@@ -15,11 +15,14 @@
     "index.server.tsx",
     "client/",
     "server/",
-    "shared/"
+    "shared/",
+    "README.md",
+    "docs/",
+    "LICENSE"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run --maxWorkers=2",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "test": "vitest run --maxWorkers=2 --exclude '**/.worktrees/**'",
     "check": "npm run typecheck && npm test",
     "package:check": "npm pack --dry-run --json"
   },

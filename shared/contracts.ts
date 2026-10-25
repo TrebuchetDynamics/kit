@@ -30,7 +30,8 @@ export const fleetSchema = z.object({
   instance: z.string(), capturedAt: z.number(), release: z.string(), executable: z.string(),
   prepareApi: z.number(), permissions: policySchema, repos: z.array(repoSchema), warnings: z.array(z.string()),
 });
-export const closureSchema = recordSchema;
+// Autowork emits null for open tasks; an empty evidence map does not imply closure.
+export const closureSchema = recordSchema.nullable().transform(value => value ?? {});
 export const taskSchema = z.object({ id: idSchema, title: z.string(), section: z.string().nullable(),
   status: z.string(), goal: z.string().nullable(), rank: z.number().nullable(),
   position: z.number().nullable(), blocked_by: z.string().nullable(), closure: closureSchema });

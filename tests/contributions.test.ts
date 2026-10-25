@@ -15,6 +15,7 @@ describe('native contributions', () => {
     expect(records.filter(r => r.kind === 'addScreen').map(r => r.value.id)).toEqual(['autowork']);
     expect(records.filter(r => r.kind === 'addWorkspacePanel')).toHaveLength(1);
     expect(records.filter(r => r.kind === 'addAgentPanel')).toHaveLength(1);
+    expect(records.filter(r => r.kind === 'addCommandCenterItem' && r.value.context === 'workspace')).toHaveLength(4);
     for (const record of records) {
       const id = record.value.id ?? record.value.name;
       expect(id).toMatch(/^[a-z][a-z0-9-]*$/);

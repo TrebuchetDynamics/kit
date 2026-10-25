@@ -22,44 +22,47 @@ Read-only by default; no daemon installation/reload, actual model calls, real ru
 ## Tasks and interfaces
 
 ### 1. Typed contracts and compatibility skeleton
-- [ ] Define shared fleet/task/detail/settings-free policy, operation, planning schemas and named RPC contracts in `shared/contracts.ts`.
-- [ ] Keep root entries runtime-separated; strict generated tsconfig; pin SDK/CLI compatibility.
-- [ ] Add tests for contribution IDs, schemas and package manifest. Run `npm test -- tests/contracts.test.ts`; observe RED before implementation and GREEN after.
-- [ ] Commit the connected skeleton/design and record official scaffold provenance.
+- [x] Define shared fleet/task/detail/settings-free policy, operation, planning schemas and named RPC contracts in `shared/contracts.ts`.
+- [x] Keep root entries runtime-separated; strict generated tsconfig; pin SDK/CLI compatibility.
+- [x] Add tests for contribution IDs, schemas and package manifest. Run `npm test -- tests/contracts.test.ts`; observe RED before implementation and GREEN after.
+- [x] Commit the connected skeleton/design and record official scaffold provenance.
 
 ### 2. Bounded read-only adapter
 Files: `server/process.ts`, `server/autowork-client.ts`, `server/discovery.ts`, `server/config.ts`, `tests/server.test.ts`.
 Consumes shared schemas. Produces `AutoworkClient` and `AutoworkService` methods fleet(), tasks(repoId), task(repoId,id), logs(repoId), close().
-- [ ] Write fake-command and disposable-Git tests: argv injection remains literal; unknown/symlink/replaced paths refused; invalid JSON/nonzero/oversize/timeout fail explicitly; one collector serves concurrent refreshes and invalidates after errors.
-- [ ] Implement fixed executable resolution, capabilities handshake, exact known-repo discovery, pinned task reads and canonical fleet projection.
-- [ ] Execute `npm test -- tests/server.test.ts` and typecheck; keep missing transport/delivery unknown.
+- [x] Write fake-command and disposable-Git tests: argv injection remains literal; unknown/symlink/replaced paths refused; invalid JSON/nonzero/oversize/timeout fail explicitly; one collector serves concurrent refreshes and invalidates after errors.
+- [x] Implement fixed executable resolution, capabilities handshake, exact known-repo discovery, pinned task reads and canonical fleet projection.
+- [x] Execute `npm test -- tests/server.test.ts` and typecheck; keep missing transport/delivery unknown.
 
 ### 3. Native surfaces
 Files: `index.client.tsx`, `client/`, `tests/client.test.tsx`.
 Consumes shared RPC contracts and host-aware SDK props. Produces native fleet, runner, tasks, blockers and planning views plus workspace/agent panels and command/slash registrations.
-- [ ] Test host-keyed query/cache behavior, offline failure, task/closure rendering, owner-question-only answer action and confirmation flow with a native test renderer.
-- [ ] Implement theme-token styles, accessibility, adaptive layouts, refresh, expansion and loading/error/cached states.
-- [ ] Keep queries disabled offline/background; no unsolicited planning or control dispatch.
-- [ ] Run typecheck and client/contribution tests.
+- [x] Test host-keyed query/cache behavior, offline failure, task/closure rendering, owner-question-only answer action and confirmation flow with a native test renderer.
+- [x] Implement theme-token styles, accessibility, adaptive layouts, refresh, expansion and loading/error/cached states.
+- [x] Keep queries disabled offline/background; no unsolicited planning or control dispatch.
+- [x] Run typecheck and client/contribution tests.
 
 ### 4. Confirmed operations and owned planning
-Files: `server/operations.ts`, `server/planning.ts`, `tests/operations.test.ts`, `tests/planning.test.ts`.
+Files: `server/operations.ts`, `server/planning.ts`, `server/planning-bridge.ts`, `tests/operations.test.ts`, `tests/planning.test.ts`.
 Consumes `AutoworkService` and fixed action schemas. Produces prepare(input), commit(ticket), planning start/read/send/preview/apply/cancel and close().
-- [ ] Test read-only policy, stale generations/revisions/repo identities, consumed-ticket replay, per-repo serialization and uncertainty after timeout.
-- [ ] Implement operator-only configuration, single-use bound confirmations, canonical owner decisions and existing service CLI argv.
-- [ ] Test plugin-owned session registration, bounded progress, reconnection handle reuse, no automatic Apply/Start, exact preview revision and cleanup limited to owned subprocesses.
-- [ ] Implement existing planning CLI supervision; fail closed for unsupported live steering rather than invent an API.
-- [ ] Run security/operation/planning tests and typecheck.
+- [x] Test read-only policy, stale generations/revisions/repo identities, consumed-ticket replay, per-repo serialization and uncertainty after timeout.
+- [x] Implement operator-only configuration, single-use bound confirmations, canonical owner decisions and existing service CLI argv.
+- [x] Test plugin-owned session registration, bounded progress, reconnection handle reuse, no automatic Apply/Start, exact preview revision and cleanup limited to owned subprocesses.
+- [x] Implement existing planning CLI supervision; fail closed for unsupported live steering rather than invent an API.
+- [x] Run security/operation/planning tests and typecheck.
 
 ### 5. Real compiler/load verification and packaging
 Files: `tests/plugin-load.test.ts`, `docs/qualification.md`, `README.md`, `OVERVIEW.md`, `docs/security.md`, `docs/follow-ups.md`.
-- [ ] Compile both runtime bundles with the official pinned Paseo compiler; validate manifest and load/unload the actual server entry in an isolated plugin runtime, no user daemon.
-- [ ] Run all project tests, `npm run typecheck`, package dry-run/content audit and `git diff --check`.
-- [ ] Independently review security/ownership/cleanup before closeout and fix actionable findings with regression tests.
-- [ ] Document install/configuration/upgrade/removal, exact supported versions, actual test evidence and pending Android/Linux live qualification. Do not publish or install into existing services.
+- [x] Compile both runtime bundles with the official pinned Paseo compiler; validate manifest and load/unload the actual server entry in an isolated plugin runtime, no user daemon.
+- [x] Run all project tests, `npm run typecheck`, package dry-run/content audit and `git diff --check`.
+- [x] Independently review security/ownership/cleanup before closeout and fix actionable findings with regression tests.
+- [x] Document install/configuration/upgrade/removal, exact supported versions, actual test evidence and pending Android/Linux live qualification. Do not publish or install into existing services.
 
 ## Progress / rulings
 
 - Design approved for autonomous implementation by the mission itself; local repo scaffolding is authorized, not live plugin activation.
+- Implementation ruling: CLI progress is not a structured steering protocol; use the selected upstream Planner/PlanningHub through a bounded owned stdio bridge instead. No alternate prompts/engine or upstream session adoption.
+- Safety ruling: upstream `--worktree` reads can recover interrupted transactions, so read-only RPCs inspect committed records; mutations use --expect against the displayed record hash.
+- Review repair: uncertain planning observations retain their repository reservation and can be reconciled/cancelled; only authoritative settlement releases ownership. Prepared confirmations display the exact frozen text payload.
 - Paseo public RPC handler lacks end-user principal: enforce daemon.manage plus server-operator policy; do not invent per-user access control.
 - Existing Autowork blockers command invokes an agent: observation must use fleet's canonical blocker/question data instead.

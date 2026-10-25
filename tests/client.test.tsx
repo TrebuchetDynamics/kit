@@ -351,6 +351,35 @@ describe('native host-scoped surfaces', () => {
     expect(text()).toContain('Closure: closed · manual · not verified');
     expect(text()).toContain('Closure: closed · evidence · verified');
   });
+  it('filters completed and canonically held tasks without requiring a live worker lane', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [
+      task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done' },
+      { ...task, id: 'T-HELD', title: 'Held task', blocked_by: 'HELD' },
+    ] }) : initial(name, data));
+    await mount({ params: { view: 'tasks' } });
+    await input('Filter runtime', 'done'); expect(text()).toContain('Finished task'); expect(text()).not.toContain('Owner task');
+    await input('Filter runtime', 'held'); expect(text()).toContain('Held task'); expect(text()).not.toContain('Finished task');
+  });
+  it('keeps uncertain planning cancellable and explicitly reconcilable without starting another turn', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.commit'
+      ? Promise.resolve(operation({ sessionId: 'owned-session', status: 'uncertain' }))
+      : name === 'autowork.operation' ? Promise.resolve(operation({ sessionId: 'owned-session', status: 'running' })) : initial(name, data));
+    await mount({ params: { view: 'planning' } });
+    await press('Prepare planning start'); await press('Confirm operation');
+    expect(button('Prepare planning cancel')).toBeTruthy();
+    expect(button('Prepare planning message')!.props.disabled).toBe(true);
+    await press('Reconcile operation');
+    // Reconciliation may resume ordinary status polling; neither observation may replay a commit.
+    expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.operation').length).toBeGreaterThanOrEqual(1);
+    expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(1);
+  });
+  it('groups task rows by canonical goal', async () => {
+    await mount({ params: { view: 'tasks' } });
+    const headings = root.root.findAll(node => String(node.type) === 'Text' && node.props.accessibilityRole === 'header');
+    expect(headings.some(node => node.children.join('') === 'Goal · goal')).toBe(true);
+  });
   it('uses minimum 48px accessible native action targets and theme tokens', async () => {
     await mount({ params: { view: 'runner' } });
     for (const node of root.root.findAll(node => String(node.type) === 'Pressable')) {

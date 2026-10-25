@@ -44,8 +44,9 @@ function FleetContent({ props, host, fleet }: { props: PluginScreenProps; host: 
   const directory = props.params.directory;
   const repos = directory ? fleet.repos.filter(repo => knownDirectory(repo.path, directory)) : fleet.repos;
   const repo = repos.find(item => item.id === selectedId) ?? repos[0];
-  const planningOperation = operations.findLast(item => item.repoId === repo?.id && ['plan-start', 'plan-send'].includes(item.kind) && item.status === 'running')
-    ?? operations.findLast(item => item.repoId === repo?.id && item.kind.startsWith('plan-'));
+  const latestOperations = [...operations].reverse();
+  const planningOperation = latestOperations.find(item => item.repoId === repo?.id && ['plan-start', 'plan-send'].includes(item.kind) && ['running', 'uncertain'].includes(item.status))
+    ?? latestOperations.find(item => item.repoId === repo?.id && item.kind.startsWith('plan-'));
   const context = `${view}:${repo?.id ?? ''}:${repo?.revision ?? ''}`;
   const updateOperation = (operation: Operation) => {
     queryClient.setQueryData<Operation[]>(operationsKey(props.host.id, fleet.instance), existing => rememberOperation(existing, operation));
@@ -145,6 +146,10 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
   const [selected, select] = useState('');
   const runner = repo.runner;
   const questions = runner?.questions ?? [];
+  const visibleTasks = (query.data?.tasks ?? []).filter(task =>
+    (!blockers || !!task.blocked_by || questions.some(question => question.id === task.id)) &&
+    taskMatches(task, filters, [task.status, task.blocked_by ?? '', runner?.lanes.find(lane => lane.task === task.id)?.phase ?? ''].join(' ')))
+    .sort((a, b) => (a.goal ?? '').localeCompare(b.goal ?? ''));
   return <>
     {blockers ? <Card>
       <Heading>Canonical owner questions</Heading>{questions.length ? questions.map(question => <View key={question.id} style={{ gap: 8 }}>
@@ -169,13 +174,15 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
       </View>)}</Row>
       <Label muted>{query.isFetching ? 'Refreshing tasks…' : `${host.enabled && !query.isStale && !query.isError ? 'Live' : 'Cached'} tasks · revision ${query.data?.revision ?? 'unknown'}`}</Label>
       {query.error ? <Label>{query.error.message}</Label> : null}
-      {(query.data?.tasks ?? []).filter(task => (!blockers || !!task.blocked_by || questions.some(question => question.id === task.id)) && taskMatches(task, filters, runner?.lanes.find(lane => lane.task === task.id)?.phase ?? '')).map(task => <Card key={task.id}>
+      {visibleTasks.map((task, index) => <View key={task.id} style={{ gap: 8 }}>
+        {index === 0 || visibleTasks[index - 1]?.goal !== task.goal ? <Heading>Goal · {task.goal ?? 'unassigned'}</Heading> : null}
+        <Card>
         <Label mono>{task.id} · {task.status} · {task.section ?? 'unknown section'}</Label>
         <Label>{task.title}</Label>
         <Label muted>Goal: {display(task.goal)} · Blocked by: {display(task.blocked_by)}</Label>
         <Label>Closure: {closureLabel(task.closure)}</Label>
         <Button label={`Open task ${task.id}`} onPress={() => select(selected === task.id ? '' : task.id)} />
-      </Card>)}
+      </Card></View>)}
       {!query.isFetching && !query.data?.tasks.length ? <Label>No tasks observed.</Label> : null}
     </Card>
     {selected ? <TaskView key={selected} task={query.data?.tasks.find(task => task.id === selected)} taskId={selected} repo={repo} fleet={fleet} host={host} hostId={hostId} enabled={enabled && !query.isStale && !query.isError} request={request} /> : null}
@@ -186,7 +193,7 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
   const load = useRpc(taskRpc);
   const query = useQuery({
     queryKey: ['autowork', hostId, fleet.instance, repo.id, 'task', taskId], enabled: host.enabled,
-    queryFn: () => readForHost(host, () => load({ instance: fleet.instance, repoId: repo.id, task: taskId, working: true })), staleTime: 10000, retry: false, refetchOnWindowFocus: false
+    queryFn: () => readForHost(host, () => load({ instance: fleet.instance, repoId: repo.id, task: taskId, working: false })), staleTime: 10000, retry: false, refetchOnWindowFocus: false
   });
   const [answer, setAnswer] = useState('');
   const detail = query.data;
@@ -231,7 +238,7 @@ function PlanningView({ repo, fleet, host, hostId, enabled, request, sessionId, 
   // Any accepted planning turn invalidates the previous preview, even before its new session ID arrives.
   useEffect(() => { setRequested(false); }, [operation?.id, sessionId]);
   const preview = view === 'preview' && requested && !query.isError && !query.isFetching ? previewForApply(query.data?.value) : null;
-  const busy = operation?.status === 'running';
+  const busy = operation?.status === 'running' || operation?.status === 'uncertain';
   const planEnabled = enabled && fleet.permissions.planning && !busy;
   const value = record(query.data?.value);
   return <Card>
@@ -252,7 +259,7 @@ function PlanningView({ repo, fleet, host, hostId, enabled, request, sessionId, 
         <Button label="Prepare Apply exact preview" disabled={!planEnabled} onPress={() => request({ kind: 'plan-apply', repoId: repo.id, sessionId, revision: preview.revision })} />
       </> : <Label muted>Read a valid nonempty preview before Apply.</Label>}
     </>}
-    {busy && operation ? <>
+    {busy && operation?.sessionId && ['plan-start', 'plan-send'].includes(operation.kind) ? <>
       <Button label="Prepare planning cancel" disabled={!enabled || !fleet.permissions.planning} onPress={() => request({ kind: 'plan-cancel', repoId: repo.id, operationId: operation.id })} />
       <Button label="Prepare planning steer" disabled={!enabled || !fleet.permissions.planning || !text.trim()} onPress={() => request({ kind: 'plan-steer', repoId: repo.id, operationId: operation.id, message: text })} />
       <Label muted>Steering uses the existing controller interface; unsupported runtime capabilities are refused by the backend.</Label>
@@ -275,6 +282,7 @@ function OperationStatus({ operation, fleet, hostId, enabled, onUpdate }: { oper
     <Heading>Operation · {operation.status}</Heading>
     <Label mono>{operation.id} · {operation.kind} · {operation.repoId}</Label>
     <Label>{operation.message}</Label>
+    {operation.status === 'uncertain' ? <Button label="Reconcile operation" disabled={!enabled} onPress={() => { void query.refetch(); }} /> : null}
     <Label mono>{operation.progress}</Label>{operation.result !== undefined ? <Expand title="Operation result evidence">
       <Label mono>{display(operation.result)}</Label>
     </Expand> : null}{query.error ? <Label>Status unavailable; delivery unknown. No replay: {query.error.message}</Label> : null}{operation.status === 'uncertain' ? <Label>Outcome uncertain. Inspect canonical state before attempting another action.</Label> : null}</Card>;
