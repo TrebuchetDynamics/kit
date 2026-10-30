@@ -17,6 +17,7 @@
     "server/",
     "shared/",
     "README.md",
+    "assets/readme/",
     "docs/",
     "LICENSE"
   ],
