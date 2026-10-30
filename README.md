@@ -26,7 +26,7 @@ paseo plugin ls
 
 Select **Autowork** in Paseo's sidebar on that host. Use Paseo's existing host picker; inventories and caches never merge across hosts. Offline/unknown hosts show unavailable state, not another machine's fleet. The workspace/agent panels show only known repositories matching that workspace directory.
 
-If plugins are globally disabled, enable them yourself only after consenting to Paseo's trust warning. These installation commands are instructions, **not actions performed by this repository**. No public Git source or registry release has been created yet; use the local directory until a separately reviewed publication exists.
+If plugins are globally disabled, enable them yourself only after consenting to Paseo's trust warning. These installation commands are instructions, **not actions performed by this repository**. Source is hosted in the private [TrebuchetDynamics/paseo-autowork](https://github.com/TrebuchetDynamics/paseo-autowork) repository. No public source or registry release is available; the local-directory installation above requires an authorized checkout.
 
 ## Read-only by default
 
@@ -35,6 +35,7 @@ Without configuration the plugin discovers repositories already known to `autowo
 - Fleet and active task views refresh at most every 20 seconds while foregrounded and online, with bounded error backoff. Pull-to-refresh or use Refresh for a fresh read.
 - The server shares a five-second collector cache and one in-flight fleet read per plugin installation. Capture time and source revision remain visible.
 - `aw-status`, `aw-tasks`, `aw-plan` and `aw-blockers` open the native workspace. `/aw-plan` optional text is a draft objective, not permission to run a model.
+- Task and blocker lists show result counts and at most 25 task summaries per page. Filters apply to the full snapshot before pagination; Clear task filters resets the search. Empty queues, unmatched filters and read failures remain distinct. Pagination bounds rendering, not upstream snapshot size.
 - A healthy systemd process does not imply productive engineering. Canonical stalled/paused/waiting states remain distinct.
 - Closure labels distinguish manual closure, verified closure, missing/invalid receipts and absent provenance. Uncommitted task edits are not presented as accepted committed scope.
 
@@ -90,7 +91,7 @@ Host modules are pinned development dependencies only; Paseo supplies its runtim
 
 For upgrades: review code and compatibility, run checks, then `paseo plugin reload paseo-autowork` on the chosen daemon. This is an explicit trusted-code operation. Remove with `paseo plugin remove paseo-autowork`; source repositories, Autowork services, tasks and retained planning work remain. No automatic restore, cleanup or worker interruption is performed.
 
-See [architecture](docs/design.md), [security](docs/security.md), [qualification](docs/qualification.md) and [ranked follow-ups](docs/follow-ups.md).
+See [architecture](docs/design.md), [security](docs/security.md), [qualification](docs/qualification.md), [ranked follow-ups](docs/follow-ups.md) and [patterns learned from similar plugins](docs/plugin-patterns.md).
 
 ## Official references
 

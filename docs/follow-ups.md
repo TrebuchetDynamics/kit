@@ -24,7 +24,7 @@ Acceptance: add or consume a small versioned upstream read API for those existin
 
 **Value:** medium; **dependency:** measured physical-device behavior from item 1.
 
-Acceptance: representative large queues/logs, virtualized task rows or bounded pagination if needed, physical-device validation of goal grouping and Done/Held runtime filters, narrow-layout one-handed navigation, long-input/keyboard behavior, accessibility screen-reader traversal and measured network/battery impact. Current UI has repository/task/goal/section/runtime filtering and expandable details; it does not claim large-queue mobile performance.
+Acceptance: representative large queues/logs, virtualized task rows or bounded pagination if needed, physical-device validation of goal grouping and Done/Held runtime filters, narrow-layout one-handed navigation, long-input/keyboard behavior, accessibility screen-reader traversal and measured network/battery impact. Current UI has repository/task/goal/section/runtime filtering, result counts, resettable filters, 25-row task summary pages and expandable details (see [pattern study](plugin-patterns.md)). This bounds rendered task summaries, not snapshot transfer size or owner-question rows; it does not claim measured large-queue mobile performance.
 
 ## 5. Publication and compatibility maintenance
 

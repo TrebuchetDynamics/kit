@@ -144,12 +144,24 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
   });
   const [filters, setFilters] = useState<TaskFilters>({ task: '', goal: '', runtime: '', section: '' });
   const [selected, select] = useState('');
+  const [page, setPage] = useState(0);
+  const pageSize = 25;
   const runner = repo.runner;
   const questions = runner?.questions ?? [];
   const visibleTasks = (query.data?.tasks ?? []).filter(task =>
     (!blockers || !!task.blocked_by || questions.some(question => question.id === task.id)) &&
     taskMatches(task, filters, [task.status, task.blocked_by ?? '', runner?.lanes.find(lane => lane.task === task.id)?.phase ?? ''].join(' ')))
     .sort((a, b) => (a.goal ?? '').localeCompare(b.goal ?? ''));
+  const lastPage = Math.max(0, Math.ceil(visibleTasks.length / pageSize) - 1);
+  const currentPage = Math.min(page, lastPage);
+  const pageStart = currentPage * pageSize;
+  const pageTasks = visibleTasks.slice(pageStart, pageStart + pageSize);
+  // Polling can shrink the queue while the user is on a later page.
+  useEffect(() => { setPage(currentPage); }, [currentPage]);
+  const changeFilter = (key: keyof TaskFilters, value: string) => {
+    setFilters(existing => ({ ...existing, [key]: value })); setPage(0);
+  };
+  const hasFilters = Object.values(filters).some(value => value.trim());
   return <>
     {blockers ? <Card>
       <Heading>Canonical owner questions</Heading>{questions.length ? questions.map(question => <View key={question.id} style={{ gap: 8 }}>
@@ -170,12 +182,14 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
     <Card>
       <Heading>{blockers ? 'Blocked tasks' : 'Tasks'}</Heading>
       <Row>{(['task', 'goal', 'runtime', 'section'] as const).map(key => <View key={key} style={{ flexGrow: 1, minWidth: 140 }}>
-        <Input label={`Filter ${key}`} value={filters[key]} onChange={value => setFilters(existing => ({ ...existing, [key]: value }))} />
+        <Input label={`Filter ${key}`} value={filters[key]} onChange={value => changeFilter(key, value)} />
       </View>)}</Row>
+      {hasFilters ? <Button label="Clear task filters" onPress={() => { setFilters({ task: '', goal: '', runtime: '', section: '' }); setPage(0); }} /> : null}
+      {query.data ? <Label muted>Showing {visibleTasks.length ? pageStart + 1 : 0}–{pageStart + pageTasks.length} of {visibleTasks.length} matching tasks · {query.data.tasks.length} total</Label> : null}
       <Label muted>{query.isFetching ? 'Refreshing tasks…' : `${host.enabled && !query.isStale && !query.isError ? 'Live' : 'Cached'} tasks · revision ${query.data?.revision ?? 'unknown'}`}</Label>
       {query.error ? <Label>{query.error.message}</Label> : null}
-      {visibleTasks.map((task, index) => <View key={task.id} style={{ gap: 8 }}>
-        {index === 0 || visibleTasks[index - 1]?.goal !== task.goal ? <Heading>Goal · {task.goal ?? 'unassigned'}</Heading> : null}
+      {pageTasks.map((task, index) => <View key={task.id} style={{ gap: 8 }}>
+        {index === 0 || pageTasks[index - 1]?.goal !== task.goal ? <Heading>Goal · {task.goal ?? 'unassigned'}</Heading> : null}
         <Card>
         <Label mono>{task.id} · {task.status} · {task.section ?? 'unknown section'}</Label>
         <Label>{task.title}</Label>
@@ -183,7 +197,12 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
         <Label>Closure: {closureLabel(task.closure)}</Label>
         <Button label={`Open task ${task.id}`} onPress={() => select(selected === task.id ? '' : task.id)} />
       </Card></View>)}
-      {!query.isFetching && !query.data?.tasks.length ? <Label>No tasks observed.</Label> : null}
+      {lastPage > 0 ? <Row>
+        <Button label="Previous task page" disabled={currentPage === 0} onPress={() => setPage(currentPage - 1)} />
+        <Label muted>Page {currentPage + 1} of {lastPage + 1}</Label>
+        <Button label="Next task page" disabled={currentPage === lastPage} onPress={() => setPage(currentPage + 1)} />
+      </Row> : null}
+      {!query.isFetching && !query.isError && query.data && !visibleTasks.length ? <Label>{!query.data.tasks.length ? 'No tasks observed.' : hasFilters ? 'No tasks match these filters.' : 'No blocked tasks observed.'}</Label> : null}
     </Card>
     {selected ? <TaskView key={selected} task={query.data?.tasks.find(task => task.id === selected)} taskId={selected} repo={repo} fleet={fleet} host={host} hostId={hostId} enabled={enabled && !query.isStale && !query.isError} request={request} /> : null}
   </>;

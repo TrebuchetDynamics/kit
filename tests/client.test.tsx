@@ -380,6 +380,89 @@ describe('native host-scoped surfaces', () => {
     const headings = root.root.findAll(node => String(node.type) === 'Text' && node.props.accessibilityRole === 'header');
     expect(headings.some(node => node.children.join('') === 'Goal · goal')).toBe(true);
   });
+  it('distinguishes unmatched filters from an empty queue and lets the user reset filters', async () => {
+    await mount({ params: { view: 'tasks' } });
+    expect(text()).toContain('Showing 1–1 of 1 matching tasks · 1 total');
+    await input('Filter task', 'not-present');
+    expect(text()).toContain('No tasks match these filters.');
+    expect(text()).not.toContain('No tasks observed.');
+    expect(text()).not.toContain('Owner task');
+    await press('Clear task filters');
+    expect(text()).toContain('Owner task');
+    for (const key of ['task', 'goal', 'runtime', 'section']) {
+      expect(root.root.find(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === `Filter ${key}`).props.value).toBe('');
+    }
+  });
+  it('bounds rendered task rows and applies filters before pagination', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    const tasks = Array.from({ length: 61 }, (_, index) => ({ ...task, id: `T-${index + 1}`, title: `Queue item ${index + 1}` }));
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks }) : initial(name, data));
+    await mount({ params: { view: 'tasks' } });
+    const rows = () => root.root.findAll(node => String(node.type) === 'Pressable' && /^Open task /.test(node.props.accessibilityLabel));
+    expect(rows()).toHaveLength(25);
+    expect(button('Previous task page')!.props.disabled).toBe(true);
+    await press('Next task page');
+    expect(text()).toContain('Showing 26–50 of 61 matching tasks · 61 total');
+    expect(button('Open task T-1')).toBeUndefined();
+    expect(button('Open task T-26')).toBeTruthy();
+    await press('Next task page');
+    expect(rows()).toHaveLength(11);
+    expect(button('Next task page')!.props.disabled).toBe(true);
+    await input('Filter task', 'Queue item 61');
+    expect(text()).toContain('Showing 1–1 of 1 matching tasks · 61 total');
+    expect(button('Open task T-61')).toBeTruthy();
+    await press('Clear task filters');
+    expect(button('Open task T-1')).toBeTruthy();
+    expect(rows()).toHaveLength(25);
+    expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.tasks')).toHaveLength(1);
+  });
+  it('clamps task pagination when a refreshed queue shrinks', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    let tasks = Array.from({ length: 26 }, (_, index) => ({ ...task, id: `T-${index + 1}` }));
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks }) : initial(name, data));
+    await mount({ params: { view: 'tasks' } });
+    await press('Next task page');
+    tasks = [tasks[0]!];
+    await act(async () => { await query.invalidateQueries({ queryKey: ['autowork', 'a', 'generation-1', 'repo', 'tasks'], exact: true }); });
+    await flush();
+    expect(text()).toContain('Showing 1–1 of 1 matching tasks · 1 total');
+    expect(button('Open task T-1')).toBeTruthy();
+    expect(button('Next task page')).toBeUndefined();
+  });
+  it('repeats goal headings at page boundaries and supports backward navigation', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks:
+      Array.from({ length: 26 }, (_, index) => ({ ...task, id: `T-${index + 1}` })) }) : initial(name, data));
+    await mount({ params: { view: 'tasks' } });
+    await press('Next task page');
+    expect(text()).toContain('Goal · goal');
+    expect(button('Open task T-26')).toBeTruthy();
+    await press('Previous task page');
+    expect(button('Open task T-1')).toBeTruthy();
+    expect(button('Open task T-26')).toBeUndefined();
+  });
+  it('distinguishes an empty queue from a nonempty queue without blocked tasks', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    let tasks: typeof task[] = [];
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks }) : initial(name, data));
+    await mount({ params: { view: 'tasks' } });
+    expect(text()).toContain('No tasks observed.');
+    tasks = [{ ...task, id: 'T-OTHER' }];
+    await press('Blockers');
+    await act(async () => { await query.invalidateQueries({ queryKey: ['autowork', 'a', 'generation-1', 'repo', 'tasks'], exact: true }); });
+    await flush();
+    expect(text()).toContain('No blocked tasks observed.');
+    expect(button('Open task T-OTHER')).toBeUndefined();
+    expect(text()).toContain('of 0 matching tasks · 1 total');
+  });
+  it('does not describe failed task reads as an empty queue', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.reject(new Error('Task read unavailable')) : initial(name, data));
+    await mount({ params: { view: 'tasks' } });
+    expect(text()).toContain('Task read unavailable');
+    expect(text()).not.toContain('No tasks observed.');
+    expect(text()).not.toContain('No tasks match these filters.');
+  });
   it('uses minimum 48px accessible native action targets and theme tokens', async () => {
     await mount({ params: { view: 'runner' } });
     for (const node of root.root.findAll(node => String(node.type) === 'Pressable')) {

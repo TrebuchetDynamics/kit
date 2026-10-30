@@ -24,6 +24,57 @@ describe('bounded command adapter', () => {
     await expect(p.json(['fail'])).rejects.toMatchObject({ code: 'EXIT' });
     await p.close();
   });
+  it('redacts secrets split across stderr chunks and flushes a final unterminated line', async () => {
+    const f = await fixture();
+    await writeFile(f.exe, `#!/usr/bin/env node
+process.stderr.write('safe progress\\nSECRET_TO');
+setTimeout(() => {
+  process.stderr.write('KEN=private-value\\nBearer ');
+  setTimeout(() => process.stderr.write('private-bearer'), 30);
+}, 30);
+`);
+    const p = new ProcessRunner(f.exe);
+    const streamed: string[] = [];
+    try {
+      const result = await p.run([], { onStderr: text => streamed.push(text) });
+      expect(streamed.join('')).toBe('safe progress\n[redacted]\n[redacted]');
+      expect(result.stderr).toBe(streamed.join(''));
+    } finally { await p.close(); }
+  });
+  it.each(['\n', '\r\n', '\n\n\t'])('redacts a Bearer credential across a %j line boundary', async separator => {
+    const f = await fixture();
+    await writeFile(f.exe, `#!/usr/bin/env node
+process.stderr.write(${JSON.stringify('safe progress\nBearer' + separator)});
+setTimeout(() => {
+  process.stderr.write('private-');
+  setTimeout(() => process.stderr.write('bearer\\n'), 30);
+}, 30);
+`);
+    const p = new ProcessRunner(f.exe);
+    const streamed: string[] = [];
+    try {
+      const result = await p.run([], { onStderr: text => streamed.push(text) });
+      expect(streamed.join('')).toBe('safe progress\n[redacted]\n');
+      expect(result.stderr).toBe(streamed.join(''));
+    } finally { await p.close(); }
+  });
+  it('withholds an incomplete stderr credential when a command fails or exceeds its output budget', async () => {
+    const f = await fixture();
+    for (const ending of ["process.exitCode = 2;", "process.stdout.write('x'.repeat(2048));"]) {
+      await writeFile(f.exe, `#!/usr/bin/env node
+process.stderr.write('safe progress\\nSECRET_TO');
+setTimeout(() => { ${ending} }, 30);
+`);
+      const p = new ProcessRunner(f.exe, { maxBytes: 1024 });
+      const streamed: string[] = [];
+      try {
+        await expect(p.run([], { onStderr: text => streamed.push(text) })).rejects.toMatchObject({
+          code: ending.includes('exitCode') ? 'EXIT' : 'OUTPUT_LIMIT',
+        });
+        expect(streamed.join('')).toBe('safe progress\n');
+      } finally { await p.close(); }
+    }
+  });
   it('teardown has a finite deadline even when an owned command ignores graceful signals', async () => {
     const f = await fixture(); const p = new ProcessRunner(f.exe);
     let ready!: () => void; const observed = new Promise<void>(resolve => { ready = resolve; });

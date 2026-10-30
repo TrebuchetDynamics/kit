@@ -12,7 +12,7 @@ In the verified Paseo 0.13 source, `plugin.rpc.invoke.request` requires `daemon.
 - Clients submit opaque discovered repository IDs, not arbitrary paths, executable names, environment variables, CLI arguments or shell commands. Workspace directory matching only filters the known fleet in the client.
 - Git roots/common-directory identity and filesystem device/inode are revalidated before commands; symlink aliases, replacements and disappeared repositories refuse actions.
 - Committed task records come from `tasks list/show --rev`. Read RPCs do **not** use `--worktree`: upstream transactional working-tree reads can recover interrupted writes. No second task parser is implemented.
-- Logs are fixed, bounded `autowork logs --lines 150` snapshots. Credential-like strings are redacted. No unrestricted file/log path endpoint exists.
+- Logs are fixed, bounded `autowork logs --lines 150` snapshots. Credential-like strings are redacted. Streamed command stderr is buffered through complete lines before redaction, including cross-line Bearer prefixes; a successful exit flushes the final line, while failure withholds an incomplete final line from streaming callbacks. Buffering remains subject to the command output byte limit. Redaction is best-effort pattern matching, not a guarantee that arbitrary output contains no secrets. No unrestricted file/log path endpoint exists.
 - Effective state, capture times, source revisions and missing evidence are kept distinct. Unknown transport/delivery/runtime metadata is never guessed from configured defaults or stale records.
 
 ## Mutation boundaries

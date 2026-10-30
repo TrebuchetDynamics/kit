@@ -41,7 +41,23 @@ export class ProcessRunner {
       try { child = spawn(this.executable, [...args], { shell: false, env, stdio: ['ignore', 'pipe', 'pipe'] }); }
       catch { this.active--; reject(new CommandFailure('NOT_FOUND', 'Cannot execute configured Autowork')); return; }
       this.children.add(child);
-      let stdout = '', stderr = '', bytes = 0, failure: CommandFailure | null = null;
+      let stdout = '', stderr = '', pendingStderr = '', bytes = 0, failure: CommandFailure | null = null;
+      // Pipe chunks are arbitrary: redact complete lines, not partial credentials.
+      // The shared output byte limit also bounds this pending line buffer.
+      const streamStderr = (text: string, flush = false) => {
+        pendingStderr += text;
+        let end = flush ? pendingStderr.length : pendingStderr.lastIndexOf('\n') + 1;
+        // redact() permits whitespace (including newlines) after Bearer.
+        // Keep an unresolved prefix until its credential arrives.
+        // Inspect redacted text so a token ending in "bearer" cannot be split.
+        const bearer = !flush && /Bearer\s*$/i.exec(redact(pendingStderr.slice(0, end)));
+        if (bearer) end -= bearer[0].length;
+        if (end > 0) {
+          const complete = pendingStderr.slice(0, end);
+          pendingStderr = pendingStderr.slice(end);
+          options.onStderr?.(redact(complete));
+        }
+      };
       const outputDecoder = new StringDecoder('utf8'), errorDecoder = new StringDecoder('utf8');
       let escalation: ReturnType<typeof setTimeout> | undefined;
       const stop = (error: CommandFailure, signal: NodeJS.Signals = 'SIGTERM') => {
@@ -61,7 +77,7 @@ export class ProcessRunner {
         bytes += chunk.length;
         if (bytes > this.maxBytes) { stop(new CommandFailure('OUTPUT_LIMIT', 'Autowork output limit exceeded', true)); return; }
         const text = (error ? errorDecoder : outputDecoder).write(chunk);
-        if (error) { stderr += text; options.onStderr?.(redact(text)); } else stdout += text;
+        if (error) { stderr += text; streamStderr(text); } else stdout += text;
       };
       child.stdout!.on('data', (chunk: Buffer) => accept(chunk, false));
       child.stderr!.on('data', (chunk: Buffer) => accept(chunk, true));
@@ -71,7 +87,10 @@ export class ProcessRunner {
         clearTimeout(timer); if (escalation) clearTimeout(escalation);
         options.signal?.removeEventListener('abort', cancelled);
         this.children.delete(child); this.active--;
-        stdout += outputDecoder.end(); stderr += errorDecoder.end();
+        stdout += outputDecoder.end();
+        const errorTail = errorDecoder.end(); stderr += errorTail;
+        // On failure the final line may be truncated inside a credential; do not emit it.
+        if (!failure && code === 0) streamStderr(errorTail, true);
         if (failure) reject(failure);
         else if (code !== 0) reject(new CommandFailure('EXIT', `Autowork exited ${code ?? 'by signal'}: ${redact(stderr).slice(-1200)}`, true));
         else resolve({ stdout, stderr: redact(stderr) });
