@@ -1,6 +1,6 @@
 ---
 name: ui-taste
-description: "Build or review UI with Uizze playbooks."
+description: "Use Uizze playbooks to build or review UI."
 disable-model-invocation: true
 ---
 

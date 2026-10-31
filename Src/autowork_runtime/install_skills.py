@@ -74,15 +74,23 @@ def install(source, profiles, *, dry_run=False, report=print, skills=None):
     if not skills:
         raise ValueError(f'No skill folders found in {source}')
     ignore = shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo', '.pytest_cache', '.git', '.DS_Store')
+    installable = []
     for skill in skills:
-        shared_support = skill.name == 'shared' and all(
-            (skill / name).is_file() for name in
-            ('COMMON-CONTRACT.md', 'PLAN-HANDOFF.md', 'WORKTREE-ISOLATION.md'))
-        if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', skill.name) or not (shared_support or (skill / 'SKILL.md').is_file()):
+        if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', skill.name):
             raise ValueError(f'Invalid skill folder or missing SKILL.md: {skill}')
         if skill.is_symlink() or any(p.is_symlink() for p in skill.rglob('*')):
             raise ValueError(f'Symlinks are not supported inside source skills: {skill}')
-
+        if (skill.name != 'shared' and not (skill / 'SKILL.md').is_file()
+                and (skill / 'README.md').is_file()):
+            # A documented support container (README.md, no SKILL.md) is not a skill,
+            # matching plugin discovery. A bare folder without SKILL.md stays an error.
+            continue
+        shared_support = skill.name == 'shared' and all(
+            (skill / name).is_file() for name in
+            ('COMMON-CONTRACT.md', 'PLAN-HANDOFF.md', 'WORKTREE-ISOLATION.md'))
+        if not (shared_support or (skill / 'SKILL.md').is_file()):
+            raise ValueError(f'Invalid skill folder or missing SKILL.md: {skill}')
+        installable.append(skill)
 
     installed = skipped = planned = failed = 0
     for name, home in profiles:
@@ -91,7 +99,7 @@ def install(source, profiles, *, dry_run=False, report=print, skills=None):
             report(f'Failed: {name}: unsafe or non-directory destination {destination}')
             failed += 1
             continue
-        for skill in skills:
+        for skill in installable:
             target = destination / skill.name
             required = ('COMMON-CONTRACT.md', 'PLAN-HANDOFF.md', 'WORKTREE-ISOLATION.md') if skill.name == 'shared' else ('SKILL.md',)
             if target.exists() or target.is_symlink():
