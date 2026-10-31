@@ -124,6 +124,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- Fix offline provisioning to skip documented script-only skill folders (skills/cron-autowork stays a support location) and restore the ui-taste skill-index trigger description. (MAIN-002-670509da)
 - Repair the Docs Sync and Git Commit Push links left dangling by the writing-for-agents disclosure, resolve pinned upstream skill links through their UPSTREAM.json relocation instead of editing pinned bytes, and restore the delivery-scope policy phrases the skill's regression test asserts. (TOOLSET-410-f137f794)
 - Fix the Unused Code skill's Graphify reference so installed profiles no longer contain a broken relative link. (TOOLSET-409-95ccc944)
 - Fixed native and portable test-optimizer discovery descriptions to fit the 60-character skill index while preserving suite-reduction guidance. (TOOLSET-406-bf73282e)
