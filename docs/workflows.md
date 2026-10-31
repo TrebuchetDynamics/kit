@@ -305,6 +305,31 @@ Editing a document is not new authority. Keep every tested contract, move text
 instead of rewriting meaning, and report lines removed with the tests you ran.
 Offline link and packaging checks do not qualify model behavior.
 
+## Responsive screenshots
+
+`/responsive-screenshots` captures one or more pages at chosen viewport widths and
+reports what each capture proves: the file, its real pixel size, whether the page
+scrolls horizontally, console errors and failed requests. Its bundled
+[capture script](../skills/responsive-screenshots/scripts/capture.py) drives the
+installed Playwright library, so it works on every host without host-specific browser
+tools.
+
+Standard widths are `375x667`, `768x1024` and `1440x900`; `--scheme both` adds a dark
+capture. Each capture fixes the viewport, device scale and reduced motion, waits on
+network idle, an optional selector and document fonts rather than a fixed sleep, and
+writes `report.md` plus `captures.json`. Exit status is `0` captured, `1` a capture
+failed, `2` a usage refusal or horizontal overflow under `--fail-on-overflow`.
+
+The workflow installs nothing, refuses URLs with embedded credentials, keeps captures
+out of Git unless the request publishes them, and leaves design judgement to
+`/ui-taste` or `/impeccable`. A capture file proves a render happened, not that a layout
+is correct.
+
+```text
+/responsive-screenshots src/app preview at 375x667 768x1024 1440x900; both schemes
+/responsive-screenshots https://staging.example.com/pricing; fail on overflow
+```
+
 ## Ask Autowork
 
 `/ask-autowork` is the map over this bundle: one router that names the skill for a

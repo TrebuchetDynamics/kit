@@ -375,6 +375,9 @@ All four hosts, with the same namespacing as the commands above:
   the commands.
 - **Read the queue without writing:** `/pending` reports what is open, done and next
   from `tasks/`.
+- **Capture responsive views:** `/responsive-screenshots <url or page>` screenshots the
+  pages at 375, 768 and 1440 px, checks horizontal overflow, and writes a report with the
+  real pixel sizes. It installs nothing and keeps captures out of Git unless asked.
 
 </details>
 

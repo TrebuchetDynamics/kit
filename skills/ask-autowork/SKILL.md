@@ -49,6 +49,7 @@ a step, read that skill's `SKILL.md`: a summary here is orientation only.
 | Interface design, polish or frontend audit | `/impeccable` |
 | Uizze's UI playbooks | `/ui-taste` |
 | README visuals and SVG assets | `/beautify-github-readme` |
+| Responsive captures at chosen breakpoints | `/responsive-screenshots` |
 | Writing or pruning a skill, `AGENTS.md` or agent doc | `/writing-for-agents` |
 | Orientation in code before reading many files | `/graphify` |
 | Ponytail guidance, review, audit, debt or benchmarks | `/ponytail`, `/ponytail-review`,

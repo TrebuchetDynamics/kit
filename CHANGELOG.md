@@ -14,6 +14,15 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Added
 
+- `responsive-screenshots`: capture one or more pages at chosen breakpoints and verify
+  each result. A bundled script drives the installed Playwright library on every host,
+  fixes viewport, device scale, color scheme and reduced motion, waits on page state
+  instead of a fixed sleep, and reports real pixel sizes, horizontal overflow, console
+  errors and failed requests as `report.md` and `captures.json`. It installs nothing,
+  refuses credential URLs, keeps captures out of Git unless asked, and leaves design
+  judgement to `/ui-taste` and `/impeccable`. Adapted from an unlicensed upstream idea
+  with no bytes copied; see the skill's `SOURCES.md`.
+
 - `ask-autowork`: one router over the bundle, adapted from mattpocock's `ask-matt`.
   It names the skill for a situation and the next step, reads the chosen skill before
   describing it, and names one command. It grants no authority. The skill standard gains
