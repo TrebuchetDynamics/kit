@@ -142,6 +142,24 @@ class InstallSkillsTests(unittest.TestCase):
         self.assertIn('SKILL.md', result.stderr)
         self.assertFalse((self.home / 'skills').exists())
 
+    def test_documented_support_folder_without_skill_is_not_installed(self):
+        support = self.repo / 'skills/cron-support'
+        support.mkdir()
+        (support / 'README.md').write_text('This folder is not a skill.\n')
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.home / 'skills/cron-support').exists())
+        self.assertTrue((self.home / 'skills/example/SKILL.md').is_file())
+
+    def test_support_folder_still_requires_a_valid_skill_name(self):
+        support = self.repo / 'skills/Not-A-Skill'
+        support.mkdir()
+        (support / 'README.md').write_text('This folder is not a skill.\n')
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('Invalid skill folder', result.stderr)
+        self.assertFalse((self.home / 'skills').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

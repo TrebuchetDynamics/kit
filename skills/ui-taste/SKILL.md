@@ -1,6 +1,6 @@
 ---
 name: ui-taste
-description: "Build or review UI with Uizze playbooks."
+description: "Use Uizze playbooks to build or review UI."
 version: 0.2.2
 license: Apache-2.0
 ---
