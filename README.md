@@ -20,6 +20,10 @@ Start the Linux Pi runner separately when you want it to continue through the qu
 | **Codex** | [Marketplace plugin](#codex) | `$autowork:plan-with-me` |
 | **Pi** | [Git package](#pi) | `/plan-with-me` |
 
+Not sure which command fits? `/ask-autowork` names one for your situation, then the
+next step it implies (`/autowork:ask-autowork` in Claude Code,
+`$autowork:ask-autowork` in Codex).
+
 For example, in **Hermes CLI** after installation (illustrative, not a run receipt):
 
 ```text
@@ -348,6 +352,33 @@ controllers, installers or global activation are imported.
 </details>
 
 <details>
+<summary><strong>Research, design and reference commands</strong></summary>
+
+### Research, design and reference
+
+All four hosts, with the same namespacing as the commands above:
+
+- **Measure instead of guess:** `/autoresearch <question or metric>` runs one bounded
+  research protocol, or a measured loop with a baseline, target and iteration budget.
+- **Load one method:** `/engineering` selects a technique for a concrete gap, such as
+  test-driven development, code review or systematic debugging. It supplies method,
+  not authority.
+- **Design interfaces:** `/impeccable` applies the bundled design playbooks to layout,
+  states and polish.
+- **Apply UI playbooks:** `/ui-taste` builds or reviews web and iOS screens with
+  Uizze's playbooks.
+- **Redesign this kind of README:** `/beautify-github-readme` audits or rewrites the
+  README of the repository you are in, with project-native SVG assets.
+- **Choose the smallest complete change:** `/ponytail` picks a guidance level;
+  `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`, `/ponytail-gain` and
+  `/ponytail-help` review, audit, list deferred shortcuts, show benchmarks and explain
+  the commands.
+- **Read the queue without writing:** `/pending` reports what is open, done and next
+  from `tasks/`.
+
+</details>
+
+<details>
 <summary><strong>Hermes scheduling, profiles and command aliases</strong></summary>
 
 ### Operate
@@ -359,9 +390,6 @@ Hermes-only scheduler, profiles and fleet management:
 - **Set up a profile:** `/profile-create` guides repository-bound profile setup.
 - **Update:** `/autowork update` updates every live profile; see [updating](#updating).
 - **Inspect:** `/autowork list` lists registered commands and their owners.
-
-`/ask-autowork` is the map: ask which command fits and it names one, then the next
-step. Claude Code prefixes `/autowork:`, Codex `$autowork:`.
 
 | Interface | Plan | Docs Sync |
 | --- | --- | --- |
