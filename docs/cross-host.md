@@ -130,6 +130,25 @@ scope, the task store, review gates and delivery limits. The current upstream na
 is `writing-for-agents`; upstream retired `writing-great-skills` without an alias.
 See [workflow and evidence requirements](workflows.md#writing-for-agents).
 
+## Responsive screenshots
+
+[Responsive Screenshots](../skills/responsive-screenshots/SKILL.md) captures pages at
+chosen breakpoints and verifies each result. It runs a bundled script against the
+installed Playwright Python package; when that package is absent, the adapter uses the
+host's MCP browser tools or its Playwright CLI and says which path it used. It installs
+no browser, refuses credential URLs, keeps captures out of Git unless asked, and treats
+a file as evidence of a render, not of a correct layout.
+
+| Host | Example |
+| --- | --- |
+| Hermes | `/responsive-screenshots https://localhost:3000; 375, 768, 1440; both schemes` |
+| Claude Code | `/autowork:responsive-screenshots https://localhost:3000; 375, 768, 1440` |
+| Codex | `$autowork:responsive-screenshots https://localhost:3000; 375, 768, 1440` |
+| Pi | `/responsive-screenshots https://localhost:3000; 375, 768, 1440` |
+
+See [workflow requirements](workflows.md#responsive-screenshots). Design review stays
+with `/ui-taste` and `/impeccable`.
+
 ## Ask Autowork
 
 [Ask Autowork](../skills/ask-autowork/SKILL.md) is the router over the bundle: it names

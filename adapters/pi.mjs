@@ -15,6 +15,7 @@ const workflows = {
   graphify: ['graphify', 'Query a local Graphify code graph before wide reading'],
   'writing-for-agents': ['writing-for-agents', 'Write and prune skills, AGENTS.md and agent docs'],
   'ask-autowork': ['ask-autowork', 'Find the skill that fits the situation'],
+  'responsive-screenshots': ['responsive-screenshots', 'Capture pages at breakpoints and check overflow'],
   grilling: ['grilling', 'Stress-test a plan or idea with rounds of questions'],
   'grill-with-docs': ['grill-with-docs', 'Grill a plan and record decisions as ADRs and terms'],
   'improve-codebase-architecture': ['improve-codebase-architecture', 'Find deepening opportunities and report them visually'],
