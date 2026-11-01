@@ -43,9 +43,9 @@ class BundleTests(unittest.TestCase):
         self.addCleanup(p.stop)
 
     def register_command(self, name, handler, description='', args_hint=''):
-        self.commands[name] = {'handler': handler, 'plugin': 'autowork'}
+        self.commands[name] = {'handler': handler, 'plugin': 'kit'}
 
-    def invoke(self, ctx, name, path, args, namespace='autowork'):
+    def invoke(self, ctx, name, path, args, namespace='kit'):
         self.messages.append((namespace, name, args))
 
     def test_chat_update_is_not_treated_as_inventory_filter(self):
@@ -370,12 +370,12 @@ class BundleTests(unittest.TestCase):
 
     def test_inventory_keeps_optional_ponytail_handlers_for_upgrade_readiness(self):
         names = {p.parent.name for p in (ROOT / 'skills').glob('*/SKILL.md')}
-        self.commands = {name: {'plugin': 'autowork', 'handler': object()} for name in names}
+        self.commands = {name: {'plugin': 'kit', 'handler': object()} for name in names}
         self.commands['ponytail-review']['plugin'] = 'ponytail'
-        self.skills = ['autowork:' + name for name in names]
+        self.skills = ['kit:' + name for name in names]
         self.manager.home_path = Path(self.tmp.name)
         self.manager.discover_and_load = lambda: None
-        plugins = [{'name': 'autowork', 'enabled': True}, {'name': 'ponytail', 'enabled': True}]
+        plugins = [{'name': 'kit', 'enabled': True}, {'name': 'ponytail', 'enabled': True}]
         self.manager.list_plugins = lambda: plugins
         stubs = {
             'hermes_cli.commands_platforms': types.SimpleNamespace(
@@ -390,13 +390,13 @@ class BundleTests(unittest.TestCase):
             self.assertIn('ponytail-review', [r['command'] for r in report['commands'] if r['source'] == 'ponytail'])
             diagnosed = self.bundle.diagnose(report, core_only=True)
             self.assertEqual(diagnosed['status'], 'ready', diagnosed)
-            self.assertEqual(diagnosed['bundled_skill_fallbacks'], ['autowork:ponytail-review'])
+            self.assertEqual(diagnosed['bundled_skill_fallbacks'], ['kit:ponytail-review'])
             installed, code = runtime.finish_profile(ROOT, Path(self.tmp.name), Path(self.tmp.name),
                                                       report, bundle_only=True, no_reload=True)
             self.assertEqual(code, 0, installed)
             self.assertNotIn('ponytail', report['missing_plugins'])
             plugins.pop()
-            self.commands['ponytail-review']['plugin'] = 'autowork'
+            self.commands['ponytail-review']['plugin'] = 'kit'
             report = self.bundle.inventory()
             self.assertNotIn('ponytail', report['missing_plugins'])
             self.assertEqual(self.bundle.diagnose(report, core_only=True)['status'], 'ready')
@@ -514,16 +514,16 @@ class BundleTests(unittest.TestCase):
                              'tools': 0, 'commands': 6, 'hooks': 2, 'error': None}],
                 'plugin_skills': ['ponytail:ponytail', 'ponytail:ponytail-help'],
                 'commands': [{'command': 'ponytail', 'telegram': 'ponytail', 'source': 'ponytail'},
-                             {'command': 'docs-sync', 'telegram': 'docs_sync', 'source': 'autowork'}],
+                             {'command': 'docs-sync', 'telegram': 'docs_sync', 'source': 'kit'}],
                 'missing_plugins': [], 'missing_skills': ['blocked-skill'],
                 'unchecked_skill_sources': [], 'telegram_menu_hidden': 12}
 
     def test_default_summary_reports_capabilities_and_gaps_without_command_dump(self):
         report = self.report()
-        report['plugins'].insert(0, {'name': 'autowork', 'version': '0.2.0', 'enabled': True,
+        report['plugins'].insert(0, {'name': 'kit', 'version': '0.2.0', 'enabled': True,
                                      'tools': 0, 'commands': 44, 'hooks': 0, 'error': None})
-        report['plugin_skills'] += ['autowork:autowork', 'autowork:docs-sync']
-        report['commands'].append({'command': 'autowork', 'telegram': 'autowork', 'source': 'autowork'})
+        report['plugin_skills'] += ['kit:autowork', 'kit:docs-sync']
+        report['commands'].append({'command': 'autowork', 'telegram': 'autowork', 'source': 'kit'})
         report['missing_plugins'] = ['hermes-speech']
         with patch.object(self.bundle, 'inventory', return_value=report), \
                 patch.object(self.bundle, '_identity', return_value=('abc1234', 'work')), \

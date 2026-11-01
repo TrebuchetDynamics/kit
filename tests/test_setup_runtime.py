@@ -18,11 +18,11 @@ class RuntimeSetupTests(unittest.TestCase):
         self.bundle=self.root/'bundle'; (self.bundle/'skills/grill-me').mkdir(parents=True)
         (self.bundle/'skills/grill-me/SKILL.md').write_text('fixture')
         self.report={'missing_plugins':[], 'missing_skills':[], 'unchecked_skill_sources':[],
-                     'plugins':[{'name':'autowork','enabled':True,'error':None}],
-                     'commands':[{'command':'grill-me','kind':'plugin','source':'autowork'}]}
+                     'plugins':[{'name':'kit','enabled':True,'error':None}],
+                     'commands':[{'command':'grill-me','kind':'plugin','source':'kit'}]}
         self.query=Mock(return_value={'answering_pid':42})
         self.reload=Mock(return_value={'reloaded':True,'home':str(self.home),'adapters_rewired':1,
-            'activations':[{'name':'autowork','activated_now':{'gateway_commands':['grill-me']}}]})
+            'activations':[{'name':'kit','activated_now':{'gateway_commands':['grill-me']}}]})
         self.pid=Mock(return_value=None)
         modules={'gateway.control_socket':types.SimpleNamespace(query_gateway_control=self.query,reload_gateway_plugins=self.reload),
                  'gateway.status':types.SimpleNamespace(get_running_pid=self.pid)}
@@ -78,11 +78,11 @@ class RuntimeSetupTests(unittest.TestCase):
         skill.parent.mkdir()
         skill.write_text('fixture')
         self.report['commands'].append({'command': 'ponytail-review', 'kind': 'plugin', 'source': 'ponytail'})
-        self.report['plugin_skills'] = ['autowork:ponytail-review']
+        self.report['plugin_skills'] = ['kit:ponytail-review']
         report, code = self.finish(bundle_only=True, no_reload=True)
         self.assertEqual(code, 0, report)
         self.assertNotIn('ponytail-review', report['bundled_commands'])
-        self.assertEqual(report['bundled_skill_fallbacks'], ['autowork:ponytail-review'])
+        self.assertEqual(report['bundled_skill_fallbacks'], ['kit:ponytail-review'])
         self.report['plugin_skills'] = []
         self.assertEqual(self.finish(bundle_only=True, no_reload=True)[1], 1)
 

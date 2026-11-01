@@ -1766,7 +1766,7 @@ def skill_command(agent, skill):
     """Use Claude Code's namespace or Pi's hyphenated command; preserve other agents."""
     name = os.path.basename(agent[0]) if agent else ''
     if name == 'claude':
-        return f'/autowork:{skill}'
+        return f'/kit:{skill}'
     if name == 'pi':
         return f'/{skill}'
     return '/' + skill.replace('-', '_')

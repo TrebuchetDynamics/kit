@@ -98,7 +98,7 @@ class BacklogPlanTests(unittest.TestCase):
                           unchanged_runs=0)
         result=backlog_plan.decide(self.cycle,self.state)
         self.assertEqual(result['action'],'plan')
-        self.assertEqual(result['skill'],'autowork:plan-for-me')
+        self.assertEqual(result['skill'],'kit:plan-for-me')
         self.assertTrue(result['execution_required'])
         backlog_plan.record(self.cycle,self.state,'fixture://recovery-plan','canonical_reconciled')
         self.assertEqual(backlog_plan.decide(self.cycle,self.state)['action'],'reuse')

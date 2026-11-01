@@ -36,7 +36,7 @@ def main():
         import json
 
         manifest = _read_manifest_for_install(root)
-        assert manifest["name"] == "autowork", manifest
+        assert manifest["name"] == "kit", manifest
         manager = get_plugin_manager()
         # A shared gateway can have another profile current at discovery time.
         from hermes_constants import set_hermes_home_override, reset_hermes_home_override
@@ -51,7 +51,7 @@ def main():
         finally:
             reset_hermes_home_override(token)
         assert other_config.read_bytes() == other_before
-        loaded = manager._plugins["autowork"]
+        loaded = manager._plugins["kit"]
         assert loaded.enabled and not loaded.error, loaded.error
         # Enabling/loading the plugin must wire native discovery without setup.
         # Every bundled skill must be provisioned by native plugin loading.
@@ -77,7 +77,7 @@ def main():
         assert configured['model']['default'] == 'keep-this-model'
         # Hermes still reads the legacy entry; the canonical key is ready for stage 2.
         assert configured['plugins']['entries']['kit']['allow_gateway_injection'] is True
-        assert configured['plugins']['entries']['autowork']['allow_gateway_injection'] is True
+        assert configured['plugins']['entries']['kit']['allow_gateway_injection'] is True
 
         from hermes_cli.plugins import PluginContext
         from hermes_cli.config import save_config
@@ -114,8 +114,8 @@ def main():
         commands = get_plugin_commands()
         assert not {'repo-docs', 'repo_docs', 'repo-interview', 'repo_interview'} & commands.keys(), commands.keys()
         assert {"autowork", "impeccable", "git-commit-push", "lgtm", "docs-sync", "plan-with-me"} <= commands.keys()
-        assert manager.find_plugin_skill("autowork:docs-sync") == root / "skills/docs-sync/SKILL.md"
-        payload = json.loads(skill_view("autowork:docs-sync"))
+        assert manager.find_plugin_skill("kit:docs-sync") == root / "skills/docs-sync/SKILL.md"
+        payload = json.loads(skill_view("kit:docs-sync"))
         assert "error" not in payload, payload
 
         # A deliberately core-only fixture must pass core diagnostics while
@@ -143,7 +143,7 @@ def main():
         for public in ('plan_with_me', 'plan_for_me', 'docs_sync'):
             assert public in dict(menu), menu
             assert public in commands and public.replace('_', '-') in commands
-        interview = json.loads(skill_view("autowork:plan-with-me"))
+        interview = json.loads(skill_view("kit:plan-with-me"))
         assert "error" not in interview, interview
 
         cli = SimpleNamespace(_pending_input=Queue(), _agent_running=False)
@@ -154,12 +154,12 @@ def main():
                                    ('plan_for_me', 'plan-for-me'), ('docs_sync', 'docs-sync')]:
                 assert commands[public]['handler']('read-only: example') is None
                 message = cli._pending_input.get_nowait()
-                assert f'autowork:{target}' in message, message
+                assert f'kit:{target}' in message, message
                 assert message.endswith('read-only: example'), message
-                assert manager.find_plugin_skill('autowork:' + target) == root / 'skills' / target / 'SKILL.md'
+                assert manager.find_plugin_skill('kit:' + target) == root / 'skills' / target / 'SKILL.md'
             assert commands["docs-sync"]["handler"]("update the README") is None
             queued = cli._pending_input.get_nowait()
-            assert 'skill_view(name="autowork:docs-sync")' in queued
+            assert 'skill_view(name="kit:docs-sync")' in queued
             assert "update the README" in queued
         finally:
             clear_session_vars(tokens)
@@ -178,7 +178,7 @@ def main():
             clear_session_vars(tokens)
         manager.unload("autowork")
         assert "docs-sync" not in manager._plugin_commands
-        assert manager.find_plugin_skill("autowork:docs-sync") is None
+        assert manager.find_plugin_skill("kit:docs-sync") is None
         # Broken YAML must remain recoverable, never replaced by fallback defaults.
         config_path.write_text('approvals: [broken')
         before = config_path.read_bytes()

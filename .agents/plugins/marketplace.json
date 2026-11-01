@@ -2,7 +2,7 @@
   "name": "autowork-marketplace",
   "plugins": [
     {
-      "name": "autowork",
+      "name": "kit",
       "source": {
         "source": "local",
         "path": "."

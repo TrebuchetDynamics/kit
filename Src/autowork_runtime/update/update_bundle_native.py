@@ -11,8 +11,8 @@ import sys
 import tempfile
 
 # Hermes reads plugin options from `settings` (ctx.get_config), so the opt-out lives there.
-PROBE_CONFIG = ('plugins:\n  enabled: [autowork]\n  entries:\n'
-                '    autowork:\n      settings:\n        apply_runtime_defaults: false\n')
+PROBE_CONFIG = ('plugins:\n  enabled: [kit]\n  entries:\n'
+                '    kit:\n      settings:\n        apply_runtime_defaults: false\n')
 
 
 def main():
@@ -45,7 +45,7 @@ def main():
             from hermes_cli.plugins import get_plugin_manager, get_plugin_commands
             get_plugin_manager().discover_and_load()
             commands = sorted(name for name, row in get_plugin_commands().items()
-                              if row.get('plugin') == 'autowork')
+                              if row.get('plugin') == 'kit')
             expected = {path.parent.name.replace('_', '-')
                         for path in (source / 'skills').glob('*/SKILL.md')
                         if path.parent.name not in ('repo-docs', 'repo-interview')}

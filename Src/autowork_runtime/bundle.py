@@ -88,7 +88,7 @@ def inventory():
     manager = get_plugin_manager()
     manager.discover_and_load()
     plugins = manager.list_plugins()
-    required = set(defaults()['imported_plugins']) | {'autowork'}
+    required = set(defaults()['imported_plugins']) | {'kit'}
     # Older installs can still own Ponytail commands; report them, never require them.
     wanted = required | {'ponytail'}
     rows = []
@@ -162,7 +162,7 @@ def _last_update():
 def overview(report):
     """A short /autowork plugin status reply: installed capabilities and setup gaps."""
     revision, profile = _identity()
-    own = next((p for p in report['plugins'] if p['name'] == 'autowork'), None)
+    own = next((p for p in report['plugins'] if p['name'] == 'kit'), None)
     version = f" {own['version']}" if own and own.get('version') else ''
     head = f'Autowork{version}' + (f' ({revision})' if revision else '')
     if profile:
@@ -174,7 +174,7 @@ def overview(report):
     lines = [head]
     available = {row['telegram'] for row in report['commands']}
     ready = [name for name in LEAD_WORKFLOWS if name in available]
-    toolset_skills = [n for n in report['plugin_skills'] if n.startswith('autowork:')]
+    toolset_skills = [n for n in report['plugin_skills'] if n.startswith('kit:')]
     if ready:
         lines.append('Ready: ' + ' '.join('/' + name for name in ready)
                      + (f' · {len(toolset_skills)} skills, {len(report["commands"])} commands in all'
@@ -183,7 +183,7 @@ def overview(report):
     if last:
         lines.append(last)
     for plugin in report['plugins']:
-        if plugin['name'] == 'autowork':
+        if plugin['name'] == 'kit':
             continue
         name = plugin['name'] + (f" {plugin['version']}" if plugin.get('version') else '')
         if plugin.get('error'):
@@ -584,13 +584,13 @@ def setup_parser(parser):
 def diagnose(report, *, core_only=False):
     """Evaluate one inventory snapshot without invoking setup or reloading gateways."""
     errors = []
-    own = next((p for p in report['plugins'] if p['name'] == 'autowork'), {})
+    own = next((p for p in report['plugins'] if p['name'] == 'kit'), {})
     if not own.get('enabled') or own.get('error'):
-        errors.append('autowork is not loaded cleanly')
+        errors.append('kit is not loaded cleanly')
     names = {p.parent.name for p in (ROOT / 'skills').glob('*/SKILL.md')
              if p.parent.name not in {'repo-docs', 'repo-interview'}}
     commands = {r['command'] for r in report['commands']
-                if r.get('kind') == 'plugin' and r.get('source') == 'autowork'}
+                if r.get('kind') == 'plugin' and r.get('source') == 'kit'}
     fallbacks = _AUTOWORK_COMPAT.peer(globals(), 'setup_runtime').ponytail_skill_fallbacks(report) & names
     missing_commands = sorted(n.replace('_', '-') for n in names
                               if n.replace('_', '-') not in commands | fallbacks)
@@ -601,22 +601,22 @@ def diagnose(report, *, core_only=False):
         text = (ROOT / 'skills' / name / 'SKILL.md').read_text(encoding='utf-8')
         match = re.search(r'^name: ([a-z0-9_-]+)$', text, re.MULTILINE)
         public_names.add(match.group(1) if match else name)
-    missing_skills = sorted('autowork:' + n for n in public_names
-                            if 'autowork:' + n not in report['plugin_skills'])
+    missing_skills = sorted('kit:' + n for n in public_names
+                            if 'kit:' + n not in report['plugin_skills'])
     if not names:
         errors.append('No bundled skills found')
     if missing_commands:
         errors.append('Unavailable bundled commands: ' + ', '.join(missing_commands))
     if missing_skills:
         errors.append('Unavailable bundled skills: ' + ', '.join(missing_skills))
-    gaps = {field: [name for name in report[field] if name != 'autowork']
+    gaps = {field: [name for name in report[field] if name != 'kit']
             for field in ('missing_plugins', 'missing_skills', 'unchecked_skill_sources')}
     integrations_ready = not any(gaps.values())
     ready = not errors and (core_only or integrations_ready)
     return {**report, 'scope': 'core' if core_only else 'full',
             'status': 'ready' if ready else 'incomplete',
             'core_status': 'incomplete' if errors else 'ready', 'core_errors': errors,
-            'bundled_skill_fallbacks': sorted('autowork:' + name for name in fallbacks),
+            'bundled_skill_fallbacks': sorted('kit:' + name for name in fallbacks),
             'integrations_status': 'ready' if integrations_ready else 'unavailable',
             'integration_gaps': gaps,
             'readiness_note': 'Skill and command registration only. Model execution, workflow-specific '

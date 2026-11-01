@@ -4,7 +4,7 @@
   "description": "Autowork repository workflows",
   "plugins": [
     {
-      "name": "autowork",
+      "name": "kit",
       "source": "./",
       "description": "Repository planning, documentation, research and execution workflows for Claude Code.",
       "skills": ["./adapters/skills/"]

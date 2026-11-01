@@ -158,8 +158,6 @@ def preflight(repo, root, profiles, *, bundle_only=False):
         'agent.max_turns': defaults['max_turns'],
         'skills.platform_disabled': defaults['skills_platform_disabled'],
         f'plugins.entries.{runtime.PLUGIN}.allow_gateway_injection': defaults['allow_gateway_injection'],
-        # Hermes reads this legacy entry until the plugin itself is renamed.
-        f'plugins.entries.{runtime.LEGACY_PLUGIN}.allow_gateway_injection': defaults['allow_gateway_injection'],
     }
     for name, home in profiles:
         plan.append(f'Profile {name}: {home}')

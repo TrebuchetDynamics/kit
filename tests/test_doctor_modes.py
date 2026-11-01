@@ -18,12 +18,12 @@ class DoctorModes(unittest.TestCase):
         spec.loader.exec_module(self.bundle)
         names = [p.parent.name for p in (ROOT / 'skills').glob('*/SKILL.md')]
         self.report = {
-            'plugins': [{'name': 'autowork', 'enabled': True, 'error': None}],
-            'plugin_skills': ['autowork:' + name for name in ('autowork', 'docs-sync', 'plan-with-me', 'blockers', 'plan-for-me', 'autoresearch', 'engineering', 'git-commit-push', 'impeccable', 'lgtm', 'profile-create', 'ui-taste', 'beautify-github-readme', 'pending',
+            'plugins': [{'name': 'kit', 'enabled': True, 'error': None}],
+            'plugin_skills': ['kit:' + name for name in ('autowork', 'docs-sync', 'plan-with-me', 'blockers', 'plan-for-me', 'autoresearch', 'engineering', 'git-commit-push', 'impeccable', 'lgtm', 'profile-create', 'ui-taste', 'beautify-github-readme', 'pending',
                 'autonomous-codebase-improver', 'bug-harvest', 'split-folder', 'test-optimizer', 'unused-code', 'apk-get', 'writing-for-agents', 'grilling', 'grill-with-docs',
                 'improve-codebase-architecture', 'ask-autowork', 'responsive-screenshots',
                 'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt', 'ponytail-gain', 'ponytail-help')],
-            'commands': [{'command': name.replace('_', '-'), 'source': 'autowork', 'kind': 'plugin'}
+            'commands': [{'command': name.replace('_', '-'), 'source': 'kit', 'kind': 'plugin'}
                          for name in names],
             'missing_plugins': ['omh'], 'missing_skills': ['graphify'],
             'unchecked_skill_sources': ['https://example.invalid/skills'],
@@ -82,10 +82,10 @@ class DoctorModes(unittest.TestCase):
         row['source'] = 'ponytail'
         code, output = self.run_doctor('--core', '--json')
         self.assertEqual(code, 0, output)
-        self.assertEqual(json.loads(output)['bundled_skill_fallbacks'], ['autowork:ponytail-review'])
+        self.assertEqual(json.loads(output)['bundled_skill_fallbacks'], ['kit:ponytail-review'])
         code, output = self.run_doctor('--core')
-        self.assertIn('autowork:ponytail-review', output)
-        self.report['plugin_skills'].remove('autowork:ponytail-review')
+        self.assertIn('kit:ponytail-review', output)
+        self.report['plugin_skills'].remove('kit:ponytail-review')
         self.assertEqual(self.run_doctor('--core', '--json')[0], 1)
 
     def test_foreign_command_cannot_certify_core(self):
@@ -103,7 +103,7 @@ class DoctorModes(unittest.TestCase):
     def test_disabled_or_failed_plugin_fails_core(self):
         for change in ({'enabled': False}, {'error': 'load failed'}):
             with self.subTest(change=change):
-                self.report['plugins'][0] = dict(name='autowork', enabled=True, error=None)
+                self.report['plugins'][0] = dict(name='kit', enabled=True, error=None)
                 self.report['plugins'][0].update(change)
                 code, _ = self.run_doctor('--core', '--json')
                 self.assertEqual(code, 1)

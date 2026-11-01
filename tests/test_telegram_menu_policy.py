@@ -201,7 +201,7 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
             'native_probe', Path(__file__).resolve().parents[1]/'update_bundle_native.py')
         native=importlib.util.module_from_spec(spec); spec.loader.exec_module(native)
         probe=yaml.safe_load(native.PROBE_CONFIG)
-        self.assertEqual(probe['plugins']['enabled'], ['autowork'])
+        self.assertEqual(probe['plugins']['enabled'], ['kit'])
         self.assertTrue(self.rd._opted_out(probe))
 
 

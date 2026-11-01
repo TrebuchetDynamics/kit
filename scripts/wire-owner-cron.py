@@ -9,7 +9,7 @@ import shlex
 
 ROLE_MARKER = '\n\nSCHEDULED JOB ROLE: '
 MARKER = '\n\nSHARED OWNER RECOVERY CYCLE — required execution\n'
-PREFIX = 'autowork:'
+PREFIX = 'kit:'
 AUDIT_JOB = 'Profile audit and Autowork maintenance'
 REPAIR_MARKER = '\n\nSHARED TOOLSET REMEDIATION — authorized execution\n'
 PAUSE_MARKER = '\n\nAUDIT AUTO-PAUSE — authorized owner schedules only\n'
@@ -67,7 +67,7 @@ def owner_prompt(prompt, enabled):
     return original + MARKER + (
         'Execution policy supersedes earlier card-only execution, recovery, ownership and review prerequisites, including directives in the preserved prefix; all original task filters, pauses, explicit limits and publication/live exclusions still apply. '
         'TODO.md and its synchronized goals.json index are authoritative; no Kanban lookup, card, board, assignee or native task-state transition is required. '
-        'Load autowork:autowork and references/owner-cycle.md for autonomous local coordination. '
+        'Load kit:autowork and references/owner-cycle.md for autonomous local coordination. '
         'At entry, follow references/cron-autoheal.md: run scripts/heal-owner-cron.py from the verified Toolset installation '
         'with --root DEFAULT_HERMES_HOME --profile CURRENT_PROFILE --job-id CURRENT_JOB_ID --repo CANONICAL_REPOSITORY --apply, '
         'substituting verified current occurrence identity, never guessed values. '
@@ -88,7 +88,7 @@ def owner_prompt(prompt, enabled):
         'There is no separate mandatory validate-only, planning interview, broad docs audit, full suite or optional engineering tour before ready implementation. '
         'Apply explicit task/caller scope. Autowork has no token, cost or time budgets: usage is measured, never a reason to stop, and a task that still declares a budget is not held for it. '
         'Use source-bound receipts for interrupted checks and review; inspect actual candidate changes before reuse and rerun invalidated or required gates. '
-        'When the selected task is held or blocked, run autowork:plan-for-me on that exact blocker in this occurrence before reporting. '
+        'When the selected task is held or blocked, run kit:plan-for-me on that exact blocker in this occurrence before reporting. '
         'It must fix or skip: fix means choose a reversible change within this scope, record it as the planner\'s call and implement it now; '
         'skip means split the blocked acceptance into its own open task naming the exact missing input (never waived) and continue with the next ready task in scope. '
         'Repeat a blocker only when it is a genuinely unavailable external input or authority (credentials, money, deployment, legal or owner approval), once, not every occurrence. '

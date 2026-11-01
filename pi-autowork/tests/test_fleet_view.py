@@ -1004,12 +1004,12 @@ class FleetViewTests(unittest.TestCase):
         self.assertEqual(fleet_view.blockers_agent({'PATH': str(bin_dir)}), ['pi'])
         self.assertIsNone(fleet_view.blockers_agent({'PATH': str(self.base / 'nothing')}))
         # Claude Code namespaces plugin skills; the others take /blockers directly.
-        self.assertEqual(fleet_view.blockers_prompt(['/usr/bin/claude'], '/r'), '/autowork:blockers /r')
+        self.assertEqual(fleet_view.blockers_prompt(['/usr/bin/claude'], '/r'), '/kit:blockers /r')
         self.assertEqual(fleet_view.blockers_prompt(['pi', '--model', 'x'], '/r'), '/blockers /r')
         # `autowork plan` (the TUI's Plan) uses the host's hyphenated skill commands.
         claude, pi = fleet_view.plan_prompt(['claude'], '/r'), fleet_view.plan_prompt(['pi'], '/r')
-        self.assertTrue(claude.startswith('/autowork:plan-for-me Plan the work of /r'), claude)
-        self.assertIn('/autowork:docs-sync', claude)
+        self.assertTrue(claude.startswith('/kit:plan-for-me Plan the work of /r'), claude)
+        self.assertIn('/kit:docs-sync', claude)
         self.assertTrue(pi.startswith('/plan-for-me Plan the work of /r'), pi)
         self.assertIn('/docs-sync', pi)
         self.assertIn('Do not invent intent', pi)

@@ -62,11 +62,11 @@ class PreflightTests(unittest.TestCase):
             self.assertIn('memory unchanged', plan)
             self.assertIn('default', plan)
 
-    def test_core_plan_previews_both_plugin_settings_keys(self):
+    def test_core_plan_previews_the_canonical_plugin_settings_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             plan = '\n'.join(self.check(Path(tmp))['plan'])
         self.assertIn('plugins.entries.kit.allow_gateway_injection', plan)
-        self.assertIn('plugins.entries.autowork.allow_gateway_injection', plan)
+        self.assertNotIn('plugins.entries.autowork.allow_gateway_injection', plan)
 
     def test_plan_reports_runtime_defaults_opt_out(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -166,9 +166,7 @@ class PluginSettingsDualReadTests(unittest.TestCase):
         self.assertEqual(patch['approvals']['mode'], settings['approvals_mode'])
         self.assertEqual(patch['plugins']['entries']['kit']['allow_gateway_injection'],
                          settings['allow_gateway_injection'])
-        # Hermes still reads the legacy entry until the plugin itself is renamed.
-        self.assertEqual(patch['plugins']['entries']['autowork']['allow_gateway_injection'],
-                         settings['allow_gateway_injection'])
+        self.assertNotIn('autowork', patch['plugins']['entries'])
 
 
 class RuntimeFactsTests(unittest.TestCase):

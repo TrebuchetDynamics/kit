@@ -23,7 +23,7 @@ class OwnerCronTests(unittest.TestCase):
         for rule in ('isolated-origin-clone.py', '--expected-main', 'Never use --reference',
                      'retain original candidate', 'does not clear provenance', 'No new worker'):
             self.assertIn(rule, prompt)
-        self.assertFalse(module.is_owner_job({'prompt': prompt, 'skills': ['autowork:autowork']}))
+        self.assertFalse(module.is_owner_job({'prompt': prompt, 'skills': ['kit:autowork']}))
         self.assertEqual(module.delivery_sync_prompt(prompt, Path('/fixture/isolated-origin-clone.py')), prompt)
         with self.assertRaises(ValueError):
             module.delivery_sync_prompt('Generic development', Path('/fixture/helper.py'))
@@ -69,7 +69,7 @@ class OwnerCronTests(unittest.TestCase):
         for rule in ('one coherent delivery batch', 'not one task per file',
                      'approved exact-source checks', 'lead with delivered behavior',
                      'parent task remains open', 'source-bound receipts',
-                     'held or blocked, run autowork:plan-for-me', 'fix or skip', 'never waived',
+                     'held or blocked, run kit:plan-for-me', 'fix or skip', 'never waived',
                      'unchanged held report', 'Keep Hermes Agent unchanged'):
             self.assertIn(rule, prompt)
         self.assertIn('Offline removal only; no deployment.', prompt)
@@ -187,7 +187,7 @@ class OwnerCronTests(unittest.TestCase):
     def test_restricted_roles_are_not_reclassified_by_autowork_attachment(self):
         module = load()
         for role in ('research-design', 'delivery-sync'):
-            job = {'name': 'autowork compatibility', 'skills': ['autowork:autowork'],
+            job = {'name': 'autowork compatibility', 'skills': ['kit:autowork'],
                    'prompt': module.ROLE_MARKER + role + '\nRestricted original purpose.'}
             self.assertFalse(module.is_owner_job(job))
         prompt = module.owner_prompt('Named slice only; coordinator-only publication.', True)
@@ -197,17 +197,17 @@ class OwnerCronTests(unittest.TestCase):
     def test_only_development_jobs_are_owner_targets(self):
         module = load()
         self.assertTrue(module.is_owner_job({'name': 'scheduled autogoal', 'skills': []}))
-        self.assertTrue(module.is_owner_job({'name': 'progress', 'skills': ['autowork:autogoal']}))
+        self.assertTrue(module.is_owner_job({'name': 'progress', 'skills': ['kit:autogoal']}))
         self.assertTrue(module.is_owner_job({'name': 'scheduled autowork', 'skills': []}))
-        self.assertTrue(module.is_owner_job({'name': 'progress', 'skills': ['autowork:autowork']}))
+        self.assertTrue(module.is_owner_job({'name': 'progress', 'skills': ['kit:autowork']}))
         self.assertFalse(module.is_owner_job({'name': 'mail brief', 'skills': []}))
 
     def test_autowork_is_primary_and_legacy_skill_is_replaced(self):
         module = load()
-        self.assertEqual(module.autowork_skills({'skills': ['autowork:autogoal', 'ponytail:ponytail']}),
-                         ['autowork:autowork', 'ponytail:ponytail'])
-        self.assertEqual(module.autowork_skills({'skill': 'autogoal'}), ['autowork:autowork'])
-        ready = {'skills': ['autowork:autowork', 'autowork:git-commit-push']}
+        self.assertEqual(module.autowork_skills({'skills': ['kit:autogoal', 'ponytail:ponytail']}),
+                         ['kit:autowork', 'ponytail:ponytail'])
+        self.assertEqual(module.autowork_skills({'skill': 'autogoal'}), ['kit:autowork'])
+        ready = {'skills': ['kit:autowork', 'kit:git-commit-push']}
         self.assertEqual(module.autowork_skills(ready), ready['skills'])
 
     def test_audit_job_repair_is_opt_in_sticky_and_preserves_scope(self):
@@ -305,7 +305,7 @@ class OwnerCronTests(unittest.TestCase):
         root = Path('/fixture/hermes')
         before = {'id': 'audit', 'name': 'Profile audit and Autowork maintenance',
                   'enabled': True, 'prompt': module.audit_prompt('Audit scope'),
-                  'skills': ['autowork:autowork'], 'skill': 'autowork:autowork'}
+                  'skills': ['kit:autowork'], 'skill': 'kit:autowork'}
         with patch.object(module, 'inventory', return_value=[{'profile': 'default', 'home': str(root), 'jobs': [before]}]):
             rows = module.wire(root)
         self.assertEqual(rows[0]['state'], 'unchanged')
@@ -317,10 +317,10 @@ class OwnerCronTests(unittest.TestCase):
         root = Path('/fixture/hermes')
         before = {'id': 'abc', 'name': 'autogoal', 'enabled': False,
                   'prompt': module.owner_prompt('scope', False),
-                  'skills': ['autowork:autogoal', 'ponytail:ponytail'],
-                  'skill': 'autowork:autogoal'}
-        after = {**before, 'skills': ['autowork:autowork', 'ponytail:ponytail'],
-                 'skill': 'autowork:autowork'}
+                  'skills': ['kit:autogoal', 'ponytail:ponytail'],
+                  'skill': 'kit:autogoal'}
+        after = {**before, 'skills': ['kit:autowork', 'ponytail:ponytail'],
+                 'skill': 'kit:autowork'}
         with patch.object(module, 'inventory', return_value=[{'profile': 'default', 'home': str(root), 'jobs': [before]}]), \
              patch.object(module, 'jobs', side_effect=[[before], [after]]), \
              patch.object(module.subprocess, 'run') as run, \
@@ -330,7 +330,7 @@ class OwnerCronTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs['env']['HERMES_HOME'], str(root))
         self.assertNotIn('HERMES_PROFILE', run.call_args.kwargs['env'])
         self.assertEqual(run.call_args.args[0][-4:],
-                         ['--skill', 'autowork:autowork', '--skill', 'ponytail:ponytail'])
+                         ['--skill', 'kit:autowork', '--skill', 'ponytail:ponytail'])
 
     def test_external_window_does_not_hold_independent_offline_work(self):
         policy = (ROOT / 'skills/autowork/references/owner-cycle.md').read_text()

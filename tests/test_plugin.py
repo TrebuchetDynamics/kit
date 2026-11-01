@@ -116,9 +116,9 @@ class PluginTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIsNone(self.ctx.commands[name](args))
                 message, target = self.ctx.messages[-1]
-                self.assertIn(f'skill_view(name="autowork:{name}")', message)
+                self.assertIn(f'skill_view(name="kit:{name}")', message)
                 self.assertTrue(message.endswith('User arguments:\n' + args))
-                self.assertNotIn("autowork:beta", message)
+                self.assertNotIn("kit:beta", message)
                 self.assertEqual(target, {})
                 if name != 'alpha':
                     self.assertIn('tasks/ is the central work queue', message)
@@ -138,7 +138,7 @@ class PluginTests(unittest.TestCase):
                 self.assertEqual(self.ctx.skills[name], ROOT / f'skills/{name}/SKILL.md')
                 self.ctx.commands[name](args)
                 message, target = self.ctx.messages[-1]
-                self.assertIn(f'skill_view(name="autowork:{name}")', message)
+                self.assertIn(f'skill_view(name="kit:{name}")', message)
                 self.assertTrue(message.endswith('User arguments:\n' + args))
                 self.assertEqual(target, {})
 
@@ -227,7 +227,7 @@ class PluginTests(unittest.TestCase):
         for command in ('autowork',):
             self.ctx.commands[command]('Improve this repo; no push')
             prompt,target=self.ctx.messages[-1]
-            self.assertIn('autowork:autowork',prompt)
+            self.assertIn('kit:autowork',prompt)
             self.assertIn('Improve this repo; no push',prompt)
             self.assertEqual(target['origin']['chat_id'],'fixture-chat')
 
@@ -242,7 +242,7 @@ class PluginTests(unittest.TestCase):
             start.assert_called_once_with(check=False)
         self.assertEqual(self.ctx.messages, [])
         self.ctx.commands['autowork']('update the README')
-        self.assertIn('autowork:autowork', self.ctx.messages[-1][0])
+        self.assertIn('kit:autowork', self.ctx.messages[-1][0])
         self.assertIn('update the README', self.ctx.messages[-1][0])
 
     def test_repository_skills_are_all_discovered(self):
@@ -254,7 +254,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(self.ctx.skills['plan-with-me'], ROOT / 'skills/plan-with-me/SKILL.md')
         self.session.update(HERMES_SESSION_PLATFORM='telegram', HERMES_SESSION_CHAT_ID='fixture-chat')
         self.ctx.commands['grill_me'.replace('_', '-')]('review this plan')
-        self.assertIn('autowork:plan-with-me', self.ctx.messages[-1][0])
+        self.assertIn('kit:plan-with-me', self.ctx.messages[-1][0])
         self.assertIn('review this plan', self.ctx.messages[-1][0])
         self.assertEqual(self.ctx.messages[-1][1]['origin']['chat_id'], 'fixture-chat')
 
