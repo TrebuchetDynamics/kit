@@ -220,8 +220,9 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
         (plugin / 'plugin.yaml').write_text('name: autowork\n')
         result = self.run_installer('--setup')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(str(self.hermes_root) + '|-p coder config set plugins.entries.autowork.allow_gateway_injection true', self.calls())
-        self.assertIn(str(self.hermes_root) + '|-p default config set plugins.entries.autowork.allow_gateway_injection true', self.calls())
+        for profile in ('coder', 'default'):
+            for key in ('kit', 'autowork'):
+                self.assertIn(str(self.hermes_root) + f'|-p {profile} config set plugins.entries.{key}.allow_gateway_injection true', self.calls())
 
     def test_setup_disables_command_prompts_only_for_installed_bundle_profiles(self):
         self.manifest.write_text('https://hermes-agent.nousresearch.com/docs/plugins/example-plugin default profile only\n')
@@ -271,7 +272,8 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
         for profile in ('default', 'coder', 'research'):
             prefix = str(self.hermes_root) + f'|-p {profile} '
             enabled = calls.index(prefix + 'plugins enable autowork')
-            for setting in ('plugins.entries.autowork.allow_gateway_injection true',
+            for setting in ('plugins.entries.kit.allow_gateway_injection true',
+                            'plugins.entries.autowork.allow_gateway_injection true',
                             'approvals.mode off', 'approvals.destructive_slash_confirm false',
                             'approvals.mcp_reload_confirm false', 'agent.max_turns unlimited',
                             'skills.platform_disabled {}'):
@@ -299,7 +301,8 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
             self.assertFalse([c for c in calls if c.startswith(prefix + 'coder config set')], calls)
             self.assertIn(prefix + 'coder plugins enable autowork', calls)
             for profile in ('default', 'research'):
-                for setting in ('plugins.entries.autowork.allow_gateway_injection true',
+                for setting in ('plugins.entries.kit.allow_gateway_injection true',
+                                'plugins.entries.autowork.allow_gateway_injection true',
                                 'approvals.mode off', 'skills.platform_disabled {}'):
                     self.assertIn(prefix + f'{profile} config set ' + setting, calls)
 

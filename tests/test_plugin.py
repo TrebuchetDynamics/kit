@@ -166,6 +166,19 @@ class PluginTests(unittest.TestCase):
         self.assertIn("allow_gateway_injection", result)
         self.assertIn("not started", result)
 
+    def test_injection_rejection_reads_the_legacy_settings_key(self):
+        self.skill("alpha")
+        self.plugin.register(self.ctx)
+        self.ctx.accept = False
+        config = types.ModuleType("hermes_cli.config")
+        config.read_raw_config = lambda: {
+            'plugins': {'entries': {'autowork': {'allow_gateway_injection': False}}}}
+        with patch.dict(sys.modules, {"hermes_cli.config": config}):
+            result = self.ctx.commands["alpha"]("")
+        self.assertIn("plugins.entries.autowork.allow_gateway_injection", result)
+        self.assertIn("plugins.entries.kit.allow_gateway_injection", result)
+        self.assertIn("is false", result)
+
     def test_removed_skill_is_not_queued(self):
         path = self.skill("alpha")
         self.plugin.register(self.ctx)
