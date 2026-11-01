@@ -1,7 +1,7 @@
 +++
 schema = 1
 id = "TOOLSET-427-c7d2c99a"
-title = "Finish the automork runtime fold: update and command subfolders"
+title = "Finish the runtime folder split: update and command subfolders"
 short = "Finish runtime subfolders"
 status = "open"
 goal = "CODE-HEALTH-2026-10"
