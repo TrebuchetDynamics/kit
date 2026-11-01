@@ -10,51 +10,88 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
 
-Refactor one named directory into responsibility-based subfolders without changing
-behavior. Read the [host and authority adaptations](../shared/PI-TOOLSET.md), then
-the pinned [folder-refactor protocol](upstream/PROTOCOL.md). If no folder is named,
-ask for the boundary or perform read-only discovery when requested. Treat a
-repository-root split as high risk; obtain explicit scope before editing.
+Split one named directory into responsibility-based subfolders. Three words carry the
+work: a **move-only** slice changes paths and imports and nothing else; a **seam** is
+the public entrypoint whose behavior must keep working; **topology** is the layout you
+choose and can defend. Read the [host and authority adaptations](../shared/PI-TOOLSET.md)
+and the pinned [folder-refactor protocol](upstream/PROTOCOL.md); these local rules win
+where they differ.
 
-## Preserve behavior, then simplify
+## Gate: one check first
 
-Map exact files, public entrypoints, package boundaries, imports/exports, external
-callers and behavior checks. Propose the smallest coherent topology under existing
-authorization. Keep out-of-folder caller edits limited to required import fixes
-and within the accepted scope; escalate public API or behavior changes.
+Find one command that already passes on the current tree and exercises the moved code.
+Without it, add a focused behavior check at the nearest seam, run it green, and only
+then move files. No check, no move: a refactor you cannot verify is a guess with better
+file names. When no correct seam exists, stop the slice and report the gap.
 
-1. **Move-only:** move files and fix paths/imports; do not simultaneously rename
-   symbols, rewrite logic, extract helpers or delete compatibility facades.
-2. **Validate:** run behavior checks and relevant build/import checks. Missing
-   behavior coverage needs a focused public-seam check before deeper extraction.
-   If no correct seam is available, stop deeper cleanup and report the gap.
-3. **Extract only proven duplication:** at least two callers need identical
-   semantics, a clear responsibility and adequate checks. Similar-looking code
-   is not evidence for a shared abstraction.
-4. **Cleanup:** remove shims or dead code only after caller and compatibility
-   evidence supports it, then validate again.
+## Copy the topology that is already there
 
-The upstream minimum-three-slices and mandatory-continuation language does not
-override the user's one-slice limit, budget or pause. Stop at that checkpoint and
-distinguish a verified slice from incomplete target topology. No special
-`folder_refactor_*` tool is required: inspect the actual tree with native tools;
-record state in the existing task receipt rather than a new extension database.
+Read the repository's own convention before naming a folder: bucket folders with an
+index README, feature folders, a flat list, or a router command that maps paths. Follow
+it. Inventing a second convention is the failure this skill exists to prevent, and a
+project with an index, README table, router command or docs page that names the path
+has one more file in the refactor: that map.
 
-**Completion audit:** reread the tree from disk. Classify every remaining root file
-by exact basename as public facade/compatibility, intentionally out-of-scope, or
-next move/extraction candidate. Unclassified files or remaining candidates mean
-the whole target is not complete. Do not hide them in broad categories.
+## Steps
 
-**Receipt:** target, planned → actual topology, moves, shared-code decision,
-compatibility, checks/review, exact root-file classifications, overall completion
-state, and next slice/stop reason. For example, one authorized move-only slice
-with two remaining candidates is a checkpoint, not “folder refactor complete.”
+1. **Map the move.** List files, exported symbols, package boundaries, external
+   callers, tests, fixtures and generated files. Name what must keep working: import
+   paths, package exports, CLI/API routes and observable output.
+   **Pass when:** you can list every caller outside the folder and the check that
+   covers them.
+2. **Choose the topology.** One responsibility per subfolder, named for the domain
+   rather than the file type; the project's naming wins over yours; dependency
+   direction stays sane with core logic free of transport and framework detail.
+   **Pass when:** each new folder states what it owns, what it exposes and what it
+   stays ignorant of.
+3. **Move only.** Move files, fix paths and imports, and update the maps named above.
+   Symbols, logic, helpers and compatibility facades stay as they are.
+   **Pass when:** the same check passes, and the diff holds no rename, rewrite or
+   extraction.
+4. **Extract proven duplication.** Share a helper only when at least two call sites
+   need identical semantics, the responsibility is clear and the check covers it.
+   Keep similar-looking code apart until the evidence says otherwise.
+   **Pass when:** each shared module has two named callers and the check still passes.
+5. **Update the map.** Every index, README table, router entry, import path and docs
+   link that names an old path points at the new one.
+   **Pass when:** a search for the old path finds only history and release notes.
+6. **Clean up last.** Remove a shim or dead file only after callers and the check prove
+   it is safe, then verify again.
+   **Pass when:** the check passes and nothing imports the removed path.
 
+## Example
+
+`src/parser/` holds 14 files and no subfolders. The check is
+`pytest tests/test_parser.py`. One move-only slice creates `src/parser/lex/` and
+`src/parser/ast/`, moves six files, updates eight imports and the `src/parser/README.md`
+table; the check passes before and after. Extraction and the remaining root files are
+later slices, reported as a checkpoint rather than a finished refactor.
+
+## Limits
+
+Use the user's slice limit, budget or pause as the stop line, and mark a verified slice
+as a checkpoint, not a finished topology. Treat a repository-root split as high risk
+and obtain explicit scope first. When no folder is named, ask for the boundary or run
+read-only discovery when the request allows it. Use native tools: no `folder_refactor_*`
+tool is required, and state belongs in the existing task receipt.
+
+**Completion audit:** reread the tree from disk and classify every remaining root file
+by exact basename: public facade or compatibility file, intentionally out of scope, or
+next move or extraction candidate. An unclassified file or a remaining candidate means
+the target is incomplete.
+
+**Receipt:** target; planned and actual topology; moves; shared-code decision;
+compatibility; checks and review; root-file classifications; completion state; next
+slice or stop reason.
 
 ## Boundaries
 
-- Not behavior changes or deletions; use `/unused-code` for removal.
-- Not an architecture review; use `/improve-codebase-architecture`.
+- Not behavior changes, renames or deletions; use `/unused-code` for removal.
+- Not an architecture review or a deep-module redesign; use
+  `/improve-codebase-architecture`.
+- Not multi-lane repository improvement; use `/autonomous-codebase-improver`.
 
-**Done when:** a move-only diff passes the same checks before and after, and no behavior change is claimed without them.
+**Done when:** the same check passes after a move-only diff that updates every map, and
+each remaining root file is classified or named as the next slice.
+
 [Source and hashes](UPSTREAM.json) · [MIT license](upstream/LICENSE).
