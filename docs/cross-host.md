@@ -218,7 +218,7 @@ extend the suite without installing that package or its extensions:
 | --- | --- | --- |
 | `bug-harvest` | Continuing hunts for unknown, reproducible defects | One active bug; explicit bug/slice limits win |
 | `autonomous-codebase-improver` | Evidence-ranked improvement across applicable work lanes | Current session, one writer, independent review; not a new runner |
-| `skill-folder-refactor` | Splitting one named folder by responsibility | Move-only → validate → proven extraction → cleanup |
+| `split-folder` | Splitting one named folder by responsibility | Move-only → validate → proven extraction → cleanup |
 | `unused-code` | Removing proven unreachable code | Dynamic/public consumers must be checked; retain uncertain code |
 
 Invoke with the existing host prefix:
@@ -230,7 +230,7 @@ Invoke with the existing host prefix:
 | Codex | `$autowork:bug-harvest one bug in the parser; no push` |
 | Pi | `/bug-harvest one bug in the parser; no push` |
 
-Pi also exposes `/autonomous-codebase-improver`, `/skill-folder-refactor` and
+Pi also exposes `/autonomous-codebase-improver`, `/split-folder` and
 `/unused-code`; native `/skill:<hyphenated-name>` invocation remains available.
 Portable entries are explicit-only. Existing bare command/skill collisions are
 not overwritten: select the verified Autowork namespace or installed adapter path,

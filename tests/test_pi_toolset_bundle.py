@@ -9,7 +9,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 NAMES = ('bug-harvest', 'autonomous-codebase-improver',
-         'skill-folder-refactor', 'unused-code')
+         'split-folder', 'unused-code')
+# A local rename keeps the pinned upstream path of the protocol it vendors.
+UPSTREAM_NAME = {'split-folder': 'skill-folder-refactor'}
 
 
 class PiToolsetBundleTests(unittest.TestCase):
@@ -21,7 +23,8 @@ class PiToolsetBundleTests(unittest.TestCase):
                 pin = json.loads((folder / 'UPSTREAM.json').read_text())
                 self.assertEqual(pin['repository'], 'https://github.com/TrebuchetDynamics/pi-toolset')
                 self.assertEqual(pin['revision'], '5e9aa8398adb6812fb816bf887d1ad10f12c55db')
-                self.assertIn(f'skills/engineering/{name}/SKILL.md', pin['files'])
+                upstream = UPSTREAM_NAME.get(name, name)
+                self.assertIn(f'skills/engineering/{upstream}/SKILL.md', pin['files'])
                 self.assertIn('LICENSE', pin['files'])
                 actual = {p.relative_to(folder).as_posix()
                           for p in (folder / 'upstream').rglob('*') if p.is_file()}

@@ -73,7 +73,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
     ponytail: 'ponytail', 'ponytail-review': 'ponytail-review', 'ponytail-audit': 'ponytail-audit',
     'ponytail-debt': 'ponytail-debt', 'ponytail-gain': 'ponytail-gain', 'ponytail-help': 'ponytail-help',
     'bug-harvest': 'bug-harvest', 'autonomous-codebase-improver': 'autonomous-codebase-improver',
-    'skill-folder-refactor': 'skill-folder-refactor', 'unused-code': 'unused-code',
+    'split-folder': 'split-folder', 'unused-code': 'unused-code',
     'test-optimizer': 'test-optimizer', 'apk-get': 'apk-get', graphify: 'graphify',
     'writing-for-agents': 'writing-for-agents',
     grilling: 'grilling', 'grill-with-docs': 'grill-with-docs',
@@ -187,7 +187,7 @@ test('installed archive resolves portable references and commands without checko
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
     assert.match(map, /Codebase map/);
     for (const skill of ['ponytail', 'bug-harvest', 'autonomous-codebase-improver',
-      'skill-folder-refactor', 'unused-code']) {
+      'split-folder', 'unused-code']) {
       const pin = JSON.parse(await readFile(join(installed, `skills/${skill}/UPSTREAM.json`)));
       for (const resource of Object.values(pin.files)) {
         await stat(join(installed, `skills/${skill}`, resource.path));

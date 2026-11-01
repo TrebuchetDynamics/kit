@@ -92,7 +92,7 @@ Each skill carries its unchanged license, protocol and per-file SHA-256 mapping:
   cross-lane discovery, coverage and recoverable reviewed slices; includes its four
   supporting reference documents. Its historical evaluation receipt is **upstream
   evidence**, not an Autowork run or a claim of adapted campaign reliability.
-- [Skill Folder Refactor](../skills/skill-folder-refactor/UPSTREAM.json):
+- [Split Folder](../skills/split-folder/UPSTREAM.json):
   move/extract/cleanup phases and exact remaining-root-file classification.
 - [Unused Code](../skills/unused-code/UPSTREAM.json):
   static, dynamic and external-consumer proof before deletion.
