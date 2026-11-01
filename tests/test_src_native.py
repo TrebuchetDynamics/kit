@@ -19,6 +19,9 @@ OWNERS = {
 }
 
 
+SUBFOLDER = {'autoresearch_commands.py': 'commands', 'workflow_commands.py': 'commands'}
+
+
 class SrcNativeTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -48,7 +51,8 @@ for entry, (owner, function) in {OWNERS!r}.items():
     if entry == '__init__.py': assert module.__path__ == [str(root)]
     func = getattr(module, function)
     assert func.__globals__ is module.__dict__ and func.__module__ == spec.name
-    source = root / 'Src/autowork_runtime' / owner
+    # Remote command modules live in their own subfolder; the rest stay at the root.
+    source = root / 'Src/autowork_runtime' / {SUBFOLDER!r}.get(owner, '') / owner
     assert func.__code__.co_filename == str(source), func.__code__.co_filename
     assert module._AUTOWORK_LAYOUT.implementation(entry) == source
     tree = ast.parse((root / entry).read_text())
@@ -122,7 +126,7 @@ assert standalone[1].expected_settings({{}})['approvals']['mode'] == 'manual'
     def test_missing_migrated_payload_refuses_without_legacy_or_cached_fallback(self):
         for entry, (owner, _) in OWNERS.items():
             with self.subTest(entry=entry):
-                source = self.root / 'Src/autowork_runtime' / owner
+                source = self.root / 'Src/autowork_runtime' / SUBFOLDER.get(owner, '') / owner
                 self.assertTrue(source.is_file(), f'missing owner: {source}')
                 source.unlink()
                 self.probe(f'''import importlib.util, sys, types
