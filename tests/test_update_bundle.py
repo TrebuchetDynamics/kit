@@ -65,7 +65,7 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(module.__file__, str(release / 'update_bundle.py'))
             self.assertIs(module.prepare.__globals__, vars(module))
             self.assertEqual(module.prepare.__code__.co_filename,
-                             str(release / 'Src/autowork_runtime/update_bundle.py'))
+                             str(release / 'Src/autowork_runtime/update/update_bundle.py'))
         with patch.object(peers[0], 'live_profiles', return_value=[('patched', self.home)]):
             self.assertEqual(modules[0].selected_profiles(self.home, ['patched']), [('patched', self.home)])
             self.assertEqual(modules[1].selected_profiles(self.home, ['default']), [('default', self.home)])
@@ -73,7 +73,7 @@ class UpdateTests(unittest.TestCase):
     def test_missing_updater_payload_never_borrows_another_release(self):
         release = copy_sources(self.root / 'incomplete')
         for entry in ('update_bundle', 'update_bundle_native'):
-            (release / f'Src/autowork_runtime/{entry}.py').unlink(missing_ok=True)
+            (release / f'Src/autowork_runtime/update/{entry}.py').unlink(missing_ok=True)
             result = subprocess.run([sys.executable, str(release / f'{entry}.py'), '--help'],
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
@@ -1169,7 +1169,7 @@ class ScopedUpdateTests(unittest.TestCase):
 
     def test_git_export_attributes_do_not_change_deployed_blob_hashes(self):
         copy_sources(self.remote, entries=('plugins/defaults.json',))
-        payload = 'Src/autowork_runtime/update_bundle.py'
+        payload = 'Src/autowork_runtime/update/update_bundle.py'
         (self.remote / payload).chmod(0o755)
         (self.remote/'.gitattributes').write_text(f'skills/demo/SKILL.md export-ignore\n{payload} export-ignore\n')
         self.git(self.remote, 'add', '.'); self.git(self.remote, 'commit', '-m', 'archive attributes')
