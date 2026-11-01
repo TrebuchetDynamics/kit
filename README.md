@@ -311,7 +311,7 @@ for all four hosts, with Ponytail guidance and Autowork's existing scope/review 
 - `/bug-harvest one bug in the parser; no push` — discover and verify unknown defects.
 - `/autonomous-codebase-improver one improvement; no push` — select an evidenced
   improvement across applicable work lanes, then implement and review it.
-- `/skill-folder-refactor src/parser; one move-only slice` — reorganize one folder
+- `/split-folder src/parser; one move-only slice` — reorganize one folder
   without mixing moves with behavioral changes.
 - `/unused-code src/parser; read-only` — inspect liveness before proposing deletion.
 

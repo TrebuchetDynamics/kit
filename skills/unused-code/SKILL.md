@@ -56,7 +56,7 @@ independently proven private helper only if in scope and its checks pass.
 
 ## Boundaries
 
-- Not a refactor; use `/skill-folder-refactor`.
+- Not a refactor; use `/split-folder`.
 - Not an architecture review; use `/improve-codebase-architecture`.
 
 **Done when:** proven dead code is removed with post-delete checks, or every uncertain candidate is retained with its reason.

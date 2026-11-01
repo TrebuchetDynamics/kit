@@ -30,7 +30,7 @@ class PortablePackageTests(unittest.TestCase):
             'git-commit-push', 'ui-taste', 'beautify-github-readme', 'pending',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
             'ponytail-gain', 'ponytail-help', 'bug-harvest',
-            'autonomous-codebase-improver', 'skill-folder-refactor', 'unused-code',
+            'autonomous-codebase-improver', 'split-folder', 'unused-code',
             'test-optimizer', 'apk-get', 'graphify', 'writing-for-agents',
             'grilling', 'grill-with-docs', 'improve-codebase-architecture', 'ask-autowork',
             'responsive-screenshots'})

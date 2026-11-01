@@ -1,10 +1,10 @@
 ---
-name: skill-folder-refactor
+name: split-folder
 description: "Split one folder without behavior change."
 license: MIT
 ---
 
-# Skill Folder Refactor
+# Split Folder
 
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 

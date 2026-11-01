@@ -341,7 +341,7 @@ The main flow is `/grilling` (or `/grill-with-docs` in a repository, `/grill-me`
 existing plan), then `/plan-for-me` or `/plan-with-me`, then `/autowork`, then
 `/git-commit-push`. On-ramps cover a bug (`/bug-harvest`), a bloated suite
 (`/test-optimizer`), dead code (`/unused-code`), a folder split
-(`/skill-folder-refactor`), shallow modules (`/improve-codebase-architecture`), a held
+(`/split-folder`), shallow modules (`/improve-codebase-architecture`), a held
 queue (`/blockers`), drifted docs (`/docs-sync`) and measured research
 (`/autoresearch`).
 

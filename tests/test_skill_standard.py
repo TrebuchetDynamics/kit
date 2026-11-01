@@ -50,7 +50,7 @@ class SkillStandardTests(unittest.TestCase):
                  ('autowork', 'autonomous-codebase-improver'),
                  ('autowork', 'improve-codebase-architecture'),
                  ('bug-harvest', 'unused-code'), ('bug-harvest', 'test-optimizer'),
-                 ('unused-code', 'skill-folder-refactor'),
+                 ('unused-code', 'split-folder'),
                  ('git-commit-push', 'ponytail-review'),
                  ('ponytail-review', 'ponytail-audit')]
         for a, b in pairs:

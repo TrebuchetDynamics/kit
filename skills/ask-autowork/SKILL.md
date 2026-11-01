@@ -34,7 +34,7 @@ a step, read that skill's `SKILL.md`: a summary here is orientation only.
 | Something is broken and you cannot yet reproduce it | `/bug-harvest` |
 | The suite is bloated, slow or full of low-value tests | `/test-optimizer` |
 | Code looks unused and you want it gone | `/unused-code` |
-| One folder needs splitting without behavior change | `/skill-folder-refactor` |
+| One folder needs splitting without behavior change | `/split-folder` |
 | Modules are shallow or seams leak | `/improve-codebase-architecture` |
 | Queue work is held and the owner must decide | `/blockers` |
 | Docs or task records drifted | `/docs-sync` |
