@@ -14,6 +14,17 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Added
 
+- `git-commit-push all`: sweep the repository's worktrees into the base branch. A new
+  `scripts/worktree_sweep.py` inventories every registered worktree as merged,
+  unmerged-clean, unmerged-dirty, detached or locked, reports activity age, then merges
+  the clean unmerged ones oldest-first with `--no-ff`, aborting only the merge that
+  conflicts. It refuses a canonical checkout that is on another branch, dirty or mid-merge,
+  and it never commits, stashes, resets or discards another writer's work: a dirty
+  worktree is reported to its owner, or archived with `worktree_closeout.py --archive`.
+  `--remove` closes out merged worktrees through the existing safety-checked closer. A
+  reference covers the order, the rules and the report; a real-Git fixture test covers
+  classification, merging, conflicts, the idle guard and both refusals.
+
 - `responsive-screenshots`: capture one or more pages at chosen breakpoints and verify
   each result. A bundled script drives the installed Playwright library on every host,
   fixes viewport, device scale, color scheme and reduced motion, waits on page state

@@ -1,6 +1,6 @@
 ---
 name: git-commit-push
-description: "Commit, push, pull or merge Git changes."
+description: "Commit, push, pull, merge or sweep worktrees."
 version: 2.1.1
 license: MIT
 metadata:
@@ -384,6 +384,27 @@ Report the branch and sha it prints. Never point it at main/master or the checke
    - If a tracker or `BLOCKERS.md` entry authorized the commit, mark it with the SHAs using an
      anchored patch (reread the file first). Don't rewrite the whole file.
    - If any safe topic shipped, the outcome is SHIPPED, even with other paths left local.
+
+## Worktree sweep (`all`)
+
+`/git-commit-push all`, "merge all worktrees" or "clean up worktrees" also merges the
+finished worktrees into the base branch. A worktree that never merges holds planning and
+implementation that nobody can see, and every later decision is made without it. The
+[sweep procedure](references/worktree-sweep.md) owns the order, the safety rules and the
+report; these three commands are the whole interface.
+
+```sh
+python3 "<skill-dir>/scripts/worktree_sweep.py" .                     # read-only inventory
+python3 "<skill-dir>/scripts/worktree_sweep.py" . --apply             # merge finished, clean ones
+python3 "<skill-dir>/scripts/worktree_sweep.py" . --apply --remove    # then close them out
+```
+
+A merge candidate has commits that are not on the base branch **and** a clean tree. The
+sweep never commits, stashes, resets, rebases or discards another writer's work: a dirty
+worktree is reported for its owner, or archived with `worktree_closeout.py --archive`.
+Detached release checkouts and locked worktrees stay untouched. After the batch, re-run
+the repository check on the merged tree, and report a conflict as `Merge pending` for
+that branch while the rest continue.
 
 ## Red lines
 
