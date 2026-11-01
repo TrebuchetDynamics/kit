@@ -91,6 +91,18 @@ Recurrence authorizes the saved occurrence, not wider scope. Reconcile consumed
 history first. Autowork has no token, cost or time budgets: usage is measured, never
 a reason to stop or a grant to spend.
 
+## Behavior-preserving refactor
+
+A request to refactor code inside a seam is ordinary execution, not a new workflow:
+one **check** already passes on unchanged behavior, one **step** per slice, and the
+same check passes again. Rename a symbol, extract a function or class, split one file
+into modules, or deduplicate logic in that shape. A behavior change belongs in its own
+task with its own acceptance, never in the same slice as a rename or a move.
+
+Moving files between folders is `/split-folder`; deciding whether a module is too
+shallow is `/improve-codebase-architecture`. Removal of unreachable code is
+`/unused-code`.
+
 ## Close verified completion
 
 Close a task only after verified acceptance. The engine's verified close writes
