@@ -34,6 +34,7 @@ a step, read that skill's `SKILL.md`: a summary here is orientation only.
 | Something is broken and you cannot yet reproduce it | `/bug-harvest` |
 | The suite is bloated, slow or full of low-value tests | `/test-optimizer` |
 | Code looks unused and you want it gone | `/unused-code` |
+| Merge every finished worktree into main | `/git-commit-push all` |
 | Refactor code inside a file, rename a symbol, extract a module | `/autowork` |
 | One folder needs splitting without behavior change | `/split-folder` |
 | Modules are shallow or seams leak | `/improve-codebase-architecture` |
