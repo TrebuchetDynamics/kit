@@ -214,15 +214,13 @@ Interactive updates follow
 
 ## Behavior-preserving refactor
 
-A request to refactor code inside a seam is ordinary execution, not a new workflow:
-one **check** already passes on unchanged behavior, one **step** per slice, and the
-same check passes again. Rename a symbol, extract a function or class, split one file
-into modules, or deduplicate logic in that shape. A behavior change belongs in its own
-task with its own acceptance, never in the same slice as a rename or a move.
+A refactor inside a seam is ordinary execution: one **check** passes on unchanged
+behavior, one **step** per slice, and the same check passes again; a behavior change
+stays in its own task. Detail:
+[iteration and decisions](references/iteration-and-decisions.md#behavior-preserving-refactor).
 
-Moving files between folders is `/split-folder`; deciding whether a module is too
-shallow is `/improve-codebase-architecture`. Removal of unreachable code is
-`/unused-code`.
+Folder moves are `/split-folder`; module depth is `/improve-codebase-architecture`;
+unreachable code is `/unused-code`.
 
 ## Reference map
 
