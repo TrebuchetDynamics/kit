@@ -212,6 +212,18 @@ is allowed only after reconciliation and required work search find no reportable
 Interactive updates follow
 [dispatch and reporting](references/dispatch-and-reporting.md#interactive-updates).
 
+## Behavior-preserving refactor
+
+A request to refactor code inside a seam is ordinary execution, not a new workflow:
+one **check** already passes on unchanged behavior, one **step** per slice, and the
+same check passes again. Rename a symbol, extract a function or class, split one file
+into modules, or deduplicate logic in that shape. A behavior change belongs in its own
+task with its own acceptance, never in the same slice as a rename or a move.
+
+Moving files between folders is `/split-folder`; deciding whether a module is too
+shallow is `/improve-codebase-architecture`. Removal of unreachable code is
+`/unused-code`.
+
 ## Reference map
 
 Active guidance: references/repository-stages.md, references/iteration-and-decisions.md,
