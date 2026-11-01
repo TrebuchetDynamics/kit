@@ -58,6 +58,12 @@ So the order is: compatibility first, identity second, prose last.
   menu priority and opt-out after the rename; a profile with the new key wins when
   both exist; a profile with neither gets today's defaults.
 - **Pass when:** the three fixtures pass and no code path reads only the old key.
+- **Landed:** `runtime_defaults.PLUGIN` is `kit` and `LEGACY_PLUGIN` keeps
+  `autowork`; the runtime, setup preflight, installer defaults and gateway-injection
+  report read either entry per key (canonical values win, legacy values fill keys the
+  canonical entry lacks). Settings are written under `plugins.entries.kit`; while the
+  plugin is still named `autowork`, `allow_gateway_injection` is mirrored to the legacy
+  entry Hermes actually reads, and the diagnostic names that entry.
 
 ## Stage 2: plugin identity and namespace
 

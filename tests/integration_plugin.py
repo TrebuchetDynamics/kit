@@ -75,6 +75,8 @@ def main():
         assert configured['approvals']['mode'] == 'off'
         assert configured['approvals']['deny'] == ['keep-this-deny-rule']
         assert configured['model']['default'] == 'keep-this-model'
+        # Hermes still reads the legacy entry; the canonical key is ready for stage 2.
+        assert configured['plugins']['entries']['kit']['allow_gateway_injection'] is True
         assert configured['plugins']['entries']['autowork']['allow_gateway_injection'] is True
 
         from hermes_cli.plugins import PluginContext

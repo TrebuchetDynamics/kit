@@ -1,11 +1,36 @@
 """Apply bundle policy and command visibility in Hermes' bound profile."""
 import json
+import logging
 from pathlib import Path
 import re
 
 OMH_PACKAGE = 'oh-my-hermes'
-PLUGIN = 'autowork'
+PLUGIN = 'kit'
+LEGACY_PLUGIN = 'autowork'
 BUNDLE_SKILLS = Path(__file__).resolve().parent / 'skills'
+logger = logging.getLogger(__name__)
+_reported_legacy_entry = set()
+
+
+def _plugin_entries(raw):
+    entries = ((raw.get('plugins') or {}).get('entries') or {}) if isinstance(raw, dict) else {}
+    return entries if isinstance(entries, dict) else {}
+
+
+def _report_legacy_entry(raw):
+    """Report a profile carrying both keys once; canonical values still win per key."""
+    entries = _plugin_entries(raw)
+    if PLUGIN not in entries or LEGACY_PLUGIN not in entries:
+        return
+    marker = (PLUGIN, LEGACY_PLUGIN)
+    if marker in _reported_legacy_entry:
+        return
+    _reported_legacy_entry.add(marker)
+    logger.warning(
+        'Profile carries both plugins.entries.%s and plugins.entries.%s; using %s values '
+        'where present and %s for missing keys. Gateway injection is mirrored to %s '
+        'until the plugin rename.',
+        PLUGIN, LEGACY_PLUGIN, PLUGIN, LEGACY_PLUGIN, LEGACY_PLUGIN)
 
 
 def _frontmatter_name(path):
@@ -68,10 +93,26 @@ def skills_patch(raw, keep, previous):
 
 
 def plugin_entry(raw):
-    """This plugin's `plugins.entries` block."""
-    entries = ((raw.get('plugins') or {}).get('entries') or {}) if isinstance(raw, dict) else {}
-    entry = entries.get(PLUGIN) if isinstance(entries, dict) else None
-    return entry if isinstance(entry, dict) else {}
+    """This plugin's `plugins.entries` block: canonical keys, then legacy keys it lacks.
+
+    A profile may carry both entries while the rename is in progress. Reading only the
+    canonical entry would drop an opt-out or `omh_trim` bookkeeping that still lives
+    under the legacy key, so fall back per key (and per `settings`/`config` key) and
+    let the canonical value win wherever both define one.
+    """
+    entries = _plugin_entries(raw)
+    _report_legacy_entry(raw)
+    legacy = entries.get(LEGACY_PLUGIN)
+    canonical = entries.get(PLUGIN)
+    legacy = legacy if isinstance(legacy, dict) else {}
+    if not isinstance(canonical, dict):
+        return legacy
+    entry = {**legacy, **canonical}
+    for subtree in ('settings', 'config'):
+        old, new = legacy.get(subtree), canonical.get(subtree)
+        if isinstance(old, dict) and isinstance(new, dict):
+            entry[subtree] = {**old, **new}
+    return entry
 
 
 def expected_settings(raw):
@@ -89,9 +130,12 @@ def expected_settings(raw):
         },
         # Hermes quick setup writes a 90-iteration cap that cuts Autowork turns short.
         'agent': {'max_turns': wanted['max_turns']},
-        'plugins': {'entries': {PLUGIN: {
-            'allow_gateway_injection': wanted['allow_gateway_injection'],
-        }}},
+        # Hermes still reads gateway injection from the legacy entry until the plugin
+        # itself is renamed, so mirror the canonical setting there for this stage.
+        'plugins': {'entries': {
+            PLUGIN: {'allow_gateway_injection': wanted['allow_gateway_injection']},
+            LEGACY_PLUGIN: {'allow_gateway_injection': wanted['allow_gateway_injection']},
+        }},
     }
     patch.update(menu_patch(raw))
     keep = settings.get('omh_keep_skills')
@@ -107,14 +151,18 @@ def expected_settings(raw):
     return patch
 
 
-def settings_drift(raw, expected, prefix=()):
-    """Dotted paths whose current value differs from the expected leaf value."""
+def settings_drift(raw, expected, prefix=(), root=None):
+    """Dotted paths whose effective value differs from the expected leaf value."""
+    root = raw if root is None else root
     drift = []
     for key, value in expected.items():
         path = prefix + (key,)
-        actual = raw.get(key) if isinstance(raw, dict) else None
+        if prefix == ('plugins', 'entries') and key == PLUGIN:
+            actual = plugin_entry(root)
+        else:
+            actual = raw.get(key) if isinstance(raw, dict) else None
         if isinstance(value, dict):
-            drift += settings_drift(actual, value, path)
+            drift += settings_drift(actual, value, path, root)
         elif type(actual) is not type(value) or actual != value:
             drift.append('.'.join(path))
     return drift
@@ -171,10 +219,6 @@ def opted_out_settings(raw):
 
 
 def apply_runtime_defaults(ctx):
-    # This opt-out must be set before restoring prompts; otherwise the next load
-    # deliberately reapplies the bundle policy.
-    opted_out = ctx.get_config('apply_runtime_defaults', True) is False
-
     # Read raw YAML, refusing malformed settings rather than overwriting them
     # with fallback defaults. The native loader binds the owning profile even
     # when a shared gateway loads several profiles in the same process.
@@ -182,9 +226,13 @@ def apply_runtime_defaults(ctx):
         from hermes_cli.config import require_readable_config_before_write, save_config
         raw = require_readable_config_before_write()
     except Exception:
-        if opted_out:  # an opted-out profile never failed to load over its config
+        # An opted-out profile never failed to load over its unreadable config.
+        if ctx.get_config('apply_runtime_defaults', True) is False:
             return
         raise
+    # This opt-out must be read from either settings key; otherwise the next load
+    # deliberately reapplies the bundle policy.
+    opted_out = _opted_out(raw)
     patch = opted_out_settings(raw) if opted_out else expected_settings(raw)
     if settings_drift(raw, patch):
         # Merge under Hermes' config lock, preserving unrelated settings and

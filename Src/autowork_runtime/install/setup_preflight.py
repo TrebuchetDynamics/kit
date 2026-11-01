@@ -148,17 +148,19 @@ def preflight(repo, root, profiles, *, bundle_only=False):
         errors.append(str(exc))
     plan.extend(messages)
     defaults = json.loads((repo / 'plugins/defaults.json').read_text())['hermes']
+    spec = importlib.util.spec_from_file_location('preflight_runtime_defaults', repo / 'runtime_defaults.py')
+    runtime = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runtime)
     settings = {
         'approvals.mode': defaults['approvals_mode'],
         'approvals.destructive_slash_confirm': defaults['destructive_slash_confirm'],
         'approvals.mcp_reload_confirm': defaults['mcp_reload_confirm'],
         'agent.max_turns': defaults['max_turns'],
         'skills.platform_disabled': defaults['skills_platform_disabled'],
-        'plugins.entries.autowork.allow_gateway_injection': defaults['allow_gateway_injection'],
+        f'plugins.entries.{runtime.PLUGIN}.allow_gateway_injection': defaults['allow_gateway_injection'],
+        # Hermes reads this legacy entry until the plugin itself is renamed.
+        f'plugins.entries.{runtime.LEGACY_PLUGIN}.allow_gateway_injection': defaults['allow_gateway_injection'],
     }
-    spec = importlib.util.spec_from_file_location('preflight_runtime_defaults', repo / 'runtime_defaults.py')
-    runtime = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(runtime)
     for name, home in profiles:
         plan.append(f'Profile {name}: {home}')
         for relative in ('config.yaml', 'plugins', 'skills'):

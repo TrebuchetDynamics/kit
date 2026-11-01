@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -60,6 +62,12 @@ class PreflightTests(unittest.TestCase):
             self.assertIn('memory unchanged', plan)
             self.assertIn('default', plan)
 
+    def test_core_plan_previews_both_plugin_settings_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = '\n'.join(self.check(Path(tmp))['plan'])
+        self.assertIn('plugins.entries.kit.allow_gateway_injection', plan)
+        self.assertIn('plugins.entries.autowork.allow_gateway_injection', plan)
+
     def test_plan_reports_runtime_defaults_opt_out(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
@@ -99,6 +107,68 @@ class PreflightTests(unittest.TestCase):
             with patch.object(pre.shutil, 'which', return_value=str(script)):
                 self.assertIsNone(pre.selected_source())
                 self.assertTrue(pre.runtime_check(ROOT, Path(tmp), [], True))
+
+
+class PluginSettingsDualReadTests(unittest.TestCase):
+    """The runtime reads either settings key and writes only the canonical one."""
+
+    def setUp(self):
+        self.policy = module('runtime_defaults')
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name) / 'config.yaml'
+
+    def test_legacy_only_profiles_keep_their_opt_out_approvals_and_menu(self):
+        self.path.write_text(
+            'approvals:\n  mode: manual\n'
+            'plugins:\n  entries:\n    autowork:\n      settings:\n        apply_runtime_defaults: false\n')
+        self.assertTrue(self.policy.setup_opted_out(self.path))
+        raw = yaml.safe_load(self.path.read_text())
+        patch = self.policy.opted_out_settings(raw)
+        self.assertEqual(raw['approvals']['mode'], 'manual')
+        self.assertNotIn('approvals', patch)
+        self.assertIn('blockers', patch['platforms']['telegram']['extra']['command_menu']['priority'])
+        self.assertEqual(self.policy.plugin_entry(raw).get('settings'), {'apply_runtime_defaults': False})
+
+    def test_canonical_key_wins_when_both_entries_exist(self):
+        cases = ((False, True, False), (True, False, True))
+        for legacy, canonical, expected in cases:
+            with self.subTest(legacy=legacy, canonical=canonical):
+                self.path.write_text(
+                    'plugins:\n  entries:\n'
+                    f'    autowork:\n      settings:\n        apply_runtime_defaults: {str(legacy).lower()}\n'
+                    f'    kit:\n      settings:\n        apply_runtime_defaults: {str(canonical).lower()}\n'
+                    f'      allow_gateway_injection: {str(canonical).lower()}\n')
+                raw = yaml.safe_load(self.path.read_text())
+                self.assertEqual(self.policy.setup_opted_out(self.path), expected)
+                self.assertEqual(self.policy.plugin_entry(raw)['allow_gateway_injection'], canonical)
+
+    def test_mixed_profile_falls_back_to_the_legacy_entry_per_key(self):
+        self.path.write_text(
+            'plugins:\n  entries:\n'
+            '    autowork:\n'
+            '      settings:\n        apply_runtime_defaults: false\n'
+            '      omh_trim: [omh-browser]\n'
+            '    kit:\n      allow_gateway_injection: true\n')
+        raw = yaml.safe_load(self.path.read_text())
+        self.assertTrue(self.policy.setup_opted_out(self.path))
+        entry = self.policy.plugin_entry(raw)
+        self.assertIs(entry['allow_gateway_injection'], True)
+        self.assertEqual(entry['settings'], {'apply_runtime_defaults': False})
+        self.assertEqual(entry['omh_trim'], ['omh-browser'])
+
+    def test_profiles_without_either_entry_get_the_current_defaults(self):
+        self.path.write_text('approvals:\n  mode: manual\n')
+        self.assertFalse(self.policy.setup_opted_out(self.path))
+        raw = yaml.safe_load(self.path.read_text())
+        settings = self.policy._AUTOWORK_COMPAT.peer(self.policy.__dict__, 'bundle').defaults()['hermes']
+        patch = self.policy.expected_settings(raw)
+        self.assertEqual(patch['approvals']['mode'], settings['approvals_mode'])
+        self.assertEqual(patch['plugins']['entries']['kit']['allow_gateway_injection'],
+                         settings['allow_gateway_injection'])
+        # Hermes still reads the legacy entry until the plugin itself is renamed.
+        self.assertEqual(patch['plugins']['entries']['autowork']['allow_gateway_injection'],
+                         settings['allow_gateway_injection'])
 
 
 class RuntimeFactsTests(unittest.TestCase):

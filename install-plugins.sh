@@ -132,8 +132,9 @@ failed=0
 installed=0
 skipped=0
 planned=0
-# Honor plugins.entries.autowork.settings.apply_runtime_defaults: false
-# (legacy config.*) with the same rule the plugin runtime uses.
+# Honor plugins.entries.kit.settings.apply_runtime_defaults: false (and the
+# legacy plugins.entries.autowork key, including its config.* subtree) with the
+# same rule the plugin runtime uses.
 runtime_opt_out() {
     local config=$hermes_root
     [[ $1 == default ]] || config=$hermes_root/profiles/$1
@@ -177,6 +178,8 @@ for key in ('allow_gateway_injection', 'destructive_slash_confirm', 'mcp_reload_
 assert cfg['max_turns'] == 'unlimited' or (type(cfg['max_turns']) is int and cfg['max_turns'] > 0), 'Invalid turn budget default'
 assert isinstance(cfg['skills_platform_disabled'], dict)
 for setting, key in (
+    ('plugins.entries.kit.allow_gateway_injection', 'allow_gateway_injection'),
+    # Hermes reads this legacy entry until the plugin itself is renamed.
     ('plugins.entries.autowork.allow_gateway_injection', 'allow_gateway_injection'),
     ('approvals.mode', 'approvals_mode'),
     ('approvals.destructive_slash_confirm', 'destructive_slash_confirm'),

@@ -40,6 +40,26 @@ def _discover_skills():
     return skills
 
 
+def _gateway_injection_state():
+    """The effective and Hermes-read gateway-injection values, reading either key.
+
+    The plugin still registers as `autowork`, so Hermes itself reads only the legacy
+    entry; the canonical `kit` value is read for the stage after the rename.
+    """
+    try:
+        from hermes_cli.config import read_raw_config
+        policy = _AUTOWORK_COMPAT.peer(globals(), 'runtime_defaults')
+        raw = read_raw_config() or {}
+        entries = ((raw.get('plugins') or {}).get('entries') or {}) if isinstance(raw, dict) else {}
+        legacy = entries.get(policy.LEGACY_PLUGIN) if isinstance(entries, dict) else None
+        legacy = legacy.get('allow_gateway_injection') if isinstance(legacy, dict) else None
+        value = policy.plugin_entry(raw).get('allow_gateway_injection')
+    except Exception:
+        return None, None
+    return (value if isinstance(value, bool) else None,
+            legacy if isinstance(legacy, bool) else None)
+
+
 def _invoke(ctx, name, path, raw_args, namespace="autowork"):
     from gateway.session_context import get_session_env
 
@@ -112,10 +132,32 @@ def _invoke(ctx, name, path, raw_args, namespace="autowork"):
         target["session_key"] = session_key
     if ctx.inject_message(prompt, **target):
         return None
+    effective, legacy = _gateway_injection_state()
+    policy = _AUTOWORK_COMPAT.peer(globals(), 'runtime_defaults')
+    setting = f"plugins.entries.{policy.LEGACY_PLUGIN}.allow_gateway_injection"
+    canonical = f"plugins.entries.{policy.PLUGIN}.allow_gateway_injection"
+    if legacy is False:
+        return (
+            f"Skill {name!r} was not started. {setting} is false in this profile's "
+            f"config.yaml (the canonical {canonical} is also read); set it true and "
+            "restart its gateway."
+        )
+    if legacy is True:
+        return (
+            f"Skill {name!r} was not started. {setting} is true, but Hermes did not "
+            "accept the message; check its gateway logs."
+        )
+    if effective is True:
+        return (
+            f"Skill {name!r} was not started. {canonical} is true, but Hermes still "
+            f"reads {setting} until the plugin rename; set that entry true and restart "
+            "its gateway."
+        )
     return (
         f"Skill {name!r} was not started. For Telegram/gateway use, set "
-        "plugins.entries.autowork.allow_gateway_injection: true in this profile's "
-        "config.yaml and restart its gateway. If already enabled, check Hermes gateway logs."
+        f"{setting}: true in this profile's config.yaml "
+        f"(the canonical {canonical} is also read) and restart its gateway. "
+        "If already enabled, check Hermes gateway logs."
     )
 
 
