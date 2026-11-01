@@ -56,7 +56,9 @@ independently proven private helper only if in scope and its checks pass.
 
 ## Boundaries
 
-- Not a refactor; use `/split-folder`.
+- Not a refactor inside a file or a module extraction; use `/autowork` with a task
+  and a check that passes before and after.
+- Not a folder topology change; use `/split-folder`.
 - Not an architecture review; use `/improve-codebase-architecture`.
 
 **Done when:** proven dead code is removed with post-delete checks, or every uncertain candidate is retained with its reason.
