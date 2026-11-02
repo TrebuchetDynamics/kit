@@ -108,6 +108,16 @@ def check_stop():
         raise main_check.Stopped('stopped')
 
 
+def debug(message):
+    """Routine placement detail, shown with PI_AUTOWORK_VERBOSE=1.
+
+    A routine link repeats for every task and buries what an operator must act on in engine.err
+    (2026-10-31); a refusal is still printed without the flag.
+    """
+    if os.environ.get('PI_AUTOWORK_VERBOSE'):
+        print(f'pi-autowork: {message}', file=sys.stderr)
+
+
 def link_ignored(checkout):
     """Gitignored dependencies are linked from the canonical checkout first: the paths the service
     names, and the installed dependencies of tracked lockfiles both trees share (TOOLSET-283-15)."""
@@ -121,7 +131,11 @@ def link_ignored(checkout):
     wanted = named + [p for p in found if p not in named]
     if wanted:
         for path, outcome in workspaces.link_ignored(repo, checkout, ','.join(wanted)):
-            print(f'pi-autowork: linked path {path}: {outcome}', file=sys.stderr)
+            # A refusal is the one outcome a person may need; a link or an existing path is not.
+            if outcome in ('linked', 'present'):
+                debug(f'linked path {path}: {outcome}')
+            else:
+                print(f'pi-autowork: linked path {path}: {outcome}', file=sys.stderr)
 
 
 def worker(state, worktree, prompt_file, report, limit):
@@ -878,9 +892,19 @@ def review_decision(state, task, checkout, evidence=None):
                     commit=git(checkout, 'rev-parse', 'HEAD'), command=main_check.full_check(checkout))
     path = Path(state) / 'review-policy' / f'{safe_name(task)}.json'
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        previous = json.loads(path.read_text())
+    except (OSError, ValueError):
+        previous = {}
     path.write_text(json.dumps(decision))
     action = 'required' if decision['required'] else 'skipped'
-    print(f'pi-autowork: model review {action} for {task}: {decision["reason"]}', file=sys.stderr)
+    # A re-dispatched worker asks the same question of the same tree. Say it once per tree rather
+    # than repeat an identical line every cycle (2026-10-31); the stored decision is the answer.
+    unchanged = isinstance(previous, dict) and all(
+        previous.get(key) == decision.get(key) for key in ('tree', 'required', 'reason'))
+    print(f'pi-autowork: model review {action} for {task}: '
+          + (f'unchanged for tree {decision["tree"][:12]}' if unchanged else decision['reason']),
+          file=sys.stderr)
     return decision
 
 
