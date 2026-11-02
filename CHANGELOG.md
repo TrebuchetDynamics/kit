@@ -18,7 +18,8 @@ claim of a tagged release, completed installation or live workflow qualification
   `/kit:plan-with-me`, `$kit:…`, `kit:…` in `skill_view`, and `plugins.entries.kit`.
   A profile configured under `plugins.entries.autowork` keeps its approvals mode, menu
   priority and opt-out for one release, and a native install that landed under
-  `plugins/kit` is recognized instead of being duplicated. The updater still accepts a
+  `plugins/kit` is recognized instead of being duplicated. Installation stays on the
+  Git source; nothing is published to npm, so `@trebuchet/kit` is local metadata only. The updater still accepts a
   checkout whose manifest says `autowork`, so an older release can be recovered. The
   installed plugin directory, the `# autowork:` script marker, the `pi-autowork:`
   markers in `BLOCKERS.md`, the runner CLI, its skill and its state directory are
