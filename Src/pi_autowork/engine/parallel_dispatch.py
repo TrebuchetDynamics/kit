@@ -25,6 +25,7 @@ from pi_autowork.engine import task_queue
 from pi_autowork.engine import parallel_state as state
 from pi_autowork.engine import task_execution as execution
 from pi_autowork.engine.worktree_paths import worktree_path
+from pi_autowork.common import ponytail_prompt
 
 # The coordinator's own files: the task store (a directory) and the shared changelog.
 COORDINATOR_FILES = ('tasks/', 'TODO.archive.md', 'CHANGELOG.md')
@@ -278,6 +279,7 @@ def prompt(task, worktree, branch, baseline, report, resume=False, commit_finish
         'write it in the report.',
         '',
         'Rules:',
+        '- ' + ponytail_prompt(),
         f'- Work only inside {worktree}. Touches names the paths this task is expected to change: {touches}.',
         '  It guides scheduling, not a fence: change whatever else the task truly needs, keeping the',
         '  change as small as the task allows.',

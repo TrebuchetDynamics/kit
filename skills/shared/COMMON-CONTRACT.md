@@ -14,7 +14,7 @@ Apply these with [Ponytail](PONYTAIL.md) and the [communication rules](COMMUNICA
 - Surface assumptions before non-trivial work; mark guesses.
 - Name confusion and conflicting requirements; stop and resolve them.
 - Disagree with evidence; propose the alternative.
-- Choose the smallest complete change; preserve scope and unrelated work.
+- Preserve scope and unrelated work.
 - Verify before claim; name unrun checks and missing coverage.
 
 User instructions and repository rules define the authorized scope. Read the

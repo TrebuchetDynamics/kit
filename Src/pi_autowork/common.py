@@ -7,6 +7,37 @@ import subprocess
 import sys
 
 
+PONYTAIL_LEVELS = ('lite', 'full', 'ultra', 'off')
+
+
+def ponytail_level(env=None):
+    """The explicit runner level, or full for an absent or invalid value."""
+    value = str((env if env is not None else os.environ).get('PI_AUTOWORK_PONYTAIL_LEVEL', 'full'))
+    value = value.strip().lower()
+    return value if value in PONYTAIL_LEVELS else 'full'
+
+
+def ponytail_prompt(level=None, *, review=False, toolset=None):
+    """A short pointer and level for worker and reviewer prompts.
+
+    The shared method remains the owner. Workers and reviewers get the level, the
+    method path and a compact reminder; material work still reads the method.
+    """
+    level = level or ponytail_level()
+    root = Path(toolset) if toolset is not None else Path(__file__).resolve().parents[2]
+    method = root / 'skills/shared/PONYTAIL.md'
+    if level == 'off':
+        text = 'Ponytail is off for this task. Preserve acceptance, safety, scope and verification.'
+    else:
+        text = (f'Ponytail level: {level}. Read and apply `{method}` for material choices; '
+                'choose the smallest complete change, reuse existing code and owners, preserve '
+                'acceptance, safety, tests and scope, and report reuse and omissions.')
+    if review:
+        text += f' Review with `{root / "skills/ponytail/upstream/skills/ponytail-review/PROTOCOL.md"}`.'
+    return text
+
+
+
 class Log:
     """`[HH:MM] text` on stdout; the same line with an ISO time in STATE/runner.log."""
 

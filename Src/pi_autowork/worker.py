@@ -22,7 +22,7 @@ import tempfile
 import time
 
 from . import main_check, optimistic, pi_runtime, review_policy, workspaces
-from .common import dirty, git, push_guard, safe_name
+from .common import dirty, git, ponytail_prompt, push_guard, safe_name
 from .processes import alive, start_time
 
 REVIEW = ('You are an independent reviewer verifying task {task} in {checkout}, which holds a worker\'s commit '
@@ -1574,7 +1574,8 @@ def review(state, task, checkout, head_before, gate=''):
                             + (PROVISIONED.format(path=provisioned) if provisioned else '')
                             + (CACHE.format(path=cache) if cache else '') + (
                                 LIVE.format(items='; '.join(live)) if (live := pending_live(checkout, task)) else NO_LIVE)
-                            + changelog_note(checkout, task),
+                            + changelog_note(checkout, task)
+                            + '\n\n' + ponytail_prompt(review=True),
                             f'pi-autowork-verify-{safe_name(task)}-{datetime.now():%Y%m%d%H%M%S}',
                             f"{(limit := setting('PI_AUTOWORK_VERIFY_TIMEOUT', 1800, float)):g}",
                             ['--tools', 'read,bash,grep,find,ls'])
