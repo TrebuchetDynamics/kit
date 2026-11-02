@@ -77,8 +77,9 @@ class WorkflowCommands(unittest.TestCase):
         self.plugin.SKILLS_DIR = fixture.ROOT / 'skills'
         self.plugin.register(self.ctx)
         work_center = (fixture.ROOT / 'skills/shared/TODO-WORKCENTER.md').read_text()
+        protocol = (fixture.ROOT / 'skills/shared/RESEARCH-PLAN.md').read_text()
         for command, skill in (('plan_for_me', 'plan-for-me'), ('plan_with_me', 'plan-with-me')):
-            text = self.ctx.skills[skill].read_text()
+            text = self.ctx.skills[skill].read_text() + protocol
             for required in ('TODO-WORKCENTER.md#rolling-planning', 'kind = "plan"',
                              'Plan round: 1 of 10', 'every building task', 'Needs decision',
                              'continue on its own'):

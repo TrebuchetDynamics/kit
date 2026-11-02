@@ -2282,3 +2282,28 @@ behavior, JSON/shared verdict consumers and diagnostic-only idle logging. Test
 inputs are task-owned fixtures; no external input or live operation is needed.
 All three are independently implementable with the overlap noted above. These
 findings are recorded in each task; no new product choice or scope change arose.
+
+
+## Planning authority and shared protocol (2026-11-01)
+
+Status: Accepted
+
+Decision: planning proposals use one machine authority for the rules that can be
+enforced. `Src/pi_autowork/planning_authority.py` owns the allowed paths, proposal
+size and secret checks, and generates the prompt block that the planning console
+injects. `Src/pi_autowork/engine/task_store.py::planner_authority` owns record
+schema and authority diffs: closure fields, owner attestations, holds, live
+authorization, ownership, task status and goal status. The console policy and the
+proposal validator call these owners instead of carrying their own copies.
+
+Plan With Me and Plan For Me are two adapters over the shared planning interface in
+`skills/shared/RESEARCH-PLAN.md#shared-planning-interface`. The shared sequence,
+rolling-plan rules and task-record requirements have one home. Each entry skill
+states only its mode-specific interview or discovery behavior and links to the
+protocol. Existing prose instruction guards remain only for rules that cannot be
+executed; machine-enforced rules are tested at the authority and CLI seam.
+
+Implementation keeps the accepted planning-skills split: Plan For Me remains
+decisive, Plan With Me remains interactive for consequential missing intent, and
+neither gains execution, dispatch or publication authority. The next change to a
+planning limit or a protected record field has one code owner to edit.

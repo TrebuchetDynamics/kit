@@ -134,6 +134,9 @@ class TaskRecord(Record):
 _TASK_LISTS = ('depends_on', 'touches', 'resources', 'acceptance', 'checks', 'exclusions')
 _CLOSURE_FIELDS = ('closure', 'closure_actor', 'closure_timestamp', 'closure_reason', 'closure_evidence',
                    'owner_waiver', 'owner_qualification')
+# Notes a planner may not invent or release; the task record is the authority owner.
+_PLANNER_NOTE = re.compile(
+    r'\s*-?\s*(Evidence|Verified|Held by|Owner (decision|waiver|qualification)|Live authorization)\s*:', re.I)
 _TASK_STRINGS = ('id', 'title', 'short', 'status', 'goal', 'section', 'scope')
 _TASK_REQUIRED = (*_TASK_STRINGS, 'rank', *_TASK_LISTS, 'kind', 'ownership')
 _GOAL_REQUIRED = ('id', 'title', 'priority', 'source', 'status', 'focus')
@@ -346,6 +349,44 @@ class _Document:
             missing = [key for key in missing if key in ('id', 'title', 'status')]
         return TaskRecord(**common, **fields, contract_hash=_hash(contract),
                           missing_fields=tuple(missing))
+
+
+def planner_authority(before, after, *, goal=False, path=None):
+    """Refuse a planner change to record closure, owner authority, hold or live gate.
+
+    Schema parsing and field validation stay in this module's ``_Document``. Callers
+    supply the base text (``None`` for a new record) and the proposed text. Ordinary
+    planning fields stay editable; this function protects only authority transitions.
+    """
+    path = path or ('tasks/goals/PLANNER.md' if goal else 'tasks/items/PLANNER.md')
+    new = _Document(path, after.encode('utf-8'))
+    new.validate(goal)
+    old_data, old_body = {}, ''
+    if before is not None:
+        old = _Document(path, before.encode('utf-8'))
+        old.validate(goal)
+        old_data, old_body = old.data, old.body
+    for field in _CLOSURE_FIELDS:
+        if new.data.get(field) != old_data.get(field):
+            raise StoreError(f'{path}: planner cannot change closure/owner evidence field {field}')
+    if goal:
+        if new.data.get('status') != old_data.get('status', 'unmet'):
+            raise StoreError(f'{path}: planner cannot invent goal progress or completion')
+    else:
+        if new.data.get('status', 'open') != old_data.get('status', 'open'):
+            raise StoreError(f'{path}: planner cannot close, supersede or reopen tasks')
+        if new.data.get('live', 'denied') != old_data.get('live', 'denied'):
+            raise StoreError(f'{path}: planner cannot change live authorization')
+        if old_data and new.data.get('ownership', 'unknown') != old_data.get('ownership', 'unknown'):
+            raise StoreError(f'{path}: planner cannot change existing ownership')
+        new_live = 'live' in (new.data.get('resources') or [])
+        old_live = 'live' in (old_data.get('resources') or [])
+        if new_live != old_live:
+            raise StoreError(f'{path}: planner cannot change the live resource authorization gate')
+    def notes(text):
+        return [line for line in text.splitlines() if _PLANNER_NOTE.match(line)]
+    if notes(new.body) != notes(old_body):
+        raise StoreError(f'{path}: planner cannot invent evidence, owner authority or release holds')
 
 
 @dataclass(frozen=True)

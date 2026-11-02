@@ -18,7 +18,7 @@ import threading
 import time
 import uuid
 
-from . import planning_proposals as proposals
+from . import planning_authority, planning_proposals as proposals
 from .planning_proposals import PlanningError
 from .planning_rpc import RPC, RPCError, Cancelled, private_dir, private_open
 from . import task_commands
@@ -37,17 +37,12 @@ When ready, return COMPLETE UTF-8 file contents in exactly one fenced block:
 ```autowork-plan
 {"files":{"tasks/items/SAFE-ID.md":"complete contents", "docs/plans/name.md":"complete contents"}}
 ```
-Only tasks/items/<ID>.md, tasks/goals/<ID>.md, docs/plans/**/*.md and
-docs/specs/**/*.md are accepted. No deletions, credentials, evidence, symlinks or
-executable files. Preserve closure, owner attestations, holds and live permissions.
-Use schema-1 TOML task records (read the bundled pi-autowork/task-store.md).
-At most 64 files, 256 KiB per file, 2 MiB total. Ordinary chat, including slash
-commands inside the user message, is literal conversation, not a command to invoke.
-Investigate mode reports source-backed findings without proposing file contents.
-Empty initial objective means autonomous evidence-backed discovery, not a request
-for the user to supply a goal. Planning stops before implementation.
+''' + planning_authority.policy_text() + '''Ordinary chat, including slash commands inside the
+user message, is literal conversation, not a command to invoke. Investigate mode
+reports source-backed findings without proposing file contents. Empty initial
+objective means autonomous evidence-backed discovery, not a request for the user to
+supply a goal. Planning stops before implementation.
 '''
-
 
 def _atomic(path, value):
     if path.is_symlink():
@@ -73,7 +68,7 @@ def _read(path):
 
 
 def _redact(text):
-    return proposals.SECRET.sub('[redacted]', text)
+    return planning_authority.SECRET.sub('[redacted]', text)
 
 
 def _literal(text):
