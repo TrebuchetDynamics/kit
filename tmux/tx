@@ -683,9 +683,30 @@ doctor() {
   (( ok == 1 ))
 }
 
+# --- session module --------------------------------------------------------
+# One owner for alias-to-tmux-session state. The tmux binary is its only adapter.
+
+session_names() { "$TMUX_BIN" list-sessions -F '#{session_name}' 2>/dev/null || true; }
+session_exists() { "$TMUX_BIN" has-session -t "=$1" 2>/dev/null; }
+session_current() {
+  if [[ -n "${TMUX:-}" ]]; then
+    "$TMUX_BIN" display-message -p '#S' 2>/dev/null || true
+  fi
+}
+session_list_has() {
+  local names=$1 alias=$2
+  [[ -n "$names" ]] && printf '%s\n' "$names" | grep -qx -- "$alias"
+}
+session_kill() { "$TMUX_BIN" kill-session -t "=$1"; }
+session_new() { "$TMUX_BIN" new-session -d -s "$1" -c "$2" "$3"; }
+session_pane_path() { "$TMUX_BIN" display-message -p -t "=$1" '#{pane_current_path}' 2>/dev/null || true; }
+session_pane_command() { "$TMUX_BIN" display-message -p -t "=$1" '#{pane_current_command}' 2>/dev/null || true; }
+session_switch() { "$TMUX_BIN" switch-client -t "=$1"; }
+session_attach() { "$TMUX_BIN" attach-session -t "=$1"; }
+
 list_sessions() {
   local running=""
-  running=$("$TMUX_BIN" list-sessions -F '#{session_name}' 2>/dev/null || true)
+  running=$(session_names)
 
   local -a row_aliases=() row_aliases_plain=() row_paths=()
   local total=0 running_count=0 missing_count=0
@@ -705,7 +726,7 @@ list_sessions() {
       if (( ! dir_exists )); then
         status="missing"
         missing_count=$((missing_count + 1))
-      elif [[ -n "$running" ]] && printf '%s\n' "$running" | grep -qx -- "$a"; then
+      elif session_list_has "$running" "$a"; then
         status="running"
         running_count=$((running_count + 1))
       else
@@ -808,8 +829,8 @@ kill_session() {
   local alias
   alias=$(resolve_alias "$1")
   [[ -n "${ALIAS_TO_PATH[$alias]+x}" ]] || die "unknown alias: $alias"
-  if "$TMUX_BIN" has-session -t "=$alias" 2>/dev/null; then
-    "$TMUX_BIN" kill-session -t "=$alias"
+  if session_exists "$alias"; then
+    session_kill "$alias"
     printf 'killed: %s\n' "$alias"
   else
     printf 'not running: %s\n' "$alias"
@@ -821,10 +842,8 @@ kill_all_sessions() {
   local -a parts aliases=() targets=()
   local total=0 killed=0 not_running=0 i
 
-  running=$("$TMUX_BIN" list-sessions -F '#{session_name}' 2>/dev/null || true)
-  if [[ -n "${TMUX:-}" ]]; then
-    current=$("$TMUX_BIN" display-message -p '#S' 2>/dev/null || true)
-  fi
+  running=$(session_names)
+  current=$(session_current)
 
   for p in "${PATH_ORDER[@]}"; do
     alias_str=${PATH_TO_ALIASES[$p]}
@@ -855,8 +874,8 @@ kill_all_sessions() {
 
   for (( i=0; i<${#targets[@]}; i++ )); do
     a=${targets[i]}
-    if [[ -n "$running" ]] && printf '%s\n' "$running" | grep -qx -- "$a"; then
-      "$TMUX_BIN" kill-session -t "=$a"
+    if session_list_has "$running" "$a"; then
+      session_kill "$a"
       printf 'killed: %s\n' "$a"
       killed=$((killed + 1))
     else
@@ -878,24 +897,25 @@ attach_session() {
   local startup
   startup="cd -- $(printf '%q' "$target") && exec $(printf '%q' "$shell_path")"
 
-  if ! "$TMUX_BIN" has-session -t "=$alias" 2>/dev/null; then
-    "$TMUX_BIN" new-session -d -s "$alias" -c "$target" "$startup"
+  if ! session_exists "$alias"; then
+    session_new "$alias" "$target" "$startup"
   else
     # Existing session (e.g. restored by tmux-continuum/resurrect) may be in
     # the wrong cwd. If the active pane is an idle shell in the wrong dir,
     # self-heal by sending `cd <target>` before attaching.
     local cur_path="" cur_cmd=""
-    cur_path=$("$TMUX_BIN" display-message -p -t "=$alias" '#{pane_current_path}' 2>/dev/null || true)
-    cur_cmd=$("$TMUX_BIN" display-message -p -t "=$alias" '#{pane_current_command}' 2>/dev/null || true)
+    cur_path=$(session_pane_path "$alias")
+    cur_cmd=$(session_pane_command "$alias")
     if [[ "$cur_path" != "$target" ]] && [[ "$cur_cmd" =~ ^(bash|zsh|sh|fish|dash)$ ]]; then
       "$TMUX_BIN" send-keys -t "=$alias" "cd -- $(printf '%q' "$target")" C-m
     fi
   fi
 
   if [[ -n "${TMUX:-}" ]]; then
-    exec "$TMUX_BIN" switch-client -t "=$alias"
+    session_switch "$alias"
+  else
+    session_attach "$alias"
   fi
-  exec "$TMUX_BIN" attach-session -t "=$alias"
 }
 
 set_command() {

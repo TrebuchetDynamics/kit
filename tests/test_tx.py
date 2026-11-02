@@ -1,6 +1,7 @@
 """tx is the tmux session launcher; runners are the autowork command's."""
 import json
 import os
+import shutil
 from pathlib import Path
 import shlex
 import subprocess
@@ -52,6 +53,38 @@ class TxTests(unittest.TestCase):
         help_text = self.tx('help').stdout
         self.assertIn('tx kill <alias>', help_text)
         self.assertNotIn('__complete_', help_text)
+
+    def test_session_module_uses_a_fake_tmux_adapter(self):
+        with tempfile.TemporaryDirectory(prefix='autowork-tx-tmux-') as folder:
+            root = Path(folder)
+            fake = root / 'tmux'
+            shutil.copy(ROOT / 'tests/fixtures/fake_tmux.sh', fake)
+            fake.chmod(0o755)
+            log = root / 'tmux.log'
+            config = root / 'session.config'
+            config.write_text('a=/tmp\nb=/tmp\n')
+            env = {**os.environ, 'TX_CONFIG': str(config), 'TX_COLOR': 'never',
+                   'TX_TMUX': str(fake), 'FAKE_TMUX_LOG': str(log),
+                   'FAKE_RUNNING': 'a', 'FAKE_PANE_PATH': '/tmp',
+                   'FAKE_PANE_COMMAND': 'bash'}
+
+            def run(*args):
+                return subprocess.run(['bash', str(TX), *args], env=env,
+                                      capture_output=True, text=True, timeout=30)
+
+            listed = run('ls')
+            self.assertEqual(listed.returncode, 0, listed.stderr)
+            self.assertIn('1 running', listed.stdout)
+            killed = run('kill', 'a')
+            self.assertEqual(killed.returncode, 0, killed.stderr)
+            self.assertIn('killed: a', killed.stdout)
+            self.assertIn('kill-session -t =a', log.read_text())
+            idle = run('kill', 'b')
+            self.assertEqual(idle.returncode, 0, idle.stderr)
+            self.assertIn('not running: b', idle.stdout)
+            attached = run('a')
+            self.assertEqual(attached.returncode, 0, attached.stderr)
+            self.assertIn('attach-session -t =a', log.read_text())
 
     def test_the_package_installs_tx_and_autowork(self):
         package = json.loads((ROOT / 'package.json').read_text())
