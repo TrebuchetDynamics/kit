@@ -1391,6 +1391,18 @@ def runner_rows(runners):
     return tuple(rows)
 
 
+ATTENTION_STATES = ('blocked', 'stalled', 'unavailable', 'not running', 'not cycling')
+
+
+def attention(runners):
+    """Runners that need a person or a repair. Order is left to the caller.
+
+    Paused is intentional and omitted; a recorded owner question is included even when
+    the runner itself is idle.
+    """
+    return tuple(r for r in runners if r.state in ATTENTION_STATES or r.questions)
+
+
 def summary(runners):
     counts = {}
     for runner in runners:

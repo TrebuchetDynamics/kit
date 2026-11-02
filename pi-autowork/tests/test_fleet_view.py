@@ -140,6 +140,13 @@ class FleetViewTests(unittest.TestCase):
         self.assertEqual(row['Total'], ('4', 'bold'))
         self.assertIn('2 tasks in Needs decision', row['Needs'][0])
 
+    def test_attention_names_urgent_runners_and_owner_questions(self):
+        runners = [fleet_view.Runner('stalled', state='stalled'),
+                   fleet_view.Runner('idle', state='idle'),
+                   fleet_view.Runner('asked', state='idle', questions=[object()]),
+                   fleet_view.Runner('paused', state='paused')]
+        self.assertEqual([r.name for r in fleet_view.attention(runners)], ['stalled', 'asked'])
+
     def test_merges_services_and_runner_state(self):
         self.runner_state('/git/india', state='stalled', since=time.time() - 341 * 60, waiting=23,
                           roots=[{'id': 'TASK-036', 'kind': 'outside', 'blocks': 19},

@@ -80,6 +80,7 @@ async def layout_pilot():
                 shown = str(overview.render())
                 assert 'unavailable' in shown.lower() and 'execution unknown' in shown, shown
                 assert '3 waiting' in shown and '1 blocker' in shown, shown
+                assert 'need attention' in app.sub_title, app.sub_title
                 assert warning not in shown, 'raw paths belong in Details'
                 assert app.query_one('#lanes').region.height >= 2
                 log = app.query_one('#log')
