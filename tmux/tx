@@ -31,7 +31,30 @@ if [[ -z "${NO_COLOR:-}" ]]; then
   esac
 fi
 
-RESERVED_ALIASES=(help ls kill kill-all init add remove edit doctor which config install completion __complete_aliases __complete_commands)
+COMMANDS=(
+  'help|-h,--help|cmd_help|tx help|Show this help.|yes|no'
+  'ls|-l,--list|cmd_ls|tx ls|List aliases grouped by target directory.|yes|no'
+  'kill|-k,--kill|cmd_kill|tx kill <alias>|Kill the tmux session for an alias.|yes|yes'
+  'kill-all|--kill-all|cmd_kill_all|tx kill-all|Kill all running configured tx sessions.|yes|no'
+  'init||cmd_init|tx init|Create an example config if one does not exist.|yes|no'
+  'add||cmd_add|tx add <alias[,..]> [dir]|Add or update an alias; prompt and directory-first forms are accepted.|yes|no'
+  'remove||cmd_remove|tx remove <alias>|Remove one alias from the config.|yes|yes'
+  'edit||cmd_edit|tx edit <alias> [new]|Rename one alias; prompt when the new name is omitted.|yes|yes'
+  'doctor||cmd_doctor|tx doctor [--install]|Validate tmux, config parsing, targets and installed assets.|yes|no'
+  'which||cmd_which|tx which <alias>|Print the resolved target directory.|yes|yes'
+  'config||cmd_config|tx config|Print the config path.|yes|no'
+  'install||cmd_install|tx install|Install tmux.conf, status helpers and tx for this user.|yes|no'
+  'completion||cmd_completion|tx completion bash, zsh or fish|Print a shell completion script.|yes|no'
+  '__complete_aliases||cmd_complete_aliases|tx __complete_aliases|Print configured aliases for completion.|no|no'
+  '__complete_commands||cmd_complete_commands|tx __complete_commands|Print public command names for completion.|no|no'
+  '__complete_alias_commands||cmd_complete_alias_commands|tx __complete_alias_commands|Print commands and flags that take an alias.|no|no'
+)
+COMMAND_NAMES=()
+for _record in "${COMMANDS[@]}"; do
+  IFS='|' read -r _name _flags _handler _usage _summary _public _aliases <<< "$_record"
+  COMMAND_NAMES+=("$_name")
+done
+RESERVED_ALIASES=("${COMMAND_NAMES[@]}")
 
 declare -A ALIAS_TO_PATH=()
 declare -A PATH_TO_ALIASES=()
@@ -80,32 +103,24 @@ print_config_path() {
 }
 
 print_help() {
+  local record name flags handler usage summary public aliases flag flag_forms=""
+  local -a flag_list
+  printf 'Usage:\n'
+  for record in "${COMMANDS[@]}"; do
+    IFS='|' read -r name flags handler usage summary public aliases <<< "$record"
+    [[ "$public" == "yes" ]] || continue
+    printf '  %-34s %s\n' "$usage" "$summary"
+    if [[ -n "$flags" ]]; then
+      IFS=',' read -ra flag_list <<< "$flags"
+      for flag in "${flag_list[@]}"; do
+        [[ -n "$flag_forms" ]] && flag_forms+=", "
+        flag_forms+="$flag"
+      done
+    fi
+  done
   cat <<EOF
-Usage:
-  tx <alias>              Start (if needed) and attach the tmux session for <alias>.
-  tx ls                   List all configured aliases grouped by target directory.
-  tx which <alias>        Print the resolved target directory for <alias>.
-  tx add <alias[,..]> [dir]
-                          Add alias mapping for dir, defaulting to the current directory.
-  tx add <dir> <alias[,..]>
-                          Add alias mapping for dir, with directory-first shorthand.
-  tx add . | tx add <dir>
-                          Prompt for an alias and add/update that directory mapping.
-  tx add . <alias[,..]>
-                          Add alias mapping for the current directory without prompting.
-  tx remove <alias>       Remove one alias from the tx config.
-  tx edit <alias> [new]   Rename one alias in the tx config; prompts when [new] is omitted.
-  tx init                 Create an example config if one does not exist.
-  tx config               Print the config path.
-  tx install              Install tmux.conf, status helpers, and tx for this user.
-  tx completion <shell>   Print shell completion script for bash, zsh, or fish.
-  tx doctor               Validate tmux availability, config parsing, and target dirs.
-  tx doctor --install     Install/repair tmux assets, then verify installed paths.
-  tx kill <alias>         Kill the tmux session for <alias>.
-  tx kill-all             Kill all running configured tx sessions.
-  tx help                 Show this help.
 
-Flag forms also accepted: -l/--list, -k/--kill, --kill-all, -h/--help.
+Flag forms also accepted: $flag_forms.
 
 Config file:
   \$TX_CONFIG, or \$XDG_CONFIG_HOME/tx/session.config, or ~/.config/tx/session.config
@@ -229,12 +244,25 @@ colorize_status() {
 }
 
 completion_commands() {
-  printf '%s\n' help ls kill kill-all init add remove edit doctor which config install completion
+  local record name flags handler usage summary public aliases
+  for record in "${COMMANDS[@]}"; do
+    IFS='|' read -r name flags handler usage summary public aliases <<< "$record"
+    [[ "$public" == "yes" ]] && printf '%s\n' "$name"
+  done
 }
-completion_aliases() {
-  [[ -f "$CONFIG_PATH" ]] || return 0
-  load_config
-  printf '%s\n' "${!ALIAS_TO_PATH[@]}" | sort
+
+completion_alias_commands() {
+  local record name flags handler usage summary public aliases flag
+  local -a flag_list
+  for record in "${COMMANDS[@]}"; do
+    IFS='|' read -r name flags handler usage summary public aliases <<< "$record"
+    [[ "$aliases" == "yes" ]] || continue
+    printf '%s\n' "$name"
+    IFS=',' read -ra flag_list <<< "$flags"
+    for flag in "${flag_list[@]}"; do
+      [[ -n "$flag" ]] && printf '%s\n' "$flag"
+    done
+  done
 }
 
 print_completion() {
@@ -254,8 +282,9 @@ _tx_completion() {
     return 0
   fi
   cmd="${COMP_WORDS[1]}"
+  alias_commands="$($tx_bin __complete_alias_commands 2>/dev/null)"
   case "$cmd" in
-    which|kill|remove|edit|-k|--kill)
+    $alias_commands)
       COMPREPLY=( $(compgen -W "$aliases" -- "$cur") )
       ;;
     completion)
@@ -273,13 +302,14 @@ EOF
       cat <<EOF
 #compdef ${command_name}
 _tx_completion() {
-  local -a commands aliases
+  local -a commands aliases alias_commands
   commands=(\${(f)"\$(${command_name} __complete_commands 2>/dev/null)"})
   aliases=(\${(f)"\$(${command_name} __complete_aliases 2>/dev/null)"})
+  alias_commands=($(${command_name} __complete_alias_commands 2>/dev/null))
   if (( CURRENT == 2 )); then
     _describe 'tx commands' commands
     _describe 'tx aliases' aliases
-  elif [[ \${words[2]} == (which|kill|remove|edit|-k|--kill) ]]; then
+  elif (( \${alias_commands[(Ie)\${words[2]}]} )); then
     _describe 'tx aliases' aliases
   elif [[ \${words[2]} == completion ]]; then
     _values 'shell' bash zsh fish
@@ -293,7 +323,7 @@ EOF
     fish)
       cat <<EOF
 complete -c ${command_name} -f -n '__fish_use_subcommand' -a '(${command_name} __complete_commands; ${command_name} __complete_aliases)'
-complete -c ${command_name} -f -n '__fish_seen_subcommand_from which kill remove edit -k --kill' -a '(${command_name} __complete_aliases)'
+complete -c ${command_name} -f -n '__fish_seen_subcommand_from (${command_name} __complete_alias_commands)' -a '(${command_name} __complete_aliases)'
 complete -c ${command_name} -f -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'
 complete -c ${command_name} -n '__fish_seen_subcommand_from add' -a '(__fish_complete_directories)'
 EOF
@@ -868,98 +898,112 @@ attach_session() {
   exec "$TMUX_BIN" attach-session -t "=$alias"
 }
 
+set_command() {
+  CMD_NAME=$1
+  CMD_HANDLER=$2
+  CMD_USAGE=$3
+  CMD_SUMMARY=$4
+  CMD_PUBLIC=$5
+  CMD_ALIASES=$6
+}
+
+command_lookup() {
+  local token=$1 record name flags handler usage summary public aliases flag
+  local -a flag_list
+  for record in "${COMMANDS[@]}"; do
+    IFS='|' read -r name flags handler usage summary public aliases <<< "$record"
+    if [[ "$token" == "$name" ]]; then
+      set_command "$name" "$handler" "$usage" "$summary" "$public" "$aliases"
+      return 0
+    fi
+    IFS=',' read -ra flag_list <<< "$flags"
+    for flag in "${flag_list[@]}"; do
+      if [[ -n "$flag" && "$token" == "$flag" ]]; then
+        set_command "$name" "$handler" "$usage" "$summary" "$public" "$aliases"
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
+cmd_help() { print_help; }
+cmd_init() { [[ $# -eq 0 ]] || die "init: takes no arguments"; init_config; }
+cmd_config() { [[ $# -eq 0 ]] || die "config: takes no arguments"; print_config_path; }
+cmd_install() { run_installer "$@"; }
+cmd_completion() {
+  [[ $# -eq 1 ]] || die "completion: expected exactly one shell: bash, zsh, or fish"
+  print_completion "$1"
+}
+cmd_complete_aliases() {
+  [[ $# -eq 0 ]] || die "__complete_aliases: takes no arguments"
+  completion_aliases
+}
+cmd_complete_commands() {
+  [[ $# -eq 0 ]] || die "__complete_commands: takes no arguments"
+  completion_commands
+}
+cmd_complete_alias_commands() {
+  [[ $# -eq 0 ]] || die "__complete_alias_commands: takes no arguments"
+  completion_alias_commands
+}
+cmd_add() { add_alias "$@"; }
+cmd_remove() { remove_alias "$@"; }
+cmd_edit() { edit_alias "$@"; }
+cmd_doctor() {
+  if [[ $# -eq 1 && "$1" == "--install" ]]; then
+    doctor_install
+  else
+    [[ $# -eq 0 ]] || die "doctor: takes no arguments, or exactly --install"
+    doctor
+  fi
+}
+cmd_which() {
+  [[ $# -eq 1 ]] || die "which: expected exactly one alias"
+  load_config
+  print_alias_path "$1"
+}
+cmd_ls() {
+  [[ $# -eq 0 ]] || die "ls: takes no arguments"
+  require_tmux
+  load_config
+  list_sessions
+}
+cmd_kill() {
+  [[ $# -eq 1 ]] || die "kill: expected exactly one alias"
+  require_tmux
+  load_config
+  kill_session "$1"
+}
+cmd_kill_all() {
+  [[ $# -eq 0 ]] || die "kill-all: takes no arguments"
+  require_tmux
+  load_config
+  kill_all_sessions
+}
+cmd_attach() {
+  [[ $# -eq 1 ]] || die "expected exactly one alias, got: $*"
+  require_tmux
+  load_config
+  attach_session "$1"
+}
+
 main() {
   if [[ $# -eq 0 ]]; then
     print_help >&2
     exit 1
   fi
-
+  if command_lookup "$1"; then
+    shift
+    "$CMD_HANDLER" "$@"
+    return
+  fi
   case "$1" in
-    -h|--help|help)
-      print_help
-      return 0
-      ;;
-  esac
-
-  case "$1" in
-    init)
-      [[ $# -eq 1 ]] || die "init: takes no arguments"
-      init_config
-      ;;
-    config)
-      [[ $# -eq 1 ]] || die "config: takes no arguments"
-      print_config_path
-      ;;
-    install)
-      shift
-      run_installer "$@"
-      ;;
-    completion)
-      shift
-      [[ $# -eq 1 ]] || die "completion: expected exactly one shell: bash, zsh, or fish"
-      print_completion "$1"
-      ;;
-    __complete_aliases)
-      [[ $# -eq 1 ]] || die "__complete_aliases: takes no arguments"
-      completion_aliases
-      ;;
-    __complete_commands)
-      [[ $# -eq 1 ]] || die "__complete_commands: takes no arguments"
-      completion_commands
-      ;;
-    add)
-      shift
-      add_alias "$@"
-      ;;
-    remove)
-      shift
-      remove_alias "$@"
-      ;;
-    edit)
-      shift
-      edit_alias "$@"
-      ;;
-    doctor)
-      if [[ $# -eq 2 && "$2" == "--install" ]]; then
-        doctor_install
-      else
-        [[ $# -eq 1 ]] || die "doctor: takes no arguments, or exactly --install"
-        doctor
-      fi
-      ;;
-    which)
-      shift
-      [[ $# -eq 1 ]] || die "which: expected exactly one alias"
-      load_config
-      print_alias_path "$1"
-      ;;
-    -l|--list|ls)
-      [[ $# -eq 1 ]] || die "ls: takes no arguments"
-      require_tmux
-      load_config
-      list_sessions
-      ;;
-    -k|--kill|kill)
-      shift
-      [[ $# -eq 1 ]] || die "kill: expected exactly one alias"
-      require_tmux
-      load_config
-      kill_session "$1"
-      ;;
-    --kill-all|kill-all)
-      [[ $# -eq 1 ]] || die "kill-all: takes no arguments"
-      require_tmux
-      load_config
-      kill_all_sessions
-      ;;
     -*)
       die "unknown option: $1 (try 'tx help')"
       ;;
     *)
-      [[ $# -eq 1 ]] || die "expected exactly one alias, got: $*"
-      require_tmux
-      load_config
-      attach_session "$1"
+      cmd_attach "$@"
       ;;
   esac
 }

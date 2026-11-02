@@ -12,9 +12,13 @@ TX = ROOT / 'tmux' / 'tx'
 
 
 class TxTests(unittest.TestCase):
-    def tx(self, *args):
+    def tx(self, *args, config=None):
         with tempfile.TemporaryDirectory(prefix='autowork-tx-') as folder:
-            env = {**os.environ, 'TX_CONFIG': str(Path(folder) / 'tx.config'), 'TX_COLOR': 'never'}
+            path = Path(folder) / 'tx.config'
+            if config is not None:
+                path.write_text(config)
+            env = {**os.environ, 'TX_CONFIG': str(path),
+                   'TX_COLOR': 'never', 'TX_TMUX': 'true'}
             return subprocess.run(['bash', str(TX), *args], env=env, capture_output=True, text=True, timeout=30)
 
     def test_tx_has_no_autowork_commands(self):
@@ -31,6 +35,23 @@ class TxTests(unittest.TestCase):
                 stdout='  tx autowork\n  Current: /example/autowork/tx.config\n', returncode=1)):
             with self.assertRaises(AssertionError):
                 self.test_tx_has_no_autowork_commands()
+
+    def test_flag_forms_dispatch_through_the_table(self):
+        result = self.tx('-l', config='a=/tmp\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('tx sessions', result.stdout)
+
+    def test_command_table_drives_help_and_completion(self):
+        commands = self.tx('__complete_commands').stdout.split()
+        self.assertEqual(commands, ['help', 'ls', 'kill', 'kill-all', 'init', 'add',
+                                    'remove', 'edit', 'doctor', 'which', 'config',
+                                    'install', 'completion'])
+        aliases = self.tx('__complete_alias_commands').stdout.split()
+        self.assertEqual(aliases, ['kill', '-k', '--kill', 'remove', 'edit',
+                                   'which'])
+        help_text = self.tx('help').stdout
+        self.assertIn('tx kill <alias>', help_text)
+        self.assertNotIn('__complete_', help_text)
 
     def test_the_package_installs_tx_and_autowork(self):
         package = json.loads((ROOT / 'package.json').read_text())
