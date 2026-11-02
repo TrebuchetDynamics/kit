@@ -473,6 +473,28 @@ repository: `python3 skills/git-commit-push/scripts/test_delivery_scope.py -v`.
 `python3 scripts/check.py` discovers this offline suite. These checks pin scope,
 cross-agent eligibility, live-writer exclusions and stale-ledger reconciliation;
 they are policy-contract tests, not proof of model behavior or live publication.
+
+## Common Rationalizations
+
+The [Definition of Done](../shared/DEFINITION-OF-DONE.md) is the standing bar; delivery
+does not replace it.
+
+| Rationalization | Reality |
+| --- | --- |
+| "The change is ready, so I can commit everything." | Stage only owned paths. Preserve unrelated, dirty and live work. |
+| "Commit implies push." | A local commit, push and deployment are separate outcomes. Push needs explicit authority. |
+| "The gate is failing, but I can ship a checkpoint." | Report the failing gate. A local checkpoint may be allowed; it claims no readiness and waives nothing. |
+| "I can force-push or rewrite history to clean this up." | Destructive history changes need explicit authority and their own safety checks. |
+| "The push probably worked." | Read back the remote target. A local success is not remote delivery. |
+
+## Red Flags
+
+- Staged unrelated paths, secrets or generated scratch.
+- Push, force-push or history rewrite without explicit authority.
+- A waived gate, skipped check or readiness claim after a failure.
+- Remote delivery claimed without a readback.
+- Merge or cleanup that touches dirty, locked or live worktrees.
+
 ## Boundaries
 
 - Not a code review; use `/ponytail-review`.

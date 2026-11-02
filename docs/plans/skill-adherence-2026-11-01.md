@@ -38,7 +38,24 @@ red flags, and the structural checks cover the added skills.
 
 Checks: the skill-standard and routing checks for the expanded set.
 
+## Task 3: Tier 3 trace evals
+
+Add `scripts/skill_trace_eval.py`, `evals/tier3/<skill>.json` specs and synthetic
+pass/fail trace fixtures for the six high-risk skills. Add
+`tests/test_skill_trace_evals.py` and document the trace/spec format.
+
+Acceptance: every spec has a passing fixture; a forbidden write fails the review
+spec; wrong-skill and malformed traces are refused; the CLI example returns the
+expected exit code. The fixtures are labelled synthetic and do not prove live model
+adherence.
+
+Checks:
+
+```sh
+python3 scripts/check.py tests/test_skill_trace_evals.py
+```
+
 ## Out of scope
 
-No new lifecycle commands, automatic activation, second router, Tier 3 model-trace
-evals, packaging change or delivery authority. Pinned Addy bytes stay unchanged.
+No new lifecycle commands, automatic activation, second router, packaging change,
+live model run or delivery authority. Pinned Addy bytes stay unchanged.

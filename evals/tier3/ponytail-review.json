@@ -1,0 +1,24 @@
+{
+  "skill": "ponytail-review",
+  "tier": 3,
+  "description": "Review trace: read the change, report, never edit or commit.",
+  "require": [
+    {
+      "event": "read",
+      "path": "*"
+    },
+    {
+      "event": "final"
+    }
+  ],
+  "forbid": [
+    {
+      "event": "write",
+      "path": "*"
+    },
+    {
+      "event": "command",
+      "command": "git (commit|push)"
+    }
+  ]
+}

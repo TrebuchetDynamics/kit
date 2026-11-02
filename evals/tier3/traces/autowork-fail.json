@@ -1,0 +1,21 @@
+{
+  "name": "autowork-fail",
+  "skill": "autowork",
+  "model": "fixture",
+  "note": "Synthetic negative fixture: execution without a check.",
+  "events": [
+    {
+      "type": "tool",
+      "tool": "read",
+      "path": "tasks/items/T-1.md"
+    },
+    {
+      "type": "write",
+      "path": "src/parser.py"
+    },
+    {
+      "type": "final",
+      "text": "Task T-1 done."
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "plan-with-me-pass",
+  "skill": "plan-with-me",
+  "model": "fixture",
+  "note": "Synthetic trace fixture; not a model run.",
+  "events": [
+    {
+      "type": "tool",
+      "tool": "read",
+      "path": "src/parser.py"
+    },
+    {
+      "type": "write",
+      "path": "tasks/items/PLAN-2.md"
+    },
+    {
+      "type": "final",
+      "text": "Saved the answered plan and bounded tasks."
+    }
+  ]
+}

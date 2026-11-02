@@ -650,6 +650,28 @@ tasks or a secondary detail, and do not reopen already answered defaults.
 When graph analysis was used or required, include Graphify coverage/limitations,
 freshness, actual queries, source corroboration
 and the evidence chain behind changed docs and tasks; graph output alone is not delivery.
+
+## Common Rationalizations
+
+The [Definition of Done](../shared/DEFINITION-OF-DONE.md) is the standing bar; a docs
+pass does not replace implementation or verification.
+
+| Rationalization | Reality |
+| --- | --- |
+| "A docs pass should also fix the code." | Docs Sync writes documentation and task records. Implementation uses `/autowork`. |
+| "The task looks done, so I can close it." | Close only with the required evidence. A manual close is not a verified receipt. |
+| "A small doc change needs a full bootstrap." | Use Maintain for affected owners. Bootstrap only when the requested scope needs it. |
+| "The other writer's dirty files are in the way." | Preserve them. Coordinate, or stage only attributable owned hunks. |
+| "The graph or links prove the docs." | Graph output is orientation. Check source, targets and current bytes. |
+
+## Red Flags
+
+- Code, tests, fixtures or CI changed during a docs pass.
+- A task closed without its required verification.
+- Broad bootstrap or conversion for a narrow request.
+- Another writer's dirty work overwritten or absorbed.
+- A report claims checks that did not run.
+
 ## Boundaries
 
 - Not implementation; use `/autowork`.

@@ -1,0 +1,21 @@
+{
+  "name": "plan-for-me-pass",
+  "skill": "plan-for-me",
+  "model": "fixture",
+  "note": "Synthetic trace fixture; not a model run.",
+  "events": [
+    {
+      "type": "tool",
+      "tool": "read",
+      "path": "src/parser.py"
+    },
+    {
+      "type": "write",
+      "path": "tasks/items/PLAN-1.md"
+    },
+    {
+      "type": "final",
+      "text": "Saved the plan and task record."
+    }
+  ]
+}

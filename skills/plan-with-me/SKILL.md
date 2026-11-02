@@ -161,6 +161,27 @@ recovery; do not reopen the product interview or create duplicate tasks. An
 Autowork-owned planning substep returns the batch to its same coordinator without
 another permission question; preserve its review and owned-commit requirements.
 
+## Common Rationalizations
+
+The [Definition of Done](../shared/DEFINITION-OF-DONE.md) is the standing bar; a saved
+plan is not execution.
+
+| Rationalization | Reality |
+| --- | --- |
+| "Ask what the repository can answer." | Find repository facts yourself. Ask only for missing intent, authority or input. |
+| "A bare yes accepts every recommendation." | A bare yes accepts one unambiguous proposal, never several separate recommendations. |
+| "A polished proposal is accepted scope." | Proposals stay proposed until the owner accepts them. |
+| "I can write code while waiting for an answer." | Planning writes docs and task records. Implementation needs its own authorization. |
+| "Silence means agreement." | Silence is neither an answer nor acceptance. Leave the question open. |
+
+## Red Flags
+
+- Asking for facts the repository already answers.
+- Several recommendations accepted by one bare yes.
+- A proposal marked Accepted without an owner answer.
+- Code, tests or fixtures edited during the interview.
+- Settled questions asked again without new evidence.
+
 ## Boundaries
 
 - Not unattended discovery; use `/plan-for-me`.

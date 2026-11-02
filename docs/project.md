@@ -2315,17 +2315,21 @@ Status: Accepted
 
 Decision: high-risk Kit skills adopt Addy Osmani's `## Common Rationalizations` and
 `## Red Flags` sections. Keep the single `**Done when:**` line; do not add a second
-verification checklist. Each pilot skill links the shared
+verification checklist. Each high-risk skill links the shared
 [Definition of Done](../skills/shared/DEFINITION-OF-DONE.md), which owns Kit-specific
 gates and points to the pinned Addy checklist for general correctness, quality,
 integration, documentation and ship criteria.
 
-The pilot is `autowork`, `plan-for-me` and `ponytail-review`. `docs/skill-standard.md`
-and `writing-for-agents` carry the rule for later rollout. Addy's core operating
+The initial pilot was `autowork`, `plan-for-me` and `ponytail-review`; the rollout
+adds `git-commit-push`, `docs-sync` and `plan-with-me`. `docs/skill-standard.md` and
+`writing-for-agents` carry the rule for later skills. Addy's core operating
 behaviors live in `skills/shared/COMMON-CONTRACT.md`, not a second meta-skill. Kit
 keeps explicit-only commands and `ask-autowork` as the only router; Addy's lifecycle
 phases map to existing owners rather than a parallel command set.
 
 Tier 1 structural checks and Tier 2 routing/description checks cover the pilot.
-Tier 3 model-trace evals and the remaining skill rollout stay separate work. The
-pilot does not create a new queue, command, auto-activation rule or delivery authority.
+Tier 3 trace grading covers the six high-risk skills through
+`evals/tier3/<skill>.json` and `scripts/skill_trace_eval.py`. The checked-in traces
+are synthetic fixtures; live traces remain outside Git and are graded with the same
+command. The rollout does not create a new queue, command, auto-activation rule or
+delivery authority.

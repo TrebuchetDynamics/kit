@@ -113,6 +113,10 @@ General criteria come from its pinned
 [Definition of Done](../skills/engineering/upstream/references/definition-of-done.md);
 Kit-specific gates live in the shared reference.
 
+Tier 3 trace grading lives in [evals/README.md](../evals/README.md). It grades a
+recorded trace against `evals/tier3/<skill>.json`; it does not call a model or prove
+live adherence. The checked-in traces are synthetic fixtures.
+
 ## Deliberate differences from upstream
 
 - **No bucket split.** Every folder is discovered; `skills/shared/` holds contracts and
@@ -141,9 +145,11 @@ Kit-specific gates live in the shared reference.
 - [ ] A dispatching skill says to start the child in a fresh context window.
 - [ ] The router (`ask-autowork`) lists the skill, and the skill's Boundaries name
       the sibling a confused caller should use instead.
-- [ ] High-risk pilot skills carry `## Common Rationalizations` and `## Red Flags`,
+- [ ] High-risk skills carry `## Common Rationalizations` and `## Red Flags`,
       and link the Definition of Done.
 - [ ] The standing Definition of Done is separate from task acceptance and names
       local commit, integration, push, deployment and live qualification separately.
+- [ ] Tier 3 trace specs have a passing fixture and the evaluator refuses a
+      forbidden action; `tests/test_skill_trace_evals.py` passes.
 - [ ] Checks pass: `python3 scripts/check.py tests/test_skill_standard.py` plus the
       modules that read the touched files.

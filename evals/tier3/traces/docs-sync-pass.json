@@ -1,0 +1,26 @@
+{
+  "name": "docs-sync-pass",
+  "skill": "docs-sync",
+  "model": "fixture",
+  "note": "Synthetic trace fixture; not a model run.",
+  "events": [
+    {
+      "type": "tool",
+      "tool": "read",
+      "path": "docs/architecture.md"
+    },
+    {
+      "type": "write",
+      "path": "docs/architecture.md"
+    },
+    {
+      "type": "command",
+      "command": "python3 scripts/check.py tests/test_workflow_contract.py",
+      "exit": 0
+    },
+    {
+      "type": "final",
+      "text": "Updated the architecture owner and validated the links."
+    }
+  ]
+}
