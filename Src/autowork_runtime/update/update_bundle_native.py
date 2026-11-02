@@ -10,6 +10,9 @@ from pathlib import Path
 import sys
 import tempfile
 
+# A command row may still name the plugin by its legacy identity mid-upgrade.
+PLUGIN_NAMES = ('kit', 'autowork')
+
 # Hermes reads plugin options from `settings` (ctx.get_config), so the opt-out lives there.
 PROBE_CONFIG = ('plugins:\n  enabled: [kit]\n  entries:\n'
                 '    kit:\n      settings:\n        apply_runtime_defaults: false\n')
@@ -45,7 +48,7 @@ def main():
             from hermes_cli.plugins import get_plugin_manager, get_plugin_commands
             get_plugin_manager().discover_and_load()
             commands = sorted(name for name, row in get_plugin_commands().items()
-                              if row.get('plugin') == 'kit')
+                              if row.get('plugin') in PLUGIN_NAMES)
             expected = {path.parent.name.replace('_', '-')
                         for path in (source / 'skills').glob('*/SKILL.md')
                         if path.parent.name not in ('repo-docs', 'repo-interview')}

@@ -12,6 +12,11 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parent
+# Must match plugin.yaml's name and the host's plugin namespace.
+PLUGIN_NAME = 'kit'
+# A profile mid-upgrade still reports the plugin under its legacy name.
+LEGACY_PLUGIN_NAME = 'autowork'
+OWNER_NAMES = (PLUGIN_NAME, LEGACY_PLUGIN_NAME)
 
 
 def defaults():
@@ -88,9 +93,10 @@ def inventory():
     manager = get_plugin_manager()
     manager.discover_and_load()
     plugins = manager.list_plugins()
-    required = set(defaults()['imported_plugins']) | {'kit'}
-    # Older installs can still own Ponytail commands; report them, never require them.
-    wanted = required | {'ponytail'}
+    required = set(defaults()['imported_plugins']) | {PLUGIN_NAME}
+    # Older installs can still own Ponytail commands or report the legacy plugin name;
+    # report them, never require them.
+    wanted = required | {LEGACY_PLUGIN_NAME, 'ponytail'}
     rows = []
     for name, item in sorted(get_plugin_commands().items()):
         if item.get('plugin') in wanted:
@@ -162,7 +168,7 @@ def _last_update():
 def overview(report):
     """A short /autowork plugin status reply: installed capabilities and setup gaps."""
     revision, profile = _identity()
-    own = next((p for p in report['plugins'] if p['name'] == 'kit'), None)
+    own = next((p for p in report['plugins'] if p['name'] in OWNER_NAMES), None)
     version = f" {own['version']}" if own and own.get('version') else ''
     head = f'Autowork{version}' + (f' ({revision})' if revision else '')
     if profile:
@@ -183,7 +189,7 @@ def overview(report):
     if last:
         lines.append(last)
     for plugin in report['plugins']:
-        if plugin['name'] == 'kit':
+        if plugin['name'] in OWNER_NAMES:
             continue
         name = plugin['name'] + (f" {plugin['version']}" if plugin.get('version') else '')
         if plugin.get('error'):
@@ -584,13 +590,13 @@ def setup_parser(parser):
 def diagnose(report, *, core_only=False):
     """Evaluate one inventory snapshot without invoking setup or reloading gateways."""
     errors = []
-    own = next((p for p in report['plugins'] if p['name'] == 'kit'), {})
+    own = next((p for p in report['plugins'] if p['name'] in OWNER_NAMES), {})
     if not own.get('enabled') or own.get('error'):
         errors.append('kit is not loaded cleanly')
     names = {p.parent.name for p in (ROOT / 'skills').glob('*/SKILL.md')
              if p.parent.name not in {'repo-docs', 'repo-interview'}}
     commands = {r['command'] for r in report['commands']
-                if r.get('kind') == 'plugin' and r.get('source') == 'kit'}
+                if r.get('kind') == 'plugin' and r.get('source') in OWNER_NAMES}
     fallbacks = _AUTOWORK_COMPAT.peer(globals(), 'setup_runtime').ponytail_skill_fallbacks(report) & names
     missing_commands = sorted(n.replace('_', '-') for n in names
                               if n.replace('_', '-') not in commands | fallbacks)
@@ -609,7 +615,7 @@ def diagnose(report, *, core_only=False):
         errors.append('Unavailable bundled commands: ' + ', '.join(missing_commands))
     if missing_skills:
         errors.append('Unavailable bundled skills: ' + ', '.join(missing_skills))
-    gaps = {field: [name for name in report[field] if name != 'kit']
+    gaps = {field: [name for name in report[field] if name not in OWNER_NAMES]
             for field in ('missing_plugins', 'missing_skills', 'unchecked_skill_sources')}
     integrations_ready = not any(gaps.values())
     ready = not errors and (core_only or integrations_ready)

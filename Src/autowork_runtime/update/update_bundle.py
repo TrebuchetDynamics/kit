@@ -17,7 +17,7 @@ import tempfile
 import time
 
 UPSTREAM = 'https://github.com/TrebuchetDynamics/autowork.git'
-PLUGIN = 'autowork'
+PLUGIN = 'autowork'  # installed plugin directory; unchanged by the manifest rename
 HOST_REFRESH_TIMEOUT_S = 300
 HOST_ITEMS = ('autowork', 'tx', 'claude', 'codex')
 
@@ -136,7 +136,7 @@ def managed_evidence(repo, profiles, upstream, *, admitted_head=None):
     if len([line for line in git(repo, 'worktree', 'list', '--porcelain').splitlines()
             if line.startswith(b'worktree ')]) != 1:
         raise ValueError(f'Extra linked worktrees consume {repo}; reconcile them before recovery')
-    if not re.search(r'^name:\s*[\'\"]?kit[\'\"]?\s*$', (repo / 'plugin.yaml').read_text(), re.M):
+    if not re.search(r'^name:\s*[\'\"]?(?:kit|autowork)[\'\"]?\s*$', (repo / 'plugin.yaml').read_text(), re.M):
         raise ValueError(f'Unexpected managed plugin identity: {repo}')
     metadata = home / 'plugins/.install-metadata.json'
     safe_path(metadata)
