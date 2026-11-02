@@ -3,24 +3,26 @@
 ### A toolset of skills for coding agents.
 
 Kit gives an agent a set of practised workflows: plan a decision, document it, execute
-accepted work, review a change, shrink a test suite. The skills run in **Hermes**,
-**Claude Code**, **Codex** and **Pi**, and they share one work queue: a Git-versioned
-`tasks/` store in your own repository.
+accepted work, review a change, shrink a test suite. The skills run in **Pi**,
+**Claude Code** and **Codex**; **Hermes** is an optional native fleet. Paseo can host
+any of those agents. All hosts share one work queue: a Git-versioned `tasks/` store in
+your own repository.
 
 **Autowork is one tool in the kit**, not the whole set: an optional Linux runner that
 keeps working through that queue after a session ends. Everything else works without
 it.
 
 [Install](#install) · [The skills](#the-skills) · [First use](#first-use-in-your-project) ·
-[The runner](#the-runner-autowork) · [Safety](#read-before-installing) ·
+[The runner](#the-runner-autowork) · [Safety](#safety-before-installing) ·
 [Evidence and limits](#what-verification-proves) · [Docs](#documentation)
 
 | Your host | Install | Ask for a workflow |
 | --- | --- | --- |
-| **Hermes** | [Native plugin](#hermes) | `/plan-with-me` |
+| **Pi** | [Git package](#pi) | `/plan-with-me` |
 | **Claude Code** | [Marketplace plugin](#claude-code) | `/kit:plan-with-me` |
 | **Codex** | [Marketplace plugin](#codex) | `$kit:plan-with-me` |
-| **Pi** | [Git package](#pi) | `/plan-with-me` |
+| **Paseo** | [Agent host](#paseo) | `/ask-kit` in the hosted agent |
+| **Hermes** | [Optional native plugin](#hermes-optional) | `/plan-with-me` |
 
 Not sure which skill fits? `/ask-kit` names one for your situation, then the next
 step it implies (`/kit:ask-kit` in Claude Code, `$kit:ask-kit` in Codex).
@@ -30,8 +32,9 @@ step it implies (`/kit:ask-kit` in Claude Code, `$kit:ask-kit` in Codex).
 </p>
 
 **A skill invocation is not a background service.** The skills act in your session and
-stop when it ends. Hermes scheduler integration is native-only; the Pi runner is the
-one continuous option, and you start it yourself.
+stop when it ends. The Pi runner is the one continuous option, and you start it
+yourself. Hermes adds native scheduling for its own profiles; Paseo can supervise
+agents, but Kit does not start a service there.
 
 ---
 
@@ -91,27 +94,18 @@ states its own boundaries and what "done" means.
 
 ## Install
 
-Choose one host and configure its model. The portable adapters need no Hermes
-installation. Review [what installing changes](#read-before-installing) first: the
-Hermes defaults are designed for an autonomous fleet, not a policy-neutral bridge.
+Start with Pi, Claude Code or Codex and configure that host's model. These are the
+primary portable targets. Hermes is optional and adds a native fleet with its own
+policy defaults; review its safety notes before enabling it. Paseo hosts any of the
+three portable agents.
 
-### Hermes
+### Pi
 
-Default-profile commands; add `-p work` after `hermes` for a named profile.
-
-**Keep your approval settings?** Before enabling, run
-`hermes config set plugins.entries.kit.settings.apply_runtime_defaults false`
-([opt-out details](docs/installation.md#install)). Otherwise accept the defaults with:
+Requires Node 22 or later:
 
 ```sh
-hermes plugins install TrebuchetDynamics/kit
-hermes plugins enable kit
-hermes autowork doctor --core
+pi install git:github.com/TrebuchetDynamics/kit
 ```
-
-The opt-out does not undo prior changes or stop full setup from configuring memory and
-external integrations. A native install stays in one profile; full setup expands to
-**every live profile**.
 
 ### Claude Code
 
@@ -129,13 +123,32 @@ codex plugin marketplace add TrebuchetDynamics/kit --ref main
 codex plugin add kit@autowork-marketplace
 ```
 
-### Pi
+### Paseo
 
-Requires Node 22 or later:
+Paseo hosts agents; it does not install Kit itself. Install Kit in Pi, Claude Code or
+Codex as above, then run that agent inside a Paseo workspace. The optional native Paseo
+workspace plugin for runner and task inspection is not part of this checkout yet. Do
+not install it from `main`.
+
+### Hermes (optional)
+
+Hermes adds a native fleet, profile setup, scheduling and memory integrations. Its
+defaults change approvals and target every live profile on full setup. Read
+[Hermes installation and policy](docs/installation.md#install) before enabling it.
+
+Default-profile commands; add `-p work` after `hermes` for a named profile.
+**Keep your approval settings?** Before enabling, run
+`hermes config set plugins.entries.kit.settings.apply_runtime_defaults false`
+([opt-out details](docs/installation.md#install)). Otherwise accept the defaults with:
 
 ```sh
-pi install git:github.com/TrebuchetDynamics/kit
+hermes plugins install TrebuchetDynamics/kit
+hermes plugins enable kit
+hermes autowork doctor --core
 ```
+
+The opt-out does not undo prior changes or stop full setup from configuring memory and
+external integrations.
 
 Restart your host session to discover the installed skills. See the
 [cross-host guide](docs/cross-host.md) for reload commands, updates and removal.
@@ -166,26 +179,20 @@ security prompts; use `--yes-deps` only when you intend to consent to them.
 
 ## First use in your project
 
-Open **your project**, not this checkout. Start your configured host there (`hermes`,
-`claude`, `codex` or `pi`), then use the planning invocation from the table above:
-
-```text
-questions only: help me clarify a caching improvement; ask one question, then stop
-```
-
-In **Hermes CLI** that is:
+Open **your project**, not this checkout. Start the host you installed (`pi`, `claude`,
+`codex` or `hermes`), then use the planning command from the table above:
 
 ```text
 /plan-with-me questions only: help me clarify a caching improvement; ask one question, then stop
 ```
 
-Expected first success: one relevant question and no file changes. This is a live smoke
-check **you perform**, not an outcome established by automated tests. Hermes'
-`doctor --core` checks registrations, not a model or live messaging. Continue with the
-[core-only interview](docs/onboarding.md#core-only-requirements-interview) or the
-[full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-task).
-See [onboarding](docs/onboarding.md) for Telegram and project binding; a profile is not
-a filesystem sandbox.
+Claude Code uses `/kit:plan-with-me`; Codex uses `$kit:plan-with-me`. The portable
+hosts resolve the same skill.
+
+Expected first success: one relevant question and no file changes. This is a live
+smoke check **you perform**, not an outcome established by automated tests. Continue
+with the [core-only interview](docs/onboarding.md#core-only-requirements-interview) or
+the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-task).
 
 ## The runner (Autowork)
 
@@ -257,50 +264,29 @@ exclusions = []
 
 </details>
 
-## Read before installing
+## Safety before installing
 
-These defaults apply to Hermes; the [Claude Code, Codex and Pi adapters](docs/cross-host.md)
-keep their hosts' settings. **They are designed for an autonomous fleet, not a
-policy-neutral command bridge.**
-
-- Full setup targets **every existing live profile**. There is no general
-  `--profile` selector; `--hermes-home` selects a Hermes installation root.
-- Loading the plugin sets `approvals.mode: off`, disables destructive slash-command
-  and MCP-reload confirmations, removes the per-turn iteration cap
-  (`agent.max_turns: unlimited`) and enables gateway injection in its owning profile.
-  Explicit deny rules and Hermes hard blocks remain. In profiles with OMH it disables the
-  OMH skills outside a measured keep list (your own disabled skills stay).
-- Full setup installs external integrations and selects **OMH memory with auto-safe
-  capture** in separate profile stores. Conflicting stores are refused; another
-  selected memory provider is left in place, and OMH memory stays off until you clear it.
-- External imports are **not fully locked**. Some are pinned; others follow current
-  upstream sources. Scans or missing dependencies can leave setup incomplete.
-- There is **no automatic restoration of previous configuration** on uninstall.
-  Back up profile configurations first; see [removal and recovery](docs/uninstall.md).
-- With approvals off and unattended runners, **give agents no production
-  credentials** and start with repositories where an automatic local commit and
-  push is acceptable.
-
-The runtime-policy opt-out prevents policy changes **during plugin loading and
-setup**. Full setup still applies OMH memory defaults and external integrations;
-there is currently no policy-neutral full-installation mode. See
-[installation](docs/installation.md), and [memory and retained data](docs/memory.md)
-before enabling memory capture.
+Portable hosts keep their own settings. Hermes is different: its native plugin changes
+approvals, iteration limits and gateway behavior, and full setup targets every live
+profile, installs memory capture and adds external integrations. Read
+[Hermes installation and policy](docs/installation.md) and
+[removal and recovery](docs/uninstall.md) before enabling it. Give unattended agents no
+production credentials, and start with repositories where an automatic local commit is
+acceptable.
 
 ## Updating
 
-**Hermes:** `/autowork update` in chat updates every live profile; the terminal form is
-`hermes autowork update`, and `/autowork update --check` previews it. Updates normally
-fast-forward clean plugin checkouts; verified managed checkouts can recover from
-rewritten upstream history through a backed-up transaction that keeps compatible
-installed-skill edits. Dirty or unproven sources defer. Ordinary updates reapply
-runtime and menu defaults except where opted out; recovery does not.
+**Pi:** update the package with
+`pi update git:github.com/TrebuchetDynamics/kit`.
 
-**Files updated does not mean the gateway is running updated code.** A busy root gateway
-can defer its restart for up to six hours, then expire without restarting. Check
-`/autowork update status` for pending or deferred activation. See
-[update behavior and recovery](docs/installation.md#update-all-profiles); portable hosts
-use their [own package update commands](docs/cross-host.md).
+**Claude Code and Codex:** update the marketplace and plugin through their CLI. See
+[cross-host updates](docs/cross-host.md) for the exact commands.
+
+**Hermes:** `/autowork update` updates every live profile; the terminal form is
+`hermes autowork update`, and `/autowork update --check` previews it. See
+[update behavior and recovery](docs/installation.md#update-all-profiles). Files updated
+does not mean a gateway is running the new code; check `/autowork update status` for
+pending activation.
 
 <details>
 <summary><strong>Migrating from hermes-toolset</strong></summary>
@@ -321,17 +307,18 @@ and [install](#install) again in each host; in Hermes, rewire existing cron jobs
 
 | Host | Evidence and limits |
 | --- | --- |
-| Hermes | Offline tests, native registration/integration checks and gateway activation receipts. Live model behavior and Telegram delivery require separate live checks. |
+| Pi | Earlier isolated installation and resource discovery, plus package/command tests; the current package still needs renewed native/live qualification. |
 | Claude Code | Plugin validation and an earlier isolated install are recorded; no live model workflow is demonstrated in that record. |
 | Codex | Earlier isolated installation and skill discovery, plus portable-package checks; the current package still needs renewed native/live qualification. |
-| Pi | Earlier isolated installation and resource discovery, plus package/command tests; the current package still needs renewed native/live qualification. |
+| Hermes | Offline tests, native registration/integration checks and gateway activation receipts. Live model behavior and Telegram delivery require separate live checks. |
+| Paseo | Native plugin integration is not in this checkout; do not claim a Paseo install from `main`. |
 
 Package contents have changed since some isolated-install runs. The
 [cross-host verification record](docs/cross-host.md#behavior-and-verification) names the
-tested versions and gaps; [testing and compatibility](docs/testing.md) covers Hermes.
+tested versions and gaps; [testing and compatibility](docs/testing.md) covers host-specific checks.
 `/autowork status` reads the runner fleet; `/autowork plugin status` reports
 registrations and setup gaps. No registration or package test proves model output
-quality, Git delivery or live Telegram execution.
+quality, Git delivery or live messaging execution.
 
 ## Project status
 
