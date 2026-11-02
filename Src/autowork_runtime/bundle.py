@@ -12,9 +12,8 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parent
-# Must match plugin.yaml's name and the host's plugin namespace.
+# The plugin's name, plus the legacy name a profile still reports mid-upgrade.
 PLUGIN_NAME = 'kit'
-# A profile mid-upgrade still reports the plugin under its legacy name.
 LEGACY_PLUGIN_NAME = 'autowork'
 OWNER_NAMES = (PLUGIN_NAME, LEGACY_PLUGIN_NAME)
 
@@ -94,8 +93,7 @@ def inventory():
     manager.discover_and_load()
     plugins = manager.list_plugins()
     required = set(defaults()['imported_plugins']) | {PLUGIN_NAME}
-    # Older installs can still own Ponytail commands or report the legacy plugin name;
-    # report them, never require them.
+    # Older installs can still own Ponytail commands; report them, never require them.
     wanted = required | {LEGACY_PLUGIN_NAME, 'ponytail'}
     rows = []
     for name, item in sorted(get_plugin_commands().items()):
