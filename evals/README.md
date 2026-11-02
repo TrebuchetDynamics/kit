@@ -28,8 +28,11 @@ A trace is one JSON object:
 ```
 
 Event types: `read`, `write`, `edit`, `command`, `final`. A `tool` event with
-`tool: "read"`, `"write"` or `"edit"` is the same as that event type. Paths are
-repository-relative strings. Commands include the exact command and exit code.
+`tool: "read"`, `"write"` or `"edit"` is the same as that event type. A `tool`
+event with `tool: "bash"` or `"shell"` and a command is a `command` event. Paths
+may be top-level or under `args.path`; commands may be top-level or under
+`args.command`. Paths are repository-relative strings. Commands include the exact
+command and exit code.
 
 ## Tier 3 spec format
 
@@ -52,9 +55,13 @@ A spec names required and forbidden events:
 ```
 
 `path` is an fnmatch pattern. `command` is a regular expression. `exit` is the
-required exit code when present. `final` may add `contains`, a string or list of
-strings, when a trace must name a specific result. Use that sparingly; exact wording
-is a weak oracle.
+required exit code when present and only valid with `command`. `contains` is only
+valid with `final`; use it sparingly because exact wording is a weak oracle. Unknown
+keys and fields on the wrong event type are refused.
+
+A review spec forbids `write` and `edit`. A git command check must account for global
+options such as `git -C . commit`, not only `git commit`; see
+`evals/tier3/ponytail-review.json`.
 
 ## Run
 
@@ -62,6 +69,19 @@ is a weak oracle.
 python3 scripts/skill_trace_eval.py evals/tier3/autowork.json \
   evals/tier3/traces/autowork-pass.json
 ```
+
+For a real Pi session, capture JSONL with `pi --mode json -p ...`, then convert it:
+
+```sh
+python3 scripts/pi_trace_to_eval.py --skill ponytail-review \
+  --name ponytail-review-live session.jsonl -o /tmp/ponytail-review-live.json
+python3 scripts/skill_trace_eval.py evals/tier3/ponytail-review.json \
+  /tmp/ponytail-review-live.json
+```
+
+The converter removes heredoc bodies, maps read-only `cat`/`head`/`tail`/`sed`/
+`git show`/`git diff`/`git log` commands to read events, and keeps the last assistant
+text as `final`. Keep live traces and credentials outside Git.
 
 Exit 0 means the trace satisfies the spec. Exit 1 means a required event is missing
 or a forbidden action occurred. Exit 2 means the JSON is malformed.

@@ -18,7 +18,7 @@
   "forbid": [
     {
       "event": "command",
-      "command": "git (push --force|reset --hard|clean -fd)"
+      "command": "\\bgit\\b(?:\\s+(?:-[Cc]|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+--?[^\\s]+)*\\s+(?:push\\s+(?:--force|-f)|reset\\s+--hard|clean\\s+-[a-z]*(?:f[a-z]*d|d[a-z]*f))(?=\\s|$)"
     }
   ]
 }

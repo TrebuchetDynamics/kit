@@ -40,6 +40,36 @@ class SkillTraceEvalTests(unittest.TestCase):
         self.assertFalse(result['ok'])
         self.assertTrue(any('missing required' in failure for failure in result['failures']))
 
+    def test_edit_and_tool_wrapped_commit_are_refused(self):
+        spec = load(SPECS / 'ponytail-review.json')
+        base = load(TRACES / 'ponytail-review-pass.json')
+        for extra in ({'type': 'edit', 'path': 'src/parser.py'},
+                      {'type': 'tool', 'tool': 'bash', 'args': {'command': 'git -C . commit -m x'}}):
+            trace = json.loads(json.dumps(base))
+            trace['events'].insert(-1, extra)
+            with self.subTest(extra=extra):
+                result = evaluate(trace, spec)
+                self.assertFalse(result['ok'])
+                self.assertTrue(any('forbidden action' in failure for failure in result['failures']))
+
+    def test_tool_wrapped_read_path_and_safe_git_log_pass(self):
+        spec = load(SPECS / 'ponytail-review.json')
+        trace = {'skill': 'ponytail-review', 'events': [
+            {'type': 'tool', 'tool': 'read', 'args': {'path': 'src/parser.py'}},
+            {'type': 'command', 'command': 'git log --grep commit', 'exit': 0},
+            {'type': 'final', 'text': 'No findings.'},
+        ]}
+        self.assertTrue(evaluate(trace, spec)['ok'])
+
+    def test_spec_typos_and_wrong_fields_are_refused(self):
+        trace = {'skill': 'autowork', 'events': []}
+        for spec in (
+                {'skill': 'autowork', 'require': [{'event': 'read', 'pth': '*'}]},
+                {'skill': 'autowork', 'require': [{'event': 'read', 'exit': 0}]},
+                {'skill': 'autowork', 'require': [{'event': 'command', 'path': '*'}]}):
+            with self.subTest(spec=spec), self.assertRaises(TraceError):
+                evaluate(trace, spec)
+
     def test_wrong_skill_and_malformed_trace_are_refused(self):
         spec = load(SPECS / 'autowork.json')
         trace = load(TRACES / 'autowork-pass.json')

@@ -34,29 +34,79 @@ def _load(path):
 def _kind(event):
     kind = event.get('type')
     if kind == 'tool':
-        return event.get('tool') if event.get('tool') in ('read', 'write', 'edit') else None
+        tool = event.get('tool')
+        if tool in ('read', 'write', 'edit'):
+            return tool
+        if tool in ('bash', 'shell') and _command(event) is not None:
+            return 'command'
+        return None
     return kind if kind in ('read', 'write', 'edit', 'command', 'final') else None
+
+
+def _path(event):
+    if isinstance(event.get('path'), str):
+        return event['path']
+    args = event.get('args')
+    if isinstance(args, dict) and isinstance(args.get('path'), str):
+        return args['path']
+    return None
+
+
+def _command(event):
+    if isinstance(event.get('command'), str):
+        return event['command']
+    args = event.get('args')
+    if isinstance(args, dict) and isinstance(args.get('command'), str):
+        return args['command']
+    return None
+
+
+def _exit(event):
+    value = event.get('exit')
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    result = event.get('result')
+    if isinstance(result, dict):
+        structured = result.get('structuredContent')
+        if isinstance(structured, dict) and isinstance(structured.get('exit_code'), int):
+            return structured['exit_code']
+    return None
 
 
 def _clause_text(clause):
     return json.dumps(clause, sort_keys=True, ensure_ascii=False)
 
 
-def _matches(event, clause):
+def _check_clause(clause):
+    if not isinstance(clause, dict):
+        raise TraceError('every clause must be an object')
+    unknown = set(clause) - {'event', 'path', 'command', 'exit', 'contains'}
+    if unknown:
+        raise TraceError('unknown clause keys: ' + ', '.join(sorted(unknown)))
     kind = clause.get('event')
-    if not isinstance(kind, str):
-        raise TraceError('every clause needs an event string')
+    if kind not in ('read', 'write', 'edit', 'command', 'final'):
+        raise TraceError('clause.event must be read, write, edit, command or final')
+    if 'path' in clause and kind not in ('read', 'write', 'edit'):
+        raise TraceError('path is only valid for read, write or edit')
+    if ('command' in clause or 'exit' in clause) and kind != 'command':
+        raise TraceError('command and exit are only valid for command')
+    if 'contains' in clause and kind != 'final':
+        raise TraceError('contains is only valid for final')
+
+
+def _matches(event, clause):
+    kind = clause['event']
     if _kind(event) != kind:
         return False
     if 'path' in clause:
-        path = event.get('path')
+        path = _path(event)
         if not isinstance(path, str) or not fnmatchcase(path, clause['path']):
             return False
     if 'command' in clause:
-        command = event.get('command')
+        command = _command(event)
         if not isinstance(command, str) or not re.search(clause['command'], command):
             return False
-        if 'exit' in clause and event.get('exit') != clause['exit']:
+        if 'exit' in clause and _exit(event) != clause['exit']:
             return False
     if kind == 'final' and 'contains' in clause:
         text = event.get('text')
@@ -85,12 +135,17 @@ def evaluate(trace, spec):
     if trace.get('skill') != skill:
         failures.append(f'skill mismatch: trace={trace.get("skill")!r} spec={skill!r}')
     matched = {}
+    for key in ('require', 'forbid'):
+        if key in spec and not isinstance(spec[key], list):
+            raise TraceError(f'spec.{key} must be a list')
     for index, clause in enumerate(spec.get('require', [])):
+        _check_clause(clause)
         found = sum(1 for event in events if _matches(event, clause))
         matched[f'require[{index}]'] = found
         if not found:
             failures.append('missing required: ' + _clause_text(clause))
     for index, clause in enumerate(spec.get('forbid', [])):
+        _check_clause(clause)
         found = sum(1 for event in events if _matches(event, clause))
         matched[f'forbid[{index}]'] = found
         if found:
