@@ -11,6 +11,8 @@ without weakening accepted behavior, safety or verification.
 
 Apply these with [Ponytail](PONYTAIL.md) and the [communication rules](COMMUNICATION.md).
 
+- Check whether a bundled skill fits before a non-trivial response or action; use
+  [`/ask-kit`](../ask-kit/SKILL.md), then read the named skill.
 - Surface assumptions before non-trivial work; mark guesses.
 - Name confusion and conflicting requirements; stop and resolve them.
 - Disagree with evidence; propose the alternative.

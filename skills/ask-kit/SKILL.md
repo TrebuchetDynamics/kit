@@ -14,6 +14,13 @@ You do not remember every command, so ask. This map names the skill for a situat
 never replaces reading it. Before you describe what a skill does or recommend skipping
 a step, read that skill's `SKILL.md`: a summary here is orientation only.
 
+## Before you answer or act
+
+Check this map before a non-trivial response or action. A short request or a question
+can still match a skill. If one fits, name it, read its `SKILL.md` and follow it. If
+none fits, say so. This map grants no authority and does not start work the user did
+not ask for.
+
 ## Main flow: idea to delivered work
 
 1. **Sharpen the idea.** `/grilling` interviews you in rounds and stops when the
@@ -74,6 +81,8 @@ a step, read that skill's `SKILL.md`: a summary here is orientation only.
 - Not a dispatcher: it recommends a command, and the user or caller runs it.
 - Not a queue or status report; use `/pending` or `/blockers`.
 - Not a substitute for the chosen skill's instructions; read that file.
+- Not an always-on meta-skill: it runs when invoked; the shared contract asks for a
+  check, not automatic activation.
 
 **Done when:** one command is named with its next step, or the request is reported as
 needing no skill or an owner decision.
