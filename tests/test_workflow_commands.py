@@ -146,7 +146,7 @@ class WorkflowCommands(unittest.TestCase):
         self.assertIn('docs_sync',self.ctx.commands)
 
     def test_pilot_command_descriptions_are_distinct_and_routed(self):
-        router = (fixture.ROOT / 'skills/ask-autowork/SKILL.md').read_text()
+        router = (fixture.ROOT / 'skills/ask-kit/SKILL.md').read_text()
         descriptions = {}
         for name in ('autowork', 'plan-for-me', 'ponytail-review',
                      'git-commit-push', 'docs-sync', 'plan-with-me'):

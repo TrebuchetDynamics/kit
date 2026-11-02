@@ -80,7 +80,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
     'writing-for-agents': 'writing-for-agents',
     grilling: 'grilling', 'grill-with-docs': 'grill-with-docs',
     'improve-codebase-architecture': 'improve-codebase-architecture',
-    'ask-autowork': 'ask-autowork',
+    'ask-kit': 'ask-kit',
     'responsive-screenshots': 'responsive-screenshots',
     ...Object.fromEntries(selectors.map(selector => [`autoresearch-${selector}`, 'autoresearch'])),
   })) {

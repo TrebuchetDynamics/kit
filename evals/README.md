@@ -5,7 +5,7 @@ Three tiers, each with a different claim.
 | Tier | Check | Evidence |
 | --- | --- | --- |
 | 1 | Structure | `tests/test_skill_standard.py` checks descriptions, boundaries, rationalizations, red flags and the Definition of Done link. |
-| 2 | Routing and description | `tests/test_workflow_commands.py` checks the pilot commands are named by `ask-autowork` and their descriptions are distinct summaries. |
+| 2 | Routing and description | `tests/test_workflow_commands.py` checks the pilot commands are named by `ask-kit` and their descriptions are distinct summaries. |
 | 3 | Recorded trace | `scripts/skill_trace_eval.py` grades a JSON trace against `evals/tier3/<skill>.json`. |
 
 ## Tier 3 trace format

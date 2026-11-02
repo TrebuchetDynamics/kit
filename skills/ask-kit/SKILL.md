@@ -1,10 +1,10 @@
 ---
-name: ask-autowork
+name: ask-kit
 description: "Find the skill that fits the situation."
 license: MIT
 ---
 
-# Ask Autowork
+# Ask Kit
 
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 

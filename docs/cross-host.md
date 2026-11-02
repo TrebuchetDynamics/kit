@@ -149,22 +149,22 @@ a file as evidence of a render, not of a correct layout.
 See [workflow requirements](workflows.md#responsive-screenshots). Design review stays
 with `/ui-taste` and `/impeccable`.
 
-## Ask Autowork
+## Ask Kit
 
-[Ask Autowork](../skills/ask-autowork/SKILL.md) is the router over the bundle: it names
+[Ask Autowork](../skills/ask-kit/SKILL.md) is the router over the bundle: it names
 the skill for a situation, then the next step. It reads the chosen skill before
 describing it and names one command. Use it when you know the outcome you want but not
 the command.
 
 | Host | Example |
 | --- | --- |
-| Hermes | `/ask-autowork I need to stress-test a plan` |
-| Claude Code | `/kit:ask-autowork I need to stress-test a plan` |
-| Codex | `$kit:ask-autowork I need to stress-test a plan` |
-| Pi | `/ask-autowork I need to stress-test a plan` |
+| Hermes | `/ask-kit I need to stress-test a plan` |
+| Claude Code | `/kit:ask-kit I need to stress-test a plan` |
+| Codex | `$kit:ask-kit I need to stress-test a plan` |
+| Pi | `/ask-kit I need to stress-test a plan` |
 
 The map is orientation, not authority: the named skill keeps its own scope, review and
-delivery rules. See [workflow requirements](workflows.md#ask-autowork).
+delivery rules. See [workflow requirements](workflows.md#ask-kit).
 
 ## Grilling and architecture review
 

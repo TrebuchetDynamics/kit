@@ -5,7 +5,7 @@ Status: Accepted
 ## Scope
 
 Borrow Addy Osmani's adherence mechanics without replacing Kit's task store,
-explicit-only commands or `ask-autowork` router. Pilot the sections on three
+explicit-only commands or `ask-kit` router. Pilot the sections on three
 high-risk skills, add the shared Definition of Done and operating behavior, and
 cover the pilot with Tier 1 and Tier 2 checks.
 

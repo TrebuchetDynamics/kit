@@ -22,8 +22,8 @@ it.
 | **Codex** | [Marketplace plugin](#codex) | `$kit:plan-with-me` |
 | **Pi** | [Git package](#pi) | `/plan-with-me` |
 
-Not sure which skill fits? `/ask-autowork` names one for your situation, then the next
-step it implies (`/kit:ask-autowork` in Claude Code, `$kit:ask-autowork` in Codex).
+Not sure which skill fits? `/ask-kit` names one for your situation, then the next
+step it implies (`/kit:ask-kit` in Claude Code, `$kit:ask-kit` in Codex).
 
 <p align="center">
   <img src="assets/readme/workflow.svg" width="100%" alt="Plan accepted work, queue it in tasks/, execute an eligible task, and report checks and delivery. Further work requires the caller's authority; this diagram does not promise a background scheduler.">
@@ -86,7 +86,7 @@ states its own boundaries and what "done" means.
 
 **Operate**
 
-- `/ask-autowork` — ask which of the above fits.
+- `/ask-kit` — ask which of the above fits.
 - `/autowork` runner — the optional section [below](#the-runner-autowork).
 
 ## Install

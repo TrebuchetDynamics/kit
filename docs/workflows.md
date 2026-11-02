@@ -330,9 +330,9 @@ is correct.
 /responsive-screenshots https://staging.example.com/pricing; fail on overflow
 ```
 
-## Ask Autowork
+## Ask Kit
 
-`/ask-autowork` is the map over this bundle: one router that names the skill for a
+`/ask-kit` is the map over this bundle: one router that names the skill for a
 situation and the next step it implies. It answers "which command do I want?", never
 "what does that command decide?". It reads the chosen skill before describing it, names
 one command, and sends you to that skill's `## Boundaries` when two look close.

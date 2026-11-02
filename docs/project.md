@@ -2324,7 +2324,7 @@ The initial pilot was `autowork`, `plan-for-me` and `ponytail-review`; the rollo
 adds `git-commit-push`, `docs-sync` and `plan-with-me`. `docs/skill-standard.md` and
 `writing-for-agents` carry the rule for later skills. Addy's core operating
 behaviors live in `skills/shared/COMMON-CONTRACT.md`, not a second meta-skill. Kit
-keeps explicit-only commands and `ask-autowork` as the only router; Addy's lifecycle
+keeps explicit-only commands and `ask-kit` as the only router; Addy's lifecycle
 phases map to existing owners rather than a parallel command set.
 
 Tier 1 structural checks and Tier 2 routing/description checks cover the pilot.

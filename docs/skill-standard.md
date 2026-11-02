@@ -92,7 +92,7 @@ read-only. A fork inherits the context the dispatch was meant to escape.
 ## 12. One map over the set
 
 A growing set of user-invoked skills needs one router skill that names the others and
-when to reach for each: `ask-autowork` here, upstream's `ask-matt`. The router is
+when to reach for each: `ask-kit` here, upstream's `ask-matt`. The router is
 orientation, never authority, and it reads a skill's `SKILL.md` before describing it.
 
 *Source:* upstream `.agents/invocation.md` (router skills) and
@@ -128,7 +128,7 @@ live adherence. The checked-in traces are synthetic fixtures.
 - **Pinned vendoring.** Upstream bytes live under `upstream/` with `UPSTREAM.json`
   hashes and the license; policy lives in the local adapter.
 - **No auto-activation or Addy lifecycle commands.** Kit keeps explicit-only
-  commands and `ask-autowork` as its only router; Addy's phases map to existing
+  commands and `ask-kit` as its only router; Addy's phases map to existing
   owners instead of a second command set. High-risk skills adopt Addy's
   rationalization and red-flag sections.
 
@@ -143,7 +143,7 @@ live adherence. The checked-in traces are synthetic fixtures.
 - [ ] Claims stop at executed evidence.
 - [ ] The adapter adds host mechanics only.
 - [ ] A dispatching skill says to start the child in a fresh context window.
-- [ ] The router (`ask-autowork`) lists the skill, and the skill's Boundaries name
+- [ ] The router (`ask-kit`) lists the skill, and the skill's Boundaries name
       the sibling a confused caller should use instead.
 - [ ] High-risk skills carry `## Common Rationalizations` and `## Red Flags`,
       and link the Definition of Done.

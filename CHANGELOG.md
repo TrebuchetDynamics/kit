@@ -7,6 +7,11 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- The router is renamed to **`ask-kit`**, matching the toolset it maps: `/ask-kit`
+  in Hermes and Pi, `/kit:ask-kit` in Claude Code, `$kit:ask-kit` in Codex. It still
+  names one command per situation and grants no authority; the rename is a move, not
+  a behaviour change.
+
 - The repository is renamed to **`TrebuchetDynamics/kit`**. GitHub redirects the old
   `autowork` URLs, and every live reference in this repository, the installers, the Pi
   package source and the documentation now names `kit`. Historical records

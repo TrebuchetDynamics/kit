@@ -79,10 +79,10 @@ class SkillStandardTests(unittest.TestCase):
     def test_the_router_names_every_skill(self):
         # Upstream's rule: a router that never mentions a skill, or still names a
         # removed one, is a router that lies.
-        router = (ROOT / 'skills/ask-autowork/SKILL.md').read_text()
+        router = (ROOT / 'skills/ask-kit/SKILL.md').read_text()
         for path in self.skills('skills'):
             name = path.parent.name
-            if name in ('shared', 'ask-autowork'):
+            if name in ('shared', 'ask-kit'):
                 continue
             with self.subTest(skill=name):
                 self.assertIn(f'`/{name}`', router)
