@@ -34,7 +34,7 @@ SETTING_NAMES = ENV_NAMES + ('PI_AUTOWORK_WORKERS', 'PI_AUTOWORK_ALLOW_HERMES', 
 
 UNIT = """[Unit]
 Description=pi-autowork for %i
-Documentation=https://github.com/TrebuchetDynamics/autowork/blob/main/docs/cross-host.md#run-autowork-continuously
+Documentation=https://github.com/TrebuchetDynamics/kit/blob/main/docs/cross-host.md#run-autowork-continuously
 After=network-online.target
 
 [Service]

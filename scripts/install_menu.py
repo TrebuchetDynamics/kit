@@ -32,12 +32,27 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = 'TrebuchetDynamics/autowork'
-PI_SOURCE = 'git:github.com/TrebuchetDynamics/autowork'
+SOURCE = 'TrebuchetDynamics/kit'
+PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
 HOME = Path(os.environ.get('HOME', str(Path.home())))
 BIN = Path(os.environ.get('AUTOWORK_BIN_DIR') or HOME / '.local' / 'bin')
 # Claude Code's refusal when settings name this marketplace from another source.
 TOLERATE_CLAUDE_SOURCE = "its source doesn't match its extraKnownMarketplaces entry"
+
+
+def manifest_name(relative, key='name'):
+    """A plugin or marketplace name declared by a manifest in this checkout."""
+    try:
+        data = json.loads((ROOT / relative).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return ''
+    return str(data.get(key) or '')
+
+
+CLAUDE_PLUGIN = manifest_name('.claude-plugin/plugin.json') or 'kit'
+CLAUDE_MARKETPLACE = manifest_name('.claude-plugin/marketplace.json') or 'autowork'
+CODEX_PLUGIN = manifest_name('.codex-plugin/plugin.json') or CLAUDE_PLUGIN
+CODEX_MARKETPLACE = manifest_name('.agents/plugins/marketplace.json') or 'autowork-marketplace'
 
 
 class Output:
@@ -313,14 +328,16 @@ def drop_claude_plugin():
     """Claude Code caches a plugin by its version, which changes rarely: a reinstall of the same
     version kept the old workflows (sessions lacked two skills a release had added). Uninstalling
     first makes the install copy the current release; not being installed yet is fine."""
-    done = subprocess.run(['claude', 'plugin', 'uninstall', '--keep-data', 'autowork@autowork'], stdin=subprocess.DEVNULL,
+    done = subprocess.run(['claude', 'plugin', 'uninstall', '--keep-data',
+                           f'{CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}'], stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, timeout=120)
     return 'dropped the cached plugin' if done.returncode == 0 else 'no cached plugin to drop'
 
 
 def drop_codex_plugin():
     """Codex caches a plugin by its version too (see drop_claude_plugin)."""
-    done = subprocess.run(['codex', 'plugin', 'remove', 'autowork@autowork-marketplace'], stdin=subprocess.DEVNULL,
+    done = subprocess.run(['codex', 'plugin', 'remove',
+                           f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'], stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, timeout=120)
     return 'dropped the cached plugin' if done.returncode == 0 else 'no cached plugin to drop'
 
@@ -355,18 +372,24 @@ def items(hermes_args):
              # The update step below proves the configured marketplace is usable.
              steps=[Step(f'claude plugin marketplace add {SOURCE}', ['claude', 'plugin', 'marketplace', 'add', SOURCE],
                          tolerate=(TOLERATE_CLAUDE_SOURCE, 'already added', 'already exists')),
-                    Step('claude plugin marketplace update autowork',
-                         ['claude', 'plugin', 'marketplace', 'update', 'autowork']),
+                    Step(f'claude plugin marketplace update {CLAUDE_MARKETPLACE}',
+                         ['claude', 'plugin', 'marketplace', 'update', CLAUDE_MARKETPLACE]),
                     Step('drop the cached plugin, keeping its data', run=drop_claude_plugin),
-                    Step('claude plugin install autowork@autowork', ['claude', 'plugin', 'install', 'autowork@autowork'])]),
+                    Step(f'claude plugin install {CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}',
+                         ['claude', 'plugin', 'install', f'{CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}'])]),
         Item('codex', 'Codex plugin and full suite + bundled Ponytail', needs='codex',
-             steps=[Step(f'codex plugin marketplace add {SOURCE} --ref main',
+             # The registration carries the source URL, so a renamed repository is a
+             # different source for the same marketplace id. Drop it before adding.
+             steps=[Step(f'codex plugin marketplace remove {CODEX_MARKETPLACE}',
+                         ['codex', 'plugin', 'marketplace', 'remove', CODEX_MARKETPLACE],
+                         tolerate=('not found', 'no marketplace', 'not registered')),
+                    Step(f'codex plugin marketplace add {SOURCE} --ref main',
                          ['codex', 'plugin', 'marketplace', 'add', SOURCE, '--ref', 'main']),
-                    Step('codex plugin marketplace upgrade autowork-marketplace',
-                         ['codex', 'plugin', 'marketplace', 'upgrade', 'autowork-marketplace']),
+                    Step(f'codex plugin marketplace upgrade {CODEX_MARKETPLACE}',
+                         ['codex', 'plugin', 'marketplace', 'upgrade', CODEX_MARKETPLACE]),
                     Step('drop the cached plugin', run=drop_codex_plugin),
-                    Step('codex plugin add autowork@autowork-marketplace',
-                         ['codex', 'plugin', 'add', 'autowork@autowork-marketplace'])]),
+                    Step(f'codex plugin add {CODEX_PLUGIN}@{CODEX_MARKETPLACE}',
+                         ['codex', 'plugin', 'add', f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'])]),
     ]
 
 

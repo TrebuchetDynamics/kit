@@ -122,7 +122,7 @@ def is_toolset(path):
         (Path(path) / 'pi-autowork/engine/task_store.py').is_file()
 
 
-PI_SOURCE = 'git:github.com/TrebuchetDynamics/autowork'
+PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
 
 
 def installed_toolset(pi):
@@ -285,7 +285,7 @@ def run(argv, start, identity):
         if not shutil.which(tool):
             setup_error(f'Missing required command: {tool}')
     if not shutil.which(pi):
-        setup_error(f'Pi not found ({pi}). Install Pi, then: pi install git:github.com/TrebuchetDynamics/autowork')
+        setup_error(f'Pi not found ({pi}). Install Pi, then: pi install git:github.com/TrebuchetDynamics/kit')
     state_root = os.environ.get('PI_AUTOWORK_STATE_DIR') or \
         os.path.join(os.environ.get('XDG_STATE_HOME') or str(Path.home() / '.local/state'), 'pi-autowork')
     if opts['fleet']:
@@ -329,14 +329,14 @@ def run(argv, start, identity):
         toolset = str(Path(script).resolve().parents[1])
         skill_args = ['--skill', f'{toolset}/adapters/skills/git-commit-push']
         print(f'pi-autowork: autowork is not installed in Pi; using {toolset}. Install the package: '
-              'pi install git:github.com/TrebuchetDynamics/autowork', file=sys.stderr, flush=True)
+              'pi install git:github.com/TrebuchetDynamics/kit', file=sys.stderr, flush=True)
     else:
-        setup_error('Autowork not found. Install it in Pi (pi install git:github.com/TrebuchetDynamics/autowork) '
+        setup_error('Autowork not found. Install it in Pi (pi install git:github.com/TrebuchetDynamics/kit) '
                'or set PI_AUTOWORK_TOOLSET.')
     component = Path(toolset) / 'pi-autowork'
     if not (component / 'pi_autowork/cli.py').is_file():
         setup_error(f'{toolset} has no pi-autowork component; update the toolset '
-               '(pi update git:github.com/TrebuchetDynamics/autowork)')
+               '(pi update git:github.com/TrebuchetDynamics/kit)')
     if component.resolve() != COMPONENT:
         # Continue in the resolved release's own component: one release per run.
         os.environ['PI_AUTOWORK_SCRIPT'] = script

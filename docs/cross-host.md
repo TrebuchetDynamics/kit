@@ -282,11 +282,11 @@ claude plugin install autowork@autowork
 Install the published Git source with:
 
 ```sh
-claude plugin marketplace add TrebuchetDynamics/autowork
+claude plugin marketplace add TrebuchetDynamics/kit
 claude plugin install autowork@autowork
 ```
 
-Inside a session, `/plugin marketplace add TrebuchetDynamics/autowork` and
+Inside a session, `/plugin marketplace add TrebuchetDynamics/kit` and
 `/plugin install autowork@autowork` do the same; run `/reload-plugins` or
 start a new session. Add `--scope project` to the install to record it in the
 repository's `.claude/settings.json` for everyone who works there. Invoke the
@@ -324,7 +324,7 @@ codex plugin add autowork@autowork-marketplace
 Install the published Git source with:
 
 ```sh
-codex plugin marketplace add TrebuchetDynamics/autowork --ref main
+codex plugin marketplace add TrebuchetDynamics/kit --ref main
 codex plugin add autowork@autowork-marketplace
 ```
 
@@ -366,7 +366,7 @@ pi install .
 Install the published Git source with:
 
 ```sh
-pi install git:github.com/TrebuchetDynamics/autowork
+pi install git:github.com/TrebuchetDynamics/kit
 ```
 
 Use `/reload` in an existing Pi session, or start a new one inside your project.
@@ -484,9 +484,9 @@ Run it from the checkout of the repository's main branch (`main`, `master` or
 `origin/HEAD`'s branch), or name that checkout; it refuses any other branch:
 
 ```sh
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --dry-run
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --status
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --dry-run
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --status
 ```
 
 It selects the autowork package Pi has installed (found with `pi list`), or an
@@ -498,7 +498,7 @@ that path through `PI_AUTOWORK_TOOLSET`, including for late imports; updating th
 package never rewrites a selected release. Local-path installs run committed code,
 not uncommitted working-tree edits. Engine commands (including `--status` and
 `--dry-run`) require a committed Git checkout; use
-`pi install git:github.com/TrebuchetDynamics/autowork`.
+`pi install git:github.com/TrebuchetDynamics/kit`.
 
 The bootstrap serializes release creation and pruning. It retains the newest two
 snapshots plus any older snapshot referenced by a live process, including children
@@ -553,8 +553,8 @@ autowork remove my-project     # stop and remove the service; state and worktree
 (run it from the repository, or add `--repo PATH`):
 
 ```sh
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --install-service
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --remove-service
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --install-service
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --remove-service
 ```
 
 Each repository gets `pi-autowork@<repository name>.service`, for example
@@ -809,7 +809,7 @@ conflicting saved setting rather than silently changing it. To explicitly grant
 (or revoke with `0`), run the supported installer for that repository:
 
 ```sh
-PI_AUTOWORK_PUSH=1 ~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --install-service --repo /path/to/my-project
+PI_AUTOWORK_PUSH=1 ~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --install-service --repo /path/to/my-project
 ```
 
 This explicit edit reloads/restarts the service. `autowork status my-project` shows

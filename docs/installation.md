@@ -83,7 +83,7 @@ configured `memory_mode` is `preserve`; binding preservation alone does not pres
 that policy. No external memory server or connection JSON is required.
 
 ```sh
-hermes plugins install TrebuchetDynamics/autowork
+hermes plugins install TrebuchetDynamics/kit
 hermes plugins enable kit
 hermes autowork setup --yes-deps
 hermes autowork doctor

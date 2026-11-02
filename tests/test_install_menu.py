@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTALL = ROOT / 'install.sh'
 sys.path.insert(0, str(ROOT / "scripts"))
 import install_menu  # noqa: E402
-NEW = 'git:github.com/TrebuchetDynamics/autowork'
+NEW = 'git:github.com/TrebuchetDynamics/kit'
 
 # A fake pi: `pi list` reads installed sources from a file; install and remove edit it.
 PI = r'''#!/usr/bin/env bash
@@ -90,7 +90,7 @@ class InstallMenuTests(unittest.TestCase):
         result = self.install('--full')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertRegex(result.stdout, r'hermes\s+skipped.*launcher target')
-        self.assertIn('codex plugin add autowork@autowork-marketplace', self.calls('codex'))
+        self.assertIn('codex plugin add kit@autowork-marketplace', self.calls('codex'))
         self.assertRegex(self.install('--list').stdout, r'hermes\s+unavailable.*launcher target')
 
     def test_an_explicit_stale_host_fails_without_stopping_other_components(self):
@@ -126,16 +126,17 @@ class InstallMenuTests(unittest.TestCase):
         self.assertEqual(self.calls('pi install'), [f'pi install {NEW}'])
         # The cached plugin is dropped first: Claude Code caches by version, and a reinstall of the
         # same version kept the old workflows.
-        self.assertEqual(self.calls('claude'), ['claude plugin marketplace add TrebuchetDynamics/autowork',
+        self.assertEqual(self.calls('claude'), ['claude plugin marketplace add TrebuchetDynamics/kit',
                                                 'claude plugin marketplace update autowork',
-                                                'claude plugin uninstall --keep-data autowork@autowork',
-                                                'claude plugin install autowork@autowork'])
-        self.assertEqual(self.calls('codex'), ['codex plugin marketplace add TrebuchetDynamics/autowork --ref main',
+                                                'claude plugin uninstall --keep-data kit@autowork',
+                                                'claude plugin install kit@autowork'])
+        self.assertEqual(self.calls('codex'), ['codex plugin marketplace remove autowork-marketplace',
+                                               'codex plugin marketplace add TrebuchetDynamics/kit --ref main',
                                                'codex plugin marketplace upgrade autowork-marketplace',
-                                               'codex plugin remove autowork@autowork-marketplace',
-                                               'codex plugin add autowork@autowork-marketplace'])
+                                               'codex plugin remove kit@autowork-marketplace',
+                                               'codex plugin add kit@autowork-marketplace'])
         link = self.home / '.local/bin/autowork'
-        self.assertEqual(Path(os.readlink(link)), self.home / 'pkg/autowork/pi-autowork/bin/autowork')  # the package's
+        self.assertEqual(Path(os.readlink(link)), self.home / 'pkg/kit/pi-autowork/bin/autowork')  # the package's
         self.assertEqual((self.home / '.local/bin/tx').read_bytes(), (ROOT / 'tmux/tx').read_bytes())
         self.assertTrue((self.home / '.local/share/bash-completion/completions/tx').is_file())
         self.assertTrue((self.home / '.tmux.conf').is_file())  # none existed
@@ -147,8 +148,8 @@ class InstallMenuTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('Autowork suite update', result.stdout)
         self.assertIn(f'pi install {NEW}', self.calls('pi'))
-        self.assertIn('claude plugin install autowork@autowork', self.calls('claude'))
-        self.assertIn('codex plugin add autowork@autowork-marketplace', self.calls('codex'))
+        self.assertIn('claude plugin install kit@autowork', self.calls('claude'))
+        self.assertIn('codex plugin add kit@autowork-marketplace', self.calls('codex'))
 
     def test_a_marketplace_from_a_configured_source_is_used_and_not_rewritten(self):
         # Claude Code refuses `marketplace add` when settings list that marketplace from
@@ -167,8 +168,8 @@ exit 0
         self.env['REFUSAL'] = refusal
         result = self.install('--only', 'claude')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('claude plugin uninstall --keep-data autowork@autowork', self.calls('claude'))
-        self.assertIn('claude plugin install autowork@autowork', self.calls('claude'))
+        self.assertIn('claude plugin uninstall --keep-data kit@autowork', self.calls('claude'))
+        self.assertIn('claude plugin install kit@autowork', self.calls('claude'))
         self.assertIn('kept the existing configuration', result.stdout)
         self.assertRegex(result.stdout, r'claude\s+installed')
 
@@ -185,7 +186,7 @@ exit 0
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn('network unavailable', result.stdout)
         self.assertRegex(result.stdout, r'claude\s+failed')
-        self.assertNotIn('claude plugin install autowork@autowork', self.calls('claude'))
+        self.assertNotIn('claude plugin install kit@autowork', self.calls('claude'))
 
     def test_a_transient_preflight_race_is_retried_once(self):
         import sys
@@ -269,11 +270,11 @@ exit 0
         result = self.install()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('pi install'), [f'pi install {NEW}'])
-        self.assertIn('claude plugin install autowork@autowork', self.calls('claude'))
-        self.assertIn('codex plugin add autowork@autowork-marketplace', self.calls('codex'))
+        self.assertIn('claude plugin install kit@autowork', self.calls('claude'))
+        self.assertIn('codex plugin add kit@autowork-marketplace', self.calls('codex'))
         self.assertTrue((self.home / '.local/bin/autowork').is_symlink())
         self.assertTrue((self.home / '.local/bin/tx').is_file())
-        self.assertIn('$ codex plugin add autowork@autowork-marketplace', result.stdout)
+        self.assertIn('$ codex plugin add kit@autowork-marketplace', result.stdout)
         self.assertRegex(result.stdout, r'hermes\s+skipped.*hermes not found')
 
     def test_dry_run_defaults_to_the_full_suite_without_installing(self):
@@ -365,9 +366,9 @@ fi
                               env={'AUTOWORK_INSTALL_REPORT': str(report)})
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(self.calls('claude'), [
-            'claude plugin marketplace add TrebuchetDynamics/autowork',
+            'claude plugin marketplace add TrebuchetDynamics/kit',
             'claude plugin marketplace update autowork'])
-        self.assertIn('codex plugin add autowork@autowork-marketplace', self.calls('codex'))
+        self.assertIn('codex plugin add kit@autowork-marketplace', self.calls('codex'))
         import json
         rows = {row['item']: row for row in map(json.loads, report.read_text().splitlines())}
         self.assertEqual(rows['claude'], {'item': 'claude', 'status': 'failed', 'exit': 23})
@@ -424,7 +425,7 @@ fi
         self.assertEqual(result.returncode, 0, result.stderr)
         for key in ('pi', 'autowork', 'tx', 'hermes', 'claude', 'codex'):
             self.assertRegex(result.stdout, rf'{key}\s+planned')
-        self.assertIn('codex plugin add autowork@autowork-marketplace', result.stdout)
+        self.assertIn('codex plugin add kit@autowork-marketplace', result.stdout)
         self.assertIn('setup_bundle.py', result.stdout)
         self.assertEqual(self.calls('codex'), [])
         self.assertEqual(self.calls('hermes'), [])
@@ -513,7 +514,8 @@ fi
             try:
                 with selectors.DefaultSelector() as selector:
                     selector.register(proc.stdout, selectors.EVENT_READ)
-                    for _ in range(3):  # marketplace add, marketplace upgrade, plugin add
+                    # marketplace remove, add, upgrade and plugin add prompt; the cache drop does not
+                    for _ in range(4):
                         pending = b''
                         while b'waiting for input: ' not in pending:
                             self.assertTrue(selector.select(timeout=5), seen.decode(errors='replace'))

@@ -4,7 +4,7 @@ For an existing Hermes profile, the native plugin manager avoids maintaining a
 source checkout. Replace `work` with your actual profile; omit `-p work` for default:
 
 ```sh
-hermes -p work plugins install TrebuchetDynamics/autowork
+hermes -p work plugins install TrebuchetDynamics/kit
 hermes -p work plugins enable autowork
 hermes -p work autowork doctor --core
 ```

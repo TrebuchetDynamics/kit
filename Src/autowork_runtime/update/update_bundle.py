@@ -16,7 +16,7 @@ import sys
 import tempfile
 import time
 
-UPSTREAM = 'https://github.com/TrebuchetDynamics/autowork.git'
+UPSTREAM = 'https://github.com/TrebuchetDynamics/kit.git'
 PLUGIN = 'autowork'
 HOST_REFRESH_TIMEOUT_S = 300
 HOST_ITEMS = ('autowork', 'tx', 'claude', 'codex')
@@ -1112,7 +1112,7 @@ def selected_profiles(root, names):
 def _same_remote(url, upstream):
     def norm(value):
         value = value.strip().rstrip('/')
-        if value == 'TrebuchetDynamics/autowork':
+        if value == 'TrebuchetDynamics/kit':
             value = UPSTREAM
         value = value[:-4] if value.endswith('.git') else value
         return value[7:] if value.startswith('file://') else value

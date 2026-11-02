@@ -5,7 +5,7 @@
     "autowork": "pi-autowork/bin/autowork",
     "tx": "tmux/tx"
   },
-  "description": "Autowork workflows for the Pi coding agent",
+  "description": "Kit: a toolset of skills for coding agents, with Autowork as its verified runner",
   "license": "MIT",
   "type": "module",
   "keywords": [
@@ -13,7 +13,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/TrebuchetDynamics/autowork.git"
+    "url": "https://github.com/TrebuchetDynamics/kit.git"
   },
   "files": [
     "autowork_bootstrap.py",

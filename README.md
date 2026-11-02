@@ -115,7 +115,7 @@ CAUTION requires review and acceptance, and a dangerous verdict blocks installat
 ([opt-out details](docs/installation.md#install)). Otherwise, accept the defaults with:
 
 ```sh
-hermes plugins install TrebuchetDynamics/autowork   # repository keeps its name until the rename lands
+hermes plugins install TrebuchetDynamics/kit   # repository keeps its name until the rename lands
 hermes plugins enable kit
 hermes autowork doctor --core
 ```
@@ -129,7 +129,7 @@ Native install stays in one profile; full setup expands to **every live profile*
 Install the marketplace and plugin:
 
 ```sh
-claude plugin marketplace add TrebuchetDynamics/autowork
+claude plugin marketplace add TrebuchetDynamics/kit
 claude plugin install autowork@autowork
 ```
 
@@ -138,7 +138,7 @@ claude plugin install autowork@autowork
 Requires a CLI with plugin support:
 
 ```sh
-codex plugin marketplace add TrebuchetDynamics/autowork --ref main
+codex plugin marketplace add TrebuchetDynamics/kit --ref main
 codex plugin add autowork@autowork-marketplace
 ```
 
@@ -147,7 +147,7 @@ codex plugin add autowork@autowork-marketplace
 Requires Node 22 or later:
 
 ```sh
-pi install git:github.com/TrebuchetDynamics/autowork
+pi install git:github.com/TrebuchetDynamics/kit
 ```
 
 Restart your host session to discover the installed skills. See the
@@ -192,7 +192,7 @@ A host whose CLI is missing is skipped and explained. Each item runs that host's
 command, listed above; `tx` keeps an existing `~/.tmux.conf`.
 
 ```sh
-git clone https://github.com/TrebuchetDynamics/autowork && cd autowork
+git clone https://github.com/TrebuchetDynamics/kit && cd autowork
 ./install.sh                    # full suite, live output and exact commands
 ./install.sh --menu             # arrows, Space toggles, Enter installs
 ./install.sh --dry-run          # preview the full suite without installing
@@ -233,7 +233,7 @@ also needs `uv` unless the OMH and Graphify CLIs are installed. After backing up
 configuration and reviewing the policy above:
 
 ```sh
-git clone https://github.com/TrebuchetDynamics/autowork.git
+git clone https://github.com/TrebuchetDynamics/kit.git
 cd autowork
 bash install-plugins.sh --bundle-only --dry-run
 bash install-plugins.sh --bundle-only
@@ -448,9 +448,9 @@ From your project's main-branch checkout, after the Pi installation and RPC setu
 
 ```sh
 # Preview only: no workers or repository changes.
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --dry-run
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --dry-run
 # Run until no task can start, with up to two workers.
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --until-empty --workers 2
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --until-empty --workers 2
 ```
 
 Starting the second command makes model calls and local commits. Configure project

@@ -87,7 +87,7 @@ def env_paths(env=os.environ):
     }
 
 
-PI_SOURCE = 'git:github.com/TrebuchetDynamics/autowork'
+PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
 
 
 def package_script():

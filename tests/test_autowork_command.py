@@ -396,7 +396,7 @@ class AutoworkCommandTests(unittest.TestCase):
         (package / 'scripts' / 'pi-autowork.sh').write_text('exit 0\n')
         (self.base / 'bin' / 'pi').write_text('#!/usr/bin/env bash\necho "User packages:"\n'
                                               'echo "  git:github.com/TrebuchetDynamics/old-toolset"\necho "    /old"\n'
-                                              f'echo "  git:github.com/TrebuchetDynamics/autowork (filtered)"\necho "    {package}"\n')
+                                              f'echo "  git:github.com/TrebuchetDynamics/kit (filtered)"\necho "    {package}"\n')
         import sys
         sys.path.insert(0, str(ROOT / 'pi-autowork'))
         from pi_autowork import command

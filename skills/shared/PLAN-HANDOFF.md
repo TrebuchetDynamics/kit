@@ -159,7 +159,7 @@ remaining milestone gaps. Do not mark unverified work complete.
 
 An optional `Skills:` note stays in the existing task record, not a new required
 field or registry. Follow the
-[scoped recommendation convention](https://github.com/TrebuchetDynamics/autowork/blob/main/docs/workflows.md#recommendations-autowork-can-use--toolset-137-cd)
+[scoped recommendation convention](https://github.com/TrebuchetDynamics/kit/blob/main/docs/workflows.md#recommendations-autowork-can-use--toolset-137-cd)
 when recommending a method: resolvable source, phase/purpose, expected artifact or
 check and fallback; distinguish recommendations from actual requirements. A skill
 adds no write, execution, installation or publication authority. Preserve this

@@ -2905,7 +2905,7 @@ sys.exit(result.returncode)
     def test_issue_2_reused_yarn_worker_tools_do_not_mutate_the_canonical_install(self):
         """Issue 2 part 2: automatic tool discovery works, but reuse is not mutation-isolated.
 
-        https://github.com/TrebuchetDynamics/autowork/issues/2
+        https://github.com/TrebuchetDynamics/kit/issues/2
         Synthetic executables check provisioning/resolution, not real Jest/TypeScript qualification.
         """
         from unittest.mock import patch
@@ -3162,7 +3162,7 @@ sys.exit(result.returncode)
     def test_issue_2_blocker_panel_distinguishes_saved_and_consumed_answers(self):
         """Issue 2 part 4 remains: the panel repeats a question without its answer-consumption state.
 
-        https://github.com/TrebuchetDynamics/autowork/issues/2
+        https://github.com/TrebuchetDynamics/kit/issues/2
         """
         sys.path.insert(0, str(ROOT / 'pi-autowork'))
         from pi_autowork import fleet_view, questions
@@ -3804,7 +3804,7 @@ class SetupTests(Fixture):
         (old / 'cli.py').touch()
         (old / 'release.py').write_text('raise SystemExit(2)\n')
         self.env['FAKE_PI_LIST'] = (f'git:github.com/TrebuchetDynamics/old-toolset\n  {old.parents[1]}\n'
-                                    f'git:github.com/TrebuchetDynamics/autowork\n  {package}\n')
+                                    f'git:github.com/TrebuchetDynamics/kit\n  {package}\n')
         copied = self.repo / 'pi-autowork.sh'
         shutil.copy(RUNNER, copied)
         result = self.run_runner('--dry-run', script=copied)
@@ -3827,7 +3827,7 @@ class SetupTests(Fixture):
         self.git(package, 'remote', 'add', 'origin', str(self.origin))
         self.publish(lambda tree: (tree / 'RELEASE').write_text('2\n'), 'release 2')
         self.env.update(FAKE_PI_TOOLSET=str(package), PI_AUTOWORK_UPDATE_INTERVAL='1',
-                        FAKE_PI_SOURCE='git:github.com/TrebuchetDynamics/autowork')
+                        FAKE_PI_SOURCE='git:github.com/TrebuchetDynamics/kit')
         return package
 
     def publish(self, change, message):
@@ -3873,7 +3873,7 @@ class SetupTests(Fixture):
         self.assertGreaterEqual(len(starts), 2, out)
         self.assertEqual({pid for _, pid in starts}, {str(runner.pid)}, out)  # exec keeps the PID
         updates = [json.loads(l) for l in self.log.read_text().splitlines() if '"update"' in l]
-        self.assertEqual(updates[0]['update'], ['git:github.com/TrebuchetDynamics/autowork'])
+        self.assertEqual(updates[0]['update'], ['git:github.com/TrebuchetDynamics/kit'])
 
     def test_a_release_that_cannot_read_current_state_is_never_installed(self):
         package = self.installed_package()

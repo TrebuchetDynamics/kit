@@ -7,6 +7,12 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- The repository is renamed to **`TrebuchetDynamics/kit`**. GitHub redirects the old
+  `autowork` URLs, and every live reference in this repository, the installers, the Pi
+  package source and the documentation now names `kit`. Historical records
+  (`CHANGELOG`, `docs/research`, `docs/plans`, `TODO.archive.md`) keep the old URL on
+  purpose, because they describe what was true then.
+
 - The toolset is now named **Kit**, with **Autowork** kept as the runner and its
   command-line name. The plugin, its command namespace and its settings key follow:
   `/kit:plan-with-me`, `$kit:…`, `kit:…` in `skill_view`, and `plugins.entries.kit`.

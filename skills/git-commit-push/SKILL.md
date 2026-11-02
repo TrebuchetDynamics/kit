@@ -97,7 +97,7 @@ rule set for cross-agent scope, live writers, secrets and blind staging.
 
 Card branch helper (temporary index, so HEAD, the real index, and other agents' dirty work
 are untouched). It ships with the Autowork engine: `<toolset>` is the installed Autowork
-toolset (the Pi package `~/.pi/agent/git/github.com/TrebuchetDynamics/autowork`, or a clone):
+toolset (the Pi package `~/.pi/agent/git/github.com/TrebuchetDynamics/kit`, or a clone):
 
 ```bash
 "<toolset>/pi-autowork/engine/agent_commit.sh" <repo> <profile> <card-id> "<message>" <files>...

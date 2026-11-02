@@ -443,7 +443,7 @@ production runs and external message delivery are separate outcomes.
 
 At planning time, `pi-autowork/engine/owner_cycle.py::run_locked` reconciled a retained
 native handoff before selection and could return `BLOCKED` without selecting a TODO
-task. [`pi-autowork/engine/reconcile.py` (historical source)](https://github.com/TrebuchetDynamics/autowork/blob/0d7c2bf16d4baf549b3f90033a31a9d0021280e8/pi-autowork/engine/reconcile.py) calls
+task. [`pi-autowork/engine/reconcile.py` (historical source)](https://github.com/TrebuchetDynamics/kit/blob/0d7c2bf16d4baf549b3f90033a31a9d0021280e8/pi-autowork/engine/reconcile.py) calls
 `continuation_capability.assess(None)`, while
 `skills/autowork/references/historical-owner-cycle.md#original-card-continuation-capability`
 explicitly documents the missing binding. These are concrete native-integration
@@ -1600,7 +1600,7 @@ Status: Accepted
 Decision (owner, 2026-10-16): the repository, plugin and command namespace are renamed
 from `hermes-toolset` to `autowork`. Planning works in Hermes, Claude Code, Codex and Pi,
 and pi-autowork builds the queued work, so the name no longer names one host. The
-GitHub repository is `TrebuchetDynamics/autowork`.
+GitHub repository is `TrebuchetDynamics/kit`.
 
 - No backwards compatibility (owner direction): no aliases, no migration code and no
   legacy names in source. Hermes keys a plugin by its manifest `name`, so an installation
