@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BANNED_OPENERS = ('use when', 'use to', 'use for', 'use if', 'use after', 'use before')
 # Hermes installs Graphify's own skill into profiles, so Autowork ships the adapter only.
 ADAPTER_ONLY = {'graphify'}
+PILOT = ('autowork', 'plan-for-me', 'ponytail-review')
 
 
 class SkillStandardTests(unittest.TestCase):
@@ -42,6 +43,22 @@ class SkillStandardTests(unittest.TestCase):
                 self.assertRegex(boundaries, r'(?m)^- \S', 'a boundary with no cut')
                 self.assertIn('**Done when:**', text)
                 self.assertEqual(text.count('**Done when:**'), 1, 'one completion line')
+
+    def test_high_risk_skills_name_excuses_red_flags_and_dod(self):
+        for name in PILOT:
+            with self.subTest(skill=name):
+                text = (ROOT / 'skills' / name / 'SKILL.md').read_text()
+                self.assertIn('## Common Rationalizations', text)
+                self.assertIn('| Rationalization | Reality |', text)
+                self.assertIn('## Red Flags', text)
+                self.assertIn('../shared/DEFINITION-OF-DONE.md', text)
+                self.assertEqual(text.count('**Done when:**'), 1)
+
+    def test_definition_of_done_is_one_shared_reference(self):
+        text = (ROOT / 'skills/shared/DEFINITION-OF-DONE.md').read_text()
+        self.assertIn('../engineering/upstream/references/definition-of-done.md', text)
+        self.assertIn('Task acceptance is met', text)
+        self.assertIn('NOT_CHECKED', text)
 
     def test_sibling_pairs_name_each_other(self):
         # The pairs from docs/skill-standard.md, in both directions.

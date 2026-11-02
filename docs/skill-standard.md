@@ -38,7 +38,8 @@ sibling to use instead, by command name. Sibling pairs that must stay distinct:
 
 Each skill ends on a `**Done when:**` line the agent can evaluate, plus the receipt it
 already reports. "Understanding reached" is not a criterion; "frontier empty and the
-owner confirmed" is.
+owner confirmed" is. The [Definition of Done](../skills/shared/DEFINITION-OF-DONE.md)
+is the standing bar beyond task acceptance; it never replaces a task's own criteria.
 
 ## 4. Steps first, reference behind a pointer
 
@@ -97,6 +98,21 @@ orientation, never authority, and it reads a skill's `SKILL.md` before describin
 *Source:* upstream `.agents/invocation.md` (router skills) and
 `skills/engineering/ask-matt`.
 
+## 13. Name the excuses and warning signs
+
+High-risk skills carry `## Common Rationalizations` and `## Red Flags` before
+`## Boundaries`. The table names the excuses that skip the process and the reality
+that rejects them. The list names observable signs that the skill is being violated.
+Keep `**Done when:**` as the single completion line; do not add a second checklist.
+Link the [Definition of Done](../skills/shared/DEFINITION-OF-DONE.md) where the skill
+closes or reviews work.
+
+*Source:* addyosmani/agent-skills at revision
+`1be8e34187e34647bb83adc3a1323b26ae6f6abe`, adapted to Kit's explicit-only standard.
+General criteria come from its pinned
+[Definition of Done](../skills/engineering/upstream/references/definition-of-done.md);
+Kit-specific gates live in the shared reference.
+
 ## Deliberate differences from upstream
 
 - **No bucket split.** Every folder is discovered; `skills/shared/` holds contracts and
@@ -107,6 +123,10 @@ orientation, never authority, and it reads a skill's `SKILL.md` before describin
   [shared/COMMUNICATION.md](../skills/shared/COMMUNICATION.md) own prose style.
 - **Pinned vendoring.** Upstream bytes live under `upstream/` with `UPSTREAM.json`
   hashes and the license; policy lives in the local adapter.
+- **No auto-activation or Addy lifecycle commands.** Kit keeps explicit-only
+  commands and `ask-autowork` as its only router; Addy's phases map to existing
+  owners instead of a second command set. High-risk skills adopt Addy's
+  rationalization and red-flag sections.
 
 ## Review checklist
 
@@ -121,5 +141,9 @@ orientation, never authority, and it reads a skill's `SKILL.md` before describin
 - [ ] A dispatching skill says to start the child in a fresh context window.
 - [ ] The router (`ask-autowork`) lists the skill, and the skill's Boundaries name
       the sibling a confused caller should use instead.
+- [ ] High-risk pilot skills carry `## Common Rationalizations` and `## Red Flags`,
+      and link the Definition of Done.
+- [ ] The standing Definition of Done is separate from task acceptance and names
+      local commit, integration, push, deployment and live qualification separately.
 - [ ] Checks pass: `python3 scripts/check.py tests/test_skill_standard.py` plus the
       modules that read the touched files.

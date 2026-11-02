@@ -243,6 +243,27 @@ references/native-containment-proof.md
 references/state-and-recovery.md
 references/upstream-goal-selection.md
 references/historical-owner-cycle.md
+## Common Rationalizations
+
+The [Definition of Done](../shared/DEFINITION-OF-DONE.md) is the standing bar; this
+task's acceptance is narrower.
+
+| Rationalization | Reality |
+| --- | --- |
+| "The task is obvious, so I can skip the record." | The record owns acceptance, checks and closeout. A ready task needs no new plan, but an unrecorded task has no contract. |
+| "Tests are probably fine." | Close only after the required checks ran on the changed candidate. A manual close is not a verified receipt. |
+| "I can fix unrelated files while I am here." | Preserve unrelated work and edit only the accepted task's paths. |
+| "I can bypass a slow worker or reviewer." | Live ownership is real. Report the blocker; do not start a competing writer. |
+| "The change is verified, so I can push." | Local commit, integration, push and deployment are separate outcomes. Push needs explicit authority. |
+
+## Red Flags
+
+- A task closed without an executed check or receipt.
+- Edits outside the task's scope or `touches`.
+- A second writer, a killed worker or a bypassed review.
+- "Done" reported from memory, a plan or a diff.
+- Push, deploy or live qualification claimed without its own evidence.
+
 ## Boundaries
 
 - Not planning; use `/plan-with-me` or `/plan-for-me`.

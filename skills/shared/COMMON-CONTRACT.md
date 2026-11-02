@@ -7,6 +7,16 @@ Apply the [shared Ponytail method](PONYTAIL.md) within each workflow's authority
 Reuse existing code and artifact owners; choose the smallest complete result,
 without weakening accepted behavior, safety or verification.
 
+## Operating behavior
+
+Apply these with [Ponytail](PONYTAIL.md) and the [communication rules](COMMUNICATION.md).
+
+- Surface assumptions before non-trivial work; mark guesses.
+- Name confusion and conflicting requirements; stop and resolve them.
+- Disagree with evidence; propose the alternative.
+- Choose the smallest complete change; preserve scope and unrelated work.
+- Verify before claim; name unrun checks and missing coverage.
+
 User instructions and repository rules define the authorized scope. Read the
 relevant instructions, current source, tests and existing documentation before
 changing their owners. Keep proposals distinct from accepted requirements and

@@ -2,6 +2,7 @@
 import re
 import tomllib
 import unittest
+import yaml
 import test_plugin as fixture
 
 
@@ -143,6 +144,18 @@ class WorkflowCommands(unittest.TestCase):
         self.assertNotIn('repo-docs',self.ctx.commands)
         self.assertNotIn('repo_docs',self.ctx.commands)
         self.assertIn('docs_sync',self.ctx.commands)
+
+    def test_pilot_command_descriptions_are_distinct_and_routed(self):
+        router = (fixture.ROOT / 'skills/ask-autowork/SKILL.md').read_text()
+        descriptions = {}
+        for name in ('autowork', 'plan-for-me', 'ponytail-review'):
+            with self.subTest(name=name):
+                text = (fixture.ROOT / f'skills/{name}/SKILL.md').read_text()
+                metadata = yaml.safe_load(text.split('---', 2)[1])
+                descriptions[name] = metadata['description']
+                self.assertIn(f'`/{name}`', router)
+                self.assertNotIn('use when', metadata['description'].lower())
+        self.assertEqual(len(set(descriptions.values())), len(descriptions))
 
     def test_missing_skills_do_not_advertise_workflows(self):
         self.skill('other')

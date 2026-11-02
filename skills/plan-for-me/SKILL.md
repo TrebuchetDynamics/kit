@@ -154,6 +154,27 @@ When existing execution fails without new product uncertainty, return the exact 
 ID, attempt evidence and failed operation to the same coordinator for supported
 recovery; do not reopen the product interview or create duplicate tasks.
 
+## Common Rationalizations
+
+The [Definition of Done](../shared/DEFINITION-OF-DONE.md) is the standing bar; a
+saved plan is not execution.
+
+| Rationalization | Reality |
+| --- | --- |
+| "The request is vague, so ask for a goal first." | Bare or vague Plan For Me runs discovery. Investigate the repository first. |
+| "A well-written proposal is accepted scope." | New product directions stay proposals until the owner accepts them. |
+| "A plan without tasks is enough." | The handoff needs complete task records with acceptance, checks and `touches`. |
+| "The queue is short, so invent useful work." | Save only the evidence-backed frontier. A short queue is not permission to invent work. |
+| "I can write code or tests while planning." | Planning writes docs and task records; implementation needs its own authorization. |
+
+## Red Flags
+
+- A goal question before repository investigation.
+- A roadmap or prose plan with no task records.
+- A proposal marked accepted without an owner answer.
+- Code, tests or fixtures written during planning.
+- Acceptance or evidence invented to make the queue look ready.
+
 ## Boundaries
 
 - Not an interactive interview; use `/plan-with-me`.

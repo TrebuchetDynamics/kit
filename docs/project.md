@@ -2307,3 +2307,25 @@ Implementation keeps the accepted planning-skills split: Plan For Me remains
 decisive, Plan With Me remains interactive for consequential missing intent, and
 neither gains execution, dispatch or publication authority. The next change to a
 planning limit or a protected record field has one code owner to edit.
+
+
+## Skill adherence and Definition of Done (2026-11-01)
+
+Status: Accepted
+
+Decision: high-risk Kit skills adopt Addy Osmani's `## Common Rationalizations` and
+`## Red Flags` sections. Keep the single `**Done when:**` line; do not add a second
+verification checklist. Each pilot skill links the shared
+[Definition of Done](../skills/shared/DEFINITION-OF-DONE.md), which owns Kit-specific
+gates and points to the pinned Addy checklist for general correctness, quality,
+integration, documentation and ship criteria.
+
+The pilot is `autowork`, `plan-for-me` and `ponytail-review`. `docs/skill-standard.md`
+and `writing-for-agents` carry the rule for later rollout. Addy's core operating
+behaviors live in `skills/shared/COMMON-CONTRACT.md`, not a second meta-skill. Kit
+keeps explicit-only commands and `ask-autowork` as the only router; Addy's lifecycle
+phases map to existing owners rather than a parallel command set.
+
+Tier 1 structural checks and Tier 2 routing/description checks cover the pilot.
+Tier 3 model-trace evals and the remaining skill rollout stay separate work. The
+pilot does not create a new queue, command, auto-activation rule or delivery authority.

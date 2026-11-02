@@ -28,6 +28,9 @@ Apply the technique; keep Autowork's scope, task store, review and delivery rule
   the sentence, not its words.
 - Prefer a pretrained **leading word** over a spelled-out triad. It recruits priors
   and anchors the behaviour in fewer tokens.
+- For a high-risk skill, name the excuses that skip the process and the observable
+  red flags. Link the [Definition of Done](../shared/DEFINITION-OF-DONE.md); keep
+  the skill's single completion line as the only criterion.
 
 ## Editing an existing skill
 
@@ -36,6 +39,8 @@ Apply the technique; keep Autowork's scope, task store, review and delivery rule
    noise. Move branch-only reference behind a pointer; delete noise.
 3. Keep every contract a test, host or user relies on, and move text rather than
    rewriting it when the meaning already holds.
+   For a high-risk skill, check the rationalization table, red flags and Definition
+   of Done link while you check the steps.
 4. Check the result: the steps still read in order, each pointer has a live target,
    and no meaning now has two homes.
 5. Run the tests for the files you touched. Report lines removed and what stayed.
