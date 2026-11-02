@@ -16,6 +16,26 @@ TX_FISH_COMPLETION_DIR=${TX_FISH_COMPLETION_DIR:-$HOME/.config/fish/completions}
 TX_ZSH_COMPLETION_DIR=${TX_ZSH_COMPLETION_DIR:-$HOME/.zsh/completions}
 TX_INSTALL_BASHRC_COMPLETION=${TX_INSTALL_BASHRC_COMPLETION:-1}
 
+case "${1:-}" in
+  "")
+    ;;
+  --print-paths)
+    printf 'TMUX_CONF_TARGET=%s\n' "$TMUX_CONF_TARGET"
+    printf 'TMUX_HELPER_DIR=%s\n' "$TMUX_HELPER_DIR"
+    printf 'TX_BIN_DIR=%s\n' "$TX_BIN_DIR"
+    printf 'TX_BIN_NAME=%s\n' "$TX_BIN_NAME"
+    printf 'TMUX_STYLE_TARGET=%s\n' "$HOME/.tmux/style.tmux"
+    printf 'TX_BASH_COMPLETION_DIR=%s\n' "$TX_BASH_COMPLETION_DIR"
+    printf 'TX_FISH_COMPLETION_DIR=%s\n' "$TX_FISH_COMPLETION_DIR"
+    printf 'TX_ZSH_COMPLETION_DIR=%s\n' "$TX_ZSH_COMPLETION_DIR"
+    exit 0
+    ;;
+  *)
+    printf 'tmux install: unknown argument: %s\n' "$1" >&2
+    exit 2
+    ;;
+esac
+
 for setting in TX_INSTALL_BACKUP TX_INSTALL_COMPLETIONS TX_INSTALL_BASHRC_COMPLETION; do
   eval "value=\${$setting}"
   case "$value" in

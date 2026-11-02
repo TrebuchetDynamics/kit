@@ -59,6 +59,9 @@ TX_BIN_DIR=/tmp/bin \
 ./install.sh
 ```
 
+`./install.sh --print-paths` prints the resolved install targets without writing.
+`tx doctor --install` runs the installer and uses those same paths.
+
 Reload tmux:
 
 ```sh

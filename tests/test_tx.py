@@ -54,6 +54,22 @@ class TxTests(unittest.TestCase):
         self.assertIn('tx kill <alias>', help_text)
         self.assertNotIn('__complete_', help_text)
 
+    def test_install_print_paths_is_read_only(self):
+        with tempfile.TemporaryDirectory(prefix='autowork-tx-install-') as folder:
+            home = Path(folder)
+            env = {**os.environ, 'HOME': str(home),
+                   'TMUX_CONF_TARGET': str(home / 'tmux.conf'),
+                   'TMUX_HELPER_DIR': str(home / 'tmux'),
+                   'TX_BIN_DIR': str(home / 'bin'),
+                   'TX_BIN_NAME': 'tx'}
+            result = subprocess.run(['sh', str(ROOT / 'tmux/install.sh'), '--print-paths'],
+                                    env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('TMUX_CONF_TARGET=', result.stdout)
+            self.assertIn('TX_BIN_DIR=', result.stdout)
+            self.assertFalse((home / 'tmux.conf').exists())
+            self.assertFalse((home / 'bin').exists())
+
     def test_session_module_uses_a_fake_tmux_adapter(self):
         with tempfile.TemporaryDirectory(prefix='autowork-tx-tmux-') as folder:
             root = Path(folder)

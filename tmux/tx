@@ -595,14 +595,35 @@ print_alias_path() {
   printf '%s\n' "${ALIAS_TO_PATH[$alias]}"
 }
 
+load_install_paths() {
+  INSTALL_TMUX_CONF_TARGET=${TMUX_CONF_TARGET:-$HOME/.tmux.conf}
+  INSTALL_TMUX_HELPER_DIR=${TMUX_HELPER_DIR:-$HOME/.tmux}
+  INSTALL_TX_BIN_DIR=${TX_BIN_DIR:-$HOME/.local/bin}
+  INSTALL_TX_BIN_NAME=${TX_BIN_NAME:-tx}
+  local installer paths line key value
+  installer="$(script_dir)/install.sh"
+  [[ -f "$installer" ]] || return 0
+  paths=$(sh "$installer" --print-paths 2>/dev/null) || return 0
+  while IFS= read -r line; do
+    key=${line%%=*}
+    value=${line#*=}
+    case "$key" in
+      TMUX_CONF_TARGET) INSTALL_TMUX_CONF_TARGET=$value ;;
+      TMUX_HELPER_DIR) INSTALL_TMUX_HELPER_DIR=$value ;;
+      TX_BIN_DIR) INSTALL_TX_BIN_DIR=$value ;;
+      TX_BIN_NAME) INSTALL_TX_BIN_NAME=$value ;;
+    esac
+  done <<< "$paths"
+}
+
 doctor_install() {
   sh "$(installer_path)"
+  load_install_paths
 
-  local home=${HOME:?HOME is required}
-  local tmux_conf_target=${TMUX_CONF_TARGET:-$home/.tmux.conf}
-  local tmux_helper_dir=${TMUX_HELPER_DIR:-$home/.tmux}
-  local tx_bin_dir=${TX_BIN_DIR:-$home/.local/bin}
-  local tx_bin_name=${TX_BIN_NAME:-tx}
+  local tmux_conf_target=$INSTALL_TMUX_CONF_TARGET
+  local tmux_helper_dir=$INSTALL_TMUX_HELPER_DIR
+  local tx_bin_dir=$INSTALL_TX_BIN_DIR
+  local tx_bin_name=$INSTALL_TX_BIN_NAME
   local tx_path="$tx_bin_dir/$tx_bin_name"
   local ok=1
 
