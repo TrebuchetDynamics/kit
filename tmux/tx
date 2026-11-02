@@ -940,12 +940,7 @@ attach_session() {
 }
 
 set_command() {
-  CMD_NAME=$1
-  CMD_HANDLER=$2
-  CMD_USAGE=$3
-  CMD_SUMMARY=$4
-  CMD_PUBLIC=$5
-  CMD_ALIASES=$6
+  CMD_HANDLER=$1
 }
 
 command_lookup() {
@@ -954,13 +949,13 @@ command_lookup() {
   for record in "${COMMANDS[@]}"; do
     IFS='|' read -r name flags handler usage summary public aliases <<< "$record"
     if [[ "$token" == "$name" ]]; then
-      set_command "$name" "$handler" "$usage" "$summary" "$public" "$aliases"
+      set_command "$handler"
       return 0
     fi
     IFS=',' read -ra flag_list <<< "$flags"
     for flag in "${flag_list[@]}"; do
       if [[ -n "$flag" && "$token" == "$flag" ]]; then
-        set_command "$name" "$handler" "$usage" "$summary" "$public" "$aliases"
+        set_command "$handler"
         return 0
       fi
     done
