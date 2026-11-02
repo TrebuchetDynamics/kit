@@ -534,8 +534,11 @@ def status_view(repo, base, toolset, state):
             print(f'Tasks:      status.json snapshot {age}')
     else:
         rows = snapshot.get('tasks') or []
+        awaiting = snapshot.get('awaiting_owner')
         print(f"Workers:    {snapshot.get('active_workers') or 0} running; {snapshot.get('completed') or 0} done, "
-              f"{snapshot.get('failed') or 0} failed, {snapshot.get('integration_queue') or 0} awaiting integration")
+              f"{snapshot.get('failed') or 0} failed, "
+              + (f'{awaiting} awaiting owner input, ' if awaiting else '')
+              + f"{snapshot.get('integration_queue') or 0} awaiting integration")
     try:
         since = (record.get('status_unavailable_since', record['since'])
                  if record['state'] == 'unavailable' else record['since'])
@@ -545,6 +548,10 @@ def status_view(repo, base, toolset, state):
             line += '; blocked by ' + '; '.join(
                 f"{' '.join(str(r['id']).split())[:60]} ({r['kind']}, holds {r['blocks']})" for r in roots)
         print(line)
+        for root in roots:  # one line per owner question: who acts, and on what
+            print(f"Owner:      {' '.join(str(root['id']).split())[:60]} — "
+                  f"{(root.get('next_action') or 'owner decision').replace('_', ' ')}"
+                  + (f"; {' '.join(str(root['reason']).split())[:160]}" if root.get('reason') else ''))
         checked = main_check.line(main_check.read(state, repo, base, fallback=record.get('main_check')))
         if checked:
             print(f'Main:       {checked}')

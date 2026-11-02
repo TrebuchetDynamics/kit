@@ -193,7 +193,7 @@ class LargeQueueTests(unittest.TestCase):
                          admitted_contract_hash=None) for i in range(80)]
             self.assertEqual(value, dict(outcome='PARALLEL_STATUS', workspace=str(repo),
                 task_source=dict(workspace=str(repo), repository_identity=str(repo / '.git'),
-                                 revision=pinned.rev, observed_at=100), active_workers=0, max_workers=0, tasks=rows, roots=[], completed=0, failed=0,
+                                 revision=pinned.rev, observed_at=100), active_workers=0, max_workers=0, tasks=rows, roots=[], completed=0, failed=0, awaiting_owner=0,
                 integration_queue=0, metrics=dict(wall_seconds=0.0, worker_seconds=0.0,
                 integration_seconds=0.0, waiting_seconds=0.0, peak_workers=0, conflicts=0, retries=0)))
             self.assertEqual(select.call_count, 0)  # one eligibility pass, not 80 selections

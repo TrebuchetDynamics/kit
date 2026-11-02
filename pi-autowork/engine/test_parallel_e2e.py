@@ -320,7 +320,7 @@ class StatusTests(unittest.TestCase):
                 'B                    held            -     10.0s  merge conflict',
                 'C                    reported        -     10.0s  -',
                 'D                    integrated      -     10.0s  -',
-                'Completed: 1  Failed: 1  Integration queue: 1',
+                'Completed: 1  Failed: 1  Awaiting owner: 0  Integration queue: 1',
                 'Wall: 10.0s  Worker: 0.0s  Integration: 0.0s  Waiting/blocked: 30.0s',
                 'Peak workers: 0  Conflicts: 1  Retries: 0'])
             self.assertEqual(rendered, expected)
@@ -336,6 +336,28 @@ class StatusTests(unittest.TestCase):
             self.assertFalse((common / 'coordinator.json').exists())
             # Status did not reconcile or append to the fixed journal.
             self.assertEqual(status.journal(common), events)
+
+    def test_an_owner_question_is_not_counted_as_a_failure(self):
+        """Two lab requests read as "2 failed" for two days (2026-10-31)."""
+        with ABCWorkload() as fixture:
+            common = fixture.common
+            (common / 'slots').mkdir(parents=True)
+            events = [dict(timestamp=100, event='coordinator_claimed', coordinator=dict(max_workers=4))]
+            for task, cause, reason in (('A', 'blocker', 'needs the lab roster'),
+                                        ('B', 'validation', 'validation failed')):
+                slot = dict(task_id=task, state='held', attempt=1, started_at=100,
+                            worktree='/fixture/' + task, worker=None, commit='abc',
+                            checks=dict(outcome='EXECUTED'), integration=None,
+                            cause=cause, reason=reason)
+                (common / 'slots' / (task + '.json')).write_text(json.dumps(slot))
+                events.append(dict(timestamp=100, event='slot_changed', task_id=task, state='held', slot=slot))
+            (common / 'journal.jsonl').write_text(''.join(json.dumps(e) + '\n' for e in events))
+            value = fixture.cli('--parallel-status', '--json')
+            self.assertEqual((value['failed'], value['awaiting_owner']), (1, 1))
+            self.assertIn('Awaiting owner: 1', status.render(value))
+            owner = next(r for r in value['roots'] if r['id'] == 'A')
+            self.assertEqual(owner['next_action'], 'answer_owner_question')
+            self.assertTrue(owner['owner_decision_required'])
 
     def test_empty_status_does_not_claim_or_create_runtime_state(self):
         with ABCWorkload() as fixture:

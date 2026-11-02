@@ -331,11 +331,17 @@ def _snapshot(repo, common, now):
     if not timing['reliable']:
         for row in rows:
             row['elapsed_seconds'] = None
+    # A slot a person must unblock is not a failure: the shared policy already names its owner
+    # and next action, and counting owner questions as failures made two lab requests read as
+    # "2 failed" for two days (2026-10-31). Only the rest of the settled slots is failed.
+    settled = [r for r in rows if r['state'] == 'held'
+               or (r['state'] in ('interrupted', 'released') and not r.get('paused'))]
+    awaiting = [r for r in settled if r.get('owner_decision_required')]
     return dict(outcome='PARALLEL_STATUS', workspace=str(repo), task_source=task_source,
                 active_workers=active, max_workers=capacity,
                 tasks=rows, roots=root_rows, completed=sum(r['state'] == 'closed' for r in rows),
-                failed=sum(r['state'] == 'held' or (r['state'] in ('interrupted', 'released')
-                                                  and not r.get('paused')) for r in rows),
+                failed=len([r for r in settled if not r.get('owner_decision_required')]),
+                awaiting_owner=len(awaiting),
                 integration_queue=sum(r['state'] in ('reported', 'integrating') for r in rows),
                 metrics=metrics(events, now),
                 **({'journal_timing': timing} if not timing['reliable'] else {}),
@@ -354,7 +360,9 @@ def render(value):
         elapsed = 'unknown' if row['elapsed_seconds'] is None else f"{row['elapsed_seconds']:.1f}s"
         lines.append(f"{text(row['task'], 20):<20} {word:<12} {str(row['slot'] or '-'):>4} "
                      f"{elapsed:>9}  {text(row['reason'] or '-', 70)}")
-    lines.append(f"Completed: {value['completed']}  Failed: {value['failed']}  Integration queue: {value['integration_queue']}")
+    lines.append(f"Completed: {value['completed']}  Failed: {value['failed']}  "
+                 f"Awaiting owner: {value.get('awaiting_owner', 0)}  "
+                 f"Integration queue: {value['integration_queue']}")
     m = value['metrics']
     def duration(key):
         return 'unknown' if m[key] is None else f'{m[key]:.1f}s'
