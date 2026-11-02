@@ -129,3 +129,24 @@ For material choices retain `Decision: <choice>; Evidence: <source>; Reason: <wh
 Check: <proof>` in the existing task evidence. This is not user approval for broader
 scope. After 5 consecutive attempts with no new evidence, change the approach or
 report the exact unavailable input; do not rerun unchanged failures indefinitely.
+
+## Scheduled runs and their reports
+
+Autowork does not create schedules. Existing jobs use [scheduled policy](scheduled-policy.md)
+and [exact-job self-repair](cron-autoheal.md). Preserve pauses, IDs, cadence,
+model, delivery, task filters and publication limits. A paused job cannot resume
+itself. Managed profile invocations must pass `--profile CURRENT_PROFILE` and
+`--state-dir VERIFIED_PROFILE_HOME/autowork` to owner_cycle.py alongside the actual
+owner identity. Resolve both from verified occurrence context so scoped helper
+updates can detect and preserve the active coordinator. Do not guess a profile home.
+Scope retained in an old prompt survives migration; obsolete card-only
+prerequisites do not.
+
+Report per [dispatch and reporting](dispatch-and-reporting.md): task ID
+and title, concrete change, actual checks/review, local commit/integration/publication,
+next task and precise blocker. A selected contract, completed session or checkbox is
+not product acceptance. Never claim live qualification or Telegram delivery from
+offline fixtures. Honor every-occurrence reporting; otherwise exactly `[SILENT]`
+is allowed only after reconciliation and required work search find no reportable delta.
+Interactive updates follow
+[dispatch and reporting](dispatch-and-reporting.md#interactive-updates).

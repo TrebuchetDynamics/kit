@@ -173,17 +173,8 @@ This policy is not a runtime guarantee of progress. No fabricated busywork.
 
 ## Parallel workers (opt-in)
 
-Only when the caller asks for it, run `owner_cycle.py REPO --apply
---parallel [N] --owner-pid PID`: it starts headless workers, one task each in
-its own worktree. `touches` only orders tasks, never holding one; `resources` and
-dependencies keep tasks apart.
-Loop `--wait --timeout S`, review each `report.json`, `--integrate TASK
---timeout S --run CHECK...` (`--run` last), `--parallel-close TASK`, commit the
-coordinator files, and refill with `--apply --parallel`; release only after no slot
-is left to integrate or close. Workers never select, merge, close or push. On
-`SEQUENTIAL_FALLBACK`, run the returned contract normally. Start every dispatched worker
-in a fresh context window: a forked parent conversation inherits the context the
-dispatch was meant to leave behind. Follow [parallel workers](references/parallel-workers.md).
+Only when the user asks: [parallel workers](references/parallel-workers.md#admission-at-a-glance)
+run independent tasks in separate worktrees and integrate them one at a time.
 
 ## Owner blockers
 
@@ -193,24 +184,9 @@ Tasks may read runners (`autowork ls|status`), never start, stop or reconfigure 
 
 ## Scheduled work and reporting
 
-Autowork does not create schedules. Existing jobs use [scheduled policy](references/scheduled-policy.md)
-and [exact-job self-repair](references/cron-autoheal.md). Preserve pauses, IDs, cadence,
-model, delivery, task filters and publication limits. A paused job cannot resume
-itself. Managed profile invocations must pass `--profile CURRENT_PROFILE` and
-`--state-dir VERIFIED_PROFILE_HOME/autowork` to owner_cycle.py alongside the actual
-owner identity. Resolve both from verified occurrence context so scoped helper
-updates can detect and preserve the active coordinator. Do not guess a profile home.
-Scope retained in an old prompt survives migration; obsolete card-only
-prerequisites do not.
-
-Report per [dispatch and reporting](references/dispatch-and-reporting.md): task ID
-and title, concrete change, actual checks/review, local commit/integration/publication,
-next task and precise blocker. A selected contract, completed session or checkbox is
-not product acceptance. Never claim live qualification or Telegram delivery from
-offline fixtures. Honor every-occurrence reporting; otherwise exactly `[SILENT]`
-is allowed only after reconciliation and required work search find no reportable delta.
-Interactive updates follow
-[dispatch and reporting](references/dispatch-and-reporting.md#interactive-updates).
+Autowork creates no schedules. Existing jobs follow
+[scheduled policy](references/scheduled-policy.md#scheduled-runs-and-their-reports);
+a paused job cannot resume itself, and occurrence scope never widens.
 
 ## Behavior-preserving refactor
 
@@ -230,7 +206,8 @@ references/repository-maintenance.md, references/dispatch-and-reporting.md,
 references/delivery-batches.md, references/accepted-plan-execution.md,
 references/whole-spec-execution.md, references/backlog-planning.md,
 references/parallel-workers.md, references/ponytail.md, references/discovery.md,
-references/profile-feedback.md.
+references/profile-feedback.md,
+references/adherence.md.
 
 Historical native-card evidence, not instructions or prerequisites:
 references/blocker-recovery.md
