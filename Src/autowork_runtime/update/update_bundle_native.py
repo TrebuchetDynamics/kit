@@ -7,15 +7,15 @@ Native API absence or refusal is an incomplete deployment, never a fallback copy
 import json
 import os
 from pathlib import Path
-
-# A command row may still name the plugin by its legacy identity mid-upgrade.
-PLUGIN_NAMES = ('kit', 'autowork')
 import sys
 import tempfile
 
+# A command row may still name the plugin by its legacy identity mid-upgrade.
+PLUGIN_NAMES = ('kit', 'autowork')
+
 # Hermes reads plugin options from `settings` (ctx.get_config), so the opt-out lives there.
-PROBE_CONFIG = ('plugins:\n  enabled: [autowork]\n  entries:\n'
-                '    autowork:\n      settings:\n        apply_runtime_defaults: false\n')
+PROBE_CONFIG = ('plugins:\n  enabled: [kit]\n  entries:\n'
+                '    kit:\n      settings:\n        apply_runtime_defaults: false\n')
 
 
 def main():

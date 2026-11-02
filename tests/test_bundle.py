@@ -45,7 +45,7 @@ class BundleTests(unittest.TestCase):
     def register_command(self, name, handler, description='', args_hint=''):
         self.commands[name] = {'handler': handler, 'plugin': 'kit'}
 
-    def invoke(self, ctx, name, path, args, namespace='autowork'):
+    def invoke(self, ctx, name, path, args, namespace='kit'):
         self.messages.append((namespace, name, args))
 
     def test_chat_update_is_not_treated_as_inventory_filter(self):
@@ -396,7 +396,7 @@ class BundleTests(unittest.TestCase):
             self.assertEqual(code, 0, installed)
             self.assertNotIn('ponytail', report['missing_plugins'])
             plugins.pop()
-            self.commands['ponytail-review']['plugin'] = 'autowork'
+            self.commands['ponytail-review']['plugin'] = 'kit'
             report = self.bundle.inventory()
             self.assertNotIn('ponytail', report['missing_plugins'])
             self.assertEqual(self.bundle.diagnose(report, core_only=True)['status'], 'ready')

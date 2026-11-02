@@ -179,8 +179,6 @@ assert cfg['max_turns'] == 'unlimited' or (type(cfg['max_turns']) is int and cfg
 assert isinstance(cfg['skills_platform_disabled'], dict)
 for setting, key in (
     ('plugins.entries.kit.allow_gateway_injection', 'allow_gateway_injection'),
-    # Hermes reads this legacy entry until the plugin itself is renamed.
-    ('plugins.entries.autowork.allow_gateway_injection', 'allow_gateway_injection'),
     ('approvals.mode', 'approvals_mode'),
     ('approvals.destructive_slash_confirm', 'destructive_slash_confirm'),
     ('approvals.mcp_reload_confirm', 'mcp_reload_confirm'),

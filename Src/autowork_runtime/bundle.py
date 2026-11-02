@@ -592,7 +592,7 @@ def diagnose(report, *, core_only=False):
     errors = []
     own = next((p for p in report['plugins'] if p['name'] in OWNER_NAMES), {})
     if not own.get('enabled') or own.get('error'):
-        errors.append('autowork is not loaded cleanly')
+        errors.append('kit is not loaded cleanly')
     names = {p.parent.name for p in (ROOT / 'skills').glob('*/SKILL.md')
              if p.parent.name not in {'repo-docs', 'repo-interview'}}
     commands = {r['command'] for r in report['commands']

@@ -68,7 +68,7 @@ def finish_profile(bundle, home, root, inventory, *, bundle_only=False, no_reloa
                 active.update((activation.get('name'), command) for command in
                               activation.get('activated_now', {}).get('gateway_commands', []))
             expected = {(r['source'], r['command']) for r in inventory['commands'] if r.get('kind') == 'plugin'
-                        and (not bundle_only or r['source'] == 'autowork')}
+                        and (not bundle_only or r['source'] in OWNER_NAMES)}
             absent = sorted(owner + ':' + command for owner, command in expected - active)
             if not valid or absent or receipt.get('adapters_rewired') is None:
                 result['gateway'] = 'reload_incomplete'

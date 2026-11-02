@@ -24,7 +24,7 @@ class UpdateTests(unittest.TestCase):
         self.git(self.remote,'config','user.name','Fixture')
         (self.remote/'skills/demo').mkdir(parents=True)
         (self.remote/'skills/demo/SKILL.md').write_text('old\n')
-        (self.remote/'plugin.yaml').write_text('name: autowork\n')
+        (self.remote/'plugin.yaml').write_text('name: kit\n')
         self.git(self.remote,'add','.');self.git(self.remote,'commit','-m','initial')
         self.repo=self.root/'checkout';self.git(self.root,'clone',str(self.remote),str(self.repo))
         self.home=self.root/'home';self.home.mkdir()
@@ -1491,11 +1491,11 @@ class ManagedRecoveryTests(unittest.TestCase):
         with patch.object(Path, 'rename', interrupt), self.assertRaises(Killed):
             self.run_update()
         saved = json.loads((self.home / 'maintenance/toolset-update/recovery.json').read_text())
-        (self.repo / 'plugin.yaml').write_text('name: autowork\n# foreign edit\n')
+        (self.repo / 'plugin.yaml').write_text('name: kit\n# foreign edit\n')
         code, result = self.run_update()
         self.assertEqual(code, 1, result)
         self.assertEqual(saved['backup'], result['recovery']['backup'])
-        self.assertEqual((self.repo / 'plugin.yaml').read_text(), 'name: autowork\n# foreign edit\n')
+        self.assertEqual((self.repo / 'plugin.yaml').read_text(), 'name: kit\n# foreign edit\n')
         self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), self.before)
         self.assertFalse((Path(saved['backup']) / 'default/plugin').exists())
 

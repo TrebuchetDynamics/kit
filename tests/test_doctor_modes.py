@@ -103,7 +103,7 @@ class DoctorModes(unittest.TestCase):
     def test_disabled_or_failed_plugin_fails_core(self):
         for change in ({'enabled': False}, {'error': 'load failed'}):
             with self.subTest(change=change):
-                self.report['plugins'][0] = dict(name='autowork', enabled=True, error=None)
+                self.report['plugins'][0] = dict(name='kit', enabled=True, error=None)
                 self.report['plugins'][0].update(change)
                 code, _ = self.run_doctor('--core', '--json')
                 self.assertEqual(code, 1)

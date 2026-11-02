@@ -28,9 +28,8 @@ def _report_legacy_entry(raw):
     _reported_legacy_entry.add(marker)
     logger.warning(
         'Profile carries both plugins.entries.%s and plugins.entries.%s; using %s values '
-        'where present and %s for missing keys. Gateway injection is mirrored to %s '
-        'until the plugin rename.',
-        PLUGIN, LEGACY_PLUGIN, PLUGIN, LEGACY_PLUGIN, LEGACY_PLUGIN)
+        'where present and %s for missing keys.',
+        PLUGIN, LEGACY_PLUGIN, PLUGIN, LEGACY_PLUGIN)
 
 
 def _frontmatter_name(path):
@@ -130,11 +129,9 @@ def expected_settings(raw):
         },
         # Hermes quick setup writes a 90-iteration cap that cuts Autowork turns short.
         'agent': {'max_turns': wanted['max_turns']},
-        # Hermes still reads gateway injection from the legacy entry until the plugin
-        # itself is renamed, so mirror the canonical setting there for this stage.
+        # Writes go to the canonical entry only; reads accept the legacy entry.
         'plugins': {'entries': {
             PLUGIN: {'allow_gateway_injection': wanted['allow_gateway_injection']},
-            LEGACY_PLUGIN: {'allow_gateway_injection': wanted['allow_gateway_injection']},
         }},
     }
     patch.update(menu_patch(raw))

@@ -36,7 +36,7 @@ def main():
         import json
 
         manifest = _read_manifest_for_install(root)
-        assert manifest["name"] == "autowork", manifest
+        assert manifest["name"] == "kit", manifest
         manager = get_plugin_manager()
         # A shared gateway can have another profile current at discovery time.
         from hermes_constants import set_hermes_home_override, reset_hermes_home_override
@@ -51,7 +51,7 @@ def main():
         finally:
             reset_hermes_home_override(token)
         assert other_config.read_bytes() == other_before
-        loaded = manager._plugins["autowork"]
+        loaded = manager._plugins["kit"]
         assert loaded.enabled and not loaded.error, loaded.error
         # Enabling/loading the plugin must wire native discovery without setup.
         # Every bundled skill must be provisioned by native plugin loading.
@@ -77,7 +77,7 @@ def main():
         assert configured['model']['default'] == 'keep-this-model'
         # Hermes still reads the legacy entry; the canonical key is ready for stage 2.
         assert configured['plugins']['entries']['kit']['allow_gateway_injection'] is True
-        assert configured['plugins']['entries']['autowork']['allow_gateway_injection'] is True
+        assert configured['plugins']['entries']['kit']['allow_gateway_injection'] is True
 
         from hermes_cli.plugins import PluginContext
         from hermes_cli.config import save_config

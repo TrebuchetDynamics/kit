@@ -22,7 +22,7 @@ def main():
         from tools.skills_tool import skill_view
         manager = get_plugin_manager()
         manager.discover_and_load()
-        loaded = manager._plugins['autowork']
+        loaded = manager._plugins['kit']
         assert loaded.enabled and not loaded.error, loaded.error
         commands = get_plugin_commands()
         assert 'kit:engineering' in [i['name'] for i in manager.list_plugin_skill_metadata()]
