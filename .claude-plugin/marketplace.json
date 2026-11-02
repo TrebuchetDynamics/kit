@@ -1,17 +1,13 @@
 {
-  "name": "kit",
-  "owner": {
-    "name": "TrebuchetDynamics"
-  },
+  "name": "autowork",
+  "owner": {"name": "TrebuchetDynamics"},
   "description": "Autowork repository workflows",
   "plugins": [
     {
       "name": "kit",
       "source": "./",
       "description": "Repository planning, documentation, research and execution workflows for Claude Code.",
-      "skills": [
-        "./adapters/skills/"
-      ]
+      "skills": ["./adapters/skills/"]
     }
   ]
 }
