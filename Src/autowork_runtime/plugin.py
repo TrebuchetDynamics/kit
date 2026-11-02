@@ -60,7 +60,7 @@ def _gateway_injection_state():
             legacy if isinstance(legacy, bool) else None)
 
 
-def _invoke(ctx, name, path, raw_args, namespace="autowork"):
+def _invoke(ctx, name, path, raw_args, namespace="kit"):
     from gateway.session_context import get_session_env
 
     if not path.is_file():
@@ -77,10 +77,10 @@ def _invoke(ctx, name, path, raw_args, namespace="autowork"):
                         "report that there are no questions without a resolved target.")
     public = name
     mode = ""
-    if namespace == "autowork" and name == "grill-me" and (SKILLS_DIR / "plan-with-me/SKILL.md").is_file():
+    if namespace == "kit" and name == "grill-me" and (SKILLS_DIR / "plan-with-me/SKILL.md").is_file():
         public = "plan-with-me"
         mode = "Selected mode: challenge\n\n"
-    planning = namespace == "autowork" and (
+    planning = namespace == "kit" and (
         public in {"plan-for-me", "plan-with-me"}
         or (name == "autoresearch" and (
             raw_args.startswith("Selected subcommand: plan\n")
@@ -92,7 +92,7 @@ def _invoke(ctx, name, path, raw_args, namespace="autowork"):
         "supporting methods add no execution authority.\n\n"
     ) if planning else ""
     route = ""
-    if namespace == "autowork" and public == "plan-for-me" and not (raw_args or '').strip():
+    if namespace == "kit" and public == "plan-for-me" and not (raw_args or '').strip():
         # A bare standing planner invocation is discovery, not a missing-goal interview.
         # The skill owns the semantics; this marker makes the default route explicit.
         route = (
@@ -107,7 +107,7 @@ def _invoke(ctx, name, path, raw_args, namespace="autowork"):
         "Resolve supporting files relative to that skill's directory.\n\n"
         f"{boundary}{mode}{route}User arguments:\n{raw_args}"
     )
-    if namespace == "autowork" and name in {"autoresearch", "plan-for-me"}:
+    if namespace == "kit" and name in {"autoresearch", "plan-for-me"}:
         prompt = (
             "tasks/ is the central work queue. By default, persist actionable "
             "research/planning findings there through Docs Sync and `autowork tasks`; "

@@ -25,7 +25,7 @@ class WorkflowCommands(unittest.TestCase):
                            '--no-push $(literal); echo "TODO.md" > goals.json')
                     self.ctx.commands[spelling](raw)
                     prompt, routing = self.ctx.messages[-1]
-                    self.assertIn('autowork:' + skill, prompt)
+                    self.assertIn('kit:' + skill, prompt)
                     injected, arguments = prompt.split('User arguments:\n', 1)
                     self.assertEqual(arguments, raw)
                     self.assertNotIn('TODO.md', injected)
@@ -133,7 +133,7 @@ class WorkflowCommands(unittest.TestCase):
         for retired in ('repo-docs', 'repo_docs', 'repo-interview', 'repo_interview'):
             self.assertNotIn(retired, self.ctx.commands)
         self.ctx.commands['docs_sync']('resume')
-        self.assertIn('autowork:docs-sync', self.ctx.messages[-1][0])
+        self.assertIn('kit:docs-sync', self.ctx.messages[-1][0])
 
     def test_foreign_retired_command_does_not_block_docs_sync(self):
         self.skill('docs-sync')
@@ -156,7 +156,7 @@ class WorkflowCommands(unittest.TestCase):
         self.assertEqual(set(self.ctx.skills), {'plan-with-me', 'docs-sync', 'plan-for-me', 'autoresearch'})
         self.ctx.commands['grill-me']('challenge my cache plan')
         prompt, _ = self.ctx.messages[-1]
-        self.assertIn('skill_view(name="autowork:plan-with-me")', prompt)
+        self.assertIn('skill_view(name="kit:plan-with-me")', prompt)
         self.assertIn('Selected mode: challenge', prompt)
         self.assertNotIn('central work queue', prompt)
         self.assertIn('../shared/RESEARCH-PLAN.md', prompt)

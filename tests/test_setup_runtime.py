@@ -78,11 +78,11 @@ class RuntimeSetupTests(unittest.TestCase):
         skill.parent.mkdir()
         skill.write_text('fixture')
         self.report['commands'].append({'command': 'ponytail-review', 'kind': 'plugin', 'source': 'ponytail'})
-        self.report['plugin_skills'] = ['autowork:ponytail-review']
+        self.report['plugin_skills'] = ['kit:ponytail-review']
         report, code = self.finish(bundle_only=True, no_reload=True)
         self.assertEqual(code, 0, report)
         self.assertNotIn('ponytail-review', report['bundled_commands'])
-        self.assertEqual(report['bundled_skill_fallbacks'], ['autowork:ponytail-review'])
+        self.assertEqual(report['bundled_skill_fallbacks'], ['kit:ponytail-review'])
         self.report['plugin_skills'] = []
         self.assertEqual(self.finish(bundle_only=True, no_reload=True)[1], 1)
 

@@ -96,7 +96,7 @@ class BlockersRouting(unittest.TestCase):
             with self.subTest(command=command, raw=raw):
                 self.ctx.commands[command](raw)
                 prompt, _ = self.ctx.messages[-1]
-                self.assertIn('skill_view(name="autowork:blockers")', prompt)
+                self.assertIn('skill_view(name="kit:blockers")', prompt)
                 self.assertTrue(prompt.endswith('User arguments:\nindia'), prompt)
 
     def test_blockers_without_a_target_names_the_repository_here(self):
@@ -106,7 +106,7 @@ class BlockersRouting(unittest.TestCase):
         with patch.object(self.plugin, 'repository_here', return_value='/repo/here'):
             self.ctx.commands['blockers']('')
         prompt, _ = self.ctx.messages[-1]
-        self.assertIn('skill_view(name="autowork:blockers")', prompt)
+        self.assertIn('skill_view(name="kit:blockers")', prompt)
         self.assertTrue(prompt.endswith('User arguments:\n/repo/here'), prompt)
 
     def test_blockers_without_a_target_or_repository_never_defaults_to_an_empty_block(self):
@@ -120,9 +120,9 @@ class BlockersRouting(unittest.TestCase):
     def test_other_arguments_keep_their_skill(self):
         self.register()
         self.ctx.commands['autowork']('fix the blockers page')
-        self.assertIn('autowork:autowork', self.ctx.messages[-1][0])
+        self.assertIn('kit:autowork', self.ctx.messages[-1][0])
         self.ctx.commands['plan_with_me']('blockers-free roadmap')
-        self.assertIn('autowork:plan-with-me', self.ctx.messages[-1][0])
+        self.assertIn('kit:plan-with-me', self.ctx.messages[-1][0])
 
 
 if __name__ == '__main__':

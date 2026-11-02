@@ -52,7 +52,7 @@ class PortablePackageTests(unittest.TestCase):
         marketplace = json.loads((ROOT / '.claude-plugin/marketplace.json').read_text())
         codex = json.loads((ROOT / '.codex-plugin/plugin.json').read_text())
         pi = json.loads((ROOT / 'package.json').read_text())
-        self.assertEqual(plugin['name'], 'autowork')
+        self.assertEqual(plugin['name'], 'kit')
         self.assertEqual(plugin['version'], codex['version'])
         self.assertEqual(plugin['version'], pi['version'])
         # A plugin.json `skills` path adds to the default root skills/ scan, which holds
@@ -76,7 +76,7 @@ class PortablePackageTests(unittest.TestCase):
 
     def test_host_contract_keeps_namespaced_planning_invocation(self):
         contract = (ROOT / 'adapters/skills/COMMON.md').read_text()
-        self.assertIn('/autowork:plan-with-me', contract)
+        self.assertIn('/kit:plan-with-me', contract)
 
     def test_every_codex_adapter_is_explicit_only(self):
         # Codex treats a missing policy as implicit invocation allowed (TOOLSET-035).

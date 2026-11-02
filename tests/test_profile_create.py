@@ -41,7 +41,7 @@ class ProfileCreateTests(unittest.TestCase):
         args = 'fixture /repository with spaces --dry-run'
         with patch.dict(sys.modules, {'gateway.session_context': stub}):
             self.assertIsNone(plugin._invoke(ctx, 'profile-create', SKILL, args))
-        self.assertIn('autowork:profile-create', messages[0][0])
+        self.assertIn('kit:profile-create', messages[0][0])
         self.assertIn(args, messages[0][0])
         self.assertEqual(messages[0][1]['origin']['chat_id'], 'fixture-chat')
 
