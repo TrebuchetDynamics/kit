@@ -23,7 +23,8 @@ a step, read that skill's `SKILL.md`: a summary here is orientation only.
 2. **Make the plan executable.** `/plan-for-me` investigates and saves goals and tasks
    without an interview; `/plan-with-me` asks only what it cannot find.
 3. **Do the work.** `/autowork` implements one ready task, verifies it, and closes it.
-   For many lanes at once, `/autonomous-codebase-improver`.
+   For one objective that must stay in view across many turns, use `/goal`. For many
+   lanes at once, `/autonomous-codebase-improver`.
 4. **Deliver.** `/git-commit-push` commits, syncs and pushes when the request allows.
    `/lgtm` continues a concrete step you already approved.
 
@@ -38,6 +39,7 @@ a step, read that skill's `SKILL.md`: a summary here is orientation only.
 | Refactor code inside a file, rename a symbol, extract a module | `/autowork` |
 | One folder needs splitting without behavior change | `/split-folder` |
 | Modules are shallow or seams leak | `/improve-codebase-architecture` |
+| One objective needs many turns and an evidence audit | `/goal` |
 | Queue work is held and the owner must decide | `/blockers` |
 | Docs or task records drifted | `/docs-sync` |
 | A question needs measured evidence | `/autoresearch` |
