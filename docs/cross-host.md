@@ -32,9 +32,9 @@ Existing external Ponytail installations are left alone; check command collision
 
 | Host | Example review invocation |
 | --- | --- |
-| Hermes | `/ponytail-review` (or bundled `autowork:ponytail-review` via skill tools if another plugin owns the command) |
-| Claude Code | `/autowork:ponytail-review` |
-| Codex | `$autowork:ponytail-review` |
+| Hermes | `/ponytail-review` (or bundled `kit:ponytail-review` via skill tools if another plugin owns the command) |
+| Claude Code | `/kit:ponytail-review` |
+| Codex | `$kit:ponytail-review` |
 | Pi | `/ponytail-review` or `/skill:ponytail-review` |
 
 The suite also includes `ponytail`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`
@@ -79,8 +79,8 @@ executable helper or external dependency is installed.
 | Host | Example |
 | --- | --- |
 | Hermes | `/test-optimizer tests/parser; apply one batch; no push` |
-| Claude Code | `/autowork:test-optimizer tests/parser; apply one batch; no push` |
-| Codex | `$autowork:test-optimizer tests/parser; apply one batch; no push` |
+| Claude Code | `/kit:test-optimizer tests/parser; apply one batch; no push` |
+| Codex | `$kit:test-optimizer tests/parser; apply one batch; no push` |
 | Pi | `/test-optimizer tests/parser; apply one batch; no push` |
 
 Portable invocation is explicit-only; `read-only` changes nothing. See
@@ -98,8 +98,8 @@ the local [adapter](../adapters/skills/graphify/SKILL.md), which calls the same
 | Host | Example |
 | --- | --- |
 | Hermes | `/graphify src/parser; explain parse_statement; read-only` |
-| Claude Code | `/autowork:graphify src/parser; explain parse_statement; read-only` |
-| Codex | `$autowork:graphify src/parser; explain parse_statement; read-only` |
+| Claude Code | `/kit:graphify src/parser; explain parse_statement; read-only` |
+| Codex | `$kit:graphify src/parser; explain parse_statement; read-only` |
 | Pi | `/graphify src/parser; explain parse_statement; read-only` |
 
 Portable invocation is explicit-only. The adapter never installs `graphifyy`, adds
@@ -120,8 +120,8 @@ name, within their accepted scope.
 | Host | Example |
 | --- | --- |
 | Hermes | `/writing-for-agents skills/blockers; remove no-ops; read-only` |
-| Claude Code | `/autowork:writing-for-agents skills/blockers; remove no-ops; read-only` |
-| Codex | `$autowork:writing-for-agents skills/blockers; remove no-ops; read-only` |
+| Claude Code | `/kit:writing-for-agents skills/blockers; remove no-ops; read-only` |
+| Codex | `$kit:writing-for-agents skills/blockers; remove no-ops; read-only` |
 | Pi | `/writing-for-agents skills/blockers; remove no-ops; read-only` |
 
 The reference covers pointer wording, progressive disclosure, completion criteria,
@@ -142,8 +142,8 @@ a file as evidence of a render, not of a correct layout.
 | Host | Example |
 | --- | --- |
 | Hermes | `/responsive-screenshots https://localhost:3000; 375, 768, 1440; both schemes` |
-| Claude Code | `/autowork:responsive-screenshots https://localhost:3000; 375, 768, 1440` |
-| Codex | `$autowork:responsive-screenshots https://localhost:3000; 375, 768, 1440` |
+| Claude Code | `/kit:responsive-screenshots https://localhost:3000; 375, 768, 1440` |
+| Codex | `$kit:responsive-screenshots https://localhost:3000; 375, 768, 1440` |
 | Pi | `/responsive-screenshots https://localhost:3000; 375, 768, 1440` |
 
 See [workflow requirements](workflows.md#responsive-screenshots). Design review stays
@@ -159,8 +159,8 @@ the command.
 | Host | Example |
 | --- | --- |
 | Hermes | `/ask-autowork I need to stress-test a plan` |
-| Claude Code | `/autowork:ask-autowork I need to stress-test a plan` |
-| Codex | `$autowork:ask-autowork I need to stress-test a plan` |
+| Claude Code | `/kit:ask-autowork I need to stress-test a plan` |
+| Codex | `$kit:ask-autowork I need to stress-test a plan` |
 | Pi | `/ask-autowork I need to stress-test a plan` |
 
 The map is orientation, not authority: the named skill keeps its own scope, review and
@@ -178,8 +178,8 @@ scans for shallow modules and writes one HTML report to the temp directory.
 | Host | Example |
 | --- | --- |
 | Hermes | `/grilling the retry design; read-only` |
-| Claude Code | `/autowork:grilling the retry design; read-only` |
-| Codex | `$autowork:grilling the retry design; read-only` |
+| Claude Code | `/kit:grilling the retry design; read-only` |
+| Codex | `$kit:grilling the retry design; read-only` |
 | Pi | `/grilling the retry design; read-only` |
 
 The upstream entries call sibling skills by name. Portable hosts expose commands
@@ -194,8 +194,8 @@ commits and delivery still need their own accepted scope. See
 
 [APK Get](../skills/apk-get/SKILL.md) builds an existing Flutter or React Native
 Android application as an ARM64-only release APK, then uploads it with the host's
-installed `s3upload`. Use `/apk-get` in Pi, `/autowork:apk-get` in Claude Code,
-or `$autowork:apk-get` in Codex. Hermes discovers the same named skill
+installed `s3upload`. Use `/apk-get` in Pi, `/kit:apk-get` in Claude Code,
+or `$kit:apk-get` in Codex. Hermes discovers the same named skill
 through its existing plugin registration. No host requires Hermes installation.
 
 No app-path argument is required. The skill finds apps in the current repository;
@@ -226,8 +226,8 @@ Invoke with the existing host prefix:
 | Host | Example |
 | --- | --- |
 | Hermes | `/bug-harvest one bug in the parser; no push` |
-| Claude Code | `/autowork:bug-harvest one bug in the parser; no push` |
-| Codex | `$autowork:bug-harvest one bug in the parser; no push` |
+| Claude Code | `/kit:bug-harvest one bug in the parser; no push` |
+| Codex | `$kit:bug-harvest one bug in the parser; no push` |
 | Pi | `/bug-harvest one bug in the parser; no push` |
 
 Pi also exposes `/autonomous-codebase-improver`, `/split-folder` and
@@ -293,13 +293,13 @@ repository's `.claude/settings.json` for everyone who works there. Invoke the
 namespaced skills:
 
 ```text
-/autowork:plan-with-me questions only: ask one question about this project
-/autowork:plan-with-me challenge this plan; read-only, no implementation
-/autowork:plan-for-me investigate the next useful improvement; save the plan
-/autowork:plan-for-me
-/autowork:docs-sync update the docs and tasks
-/autowork:autowork complete the next ready task; commit locally, no push
-/autowork:autoresearch debug the failing test
+/kit:plan-with-me questions only: ask one question about this project
+/kit:plan-with-me challenge this plan; read-only, no implementation
+/kit:plan-for-me investigate the next useful improvement; save the plan
+/kit:plan-for-me
+/kit:docs-sync update the docs and tasks
+/kit:autowork complete the next ready task; commit locally, no push
+/kit:autoresearch debug the failing test
 ```
 
 The marketplace entry lists `./adapters/skills/` as the plugin's only skills folder,
@@ -331,16 +331,16 @@ codex plugin add autowork@autowork-marketplace
 Start a new Codex session in your project. Invoke the namespaced native skills:
 
 ```text
-$autowork:plan-with-me questions only: ask one question about this project
-$autowork:plan-with-me challenge this plan; read-only, no implementation
-$autowork:plan-for-me investigate the next useful improvement; save the plan
-$autowork:plan-for-me
-$autowork:docs-sync update the docs and tasks
-$autowork:autowork complete the next ready task; commit locally, no push
-$autowork:autoresearch debug the failing test
+$kit:plan-with-me questions only: ask one question about this project
+$kit:plan-with-me challenge this plan; read-only, no implementation
+$kit:plan-for-me investigate the next useful improvement; save the plan
+$kit:plan-for-me
+$kit:docs-sync update the docs and tasks
+$kit:autowork complete the next ready task; commit locally, no push
+$kit:autoresearch debug the failing test
 ```
 
-Use `$autowork:docs-sync` in Codex; the Hermes spelling `/docs_sync`
+Use `$kit:docs-sync` in Codex; the Hermes spelling `/docs_sync`
 is not a Codex slash command. Adding package files to a Git repository does not
 install that plugin into your Codex configuration. After installation, use the
 next turn if the client refreshes skill discovery; otherwise start a new session.
@@ -392,7 +392,7 @@ after updating the package. Hermes Telegram aliases are unchanged.
 Command arguments remain literal prompt text.
 `/grill-me` loads Plan With Me with explicit challenge mode and preserves the
 request unchanged. The old standalone `grill-me` skill is no longer discoverable;
-use `$autowork:plan-with-me` in Codex or `/skill:plan-with-me` in Pi with
+use `$kit:plan-with-me` in Codex or `/skill:plan-with-me` in Pi with
 `challenge` in the request. Autoresearch stays independent; its `plan` selector
 routes to Plan For Me, which reads the pinned plan protocol directly, never back
 through Autoresearch. All other selectors retain their shipped protocols.

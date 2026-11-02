@@ -61,8 +61,37 @@ def refresh_hosts(source):
     return [rows.get(item, {'item': item, 'status': status, 'exit': code}) for item in HOST_ITEMS]
 
 
+MANIFEST_NAMES = ('kit', PLUGIN)
+
+
+def _manifest_name(directory):
+    """The plugin name a directory's own manifest declares, or '' when it has none."""
+    try:
+        text = (directory / 'plugin.yaml').read_text(encoding='utf-8')
+    except OSError:
+        return ''
+    match = re.search(r'^name:\s*[\'\"]?([A-Za-z0-9_-]+)', text, re.M)
+    return match.group(1) if match else ''
+
+
 def plugin_dir(home):
-    return home / 'plugins' / PLUGIN
+    """An existing install wins whichever name its manifest carries.
+
+    A native install of the renamed plugin lands in `plugins/kit`, while profiles
+    installed before the rename own `plugins/autowork`. Prefer what is there instead of
+    creating a second copy of the same plugin under the other name.
+    """
+    plugins = home / 'plugins'
+    for name in MANIFEST_NAMES:
+        if _manifest_name(plugins / name) == name:
+            return plugins / name
+    return plugins / PLUGIN
+
+
+def plugin_name(home):
+    """The name to pass to `hermes plugins enable` for the install this tool owns."""
+    directory = plugin_dir(home)
+    return _manifest_name(directory) or (PLUGIN if directory.name == PLUGIN else directory.name)
 
 
 class GitFailure(ValueError):
@@ -417,7 +446,7 @@ def finalize_profiles(source, root, profiles, retries=()):
         if not plugin.exists():
             plugin.parent.mkdir(parents=True, exist_ok=True)
             plugin.symlink_to(source, target_is_directory=True)
-        enable = subprocess.run(['hermes', '-p', name, 'plugins', 'enable', PLUGIN],
+        enable = subprocess.run(['hermes', '-p', name, 'plugins', 'enable', plugin_name(home)],
                                 env=env, timeout=120)
         final = subprocess.run(['hermes', '-p', name, 'autowork', 'finalize',
                                 '--hermes-home', str(root), '--bundle-only'], env=env, timeout=120)

@@ -6,6 +6,10 @@ disable-model-invocation: true
 
 # Goal
 
+Apply the [shared Ponytail method](../../../skills/shared/PONYTAIL.md) within this workflow's scope.
+
+Use the [ASD-STE100 and project language rules](../../../skills/shared/COMMUNICATION.md) for user-facing text.
+
 Read the [host contract](../COMMON.md), then follow the
 [goal skill](../../../skills/goal/SKILL.md) in this session. Keep the goal contract
 and state visible in the conversation. Do not create a goal file, task record,

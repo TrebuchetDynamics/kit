@@ -17,3 +17,4 @@ acceptance = ["Every documented skill command uses the kit namespace, and every 
 checks = ["python3 skills/docs-sync/scripts/docs.py check .", "python3 scripts/check.py tests/test_repo_docs_graphify.py tests/test_portable_package.py"]
 exclusions = ["No code, manifest or test sweep; no safety or policy rewording; no live profile write; no publication."]
 +++
+- Held by: interactive session doing the docs sweep by hand; until 2026-11-02

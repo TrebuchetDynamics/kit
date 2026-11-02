@@ -15,6 +15,46 @@ from src_fixture import copy_sources
 
 ROOT=Path(__file__).resolve().parents[1]
 
+class PluginDirectoryTests(unittest.TestCase):
+    """The installed directory follows whatever the profile already has."""
+
+    def module(self):
+        spec = importlib.util.spec_from_file_location('updater_dir', ROOT / 'update_bundle.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def make(self, home, name):
+        folder = home / 'plugins' / name
+        folder.mkdir(parents=True)
+        (folder / 'plugin.yaml').write_text(f'name: {name}\nversion: 0.3.0\n')
+        return folder
+
+    def test_a_legacy_install_keeps_its_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            folder = self.make(home, 'autowork')
+            module = self.module()
+            self.assertEqual(module.plugin_dir(home), folder)
+            self.assertEqual(module.plugin_name(home), 'autowork')
+
+    def test_a_native_install_of_the_renamed_plugin_is_not_duplicated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            folder = self.make(home, 'kit')
+            module = self.module()
+            self.assertEqual(module.plugin_dir(home), folder)
+            self.assertEqual(module.plugin_name(home), 'kit')
+            self.assertFalse((home / 'plugins' / 'autowork').exists())
+
+    def test_without_an_install_the_legacy_path_is_the_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            module = self.module()
+            self.assertEqual(module.plugin_dir(home), home / 'plugins' / 'autowork')
+            self.assertEqual(module.plugin_name(home), 'autowork')
+
+
 class UpdateTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)

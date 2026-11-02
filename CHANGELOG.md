@@ -5,6 +5,19 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ## [Unreleased]
 
+### Changed
+
+- The toolset is now named **Kit**, with **Autowork** kept as the runner and its
+  command-line name. The plugin, its command namespace and its settings key follow:
+  `/kit:plan-with-me`, `$kit:…`, `kit:…` in `skill_view`, and `plugins.entries.kit`.
+  A profile configured under `plugins.entries.autowork` keeps its approvals mode, menu
+  priority and opt-out for one release, and a native install that landed under
+  `plugins/kit` is recognized instead of being duplicated. The updater still accepts a
+  checkout whose manifest says `autowork`, so an older release can be recovered. The
+  installed plugin directory, the `# autowork:` script marker, the `pi-autowork:`
+  markers in `BLOCKERS.md`, the runner CLI, its skill and its state directory are
+  unchanged.
+
 ### Removed
 
 - `cron-autowork`: the scheduling skill and its Claude Code, Codex and Pi adapters

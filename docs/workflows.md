@@ -34,7 +34,7 @@ only the conversation's Autowork preference. `/ponytail-review`, `/ponytail-audi
 they do not implement, publish, start an extra reviewer or change persistent modes.
 See [portable host invocations](cross-host.md#bundled-ponytail-on-every-host).
 Existing external command owners keep their handlers; the bundled skills remain
-available as `autowork:ponytail` and `autowork:ponytail-review` (and the other names).
+available as `kit:ponytail` and `kit:ponytail-review` (and the other names).
 
 ## Commands
 
@@ -107,7 +107,7 @@ subcommands. The agent loads the skill through `skill_view` and performs its
 instructions using the current conversation and tools.
 
 Bundled skills also remain available by their qualified names, such as
-`autowork:docs-sync`. Supporting files stay next to their `SKILL.md`. Shared contracts live in
+`kit:docs-sync`. Supporting files stay next to their `SKILL.md`. Shared contracts live in
 [`skills/shared`](../skills/shared/COMMON-CONTRACT.md), alongside the skill folders;
 the legacy skill copier preserves that support directory too. Resolve helper
 commands from the loaded bundle rather than assuming `~/.hermes/shared-skills`.
@@ -243,7 +243,7 @@ silently skipping tests or weakening CI. This is an agent-guided skill, not an
 automatic test-deletion script.
 
 Examples (Hermes CLI; Pi uses `/test-optimizer`, Claude Code
-`/autowork:test-optimizer`, Codex `$autowork:test-optimizer`):
+`/kit:test-optimizer`, Codex `$kit:test-optimizer`):
 
 ```text
 /test-optimizer tests/parser; read-only
@@ -275,8 +275,8 @@ never prove dead code. Unused Code keeps its own proof rules and uses the graph 
 to rank candidates. `graphify-out/` is a generated artifact and stays uncommitted.
 A read-only request builds nothing.
 
-Examples (Hermes CLI; Pi uses `/graphify`, Claude Code `/autowork:graphify`, Codex
-`$autowork:graphify`):
+Examples (Hermes CLI; Pi uses `/graphify`, Claude Code `/kit:graphify`, Codex
+`$kit:graphify`):
 
 ```text
 /graphify src/parser; explain parse_statement; read-only
@@ -291,7 +291,7 @@ model behavior.
 `/writing-for-agents` applies mattpocock's skill-writing reference, the skill formerly
 called `writing-great-skills`. Use it to write or prune a skill, an `AGENTS.md` or a
 document an agent reaches through a pointer. Claude Code uses
-`/autowork:writing-for-agents`, Codex `$autowork:writing-for-agents` and Pi
+`/kit:writing-for-agents`, Codex `$kit:writing-for-agents` and Pi
 `/writing-for-agents`.
 
 The pinned [reference](../skills/writing-for-agents/upstream/PROTOCOL.md) owns the
@@ -704,8 +704,8 @@ Examples:
 
 | Task evidence | Recommendation and contribution | Limit/fallback |
 | --- | --- | --- |
-| Web/mobile hierarchy and interaction need design work | `autowork:ui-taste`, design/review; follow the host adapter and produce relevant rendered/UI evidence | Confirm platform fit; a terminal status-label correction does not justify a browser/UI design workflow. Use the project's existing design method if more appropriate. |
-| Repeated test setup and duplicate behavioral assertions | `autowork:test-optimizer`, test cleanup; risk matrix, retained-test mapping and measured candidate evidence | Bare invocation audits; explicit reduction/apply or existing implementation authority permits one verified batch. Uses Engineering's existing `test-suite-optimization` protocol; rare but consequential risks stay protected. |
+| Web/mobile hierarchy and interaction need design work | `kit:ui-taste`, design/review; follow the host adapter and produce relevant rendered/UI evidence | Confirm platform fit; a terminal status-label correction does not justify a browser/UI design workflow. Use the project's existing design method if more appropriate. |
+| Repeated test setup and duplicate behavioral assertions | `kit:test-optimizer`, test cleanup; risk matrix, retained-test mapping and measured candidate evidence | Bare invocation audits; explicit reduction/apply or existing implementation authority permits one verified batch. Uses Engineering's existing `test-suite-optimization` protocol; rare but consequential risks stay protected. |
 | A small local parser fix with established tests | No additional skill required beyond the repository's applicable workflow | Do not add a method tour, UI skill or suite-wide audit. |
 
 Autowork reads the task's recommendations before the relevant step, resolves the
