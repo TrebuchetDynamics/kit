@@ -58,7 +58,6 @@ a step, read that skill's `SKILL.md`: a summary here is orientation only.
 | Orientation in code before reading many files | `/graphify` |
 | Ponytail guidance, review, audit, debt or benchmarks | `/ponytail`, `/ponytail-review`,
   `/ponytail-audit`, `/ponytail-debt`, `/ponytail-gain`, `/ponytail-help` |
-| Hermes profile setup | `/profile-create` |
 | What is open, done or next | `/pending` |
 
 ## How to answer

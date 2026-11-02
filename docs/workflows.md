@@ -62,7 +62,6 @@ capacity limit, so some commands must be typed rather than selected in the menu.
 | `/plan_for_me` | `/plan_for_me` | Discover the project's best next work, or investigate a supplied goal, then save the plan and tasks |
 | `/grill-me` | `/grill_me` | Stress-test a plan through questions |
 | `/autoresearch` | `/autoresearch` | Route a research goal or run a bounded metric loop |
-| `/profile-create` | `/profile_create` | Create a repository-bound profile with shared setup |
 | `/impeccable` | `/impeccable` | Design and front-end quality workflow |
 | `/ui-taste` | `/ui_taste` | Uizze's UI Taste playbooks for building, polishing and reviewing web and iOS interfaces |
 | `/beautify-github-readme` | `/beautify_github_readme` | Redesign or audit a GitHub README with project-native SVG assets |

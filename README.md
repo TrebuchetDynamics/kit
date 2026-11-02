@@ -86,7 +86,6 @@ states its own boundaries and what "done" means.
 
 **Operate**
 
-- `/profile-create` — create a repository-bound Hermes profile.
 - `/ask-autowork` — ask which of the above fits.
 - `/autowork` runner — the optional section [below](#the-runner-autowork).
 

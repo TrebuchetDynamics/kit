@@ -27,6 +27,8 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Removed
 
+- `profile-create`: the skill and its test are gone, with the router row, README line and workflow table entry. Hermes profiles are still created with the host's own commands (`hermes -p PROFILE …`, `install-plugins.sh`); nothing in the runtime depended on the skill.
+
 - `cron-autowork`: the scheduling skill and its Claude Code, Codex and Pi adapters
   are gone, with their command, menu priority and documentation. Use the host's own
   cron command. The `autowork-start-notice.py` pre-run script stays where saved jobs
