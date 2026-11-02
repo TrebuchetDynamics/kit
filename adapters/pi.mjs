@@ -34,6 +34,7 @@ const workflows = {
   'beautify-github-readme': ['beautify-github-readme', 'Redesign or audit a GitHub README'],
   'grill-me': ['plan-with-me', 'Plan With Me challenge mode (compatibility)', 'challenge'],
   lgtm: ['lgtm', 'Continue the last approved action'],
+  goal: ['goal', 'Keep one objective alive until evidence proves it done'],
   blockers: ['blockers', 'Answer what blocks the queue, one picked option at a time'],
   'git-commit-push': ['git-commit-push', 'Commit and push, or pull and merge, owned changes'],
 };
