@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -38,6 +39,32 @@ class TxTests(unittest.TestCase):
             self.assertIn(folder, package['files'])
         for path in (TX, ROOT / 'pi-autowork/bin/autowork'):
             self.assertTrue(os.access(path, os.X_OK), path)
+
+
+class TxConfigModuleTests(unittest.TestCase):
+    def source(self, config, script):
+        with tempfile.TemporaryDirectory(prefix='autowork-tx-config-') as folder:
+            path = Path(folder) / 'session.config'
+            path.write_text(config)
+            env = {**os.environ, 'TX_CONFIG': str(path), 'TX_COLOR': 'never',
+                   'TARGET': '/tmp/agent'}
+            (Path(folder) / 'agent').mkdir()
+            return subprocess.run(['bash', '-c', f'source {shlex.quote(str(TX))}\n{script}'],
+                                  env=env, capture_output=True, text=True, timeout=30)
+
+    def test_source_does_not_run_main_and_config_owns_the_grammar(self):
+        config = '# keep\nWORK=/tmp\n# row\nga,g=$WORK/agent\n'
+        result = self.source(config, 'config_load; printf "%s\\n" "${ALIAS_TO_PATH[g]}"')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '/tmp/agent')
+
+    def test_append_and_rewrite_preserve_comments_vars_and_order(self):
+        config = '# keep\nWORK=/tmp\n# row\nga,g=$WORK/agent\n'
+        result = self.source(
+            config,
+            'config_load; config_append_alias h "$TARGET"; config_rewrite_alias edit g g2; cat "$TX_CONFIG"')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '# keep\nWORK=/tmp\n# row\nga,g2,h=$WORK/agent\n')
 
 
 if __name__ == '__main__':

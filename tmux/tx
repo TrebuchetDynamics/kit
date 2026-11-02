@@ -36,6 +36,8 @@ RESERVED_ALIASES=(help ls kill kill-all init add remove edit doctor which config
 declare -A ALIAS_TO_PATH=()
 declare -A PATH_TO_ALIASES=()
 declare -a PATH_ORDER=()
+declare -a CFG_LINES=() CFG_KIND=() CFG_PREFIX=() CFG_KEYS=()
+declare -a CFG_SEP=() CFG_VALUE_RAW=() CFG_TARGET=()
 
 die() {
   printf 'tx: %s\n' "$1" >&2
@@ -302,33 +304,62 @@ EOF
   esac
 }
 
-load_config() {
-  [[ -f "$CONFIG_PATH" ]] || die "config not found: $CONFIG_PATH"
+# --- config module ---------------------------------------------------------
+# One owner for the config grammar. Commands resolve a target and print the
+# result; they do not parse or rewrite config lines themselves.
 
+config_reset() {
   ALIAS_TO_PATH=()
   PATH_TO_ALIASES=()
   PATH_ORDER=()
-  declare -A vars=()
-  local lineno=0 line key val keys path part
-  local -a parts
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    lineno=$((lineno + 1))
-    line=${line%$'\r'}
-    [[ -z "${line//[[:space:]]/}" ]] && continue
-    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+  CFG_LINES=()
+  CFG_KIND=()
+  CFG_PREFIX=()
+  CFG_KEYS=()
+  CFG_SEP=()
+  CFG_VALUE_RAW=()
+  CFG_TARGET=()
+}
 
-    if [[ "$line" =~ ^[[:space:]]*([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
-      key=${BASH_REMATCH[1]}
-      val=${BASH_REMATCH[2]}
-      vars[$key]=$(expand_vars "$val" vars)
+config_append_line() {
+  local kind=$1 prefix=$2 keys=$3 sep=$4 value_raw=$5 target=$6
+  CFG_KIND+=("$kind")
+  CFG_PREFIX+=("$prefix")
+  CFG_KEYS+=("$keys")
+  CFG_SEP+=("$sep")
+  CFG_VALUE_RAW+=("$value_raw")
+  CFG_TARGET+=("$target")
+}
+
+config_load() {
+  [[ -f "$CONFIG_PATH" ]] || die "config not found: $CONFIG_PATH"
+  config_reset
+  local i line lineno=0 key val prefix keys sep value_raw value path part
+  local -a parts
+  declare -A vars=()
+  mapfile -t CFG_LINES < "$CONFIG_PATH" || true
+  for i in "${!CFG_LINES[@]}"; do
+    line=${CFG_LINES[i]}
+    lineno=$((i + 1))
+    line=${line%$'\r'}
+    if [[ -z "${line//[[:space:]]/}" || "$line" =~ ^[[:space:]]*# ]]; then
+      config_append_line other '' '' '' '' ''
       continue
     fi
-
-    if [[ "$line" =~ ^[[:space:]]*([A-Za-z0-9_,-]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-      keys=${BASH_REMATCH[1]}
-      val=${BASH_REMATCH[2]}
-      val=${val%"${val##*[![:space:]]}"}
-      path=$(expand_vars "$val" vars)
+    if [[ "$line" =~ ^([[:space:]]*)([A-Z_][A-Z0-9_]*)(=)(.*)$ ]]; then
+      key=${BASH_REMATCH[2]}
+      val=${BASH_REMATCH[4]}
+      vars[$key]=$(expand_vars "$val" vars)
+      config_append_line var '' '' '' '' ''
+      continue
+    fi
+    if [[ "$line" =~ ^([[:space:]]*)([A-Za-z0-9_,-]+)([[:space:]]*=[[:space:]]*)(.*)$ ]]; then
+      prefix=${BASH_REMATCH[1]}
+      keys=${BASH_REMATCH[2]}
+      sep=${BASH_REMATCH[3]}
+      value_raw=${BASH_REMATCH[4]}
+      value=${value_raw%"${value_raw##*[![:space:]]}"}
+      path=$(expand_vars "$value" vars)
       path=$(expand_tilde "$path")
       [[ -n "$path" ]] || die "config:$lineno: empty path"
 
@@ -340,18 +371,88 @@ load_config() {
         fi
         ALIAS_TO_PATH[$part]=$path
       done
-
       if [[ -z "${PATH_TO_ALIASES[$path]+x}" ]]; then
         PATH_ORDER+=("$path")
         PATH_TO_ALIASES[$path]=$keys
       else
         PATH_TO_ALIASES[$path]+=",$keys"
       fi
+      config_append_line alias "$prefix" "$keys" "$sep" "$value_raw" "$path"
       continue
     fi
-
     die "config:$lineno: cannot parse line: $line"
-  done < "$CONFIG_PATH"
+  done
+}
+
+load_config() { config_load; }
+
+config_write() {
+  ensure_config_parent
+  local i tmp
+  tmp=$(mktemp "${CONFIG_PATH}.tmp.XXXXXX")
+  for i in "${!CFG_LINES[@]}"; do
+    printf '%s\n' "${CFG_LINES[i]}" >> "$tmp"
+  done
+  mv "$tmp" "$CONFIG_PATH"
+}
+
+config_render_alias_line() {
+  local i=$1 keys=$2 cr=''
+  [[ "${CFG_LINES[i]}" == *$'\r' ]] && cr=$'\r'
+  CFG_LINES[i]="${CFG_PREFIX[i]}${keys}${CFG_SEP[i]}${CFG_VALUE_RAW[i]}${cr}"
+  CFG_KEYS[i]=$keys
+}
+
+config_append_alias() {
+  local keys=$1 target=$2 i
+  for i in "${!CFG_KIND[@]}"; do
+    if [[ "${CFG_KIND[i]}" == alias && "${CFG_TARGET[i]}" == "$target" ]]; then
+      config_render_alias_line "$i" "${CFG_KEYS[i]},$keys"
+      config_write
+      config_load
+      return 0
+    fi
+  done
+  CFG_LINES+=("$keys=$target")
+  config_write
+  config_load
+}
+
+config_rewrite_alias() {
+  local mode=$1 alias=$2 replacement=${3:-}
+  local i part keys found=0 cr='' joined
+  local -a parts kept
+
+  for i in "${!CFG_KIND[@]}"; do
+    [[ "${CFG_KIND[i]}" == alias ]] || continue
+    IFS=',' read -ra parts <<< "${CFG_KEYS[i]}"
+    kept=()
+    found=0
+    for part in "${parts[@]}"; do
+      if [[ "$part" == "$alias" ]]; then
+        found=1
+        [[ "$mode" == "edit" ]] && kept+=("$replacement")
+      else
+        kept+=("$part")
+      fi
+    done
+    (( found == 1 )) || continue
+    if (( ${#kept[@]} == 0 )); then
+      unset "CFG_LINES[$i]" "CFG_KIND[$i]" "CFG_PREFIX[$i]" "CFG_KEYS[$i]"
+      unset "CFG_SEP[$i]" "CFG_VALUE_RAW[$i]" "CFG_TARGET[$i]"
+    else
+      joined=""
+      for part in "${kept[@]}"; do
+        [[ -n "$joined" ]] && joined+=","
+        joined+="$part"
+      done
+      config_render_alias_line "$i" "$joined"
+    fi
+    config_write
+    config_load
+    return 0
+  done
+  die "$mode: alias not found: $alias"
 }
 
 init_config() {
@@ -375,49 +476,9 @@ EOF
   printf 'created config: %s\n' "$CONFIG_PATH"
 }
 
-append_aliases_to_existing_path() {
-  local keys=$1 target=$2
-  local tmp line lineno=0 key val map_keys path done=0
-  declare -A vars=()
-  tmp=$(mktemp "${CONFIG_PATH}.tmp.XXXXXX")
-
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    lineno=$((lineno + 1))
-    line=${line%$'\r'}
-    if [[ "$line" =~ ^[[:space:]]*([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
-      key=${BASH_REMATCH[1]}
-      val=${BASH_REMATCH[2]}
-      vars[$key]=$(expand_vars "$val" vars)
-      printf '%s\n' "$line" >> "$tmp"
-      continue
-    fi
-
-    if (( done == 0 )) && [[ "$line" =~ ^[[:space:]]*([A-Za-z0-9_,-]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-      map_keys=${BASH_REMATCH[1]}
-      val=${BASH_REMATCH[2]}
-      val=${val%"${val##*[![:space:]]}"}
-      path=$(expand_vars "$val" vars)
-      path=$(expand_tilde "$path")
-      if [[ "$path" == "$target" ]]; then
-        printf '%s,%s=%s\n' "$map_keys" "$keys" "$val" >> "$tmp"
-        done=1
-        continue
-      fi
-    fi
-
-    printf '%s\n' "$line" >> "$tmp"
-  done < "$CONFIG_PATH"
-
-  if (( done == 0 )); then
-    rm -f "$tmp"
-    die "add: no existing config row found for $target"
-  fi
-  mv "$tmp" "$CONFIG_PATH"
-}
-
 add_alias() {
   [[ $# -ge 1 && $# -le 2 ]] || die "add: expected alias[,alias2] and optional directory, or a directory to prompt for aliases"
-  local keys target part prompt_for_alias=0 first_path ending
+  local keys target part prompt_for_alias=0 first_path existing=""
   local -a parts
 
   first_path=$(expand_tilde "$1")
@@ -443,106 +504,41 @@ add_alias() {
   validate_alias_list "$keys" "add"
 
   if [[ -f "$CONFIG_PATH" ]]; then
-    load_config
+    config_load
     IFS=',' read -ra parts <<< "$keys"
     for part in "${parts[@]}"; do
       if [[ -n "${ALIAS_TO_PATH[$part]+x}" ]]; then
         die "add: duplicate alias '$part' (already maps to ${ALIAS_TO_PATH[$part]})"
       fi
     done
+    existing=${PATH_TO_ALIASES[$target]-}
   else
     init_config >/dev/null
+    config_load
   fi
 
-  if [[ -n "${PATH_TO_ALIASES[$target]+x}" ]]; then
-    append_aliases_to_existing_path "$keys" "$target"
-    printf 'updated: %s,%s=%s\n' "${PATH_TO_ALIASES[$target]}" "$keys" "$target"
+  config_append_alias "$keys" "$target"
+  if [[ -n "$existing" ]]; then
+    printf 'updated: %s,%s=%s\n' "$existing" "$keys" "$target"
   else
-    if [[ -s "$CONFIG_PATH" ]]; then
-      ending=$(tail -c 1 "$CONFIG_PATH"; printf x)
-      [[ "$ending" == $'\nx' ]] || printf '\n' >> "$CONFIG_PATH"
-    fi
-    printf '%s=%s\n' "$keys" "$target" >> "$CONFIG_PATH"
     printf 'added: %s=%s\n' "$keys" "$target"
-  fi
-}
-
-rewrite_alias_row() {
-  local mode=$1 alias=$2 replacement=${3:-}
-  [[ -f "$CONFIG_PATH" ]] || die "$mode: config missing: $CONFIG_PATH"
-  load_config
-
-  local target tmp line key val map_keys path changed=0 kept_keys part new_part
-  local -a parts kept_parts
-  alias=$(resolve_alias "$alias")
-  target=${ALIAS_TO_PATH[$alias]}
-  tmp=$(mktemp "${CONFIG_PATH}.tmp.XXXXXX")
-  declare -A vars=()
-
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line=${line%$'\r'}
-    if [[ "$line" =~ ^[[:space:]]*([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
-      key=${BASH_REMATCH[1]}
-      val=${BASH_REMATCH[2]}
-      vars[$key]=$(expand_vars "$val" vars)
-      printf '%s\n' "$line" >> "$tmp"
-      continue
-    fi
-
-    if [[ "$line" =~ ^[[:space:]]*([A-Za-z0-9_,-]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-      map_keys=${BASH_REMATCH[1]}
-      val=${BASH_REMATCH[2]}
-      val=${val%"${val##*[![:space:]]}"}
-      path=$(expand_vars "$val" vars)
-      path=$(expand_tilde "$path")
-      if [[ "$path" == "$target" ]]; then
-        IFS=',' read -ra parts <<< "$map_keys"
-        kept_parts=()
-        for part in "${parts[@]}"; do
-          if [[ "$part" == "$alias" ]]; then
-            changed=1
-            [[ "$mode" == "edit" ]] && kept_parts+=("$replacement")
-          else
-            kept_parts+=("$part")
-          fi
-        done
-        if (( ${#kept_parts[@]} > 0 )); then
-          kept_keys=""
-          for new_part in "${kept_parts[@]}"; do
-            [[ -n "$kept_keys" ]] && kept_keys+=","
-            kept_keys+="$new_part"
-          done
-          printf '%s=%s\n' "$kept_keys" "$val" >> "$tmp"
-        fi
-        continue
-      fi
-    fi
-
-    printf '%s\n' "$line" >> "$tmp"
-  done < "$CONFIG_PATH"
-
-  if (( changed == 0 )); then
-    rm -f "$tmp"
-    die "$mode: alias not found: $alias"
-  fi
-
-  mv "$tmp" "$CONFIG_PATH"
-  if [[ "$mode" == "edit" ]]; then
-    printf 'renamed: %s -> %s=%s\n' "$alias" "$replacement" "$target"
-  else
-    printf 'removed: %s=%s\n' "$alias" "$target"
   fi
 }
 
 remove_alias() {
   [[ $# -eq 1 ]] || die "remove: expected exactly one alias"
-  rewrite_alias_row remove "$1"
+  local alias target
+  config_load
+  alias=$(resolve_alias "$1")
+  target=${ALIAS_TO_PATH[$alias]}
+  config_rewrite_alias remove "$alias"
+  printf 'removed: %s=%s\n' "$alias" "$target"
 }
 
 edit_alias() {
   [[ $# -ge 1 && $# -le 2 ]] || die "edit: expected alias and optional new alias"
   [[ -f "$CONFIG_PATH" ]] || die "edit: config missing: $CONFIG_PATH"
-  load_config
+  config_load
 
   local old_alias new_alias
   old_alias=$(resolve_alias "$1")
@@ -557,7 +553,9 @@ edit_alias() {
   if [[ -n "${ALIAS_TO_PATH[$new_alias]+x}" ]]; then
     die "edit: duplicate alias '$new_alias' (already maps to ${ALIAS_TO_PATH[$new_alias]})"
   fi
-  rewrite_alias_row edit "$old_alias" "$new_alias"
+  local target=${ALIAS_TO_PATH[$old_alias]}
+  config_rewrite_alias edit "$old_alias" "$new_alias"
+  printf 'renamed: %s -> %s=%s\n' "$old_alias" "$new_alias" "$target"
 }
 
 print_alias_path() {
@@ -966,4 +964,6 @@ main() {
   esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
