@@ -144,6 +144,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- Rename the Hermes, Claude Code and Codex plugin identity and skill namespace to Kit (kit:<skill>, /kit:, $kit:), leaving the autowork runner CLI, skill name and state paths unchanged. (TOOLSET-429-6a727853)
 - Dual-read the Hermes plugin settings key, writing canonical plugins.entries.kit values while mirroring gateway injection to the legacy autowork entry Hermes still reads. (TOOLSET-428-07ba81ac)
 - Restored the Autowork core SKILL.md size budget by moving the behavior-preserving refactor detail into references/iteration-and-decisions.md (15888 bytes). (MAIN-003-7e03d7a7)
 - Fix offline provisioning to skip documented script-only skill folders (skills/cron-autowork stays a support location) and restore the ui-taste skill-index trigger description. (MAIN-002-670509da)
