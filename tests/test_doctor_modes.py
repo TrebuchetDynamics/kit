@@ -19,10 +19,8 @@ class DoctorModes(unittest.TestCase):
         names = [p.parent.name for p in (ROOT / 'skills').glob('*/SKILL.md')]
         self.report = {
             'plugins': [{'name': 'kit', 'enabled': True, 'error': None}],
-            'plugin_skills': ['kit:' + name for name in ('autowork', 'docs-sync', 'plan-with-me', 'blockers', 'plan-for-me', 'autoresearch', 'engineering', 'git-commit-push', 'impeccable', 'lgtm', 'profile-create', 'ui-taste', 'beautify-github-readme', 'pending',
-                'autonomous-codebase-improver', 'bug-harvest', 'split-folder', 'test-optimizer', 'unused-code', 'apk-get', 'writing-for-agents', 'grilling', 'grill-with-docs',
-                'improve-codebase-architecture', 'ask-autowork', 'responsive-screenshots',
-                'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt', 'ponytail-gain', 'ponytail-help')],
+            # Derived from disk so a new skill cannot drift away from this fixture.
+            'plugin_skills': ['kit:' + name for name in names],
             'commands': [{'command': name.replace('_', '-'), 'source': 'kit', 'kind': 'plugin'}
                          for name in names],
             'missing_plugins': ['omh'], 'missing_skills': ['graphify'],

@@ -1,13 +1,15 @@
-# Autowork
+# Kit
 
 ### Plan in Git. Build with agents. Verify each change.
 
-Autowork connects your project's decisions, work queue and coding agents.
-Plan together, save accepted tasks in `tasks/`, and execute the next eligible task
-with checks and a clear delivery report.
+Kit is a toolset of skills for coding agents: plan a decision, record it, and let an
+agent execute the accepted work. Tasks live in the repository's `tasks/` store, and
+every change ships with its checks.
 
-**Use the workflows in Hermes, Claude Code, Codex or Pi.**
-Start the Linux Pi runner separately when you want it to continue through the queue.
+**Autowork** is the runner inside Kit. It is one of the tools, not the whole set: start
+it on Linux when you want the queue to continue after a session ends.
+
+**Use the skills in Hermes, Claude Code, Codex or Pi.**
 
 [Get started](#install) · [Choose a workflow](#what-you-can-do) ·
 [Run continuously](#pi-autowork-pipeline) · [Safety](#read-before-installing) ·
@@ -16,13 +18,13 @@ Start the Linux Pi runner separately when you want it to continue through the qu
 | Your host | Install | Start planning |
 | --- | --- | --- |
 | **Hermes** | [Native plugin](#try-the-native-plugin-in-one-profile) | `/plan-with-me` |
-| **Claude Code** | [Marketplace plugin](#claude-code) | `/autowork:plan-with-me` |
-| **Codex** | [Marketplace plugin](#codex) | `$autowork:plan-with-me` |
+| **Claude Code** | [Marketplace plugin](#claude-code) | `/kit:plan-with-me` |
+| **Codex** | [Marketplace plugin](#codex) | `$kit:plan-with-me` |
 | **Pi** | [Git package](#pi) | `/plan-with-me` |
 
 Not sure which command fits? `/ask-autowork` names one for your situation, then the
-next step it implies (`/autowork:ask-autowork` in Claude Code,
-`$autowork:ask-autowork` in Codex).
+next step it implies (`/kit:ask-autowork` in Claude Code,
+`$kit:ask-autowork` in Codex).
 
 For example, in **Hermes CLI** after installation (illustrative, not a run receipt):
 
@@ -109,12 +111,12 @@ Native security scanning still applies. A successful download is not scan approv
 CAUTION requires review and acceptance, and a dangerous verdict blocks installation.
 
 **Keep your approval settings?** Before enabling, run
-`hermes config set plugins.entries.autowork.settings.apply_runtime_defaults false`
+`hermes config set plugins.entries.kit.settings.apply_runtime_defaults false`
 ([opt-out details](docs/installation.md#install)). Otherwise, accept the defaults with:
 
 ```sh
-hermes plugins install TrebuchetDynamics/autowork
-hermes plugins enable autowork
+hermes plugins install TrebuchetDynamics/autowork   # repository keeps its name until the rename lands
+hermes plugins enable kit
 hermes autowork doctor --core
 ```
 
@@ -322,15 +324,15 @@ safety protection. Bare invocation audits; `read-only` writes nothing.
 
 [Graphify](docs/workflows.md#graphify) adds `/graphify` where Hermes does not already
 install the official skill: build a local code graph and query it before long file
-reads. Claude Code uses `/autowork:graphify`, Codex `$autowork:graphify` and Pi
+reads. Claude Code uses `/kit:graphify`, Codex `$kit:graphify` and Pi
 `/graphify`. The adapter calls the installed `graphify` command, never installs it,
 and treats graph edges as orientation, not proof of behavior or dead code.
 
 [Writing For Agents](docs/workflows.md#writing-for-agents) adds
 `/writing-for-agents`: mattpocock's skill-writing reference (formerly
 `writing-great-skills`) for writing and pruning skills, `AGENTS.md` and agent docs.
-Claude Code uses `/autowork:writing-for-agents`, Codex
-`$autowork:writing-for-agents` and Pi `/writing-for-agents`. The reference is pinned
+Claude Code uses `/kit:writing-for-agents`, Codex
+`$kit:writing-for-agents` and Pi `/writing-for-agents`. The reference is pinned
 byte-exact; the local adapter keeps Autowork scope and delivery limits.
 
 [Grilling](docs/workflows.md#grilling-and-architecture-review) adds `/grilling`,
@@ -584,7 +586,7 @@ portable hosts use their [own package update commands](docs/cross-host.md).
 ### Renamed from hermes-toolset
 
 This project was called hermes-toolset before 0.3.0. The rename has no compatibility
-layer: the plugin, command namespace, settings key (`plugins.entries.autowork`) and
+layer: the plugin, command namespace, settings key (`plugins.entries.kit`) and
 chat/terminal maintenance commands (`/autowork update|status|list`,
 `hermes autowork …`) exist only under the new name. Remove an older installation and
 [install](#install) `autowork` again in each host; in Hermes, move any settings you set

@@ -21,11 +21,11 @@ ran, a worker is available or a Telegram message was delivered.
 
 - **Check:** `/autowork list` and `hermes autowork doctor --core`.
 - **Plugin not loaded or not enabled in this profile:** plugins are enabled per
-  profile. Run `hermes -p PROFILE plugins enable autowork`; see
+  profile. Run `hermes -p PROFILE plugins enable kit`; see
   [first use](onboarding.md).
 - **Name owned by another plugin:** an existing command keeps its name. The
   bundle logs `Skipping /NAME: command already exists` (with a `skill_view` hint
-  for most skills) and the skill stays available as `autowork:NAME`; see [workflows](workflows.md#commands).
+  for most skills) and the skill stays available as `kit:NAME`; see [workflows](workflows.md#commands).
   Previously installed Ponytail commands are preserved. Setup/doctor report verified
   bundled alternatives in `bundled_skill_fallbacks`; use those qualified skill names.
   This exception requires each local skill registration and does not certify the
@@ -89,7 +89,7 @@ them, or keep using the core workflows; see [installation](installation.md#insta
 
 This is the bundle's documented runtime policy (`approvals.mode: off` and related
 keys), applied on every plugin load. Set
-`plugins.entries.autowork.settings.apply_runtime_defaults` to `false`
+`plugins.entries.kit.settings.apply_runtime_defaults` to `false`
 first, then restore your values; see [reference](reference.md#plugin-settings)
 and [removal and recovery](uninstall.md#restore-configuration-deliberately).
 

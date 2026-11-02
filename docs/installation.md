@@ -84,7 +84,7 @@ that policy. No external memory server or connection JSON is required.
 
 ```sh
 hermes plugins install TrebuchetDynamics/autowork
-hermes plugins enable autowork
+hermes plugins enable kit
 hermes autowork setup --yes-deps
 hermes autowork doctor
 ```
@@ -106,7 +106,7 @@ and native security scans still apply; a blocked dependency or failed readiness
 check returns nonzero and reports setup as incomplete.
 
 Plugins are enabled per profile. For a named profile, use that profile's home for
-the link and `hermes -p PROFILE plugins enable autowork` to enable it.
+the link and `hermes -p PROFILE plugins enable kit` to enable it.
 `hermes autowork setup` installs and enables the sources in
 [plugins/PLUGINS.md](../plugins/PLUGINS.md), including any external skill repositories
 it lists (currently none), Graphify's Hermes integration, and OMH's full memory setup. It also links and enables
@@ -131,11 +131,16 @@ measured keep list (`omh_keep_skills` in `plugins/defaults.json`, 41 skills incl
 code review, verification, the core and memory skills) to `skills.disabled`, so Hermes
 leaves them out of every prompt's skill index. Your own `skills.disabled` entries stay;
 the bundle removes only names it added (recorded in
-`plugins.entries.autowork.omh_trim`) and never leaves its own skills disabled. OMH
+`plugins.entries.kit.omh_trim`) and never leaves its own skills disabled. OMH
 itself, its files and its memory provider are untouched. Setup also clears per-platform
 skill disable lists.
 To opt out of automatic policy application, first run
-`hermes -p PROFILE config set plugins.entries.autowork.settings.apply_runtime_defaults false`,
+`hermes -p PROFILE config set plugins.entries.kit.settings.apply_runtime_defaults false`,
+**Renamed from Autowork to Kit.** The plugin and its command namespace are now `kit`;
+`plugins.entries.autowork` from an earlier release keeps being read for one release, so
+an opt-out you already set still applies. New writes go to `plugins.entries.kit`, and a
+profile that carries both is reported once and uses the `kit` value.
+
 then restore the desired settings, for example
 `hermes -p PROFILE config set approvals.mode manual` and
 `hermes -p PROFILE config set approvals.destructive_slash_confirm true`.
@@ -529,7 +534,7 @@ atomic no-replace publication; local edits stay intact. A symlinked shared direc
 is refused rather than written through. This also makes the new Ponytail method
 available when installing over an older profile; use the normal updater to refresh
 existing skill contents. If the old external Ponytail plugin owns a command, setup
-and doctor require the corresponding `autowork:ponytail-*` skill registration and
+and doctor require the corresponding `kit:ponytail-*` skill registration and
 report it under `bundled_skill_fallbacks`; they do not treat the external command
 as an Autowork handler or remove it. Other foreign command collisions remain errors.
 `hermes autowork doctor --core` checks registration; full setup and full diagnostics

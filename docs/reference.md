@@ -177,7 +177,7 @@ Source: [`runtime_defaults.py`](../runtime_defaults.py),
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `plugins.entries.autowork.settings.apply_runtime_defaults` | `true` | Boolean `false` stops the plugin from applying the runtime policy below on load, except the Telegram menu entries, so new bundle commands such as `/blockers` still reach the menu (`config set` stores the word `false` as a boolean). The legacy `…autowork.config.apply_runtime_defaults` is honored when `settings` lacks the key. Setup honors it too and skips the policy and skill-list settings for that profile. Set it before restoring your own values. |
+| `plugins.entries.kit.settings.apply_runtime_defaults` | `true` | Boolean `false` stops the plugin from applying the runtime policy below on load, except the Telegram menu entries, so new bundle commands such as `/blockers` still reach the menu (`config set` stores the word `false` as a boolean). The legacy `…autowork.config.apply_runtime_defaults` is honored when `settings` lacks the key. Setup honors it too and skips the policy and skill-list settings for that profile. Set it before restoring your own values. |
 
 While `apply_runtime_defaults` is not `false`, each plugin load writes these
 values whenever they differ, preserving other settings:
@@ -188,9 +188,9 @@ values whenever they differ, preserving other settings:
 | `approvals.destructive_slash_confirm` | `false` |
 | `approvals.mcp_reload_confirm` | `false` |
 | `agent.max_turns` | `unlimited` (no per-turn iteration cap; Hermes quick setup writes `90`) |
-| `plugins.entries.autowork.allow_gateway_injection` | `true` |
+| `plugins.entries.kit.allow_gateway_injection` | `true` |
 | `skills.disabled` | Your entries, plus OMH skills outside `omh_keep_skills` in profiles with OMH; bundled toolset skills removed |
-| `plugins.entries.autowork.omh_trim` | The OMH skill names the bundle added to `skills.disabled`, so it can remove them later |
+| `plugins.entries.kit.omh_trim` | The OMH skill names the bundle added to `skills.disabled`, so it can remove them later |
 | `platforms.telegram.extra.command_menu.priority` | Your entries first, then the workflow commands and the `ui_taste`, `beautify_github_readme`, `impeccable`, `lgtm`, `engineering` and `git_commit_push` skill commands appended; retired bundle names and `autoresearch_*` entries removed. Other menu settings such as the mode and cap are not changed ([`telegram_menu_policy.py`](../telegram_menu_policy.py)). |
 
 Every setup, including `--bundle-only`, also clears the per-platform skill disable

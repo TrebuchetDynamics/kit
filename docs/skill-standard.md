@@ -61,7 +61,7 @@ spelled-out triad.
 ## 7. Handoffs name the command
 
 A step that needs another skill says so as a command the host exposes: "run
-`/docs-sync`", "load `autowork:docs-sync`" in a message. Upstream can say "call the
+`/docs-sync`", "load `kit:docs-sync`" in a message. Upstream can say "call the
 Skill tool"; our hosts have commands, so the adapter states the composition directly.
 
 ## 8. Evidence, then claim
