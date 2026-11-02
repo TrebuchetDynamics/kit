@@ -1,5 +1,5 @@
 {
-  "name": "autowork",
+  "name": "@trebuchet/kit",
   "version": "0.3.0",
   "bin": {
     "autowork": "pi-autowork/bin/autowork",

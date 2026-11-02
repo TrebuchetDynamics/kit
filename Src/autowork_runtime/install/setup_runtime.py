@@ -2,6 +2,11 @@
 from pathlib import Path
 
 
+PLUGIN_NAME = 'kit'
+# A profile mid-upgrade still reports the plugin under its legacy name.
+OWNER_NAMES = (PLUGIN_NAME, 'autowork')
+
+
 def ponytail_skill_fallbacks(inventory):
     """Old external Ponytail commands stay owned; only a registered local skill substitutes."""
     suite = {'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
@@ -9,7 +14,7 @@ def ponytail_skill_fallbacks(inventory):
     registered = set(inventory.get('plugin_skills', []))
     return {row['command'] for row in inventory['commands']
             if row.get('kind') == 'plugin' and row.get('source') == 'ponytail'
-            and row['command'] in suite and 'autowork:' + row['command'] in registered}
+            and row['command'] in suite and PLUGIN_NAME + ':' + row['command'] in registered}
 
 
 def finish_profile(bundle, home, root, inventory, *, bundle_only=False, no_reload=False, verify_settings=None):
@@ -17,13 +22,13 @@ def finish_profile(bundle, home, root, inventory, *, bundle_only=False, no_reloa
     bundled = {p.parent.name for p in (bundle / 'skills').glob('*/SKILL.md')
                if p.parent.name not in {'repo-docs', 'repo-interview'}}
     commands = {r['command'] for r in inventory['commands']
-                if r.get('kind') == 'plugin' and r.get('source') == 'autowork'}
+                if r.get('kind') == 'plugin' and r.get('source') in OWNER_NAMES}
     fallbacks = ponytail_skill_fallbacks(inventory) & bundled
     missing = sorted(bundled - commands - fallbacks)
     if missing: errors.append('Unavailable bundled commands: ' + ', '.join(missing))
-    own = next((p for p in inventory['plugins'] if p['name'] == 'autowork'), {})
+    own = next((p for p in inventory['plugins'] if p['name'] in OWNER_NAMES), {})
     if not own.get('enabled') or own.get('error'):
-        errors.append('autowork is not loaded cleanly in this profile')
+        errors.append(PLUGIN_NAME + ' is not loaded cleanly in this profile')
     if not bundle_only:
         for field in ('missing_plugins', 'missing_skills', 'unchecked_skill_sources'):
             if inventory[field]: errors.append(field + ': ' + ', '.join(inventory[field]))
@@ -32,7 +37,7 @@ def finish_profile(bundle, home, root, inventory, *, bundle_only=False, no_reloa
     if drift:
         errors.append('Profile settings not healed: ' + ', '.join(drift))
     result = {'home': str(home), 'bundled_commands': sorted(bundled & commands),
-              'bundled_skill_fallbacks': sorted('autowork:' + name for name in fallbacks),
+              'bundled_skill_fallbacks': sorted('kit:' + name for name in fallbacks),
               'settings': 'drift' if drift else 'current',
               'gateway': 'not_checked', 'errors': errors,
               'note': 'Command registration is verified, not a Telegram message or model invocation. '

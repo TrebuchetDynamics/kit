@@ -48,7 +48,7 @@ class ObserverTests(unittest.TestCase):
         with patch.dict(os.environ, {'PI_AUTOWORK_HERMES_OBSERVERS': ''}):
             self.assertEqual(hermes_jobs(self.repo), 'monitor: Progress')
         self.assertEqual(hermes_jobs(self.repo), '')
-        writer = dict(id='writer', name='Development', workdir=str(self.repo), skills=['autowork:autowork'])
+        writer = dict(id='writer', name='Development', workdir=str(self.repo), skills=['kit:autowork'])
         self.save([self.observer, writer])
         self.assertEqual(hermes_jobs(self.repo), 'monitor: Development')
 
@@ -88,7 +88,7 @@ class ObserverTests(unittest.TestCase):
         (skill_dir / 'SKILL.md').write_text('Development skill')
         alias = self.root / 'skill-alias'
         alias.symlink_to(skill_dir, target_is_directory=True)
-        for fields in [dict(skills=['autowork:autowork']), dict(skill='autowork'),
+        for fields in [dict(skills=['kit:autowork']), dict(skill='autowork'),
                        dict(skills=['/skills/autowork/SKILL.md']),
                        dict(skills=[str(skill_dir) + '/./SKILL.md']),
                        dict(skills=[str(skill_dir) + '/../autowork/SKILL.md']),

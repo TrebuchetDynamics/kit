@@ -25,11 +25,11 @@ def main():
         loaded = manager._plugins['autowork']
         assert loaded.enabled and not loaded.error, loaded.error
         commands = get_plugin_commands()
-        assert 'autowork:engineering' in [i['name'] for i in manager.list_plugin_skill_metadata()]
+        assert 'kit:engineering' in [i['name'] for i in manager.list_plugin_skill_metadata()]
         assert (home / 'skills/engineering/upstream/references/security-checklist.md').is_file()
         assert 'No update receipt yet' in commands['autowork']['handler']('update status')
         names = json.loads((root / 'skills/autoresearch/UPSTREAM.json').read_text())['commands']
-        payload = json.loads(skill_view('autowork:autoresearch'))
+        payload = json.loads(skill_view('kit:autoresearch'))
         assert 'error' not in payload, payload
         menu, _ = telegram_menu_commands(telegram_menu_max_commands())
         menu = dict(menu)
@@ -50,12 +50,12 @@ def main():
         try:
             for alias in ('autowork',):
                 assert commands[alias]['handler']('Improve this repo; no push') is None
-                assert 'autowork:autowork' in cli._pending_input.get_nowait()
+                assert 'kit:autowork' in cli._pending_input.get_nowait()
             for name in names:
                 raw = 'Goal: cache latency\n--chain evals; do not implement'
                 assert commands[f'autoresearch:{name}']['handler'](raw) is None
                 queued = cli._pending_input.get_nowait()
-                assert 'autowork:autoresearch' in queued
+                assert 'kit:autoresearch' in queued
                 assert f'Selected subcommand: {name}\n' in queued
                 assert queued.endswith(raw)
                 assert 'TODO.md is the central work queue' in queued
