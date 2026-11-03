@@ -5,7 +5,8 @@
     python3 scripts/pre_push_check.py --install   # write or chain the hook into .git/hooks/pre-push
     KIT_PRE_PUSH=0 git push       # skip the tests this once (so does `git push --no-verify`)
 
-Git hands a pre-push hook one line per ref: local ref, local sha, remote ref, remote sha.
+The core contracts (docs check, task-store validation) run first, in seconds: the selector
+leaves documents to them. Git hands a pre-push hook one line per ref: local ref, local sha, remote ref, remote sha.
 The base of the change is the remote's current sha when this repository knows it, else
 the merge-base with origin/main (the selector's own default). Deleted refs and refs with
 nothing new are skipped. The selection follows the working tree, as the selector does, so
@@ -65,6 +66,15 @@ def test_environment(env=os.environ):
             if key not in HOOK_VARIABLES and not key.startswith('GIT_PUSH_OPTION_')}
 
 
+def run_core():
+    """The checker's cheap core contracts (docs check, task-store validation): they cover the
+    documents the selector leaves to them, in a few seconds."""
+    import runpy
+    core = runpy.run_path(str(ROOT / 'scripts/check.py'))['affected_core']
+    print('pre-push: core contracts (docs check, task-store validation)', flush=True)
+    return 0 if core(ROOT) else 1
+
+
 def run_affected(base):
     command = [sys.executable, str(ROOT / 'scripts/affected_tests.py'), '--run', *(['--base', base] if base else [])]
     print('pre-push: ' + ' '.join(command[1:]), flush=True)
@@ -96,7 +106,7 @@ def install(hooks):
     return 0
 
 
-def main(argv=None, stdin=None, run=run_affected):
+def main(argv=None, stdin=None, run=run_affected, core=run_core):
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ['--install']:
         hooks = Path(git('rev-parse', '--git-path', 'hooks').stdout.strip() or '.git/hooks')
@@ -108,6 +118,10 @@ def main(argv=None, stdin=None, run=run_affected):
     bases = pushed_bases(lines)
     if not bases:
         return 0
+    if core():
+        print('pre-push: a core contract refused this tree; nothing was pushed. Fix it, or leave this one to CI with\n'
+              '  git push --no-verify', file=sys.stderr, flush=True)
+        return 1
     for base in bases:
         code = run(base)
         if code:

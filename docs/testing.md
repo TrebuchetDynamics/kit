@@ -328,8 +328,11 @@ check at your live profile; plugin loading may write runtime records.
 HERMES_HOME="/path/to/isolated-installed-profile" PYTHONPATH="$HERMES_SOURCE" "$HERMES_PYTHON" -c 'import hermes_bootstrap, runpy, sys; runpy.run_path(sys.argv[1], run_name="__main__")' tests/integration_bundle.py
 ```
 
-Before a push, the pre-push hook runs `scripts/affected_tests.py --run` from the sha
-the remote already has (`python3 scripts/pre_push_check.py --install` writes the hook,
+Before a push, the pre-push hook runs the checker's core contracts (docs check and
+task-store validation, a few seconds) and then `scripts/affected_tests.py --run` from the sha
+the remote already has. A document no test reads selects no test module, and a document
+reaches at most the tests that read it and the tests of the code that reads it; code no test
+reaches still selects the whole suite (`python3 scripts/pre_push_check.py --install` writes the hook,
 or chains it after an existing one-line exec hook such as the private-terms check).
 A push with nothing new, a deletion, or `KIT_PRE_PUSH=0` runs nothing; `git push
 --no-verify` skips every hook. The full suite is CI's job.

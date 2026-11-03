@@ -37,14 +37,19 @@ class MainTests(unittest.TestCase):
     def test_runs_the_selection_per_base_and_stops_at_the_first_failure(self):
         calls = []
         with mock.patch.object(pre_push_check, 'known', lambda sha: True):
-            code = pre_push_check.main([], io.StringIO(f'refs/heads/main {B} refs/heads/main {A}\n'), run=lambda base: calls.append(base) or 0)
-        self.assertEqual((code, calls), (0, [A]))
+            code = pre_push_check.main([], io.StringIO(f'refs/heads/main {B} refs/heads/main {A}\n'), run=lambda base: calls.append(base) or 0, core=lambda: calls.append('core') or 0)
+        self.assertEqual((code, calls), (0, ['core', A]))
         calls.clear()
         with mock.patch.object(pre_push_check, 'known', lambda sha: True), mock.patch('sys.stderr', new_callable=io.StringIO) as err:
             code = pre_push_check.main([], io.StringIO(f'refs/heads/main {B} refs/heads/main {A}\nrefs/heads/dev {C} refs/heads/dev {ZERO}\n'),
-                                       run=lambda base: calls.append(base) or 1)
+                                       run=lambda base: calls.append(base) or 1, core=lambda: 0)
         self.assertEqual((code, calls), (1, [A]))
         self.assertIn('--no-verify', err.getvalue())
+        calls.clear()
+        with mock.patch.object(pre_push_check, 'known', lambda sha: True), mock.patch('sys.stderr', new_callable=io.StringIO) as err:
+            code = pre_push_check.main([], io.StringIO(f'refs/heads/main {B} refs/heads/main {A}\n'), run=lambda base: calls.append(base) or 0, core=lambda: 1)
+        self.assertEqual((code, calls), (1, []))  # a refused core contract runs no tests
+        self.assertIn('core contract', err.getvalue())
 
     def test_the_tests_run_without_the_variables_git_exports_to_a_hook(self):
         env = {'GIT_EDITOR': 'true', 'GIT_EXEC_PATH': '/usr/lib/git-core', 'GIT_PREFIX': '', 'GIT_DIR': '.git',
@@ -55,9 +60,9 @@ class MainTests(unittest.TestCase):
 
     def test_nothing_to_push_and_the_skip_flag_run_no_tests(self):
         calls = []
-        self.assertEqual(pre_push_check.main([], io.StringIO(''), run=lambda base: calls.append(base) or 1), 0)
+        self.assertEqual(pre_push_check.main([], io.StringIO(''), run=lambda base: calls.append(base) or 1, core=lambda: calls.append('core') or 1), 0)
         with mock.patch.dict(os.environ, KIT_PRE_PUSH='0'):
-            self.assertEqual(pre_push_check.main([], io.StringIO(f'refs/heads/main {B} refs/heads/main {A}\n'), run=lambda base: calls.append(base) or 1), 0)
+            self.assertEqual(pre_push_check.main([], io.StringIO(f'refs/heads/main {B} refs/heads/main {A}\n'), run=lambda base: calls.append(base) or 1, core=lambda: calls.append('core') or 1), 0)
         self.assertEqual(calls, [])
 
     def test_install_writes_a_hook_chains_an_exec_hook_once_and_leaves_others_alone(self):

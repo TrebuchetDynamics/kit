@@ -29,6 +29,12 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- `scripts/affected_tests.py` no longer selects the whole suite for a document no test reads,
+  and a document reaches at most the tests that read it and the tests of the code that reads
+  it (the engine names `CHANGELOG.md` because it edits one in target repositories, which used
+  to pull in every importer): a changelog line selects 38 modules instead of 144, a testing
+  doc none. The pre-push hook now runs the core contracts (docs check, task-store validation)
+  before the affected tests, so documents stay covered.
 - `autowork ls` (and every fleet lookup behind the TUI and the Paseo plugin) no longer runs
   the legacy-reference inventory of a converted task store, which read every tracked file and
   ran `git grep` over each repository: 6.2 s became 1.6 s for eleven repositories. The full
