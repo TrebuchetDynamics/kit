@@ -1,5 +1,11 @@
 # Qualification record
 
+## Five-second surface (2026-11-03)
+
+The client was reworked against a mobile critique (debug console rendered as an app: green *NOT RUNNING*, repeated unknown fields, raw hashes and Markdown, undifferentiated destructive controls, content under the navigation bar). `npm run check` passed: **109 tests across 7 test files** plus both strict TypeScript configurations. Seven new Node-renderer tests pin the semantic tone mapping, the one-banner-plus-single-blocker fleet, urgency ordering, the typed confirmation for Remove and Update, the decision card with rendered Markdown and Answer above the fold, completed work hidden behind one toggle with queue counts and a short revision, grouped health facts with relative times, and the bottom clearance. The daemon reloaded the plugin from the kit checkout after the change.
+
+Not performed: Android or Linux Desktop visual interaction with the redesigned screens. The critique's screenshots are the owner's acceptance baseline; the next owner pass should confirm the five-second test on a 360dp phone and that the floating host control no longer covers the header.
+
 ## Management surface (2026-11-02)
 
 `npm run check` passed: **102 tests across 7 test files**, plus both strict TypeScript configurations, after the plugin moved into the kit repository (`integrations/paseo/`) and gained every task verb, the tasks-only commit, every runner control and maintenance verb, planning modes, the goal/status/scorecard/models/store reads, the default policy file, the Settings screen and the long-poll change watch. New offline tests cover the server-authored argv for each action kind (flag values that start with `-`, `--` before positionals, stdin JSON for records), separate refusal per grant kind, refusal of a verb the installed release lacks, working-tree reads only under the `tasks` grant, the default policy path with its private-file rule, and a watch that answers after a task record changes.

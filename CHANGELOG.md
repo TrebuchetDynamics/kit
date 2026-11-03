@@ -25,6 +25,14 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- The Paseo plugin's screens pass a five-second test instead of dumping state: one banner per screen
+  with the single next action, a host-wide blocker said once, colour by meaning with an icon and the
+  word (green only for live or verified states, grey for *not running*), short hashes with copy,
+  relative times, owner Markdown rendered as words, unknown fields omitted, fleet rows sorted by
+  urgency with Open/Answer/More, a task queue that hides completed work and keeps filters behind one
+  button, decisions that lead with the question and **Answer**, plain control names (Start, Pause…)
+  with Remove and Update in a danger zone that asks for the repository name, a searchable model
+  picker, and bottom clearance for the navigation bar (plugin 0.3.0).
 - `/lgtm` is now a low-effort yes skill. It accepts the latest assistant
   recommendation, including every recommended answer in a question round, and
   continues the proposed work. It no longer replies "LGTM is not plan approval" or

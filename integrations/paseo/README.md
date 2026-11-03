@@ -29,6 +29,10 @@ The diagram describes the control flow. It is not a screenshot. Inspection is re
 - **Measure:** read the fleet scorecard for 1 to 30 days, including runners whose repository is missing.
 - **Stay current:** a change watch refreshes the open views within seconds of a task, Git or runner-state change. The sidebar row shows the pending-decision total and settled operations show a toast. A Settings screen shows the effective grants.
 
+### Reading the screens
+
+Every screen leads with one banner: the most urgent repository and the single next action (answer a decision, see why a runner stopped, or start one). A blocker shared by several runners is stated once at the top, not once per row. Colour follows meaning and always travels with an icon and the word itself: green only for live or verified states, amber for paused, waiting or decisions, red for failures, and plain grey for *not running*, stopped or closed. Hashes show their first eight characters with a copy action, times are relative, owner text renders its Markdown as words, and fields whose value is unknown are left out rather than repeated. Fleet rows sort by urgency and carry two lines plus **Open**, **Answer** when a decision waits, and **More** for tasks and planning. The task queue hides completed work until **Show completed**, keeps its four filters behind **Filters**, and counts open, deciding, blocked and done work. A decision shows its first sentence, what it unblocks and **Answer** first; evidence waits behind a tap.
+
 ## Requirements
 
 - Paseo **0.13.x or 0.14.x**, for both the daemon and connected app. The manifest accepts `>=0.13.0 <0.15.0`; it rejects a later minor until that release is tested.
@@ -124,9 +128,9 @@ A manual close records provenance; it does not verify acceptance. Free text neve
 Proposals remain unaccepted until you review and apply them.
 
 1. Choose **Planning**, pick a mode (plan, discuss or investigate), and optionally enter an objective, a task scope and a model. An empty objective in plan mode uses the existing autonomous discovery. Discuss and investigate modes talk about the plan; only plan mode stages file proposals.
-2. Prepare and confirm the planning start. Autowork's Planner and PlanningHub own the turn, task staging and private histories.
+2. Select **Start planning** and confirm. Each mode states in one line what it changes; a model is chosen from a searchable list or typed. Autowork's Planner and PlanningHub own the turn, task staging and private histories.
 3. Inspect progress, history, roadmap and preview. Follow-up, steering and cancellation apply only to sessions created by this plugin generation.
-4. Select **Prepare Apply exact preview**, then explicitly confirm. Autowork revalidates the exact revision and repository authority.
+4. Select **Apply preview**, then explicitly confirm. Autowork revalidates the exact revision and repository authority.
 5. Apply creates a local commit through Autowork. It does not grant push or start a service. Existing authorized runners may pick up newly accepted tasks.
 
 Only current canonical owner questions for open tasks expose **Answer**. Answers use `autowork tasks decide --expect <displayed record hash>` and leave an uncommitted local task edit that the pending-edits card can commit. Technical holds and accepted deferrals remain inspection work, not invented owner questions.
@@ -144,11 +148,11 @@ Disable/reload cancels owned turns with bounded cleanup. Retained worktrees and 
 
 ## Runner controls and maintenance
 
-Allowed controls use fixed Autowork arguments, never arbitrary shell: **start, pause, resume, stop, restart, remove and update**. Restart can wait for in-flight merges and then pause workers (`--stop-workers`), or interrupt the merges (`--now`); both are explicit toggles shown in the confirmation. Maintenance covers the service **model** with an optional fallback (chosen from `autowork models`), **clear-held** for held commits and owner **attention** minutes.
+Allowed controls use fixed Autowork arguments, never arbitrary shell: **Start, Pause, Resume, Stop and Restart** sit in one row; **Remove runner** and **Update suite** sit apart in a **Danger zone** and ask you to type the repository name before dispatch. Restart has one mode choice: wait for in-flight merges and keep workers, wait and then pause workers (`--stop-workers`), or interrupt the merges (`--now`); the confirmation repeats the choice. Maintenance covers the service **model** with an optional fallback (chosen from a searchable list fed by `autowork models`), **clear-held** for held commits and owner **attention** minutes. Without a controls grant the row is replaced by one read-only line, never by greyed-out green buttons.
 
 > **Start may install/start a user service and incur model use.** **Remove** stops and removes the service; state and worktrees stay. **Update** replaces the installed Autowork suite for every runner on the host; reload the plugin afterwards. **Model** restarts the service. The confirmation states each of these. No force flag, process-group killing or Git push is exposed.
 
-Each action requires a short-lived, single-use confirmation bound to the plugin generation, exact repository identity/revision, service state, payload and effective publication policy. Changed targets, expired confirmations and stale generations are refused. Duplicate submissions return the retained operation, not another dispatch.
+Each action opens the host's confirmation sheet with the exact effect, then requires a short-lived, single-use confirmation bound to the plugin generation, exact repository identity/revision, service state, payload and effective publication policy. Changed targets, expired confirmations and stale generations are refused. Duplicate submissions return the retained operation, not another dispatch.
 
 A command exit and observed service state are distinct. Unknown delivery and timeouts are **never automatically retried**. A settled operation shows a toast with its outcome and its result evidence stays in the operation card.
 

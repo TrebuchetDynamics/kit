@@ -10,7 +10,7 @@ const env = vi.hoisted(() => ({
   directory: '/repo' as string | null,
   hosts: [{ serverId: 'a', label: 'A', status: 'online' }],
   invoke: vi.fn(), state: 'active', listener: null as null | ((state: string) => void),
-  toast: { show: vi.fn(), error: vi.fn() },
+  toast: { show: vi.fn(), error: vi.fn() }, copyText: vi.fn(async () => {}),
 }));
 vi.mock('react-native', async () => {
   const React = await import('react');
@@ -24,7 +24,8 @@ vi.mock('react-native', async () => {
 vi.mock('@getpaseo/plugin/client/ui', async () => {
   const React = await import('react');
   const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
-  return { ScrollView: host('ScrollView'), TextInput: host('TextInput'), SidebarRow: host('SidebarRow'), useToast: () => env.toast };
+  const Modal = Object.assign((props: Record<string, unknown>) => props.open ? React.createElement('Modal', props, React.createElement('Text', null, props.title as string), props.children as React.ReactNode) : null, { Content: host('ModalContent') });
+  return { ScrollView: host('ScrollView'), TextInput: host('TextInput'), SidebarRow: host('SidebarRow'), Icon: host('Icon'), Modal, copyText: env.copyText, useToast: () => env.toast };
 });
 vi.mock('@getpaseo/plugin/client', () => ({
   useHosts: () => env.hosts,
@@ -33,7 +34,7 @@ vi.mock('@getpaseo/plugin/client', () => ({
 }));
 import { AutoworkScreen, WorkspacePanel } from '../client/screens';
 import { SettingsScreen } from '../client/settings';
-import { closureLabel, canAnswer, mainCheckSummary, previewForApply, taskMatches } from '../client/presentation';
+import { closureLabel, canAnswer, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, stateTone, taskMatches } from '../client/presentation';
 
 const fleet = (instance = 'generation-1') => fleetSchema.parse({ instance, capturedAt: Date.now(), release: 'configured-release', executable: '/bin/autowork', prepareApi: 4,
   permissions: { controls: ['pause'], planning: true, decisions: true, tasks: true, commit: true, maintenance: ['model', 'clear-held', 'attention'] }, policy: { path: '/policy.json', source: 'default' }, capabilities: { commands: ['ls', 'tasks', 'plan', 'logs', 'status', 'scorecard', 'models'], tasks: ['list', 'show', 'decide', 'goals', 'commit', 'validate', 'prepare', 'why'] }, warnings: [], repos: [{ id: 'repo', label: 'Repository', path: '/repo', identity: 'identity', revision: 'rev',
@@ -106,15 +107,16 @@ describe('canonical presentation', () => {
 describe('native host-scoped surfaces', () => {
   it('renders canonical status, unknown transport and manual closure without inferring health', async () => {
     await mount();
-    expect(text()).toContain('waiting'); expect(text()).toContain('Transport: unknown');
+    expect(text()).toContain('waiting'); expect(text()).not.toContain('Transport');
+    await press('Connection details'); expect(text()).toContain('Transport');
     await press('Tasks');
-    expect(text()).toContain('Owner task'); expect(text()).toContain('Closure: unknown');
+    expect(text()).toContain('Owner task'); expect(text()).not.toContain('Closure: unknown');
     await press('Open task T-1'); await press('Contract and evidence');
     expect(text()).toContain('Must preserve contract');
-    expect(button('Prepare owner answer')).toBeTruthy();
+    expect(button('Send answer')).toBeTruthy();
   });
   it('prepares, requires explicit confirmation, consumes once and never auto-replays', async () => {
-    await mount(); await press('Runner'); await press('Prepare pause');
+    await mount(); await press('Runner'); await press('Pause');
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(0);
     expect(text()).toContain('Pause repository');
     await press('Confirm operation');
@@ -126,7 +128,7 @@ describe('native host-scoped surfaces', () => {
     await mount(); expect(env.invoke).not.toHaveBeenCalled(); expect(text()).toContain('offline');
   });
   it('keys fleet by host and discards pending confirmations on host switch', async () => {
-    await mount(); await press('Runner'); await press('Prepare pause');
+    await mount(); await press('Runner'); await press('Pause');
     env.hosts.push({ serverId: 'b', label: 'B', status: 'online' });
     await act(async () => root.update(<QueryClientProvider client={query}><AutoworkScreen {...props} host={{ id: 'b', label: 'B' }} /></QueryClientProvider>));
     await flush();
@@ -144,7 +146,7 @@ describe('native host-scoped surfaces', () => {
       throw new Error(name);
     });
     await mount({ params: { view: 'planning' } });
-    await press('Prepare planning start'); await press('Confirm operation');
+    await press('Start planning'); await press('Confirm operation');
     await flush();
     env.hosts.push({ serverId: 'b', label: 'B', status: 'online' });
     await rerender({ host: { id: 'b', label: 'B' }, params: { view: 'planning' } });
@@ -158,7 +160,7 @@ describe('native host-scoped surfaces', () => {
     env.invoke.mockResolvedValue(value);
     await mount({ params: { view: 'runner' } });
     expect(text()).toContain('Cached');
-    expect(button('Prepare pause')!.props.disabled).toBe(true);
+    expect(button('Pause')!.props.disabled).toBe(true);
   });
   it('does not query a workspace without a known directory', async () => {
     env.directory = '';
@@ -171,7 +173,7 @@ describe('native host-scoped surfaces', () => {
   it('refreshes working revisions after reconnect instead of authorizing cached answers', async () => {
     await mount({ params: { view: 'tasks' } }); await press('Open task T-1');
     await input('Owner answer', 'Approved scope');
-    expect(button('Prepare owner answer')!.props.disabled).toBe(false);
+    expect(button('Send answer')!.props.disabled).toBe(false);
     await act(async () => { env.hosts[0]!.status = 'offline'; root.update(render({ params: { view: 'tasks' } })); });
     await flush();
     const before = env.invoke.mock.calls.filter(([name]) => name === 'autowork.task').length;
@@ -183,7 +185,7 @@ describe('native host-scoped surfaces', () => {
     const initial = env.invoke.getMockImplementation()!;
     let release!: (value: unknown) => void;
     env.invoke.mockImplementation((name, data) => name === 'autowork.prepare' ? new Promise(resolve => { release = resolve; }) : initial(name, data));
-    await mount({ params: { view: 'runner' } }); await press('Prepare pause');
+    await mount({ params: { view: 'runner' } }); await press('Pause');
     env.hosts[0]!.status = 'offline'; await rerender({ params: { view: 'runner' } });
     env.hosts[0]!.status = 'online'; await rerender({ params: { view: 'runner' } });
     await act(async () => release({ ticket: 'late', expiresAt: Date.now() + 60000, summary: 'Late', pushAllowed: false }));
@@ -191,17 +193,17 @@ describe('native host-scoped surfaces', () => {
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(0);
   });
   it('invalidates tickets and owned sessions on backend instance change', async () => {
-    await mount({ params: { view: 'runner' } }); await press('Prepare pause');
+    await mount({ params: { view: 'runner' } }); await press('Pause');
     env.invoke.mockImplementation(async name => { if (name === 'autowork.fleet') return fleet('generation-2'); throw new Error(name); });
     await act(async () => { await query.invalidateQueries({ queryKey: ['autowork', 'a', 'fleet'], exact: true }); });
     await flush();
-    expect(text()).toContain('generation-2'); expect(button('Confirm operation')).toBeUndefined();
+    expect((query.getQueryData(['autowork', 'a', 'fleet']) as { instance: string }).instance).toBe('generation-2'); expect(button('Confirm operation')).toBeUndefined();
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(0);
   });
   it('retains uncertainty after commit transport failure and does not retry on reconnect', async () => {
     const initial = env.invoke.getMockImplementation()!;
     env.invoke.mockImplementation((name, data) => name === 'autowork.commit' ? Promise.reject(new Error('Connection lost')) : initial(name, data));
-    await mount({ params: { view: 'runner' } }); await press('Prepare pause'); await press('Confirm operation');
+    await mount({ params: { view: 'runner' } }); await press('Pause'); await press('Confirm operation');
     expect(text()).toContain('Delivery unknown; not retried');
     env.hosts[0]!.status = 'offline'; await rerender({ params: { view: 'runner' } });
     env.hosts[0]!.status = 'online'; await rerender({ params: { view: 'runner' } });
@@ -210,7 +212,7 @@ describe('native host-scoped surfaces', () => {
   });
   it('sends only the current owner record revision through confirmation', async () => {
     await mount({ params: { view: 'tasks' } }); await press('Open task T-1');
-    await input('Owner answer', 'Literal answer; no command execution'); await press('Prepare owner answer');
+    await input('Owner answer', 'Literal answer; no command execution'); await press('Send answer');
     const prepared = env.invoke.mock.calls.find(([name]) => name === 'autowork.prepare')!;
     expect(prepared[1]).toEqual({ instance: 'generation-1', action: { kind: 'decision', repoId: 'repo', task: 'T-1', revision: 'working-rev', text: 'Literal answer; no command execution' } });
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(0);
@@ -221,7 +223,7 @@ describe('native host-scoped surfaces', () => {
     await mount({ params: { view: 'blockers' } }); await press('Technical holds and blocker evidence');
     expect(text()).toContain('technical hold');
     await press('Open task T-2');
-    expect(button('Prepare owner answer')).toBeUndefined();
+    expect(button('Send answer')).toBeUndefined();
     expect(text()).toContain('not a current canonical owner question');
   });
   it('stages empty-objective planning, learns session from operation, previews then confirms exact Apply', async () => {
@@ -235,15 +237,15 @@ describe('native host-scoped surfaces', () => {
     });
     await mount({ params: { view: 'planning' } });
     expect(env.invoke.mock.calls.filter(([name]) => name !== 'autowork.fleet' && name !== 'autowork.watch')).toHaveLength(0);
-    await press('Prepare planning start');
+    await press('Start planning');
     expect(prepared).toEqual({ kind: 'plan-start', repoId: 'repo', objective: '', mode: 'plan' });
     await press('Confirm operation'); await flush();
     expect(text()).toContain('Owned session: owned-plan');
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.planning')).toHaveLength(0);
-    expect(button('Prepare Apply exact preview')).toBeUndefined();
+    expect(button('Apply preview')).toBeUndefined();
     await press('Read planning preview'); await press('Planning result');
     expect(text()).toContain('+ acceptance');
-    await press('Prepare Apply exact preview');
+    await press('Apply preview');
     expect(prepared).toEqual({ kind: 'plan-apply', repoId: 'repo', sessionId: 'owned-plan', revision: 'preview-exact' });
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(1);
     await press('Confirm operation');
@@ -259,19 +261,19 @@ describe('native host-scoped surfaces', () => {
       if (name === 'autowork.planning') return new Promise(resolve => { release = resolve; });
       throw new Error(name);
     });
-    await mount({ params: { view: 'planning' } }); await press('Prepare planning start'); await press('Confirm operation'); await flush();
+    await mount({ params: { view: 'planning' } }); await press('Start planning'); await press('Confirm operation'); await flush();
     await press('Read planning preview');
     env.hosts[0]!.status = 'offline'; await rerender({ params: { view: 'planning' } });
     env.hosts[0]!.status = 'online'; await rerender({ params: { view: 'planning' } });
     await act(async () => release({ value: { revision: 'old-preview', valid: true, files: ['Task.md'], diff: 'old', errors: [] } }));
     await flush();
-    expect(button('Prepare Apply exact preview')).toBeUndefined();
+    expect(button('Apply preview')).toBeUndefined();
   });
   it('stores a late commit response only on the original host and instance', async () => {
     let release!: (value: unknown) => void;
     const initial = env.invoke.getMockImplementation()!;
     env.invoke.mockImplementation((name, data) => name === 'autowork.commit' ? new Promise(resolve => { release = resolve; }) : initial(name, data));
-    await mount({ params: { view: 'runner' } }); await press('Prepare pause'); await press('Confirm operation');
+    await mount({ params: { view: 'runner' } }); await press('Pause'); await press('Confirm operation');
     env.hosts.push({ serverId: 'b', label: 'B', status: 'online' });
     await rerender({ host: { id: 'b', label: 'B' }, params: { view: 'planning' } });
     await act(async () => release(operation({ kind: 'control', status: 'succeeded', sessionId: null })));
@@ -281,7 +283,7 @@ describe('native host-scoped surfaces', () => {
     expect(query.getQueryData(['autowork', 'b', 'generation-1', 'accepted-operations'])).toEqual([]);
   });
   it('consumes confirmation synchronously against double taps', async () => {
-    await mount({ params: { view: 'runner' } }); await press('Prepare pause');
+    await mount({ params: { view: 'runner' } }); await press('Pause');
     const confirm = button('Confirm operation')!.props.onPress;
     await act(async () => { confirm(); confirm(); }); await flush();
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(1);
@@ -289,7 +291,7 @@ describe('native host-scoped surfaces', () => {
   it('does not commit an expired ticket', async () => {
     const initial = env.invoke.getMockImplementation()!;
     env.invoke.mockImplementation((name, data) => name === 'autowork.prepare' ? Promise.resolve({ ticket: 'expired', expiresAt: Date.now() - 1, summary: 'Expired', pushAllowed: false }) : initial(name, data));
-    await mount({ params: { view: 'runner' } }); await press('Prepare pause'); await press('Confirm operation');
+    await mount({ params: { view: 'runner' } }); await press('Pause'); await press('Confirm operation');
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(0);
   });
   it('polls owned planning only on its active view and confirms steering/cancel mutations', async () => {
@@ -301,19 +303,19 @@ describe('native host-scoped surfaces', () => {
       if (name === 'autowork.operation') return prepared?.kind === 'plan-steer' ? new Promise(() => {}) : operation({ sessionId: 'owned-plan', progress: 'Controller evidence' });
       throw new Error(name);
     });
-    await mount({ params: { view: 'planning' } }); await press('Prepare planning start'); await press('Confirm operation'); await flush();
+    await mount({ params: { view: 'planning' } }); await press('Start planning'); await press('Confirm operation'); await flush();
     const key = ['autowork', 'a', 'generation-1', 'operation'];
     const count = () => env.invoke.mock.calls.filter(([name]) => name === 'autowork.operation').length;
     await press('Runner'); const before = count();
     await act(async () => { await query.invalidateQueries({ queryKey: key }); }); await flush();
     expect(count()).toBe(before);
     await press('Planning'); await flush(); expect(count()).toBeGreaterThan(before);
-    await input('Planning message', 'Clarify acceptance'); await press('Prepare planning steer');
+    await input('Planning message', 'Clarify acceptance'); await press('Steer planning');
     expect(prepared).toEqual({ kind: 'plan-steer', repoId: 'repo', operationId: 'operation-1', message: 'Clarify acceptance' });
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(1);
     await press('Confirm operation'); await flush();
-    expect(button('Prepare planning message')!.props.disabled).toBe(true);
-    await press('Prepare planning cancel');
+    expect(button('Send planning message')!.props.disabled).toBe(true);
+    await press('Cancel planning');
     expect(prepared).toEqual({ kind: 'plan-cancel', repoId: 'repo', operationId: 'operation-1' });
     await act(async () => { env.state = 'background'; env.listener?.('background'); });
     const paused = count(); await act(async () => { await query.invalidateQueries({ queryKey: key }); }); await flush();
@@ -337,15 +339,15 @@ describe('native host-scoped surfaces', () => {
     const value = fleet(); value.repos[0]!.runner!.model = 'configured-model'; value.repos[0]!.runner!.toolset = '/configured/source';
     env.invoke.mockResolvedValue(value);
     await mount({ params: { view: 'runner' } });
-    expect(text()).toContain('Configured model: configured-model');
-    expect(text()).toContain('Configured toolset: /configured/source');
+    expect(text()).toContain('Configured model\nconfigured-model');
+    expect(text()).toContain('Configured toolset\n/configured/source');
     expect(text()).toContain('Observed runtime: unknown');
     expect(text()).not.toContain('Observed runtime: configured-model');
   });
   it('updates a navigated planning objective as draft text only, without starting', async () => {
     await mount({ params: { view: 'planning', objective: 'First' } });
     await rerender({ params: { view: 'planning', objective: 'Changed objective' } });
-    const field = root.root.find(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'Objective (empty discovers work)');
+    const field = root.root.find(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'Objective');
     expect(field.props.value).toBe('Changed objective');
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.prepare' || name === 'autowork.commit')).toHaveLength(0);
   });
@@ -353,7 +355,7 @@ describe('native host-scoped surfaces', () => {
     const value = fleet(); value.repos[0]!.error = 'Repository unavailable'; value.repos[0]!.identity = '';
     env.invoke.mockResolvedValue(value);
     await mount({ params: { view: 'runner' } });
-    expect(button('Prepare pause')!.props.disabled).toBe(true);
+    expect(button('Pause')!.props.disabled).toBe(true);
   });
   it('renders manual versus verified closure explicitly on task rows', async () => {
     const initial = env.invoke.getMockImplementation()!;
@@ -361,7 +363,7 @@ describe('native host-scoped surfaces', () => {
       { ...task, status: 'done', closure: { label: 'closed', provenance: 'manual', verified: false } },
       { ...task, id: 'T-2', status: 'done', closure: { label: 'closed', provenance: 'evidence', verified: true } },
     ] }) : initial(name, data));
-    await mount({ params: { view: 'tasks' } });
+    await mount({ params: { view: 'tasks' } }); await press('Show completed');
     expect(text()).toContain('Closure: closed · manual · not verified');
     expect(text()).toContain('Closure: closed · evidence · verified');
   });
@@ -371,7 +373,7 @@ describe('native host-scoped surfaces', () => {
       task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done' },
       { ...task, id: 'T-HELD', title: 'Held task', blocked_by: 'HELD' },
     ] }) : initial(name, data));
-    await mount({ params: { view: 'tasks' } });
+    await mount({ params: { view: 'tasks' } }); await press('Filters');
     await input('Filter runtime', 'done'); expect(text()).toContain('Finished task'); expect(text()).not.toContain('Owner task');
     await input('Filter runtime', 'held'); expect(text()).toContain('Held task'); expect(text()).not.toContain('Finished task');
   });
@@ -381,9 +383,9 @@ describe('native host-scoped surfaces', () => {
       ? Promise.resolve(operation({ sessionId: 'owned-session', status: 'uncertain' }))
       : name === 'autowork.operation' ? Promise.resolve(operation({ sessionId: 'owned-session', status: 'running' })) : initial(name, data));
     await mount({ params: { view: 'planning' } });
-    await press('Prepare planning start'); await press('Confirm operation');
-    expect(button('Prepare planning cancel')).toBeTruthy();
-    expect(button('Prepare planning message')!.props.disabled).toBe(true);
+    await press('Start planning'); await press('Confirm operation');
+    expect(button('Cancel planning')).toBeTruthy();
+    expect(button('Send planning message')!.props.disabled).toBe(true);
     await press('Reconcile operation');
     // Reconciliation may resume ordinary status polling; neither observation may replay a commit.
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.operation').length).toBeGreaterThanOrEqual(1);
@@ -397,7 +399,7 @@ describe('native host-scoped surfaces', () => {
   it('distinguishes unmatched filters from an empty queue and lets the user reset filters', async () => {
     await mount({ params: { view: 'tasks' } });
     expect(text()).toContain('Showing 1–1 of 1 matching tasks · 1 total');
-    await input('Filter task', 'not-present');
+    await press('Filters'); await input('Filter task', 'not-present');
     expect(text()).toContain('No tasks match these filters.');
     expect(text()).not.toContain('No tasks observed.');
     expect(text()).not.toContain('Owner task');
@@ -422,7 +424,7 @@ describe('native host-scoped surfaces', () => {
     await press('Next task page');
     expect(rows()).toHaveLength(11);
     expect(button('Next task page')!.props.disabled).toBe(true);
-    await input('Filter task', 'Queue item 61');
+    await press('Filters'); await input('Filter task', 'Queue item 61');
     expect(text()).toContain('Showing 1–1 of 1 matching tasks · 61 total');
     expect(button('Open task T-61')).toBeTruthy();
     await press('Clear task filters');
@@ -481,10 +483,10 @@ describe('native host-scoped surfaces', () => {
     const value = fleet(); value.permissions = { controls: [], planning: false, decisions: false, tasks: false, commit: false, maintenance: [] };
     env.invoke.mockResolvedValue(value);
     await mount({ params: { view: 'runner' } });
-    expect(text()).toContain('read-only');
+    expect(text()).toContain('Read-only');
     expect(text()).toContain('Runner controls are read-only by operator policy');
     expect(button('Tasks')).toBeTruthy();
-    expect(button('Prepare pause')).toBeUndefined();
+    expect(button('Pause')).toBeUndefined();
   });
   it('renders the main-check summary rather than a raw object in the runner view', async () => {
     const value = fleet(); value.repos[0]!.runner!.main_check = { state: 'green', result_class: 'PASS', checked_rev: '7c9960e54149a2e7b5a12cbc565167f0', main_head: '7c9960e54149a2e7b5a12cbc565167f0', finished: 1793507113.748 };
@@ -503,7 +505,7 @@ describe('native host-scoped surfaces', () => {
     }
   });
   it('pauses queries in AppState background and revokes pending confirmation', async () => {
-    await mount(); await press('Runner'); await press('Prepare pause');
+    await mount(); await press('Runner'); await press('Pause');
     await act(async () => { env.state = 'background'; env.listener?.('background'); });
     expect(button('Confirm operation')).toBeUndefined(); expect(text()).toContain('paused');
     const calls = env.invoke.mock.calls.length;
@@ -525,33 +527,33 @@ describe('management surface', () => {
   it('offers every granted control and maintenance action and sends restart flags, model and attention exactly', async () => {
     const captured = capture(grantAll());
     await mount({ params: { view: 'runner' } });
-    for (const action of ['start', 'pause', 'resume', 'stop', 'restart', 'remove', 'update']) expect(button(`Prepare ${action}`), action).toBeTruthy();
-    await press('Restart waits for merges, then pauses workers'); await press('Restart interrupts merges now'); await press('Prepare restart');
+    for (const title of ['Start', 'Pause', 'Resume', 'Stop', 'Restart', 'Remove runner', 'Update suite']) expect(button(title), title).toBeTruthy();
+    await press('Interrupt merges now'); await press('Restart');
     expect(captured.action).toEqual({ kind: 'control', repoId: 'repo', action: 'restart', stopWorkers: true, now: true });
-    await press('Service model'); await press('Load model list'); await press('provider/model-a'); await press('Prepare model change');
+    await press('Service model'); await press('Choose model'); await press('provider/model-a'); await press('Change model');
     expect(captured.action).toEqual({ kind: 'model', repoId: 'repo', model: 'provider/model-a' });
-    await press('Owner attention'); await input('Minutes', '15'); await input('Attention note', '-n'); await press('Prepare attention record');
+    await press('Owner attention'); await input('Minutes', '15'); await input('Attention note', '-n'); await press('Record attention');
     expect(captured.action).toEqual({ kind: 'attention', repoId: 'repo', minutes: 15, note: '-n' });
-    await press('Clear held commits'); await input('Held task IDs (empty clears all)', 'T-2 T-3'); await press('Prepare clear-held');
+    await press('Held commits'); await input('Held task IDs (empty clears all)', 'T-2 T-3'); await press('Clear held commits');
     expect(captured.action).toEqual({ kind: 'clear-held', repoId: 'repo', tasks: ['T-2', 'T-3'] });
-    await press('Runner status'); expect(text()).toContain('Runner:     not running');
+    await press('Diagnostics'); expect(text()).toContain('Runner:     not running');
   });
   it('edits tasks against the working-tree revision, adds records and commits only task paths after showing the diff', async () => {
     const captured = capture(grantAll());
     await mount({ params: { view: 'tasks' } });
-    expect(text()).toContain('Working-tree records'); expect(text()).toContain('1 file(s) uncommitted');
+    expect(text()).toContain('working-tree records'); expect(text()).toContain('1 file uncommitted');
     await press('Pending diff'); expect(text()).toContain('+ Owner decision');
-    await input('Commit message', 'answer T-1'); await press('Prepare task commit');
+    await input('Commit message', 'answer T-1'); await press('Commit task edits');
     expect(captured.action).toEqual({ kind: 'commit', repoId: 'repo', message: 'answer T-1' });
     await press('Open task T-1');
     expect(env.invoke.mock.calls.some(([name, value]) => name === 'autowork.task' && (value as { working: boolean }).working === true)).toBe(true);
-    await press('Edit task'); await input('Closed by', 'owner'); await input('Closure reason', 'obsolete'); await press('Prepare task done');
+    await press('Edit task'); await input('Closed by', 'owner'); await input('Closure reason', 'obsolete'); await press('Mark done');
     expect(captured.action).toEqual({ kind: 'task-done', repoId: 'repo', task: 'T-1', revision: 'working-rev', by: 'owner', reason: 'obsolete' });
-    await press('Prepare move up');
+    await press('Move up');
     expect(captured.action).toEqual({ kind: 'task-move', repoId: 'repo', task: 'T-1', revision: 'working-rev', direction: 'up' });
-    await press('New task'); await press('goal'); await input('Title', 'New work'); await input('Short (at most 80 characters)', 'New'); await input('Acceptance (one per line)', 'a\nb'); await press('Prepare task add');
+    await press('New task'); await press('goal'); await input('Title', 'New work'); await input('Short (at most 80 characters)', 'New'); await input('Acceptance (one per line)', 'a\nb'); await press('Add task');
     expect(captured.action).toEqual({ kind: 'task-add', repoId: 'repo', fields: { goal: 'goal', title: 'New work', short: 'New', section: 'Next', kind: 'implementation', ownership: 'worker', acceptance: ['a', 'b'] } });
-    await press('Show goals'); await press('Edit goal goal'); await input('Goal priority', '3'); await press('focus'); await press('Prepare goal write');
+    await press('Show goals'); await press('Edit goal goal'); await input('Goal priority', '3'); await press('focus'); await press('Save goal');
     expect(captured.action).toEqual({ kind: 'goal', repoId: 'repo', goal: 'goal', revision: 'goal-v1', fields: { priority: 3, focus: true } });
   });
   it('hides task editing without the grant and never asks for working-tree records', async () => {
@@ -565,7 +567,7 @@ describe('management surface', () => {
   it('starts planning with a mode, task scope and model when chosen', async () => {
     const captured = capture(grantAll());
     await mount({ params: { view: 'planning', objective: 'Improve docs' } });
-    await press('Investigate'); await input('Task scope (optional)', 'T-1'); await input('Planning model (optional)', 'provider/model-a'); await press('Prepare planning start');
+    await press('Investigate'); await input('Task scope (optional)', 'T-1'); await input('Planning model (optional)', 'provider/model-a'); await press('Start planning');
     expect(captured.action).toEqual({ kind: 'plan-start', repoId: 'repo', objective: 'Improve docs', mode: 'investigate', task: 'T-1', model: 'provider/model-a' });
   });
   it('renders the scorecard with missing-repository errors and the read-only settings grants', async () => {
@@ -588,7 +590,85 @@ describe('management surface', () => {
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 1400)); }); await flush();
     expect(watches).toBeGreaterThanOrEqual(2);
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.fleet').length).toBeGreaterThan(before);
-    await press('Prepare pause'); await press('Confirm operation');
+    await press('Pause'); await press('Confirm operation');
     expect(env.toast.show).toHaveBeenCalledWith('control: succeeded', expect.objectContaining({ variant: 'success' }));
   }, 10000);
+
+  it('colours by meaning, not by substring: not running is neutral, only live states are green', () => {
+    expect(stateTone('NOT RUNNING')).toBe('neutral'); expect(stateTone('stopped')).toBe('neutral'); expect(stateTone('done')).toBe('neutral');
+    expect(stateTone('running')).toBe('success'); expect(stateTone('paused')).toBe('warning'); expect(stateTone('waiting')).toBe('warning');
+    expect(stateTone('service failed')).toBe('danger'); expect(stateTone('dead')).toBe('danger');
+  });
+  it('humanises hashes, times, observations and owner Markdown', () => {
+    expect(revisionParts('7c9960e54149a2e7b5a12cbc565167f0ea87a4d0+working')).toEqual({ hash: '7c9960e54149a2e7b5a12cbc565167f0ea87a4d0', short: '7c9960e5', suffix: '+working' });
+    expect(relativeTime(Date.now() - 5 * 3600 * 1000)).toBe('5h ago');
+    expect(relativeTime(1793671362.96, 1793671362960 + 90000)).toBe('2m ago');
+    expect(markdownSegments('Keep **WEB-ALL** per [final reconciliation](docs/r.md).')).toEqual([{ text: 'Keep ' }, { text: 'WEB-ALL', bold: true }, { text: ' per ' }, { text: 'final reconciliation', link: 'docs/r.md' }, { text: '.' }]);
+    expect(headline('Which scope applies? The rest is **detail** that goes on.')).toBe('Which scope applies?');
+    expect(observationRows({ runner_alive: false, health_written_at: Date.now() / 1000 - 60, task_state: 'unknown' })).toEqual([['Runner alive', 'no'], ['Health written at', '1m ago']]);
+  });
+  it('leads the fleet with one banner, says a host-wide blocker once and sorts the urgent repository first', async () => {
+    const value = fleet(); const base = value.repos[0]!;
+    value.repos = [
+      { ...base, id: 'quiet', label: 'Quiet', runner: { ...base.runner!, state: 'not running', decisions: 0, questions: [], blocker: 'Pi RPC incompatible' } },
+      { ...base, id: 'urgent', label: 'Urgent', runner: { ...base.runner!, state: 'waiting', decisions: 2, blocker: 'Pi RPC incompatible' } },
+    ];
+    capture(value);
+    await mount();
+    expect(text()).toContain('2 decisions waiting');
+    expect(text().split('Pi RPC incompatible')).toHaveLength(2);
+    const opens = root.root.findAll(node => String(node.type) === 'Pressable' && /^Open (Quiet|Urgent)$/.test(node.props.accessibilityLabel)).map(node => node.props.accessibilityLabel);
+    expect(opens).toEqual(['Open Urgent', 'Open Quiet']);
+    const pill = (state: string) => root.root.find(node => String(node.type) === 'View' && node.props.accessibilityLabel === `status ${state}`).props.style.borderColor;
+    expect(pill('not running')).toBe(props.theme.colors.foregroundMuted);
+    expect(pill('waiting')).toBe(props.theme.colors.statusWarning);
+    expect(text()).not.toContain('Transport');
+    await press('Answer in Urgent');
+    expect(text()).toContain('Decision needed · 1');
+  });
+  it('asks for the repository name before a destructive control and keeps danger out of the primary row', async () => {
+    capture(grantAll());
+    await mount({ params: { view: 'runner' } });
+    expect(text()).toContain('Danger zone');
+    await press('Remove runner');
+    expect(button('Confirm operation')!.props.disabled).toBe(true);
+    await input('Type the repository name to confirm', 'Repository');
+    expect(button('Confirm operation')!.props.disabled).toBe(false);
+    await press('Confirm operation');
+    expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(1);
+    await press('Pause');
+    expect(button('Confirm operation')!.props.disabled).toBe(false);
+    expect(root.root.findAll(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'Type the repository name to confirm')).toHaveLength(0);
+  });
+  it('puts the question and the answer above the fold and renders Markdown as words', async () => {
+    const value = fleet(); value.repos[0]!.runner!.questions = [{ id: 'T-1', effort: 'small', unblocks: 3, needs: 'Keep **WEB-ALL** as one goal? See [final reconciliation](docs/r.md).\n\nLong evidence paragraph.', answer: '', kind: '' }];
+    capture(value);
+    await mount({ params: { view: 'blockers' } });
+    expect(text()).toContain('Decision needed · 1'); expect(text()).toContain('Keep WEB-ALL as one goal?'); expect(text()).toContain('unblocks 3 tasks');
+    expect(text()).not.toContain('**'); expect(text()).not.toContain('Existing answer');
+    await press('Answer T-1');
+    expect(button('Send answer')).toBeTruthy(); expect(text()).not.toContain('](docs/'); expect(text()).toContain('final reconciliation');
+  });
+  it('hides completed work by default, counts the queue and keeps filters behind one button', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'abcdef0123456789+working', tasks: [task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done', closure: { label: 'closed', provenance: 'manual', verified: false } }] }) : initial(name, data));
+    await mount({ params: { view: 'tasks' } });
+    expect(text()).not.toContain('Finished task');
+    expect(text()).toContain('1 open task · 1 need decision · 0 blocked · 1 done');
+    expect(text()).toContain('abcdef01+working'); expect(text()).not.toContain('abcdef0123456789');
+    expect(root.root.findAll(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'Filter task')).toHaveLength(0);
+    await press('Show completed'); expect(text()).toContain('Finished task'); expect(text()).toContain('manual close');
+  });
+  it('groups runner health into facts with relative times and says why it stopped once', async () => {
+    const value = fleet(); const runner = value.repos[0]!.runner!;
+    runner.state = 'not running'; runner.blocker = 'Pi 1.5.0 is not qualified'; runner.stop_reason = 'Pi 1.5.0 is not qualified';
+    runner.observation = { runner_alive: false, health_written_at: Date.now() / 1000 - 5 * 3600, task_state: 'unknown' };
+    capture(value);
+    await mount({ params: { view: 'runner' } });
+    expect(text()).toContain('Why it stopped');
+    expect(text().split('Pi 1.5.0 is not qualified')).toHaveLength(2);
+    expect(text()).toContain('Runner alive\nno'); expect(text()).toContain('Health written at\n5h ago');
+    expect(text()).not.toContain('health_written_at'); expect(text()).not.toContain('task_state');
+    expect(root.root.find(node => String(node.type) === 'ScrollView' && node.props.contentContainerStyle).props.contentContainerStyle.paddingBottom).toBeGreaterThanOrEqual(96);
+  });
 });

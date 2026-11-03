@@ -2,7 +2,7 @@
   "name": "paseo-autowork",
   "private": true,
   "type": "module",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Native Paseo fleet, task, goal, planning and runner-control interface for the existing Autowork engine",
   "license": "MIT",
   "files": [
