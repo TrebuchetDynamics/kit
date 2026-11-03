@@ -52,6 +52,13 @@ export function Button({ label, onPress, disabled = false, selected = false, var
     <Text style={{ color: foreground, fontSize: compact ? 13 : 14, fontWeight: '600', textAlign: 'center' }}>{label}</Text>
   </Pressable>;
 }
+export function IconButton({ label, icon, onPress, disabled = false }: { label: string; icon: string; onPress: () => void; disabled?: boolean }) {
+  const colors = useColors();
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
+    style={{ alignSelf: 'flex-start', minHeight: 48, minWidth: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface2, opacity: disabled ? 0.5 : 1 }}>
+    <Icon name={icon} size={18} color={disabled ? colors.foregroundMuted : colors.foreground} />
+  </Pressable>;
+}
 export function Stat({ value, label, tone = 'neutral' }: { value: string | number; label: string; tone?: Tone }) {
   const colors = useColors();
   return <View style={{ minWidth: 74, flexGrow: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, backgroundColor: colors.surface2 }}>
@@ -126,10 +133,12 @@ export function Choice<T extends string>({ label, value, options, onChange, disa
     <Row>{items.map(([key, title]) => <Button key={key} label={title} compact selected={value === key} disabled={disabled} onPress={() => onChange(key)} />)}</Row>
   </View>;
 }
-export function Expand({ title, children, open = false }: { title: string; children: ReactNode; open?: boolean }) {
+export function Expand({ title, children, open = false, hint }: { title: string; children: ReactNode; open?: boolean; hint?: string }) {
   const [expanded, setExpanded] = useState(open);
-  return <View style={{ gap: 8 }}>
-    <Button label={title} onPress={() => setExpanded(!expanded)} selected={expanded} compact />{expanded ? <View style={{ gap: 6 }}>{children}</View> : null}</View>;
+  return <View style={{ gap: 4 }}>
+    <Button label={title} onPress={() => setExpanded(!expanded)} selected={expanded} compact />
+    {hint ? <Caption>{hint}</Caption> : null}
+    {expanded ? <View style={{ gap: 6 }}>{children}</View> : null}</View>;
 }
 /** Owner text rendered as text: bold, code and links show their words, not their Markdown. */
 export function Markdown({ text }: { text: string }) {
@@ -147,7 +156,7 @@ export function HashChip({ value, name, suffix = '' }: { value: string; name: st
   const short = value ? value.slice(0, 8) : 'unknown';
   return <Row>
     <Label mono>{short}{suffix}</Label>
-    {value ? <Button label="Copy" compact variant="ghost" accessibilityLabel={`Copy ${name} ${short}`} onPress={() => { void copyText(value).then(() => toast.show(`Copied ${name} ${value}`, { variant: 'info', durationMs: 2000 })).catch(() => toast.error('Copy unavailable on this client')); }} /> : null}
+    {value ? <IconButton label={`Copy ${name} ${short}`} icon="Copy" onPress={() => { void copyText(value).then(() => toast.show(`Copied ${name} ${value}`, { variant: 'info', durationMs: 2000 })).catch(() => toast.error('Copy unavailable on this client')); }} /> : null}
   </Row>;
 }
 /** The host's sheet (bottom sheet on phones, dialog on desktop) for a step that must not be missed. */

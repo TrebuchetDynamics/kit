@@ -8,7 +8,7 @@ This is a **plugin**, not a provider, scheduler or bundled Autowork engine. It t
 
 > **Read-only by default.** No model calls or mutation grants without a daemon-side policy file.
 >
-> **Qualification:** offline checks include the real Paseo 0.15 compiler and an isolated server load (109 tests across 7 files). The 0.15.0 Android app and the local 0.14.0 daemon both accept the manifest; a server-side exercise against the live fleet with a grant-all policy passed. Physical Android and Linux Desktop UI interaction, real planning and authorized service controls through the app remain **pending**. See the [qualification record](docs/qualification.md).
+> **Qualification:** offline checks include the real Paseo 0.15 compiler and an isolated server load (113 tests across 7 files). The 0.15.0 Android app and the local 0.14.0 daemon both accept the manifest; a server-side exercise against the live fleet with a grant-all policy passed. Physical Android and Linux Desktop UI interaction, real planning and authorized service controls through the app remain **pending**. See the [qualification record](docs/qualification.md).
 
 [Install](#install-only-after-reviewing-trusted-code) · [Host policy](#host-policy) · [Tasks](#task-edits-and-commits) · [Runners](#runner-controls-and-maintenance) · [Planning](#planning-and-decisions) · [Security](docs/security.md) · [Qualification](docs/qualification.md)
 
@@ -148,7 +148,7 @@ Disable/reload cancels owned turns with bounded cleanup. Retained worktrees and 
 
 ## Runner controls and maintenance
 
-Allowed controls use fixed Autowork arguments, never arbitrary shell: **Start, Pause, Resume, Stop and Restart** sit in one row; **Remove runner** and **Update suite** sit apart in a **Danger zone** and ask you to type the repository name before dispatch. Restart has one mode choice: wait for in-flight merges and keep workers, wait and then pause workers (`--stop-workers`), or interrupt the merges (`--now`); the confirmation repeats the choice. Maintenance covers the service **model** with an optional fallback (chosen from a searchable list fed by `autowork models`), **clear-held** for held commits and owner **attention** minutes. Without a controls grant the row is replaced by one read-only line, never by greyed-out green buttons.
+Allowed controls use fixed Autowork arguments, never arbitrary shell: **Start, Pause, Resume, Stop and Restart** sit in one row; **Remove service** and **Update all runners** sit apart in a **Danger zone** and ask you to type the repository name before dispatch. Restart has one mode choice: wait for in-flight merges and keep workers, wait and then pause workers (`--stop-workers`), or interrupt the merges (`--now`); the confirmation repeats the choice. Maintenance covers the service **model** with an optional fallback (chosen from a searchable list fed by `autowork models`), **clear-held** for held commits and owner **attention** minutes. Without a controls grant the row is replaced by one read-only line, never by greyed-out green buttons.
 
 > **Start may install/start a user service and incur model use.** **Remove** stops and removes the service; state and worktrees stay. **Update** replaces the installed Autowork suite for every runner on the host; reload the plugin afterwards. **Model** restarts the service. The confirmation states each of these. No force flag, process-group killing or Git push is exposed.
 

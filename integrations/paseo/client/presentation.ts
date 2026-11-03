@@ -52,7 +52,8 @@ export function closureLabel(closure: Record<string, unknown>): string {
   const provenance = typeof closure.provenance === 'string' ? closure.provenance : 'unknown provenance';
   const verified = closure.provenance === 'coordinator_verified' ? closure.evidence_valid : closure.verified;
   const verification = verified === true ? 'verified' : verified === false ? 'not verified' : 'verification unknown';
-  return `${display(closure.label)} · ${provenance} · ${verification}`;
+  // The badge already shows the closure label; this line adds only provenance and proof.
+  return `${provenance} · ${verification}`;
 }
 /** One badge for a closed task: how it was closed and whether evidence backs it. */
 export function closureBadge(closure: Record<string, unknown>): { label: string; tone: Tone } | null {
@@ -174,11 +175,21 @@ export function countSummary(runner: Runner | null): string {
   const said = parts.filter(([count]) => count > 0).map(([count, word]) => `${count} ${word}`);
   return said.length ? said.join(' · ') : 'idle';
 }
-/** The first sentence of an owner question, as the headline above the fold. */
+/** The owner question, not the goal history that precedes it, as the headline above the fold. */
 export function headline(text: string, max = 160): string {
   const plain = stripMarkdown(text).replace(/\s+/g, ' ').trim();
-  const sentence = plain.match(/^.{1,}?[.!?](?=\s|$)/)?.[0] ?? plain;
+  const asked = plain.match(/\bQuestion:\s*(.+?)(?:\?|$)/i)?.[1]?.trim();
+  const sentence = asked ? `${asked}?` : plain.match(/^.{1,}?[.!?](?=\s|$)/)?.[0] ?? plain;
   return sentence.length > max ? `${sentence.slice(0, max - 1).trimEnd()}…` : sentence;
+}
+/** Host failures as one sentence; raw RPC metadata belongs in Diagnostics. */
+export function friendlyError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const clean = raw.replace(/\s*requestType=.*$/s, '').replace(/\s*code=.*$/s, '').replace(/^Request failed:\s*/i, '').trim();
+  if (/request limit reached/i.test(clean)) return 'Autowork is busy; refresh later.';
+  if (/source release changed|executable changed/i.test(clean)) return 'Autowork updated; reload the plugin, then refresh.';
+  if (/plugin stopped/i.test(clean)) return 'The plugin restarted; refresh.';
+  return clean || 'The request failed; retry when the host is available.';
 }
 export type Segment = { text: string; bold?: boolean; code?: boolean; link?: string };
 /** Inline Markdown as segments: bold, code and links render as their text, never as source. */

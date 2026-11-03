@@ -364,8 +364,8 @@ describe('native host-scoped surfaces', () => {
       { ...task, id: 'T-2', status: 'done', closure: { label: 'closed', provenance: 'evidence', verified: true } },
     ] }) : initial(name, data));
     await mount({ params: { view: 'tasks' } }); await press('Show completed');
-    expect(text()).toContain('Closure: closed · manual · not verified');
-    expect(text()).toContain('Closure: closed · evidence · verified');
+    expect(text()).toContain('Provenance: manual · not verified');
+    expect(text()).toContain('Provenance: evidence · verified');
   });
   it('filters completed and canonically held tasks without requiring a live worker lane', async () => {
     const initial = env.invoke.getMockImplementation()!;
@@ -527,7 +527,7 @@ describe('management surface', () => {
   it('offers every granted control and maintenance action and sends restart flags, model and attention exactly', async () => {
     const captured = capture(grantAll());
     await mount({ params: { view: 'runner' } });
-    for (const title of ['Start', 'Pause', 'Resume', 'Stop', 'Restart', 'Remove runner', 'Update suite']) expect(button(title), title).toBeTruthy();
+    for (const title of ['Start', 'Pause', 'Resume', 'Stop', 'Restart', 'Remove service', 'Update all runners']) expect(button(title), title).toBeTruthy();
     await press('Interrupt merges now'); await press('Restart');
     expect(captured.action).toEqual({ kind: 'control', repoId: 'repo', action: 'restart', stopWorkers: true, now: true });
     await press('Service model'); await press('Choose model'); await press('provider/model-a'); await press('Change model');
@@ -567,7 +567,7 @@ describe('management surface', () => {
   it('starts planning with a mode, task scope and model when chosen', async () => {
     const captured = capture(grantAll());
     await mount({ params: { view: 'planning', objective: 'Improve docs' } });
-    await press('Investigate'); await input('Task scope (optional)', 'T-1'); await input('Planning model (optional)', 'provider/model-a'); await press('Start planning');
+    await press('Investigate'); await press('Planning options'); await input('Task scope (optional)', 'T-1'); await input('Planning model (optional)', 'provider/model-a'); await press('Start planning');
     expect(captured.action).toEqual({ kind: 'plan-start', repoId: 'repo', objective: 'Improve docs', mode: 'investigate', task: 'T-1', model: 'provider/model-a' });
   });
   it('renders the scorecard with missing-repository errors and the read-only settings grants', async () => {
@@ -605,6 +605,7 @@ describe('management surface', () => {
     expect(relativeTime(1793671362.96, 1793671362960 + 90000)).toBe('2m ago');
     expect(markdownSegments('Keep **WEB-ALL** per [final reconciliation](docs/r.md).')).toEqual([{ text: 'Keep ' }, { text: 'WEB-ALL', bold: true }, { text: ' per ' }, { text: 'final reconciliation', link: 'docs/r.md' }, { text: '.' }]);
     expect(headline('Which scope applies? The rest is **detail** that goes on.')).toBe('Which scope applies?');
+    expect(headline('Goal WEB-ALL remains unmet at Plan round 2 of 2. **Question:** Should WEB-ALL continue? No successor is saved.')).toBe('Should WEB-ALL continue?');
     expect(observationRows({ runner_alive: false, health_written_at: Date.now() / 1000 - 60, task_state: 'unknown' })).toEqual([['Runner alive', 'no'], ['Health written at', '1m ago']]);
   });
   it('leads the fleet with one banner, says a host-wide blocker once and sorts the urgent repository first', async () => {
@@ -630,7 +631,7 @@ describe('management surface', () => {
     capture(grantAll());
     await mount({ params: { view: 'runner' } });
     expect(text()).toContain('Danger zone');
-    await press('Remove runner');
+    await press('Remove service');
     expect(button('Confirm operation')!.props.disabled).toBe(true);
     await input('Type the repository name to confirm', 'Repository');
     expect(button('Confirm operation')!.props.disabled).toBe(false);
@@ -640,6 +641,16 @@ describe('management surface', () => {
     expect(button('Confirm operation')!.props.disabled).toBe(false);
     expect(root.root.findAll(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'Type the repository name to confirm')).toHaveLength(0);
   });
+  it('requires the all-runners phrase before the host-wide update', async () => {
+    capture(grantAll());
+    await mount({ params: { view: 'runner' } });
+    await press('Update all runners');
+    expect(button('Confirm operation')!.props.disabled).toBe(true);
+    await input('Type all runners to update every runner', 'all runners');
+    expect(button('Confirm operation')!.props.disabled).toBe(false);
+    await press('Confirm operation');
+    expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(1);
+  });
   it('puts the question and the answer above the fold and renders Markdown as words', async () => {
     const value = fleet(); value.repos[0]!.runner!.questions = [{ id: 'T-1', effort: 'small', unblocks: 3, needs: 'Keep **WEB-ALL** as one goal? See [final reconciliation](docs/r.md).\n\nLong evidence paragraph.', answer: '', kind: '' }];
     capture(value);
@@ -648,6 +659,39 @@ describe('management surface', () => {
     expect(text()).not.toContain('**'); expect(text()).not.toContain('Existing answer');
     await press('Answer T-1');
     expect(button('Send answer')).toBeTruthy(); expect(text()).not.toContain('](docs/'); expect(text()).toContain('final reconciliation');
+  });
+  it('keeps completed blocked work out of the blocked queue until completed is requested', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    const done = { ...task, id: 'T-DONE', title: 'Finished blocked task', status: 'done', blocked_by: 'DONE', closure: { label: 'closed', provenance: 'manual', verified: false } };
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [task, done] }) : initial(name, data));
+    await mount({ params: { view: 'blockers' } });
+    expect(text()).not.toContain('Finished blocked task');
+    expect(text()).not.toContain('blocked by DONE');
+    await press('Show completed');
+    expect(text()).toContain('Finished blocked task');
+    expect(text()).toContain('Provenance: manual · not verified');
+    expect(text()).not.toContain('blocked by DONE');
+  });
+  it('turns a raw request-limit failure into a retryable cached-data message', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks'
+      ? Promise.reject(new Error('Request failed: Autowork request limit reached; refresh later requestType=plugin.rpc.invoke.request code=handler_error'))
+      : initial(name, data));
+    await mount({ params: { view: 'tasks' } });
+    expect(text()).toContain('Autowork is busy; refresh later.');
+    expect(text()).not.toContain('requestType=');
+    expect(text()).not.toContain('handler_error');
+    expect(button('Retry')).toBeTruthy();
+  });
+  it('puts controls before explanatory status and explains each maintenance action', async () => {
+    capture(grantAll());
+    const value = fleet(); value.repos[0]!.runner!.blocker = 'Pi 1.5.0 is not qualified'; value.repos[0]!.runner!.stop_reason = 'Pi 1.5.0 is not qualified';
+    capture(value);
+    await mount({ params: { view: 'runner' } });
+    expect(text().indexOf('Controls')).toBeLessThan(text().indexOf('Why it stopped'));
+    expect(text()).toContain('Change the model and fallback; restarts the service.');
+    expect(text()).toContain('Record attention minutes or a note in private runner state.');
+    expect(text()).toContain('Clear technical holds and return commits to integration.');
   });
   it('hides completed work by default, counts the queue and keeps filters behind one button', async () => {
     const initial = env.invoke.getMockImplementation()!;

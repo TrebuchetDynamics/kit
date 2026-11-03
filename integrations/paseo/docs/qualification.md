@@ -6,6 +6,12 @@ The connected Android app reported **0.15.0** while the local daemon/CLI was **0
 
 Not performed: a physical interaction pass on the 0.15.0 app after the manifest fix.
 
+## Five-second follow-up (2026-11-03)
+
+The owner's second critique identified the remaining low-hanging failures. `npm run check` passed: **113 tests across 7 test files** plus both strict TypeScript configurations. New Node-renderer tests pin the actual owner question as the decision headline, completed blocked work hidden until requested, completed tasks never labelled “blocked by DONE”, the request-limit failure reduced to one sentence with Retry and cached context, Controls before explanatory status, and maintenance hints. The decision headline extracts the text after `Question:`; the blocked queue defaults to actionable tasks with a completed toggle; the task closure line carries provenance only because the badge already shows the label; the planning options collapse so Start planning stays above the fold; “Remove service” and “Update all runners” replace the ambiguous danger labels. The manifest was already widened to `>=0.13.0 <0.16.0`; the app card still needs its own refresh/reconnect.
+
+Not performed: a fresh physical 0.15.0 app pass with the new client bundle. The screenshots remain the owner's baseline.
+
 ## Five-second surface (2026-11-03)
 
 The client was reworked against a mobile critique (debug console rendered as an app: green *NOT RUNNING*, repeated unknown fields, raw hashes and Markdown, undifferentiated destructive controls, content under the navigation bar). `npm run check` passed: **109 tests across 7 test files** plus both strict TypeScript configurations. Seven new Node-renderer tests pin the semantic tone mapping, the one-banner-plus-single-blocker fleet, urgency ordering, the typed confirmation for Remove and Update, the decision card with rendered Markdown and Answer above the fold, completed work hidden behind one toggle with queue counts and a short revision, grouped health facts with relative times, and the bottom clearance. The daemon reloaded the plugin from the kit checkout after the change.

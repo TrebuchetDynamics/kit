@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { PluginAgentPanelProps, PluginScreenProps, PluginWorkspacePanelProps } from '@getpaseo/plugin/client';
 import { useRpc, useWorkspace } from '@getpaseo/plugin/client';
 import { ScrollView, useToast } from '@getpaseo/plugin/client/ui';
 import { RefreshControl, View } from 'react-native';
+import type { ScrollView as NativeScrollView } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
-import { canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, revisionParts, runnerFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
+import { canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, revisionParts, runnerFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
 import { operationsKey, readForHost, rememberOperation, useConfirmedAction, useHostState, useReadBackoff, useWatch, type HostState } from './state';
 import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme } from './ui';
 
@@ -24,11 +25,12 @@ export function AutoworkScreen(props: PluginScreenProps) {
 
 function HostScreen(props: PluginScreenProps) {
   const host = useHostState(props.host.id);
+  const scrollRef = useRef<NativeScrollView>(null);
   const { fleet } = host;
   const digest = useWatch(host, props.host.id, fleet.data?.instance);
-  const checked = fleet.isFetching ? 'Refreshing…' : fleet.data ? `${host.current ? 'Live' : 'Cached'} · checked ${relativeTime(fleet.data.capturedAt)}${digest ? ' · watching for changes' : ''}` : host.enabled ? 'Loading fleet…' : 'No live observation';
+  const checked = fleet.isFetching ? 'Refreshing…' : fleet.data ? `${host.current ? (digest ? 'Live via watch' : 'Live') : 'Cached'} · checked ${relativeTime(fleet.data.capturedAt)}${!host.current && digest ? ' · watch active' : ''}` : host.enabled ? 'Loading fleet…' : 'No live observation';
   // Bottom clearance keeps the last action above the navigation bar and the host's floating control.
-  return <ScrollView style={{ flex: 1, backgroundColor: props.theme.colors.surface0 }} contentContainerStyle={{ padding: props.layout.compact ? 14 : 22, paddingBottom: props.layout.compact ? 128 : 48, gap: 12, maxWidth: 1100, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={fleet.isFetching} enabled={host.enabled} onRefresh={host.refresh} tintColor={props.theme.colors.accent} />}>
+  return <ScrollView ref={scrollRef} style={{ flex: 1, backgroundColor: props.theme.colors.surface0 }} contentContainerStyle={{ padding: props.layout.compact ? 14 : 22, paddingBottom: props.layout.compact ? 128 : 48, gap: 12, maxWidth: 1100, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={fleet.isFetching} enabled={host.enabled} onRefresh={host.refresh} tintColor={props.theme.colors.accent} />}>
     <Row between>
       <View style={{ flexShrink: 1, gap: 2, paddingRight: 56 }}>
         <Heading>Autowork</Heading>
@@ -38,8 +40,8 @@ function HostScreen(props: PluginScreenProps) {
     </Row>
     {!host.online ? <Banner tone="danger" title="Host offline" body="Cached observations are not current authority. Nothing can be dispatched until the host is back." /> : null}
     {host.online && !host.foreground ? <Banner tone="warning" title="App backgrounded: polling paused" body="Reads resume when the app returns to the foreground." /> : null}
-    {fleet.error ? <Banner tone="danger" title="Fleet unavailable" body={`${fleet.error.message}. Automatic refresh retries with bounded backoff.`} action={{ label: 'Retry now', onPress: host.refresh, disabled: !host.enabled }} /> : null}
-    {fleet.data ? <FleetContent key={fleet.data.instance} props={props} host={host} fleet={fleet.data} /> : null}
+    {fleet.error ? <Banner tone="danger" title="Fleet unavailable" body={`${friendlyError(fleet.error)}. Automatic refresh retries with bounded backoff.`} action={{ label: 'Retry now', onPress: host.refresh, disabled: !host.enabled }} /> : null}
+    {fleet.data ? <FleetContent key={fleet.data.instance} props={props} host={host} fleet={fleet.data} scrollRef={scrollRef} /> : null}
   </ScrollView>;
 }
 
@@ -56,10 +58,10 @@ function dangerOf(action: ActionInput): string {
   return '';
 }
 
-function FleetContent({ props, host, fleet }: { props: PluginScreenProps; host: HostState; fleet: Fleet }) {
+function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenProps; host: HostState; fleet: Fleet; scrollRef: RefObject<NativeScrollView | null> }) {
   const [view, setView] = useState<ViewName>(validView(props.params.view));
   const [selectedId, selectId] = useState('');
-  const [pending, setPending] = useState<{ danger: string; label: string } | null>(null);
+  const [pending, setPending] = useState<{ danger: string; label: string; phrase: string; prompt: string } | null>(null);
   const [typed, setTyped] = useState('');
   const queryClient = useQueryClient();
   const { data: operations } = useQuery<Operation[]>({ queryKey: operationsKey(props.host.id, fleet.instance), queryFn: async () => [], enabled: false, initialData: [], staleTime: Infinity, gcTime: 1800000 });
@@ -76,11 +78,15 @@ function FleetContent({ props, host, fleet }: { props: PluginScreenProps; host: 
   };
   const mutation = useConfirmedAction(host, props.host.id, fleet.instance, context, updateOperation);
   const enabled = host.current && !mutation.busy && !repo?.error;
-  const request = (action: ActionInput) => {
-    setPending({ danger: dangerOf(action), label: repos.find(item => item.id === action.repoId)?.label ?? '' }); setTyped('');
+  const request = (action: ActionInput, label = '') => {
+    const updateAll = action.kind === 'control' && action.action === 'update';
+    const repoLabel = label || repos.find(item => item.id === action.repoId)?.label || '';
+    setPending({ danger: dangerOf(action), label: repoLabel, phrase: updateAll ? 'all runners' : repoLabel,
+      prompt: updateAll ? 'Type all runners to update every runner' : 'Type the repository name to confirm' }); setTyped('');
     void mutation.request(action);
   };
   useEffect(() => { setView(validView(props.params.view)); }, [props.params.view]);
+  useEffect(() => { scrollRef.current?.scrollTo({ y: 0, animated: false }); }, [view, selectedId, scrollRef]);
   const running = repos.reduce((sum, item) => sum + (item.runner?.running ?? 0), 0);
   const decisions = repos.reduce((sum, item) => sum + (item.runner?.decisions ?? 0), 0);
   const grants = grantSummary(fleet);
@@ -90,13 +96,14 @@ function FleetContent({ props, host, fleet }: { props: PluginScreenProps; host: 
   const hostBlocker = sharedBlocker(repos);
   const confirmation = mutation.confirmation;
   const dangerous = !!pending?.danger;
-  const typedOk = !dangerous || (typed.trim() === pending?.label && !!pending.label);
+  const typedOk = !dangerous || (typed.trim() === pending?.phrase && !!pending.phrase);
   return <>
     <ScrollRow>{views.map(([name, title]) => <Button key={name} label={title} compact selected={view === name} onPress={() => setView(name)} />)}</ScrollRow>
     {view === 'fleet' ? <FleetBanner repos={repos} decisions={decisions} running={running} onOpen={open} /> : null}
     {view === 'fleet' && hostBlocker ? <Notice tone="danger"><Label bold>Host-wide blocker</Label><Label>{hostBlocker}</Label><Caption>Affects every runner on this host; repository rows do not repeat it.</Caption></Notice> : null}
     {readOnly ? <Notice tone="warning"><Label bold>Read-only</Label><Caption>The daemon operator has not granted runner controls, planning, task edits or owner answers. Grants live in the daemon-side policy file.</Caption></Notice> : null}
     {fleet.warnings.map((warning, index) => <Notice key={index} tone="warning"><Label>{warning}</Label></Notice>)}
+    {fleet.warnings.length ? <Caption>Restore the path or remove it from the daemon policy's repositories list.</Caption> : null}
     {view !== 'fleet' && view !== 'scorecard' && repos.length ? <ScrollRow>{repos.map(item => <Button key={item.id} compact label={item.label} accessibilityLabel={`Repository ${item.label}`} selected={repo?.id === item.id} onPress={() => selectId(item.id)} />)}</ScrollRow> : null}
     {view === 'fleet' ? <>
       <Row>
@@ -130,7 +137,7 @@ function FleetContent({ props, host, fleet }: { props: PluginScreenProps; host: 
         <Caption>Push stays {confirmation.pushAllowed ? 'allowed' : 'not allowed'} (unchanged). Expires {relativeTime(confirmation.expiresAt).replace(' ago', '').replace('just now', 'now')} from now.</Caption>
         {dangerous ? <Notice tone="danger">
           <Label bold>This {pending!.danger}.</Label>
-          <Input label="Type the repository name to confirm" value={typed} onChange={setTyped} placeholder={pending!.label} />
+          <Input label={pending!.prompt} value={typed} onChange={setTyped} placeholder={pending!.phrase} />
         </Notice> : null}
         <Notice tone="neutral"><Caption>Confirming dispatches once. Nothing is replayed automatically and a lost response is reported as uncertain, never retried.</Caption></Notice>
         <Row>
@@ -199,7 +206,7 @@ function ModelPicker({ host, hostId, fleet, value, onChange, label }: { host: Ho
     {open ? <>
       <Input label="Search models" value={search} onChange={setSearch} placeholder="provider/name" />
       {models.isFetching ? <Caption>Loading models…</Caption> : null}
-      {models.error ? <Notice tone="danger"><Label>{models.error.message}</Label></Notice> : null}
+      {models.error ? <Notice tone="danger"><Label>{friendlyError(models.error)}</Label></Notice> : null}
       {models.data && !matches.length ? <Caption>{models.data.models.length ? 'No model matches the search.' : 'The CLI reported no models.'}</Caption> : null}
       {matches.length ? <ScrollRow>{matches.map(name => <Button key={name} label={name} compact selected={value === name} onPress={() => { onChange(value === name ? '' : name); setOpen(false); }} />)}</ScrollRow> : null}
     </> : null}
@@ -209,7 +216,7 @@ function ModelPicker({ host, hostId, fleet, value, onChange, label }: { host: Ho
 
 const restartModes = [['graceful', 'Wait for merges, keep workers'], ['stop-workers', 'Wait for merges, then pause workers'], ['now', 'Interrupt merges now']] as const;
 type RestartMode = typeof restartModes[number][0];
-const controlTitles: Record<string, string> = { start: 'Start', pause: 'Pause', resume: 'Resume', stop: 'Stop', restart: 'Restart', remove: 'Remove runner', update: 'Update suite' };
+const controlTitles: Record<string, string> = { start: 'Start', pause: 'Pause', resume: 'Resume', stop: 'Stop', restart: 'Restart', remove: 'Remove service', update: 'Update all runners' };
 
 function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewProps) {
   const runner = repo.runner;
@@ -249,6 +256,14 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
     : { kind: 'control', repoId: repo.id, action });
   return <Stack gap={12}>
     <Card>
+      <Heading level={2}>Controls</Heading>
+      {safe.length ? <>
+        <Row>{safe.map(action => <Button key={action} label={controlTitles[action] ?? action} variant="primary" disabled={!enabled} onPress={() => control(action)} />)}</Row>
+        {controls.includes('restart') ? <Choice label="Restart mode" value={restartMode} options={restartModes} onChange={setRestartMode} /> : null}
+        <Caption>Each control is prepared, shown for confirmation with its exact effect, then dispatched once.</Caption>
+      </> : <Caption>Runner controls are read-only by operator policy. Grant controls in the daemon-side policy file to enable start, pause, resume, stop or restart.</Caption>}
+    </Card>
+    <Card>
       <Row>
         <Stat value={runner.running} label="running" tone={runner.running ? 'success' : 'neutral'} />
         <Stat value={runner.waiting} label="waiting" tone={runner.waiting ? 'warning' : 'neutral'} />
@@ -264,25 +279,16 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
         </Row>
       </Notice> : null}
     </Card>
-    <Card>
-      <Row between><Heading level={2}>Controls</Heading><StatusPill state={runner.state} /></Row>
-      {safe.length ? <>
-        <Row>{safe.map(action => <Button key={action} label={controlTitles[action] ?? action} variant="primary" disabled={!enabled} onPress={() => control(action)} />)}</Row>
-        {controls.includes('restart') ? <Choice label="Restart mode" value={restartMode} options={restartModes} onChange={setRestartMode} /> : null}
-        <Caption>Each control is prepared, shown for confirmation with its exact effect, then dispatched once.</Caption>
-      </> : <Caption>Runner controls are read-only by operator policy. Grant controls in the daemon-side policy file to enable start, pause, resume, stop or restart.</Caption>}
-    </Card>
     {danger.length ? <Card tone="danger">
       <Heading level={2}>Danger zone</Heading>
       {danger.includes('remove') ? <Label>Remove deletes this runner service from the host. Task records and worktrees stay on disk.</Label> : null}
       {danger.includes('update') ? <Label>Update replaces the installed Autowork suite for every runner on this host; reload the plugin afterwards.</Label> : null}
-      <Caption>Both ask you to type the repository name before dispatch.</Caption>
+      <Caption>Remove asks for the repository name; Update all runners asks for “all runners” before dispatch.</Caption>
       <Row>{danger.map(action => <Button key={action} label={controlTitles[action] ?? action} variant="danger" disabled={!enabled} onPress={() => control(action)} />)}</Row>
     </Card> : null}
     <Card>
       <Heading level={2}>Health</Heading>
-      <Row><Caption>Main check</Caption><StatusPill state={human(record(runner.main_check)?.result_class ?? record(runner.main_check)?.state ?? 'no evidence')} tone={mainCheckTone(runner.main_check)} /></Row>
-      <Label>Main check: {mainCheckSummary(runner.main_check)}</Label>
+      <Row><StatusPill state={human(record(runner.main_check)?.result_class ?? record(runner.main_check)?.state ?? 'no evidence')} tone={mainCheckTone(runner.main_check)} /><Label>Main check: {mainCheckSummary(runner.main_check)}</Label></Row>
       {runner.job ? <Label>Current job: {jobSummary(runner.job)}</Label> : null}
       <Facts rows={observation} />
       <Row>
@@ -291,7 +297,7 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
       </Row>
       {showDiagnostics ? <Stack>
         <Caption>{statusQuery.isFetching ? 'Reading…' : statusQuery.data ? `Runner status · ${relativeTime(statusQuery.data.capturedAt)}` : 'Loading…'}</Caption>
-        {statusQuery.error ? <Notice tone="danger"><Label>{statusQuery.error.message}</Label></Notice> : null}
+        {statusQuery.error ? <Notice tone="danger"><Label>{friendlyError(statusQuery.error)}</Label></Notice> : null}
         {statusQuery.data ? <Label mono>{statusQuery.data.text}</Label> : null}
         <Facts rows={[['Transport', 'unknown'], ['Delivery', 'unknown'], ['Held', human(runner.held)], ['Roots', human(runner.roots)], ['Waiting groups', human(runner.waiting_groups)], ['Stopped groups', human(runner.stopped_groups)], ['Maintainer', human(runner.maintainer)], ['Prepare state', human(runner.prepare_state)]]} />
         <Caption>Service liveness and configured source do not prove worker runtime identity.</Caption>
@@ -302,7 +308,7 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
           <Button label="Follow logs" compact selected={follow} onPress={() => setFollow(!follow)} />
           <Caption>{query.isFetching ? 'Refreshing…' : query.data ? relativeTime(query.data.capturedAt) : 'Loading…'}</Caption>
         </Row>
-        {query.error ? <Notice tone="danger"><Label>{query.error.message}</Label></Notice> : null}
+        {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
         <Label mono>{query.data?.text ?? 'Loading…'}</Label>
       </Stack> : null}
     </Card>
@@ -314,21 +320,21 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
     </Card>
     {maintenance.length ? <Card>
       <Heading level={2}>Maintenance</Heading>
-      {maintenance.includes('model') ? <Expand title="Service model">
+      {maintenance.includes('model') ? <Expand title="Service model" hint="Change the model and fallback; restarts the service.">
         <Label>Current: {display(runner.model)} · fallback: {display(runner.fallback)}</Label>
         <ModelPicker host={host} hostId={hostId} fleet={fleet} value={model} onChange={setModel} label="Model" />
         <Input label="Fallback model" value={fallback} onChange={setFallback} placeholder="optional" />
         <Button label="Change model" variant="primary" disabled={!enabled || !model.trim()} onPress={() => request({ kind: 'model', repoId: repo.id, model: model.trim(), ...(fallback.trim() ? { fallback: fallback.trim() } : {}) })} />
         <Caption>Setting a model restarts the service through Autowork.</Caption>
       </Expand> : null}
-      {maintenance.includes('attention') ? <Expand title="Owner attention">
+      {maintenance.includes('attention') ? <Expand title="Owner attention" hint="Record attention minutes or a note in private runner state.">
         <Input label="Minutes" value={minutes} onChange={setMinutes} placeholder="15" />
         <Input label="Attention task" value={attentionTask} onChange={setAttentionTask} placeholder="optional task ID" />
         <Input label="Attention note" value={note} onChange={setNote} multiline placeholder="optional" />
         <Button label="Record attention" variant="primary" disabled={!enabled || !(minutesValue > 0)} onPress={() => request({ kind: 'attention', repoId: repo.id, minutes: minutesValue, ...(attentionTask.trim() ? { task: attentionTask.trim() } : {}), ...(note.trim() ? { note: note.trim() } : {}) })} />
         <Caption>Recorded in private runner state, never committed.</Caption>
       </Expand> : null}
-      {maintenance.includes('clear-held') ? <Expand title="Held commits">
+      {maintenance.includes('clear-held') ? <Expand title="Held commits" hint="Clear technical holds and return commits to integration.">
         <Label>Held: {human(runner.held)}</Label>
         <Input label="Held task IDs (empty clears all)" value={heldTasks} onChange={setHeldTasks} placeholder="T-12 T-13" />
         <Button label="Clear held commits" variant="primary" disabled={!enabled} onPress={() => request({ kind: 'clear-held', repoId: repo.id, tasks: words(heldTasks) })} />
@@ -378,7 +384,7 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
   // A filter is an explicit request and searches everything; otherwise closed work stays out of the way.
   const visibleTasks = all.filter(task =>
     (!blockers || !!task.blocked_by || questions.some(question => question.id === task.id)) &&
-    (blockers || hasFilters || showCompleted || isActionable(task)) &&
+    (hasFilters || showCompleted || isActionable(task)) &&
     taskMatches(task, filters, [task.status, task.blocked_by ?? '', runner?.lanes.find(lane => lane.task === task.id)?.phase ?? ''].join(' ')))
     .sort((a, b) => (a.goal ?? '').localeCompare(b.goal ?? ''));
   const lastPage = Math.max(0, Math.ceil(visibleTasks.length / pageSize) - 1);
@@ -395,10 +401,10 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
     {!blockers && (editing || fleet.permissions.commit) ? <PendingCard {...common} /> : null}
     <Card>
       <Row between><Heading level={2}>{blockers ? 'Blocked tasks' : 'Task queue'}</Heading><Caption>{query.isFetching ? 'Refreshing…' : `${host.enabled && !query.isStale && !query.isError ? 'Live' : 'Cached'}${revision ? ` · ${revision.short}${revision.suffix}` : ''}`}</Caption></Row>
-      {query.data ? <Caption>{plural(counts.open, 'open task')} · {counts.decisions} need decision · {counts.blocked} blocked · {counts.done} done{editing ? ' · working-tree records, uncommitted edits included' : ''}</Caption> : null}
+      {query.data ? <Caption>{plural(counts.open, 'open task')} · {counts.decisions} need decision · {counts.blocked} blocked{blockers ? '' : ` · ${counts.done} done`}{editing ? ' · working-tree records, uncommitted edits included' : ''}</Caption> : null}
       <Row>
         <Button label="Filters" compact selected={showFilters} onPress={() => setShowFilters(!showFilters)} />
-        {!blockers ? <Button label={showCompleted ? 'Hide completed' : 'Show completed'} compact selected={showCompleted} onPress={() => setShowCompleted(!showCompleted)} /> : null}
+        <Button label={showCompleted ? 'Hide completed' : 'Show completed'} compact selected={showCompleted} onPress={() => setShowCompleted(!showCompleted)} />
         {hasFilters ? <Button label="Clear task filters" compact onPress={() => { setFilters(emptyFilters); setPage(0); }} /> : null}
       </Row>
       {!showFilters && activeFilters.length ? <Row>{activeFilters.map(([key, value]) => <Badge key={key} label={`${key}: ${value.trim()}`} tone="accent" />)}</Row> : null}
@@ -406,7 +412,7 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
         <Input label={`Filter ${key}`} value={filters[key]} onChange={value => changeFilter(key, value)} placeholder={key === 'task' ? 'ID or title' : key === 'runtime' ? 'open, done, held…' : key} />
       </View>)}</Row> : null}
       {query.data ? <Caption>Showing {visibleTasks.length ? pageStart + 1 : 0}–{pageStart + pageTasks.length} of {visibleTasks.length} matching tasks · {all.length} total</Caption> : null}
-      {query.error ? <Notice tone="danger"><Label>{query.error.message}</Label></Notice> : null}
+      {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label>{query.data ? <Caption>Showing cached task data; retry when Autowork is free.</Caption> : null}<Button label="Retry" compact onPress={() => { void query.refetch(); }} /></Notice> : null}
       {pageTasks.map((task, index) => <View key={task.id} style={{ gap: 6 }}>
         {index === 0 || pageTasks[index - 1]?.goal !== task.goal ? <Heading level={3}>Goal · {task.goal ?? 'unassigned'}</Heading> : null}
         <TaskRow task={task} question={questions.some(question => question.id === task.id)} selected={selected === task.id} onOpen={() => select(selected === task.id ? '' : task.id)} onAnswer={() => select(task.id)} />
@@ -427,12 +433,12 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
 
 function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; question: boolean; selected: boolean; onOpen: () => void; onAnswer: () => void }) {
   const closure = closureBadge(task.closure);
-  const meta = [task.section, task.position ? `position ${task.position}` : null, task.blocked_by ? `blocked by ${task.blocked_by}` : null].filter(Boolean).join(' · ');
+  const meta = [task.section, task.position ? `position ${task.position}` : null, isActionable(task) && task.blocked_by ? `blocked by ${task.blocked_by}` : null].filter(Boolean).join(' · ');
   return <Card compact tone={question ? 'warning' : undefined}>
     <Row><Label mono>{task.id}</Label><StatusPill state={question ? 'needs decision' : task.status} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}</Row>
     <Label>{task.title}</Label>
     {meta ? <Caption>{meta}</Caption> : null}
-    {!isActionable(task) ? <Caption>Closure: {closureLabel(task.closure)}</Caption> : null}
+    {!isActionable(task) ? <Caption>Provenance: {closureLabel(task.closure)}</Caption> : null}
     <Row>
       {question ? <Button label="Answer" compact variant="primary" accessibilityLabel={`Answer task ${task.id}`} onPress={onAnswer} /> : null}
       <Button label={selected ? 'Close' : 'Open'} compact accessibilityLabel={`Open task ${task.id}`} selected={selected} onPress={onOpen} />
@@ -472,7 +478,7 @@ function PendingCard({ repo, fleet, host, hostId, enabled, request }: RepoViewPr
   if (!files.length && !query.error) return null;
   return <Card tone="warning">
     <Row between><Heading level={2}>Pending task edits</Heading><Caption>{query.isFetching ? 'Reading…' : `${plural(files.length, 'file')} uncommitted`}</Caption></Row>
-    {query.error ? <Notice tone="danger"><Label>{query.error.message}</Label></Notice> : null}
+    {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
     {files.length ? <>
       <Label mono>{files.join('\n')}</Label>
       <Expand title="Pending diff"><Label mono>{display(pending?.diff)}</Label></Expand>
@@ -554,7 +560,7 @@ function GoalsCard({ repo, fleet, host, hostId, enabled, request }: RepoViewProp
     <Row between><Heading level={2}>Goals</Heading><Button label={open ? 'Hide goals' : 'Show goals'} compact selected={open} onPress={() => setOpen(!open)} /></Row>
     {open ? <>
       {!fleet.capabilities.tasks.includes('goals') ? <Notice tone="warning"><Label>The installed Autowork release lacks `tasks goals`.</Label></Notice> : null}
-      {goals.error ? <Notice tone="danger"><Label>{goals.error.message}</Label></Notice> : null}
+      {goals.error ? <Notice tone="danger"><Label>{friendlyError(goals.error)}</Label></Notice> : null}
       {goals.data?.goals.map(goal => <View key={goal.id} style={{ gap: 4, paddingVertical: 4 }}>
         <Row><Label mono>{goal.id}</Label><StatusPill state={goal.status} />{goal.focus ? <Badge label="focus" tone="accent" /> : null}{goal.priority != null ? <Caption>priority {goal.priority}</Caption> : null}</Row>
         <Label>{goal.title}</Label>
@@ -589,7 +595,7 @@ function StoreCard({ repo, fleet, host, hostId, enabled, request }: RepoViewProp
         <Button label="Prepare check" compact selected={view === 'prepare'} onPress={() => setView('prepare')} />
       </Row>
       {query.isFetching ? <Caption>Reading…</Caption> : null}
-      {query.error ? <Notice tone="danger"><Label>{query.error.message}</Label></Notice> : null}
+      {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
       {result ? <Label mono>{display(result)}</Label> : null}
       {fleet.permissions.tasks && view === 'prepare' && result ? <Row>
         <Button label="Prepare store (commit)" compact variant="primary" disabled={!enabled} onPress={() => request({ kind: 'store-prepare', repoId: repo.id, mode: 'commit' })} />
@@ -632,7 +638,7 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request, f
     .map(key => [key.replace(/_/g, ' '), key === 'timestamp' ? relativeTime(detail.closure[key]) : human(detail.closure[key])]) : [];
   return <Card tone={answerable ? 'warning' : undefined}>
     <Row between><View style={{ flexShrink: 1, gap: 2 }}><Heading level={2}>{taskId}</Heading><Caption>{detail?.title ?? task?.title ?? 'Task detail'}</Caption></View>{onClose ? <Button label="Close task" compact onPress={onClose} /> : null}</Row>
-    {query.error ? <Notice tone="danger"><Label>{query.error.message}</Label></Notice> : null}
+    {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
     {detail ? <>
       <Row><StatusPill state={answerable ? 'needs decision' : detail.status} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}{detail.section ? <Caption>{detail.section}</Caption> : null}</Row>
       {answerable ? <>
@@ -650,7 +656,7 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request, f
         {closureRows.length ? <><Caption>Closure</Caption><Facts rows={closureRows} /></> : null}
       </Expand>
       <Row><Button label="Explain selection" compact selected={explain} onPress={() => setExplain(!explain)} /></Row>
-      {explain ? (explanation.error ? <Notice tone="danger"><Label>{explanation.error.message}</Label></Notice> : <Label mono>{explanation.data ? display(explanation.data.value) : 'Reading…'}</Label>) : null}
+      {explain ? (explanation.error ? <Notice tone="danger"><Label>{friendlyError(explanation.error)}</Label></Notice> : <Label mono>{explanation.data ? display(explanation.data.value) : 'Reading…'}</Label>) : null}
       {editing ? <TaskActions detail={detail} repo={repo} enabled={enabled && !query.isStale} request={request} /> : null}
     </> : <Caption>Loading task…</Caption>}
   </Card>;
@@ -738,8 +744,10 @@ function PlanningView({ repo, fleet, host, hostId, enabled, request, sessionId, 
     {!sessionId ? <>
       <Choice label="Mode" value={mode} options={modes} onChange={setMode} />
       <Caption>{modeHelp[mode]}</Caption>
-      <Input label="Task scope (optional)" value={task} onChange={setTask} placeholder="T-12 narrows planning to one task" />
-      <ModelPicker host={host} hostId={hostId} fleet={fleet} value={model} onChange={setModel} label="Planning model (optional)" />
+      <Expand title="Planning options" hint="Optional task scope and model selection.">
+        <Input label="Task scope (optional)" value={task} onChange={setTask} placeholder="T-12 narrows planning to one task" />
+        <ModelPicker host={host} hostId={hostId} fleet={fleet} value={model} onChange={setModel} label="Planning model (optional)" />
+      </Expand>
       <Row>
         <Button label="Start planning" variant="primary" disabled={!planEnabled} onPress={() => request({ kind: 'plan-start', repoId: repo.id, objective: text, mode, ...(task.trim() ? { task: task.trim() } : {}), ...(model.trim() ? { model: model.trim() } : {}) })} />
         {dirty ? <Button label="Clear" compact variant="ghost" onPress={() => { setText(''); setTask(''); setModel(''); }} /> : null}
@@ -752,7 +760,7 @@ function PlanningView({ repo, fleet, host, hostId, enabled, request, sessionId, 
         {(['preview', 'history', 'roadmap'] as const).map(next => <Button key={next} label={`Read planning ${next}`} compact disabled={!host.enabled || busy} selected={view === next && requested} onPress={() => { setView(next); setRequested(true); if (next === view && requested) void query.refetch(); }} />)}
       </Row>
       {requested ? <>
-        <Caption>{query.isFetching ? 'Reading planning…' : 'Cached planning observation; Apply revalidates the exact revision.'}</Caption>{query.error ? <Notice tone="danger"><Label>{query.error.message}</Label></Notice> : null}
+        <Caption>{query.isFetching ? 'Reading planning…' : 'Cached planning observation; Apply revalidates the exact revision.'}</Caption>{query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
         <Expand title="Planning result">
           <Label mono>{view === 'preview' ? `Revision: ${display(value?.revision)}\nValid: ${display(value?.valid)}\nFiles: ${display(value?.files)}\nErrors: ${display(value?.errors)}\n${display(value?.diff)}` : display(query.data?.value)}</Label>
         </Expand>
@@ -791,7 +799,7 @@ function ScorecardView({ fleet, host, hostId }: { fleet: Fleet; host: HostState;
     <Row between><Heading level={2}>Scorecard</Heading><Caption>{query.isFetching ? 'Measuring…' : query.data ? `measured ${relativeTime(query.data.capturedAt)}` : 'No model call; read-only accounting.'}</Caption></Row>
     <Choice label="Days" value={days} options={['1', '7', '14', '30'] as const} onChange={setDays} />
     {!fleet.capabilities.commands.includes('scorecard') ? <Notice tone="warning"><Label>The installed Autowork release lacks `scorecard`.</Label></Notice> : null}
-    {query.error ? <Notice tone="danger"><Label>{query.error.message}</Label></Notice> : null}
+    {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
     {Object.entries(errors).map(([name, error]) => <Notice key={name} tone="warning"><Label>{name}: no metrics; {human(error)}</Label></Notice>)}
     {Object.entries(runners).map(([name, row]) => <View key={name} style={{ gap: 3, paddingVertical: 6 }}>
       <Row between><Heading level={2}>{name}</Heading><Caption>closed {human(record(row)?.closed)} · verified {human(record(row)?.verified_closed)}</Caption></Row>
@@ -830,7 +838,7 @@ function OperationStatus({ operation, fleet, hostId, enabled, onUpdate }: { oper
     {operation.status === 'uncertain' ? <Button label="Reconcile operation" compact disabled={!enabled} onPress={() => { void query.refetch(); }} /> : null}
     {operation.progress ? <Caption>{operation.progress}</Caption> : null}
     {operation.result !== undefined ? <Expand title="Operation result evidence"><Label mono>{display(operation.result)}</Label></Expand> : null}
-    {query.error ? <Notice tone="danger"><Label>Status unavailable; delivery unknown. No replay: {query.error.message}</Label></Notice> : null}
+    {query.error ? <Notice tone="danger"><Label>Status unavailable; delivery unknown. No replay: {friendlyError(query.error)}</Label></Notice> : null}
     {operation.status === 'uncertain' ? <Caption>Outcome uncertain. Inspect canonical state before attempting another action.</Caption> : null}
   </Card>;
 }
