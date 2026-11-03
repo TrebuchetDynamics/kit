@@ -328,6 +328,12 @@ check at your live profile; plugin loading may write runtime records.
 HERMES_HOME="/path/to/isolated-installed-profile" PYTHONPATH="$HERMES_SOURCE" "$HERMES_PYTHON" -c 'import hermes_bootstrap, runpy, sys; runpy.run_path(sys.argv[1], run_name="__main__")' tests/integration_bundle.py
 ```
 
+Before a push, the pre-push hook runs `scripts/affected_tests.py --run` from the sha
+the remote already has (`python3 scripts/pre_push_check.py --install` writes the hook,
+or chains it after an existing one-line exec hook such as the private-terms check).
+A push with nothing new, a deletion, or `KIT_PRE_PUSH=0` runs nothing; `git push
+--no-verify` skips every hook. The full suite is CI's job.
+
 The offline suite runs in GitHub Actions as two jobs: `fast` runs every module except
 `tests/test_pi_autowork.py` (`scripts/check.py --exclude tests/test_pi_autowork.py`),
 and `runner` runs that module alone on three machines

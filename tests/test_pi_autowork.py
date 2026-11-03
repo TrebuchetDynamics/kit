@@ -492,7 +492,11 @@ class Fixture(unittest.TestCase):
                     'PI_AUTOWORK_MIN_FREE_DISK_GB': '0',  # tiny fixtures also run on a small TMPDIR
                     'PI_AUTOWORK_STATE_DIR': str(self.state), 'PI_AUTOWORK_HERMES_HOME': str(self.root / 'hermes'),
                     'PI_AUTOWORK_BACKOFF': '0', 'PI_AUTOWORK_MIN_FREE_MB': '0', 'PI_AUTOWORK_MIN_FREE_DISK_GB': '0',
-                    'XDG_STATE_HOME': str(self.root / 'xdg')}
+                    'XDG_STATE_HOME': str(self.root / 'xdg'),
+                    # No host unit or service settings leak in: this host's real
+                    # pi-autowork@.service pointed at a removed checkout, so the CLI judged
+                    # every fixture service stale and restarted without waiting.
+                    'XDG_CONFIG_HOME': str(self.root / 'xdg-config')}
         # Worker and review scratch in a short root this fixture owns and removes: each test left its
         # workers' /var/tmp/aw-* directories behind, and nothing could reclaim them once its repository
         # was gone (about 1.2 GB an hour on the fleet host).

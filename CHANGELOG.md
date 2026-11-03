@@ -7,6 +7,9 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Added
 
+- `scripts/pre_push_check.py`: a pre-push hook (`--install`) that runs only the tests the push
+  can affect, from the sha the remote already has; `KIT_PRE_PUSH=0` or `--no-verify` leaves a
+  push to CI, which runs the whole suite.
 - The Paseo plugin now lives in this repository at `integrations/paseo/` (subtree of the
   former private `paseo-autowork` repository, history kept) and manages every Autowork
   operation: every `autowork tasks` verb and goal edits bound to the working-tree record
@@ -85,6 +88,9 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Fixed
 
+- The runner tests set their own `XDG_CONFIG_HOME`, so a host's real `pi-autowork@.service`
+  no longer leaks into them: a unit pointing at a removed checkout made the CLI judge every
+  fixture service stale and restart without waiting, failing one test only on that host.
 - The engine's `--parallel --wait` answers at once when no worker is dispatched or running,
   and a stopping runner stops reaping once the engine reports no active worker. A runner that
   had just finished its last task took 20 s to stop (four empty 5 s waits); every test that
