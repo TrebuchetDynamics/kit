@@ -16,7 +16,7 @@ Acceptance: empty-objective upstream `/plan_for_me`, progress/follow-up/steer/ca
 
 ## 3. Expose richer authoritative runtime and delivery provenance
 
-**Value:** high; current CLI omits some source/provenance details available in Autowork's native view. Transport, actual runtime release, last verified delivery, full historical attempts and structured receipt commit chains remain explicitly unknown/not available when absent from the CLI response.
+**Value:** medium; the runner view now shows the observation, maintainer, fallback and max-workers fields from `ls --json`, but the CLI still omits some source/provenance details available in Autowork's native view. Transport, actual runtime release, last verified delivery, full historical attempts and structured receipt commit chains remain explicitly unknown/not available when absent from the CLI response.
 
 Acceptance: add or consume a small versioned upstream read API for those existing facts, including actual process identity/freshness; no second health classifier, new event database, copied private state parser or inferred delivery. Keep configured/source release separate from executed release, and manual closure separate from receipt-valid verified closure.
 
@@ -30,10 +30,22 @@ Acceptance: representative large queues/logs, virtualized task rows or bounded p
 
 **Dependency:** qualification evidence and explicit remote publication authority.
 
-Acceptance: create the chosen public repository/release only after approval, include real approved interface screenshots/registry media, publish a reviewed artifact with reproducible package contents, and test each newer Paseo minor before widening the manifest range. Paseo 0.14.0 is tested and the range is `>=0.13.0 <0.15.0`; 0.15 remains untested. No registry entry or public Git repository was created by this build.
+Acceptance: the source now lives in the public kit repository under `integrations/paseo/`; a registry entry still needs real approved interface screenshots/registry media, a reviewed artifact with reproducible package contents, and a test of each newer Paseo minor before widening the manifest range. Paseo 0.14.0 is tested and the range is `>=0.13.0 <0.15.0`; 0.15 remains untested. No registry entry was created by this build.
 
 ## 6. Reconcile retained planning sessions across plugin generations
 
 **Value:** medium, after ordinary lifecycle qualification. Current reload behavior deliberately fails closed rather than adopting an active foreign session.
 
 Acceptance: a source-backed explicit ownership-transfer/retained-session reconciliation flow through existing Autowork APIs, with process birth identity and uncertainty handling. Do not merely import session IDs from disk or steer another system's Pi process.
+
+## 7. Replace the long-poll change watch with daemon subscriptions
+
+**Value:** medium; **dependency:** a Paseo release that ships plugin subscriptions (`defineSubscription`/`useSubscription`, absent from the 0.14 SDK) and a tested manifest range that includes it.
+
+Acceptance: one shared daemon watcher pushes change events to every mounted surface; the `autowork.watch` RPC and its one-second client pacing are removed; reconnect and plugin reload resubscribe without replaying operations. Keep the 20-second polling fallback for older hosts.
+
+## 8. Per-workspace header button for pending decisions
+
+**Value:** low; the sidebar row already shows the host total.
+
+Acceptance: a header button per workspace whose label is that repository's pending-decision count, registered and updated from an owned workspace-list observation and removed on cleanup; no extra RPC per workspace beyond the shared fleet read.

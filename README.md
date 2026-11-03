@@ -336,9 +336,10 @@ instrument.
 ## Paseo interface
 
 The [Autowork Paseo plugin](integrations/paseo/README.md) lives in `integrations/paseo/`.
-It shows runners, tasks, owner questions and planning inside Paseo. With a daemon-side
-operator policy file it also performs confirmed runner controls, owner answers and
-staged planning through the existing engine. Paseo 0.13 or 0.14 on a Linux daemon host
+It shows runners, tasks, goals, owner questions, logs and the scorecard inside Paseo.
+With a daemon-side operator policy file it performs every `autowork` command through
+exact confirmations: task and goal edits with a tasks-only commit, runner controls and
+maintenance, owner answers and staged planning, all through the existing engine. Paseo 0.13 or 0.14 on a Linux daemon host
 is required. Its checks run with `npm --prefix integrations/paseo run check` after
 `npm --prefix integrations/paseo ci --ignore-scripts`; see [testing](docs/testing.md#paseo-plugin-checks).
 

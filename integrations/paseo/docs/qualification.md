@@ -1,5 +1,15 @@
 # Qualification record
 
+## Management surface (2026-11-02)
+
+`npm run check` passed: **102 tests across 7 test files**, plus both strict TypeScript configurations, after the plugin moved into the kit repository (`integrations/paseo/`) and gained every task verb, the tasks-only commit, every runner control and maintenance verb, planning modes, the goal/status/scorecard/models/store reads, the default policy file, the Settings screen and the long-poll change watch. New offline tests cover the server-authored argv for each action kind (flag values that start with `-`, `--` before positionals, stdin JSON for records), separate refusal per grant kind, refusal of a verb the installed release lacks, working-tree reads only under the `tasks` grant, the default policy path with its private-file rule, and a watch that answers after a task record changes.
+
+A server-side exercise against the **live** fleet on this host (Autowork release `e2a344c5` from the kit checkout, Paseo 0.14.0 daemon, policy `~/.config/paseo-autowork/policy.json` with `all: true`) read 11 repositories including the kit checkout added through `repositories`, 227 working-tree task records and 27 goals for kit, an empty pending-edit set, a selection explanation, the runner status text, 342 models, a one-day scorecard with one missing-repository error row, and a 32-character watch digest. No mutation was dispatched. `paseo plugin reload` on the daemon reloaded the plugin from the kit path and logged `Plugin ready`.
+
+Not performed through the app: Android or Linux Desktop visual interaction with the new cards, an authorized runner control, a task edit, a commit or a planning start from the UI, and the change watch's effect on a mounted screen. These remain pending live acceptance by the owner on the desktop app.
+
+## Initial read-only build
+
 ## Offline build result
 
 `npm run check` passed: **91 tests across 7 test files**, plus both strict TypeScript configurations. Client code typechecks without DOM or Node globals. `git diff --check` passed. The packed source archive was audited to exclude node_modules, Git/worktrees, runtime artifacts, environment files, logs and session histories.

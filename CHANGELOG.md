@@ -5,6 +5,24 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ## [Unreleased]
 
+### Added
+
+- The Paseo plugin now lives in this repository at `integrations/paseo/` (subtree of the
+  former private `paseo-autowork` repository, history kept) and manages every Autowork
+  operation: every `autowork tasks` verb and goal edits bound to the working-tree record
+  revision, a tasks-only commit after a diff preview, runner start/pause/resume/stop/
+  restart (with stop-workers and now)/remove/update, model with fallback, clear-held and
+  attention, planning mode, task scope and model, plus goal, status, scorecard, model and
+  store reads. Grants come from a daemon-side policy file at
+  `~/.config/paseo-autowork/policy.json` (or `PASEO_AUTOWORK_CONFIG`) with an `all`
+  shorthand; a Settings screen shows them. A long-poll change watch refreshes open views,
+  the sidebar row shows the pending-decision count and settled operations toast.
+  `python3 scripts/check.py` runs the plugin's `npm run check` when its dependencies are
+  installed; `.github/workflows/paseo.yml` runs it in CI.
+- `autowork tasks goals` lists every goal record as JSON and `autowork tasks commit`
+  commits the working tree's `tasks/` edits and nothing else (`--dry-run` shows the paths
+  and diff). `Planner.create` accepts a per-session model.
+
 ### Changed
 
 - `/lgtm` is now a low-effort yes skill. It accepts the latest assistant
