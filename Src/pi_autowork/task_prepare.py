@@ -259,11 +259,14 @@ def outcome(report):
     return 'MIGRATED' if any(a.get('action') == 'convert' for a in report['actions']) else 'READY'
 
 
-def prepare(repo, mode='commit', *, force=None):
+def prepare(repo, mode='commit', *, force=None, inventory=True):
     """One report dict; ``mode`` is check (read-only), stage (no commit), commit or force.
 
     The CLI supplies ``force(repo)`` for force mode: service control belongs to the caller,
-    not to the store preparation layer used by read-only fleet lookups.
+    not to the store preparation layer used by read-only fleet lookups. Those lookups pass
+    ``inventory=False``: the legacy-reference inventory reads every tracked file and runs
+    ``git grep`` over the tree, which took seven seconds per large repository on every
+    fleet listing, and a converted store needs it only in the full report.
     """
     top = _git(repo, 'rev-parse', '--show-toplevel')
     if not top:
@@ -276,10 +279,10 @@ def prepare(repo, mode='commit', *, force=None):
         # Converted: report on the new store. Refused: report what still stands, writing nothing more.
         mode = 'check' if forced and forced['step'].get('outcome') != 'CONVERTED' else 'commit'
     if mode == 'check':
-        report = _prepare(repo, mode)
+        report = _prepare(repo, mode, inventory)
     else:
         with task_commands.locked(repo):
-            report = _prepare(repo, mode)
+            report = _prepare(repo, mode, inventory)
     if forced:
         report.update(forced=forced, mode='force')
         if forced['step'].get('outcome') == 'CONVERTED':
@@ -299,17 +302,21 @@ def prepare(repo, mode='commit', *, force=None):
     return report
 
 
-def _prepare(repo, mode):
+def _prepare(repo, mode, inventory=True):
     held, problems = task_commands.in_flight(repo, task_commands.ACTIVE)
     report = dict(ok=True, repo=str(repo), mode=mode, state=detect(repo), actions=[], refusals=[],
                   in_flight=sorted(held), pending=[], diagnostics=[])
-    try:
-        report.update(task_migrate.reference_inventory(repo))
-    except task_migrate.Refused as exc:
-        report.update(ok=False, state='invalid', refusals=[str(exc)],
-                      next='make the tracked files readable, then run prepare again')
-        return report
     state = report['state']
+    if not inventory and state not in ('legacy', 'conversion_pending'):
+        # A conversion decision needs the inventory; a fleet lookup of a converted store does not.
+        report.update(consumers=[], documentation_drift=[], git_metadata=[], inventory='skipped')
+    else:
+        try:
+            report.update(task_migrate.reference_inventory(repo))
+        except task_migrate.Refused as exc:
+            report.update(ok=False, state='invalid', refusals=[str(exc)],
+                          next='make the tracked files readable, then run prepare again')
+            return report
     if state in ('legacy', 'conversion_pending'):
         if mode == 'check':
             return _check_conversion(repo, report)

@@ -28,6 +28,12 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- `autowork ls` (and every fleet lookup behind the TUI and the Paseo plugin) no longer runs
+  the legacy-reference inventory of a converted task store, which read every tracked file and
+  ran `git grep` over each repository: 6.2 s became 1.6 s for eleven repositories. The full
+  inventory stays in `autowork tasks prepare` and in the lookup of a legacy or pending store.
+  Runners are observed in parallel threads (`PI_AUTOWORK_FLEET_JOBS`, default 8; 1 keeps the
+  old order), which helps on an idle host; under a saturated host the gain is small.
 - `scripts/check.py --exclude PATH` leaves modules out of a selection and `--shard I/N`
   splits a selection across machines by test id. The `test` workflow runs as two jobs: `fast`
   (every module but `tests/test_pi_autowork.py`) and `runner` (that module in three shards).
