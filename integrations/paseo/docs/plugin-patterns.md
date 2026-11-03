@@ -7,7 +7,7 @@ This comparison inspected public documentation and selected source files, not in
 - [Task Viewer](https://github.com/akoharu/paseo-task-viewer): multi-source task search, grouped work and visible filter counts. Its [task screen at d6c28bac](https://github.com/akoharu/paseo-task-viewer/blob/d6c28bac5fc799418bb42874efcd4d64d9de65bf/client/tasks-screen.tsx) distinguishes unmatched filters from loading and computes counts after search/filtering.
 - [Dey11's Linear plugin](https://github.com/Dey11/paseo-plugins/): paged issue search with explicit confirmation for mutations. Its [panel at ca3bd5ea](https://github.com/Dey11/paseo-plugins/blob/ca3bd5ea3e157dde6fe66e5d3db5aab47413553c/plugins/linear/main.client.tsx) displays one result page with Previous/Next controls and resets pagination after search changes.
 - [Linear Todo](https://github.com/trackid-com/paseo-linear-plugin): its README describes editable handoff previews, foreground-only refresh, server-side credential handling and a shared read cache.
-- [Paseo quickstart](https://paseo.sh/docs/plugins.md) and [reference](https://paseo.sh/docs/plugins/reference.md): current runtime boundaries, native surfaces, selected-host ownership and theme requirements. Similar plugins target different SDK generations; their imports are not automatically compatible with our pinned 0.14 SDK.
+- [Paseo quickstart](https://paseo.sh/docs/plugins.md) and [reference](https://paseo.sh/docs/plugins/reference.md): current runtime boundaries, native surfaces, selected-host ownership and theme requirements. Similar plugins target different SDK generations; their imports are not automatically compatible with our pinned 0.15 SDK.
 
 ## Applied: bounded task browsing
 

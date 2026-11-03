@@ -8,7 +8,7 @@ This is a **plugin**, not a provider, scheduler or bundled Autowork engine. It t
 
 > **Read-only by default.** No model calls or mutation grants without a daemon-side policy file.
 >
-> **Qualification:** offline checks include the real Paseo 0.14 compiler and an isolated server load (102 tests across 7 files). A local Paseo 0.14.0 daemon load and a server-side exercise against the live fleet with a grant-all policy passed. Physical Android and Linux Desktop UI checks, real planning and authorized service controls through the app remain **pending**. See the [qualification record](docs/qualification.md).
+> **Qualification:** offline checks include the real Paseo 0.15 compiler and an isolated server load (109 tests across 7 files). The 0.15.0 Android app and the local 0.14.0 daemon both accept the manifest; a server-side exercise against the live fleet with a grant-all policy passed. Physical Android and Linux Desktop UI interaction, real planning and authorized service controls through the app remain **pending**. See the [qualification record](docs/qualification.md).
 
 [Install](#install-only-after-reviewing-trusted-code) · [Host policy](#host-policy) · [Tasks](#task-edits-and-commits) · [Runners](#runner-controls-and-maintenance) · [Planning](#planning-and-decisions) · [Security](docs/security.md) · [Qualification](docs/qualification.md)
 
@@ -35,7 +35,7 @@ Every screen leads with one banner: the most urgent repository and the single ne
 
 ## Requirements
 
-- Paseo **0.13.x or 0.14.x**, for both the daemon and connected app. The manifest accepts `>=0.13.0 <0.15.0`; it rejects a later minor until that release is tested.
+- Paseo **0.13.x, 0.14.x or 0.15.x**, for both the daemon and connected app. The manifest accepts `>=0.13.0 <0.16.0`; it rejects a later minor until that release is tested. The connected Android app may be newer than the daemon; each runtime checks its own version.
 - A Linux daemon host with Node 24+, Git, Python 3.11+ and an `autowork` executable: the one on the daemon's trusted PATH, or the one the policy names.
 - Autowork with `prepare_api: 4` and JSON fleet/task commands. The goal list, the pending-edits view and the task commit need an Autowork release that has `autowork tasks goals` and `autowork tasks commit` (kit `main` from 2026-11-02 on). Against an older release the plugin refuses those actions before dispatch and names the missing verb; everything else still works.
 - For opt-in planning: an existing configured Pi installation/provider and ignored canonical `.worktrees/`. The plugin does not install a model/runtime or edit credentials.
@@ -89,7 +89,7 @@ Missing transport, runtime-version or delivery evidence is **unknown**. The plug
 
 There is **no client toggle that grants execution**. The daemon operator writes one private JSON policy file. The plugin reads it from `$XDG_CONFIG_HOME/paseo-autowork/policy.json` (default `~/.config/paseo-autowork/policy.json`) in the daemon user's home, or from the path named by `PASEO_AUTOWORK_CONFIG` in the daemon's environment when that variable is set. The Settings screen shows which file was loaded. Omit grants you do not need.
 
-> Paseo 0.13 and 0.14 require `daemon.manage` for plugin RPC, but their public handler has no end-user principal. These grants are **shared by authenticated daemon managers**, not a per-user ACL. Do not use this policy model with mutually untrusted managers.
+> Paseo 0.13, 0.14 and 0.15 require `daemon.manage` for plugin RPC, but their public handler has no end-user principal. These grants are **shared by authenticated daemon managers**, not a per-user ACL. Do not use this policy model with mutually untrusted managers.
 
 <details>
 <summary><strong>Policy keys, example and deployment limits</strong></summary>
@@ -187,7 +187,7 @@ Remove with `paseo plugin remove paseo-autowork`. Source repositories, Autowork 
 
 - [Paseo plugins](https://paseo.sh/docs/plugins)
 - [Paseo plugin reference](https://paseo.sh/docs/plugins/reference)
-- [Pinned Paseo SDK source](https://github.com/getpaseo/paseo/tree/d34d17a9072149320ace35ec2a2e5c7dcd992cb3/packages/plugin)
+- [Pinned Paseo SDK package](https://www.npmjs.com/package/@getpaseo/plugin/v/0.15.0)
 - [Autowork](https://github.com/TrebuchetDynamics/kit)
 
 [MIT license](LICENSE)

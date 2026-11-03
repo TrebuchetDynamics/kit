@@ -1,5 +1,11 @@
 # Qualification record
 
+## Paseo 0.15 app compatibility (2026-11-03)
+
+The connected Android app reported **0.15.0** while the local daemon/CLI was **0.14.0**. The previous manifest range `>=0.13.0 <0.15.0` made the app's plugin card fail with `Plugin "paseo-autowork" requires Paseo >=0.13.0 <0.15.0. Your app is 0.15.0.` The 0.15.0 plugin SDK/server suite passes (**109 tests**, both TypeScript configurations), the plugin reloaded on the 0.14.0 daemon, and a live fleet read returned 11 repositories. The manifest is now `>=0.13.0 <0.16.0`; 0.16 remains untested. The app must reconnect or refresh the Plugin settings after the manifest change.
+
+Not performed: a physical interaction pass on the 0.15.0 app after the manifest fix.
+
 ## Five-second surface (2026-11-03)
 
 The client was reworked against a mobile critique (debug console rendered as an app: green *NOT RUNNING*, repeated unknown fields, raw hashes and Markdown, undifferentiated destructive controls, content under the navigation bar). `npm run check` passed: **109 tests across 7 test files** plus both strict TypeScript configurations. Seven new Node-renderer tests pin the semantic tone mapping, the one-banner-plus-single-blocker fleet, urgency ordering, the typed confirmation for Remove and Update, the decision card with rendered Markdown and Answer above the fold, completed work hidden behind one toggle with queue counts and a short revision, grouped health facts with relative times, and the bottom clearance. The daemon reloaded the plugin from the kit checkout after the change.

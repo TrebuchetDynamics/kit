@@ -3,6 +3,6 @@
   "name": "Autowork",
   "description": "Native fleet, tasks, goals, owner decisions, runner controls and staged planning for an existing Linux Autowork installation.",
   "requirements": {
-    "paseo": ">=0.13.0 <0.15.0"
+    "paseo": ">=0.13.0 <0.16.0"
   }
 }

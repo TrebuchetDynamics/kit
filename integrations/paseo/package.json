@@ -28,8 +28,8 @@
     "package:check": "npm pack --dry-run --json"
   },
   "devDependencies": {
-    "@getpaseo/plugin": "0.14.0",
-    "@getpaseo/server": "0.14.0",
+    "@getpaseo/plugin": "0.15.0",
+    "@getpaseo/server": "0.15.0",
     "@tanstack/react-query": "^5.90.11",
     "@types/node": "^24.19.2",
     "@types/react": "~19.2.0",

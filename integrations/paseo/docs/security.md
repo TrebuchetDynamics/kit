@@ -4,7 +4,7 @@
 
 Paseo plugins execute unsandboxed client and daemon code. This plugin is not a filesystem sandbox. Review its source and dependencies before installing it on a daemon with access to private repositories or provider credentials. No telemetry, public listener or extra durable service is implemented.
 
-In the verified Paseo 0.13 and 0.14 sources, `plugin.rpc.invoke.request` requires `daemon.manage` (packages/server/src/server/authorization/operation-permissions.ts). The public PluginHandlerContext exposes a PaseoApi but no end-user principal. This plugin does not invent `context.auth` or infer authorization from network encryption. Operator grants are shared by authenticated daemon managers. Mutually untrusted managers need an upstream principal-bearing API and per-user authorization before using execution grants.
+In the verified Paseo 0.13, 0.14 and 0.15 sources, `plugin.rpc.invoke.request` requires `daemon.manage` (packages/server/src/server/authorization/operation-permissions.ts). The public PluginHandlerContext exposes a PaseoApi but no end-user principal. This plugin does not invent `context.auth` or infer authorization from network encryption. Operator grants are shared by authenticated daemon managers. Mutually untrusted managers need an upstream principal-bearing API and per-user authorization before using execution grants.
 
 ## Read boundaries
 
@@ -38,4 +38,4 @@ Shutdown closes the planning bridge's input so upstream PlanningHub cancels and 
 
 ## Deployment restrictions
 
-The build did not install, enable, reload or restart an existing Paseo daemon; make provider calls; operate real runners; alter credentials; or publish remotely. A later owner-authorized live test installed, enabled and reloaded this plugin on the local Paseo 0.14.0 daemon, then exercised read-only fleet/tasks RPC and a refused mutation; it made no provider call, ran no runner operation and changed no host grant. Android connectivity, actual authenticated permission denial and live planning/service behavior require separate qualification. Do not infer these from Node tests or a fake session host.
+The build did not install, enable, reload or restart an existing Paseo daemon; make provider calls; operate real runners; alter credentials; or publish remotely. A later owner-authorized live test installed, enabled and reloaded this plugin on the local Paseo 0.14.0 daemon, with the 0.15.0 Android app accepting the widened manifest, then exercised read-only fleet/tasks RPC and a refused mutation; it made no provider call, ran no runner operation and changed no host grant. Android connectivity, actual authenticated permission denial and live planning/service behavior require separate qualification. Do not infer these from Node tests or a fake session host.
