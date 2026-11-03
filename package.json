@@ -32,7 +32,9 @@
     "LICENSE",
     "README.md",
     "docs/cross-host.md",
-    "tmux/"
+    "tmux/",
+    "integrations/paseo/",
+    "!**/node_modules"
   ],
   "pi": {
     "extensions": [

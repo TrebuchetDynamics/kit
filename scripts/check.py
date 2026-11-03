@@ -8,6 +8,7 @@ from fnmatch import fnmatchcase
 import math
 import runpy
 import os
+import shutil
 from pathlib import Path
 import signal
 import subprocess
@@ -27,6 +28,7 @@ EXCLUSIONS = {
 # Modules whose tests run in several processes: tests/test_pi_autowork.py alone took
 # 764s of a 1324s run as one process, while its tests are independent runner fixtures.
 SPLIT = {'tests/test_pi_autowork.py': 12, 'pi-autowork/engine/test_parallel_integrate.py': 4}
+PASEO = 'integrations/paseo'
 LIVE_FLAGS = ('CONTAINMENT_LINUX_TESTS', 'RUN_CONTROLLER_BRIDGE_LINUX',
               'HERMES_NATIVE_HANDOFF_TEST', 'HERMES_NATIVE_REGISTRATION_TEST')
 
@@ -225,6 +227,28 @@ def affected_core(root):
     return all(subprocess.run(command, cwd=root).returncode == 0 for command in commands)
 
 
+def paseo_check(root, env, list_only=False):
+    """The Paseo plugin's own check (strict TypeScript and vitest) when its dependencies
+    are installed; otherwise a stated skip. Returns False only when the check fails."""
+    folder = root / PASEO
+    if not (folder / 'package.json').is_file():
+        return True
+    npm = shutil.which('npm')
+    reason = ('npm is not installed' if npm is None
+              else f'run `npm --prefix {PASEO} ci --ignore-scripts` first' if not (folder / 'node_modules').is_dir()
+              else None)
+    if reason:
+        print(f'SKIP {PASEO} [paseo plugin]: {reason}', flush=True)
+        return True
+    print(f'RUN {PASEO} (npm run check)', flush=True)
+    if list_only:
+        return True
+    result = subprocess.run([npm, 'run', 'check'], cwd=folder, env=env, text=True, encoding='utf-8',
+                            errors='replace', stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    print(f'CHECK {PASEO} (npm run check)\n' + result.stdout[-6000:], flush=True)
+    return result.returncode == 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('paths', nargs='*', help='owned test modules or directories (default: all offline tests)')
@@ -275,6 +299,7 @@ def main(argv=None):
     print(f'Offline inventory: {len(tests)} modules in {len(groups)} directories; '
           f'{excluded} excluded. No model/native qualification.', flush=True)
     if args.list:
+        paseo_check(root, {}, list_only=True)
         return 0
     if not tests and (selection is None or selection['full']):
         print('FAIL: no offline tests found', flush=True)
@@ -305,6 +330,7 @@ def main(argv=None):
     order = sorted(range(len(work)), key=lambda i: len(work[i][1]) == 1 and '.' not in work[i][1][0])
     with ThreadPoolExecutor(max_workers=args.jobs or default_jobs()) as pool:
         futures = {i: pool.submit(run_unit, *work[i], env, args.timeout, args.pattern) for i in order}
+        plugin = pool.submit(paseo_check, root, env) if not args.paths and not args.pattern and selection is None else None
         runs = [(work[i][0], futures[i]) for i in range(len(work))]
         for directory, modules in groups.items():
             print(f'CHECK {directory.relative_to(root)} ({len(modules)} modules)', flush=True)
@@ -318,6 +344,8 @@ def main(argv=None):
                 passed += 1
             else:
                 failed += 1
+    if plugin is not None and not plugin.result():
+        failed += 1
     print(f'Offline result: {passed} test directories passed; {failed} failed; '
           f'{excluded} modules excluded.', flush=True)
     if gated:  # skipped, not failed: the host was busy (TOOLSET-193-54); a quieter run checks them

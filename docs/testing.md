@@ -437,6 +437,25 @@ At the repository root, `python3 -m unittest discover -s tests -p test_owner_cro
 checks prompt generation, repair-mode opt-in and preserved job settings without
 scheduling or executing a live repair.
 
+## Paseo plugin checks
+
+The Paseo plugin in `integrations/paseo/` has its own Node 24+ dependency tree and CI
+job (`.github/workflows/paseo.yml`). From the repository root:
+
+```sh
+npm --prefix integrations/paseo ci --ignore-scripts
+npm --prefix integrations/paseo run check
+npm --prefix integrations/paseo run package:check
+```
+
+These run the strict native-client and server TypeScript checks, the offline fixtures,
+the pinned Paseo 0.14 compiler and an isolated plugin runtime. `python3 scripts/check.py`
+runs the same `npm run check` when the dependencies are installed and reports a skip
+reason otherwise. None of this installs into or reloads a user daemon. See the
+[plugin qualification record](../integrations/paseo/docs/qualification.md); physical
+Android and desktop clients, provider planning and real service controls remain
+separate live acceptance.
+
 ## Portable package checks
 
 Codex/Pi packaging and adapter-reference checks run in `tests/test_portable_package.py`.

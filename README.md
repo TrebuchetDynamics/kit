@@ -125,9 +125,10 @@ codex plugin add kit@autowork-marketplace
 ### Paseo
 
 Paseo hosts agents; it does not install Kit itself. Install Kit in Pi, Claude Code or
-Codex as above, then run that agent inside a Paseo workspace. The optional native Paseo
-workspace plugin for runner and task inspection is not part of this checkout yet. Do
-not install it from `main`.
+Codex as above, then run that agent inside a Paseo workspace. The native Paseo plugin
+in [`integrations/paseo/`](integrations/paseo/README.md) adds Autowork fleet, task,
+blocker and planning management to Paseo. Install that directory, not the repository
+root, and only after reading its [security notes](integrations/paseo/docs/security.md).
 
 ### Hermes (optional)
 
@@ -310,7 +311,7 @@ and [install](#install) again in each host; in Hermes, rewire existing cron jobs
 | Claude Code | Plugin validation and an earlier isolated install are recorded; no live model workflow is demonstrated in that record. |
 | Codex | Earlier isolated installation and skill discovery, plus portable-package checks; the current package still needs renewed native/live qualification. |
 | Hermes | Offline tests, native registration/integration checks and gateway activation receipts. Live model behavior and Telegram delivery require separate live checks. |
-| Paseo | Native plugin integration is not in this checkout; do not claim a Paseo install from `main`. |
+| Paseo | The plugin's offline checks (the real Paseo 0.14 compiler and an isolated runtime) and a live local daemon load with read-only reads are in [its qualification record](integrations/paseo/docs/qualification.md). Physical client and live control qualification remain pending. |
 
 Package contents have changed since some isolated-install runs. The
 [cross-host verification record](docs/cross-host.md#behavior-and-verification) names the
@@ -331,6 +332,15 @@ regressions, owner attention, cost per verified task, time to merge and crash re
 `autowork scorecard` measures part of it today. See
 [Is Autowork worth it?](docs/evaluation.md) for the assessment and the gaps still to
 instrument.
+
+## Paseo interface
+
+The [Autowork Paseo plugin](integrations/paseo/README.md) lives in `integrations/paseo/`.
+It shows runners, tasks, owner questions and planning inside Paseo. With a daemon-side
+operator policy file it also performs confirmed runner controls, owner answers and
+staged planning through the existing engine. Paseo 0.13 or 0.14 on a Linux daemon host
+is required. Its checks run with `npm --prefix integrations/paseo run check` after
+`npm --prefix integrations/paseo ci --ignore-scripts`; see [testing](docs/testing.md#paseo-plugin-checks).
 
 ## Documentation
 

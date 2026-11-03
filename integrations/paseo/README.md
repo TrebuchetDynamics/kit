@@ -2,7 +2,7 @@
 
 **See the work. Review the plan. Confirm the action.**
 
-Inspect an existing Linux [Autowork](https://github.com/TrebuchetDynamics/autowork) installation from Paseo. See runners, task contracts, blockers and logs in one native interface. Enable planning and runner controls only when you need them.
+Inspect an existing Linux [Autowork](https://github.com/TrebuchetDynamics/kit) installation from Paseo. See runners, task contracts, blockers and logs in one native interface. Enable planning and runner controls only when you need them.
 
 This is a **plugin**, not a provider, scheduler or bundled Autowork engine. It targets Android, desktop and web through React Native.
 
@@ -35,18 +35,19 @@ The diagram describes the control flow. It is not a screenshot. Inspection is re
 
 ## Install, only after reviewing trusted code
 
-Source is in the private [TrebuchetDynamics/paseo-autowork](https://github.com/TrebuchetDynamics/paseo-autowork) repository. You need an authorized checkout. No public source or registry release is available.
+Source lives in the public [kit repository](https://github.com/TrebuchetDynamics/kit) under `integrations/paseo/`. No registry release is available.
 
 **Select the daemon host first.** Run the commands on that machine. If plugins are globally disabled, enable them only after consenting to Paseo's trust warning.
 
 > **Trusted, unsandboxed code:** installing a Paseo plugin grants code execution as the daemon user. Review [security](docs/security.md) before installation. Install only into the intended host.
 
-From the local checkout:
+From the kit checkout:
 
 ```sh
+cd /absolute/path/to/kit/integrations/paseo
 npm ci --ignore-scripts
 npm run check
-paseo plugin install /absolute/path/to/paseo-autowork
+paseo plugin install /absolute/path/to/kit/integrations/paseo
 paseo plugin ls
 ```
 
@@ -166,6 +167,6 @@ Remove with `paseo plugin remove paseo-autowork`. Source repositories, Autowork 
 - [Paseo plugins](https://paseo.sh/docs/plugins)
 - [Paseo plugin reference](https://paseo.sh/docs/plugins/reference)
 - [Pinned Paseo SDK source](https://github.com/getpaseo/paseo/tree/d34d17a9072149320ace35ec2a2e5c7dcd992cb3/packages/plugin)
-- [Autowork](https://github.com/TrebuchetDynamics/autowork)
+- [Autowork](https://github.com/TrebuchetDynamics/kit)
 
 [MIT license](LICENSE)
