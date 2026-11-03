@@ -34,7 +34,7 @@ vi.mock('@getpaseo/plugin/client', () => ({
 }));
 import { AutoworkScreen, WorkspacePanel } from '../client/screens';
 import { SettingsScreen } from '../client/settings';
-import { closureLabel, canAnswer, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, stateTone, taskMatches } from '../client/presentation';
+import { blockedReason, closureLabel, canAnswer, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, stateTone, taskMatches } from '../client/presentation';
 
 const fleet = (instance = 'generation-1') => fleetSchema.parse({ instance, capturedAt: Date.now(), release: 'configured-release', executable: '/bin/autowork', prepareApi: 4,
   permissions: { controls: ['pause'], planning: true, decisions: true, tasks: true, commit: true, maintenance: ['model', 'clear-held', 'attention'] }, policy: { path: '/policy.json', source: 'default' }, capabilities: { commands: ['ls', 'tasks', 'plan', 'logs', 'status', 'scorecard', 'models'], tasks: ['list', 'show', 'decide', 'goals', 'commit', 'validate', 'prepare', 'why'] }, warnings: [], repos: [{ id: 'repo', label: 'Repository', path: '/repo', identity: 'identity', revision: 'rev',
@@ -606,6 +606,8 @@ describe('management surface', () => {
     expect(markdownSegments('Keep **WEB-ALL** per [final reconciliation](docs/r.md).')).toEqual([{ text: 'Keep ' }, { text: 'WEB-ALL', bold: true }, { text: ' per ' }, { text: 'final reconciliation', link: 'docs/r.md' }, { text: '.' }]);
     expect(headline('Which scope applies? The rest is **detail** that goes on.')).toBe('Which scope applies?');
     expect(headline('Goal WEB-ALL remains unmet at Plan round 2 of 2. **Question:** Should WEB-ALL continue? No successor is saved.')).toBe('Should WEB-ALL continue?');
+    expect(blockedReason('NEEDS_DECISION')).toBe('needs decision');
+    expect(blockedReason('T-010-1f9b8e44')).toBe('T-010-1f9b8e44');
     expect(observationRows({ runner_alive: false, health_written_at: Date.now() / 1000 - 60, task_state: 'unknown' })).toEqual([['Runner alive', 'no'], ['Health written at', '1m ago']]);
   });
   it('leads the fleet with one banner, says a host-wide blocker once and sorts the urgent repository first', async () => {
@@ -660,6 +662,16 @@ describe('management surface', () => {
     await press('Answer T-1');
     expect(button('Send answer')).toBeTruthy(); expect(text()).not.toContain('](docs/'); expect(text()).toContain('final reconciliation');
   });
+  it('shows a blocked open task as blocked with a readable reason', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    const blocked = { ...task, id: 'T-BLOCK', title: 'Blocked open task', blocked_by: 'NEEDS_DECISION' };
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [blocked] }) : initial(name, data));
+    await mount({ params: { view: 'blockers' } });
+    expect(text()).toContain('Blocked open task');
+    expect(text()).toContain('blocked by needs decision');
+    expect(root.root.find(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'status blocked')).toBeTruthy();
+    expect(text()).not.toContain('blocked by NEEDS_DECISION');
+  });
   it('keeps completed blocked work out of the blocked queue until completed is requested', async () => {
     const initial = env.invoke.getMockImplementation()!;
     const done = { ...task, id: 'T-DONE', title: 'Finished blocked task', status: 'done', blocked_by: 'DONE', closure: { label: 'closed', provenance: 'manual', verified: false } };
@@ -699,7 +711,7 @@ describe('management surface', () => {
     await mount({ params: { view: 'tasks' } });
     expect(text()).not.toContain('Finished task');
     expect(text()).toContain('1 open task · 1 need decision · 0 blocked · 1 done');
-    expect(text()).toContain('abcdef01+working'); expect(text()).not.toContain('abcdef0123456789');
+    expect(text()).toContain('abcdef01 · working tree'); expect(text()).not.toContain('abcdef0123456789');
     expect(root.root.findAll(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'Filter task')).toHaveLength(0);
     await press('Show completed'); expect(text()).toContain('Finished task'); expect(text()).toContain('manual close');
   });

@@ -49,7 +49,7 @@ export function relativeTime(value: unknown, now = Date.now()): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 export function closureLabel(closure: Record<string, unknown>): string {
-  const provenance = typeof closure.provenance === 'string' ? closure.provenance : 'unknown provenance';
+  const provenance = typeof closure.provenance === 'string' ? closure.provenance.replace(/_/g, ' ') : 'unknown provenance';
   const verified = closure.provenance === 'coordinator_verified' ? closure.evidence_valid : closure.verified;
   const verification = verified === true ? 'verified' : verified === false ? 'not verified' : 'verification unknown';
   // The badge already shows the closure label; this line adds only provenance and proof.
@@ -167,6 +167,10 @@ export function sharedBlocker(repos: Repo[]): string | null {
   for (const repo of repos) { const blocker = repo.runner?.blocker.trim(); if (blocker) counts.set(blocker, (counts.get(blocker) ?? 0) + 1); }
   const [top] = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   return top && top[1] >= 2 ? top[0] : null;
+}
+/** A blocker code is not a task ID: NEEDS_DECISION reads as “needs decision”. */
+export function blockedReason(value: string): string {
+  return /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(value) ? value.replace(/_/g, ' ').toLowerCase() : value;
 }
 /** Counts worth a word; zeros are silence. */
 export function countSummary(runner: Runner | null): string {

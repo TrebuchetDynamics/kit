@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import type { PluginTheme } from '@getpaseo/plugin';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Icon, Modal, ScrollView, TextInput, copyText, useToast } from '@getpaseo/plugin/client/ui';
 import { markdownSegments, stateTone, toneIcon, type Tone } from './presentation';
 
@@ -28,8 +28,8 @@ export function Card({ children, compact = false, tone }: { children: ReactNode;
   const colors = useColors();
   return <View style={{ padding: compact ? 10 : 14, gap: compact ? 6 : 9, borderWidth: 1, borderColor: tone && tone !== 'neutral' ? toneColor(colors, tone) : colors.border, borderRadius: 12, backgroundColor: colors.surface1 }}>{children}</View>;
 }
-export function Row({ children, between = false }: { children: ReactNode; between?: boolean }) {
-  return <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, ...(between ? { justifyContent: 'space-between' } : {}) }}>{children}</View>;
+export function Row({ children, between = false, style }: { children: ReactNode; between?: boolean; style?: StyleProp<ViewStyle> }) {
+  return <View style={[{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, ...(between ? { justifyContent: 'space-between' } : {}) }, style]}>{children}</View>;
 }
 export function Stack({ children, gap = 6 }: { children: ReactNode; gap?: number }) { return <View style={{ gap }}>{children}</View>; }
 export function ScrollRow({ children }: { children: ReactNode }) {
@@ -155,7 +155,7 @@ export function HashChip({ value, name, suffix = '' }: { value: string; name: st
   const toast = useToast();
   const short = value ? value.slice(0, 8) : 'unknown';
   return <Row>
-    <Label mono>{short}{suffix}</Label>
+    <Label mono>{short}{suffix ? ` · ${suffix.replace(/^\+/, '')}` : ''}</Label>
     {value ? <IconButton label={`Copy ${name} ${short}`} icon="Copy" onPress={() => { void copyText(value).then(() => toast.show(`Copied ${name} ${value}`, { variant: 'info', durationMs: 2000 })).catch(() => toast.error('Copy unavailable on this client')); }} /> : null}
   </Row>;
 }

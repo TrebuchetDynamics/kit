@@ -8,7 +8,7 @@ This is a **plugin**, not a provider, scheduler or bundled Autowork engine. It t
 
 > **Read-only by default.** No model calls or mutation grants without a daemon-side policy file.
 >
-> **Qualification:** offline checks include the real Paseo 0.15 compiler and an isolated server load (113 tests across 7 files). The 0.15.0 Android app and the local 0.14.0 daemon both accept the manifest; a server-side exercise against the live fleet with a grant-all policy passed. Physical Android and Linux Desktop UI interaction, real planning and authorized service controls through the app remain **pending**. See the [qualification record](docs/qualification.md).
+> **Qualification:** offline checks include the real Paseo 0.15 compiler and an isolated server load (114 tests across 7 files). The 0.15.0 Android app and the local 0.14.0 daemon both accept the manifest; a server-side exercise against the live fleet with a grant-all policy passed. Physical Android and Linux Desktop UI interaction, real planning and authorized service controls through the app remain **pending**. See the [qualification record](docs/qualification.md).
 
 [Install](#install-only-after-reviewing-trusted-code) · [Host policy](#host-policy) · [Tasks](#task-edits-and-commits) · [Runners](#runner-controls-and-maintenance) · [Planning](#planning-and-decisions) · [Security](docs/security.md) · [Qualification](docs/qualification.md)
 

@@ -6,7 +6,7 @@ import { RefreshControl, View } from 'react-native';
 import type { ScrollView as NativeScrollView } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
-import { canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, revisionParts, runnerFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
+import { blockedReason, canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, revisionParts, runnerFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
 import { operationsKey, readForHost, rememberOperation, useConfirmedAction, useHostState, useReadBackoff, useWatch, type HostState } from './state';
 import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme } from './ui';
 
@@ -273,7 +273,7 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
       {reasons.length ? <Notice tone={stateTone(runner.state) === 'danger' ? 'danger' : 'warning'}>
         <Label bold>Why it stopped</Label>
         {reasons.map(reason => <Label key={reason}>{reason}</Label>)}
-        <Row>
+        <Row style={{ maxWidth: 260 }}>
           <Button label="Logs" compact selected={showLogs} accessibilityLabel="Runner logs" onPress={() => setShowLogs(!showLogs)} />
           <Button label="Diagnostics" compact selected={showDiagnostics} onPress={() => setShowDiagnostics(!showDiagnostics)} />
         </Row>
@@ -291,7 +291,7 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
       <Row><StatusPill state={human(record(runner.main_check)?.result_class ?? record(runner.main_check)?.state ?? 'no evidence')} tone={mainCheckTone(runner.main_check)} /><Label>Main check: {mainCheckSummary(runner.main_check)}</Label></Row>
       {runner.job ? <Label>Current job: {jobSummary(runner.job)}</Label> : null}
       <Facts rows={observation} />
-      <Row>
+      <Row style={{ maxWidth: 260 }}>
         <Button label="Logs" compact selected={showLogs} accessibilityLabel="Runner logs" onPress={() => setShowLogs(!showLogs)} />
         <Button label="Diagnostics" compact selected={showDiagnostics} onPress={() => setShowDiagnostics(!showDiagnostics)} />
       </Row>
@@ -400,7 +400,7 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
     {blockers ? <DecisionsCard runner={runner} onAnswer={select} /> : null}
     {!blockers && (editing || fleet.permissions.commit) ? <PendingCard {...common} /> : null}
     <Card>
-      <Row between><Heading level={2}>{blockers ? 'Blocked tasks' : 'Task queue'}</Heading><Caption>{query.isFetching ? 'Refreshing…' : `${host.enabled && !query.isStale && !query.isError ? 'Live' : 'Cached'}${revision ? ` · ${revision.short}${revision.suffix}` : ''}`}</Caption></Row>
+      <Row between><Heading level={2}>{blockers ? 'Blocked tasks' : 'Task queue'}</Heading><Caption>{query.isFetching ? 'Refreshing…' : `${host.enabled && !query.isStale && !query.isError ? 'Live' : 'Cached'}${revision ? ` · ${revision.short}${revision.suffix ? ' · working tree' : ''}` : ''}`}</Caption></Row>
       {query.data ? <Caption>{plural(counts.open, 'open task')} · {counts.decisions} need decision · {counts.blocked} blocked{blockers ? '' : ` · ${counts.done} done`}{editing ? ' · working-tree records, uncommitted edits included' : ''}</Caption> : null}
       <Row>
         <Button label="Filters" compact selected={showFilters} onPress={() => setShowFilters(!showFilters)} />
@@ -424,7 +424,9 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
       </Row> : null}
       {!query.isFetching && !query.isError && query.data && !visibleTasks.length ? <Notice><Label>{!all.length ? 'No tasks observed.' : hasFilters ? 'No tasks match these filters.' : blockers ? 'No blocked tasks observed.' : counts.done ? 'No open tasks; completed work is hidden.' : 'No tasks observed.'}</Label></Notice> : null}
     </Card>
-    {selected ? <TaskView key={selected} task={all.find(task => task.id === selected)} taskId={selected} {...common} enabled={enabled && !query.isStale && !query.isError} fromBlockers={blockers} onClose={() => select('')} /> : null}
+    <Sheet title="Task detail" open={!!selected} onClose={() => select('')}>
+      {selected ? <TaskView key={selected} task={all.find(task => task.id === selected)} taskId={selected} {...common} enabled={enabled && !query.isStale && !query.isError} fromBlockers={blockers} onClose={() => select('')} /> : null}
+    </Sheet>
     {!blockers && editing ? <AddTaskCard {...common} /> : null}
     {!blockers && editing ? <GoalsCard {...common} /> : null}
     {!blockers ? <StoreCard {...common} /> : null}
@@ -433,9 +435,10 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
 
 function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; question: boolean; selected: boolean; onOpen: () => void; onAnswer: () => void }) {
   const closure = closureBadge(task.closure);
-  const meta = [task.section, task.position ? `position ${task.position}` : null, isActionable(task) && task.blocked_by ? `blocked by ${task.blocked_by}` : null].filter(Boolean).join(' · ');
+  const blocked = isActionable(task) && !!task.blocked_by;
+  const meta = [task.section, task.position ? `position ${task.position}` : null, blocked ? `blocked by ${blockedReason(task.blocked_by!)}` : null].filter(Boolean).join(' · ');
   return <Card compact tone={question ? 'warning' : undefined}>
-    <Row><Label mono>{task.id}</Label><StatusPill state={question ? 'needs decision' : task.status} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}</Row>
+    <Row><Label mono>{task.id}</Label><StatusPill state={question ? 'needs decision' : blocked ? 'blocked' : task.status} tone={blocked ? 'warning' : undefined} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}</Row>
     <Label>{task.title}</Label>
     {meta ? <Caption>{meta}</Caption> : null}
     {!isActionable(task) ? <Caption>Provenance: {closureLabel(task.closure)}</Caption> : null}
@@ -637,7 +640,7 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request, f
     .filter(key => detail.closure[key] !== undefined && detail.closure[key] !== null && detail.closure[key] !== '')
     .map(key => [key.replace(/_/g, ' '), key === 'timestamp' ? relativeTime(detail.closure[key]) : human(detail.closure[key])]) : [];
   return <Card tone={answerable ? 'warning' : undefined}>
-    <Row between><View style={{ flexShrink: 1, gap: 2 }}><Heading level={2}>{taskId}</Heading><Caption>{detail?.title ?? task?.title ?? 'Task detail'}</Caption></View>{onClose ? <Button label="Close task" compact onPress={onClose} /> : null}</Row>
+    <Row between><View style={{ flexShrink: 1, gap: 2 }}><Heading level={2}>{taskId}</Heading><Caption>{detail?.title ?? task?.title ?? 'Task detail'}</Caption></View>{onClose ? <Button label="Close details" compact onPress={onClose} /> : null}</Row>
     {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
     {detail ? <>
       <Row><StatusPill state={answerable ? 'needs decision' : detail.status} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}{detail.section ? <Caption>{detail.section}</Caption> : null}</Row>
@@ -648,9 +651,9 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request, f
         <Input label="Owner answer" value={answer} onChange={setAnswer} multiline placeholder="Your decision, in your words. It is recorded on the task, never executed." />
         <Button label="Send answer" variant="primary" disabled={!enabled || query.isStale || !answer.trim() || !fleet.permissions.decisions} onPress={() => request({ kind: 'decision', repoId: repo.id, task: taskId, revision: detail.record_revision, text: answer })} />
         {!fleet.permissions.decisions ? <Caption>Owner answers are not granted by operator policy.</Caption> : null}
-      </> : fromBlockers ? <Notice><Label>No answer action: this is not a current canonical owner question for an open task.</Label></Notice> : null}
-      {detail.notes ? <Markdown text={detail.notes} /> : null}
+      </> : fromBlockers && task?.status === 'open' ? <Notice><Label>No answer action: this is not a current canonical owner question for an open task.</Label></Notice> : null}
       <Expand title="Contract and evidence">
+        {detail.notes ? <Markdown text={detail.notes} /> : null}
         <Facts rows={contract} />
         <Row><Caption>Contract</Caption><HashChip value={detail.contract_hash} name="contract hash" /><Caption>Record</Caption><HashChip value={detail.record_revision} name="record revision" /></Row>
         {closureRows.length ? <><Caption>Closure</Caption><Facts rows={closureRows} /></> : null}
