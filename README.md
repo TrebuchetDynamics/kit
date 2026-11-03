@@ -150,6 +150,8 @@ Paseo supplies its runtime modules. Pinned host modules are development dependen
 
 For upgrades, review code and compatibility, then run checks. Explicitly run `paseo plugin reload paseo-autowork` on the chosen daemon. Reload is a trusted-code operation.
 
+If the installed Autowork release changes after the plugin loads, the first refresh fails closed with `Autowork source release changed; reload and requalify before another operation`. Reload the plugin (or use **Settings → Plugins → Autowork → Reload**) and refresh. This prevents operating a new engine release under an old qualification.
+
 Remove with `paseo plugin remove paseo-autowork`. Source repositories, Autowork services, tasks and retained planning work remain. No automatic restore, cleanup or worker interruption is performed.
 
 </details>
