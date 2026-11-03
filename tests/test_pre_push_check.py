@@ -46,6 +46,13 @@ class MainTests(unittest.TestCase):
         self.assertEqual((code, calls), (1, [A]))
         self.assertIn('--no-verify', err.getvalue())
 
+    def test_the_tests_run_without_the_variables_git_exports_to_a_hook(self):
+        env = {'GIT_EDITOR': 'true', 'GIT_EXEC_PATH': '/usr/lib/git-core', 'GIT_PREFIX': '', 'GIT_DIR': '.git',
+               'GIT_PUSH_OPTION_COUNT': '1', 'GIT_PUSH_OPTION_0': 'x', 'GIT_CONFIG_COUNT': '1',
+               'GIT_CONFIG_KEY_0': 'push.default', 'GIT_CONFIG_VALUE_0': 'simple', 'PATH': '/usr/bin', 'HOME': '/h'}
+        self.assertEqual(pre_push_check.test_environment(env), {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'push.default',
+                                                                 'GIT_CONFIG_VALUE_0': 'simple', 'PATH': '/usr/bin', 'HOME': '/h'})
+
     def test_nothing_to_push_and_the_skip_flag_run_no_tests(self):
         calls = []
         self.assertEqual(pre_push_check.main([], io.StringIO(''), run=lambda base: calls.append(base) or 1), 0)

@@ -9,7 +9,8 @@ claim of a tagged release, completed installation or live workflow qualification
 
 - `scripts/pre_push_check.py`: a pre-push hook (`--install`) that runs only the tests the push
   can affect, from the sha the remote already has; `KIT_PRE_PUSH=0` or `--no-verify` leaves a
-  push to CI, which runs the whole suite.
+  push to CI, which runs the whole suite. The hook runs the tests without the variables Git
+  exports to hooks (`GIT_EDITOR=true` alone failed the planning suite).
 - The Paseo plugin now lives in this repository at `integrations/paseo/` (subtree of the
   former private `paseo-autowork` repository, history kept) and manages every Autowork
   operation: every `autowork tasks` verb and goal edits bound to the working-tree record

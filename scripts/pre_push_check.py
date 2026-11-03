@@ -53,10 +53,22 @@ def pushed_bases(lines, known=None):
     return bases
 
 
+HOOK_VARIABLES = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_EDITOR', 'GIT_EXEC_PATH', 'GIT_PREFIX',
+                  'GIT_REFLOG_ACTION', 'GIT_PUSH_OPTION_COUNT')
+
+
+def test_environment(env=os.environ):
+    """The environment the tests see: Git exports GIT_EDITOR=true, GIT_EXEC_PATH and GIT_PREFIX to a
+    hook, and GIT_EDITOR=true alone failed eight planning tests whose fixtures expect a plain shell.
+    GIT_CONFIG_* entries stay (scripts/check.py handles the runner's push guard itself)."""
+    return {key: value for key, value in env.items()
+            if key not in HOOK_VARIABLES and not key.startswith('GIT_PUSH_OPTION_')}
+
+
 def run_affected(base):
     command = [sys.executable, str(ROOT / 'scripts/affected_tests.py'), '--run', *(['--base', base] if base else [])]
     print('pre-push: ' + ' '.join(command[1:]), flush=True)
-    return subprocess.run(command, cwd=ROOT).returncode
+    return subprocess.run(command, cwd=ROOT, env=test_environment()).returncode
 
 
 def install(hooks):
