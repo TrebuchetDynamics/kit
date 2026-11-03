@@ -33,7 +33,8 @@ not ask for.
    For one objective that must stay in view across many turns, use `/goal`. For many
    lanes at once, `/autonomous-codebase-improver`.
 4. **Deliver.** `/git-commit-push` commits, syncs and pushes when the request allows.
-   `/lgtm` continues a concrete step you already approved.
+   `/lgtm` says yes to the latest recommendation, including recommended answers to a
+   question round, and continues.
 
 ## On-ramps
 

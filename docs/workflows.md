@@ -56,7 +56,7 @@ capacity limit, so some commands must be typed rather than selected in the menu.
 | `/autowork` | `/autowork` | Inspect the repo, plan missing tasks, execute a useful slice, verify and commit owned changes |
 | `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only clean unmerged ones, keep dirty and locked worktrees |
-| `/lgtm` | `/lgtm` | Continue the understood next step with existing authorization |
+| `/lgtm` | `/lgtm` | Accept the latest recommendation, including a question round, and continue |
 | `/docs_sync` | `/docs_sync` | Maintain repository documentation |
 | `/plan_with_me` | `/plan_with_me` | Answer focused questions, then update docs and plans |
 | `/plan_for_me` | `/plan_for_me` | Discover the project's best next work, or investigate a supplied goal, then save the plan and tasks |

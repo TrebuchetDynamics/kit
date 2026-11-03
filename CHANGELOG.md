@@ -7,6 +7,12 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- `/lgtm` is now a yes skill. It accepts the latest assistant recommendation,
+  including every recommended answer in a question round, and continues the proposed
+  work. It no longer replies "LGTM is not plan approval" or asks for a second
+  `confirmed` when a recommendation exists. It asks only when materially different
+  outcomes have no recommendation and no safe reversible default fits the stated goal.
+
 - The engineering pack is now a **reference**, not a callable skill: `/engineering`
   and `/skill:engineering` are no longer registered in Hermes, Pi, Claude Code or
   Codex, and the Telegram menu no longer advertises it. `skills/engineering/SKILL.md`

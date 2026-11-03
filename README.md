@@ -62,7 +62,7 @@ states its own boundaries and what "done" means.
 
 - `/autowork` — implement and verify one ready task, then close it.
 - `/goal` — keep one objective alive until evidence proves it done.
-- `/lgtm` — continue the concrete step you just approved.
+- `/lgtm` — say yes to the latest recommendation and continue.
 - `/split-folder` — reorganize one folder without changing behavior.
 - `/git-commit-push` — commit, sync and push owned changes; `all` also settles finished
   worktrees into the base branch.

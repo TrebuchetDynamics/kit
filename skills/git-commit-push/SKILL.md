@@ -35,8 +35,9 @@ identity and existing receipts first; unchanged evidence can satisfy that handof
   before pushing (step 6), so a ship leaves local and remote equal. "no pull", "no sync" or
   "ff-only" narrows it; an audit, the autonomous agent-branch route and a repository
   main-only policy that forbids merge commits do not sync.
-- LGTM accepts a checkpoint that explicitly offered commit/push (see the `lgtm` skill). A generic
-  LGTM after an implementation report never implies shipping.
+- LGTM accepts a checkpoint that recommended or explicitly offered commit/push (see the
+  `lgtm` skill). A generic LGTM after an implementation report that did not offer shipping
+  never implies shipping.
 - Audit: the user asks for delivery status, a dry run, or "what would you commit". Do not
   stage, commit, or push.
 - **Pull and merge only:** the user asks only to pull, sync, "update from origin/main" or
