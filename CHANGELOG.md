@@ -95,6 +95,9 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Fixed
 
+- The uncommitted-planning runner test no longer flakes: it tolerates the instant in which Git
+  replaces `BLOCKERS.md` as the questions commit lands, and each subtest stops its own runner,
+  so a failing first subtest cannot pollute the second one's fake-Pi log.
 - The runner tests set their own `XDG_CONFIG_HOME`, so a host's real `pi-autowork@.service`
   no longer leaks into them: a unit pointing at a removed checkout made the CLI judge every
   fixture service stale and restart without waiting, failing one test only on that host.

@@ -2725,52 +2725,63 @@ sys.exit(result.returncode)
                     (self.root / 'interrupt-insertion').touch()
                 self.plan({'worker:A': ['blocked']})
                 runner = self.start_runner('--interval', '1')
-                self.addCleanup(lambda r=runner: r.poll() is None and r.kill())
                 common = self.git(self.repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')
                 folder = self.state / hashlib.sha256(common.encode()).hexdigest()[:16]
                 log = lambda: (folder / 'runner.log').read_text() if (folder / 'runner.log').exists() else ''
-                if not stage_all:
-                    runner.communicate(timeout=30)
-                    self.assertEqual(runner.returncode, 98, log())
-                    self.assertTrue((folder / 'planning-question.json').exists())
-                    time.sleep(1.1)  # cross a timestamp boundary before retrying the pending write
-                    runner = self.start_runner('--interval', '1')
-                    self.addCleanup(lambda r=runner: r.poll() is None and r.kill())
-                deadline = time.monotonic() + 30
-                while 'planning files are not committed on main' not in question.read_text():
-                    self.assertLess(time.monotonic(), deadline, log())
-                    self.assertIsNone(runner.poll(), log())
-                    time.sleep(0.1)
-                before = question.read_text()
-                time.sleep(3)  # several cycles: neither the log nor the question repeats
-                self.assertEqual(question.read_text(), before)
-                self.assertEqual(log().count('Runner blocked:'), 1, log())
-                status = json.loads((folder / 'status.json').read_text())
-                self.assertEqual(len([r for r in status['roots'] if r['kind'] == 'runner']), 1)
-                self.assertIn('planning files are not committed on main', status['blocker'])
-                self.assertEqual(self.runs(), [])
-                self.assertEqual(self.git(self.repo, 'ls-tree', '--name-only', 'main', 'tasks'), '')
-                if not stage_all:
-                    (self.root / 'interrupt-recovery').touch()
-                self.git(self.repo, 'add', '-A' if stage_all else 'tasks')
-                self.git(self.repo, 'commit', '-qm', 'commit planning')
-                if not stage_all:
-                    runner.communicate(timeout=30)
-                    self.assertEqual(runner.returncode, 99, log())
-                    self.assertTrue((folder / 'planning-question.json').exists())
-                    runner = self.start_runner('--interval', '1')
-                    self.addCleanup(lambda r=runner: r.poll() is None and r.kill())
-                deadline = time.monotonic() + 90
-                while '### Q-A ' not in question.read_text():
-                    self.assertLess(time.monotonic(), deadline, log())
-                    self.assertIsNone(runner.poll(), log())
-                    time.sleep(0.2)
-                self.assertTrue(self.runs('worker'))
-                runner.send_signal(signal.SIGINT)
-                runner.communicate(timeout=120)
-                self.assertNotIn('The engine needs attention', log())
-                self.assertNotIn('planning files are not committed', question.read_text())
-                self.assertIn('Owner note: preserve me.', question.read_text())
+
+                def read():
+                    # Git replaces the file for an instant when the questions commit lands on main.
+                    try:
+                        return question.read_text()
+                    except FileNotFoundError:
+                        return ''
+                try:
+                    if not stage_all:
+                        runner.communicate(timeout=30)
+                        self.assertEqual(runner.returncode, 98, log())
+                        self.assertTrue((folder / 'planning-question.json').exists())
+                        time.sleep(1.1)  # cross a timestamp boundary before retrying the pending write
+                        runner = self.start_runner('--interval', '1')
+                    deadline = time.monotonic() + 30
+                    while 'planning files are not committed on main' not in read():
+                        self.assertLess(time.monotonic(), deadline, log())
+                        self.assertIsNone(runner.poll(), log())
+                        time.sleep(0.1)
+                    before = read()
+                    time.sleep(3)  # several cycles: neither the log nor the question repeats
+                    self.assertEqual(read(), before)
+                    self.assertEqual(log().count('Runner blocked:'), 1, log())
+                    status = json.loads((folder / 'status.json').read_text())
+                    self.assertEqual(len([r for r in status['roots'] if r['kind'] == 'runner']), 1)
+                    self.assertIn('planning files are not committed on main', status['blocker'])
+                    self.assertEqual(self.runs(), [])
+                    self.assertEqual(self.git(self.repo, 'ls-tree', '--name-only', 'main', 'tasks'), '')
+                    if not stage_all:
+                        (self.root / 'interrupt-recovery').touch()
+                    self.git(self.repo, 'add', '-A' if stage_all else 'tasks')
+                    self.git(self.repo, 'commit', '-qm', 'commit planning')
+                    if not stage_all:
+                        runner.communicate(timeout=30)
+                        self.assertEqual(runner.returncode, 99, log())
+                        self.assertTrue((folder / 'planning-question.json').exists())
+                        runner = self.start_runner('--interval', '1')
+                    deadline = time.monotonic() + 90
+                    while '### Q-A ' not in read():
+                        self.assertLess(time.monotonic(), deadline, log())
+                        self.assertIsNone(runner.poll(), log())
+                        time.sleep(0.2)
+                    self.assertTrue(self.runs('worker'))
+                    runner.send_signal(signal.SIGINT)
+                    runner.communicate(timeout=120)
+                    self.assertNotIn('The engine needs attention', log())
+                    self.assertNotIn('planning files are not committed', read())
+                    self.assertIn('Owner note: preserve me.', read())
+                finally:
+                    # A failing subtest must not leave its runner working into the next one's
+                    # shared fake-Pi log: one did, and a legitimate maintainer re-cut failed it.
+                    if runner.poll() is None:
+                        runner.kill()
+                        runner.communicate(timeout=30)
 
     def test_nested_task_edit_wakes_coordinator(self):
         """Editing a task file in place need not change its directory's timestamp."""
