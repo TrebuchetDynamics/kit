@@ -37,10 +37,13 @@ class SkillStandardTests(unittest.TestCase):
         skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())
         adapter = ' '.join((ROOT / 'adapters/skills/lgtm/SKILL.md').read_text().split())
         self.assertIn('LGTM is a yes', skill)
+        self.assertIn('low-effort', skill)
         self.assertIn('accept every recommendation', skill)
         self.assertIn('question round', skill)
+        self.assertIn('default first, ask last', skill.lower())
         self.assertNotIn('Not a plan approval', skill)
         self.assertIn('LGTM is a yes', adapter)
+        self.assertIn('low-effort', adapter)
         self.assertIn('question round', adapter)
 
     def test_every_native_skill_states_boundaries_and_a_done_line(self):

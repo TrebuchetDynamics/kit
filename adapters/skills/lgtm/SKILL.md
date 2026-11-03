@@ -14,11 +14,13 @@ Read the [host-neutral LGTM — yes, continue workflow](../../../skills/lgtm/SKI
 
 Read the [host contract](../COMMON.md).
 
-LGTM is a yes. Resolve the latest assistant-owned checkpoint and accept its
-recommendation. A question round with recommended answers is a go: accept every
-recommendation, state the accepted scope, and perform the proposed work once with
-normal verification. If the checkpoint reports completed work, acknowledge without
-repeating it. Preserve exclusions and any earlier "no push"/"no deploy" limit; do
-not infer commit/push/deployment from a generic approval that did not recommend or
-offer it. Ask only when the checkpoint offers materially different outcomes with no
-recommendation and no safe default exists.
+LGTM is a yes and a low-effort instruction. Resolve the latest assistant-owned
+checkpoint and accept its recommendation. A question round with recommended answers
+is a go: accept every recommendation, state the accepted scope, and perform the
+proposed work once with normal verification. Use the safe reversible default when a
+question has no recommendation; ask only when materially different outcomes have no
+recommendation and no safe default exists. Do not require the user to restate the
+scope or reply “confirmed”, and do not repeat the plan. If the checkpoint reports
+completed work, acknowledge without repeating it. Preserve exclusions and any
+earlier “no push”/“no deploy” limit; do not infer commit/push/deployment from a
+generic approval that did not recommend or offer it.

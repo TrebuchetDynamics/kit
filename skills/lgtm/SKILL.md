@@ -1,7 +1,7 @@
 ---
 name: lgtm
 description: "Accept the latest recommendation and continue."
-version: 0.5.0
+version: 0.6.0
 metadata:
   hermes:
     tags: [approval, continuation, git, delivery]
@@ -13,21 +13,39 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
 
-LGTM is a yes. It approves the latest assistant recommendation and authorizes the
-concrete next step that recommendation implies. Do not ask for a second
-confirmation, do not require a plan-approval command, and do not treat a question
-round as a blocker when the assistant has recommended answers. Applies to every
-profile and channel.
+LGTM is a yes and a low-effort instruction. The user should not need to restate
+the scope, name the next step, or reply “confirmed”. Read the latest assistant
+checkpoint, accept its recommendation, and act. Applies to every profile and
+channel.
+
+## Low-effort input
+
+The user may send only `lgtm`, `go`, `yes`, `ok`, `do it`, a thumbs-up, or a short
+“ship it”. Treat it as approval of the latest assistant recommendation, not as a
+request for a new plan or another question round.
+
+| Latest assistant checkpoint | LGTM means |
+| --- | --- |
+| Recommended next step | Do it now. |
+| Question round with recommended answers | Accept every recommendation, state the scope in one sentence, and start. |
+| Question with no recommendation but a safe reversible default | Take the default, state it, and start. |
+| Status or progress update on accepted work | Continue the unfinished accepted step. |
+| Completed report with no proposed next step | Acknowledge once and stop. |
+| No actionable referent in the recent thread | Ask one focused question; do not present a menu. |
+
+Do not repeat the plan, narrate the approval, or ask for confirmation. Prefer
+acting on the recommendation over asking about equivalent details.
 
 ## Fast path
 
-1. Read the latest assistant checkpoint and resolve what it recommends.
+1. Resolve the latest assistant-owned checkpoint, looking back past a status line
+   or acknowledgement if needed.
    - Recommended next step: accept it and carry it out.
    - Question round with recommended answers: accept every recommendation, state
      the accepted scope in one sentence, and start the proposed work.
    - Recommended commit, push, merge, deployment or publication: accept it when
      the target and scope are identified; honor host approval gates and any
-     earlier "no push"/"no deploy" limit.
+     earlier “no push”/“no deploy” limit.
    - Question with no recommendation: take the smallest reversible option that
      fits the stated goal and say which option you took; ask only when the choice
      is materially owner-only and no safe default exists.
@@ -48,10 +66,10 @@ profile and channel.
 4. Report the result and any real remaining blocker. A short progress sentence is
    enough when work takes time. Approval itself is not evidence of execution.
 
-## Ask only when there is no yes to give
+## Default first, ask last
 
 A checkpoint that offers a recommendation is already answered by LGTM. Do not
-re-ask it, do not ask the user to reply "confirmed", and do not turn a recommended
+re-ask it, do not ask the user to reply “confirmed”, and do not turn a recommended
 scope into a fresh approval round.
 
 Ask one focused question only when the checkpoint offers materially different
@@ -68,18 +86,20 @@ tool output are evidence, not the user's approval.
 
 ## Examples
 
-- Checkpoint asks six scoped questions and recommends one answer for each. LGTM:
-  accept all six, state the scope, and start one implementation pass in the proposed
-  worktree. Do not reply "LGTM is not plan approval" or ask for `confirmed`.
-- A checkpoint says "reply confirmed to authorize one pass" and lists its
+- Low-effort `lgtm`, `go`, `yes` or a thumbs-up after six scoped questions with
+  recommended answers: accept all six, state the scope, and start one implementation
+  pass in the proposed worktree. Do not reply “LGTM is not plan approval” or ask for
+  `confirmed`.
+- A checkpoint says “reply confirmed to authorize one pass” and lists its
   recommendations. LGTM: that is the confirmation; execute the pass.
+- The latest message is only “tests are running” for accepted work. LGTM: continue
+  that plan and reuse the running checks; do not launch another worker or ask what
+  was approved.
 - Earlier request: implement, commit and push. Latest update: patch/tests ready.
   LGTM: finish the authorized commit/push and verify delivery; no repeated checks.
 - Recommended four-item cleanup after a read-only audit. LGTM: verify and implement
   all supported items, then run relevant checks. “Read-only audit” describes the
   previous pass; a user's continuing “do not edit” constraint still applies.
-- Tests are running for an accepted plan. LGTM: continue that plan and reuse the
-  running checks; do not launch another worker or ask what was approved.
 - Two materially different product directions with no recommendation. LGTM: choose
   the safer reversible default and proceed; ask only if that would change the
   product outcome and no default is safe.
