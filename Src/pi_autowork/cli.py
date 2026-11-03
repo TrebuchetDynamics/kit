@@ -486,6 +486,8 @@ def engine_release(owner, state, toolset, live=False):
     Status names the release itself, and says when it is no longer on disk. It does not compare
     the two revisions: `Toolset:` may be another checkout, whose revisions are not comparable.
     """
+    if not isinstance(owner, dict):
+        return ''  # a malformed record is health's report, not a build to name
     rev = str(owner.get('toolset_rev') or '').strip()
     if not re.fullmatch(r'[0-9a-f]{7,64}', rev):
         return ''  # a record from before the runner named its release

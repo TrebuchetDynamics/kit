@@ -3815,11 +3815,14 @@ sys.exit(result.returncode)
 
     def test_status_omits_a_release_no_runner_recorded(self):
         state = self.status_state()
-        (state / 'runner.json').write_text(json.dumps(
-            {'pid': 1, 'start_time': '1', 'started': 'now', 'repo': str(self.repo)}))
-        result = self.run_runner('--status')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn('Release:', result.stdout)
+        for record in ({'pid': 1, 'start_time': '1', 'started': 'now', 'repo': str(self.repo)},
+                       ['a malformed record health reports']):
+            with self.subTest(record=record):
+                (state / 'runner.json').write_text(json.dumps(record))
+                result = self.run_runner('--status')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertNotIn('Release:', result.stdout)
+                self.assertIn('Runner:     not running', result.stdout)
 
     def test_status_and_dry_run_change_nothing(self):
         before = self.git(self.repo, 'status', '--porcelain', '--untracked-files=all')
