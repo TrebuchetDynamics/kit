@@ -286,6 +286,14 @@ claude plugin marketplace add TrebuchetDynamics/kit
 claude plugin install autowork@autowork
 ```
 
+`./install.sh` accepts a marketplace registered from a checkout (a `directory`
+source), but not one whose folder this host does not have: settings follow their
+owner between machines, and a renamed checkout leaves that path behind. A missing
+folder is a stale registration, not a source choice, so the installer drops it and
+adds the published Git source; the folder does not need to be cloned for the suite
+to install. A registered folder that still exists is left alone and used as it is,
+because that source is the owner's choice.
+
 Inside a session, `/plugin marketplace add TrebuchetDynamics/kit` and
 `/plugin install autowork@autowork` do the same; run `/reload-plugins` or
 start a new session. Add `--scope project` to the install to record it in the

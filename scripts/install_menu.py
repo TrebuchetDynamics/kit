@@ -324,6 +324,75 @@ def hermes_item(hermes_args):
     return item
 
 
+def claude_marketplace_folders():
+    """The folders Claude Code's configuration records for this marketplace.
+
+    A marketplace added from a checkout is recorded as a `directory` source in the user
+    settings and in Claude Code's own known-marketplaces registry. A published Git source
+    records a repository instead and yields nothing here.
+    """
+    for path, key in ((HOME / '.claude/settings.json', 'extraKnownMarketplaces'),
+                      (HOME / '.claude/plugins/known_marketplaces.json', '')):
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        entries = data.get(key, {}) if key else data
+        if not isinstance(entries, dict):
+            continue
+        source = (entries.get(CLAUDE_MARKETPLACE) or {}).get('source')
+        if isinstance(source, dict) and source.get('source') == 'directory':
+            yield Path(str(source.get('path') or ''))
+
+
+def missing_claude_marketplace():
+    """The folder a marketplace registration names when this host no longer has it.
+
+    Settings follow their owner between machines and outlive a renamed checkout, so a
+    registered folder is often gone. That path is not a source choice any more: it is a
+    stale registration that breaks `claude plugin marketplace update` with ENOENT, which
+    would stop the suite installing from the published source.
+    """
+    for folder in claude_marketplace_folders():
+        if not str(folder):
+            continue
+        try:
+            if not folder.is_dir():
+                return folder
+        except OSError:
+            return folder
+    return None
+
+
+def drop_stale_claude_marketplace():
+    """Re-register from the published source when the recorded folder is gone (see
+    missing_claude_marketplace); the component's own add step then adds that source."""
+    folder = missing_claude_marketplace()
+    if folder is None:
+        return ''
+    done = subprocess.run(['claude', 'plugin', 'marketplace', 'remove', CLAUDE_MARKETPLACE],
+                          stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+    text = (done.stdout + done.stderr).strip()
+    if done.returncode and 'not found' not in text.lower() and 'no marketplace' not in text.lower():
+        raise OSError(f'claude plugin marketplace remove {CLAUDE_MARKETPLACE}: {failure_summary(text)}')
+    return f'dropped the stale registration: {folder} is gone'
+
+
+def claude_steps():
+    steps = []
+    if missing_claude_marketplace() is not None:
+        steps.append(Step('drop the marketplace registration whose folder is gone',
+                          run=drop_stale_claude_marketplace))
+    return steps + [
+        Step(f'claude plugin marketplace add {SOURCE}', ['claude', 'plugin', 'marketplace', 'add', SOURCE],
+             tolerate=(TOLERATE_CLAUDE_SOURCE, 'already added', 'already exists')),
+        Step(f'claude plugin marketplace update {CLAUDE_MARKETPLACE}',
+             ['claude', 'plugin', 'marketplace', 'update', CLAUDE_MARKETPLACE]),
+        Step('drop the cached plugin, keeping its data', run=drop_claude_plugin),
+        Step(f'claude plugin install {CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}',
+             ['claude', 'plugin', 'install', f'{CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}'])]
+
+
 def drop_claude_plugin():
     """Claude Code caches a plugin by its version, which changes rarely: a reinstall of the same
     version kept the old workflows (sessions lacked two skills a release had added). Uninstalling
@@ -369,14 +438,10 @@ def items(hermes_args):
              # Claude Code refuses `marketplace add` when the owner's settings list that
              # marketplace from another source, such as this repository's checkout. That
              # source is the owner's choice: install from it, and never rewrite it here.
+             # A recorded folder that is gone is not a choice, and claude_steps drops it
+             # first so the published source installs on a host that never had it.
              # The update step below proves the configured marketplace is usable.
-             steps=[Step(f'claude plugin marketplace add {SOURCE}', ['claude', 'plugin', 'marketplace', 'add', SOURCE],
-                         tolerate=(TOLERATE_CLAUDE_SOURCE, 'already added', 'already exists')),
-                    Step(f'claude plugin marketplace update {CLAUDE_MARKETPLACE}',
-                         ['claude', 'plugin', 'marketplace', 'update', CLAUDE_MARKETPLACE]),
-                    Step('drop the cached plugin, keeping its data', run=drop_claude_plugin),
-                    Step(f'claude plugin install {CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}',
-                         ['claude', 'plugin', 'install', f'{CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}'])]),
+             steps=claude_steps()),
         Item('codex', 'Codex plugin and full suite + bundled Ponytail', needs='codex',
              # The registration carries the source URL, so a renamed repository is a
              # different source for the same marketplace id. Drop it before adding.

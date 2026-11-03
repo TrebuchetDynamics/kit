@@ -2,6 +2,7 @@
 
 The Hermes item runs only as a dry run here: the real setup changes live profiles.
 """
+import json
 import os
 import pty
 import selectors
@@ -187,6 +188,42 @@ exit 0
         self.assertIn('network unavailable', result.stdout)
         self.assertRegex(result.stdout, r'claude\s+failed')
         self.assertNotIn('claude plugin install kit@autowork', self.calls('claude'))
+
+    def test_a_marketplace_recording_a_folder_this_host_lacks_installs_anyway(self):
+        # Settings and Claude Code's own registry can name a checkout this host does not
+        # have: renamed, moved, or never cloned here. `marketplace update` then fails on
+        # the missing path, so that registration is dropped instead of being required.
+        gone = self.home / 'gone' / 'autowork'
+        self.write_claude_config(gone)
+        result = self.install('--only', 'claude')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls('claude'), [
+            'claude plugin marketplace remove autowork',
+            'claude plugin marketplace add TrebuchetDynamics/kit',
+            'claude plugin marketplace update autowork',
+            'claude plugin uninstall --keep-data kit@autowork',
+            'claude plugin install kit@autowork'])
+        self.assertIn('gone/autowork is gone', result.stdout)
+        self.assertRegex(result.stdout, r'claude\s+installed')
+
+    def test_a_recorded_marketplace_folder_that_exists_is_left_alone(self):
+        checkout = self.home / 'checkout'
+        checkout.mkdir()
+        self.write_claude_config(checkout)
+        result = self.install('--only', 'claude')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('claude plugin marketplace remove autowork', self.calls('claude'))
+        self.assertIn('claude plugin marketplace add TrebuchetDynamics/kit', self.calls('claude'))
+
+    def write_claude_config(self, folder):
+        """Record `folder` as the marketplace's source, the way a checkout registration does."""
+        source = {'source': 'directory', 'path': str(folder)}
+        (self.home / '.claude').mkdir(exist_ok=True)
+        (self.home / '.claude/settings.json').write_text(
+            json.dumps({'extraKnownMarketplaces': {'autowork': {'source': source}}}))
+        (self.home / '.claude/plugins').mkdir(parents=True, exist_ok=True)
+        (self.home / '.claude/plugins/known_marketplaces.json').write_text(
+            json.dumps({'autowork': {'source': source, 'installLocation': str(folder)}}))
 
     def test_a_transient_preflight_race_is_retried_once(self):
         import sys

@@ -7,6 +7,13 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- `./install.sh` installs from the published Git source even when Claude Code's
+  marketplace is registered from a folder this host does not have (a moved or renamed
+  checkout, or settings carried from another machine): that stale `directory`
+  registration is dropped and re-added, instead of failing
+  `claude plugin marketplace update` with ENOENT and stopping the component. A
+  registration whose folder exists is still used as the owner's choice.
+
 - The router is renamed to **`ask-kit`**, matching the toolset it maps: `/ask-kit`
   in Hermes and Pi, `/kit:ask-kit` in Claude Code, `$kit:ask-kit` in Codex. It still
   names one command per situation and grants no authority; the rename is a move, not
