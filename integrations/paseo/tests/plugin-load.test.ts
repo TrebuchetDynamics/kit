@@ -49,7 +49,8 @@ describe('official Paseo 0.13 compatibility', () => {
       await runtime.startPlugin('paseo-autowork', root);
       expect(runtime.catalog()).toHaveLength(1);
       const fleet = await runtime.invoke('paseo-autowork', 'autowork.fleet', {});
-      expect(fleet.permissions).toEqual({ planning: false, decisions: false, controls: [] });
+      expect(fleet.permissions).toEqual({ planning: false, decisions: false, tasks: false, commit: false, controls: [], maintenance: [] });
+      expect(fleet.policy).toEqual({ path: config, source: 'environment' });
       expect(fleet.repos).toHaveLength(1);
       await expect(runtime.invoke('paseo-autowork', 'autowork.prepare', {
         instance: fleet.instance, action: { kind: 'control', repoId: fleet.repos[0].id, action: 'pause' },

@@ -80,6 +80,13 @@ export function Input({ label, value, onChange, multiline = false }: { label: st
     <TextInput accessibilityLabel={label} value={value} onChangeText={onChange} multiline={multiline} maxLength={16000} placeholderTextColor={colors.foregroundMuted} style={{ minHeight: multiline ? 88 : 42, color: colors.foreground, backgroundColor: colors.surface0, borderColor: colors.border, borderWidth: 1, borderRadius: 8, padding: 10, textAlignVertical: multiline ? 'top' : 'center' }} />
   </View>;
 }
+export function Choice<T extends string>({ label, value, options, onChange, disabled = false }: { label: string; value: T; options: readonly (T | readonly [T, string])[]; onChange: (value: T) => void; disabled?: boolean }) {
+  const items = options.map(option => (typeof option === 'string' ? [option, option] : [option[0], option[1]]) as [T, string]);
+  return <View style={{ gap: 4 }}>
+    <Caption>{label}</Caption>
+    <Row>{items.map(([key, title]) => <Button key={key} label={title} compact selected={value === key} disabled={disabled} onPress={() => onChange(key)} />)}</Row>
+  </View>;
+}
 export function Expand({ title, children }: { title: string; children: ReactNode }) {
   const [expanded, setExpanded] = useState(false);
   return <View style={{ gap: 8 }}>

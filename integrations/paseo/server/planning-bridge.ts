@@ -2,6 +2,7 @@
 // This is only a transport/ownership adapter. Planning policy and persistence stay upstream.
 export const PLANNING_BRIDGE = String.raw`
 import importlib.util
+import inspect
 import json
 import os
 from pathlib import Path
@@ -61,7 +62,7 @@ def main():
         require(isinstance(request, dict), 'invalid planning request')
         method = request.get('method')
         fields = {
-            'start': {'repo', 'objective'}, 'send': {'repo', 'sessionId', 'message'},
+            'start': {'repo', 'objective', 'mode', 'task', 'model'}, 'send': {'repo', 'sessionId', 'message'},
             'state': {'repo', 'sessionId'}, 'preview': {'repo', 'sessionId'},
             'history': {'repo', 'sessionId'}, 'roadmap': {'repo', 'sessionId'},
             'apply': {'repo', 'sessionId', 'revision'}, 'steer': {'repo', 'sessionId', 'message'},
@@ -79,10 +80,25 @@ def main():
             require(len(owned) < MAX_SESSIONS, 'planning session limit reached; reload after closing')
             require(sum(snapshot(r, s)['status'] == 'running' for s, (r, _) in owned.items()) < 4,
                     'four planning turns are running; cancel or wait for one')
+            mode = text(request['mode'], 32)
+            require(mode in ('plan', 'discuss', 'investigate'), 'planning mode must be plan, discuss or investigate')
+            task = text(request['task'], 160) or None
+            model = text(request['model'], 200) or None
+            require(task is None or (task.isprintable() and not task.isspace()), 'invalid task scope')
+            require(model is None or (model.isprintable() and not any(c.isspace() for c in model)), 'invalid model')
             controller = hub.controller(repo, lambda r: planning.Planner(r, state_root=state,
                                                         pi=sys.argv[3] if len(sys.argv) > 3 else 'pi'))
             require(str(Path(controller.repo).resolve()) == repo, 'canonical main repository required')
-            meta = controller.create(objective=objective)
+            accepted = inspect.signature(controller.create).parameters
+            require(model is None or 'model' in accepted, 'installed Autowork cannot pin a planning model')
+            options = {'objective': objective}
+            if task is not None or 'task' in accepted:
+                options['task'] = task
+            if mode != 'plan' or 'mode' in accepted:
+                options['mode'] = mode
+            if model is not None:
+                options['model'] = model
+            meta = controller.create(**options)
             sid = meta['id']
             require(isinstance(sid, str) and len(sid) == 32 and all(c in '0123456789abcdef' for c in sid)
                     and sid not in owned, 'invalid new planning session')

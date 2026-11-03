@@ -10,6 +10,7 @@ const env = vi.hoisted(() => ({
   directory: '/repo' as string | null,
   hosts: [{ serverId: 'a', label: 'A', status: 'online' }],
   invoke: vi.fn(), state: 'active', listener: null as null | ((state: string) => void),
+  toast: { show: vi.fn(), error: vi.fn() },
 }));
 vi.mock('react-native', async () => {
   const React = await import('react');
@@ -23,7 +24,7 @@ vi.mock('react-native', async () => {
 vi.mock('@getpaseo/plugin/client/ui', async () => {
   const React = await import('react');
   const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
-  return { ScrollView: host('ScrollView'), TextInput: host('TextInput'), SidebarRow: host('SidebarRow') };
+  return { ScrollView: host('ScrollView'), TextInput: host('TextInput'), SidebarRow: host('SidebarRow'), useToast: () => env.toast };
 });
 vi.mock('@getpaseo/plugin/client', () => ({
   useHosts: () => env.hosts,
@@ -31,10 +32,11 @@ vi.mock('@getpaseo/plugin/client', () => ({
   useRpc: (contract: { name: string }) => (input: unknown) => env.invoke(contract.name, input),
 }));
 import { AutoworkScreen, WorkspacePanel } from '../client/screens';
+import { SettingsScreen } from '../client/settings';
 import { closureLabel, canAnswer, mainCheckSummary, previewForApply, taskMatches } from '../client/presentation';
 
 const fleet = (instance = 'generation-1') => fleetSchema.parse({ instance, capturedAt: Date.now(), release: 'configured-release', executable: '/bin/autowork', prepareApi: 4,
-  permissions: { controls: ['pause'], planning: true, decisions: true }, warnings: [], repos: [{ id: 'repo', label: 'Repository', path: '/repo', identity: 'identity', revision: 'rev',
+  permissions: { controls: ['pause'], planning: true, decisions: true, tasks: true, commit: true, maintenance: ['model', 'clear-held', 'attention'] }, policy: { path: '/policy.json', source: 'default' }, capabilities: { commands: ['ls', 'tasks', 'plan', 'logs', 'status', 'scorecard', 'models'], tasks: ['list', 'show', 'decide', 'goals', 'commit', 'validate', 'prepare', 'why'] }, warnings: [], repos: [{ id: 'repo', label: 'Repository', path: '/repo', identity: 'identity', revision: 'rev',
     runner: { name: 'runner', repo: '/repo', state: 'waiting', questions: [{ id: 'T-1', effort: 'small', unblocks: 1, needs: 'Choose the scope' }], held: [['T-2', 'technical hold']] } }] });
 const task = taskSchema.parse({ id: 'T-1', title: 'Owner task', section: 'Needs decision', status: 'open', goal: 'goal', rank: 1, position: 1, blocked_by: null, closure: {} });
 const detail = taskDetailSchema.parse({ ...task, short: null, depends_on: [], verified_depends_on: [], touches: [], resources: [], kind: 'task', ownership: 'owner', live: 'waiting', scope: null,
@@ -63,6 +65,12 @@ beforeEach(() => {
     if (name === 'autowork.fleet') return fleet();
     if (name === 'autowork.tasks') return { revision: 'rev', tasks: [task] };
     if (name === 'autowork.task') return detail;
+    if (name === 'autowork.watch') return { digest: 'digest-1', changed: false, capturedAt: Date.now() };
+    if (name === 'autowork.goals') return { revision: 'rev', goals: [{ id: 'goal', title: 'Goal', priority: 1, source: 'docs/plan.md', status: 'unmet', focus: false, depends_on: [], record_revision: 'goal-v1' }] };
+    if (name === 'autowork.store') return { value: input && (input as { view: string }).view === 'pending' ? { files: ['tasks/items/T-1.md'], diff: '+ Owner decision', commit: null, dry_run: true } : { ok: true }, capturedAt: Date.now() };
+    if (name === 'autowork.models') return { models: ['provider/model-a'], capturedAt: Date.now() };
+    if (name === 'autowork.scorecard') return { value: { days: 7, runners: { runner: { closed: 2, verified_closed: 1, evaluation: { summary: { closed: { value: 2, unit: 'tasks', status: 'measured' } } } } }, errors: { gone: '/missing is not a directory' }, overall: { summary: {} } }, capturedAt: Date.now() };
+    if (name === 'autowork.status') return { text: 'Runner:     not running', capturedAt: Date.now() };
     if (name === 'autowork.prepare') return { ticket: 'ticket', expiresAt: Date.now() + 60000, summary: 'Pause repository', pushAllowed: false };
     if (name === 'autowork.commit') return { id: 'operation-1', repoId: 'repo', kind: 'control', status: 'succeeded', message: 'Dispatched; inspect observation', startedAt: Date.now(), completedAt: Date.now(), sessionId: null, progress: '' };
     throw new Error(`Unexpected RPC ${name} ${JSON.stringify(input)}`);
@@ -226,9 +234,9 @@ describe('native host-scoped surfaces', () => {
       throw new Error(name);
     });
     await mount({ params: { view: 'planning' } });
-    expect(env.invoke.mock.calls.filter(([name]) => name !== 'autowork.fleet')).toHaveLength(0);
+    expect(env.invoke.mock.calls.filter(([name]) => name !== 'autowork.fleet' && name !== 'autowork.watch')).toHaveLength(0);
     await press('Prepare planning start');
-    expect(prepared).toEqual({ kind: 'plan-start', repoId: 'repo', objective: '' });
+    expect(prepared).toEqual({ kind: 'plan-start', repoId: 'repo', objective: '', mode: 'plan' });
     await press('Confirm operation'); await flush();
     expect(text()).toContain('Owned session: owned-plan');
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.planning')).toHaveLength(0);
@@ -470,7 +478,7 @@ describe('native host-scoped surfaces', () => {
     expect(text()).not.toContain('No tasks match these filters.');
   });
   it('shows read-only policy and navigation actions when the host grants nothing', async () => {
-    const value = fleet(); value.permissions = { controls: [], planning: false, decisions: false };
+    const value = fleet(); value.permissions = { controls: [], planning: false, decisions: false, tasks: false, commit: false, maintenance: [] };
     env.invoke.mockResolvedValue(value);
     await mount({ params: { view: 'runner' } });
     expect(text()).toContain('read-only');
@@ -501,4 +509,86 @@ describe('native host-scoped surfaces', () => {
     const calls = env.invoke.mock.calls.length;
     await query.invalidateQueries(); await flush(); expect(env.invoke).toHaveBeenCalledTimes(calls);
   });
+});
+
+describe('management surface', () => {
+  const grantAll = () => { const value = fleet(); value.permissions = { controls: ['start', 'pause', 'resume', 'stop', 'restart', 'remove', 'update'], planning: true, decisions: true, tasks: true, commit: true, maintenance: ['model', 'clear-held', 'attention'] }; return value; };
+  const capture = (value = fleet()) => {
+    const captured: { action?: unknown } = {}; const base = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation(async (name, input) => {
+      if (name === 'autowork.fleet') return value;
+      if (name === 'autowork.prepare') { captured.action = (input as { action: unknown }).action; return { ticket: 't', expiresAt: Date.now() + 60000, summary: 'Prepared', pushAllowed: false }; }
+      return base(name, input);
+    });
+    return captured;
+  };
+  it('offers every granted control and maintenance action and sends restart flags, model and attention exactly', async () => {
+    const captured = capture(grantAll());
+    await mount({ params: { view: 'runner' } });
+    for (const action of ['start', 'pause', 'resume', 'stop', 'restart', 'remove', 'update']) expect(button(`Prepare ${action}`), action).toBeTruthy();
+    await press('Restart waits for merges, then pauses workers'); await press('Restart interrupts merges now'); await press('Prepare restart');
+    expect(captured.action).toEqual({ kind: 'control', repoId: 'repo', action: 'restart', stopWorkers: true, now: true });
+    await press('Service model'); await press('Load model list'); await press('provider/model-a'); await press('Prepare model change');
+    expect(captured.action).toEqual({ kind: 'model', repoId: 'repo', model: 'provider/model-a' });
+    await press('Owner attention'); await input('Minutes', '15'); await input('Attention note', '-n'); await press('Prepare attention record');
+    expect(captured.action).toEqual({ kind: 'attention', repoId: 'repo', minutes: 15, note: '-n' });
+    await press('Clear held commits'); await input('Held task IDs (empty clears all)', 'T-2 T-3'); await press('Prepare clear-held');
+    expect(captured.action).toEqual({ kind: 'clear-held', repoId: 'repo', tasks: ['T-2', 'T-3'] });
+    await press('Runner status'); expect(text()).toContain('Runner:     not running');
+  });
+  it('edits tasks against the working-tree revision, adds records and commits only task paths after showing the diff', async () => {
+    const captured = capture(grantAll());
+    await mount({ params: { view: 'tasks' } });
+    expect(text()).toContain('Working-tree records'); expect(text()).toContain('1 file(s) uncommitted');
+    await press('Pending diff'); expect(text()).toContain('+ Owner decision');
+    await input('Commit message', 'answer T-1'); await press('Prepare task commit');
+    expect(captured.action).toEqual({ kind: 'commit', repoId: 'repo', message: 'answer T-1' });
+    await press('Open task T-1');
+    expect(env.invoke.mock.calls.some(([name, value]) => name === 'autowork.task' && (value as { working: boolean }).working === true)).toBe(true);
+    await press('Edit task'); await input('Closed by', 'owner'); await input('Closure reason', 'obsolete'); await press('Prepare task done');
+    expect(captured.action).toEqual({ kind: 'task-done', repoId: 'repo', task: 'T-1', revision: 'working-rev', by: 'owner', reason: 'obsolete' });
+    await press('Prepare move up');
+    expect(captured.action).toEqual({ kind: 'task-move', repoId: 'repo', task: 'T-1', revision: 'working-rev', direction: 'up' });
+    await press('New task'); await press('goal'); await input('Title', 'New work'); await input('Short (at most 80 characters)', 'New'); await input('Acceptance (one per line)', 'a\nb'); await press('Prepare task add');
+    expect(captured.action).toEqual({ kind: 'task-add', repoId: 'repo', fields: { goal: 'goal', title: 'New work', short: 'New', section: 'Next', kind: 'implementation', ownership: 'worker', acceptance: ['a', 'b'] } });
+    await press('Show goals'); await press('Edit goal goal'); await input('Goal priority', '3'); await press('focus'); await press('Prepare goal write');
+    expect(captured.action).toEqual({ kind: 'goal', repoId: 'repo', goal: 'goal', revision: 'goal-v1', fields: { priority: 3, focus: true } });
+  });
+  it('hides task editing without the grant and never asks for working-tree records', async () => {
+    const value = fleet(); value.permissions = { controls: [], planning: false, decisions: false, tasks: false, commit: false, maintenance: [] };
+    capture(value);
+    await mount({ params: { view: 'tasks' } });
+    expect(text()).not.toContain('Pending task edits'); expect(button('New task')).toBeUndefined();
+    await press('Open task T-1'); expect(button('Edit task')).toBeUndefined();
+    expect(env.invoke.mock.calls.some(([name, input]) => name === 'autowork.task' && (input as { working: boolean }).working === true)).toBe(false);
+  });
+  it('starts planning with a mode, task scope and model when chosen', async () => {
+    const captured = capture(grantAll());
+    await mount({ params: { view: 'planning', objective: 'Improve docs' } });
+    await press('Investigate'); await input('Task scope (optional)', 'T-1'); await input('Planning model (optional)', 'provider/model-a'); await press('Prepare planning start');
+    expect(captured.action).toEqual({ kind: 'plan-start', repoId: 'repo', objective: 'Improve docs', mode: 'investigate', task: 'T-1', model: 'provider/model-a' });
+  });
+  it('renders the scorecard with missing-repository errors and the read-only settings grants', async () => {
+    await mount({ params: { view: 'scorecard' } });
+    expect(text()).toContain('gone: no metrics'); expect(text()).toContain('closed: 2 tasks [measured]');
+    await act(async () => root.unmount());
+    await act(async () => { root = create(<QueryClientProvider client={query}><SettingsScreen {...props} /></QueryClientProvider>); }); await flush();
+    expect(text()).toContain('task edits: granted'); expect(text()).toContain('/policy.json'); expect(text()).toContain('default path, loaded');
+    expect(root.root.findAll(node => String(node.type) === 'Pressable')).toHaveLength(1);
+  });
+  it('announces a settled operation with a toast and refreshes reads when the watch reports a change', async () => {
+    let watches = 0;
+    const base = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation(async (name, input) => {
+      if (name === 'autowork.watch') { watches++; return { digest: `digest-${watches}`, changed: true, capturedAt: Date.now() }; }
+      return base(name, input);
+    });
+    await mount({ params: { view: 'runner' } });
+    const before = env.invoke.mock.calls.filter(([name]) => name === 'autowork.fleet').length;
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1400)); }); await flush();
+    expect(watches).toBeGreaterThanOrEqual(2);
+    expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.fleet').length).toBeGreaterThan(before);
+    await press('Prepare pause'); await press('Confirm operation');
+    expect(env.toast.show).toHaveBeenCalledWith('control: succeeded', expect.objectContaining({ variant: 'success' }));
+  }, 10000);
 });

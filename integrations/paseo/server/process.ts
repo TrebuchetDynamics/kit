@@ -11,7 +11,11 @@ export function redact(text: string): string {
   return text.replace(/sk-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._~+/=-]+|[A-Za-z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)[A-Za-z0-9_]*=[^\s]+/gi, '[redacted]');
 }
 export type RunOptions = { timeoutMs?: number; onStderr?: (text: string) => void;
-  onSpawn?: (child: ChildProcess) => void; signal?: AbortSignal };
+  onSpawn?: (child: ChildProcess) => void; signal?: AbortSignal;
+  /** Literal data for the child's stdin (`--json -` reads it); never shell text. */
+  stdin?: string;
+  /** Exit codes that still carry a complete answer on stdout, such as a failed check report. */
+  acceptExit?: readonly number[] };
 export type CommandResult = { stdout: string; stderr: string };
 
 /** Finite subprocess pool. Only server-authored argument arrays reach this class. */
@@ -38,7 +42,7 @@ export class ProcessRunner {
       const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
         !key.startsWith('GIT_') && !key.startsWith('PI_AUTOWORK_') && !['NODE_OPTIONS', 'PYTHONPATH', 'PYTHONHOME', 'AUTOWORK_WORKER'].includes(key)));
       let child: ChildProcess;
-      try { child = spawn(this.executable, [...args], { shell: false, env, stdio: ['ignore', 'pipe', 'pipe'] }); }
+      try { child = spawn(this.executable, [...args], { shell: false, env, stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] }); }
       catch { this.active--; reject(new CommandFailure('NOT_FOUND', 'Cannot execute configured Autowork')); return; }
       this.children.add(child);
       let stdout = '', stderr = '', pendingStderr = '', bytes = 0, failure: CommandFailure | null = null;
@@ -81,7 +85,10 @@ export class ProcessRunner {
       };
       child.stdout!.on('data', (chunk: Buffer) => accept(chunk, false));
       child.stderr!.on('data', (chunk: Buffer) => accept(chunk, true));
-      child.once('spawn', () => options.onSpawn?.(child));
+      child.once('spawn', () => {
+        if (options.stdin !== undefined && child.stdin) { child.stdin.on('error', () => {}); child.stdin.end(options.stdin); }
+        options.onSpawn?.(child);
+      });
       child.once('error', () => { failure ??= new CommandFailure('NOT_FOUND', 'Cannot execute configured Autowork'); });
       child.once('close', code => {
         clearTimeout(timer); if (escalation) clearTimeout(escalation);
@@ -92,7 +99,7 @@ export class ProcessRunner {
         // On failure the final line may be truncated inside a credential; do not emit it.
         if (!failure && code === 0) streamStderr(errorTail, true);
         if (failure) reject(failure);
-        else if (code !== 0) reject(new CommandFailure('EXIT', `Autowork exited ${code ?? 'by signal'}: ${redact(stderr).slice(-1200)}`, true));
+        else if (code !== 0 && !(code !== null && options.acceptExit?.includes(code))) reject(new CommandFailure('EXIT', `Autowork exited ${code ?? 'by signal'}: ${redact(stderr).slice(-1200)}`, true));
         else resolve({ stdout, stderr: redact(stderr) });
       });
     });

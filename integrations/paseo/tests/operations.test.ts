@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { readFile, writeFile } from 'node:fs/promises';
 import { AutoworkService } from '../server/autowork-client';
 import { Operations, type PlanningApi } from '../server/operations';
-import { fixture, cleanupFixtures } from './fixture';
+import { fixture, cleanupFixtures, policy } from './fixture';
+import { dispatchFor } from '../server/operations';
+import type { Repo } from '../shared/contracts';
 
 afterEach(cleanupFixtures);
 async function setup(granted = false, planner?: PlanningApi) {
   const f = await fixture();
-  const service = new AutoworkService({ executable: f.exe, repositories: [], planning: granted, decisions: granted, controls: granted ? ['pause', 'start'] : [] });
+  const service = new AutoworkService(policy({ executable: f.exe, planning: granted, decisions: granted, tasks: granted, commit: granted, controls: granted ? ['pause', 'start'] : [], maintenance: granted ? ['model', 'clear-held', 'attention'] : [] }));
   const ops = new Operations(service, planner ? async () => planner : undefined);
   const fleet = await service.fleet();
   return { ...f, service, ops, fleet, repoId: fleet.repos[0]!.id };
@@ -64,7 +66,7 @@ describe('confirmed operations', () => {
     const versionFile = f.root + '/release'; await writeFile(versionFile, 'release-one');
     const script = (await readFile(f.exe, 'utf8')).replace("release:'fixture-release'", `release:fs.readFileSync(${JSON.stringify(versionFile)},'utf8')`);
     await writeFile(f.exe, script);
-    const service = new AutoworkService({ executable: f.exe, repositories: [], planning: false, decisions: false, controls: ['pause'] });
+    const service = new AutoworkService(policy({ executable: f.exe, controls: ['pause'] }));
     const ops = new Operations(service); const fleet = await service.fleet();
     const ticket = await ops.prepare(fleet.instance, { kind: 'control', repoId: fleet.repos[0]!.id, action: 'pause' });
     await writeFile(versionFile, 'release-two');
@@ -84,7 +86,7 @@ describe('confirmed operations', () => {
     const op = await s.ops.commit(s.fleet.instance, ticket.ticket);
     expect((await finished(s.ops, s.fleet.instance, op.id)).status).toBe('succeeded');
     const calls = (await readFile(s.log, 'utf8')).trim().split('\n').map(x => JSON.parse(x));
-    expect(calls.find(x => x[0] === 'tasks' && x[1] === 'decide')).toEqual(['tasks', 'decide', '--expect', 'record-v1', '--', 'T-1', text, s.repo]);
+    expect(calls.find(x => x[0] === 'tasks' && x[1] === 'decide')).toEqual(['tasks', 'decide', '--expect=record-v1', '--', 'T-1', text, s.repo]);
     expect(calls.some(x => x.includes('live') || x.includes('done'))).toBe(false);
     await s.ops.close(); await s.service.close();
   });
@@ -139,5 +141,65 @@ describe('confirmed operations', () => {
     const calls = (await readFile(s.log, 'utf8')).trim().split('\n').map(x => JSON.parse(x));
     expect(calls.some(x => x[0] === 'start')).toBe(false);
     await s.ops.close(); await s.service.close();
+  });
+});
+
+const repo: Repo = { id: 'r-1', label: 'example', path: '/srv/example', identity: 'i', revision: 'rev', runner: null, error: null };
+const calls = async (log: string) => (await readFile(log, 'utf8')).trim().split('\n').map(x => JSON.parse(x));
+
+describe('server-authored argv', () => {
+  it('uses --flag=value for prose, -- before positionals and stdin JSON for records', () => {
+    expect(dispatchFor({ kind: 'task-done', repoId: 'r-1', task: 'T-1', revision: 'v1', by: '--owner', reason: '-rf $(touch nope)', evidence: '' }, repo).args)
+      .toEqual(['tasks', 'done', '--expect=v1', '--by=--owner', '--reason=-rf $(touch nope)', '--', 'T-1', '/srv/example']);
+    expect(dispatchFor({ kind: 'task-supersede', repoId: 'r-1', task: 'T-1', revision: 'v1', by: ['T-2', 'T-3'], reason: 'merged' }, repo).args)
+      .toEqual(['tasks', 'supersede', '--expect=v1', '--by=T-2', '--by=T-3', '--reason=merged', '--', 'T-1', '/srv/example']);
+    expect(dispatchFor({ kind: 'task-hold', repoId: 'r-1', task: 'T-1', revision: 'v1', by: 'an interactive session', until: '2026-12-31' }, repo).args)
+      .toEqual(['tasks', 'hold', '--expect=v1', '--by=an interactive session', '--until=2026-12-31', '--', 'T-1', '/srv/example']);
+    expect(dispatchFor({ kind: 'task-field', repoId: 'r-1', task: 'T-1', revision: 'v1', label: 'rank', value: '-5' }, repo).args)
+      .toEqual(['tasks', 'field', '--expect=v1', '--', 'T-1', 'rank', '-5', '/srv/example']);
+    expect(dispatchFor({ kind: 'task-place', repoId: 'r-1', task: 'T-1', revision: 'v1', section: 'Needs decision', decision: 'wait' }, repo).args)
+      .toEqual(['tasks', 'place', '--expect=v1', '--decision=wait', '--', 'T-1', 'Needs decision', '/srv/example']);
+    const add = dispatchFor({ kind: 'task-add', repoId: 'r-1', fields: { goal: 'G', title: 'Title', short: 'Short', acceptance: ['a'] } }, repo);
+    expect(add.args).toEqual(['tasks', 'add', '--json', '-', '/srv/example']);
+    expect(JSON.parse(add.options!.stdin!)).toEqual({ goal: 'G', title: 'Title', short: 'Short', acceptance: ['a'] });
+    const goal = dispatchFor({ kind: 'goal', repoId: 'r-1', goal: 'G', revision: 'g1', fields: { priority: 2, focus: true } }, repo);
+    expect(goal.args).toEqual(['tasks', 'goal', '--json', '-', '--expect=g1', '--', 'G', '/srv/example']);
+    expect(JSON.parse(goal.options!.stdin!)).toEqual({ priority: 2, focus: true });
+    expect(dispatchFor({ kind: 'control', repoId: 'r-1', action: 'restart', stopWorkers: true, now: true }, repo).args).toEqual(['restart', '--stop-workers', '--now', '/srv/example']);
+    expect(dispatchFor({ kind: 'control', repoId: 'r-1', action: 'update' }, repo).args).toEqual(['update']);
+    expect(dispatchFor({ kind: 'model', repoId: 'r-1', model: 'p/m', fallback: 'p/f' }, repo).args).toEqual(['model', '--fallback=p/f', '/srv/example', 'p/m']);
+    expect(dispatchFor({ kind: 'clear-held', repoId: 'r-1', tasks: ['T-1'] }, repo).args).toEqual(['clear-held', '/srv/example', 'T-1']);
+    expect(dispatchFor({ kind: 'attention', repoId: 'r-1', minutes: 12.5, task: 'T-1', note: '-n' }, repo).args).toEqual(['attention', '--task=T-1', '--note=-n', '12.5', '/srv/example']);
+    expect(dispatchFor({ kind: 'commit', repoId: 'r-1', message: 'answer T-1' }, repo).args).toEqual(['tasks', 'commit', '--message=answer T-1', '/srv/example']);
+    expect(dispatchFor({ kind: 'store-prepare', repoId: 'r-1', mode: 'stage' }, repo).args).toEqual(['tasks', 'prepare', '--no-commit', '/srv/example']);
+    expect(dispatchFor({ kind: 'store-migrate', repoId: 'r-1', commit: false }, repo).args).toEqual(['migrate', '--no-commit', '/srv/example']);
+    expect(() => dispatchFor({ kind: 'plan-start', repoId: 'r-1', objective: '', mode: 'plan' }, repo)).toThrow(/planning/);
+  });
+  it('refuses each grant kind separately and refuses verbs the installed release lacks', async () => {
+    const f = await fixture();
+    const service = new AutoworkService(policy({ executable: f.exe, decisions: true }));
+    const ops = new Operations(service); const fleet = await service.fleet(); const repoId = fleet.repos[0]!.id;
+    await expect(ops.prepare(fleet.instance, { kind: 'task-place', repoId, task: 'T-1', revision: 'record-v1', section: 'Now' })).rejects.toThrow(/task edits/);
+    await expect(ops.prepare(fleet.instance, { kind: 'commit', repoId, message: 'm' })).rejects.toThrow(/commits/);
+    await expect(ops.prepare(fleet.instance, { kind: 'model', repoId, model: 'p/m' })).rejects.toThrow(/maintenance/);
+    await expect(ops.prepare(fleet.instance, { kind: 'control', repoId, action: 'remove' })).rejects.toThrow(/runner operation/);
+    await ops.close(); await service.close();
+    const granted = new AutoworkService(policy({ executable: f.exe, all: true }));
+    const all = new Operations(granted); const snap = await granted.fleet();
+    await expect(all.prepare(snap.instance, { kind: 'task-place', repoId, task: 'T-1', revision: 'stale', section: 'Now' })).rejects.toThrow(/changed|refresh/);
+    const ticket = await all.prepare(snap.instance, { kind: 'task-done', repoId, task: 'T-1', revision: 'record-v1', by: 'owner', reason: 'obsolete' });
+    expect(ticket.summary).toContain('does not verify acceptance');
+    const op = await all.commit(snap.instance, ticket.ticket);
+    expect((await finished(all, snap.instance, op.id)).status).toBe('succeeded');
+    const recorded = await calls(f.log);
+    expect(recorded.find(x => x[0] === 'tasks' && x[1] === 'done')).toEqual(['tasks', 'done', '--expect=record-v1', '--by=owner', '--reason=obsolete', '--', 'T-1', f.repo]);
+    expect(recorded.some(x => x[0] === 'tasks' && x[1] === 'show' && x.includes('--worktree'))).toBe(true);
+    const add = await all.prepare(snap.instance, { kind: 'task-add', repoId, fields: { goal: 'G', title: 'New', short: 'New' } });
+    await finished(all, snap.instance, (await all.commit(snap.instance, add.ticket)).id);
+    const stdin = (await calls(f.log)).find(x => x[0] === 'tasks' && x[1] === 'add')!;
+    expect(JSON.parse(stdin[stdin.length - 1].stdin)).toEqual({ goal: 'G', title: 'New', short: 'New' });
+    await writeFile(f.exe, (await readFile(f.exe, 'utf8')).replace("'commit',", ''));
+    await expect(all.prepare(snap.instance, { kind: 'commit', repoId, message: 'm' })).rejects.toThrow(/executable changed|lacks/);
+    await all.close(); await granted.close();
   });
 });

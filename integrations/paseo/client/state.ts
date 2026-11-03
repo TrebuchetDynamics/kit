@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useHosts, useRpc } from '@getpaseo/plugin/client';
-import { commitRpc, fleetRpc, prepareRpc, type Action, type Operation, type Ticket } from '../shared/contracts';
+import { commitRpc, fleetRpc, prepareRpc, watchRpc, type ActionInput, type Operation, type Ticket } from '../shared/contracts';
 
 export function useReadBackoff() {
   const failures = useRef(0);
@@ -50,6 +50,38 @@ export function useHostState(hostId: string) {
 }
 
 export type HostState = ReturnType<typeof useHostState>;
+const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+/** Long-poll the daemon's change digest while this host is live; a change invalidates every read. */
+export function useWatch(host: HostState, hostId: string, instance: string | undefined) {
+  const watch = useRpc(watchRpc);
+  const queries = useQueryClient();
+  const call = useRef(watch); call.current = watch;
+  const [digest, setDigest] = useState('');
+  const enabled = host.enabled;
+  useEffect(() => {
+    if (!enabled || !instance) return;
+    let active = true;
+    const epoch = host.scope.current.epoch;
+    let last = '';
+    (async () => {
+      while (active) {
+        const started = Date.now();
+        try {
+          const result = await call.current({ instance, digest: last });
+          if (!active || host.scope.current.epoch !== epoch) return;
+          if (result.changed && last) void queries.invalidateQueries({ queryKey: ['autowork', hostId] });
+          last = result.digest; setDigest(result.digest);
+        } catch {
+          if (!active) return;
+          await pause(15000);
+        }
+        if (active && Date.now() - started < 1000) await pause(1000);
+      }
+    })();
+    return () => { active = false; };
+  }, [enabled, instance, hostId, host.scope, queries]);
+  return digest;
+}
 export async function readForHost<T>(host: HostState, read: () => Promise<T>): Promise<T> {
   const epoch = host.scope.current.epoch;
   if (!host.scope.current.enabled) throw new Error('Host offline or polling paused');
@@ -75,7 +107,7 @@ export function useConfirmedAction(host: HostState, hostId: string, instance: st
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { setConfirmation(null); }, [context, host.enabled]);
   const valid = (epoch: number, expectedContext: string) => alive.current && host.scope.current.enabled && host.scope.current.epoch === epoch && latest.current.context === expectedContext;
-  const request = async (action: Action) => {
+  const request = async (action: ActionInput) => {
     if (lock.current || !latest.current.current) return;
     lock.current = true; setBusy(true); setConfirmation(null); setMessage('Preparing confirmation…');
     const epoch = host.scope.current.epoch;

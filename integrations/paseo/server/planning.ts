@@ -76,11 +76,15 @@ export class PlanningManager {
       ...(options.pi === undefined ? {} : { pi: executable(options.pi, 'pi') }) };
   }
 
-  async start(repo: string, objective: string): Promise<Turn> {
+  async start(repo: string, objective: string, options: { mode?: string; task?: string; model?: string } = {}): Promise<Turn> {
     this.available();
     boundedText(objective);
+    const mode = options.mode ?? 'plan';
+    if (!['plan', 'discuss', 'investigate'].includes(mode)) throw new Error('Planning mode must be plan, discuss or investigate');
+    const task = options.task ?? '', model = options.model ?? '';
+    boundedText(task, 160); boundedText(model, 200);
     const canonical = this.repository(repo);
-    const value = this.turn(await this.request('start', { repo: canonical, objective }));
+    const value = this.turn(await this.request('start', { repo: canonical, objective, mode, task, model }));
     if (this.owned.has(value.id)) return this.invalid();
     this.owned.set(value.id, canonical);
     return value;
