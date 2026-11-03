@@ -535,19 +535,26 @@ def report(repositories, days=7, *, now=None, baseline=None):
     if type(days) is not int or not 1 <= days <= 30:
         raise ValueError('days must be between 1 and 30')
     now = time.time() if now is None else now
-    rows, sources, seen = {}, [], set()
+    rows, sources, seen, errors = {}, [], set(), {}
     for repo, name in repositories:
         identity = common_dir(repo) or Path(repo).resolve()
         if identity in seen:
             continue
         seen.add(identity)
-        row, data = _collect(repo, days, now)
+        try:
+            if not Path(repo).is_dir():
+                raise OSError(f'{repo} is not a directory')
+            row, data = _collect(repo, days, now)
+        except (OSError, ValueError, subprocess.CalledProcessError) as error:
+            # A runner whose repository moved or vanished still has a name; its metrics do not exist.
+            errors[name if name not in rows and name not in errors else f'{name} ({repo})'] = ' '.join(str(error).split())[:300]
+            continue
         source = observations(data, now)
         row['evaluation'] = evaluation([source], now - days * DAY, now, baseline)
         name = name if name not in rows else f'{name} ({repo})'
         rows[name] = row
         sources.append(source)
-    return dict(days=days, since=now - days * DAY, until=now, runners=rows,
+    return dict(days=days, since=now - days * DAY, until=now, runners=rows, errors=errors,
                 overall=evaluation(sources, now - days * DAY, now, baseline))
 
 
@@ -587,6 +594,8 @@ def csv_report(result):
 
 def report_table(result):
     lines = table(result['runners'], result['days'])
+    for name, error in result.get('errors', {}).items():
+        lines.append(f'\n{name}: no metrics; {error}')
     cards = [(name, row['evaluation']) for name, row in result['runners'].items()]
     cards.append(('overall', result['overall']))
     for name, card in cards:
