@@ -165,6 +165,8 @@ reservations.
 | `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]` | Manual close of any task kind; optional evidence is a reference, not verified acceptance. |
 | `autowork tasks supersede ID --by OTHER --reason TEXT` | Replace a task. |
 | `autowork tasks goal ID [--title --source --priority --status --focus/--no-focus --depends-on --evidence]` | Add or change a goal; `--status met` needs evidence and all non-superseded owned tasks done and qualified. |
+| `autowork tasks goals [--worktree]` | Read every goal record, in priority order. |
+| `autowork tasks commit [--message TEXT] [--dry-run]` | Commit the working tree's `tasks/` edits and nothing else; `--dry-run` shows the paths and their diff. |
 
 **Pass prose as literal JSON.** For quotes, backticks, `$` (including `$(...)`
 and `$VAR`) or newlines, write a UTF-8 JSON object with a file-writing tool; from

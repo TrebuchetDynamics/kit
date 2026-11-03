@@ -224,7 +224,7 @@ the [runner guide](pi-autowork/README.md) and
 ## Your work queue
 
 `tasks/` is the one queue: one file per task (`tasks/items/<ID>.md`) and per goal
-(`tasks/goals/<ID>.md`), edited only through `autowork tasks` (`list`, `show`, `add`,
+(`tasks/goals/<ID>.md`), edited only through `autowork tasks` (`list`, `goals`, `show`, `add`,
 `field`, `move`, `done`, …). The store is read from a commit, so a run's decisions are
 reproducible, and `/docs-sync` prepares or converts it.
 

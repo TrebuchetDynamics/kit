@@ -415,6 +415,8 @@ repository. Read first, then write:
 | Close manually (any task kind, not verified) | `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]` |
 | Retire for a successor | `autowork tasks supersede ID --by OTHER --reason TEXT` |
 | Check the result | `autowork tasks validate --worktree .` |
+| Read the goals | `autowork tasks goals [--worktree]` |
+| Commit only the task edits | `autowork tasks commit [--message TEXT] [--dry-run]` |
 
 **Use literal JSON for prose.** If a value contains quotes, backticks, `$`
 (including `$(...)` or `$VAR`) or newlines, write one UTF-8 JSON object with a
