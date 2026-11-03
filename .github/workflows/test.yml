@@ -3,12 +3,13 @@ on: [push, pull_request]
 jobs:
   unit:
     runs-on: ubuntu-latest
-    env:
-      # Runner, worker and check fixtures take an existing $TMPDIR for granted, as every
-      # host that runs Autowork sets one; the runner image leaves it unset.
-      TMPDIR: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@v4
+      # Runner, worker and check fixtures take an existing $TMPDIR for granted, as every
+      # host that runs Autowork sets one; the runner image leaves it unset. (The runner
+      # context is not available to a job-level env, so a step exports it.)
+      - name: Temporary directory
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       # The engine commits and merges as the host's Git user (it drops GIT_* variables), as on
