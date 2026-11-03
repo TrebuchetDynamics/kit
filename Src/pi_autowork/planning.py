@@ -118,11 +118,13 @@ class Planner:
         with proposals.exclusive(self._directory(ident) / 'writer.lock'):
             yield self.get(ident)
 
-    def create(self, objective='', task=None, mode='plan'):
+    def create(self, objective='', task=None, mode='plan', model=None):
         if mode not in ('plan', 'discuss', 'investigate'):
             raise PlanningError('planning mode must be plan, discuss or investigate')
         if not isinstance(objective, str) or task is not None and not isinstance(task, str):
             raise PlanningError('objective and task must be text')
+        if model is not None and (not isinstance(model, str) or not model.strip() or any(c.isspace() for c in model)):
+            raise PlanningError('model must be one provider/model name')
         ident = uuid.uuid4().hex
         worktree = self.repo / '.worktrees' / ('planning-' + ident)
         if worktree.parent.is_symlink() or worktree.is_symlink():
@@ -142,7 +144,7 @@ class Planner:
         meta = {'id': ident, 'repo': str(self.repo), 'identity': self.identity,
                 'worktree': str(worktree), 'base': base, 'target_branch': branch,
                 'branch': 'planning/' + ident, 'status': 'creating', 'task': task,
-                'objective': objective, 'mode': mode, 'model': self.model,
+                'objective': objective, 'mode': mode, 'model': model or self.model,
                 'created_at': time.time(), 'turns': 0}
         self._save(meta)
         try:
