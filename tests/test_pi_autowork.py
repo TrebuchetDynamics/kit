@@ -3757,6 +3757,70 @@ sys.exit(result.returncode)
                     self.assertIn('Runner:     ' + expected, result.stdout)
                     self.assertEqual(path.read_bytes(), before)
 
+    def status_state(self):
+        common = self.git(self.repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+        state = self.state / hashlib.sha256(common.encode()).hexdigest()[:16]
+        state.mkdir(parents=True, exist_ok=True)
+        return state
+
+    def test_status_names_the_release_the_engine_ran_not_only_the_toolset(self):
+        """`Toolset:` names the code a start loads, which need not be what ran: a runner pinned
+        to an older release read as current source, and that release had already been pruned,
+        so a report against it measured the old build's behavior as a defect of HEAD."""
+        sys.path.insert(0, str(ROOT / 'pi-autowork'))
+        from pi_autowork import cli
+        checkout = self.root / 'checkout'
+        checkout.mkdir()
+        self.git(checkout, 'init', '-q', '-b', 'main')
+        (checkout / 'a.txt').write_text('a\n')
+        self.git(checkout, 'add', '-A')
+        self.git(checkout, 'commit', '-qm', 'the build')
+        rev = self.git(checkout, 'rev-parse', '--short', 'HEAD')
+        day = self.git(checkout, 'log', '-1', '--format=%cs')
+        state = self.root / 'state' / '0123456789abcdef'
+        state.mkdir(parents=True)
+        present = self.state / 'releases' / rev.ljust(40, '0')  # the snapshot an older record names
+        present.mkdir(parents=True)
+        cases = [
+            ({'toolset_rev': rev, 'toolset': str(present)}, False,
+             f'last {rev} ({day}) from {present}'),
+            ({'toolset_rev': rev, 'toolset': str(present)}, True,
+             f'running {rev} ({day}) from {present}'),
+            ({'toolset_rev': rev}, False, f'last {rev} ({day}) from {present}'),  # older record
+            ({}, False, ''),
+        ]
+        for record, live, expected in cases:
+            with self.subTest(record=record, live=live):
+                line = cli.engine_release(record, state, str(checkout), live=live)
+                self.assertTrue(line.startswith(expected), line)
+        gone = cli.engine_release({'toolset_rev': rev, 'toolset': str(self.state / 'releases' / ('c' * 40))},
+                                  state, str(checkout))
+        self.assertIn('that directory is gone', gone)
+        self.assertNotIn('gone', cli.engine_release({'toolset_rev': rev, 'toolset': str(present)},
+                                                    state, str(checkout)))
+
+    def test_status_prints_the_release_the_runner_recorded(self):
+        state = self.status_state()
+        rev = self.git(self.repo, 'rev-parse', '--short', 'HEAD')
+        gone = self.state / 'releases' / ('0' * 40)
+        (state / 'runner.json').write_text(json.dumps({
+            'pid': 1, 'start_time': '1', 'started': 'now', 'repo': str(self.repo),
+            'toolset_rev': rev, 'toolset': str(gone)}))
+        result = self.run_runner('--status')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        line = next(line for line in result.stdout.splitlines() if line.startswith('Release:    '))
+        self.assertTrue(line.startswith(f'Release:    last {rev}'), line)
+        self.assertIn(str(gone), line)
+        self.assertIn('that directory is gone', line)
+
+    def test_status_omits_a_release_no_runner_recorded(self):
+        state = self.status_state()
+        (state / 'runner.json').write_text(json.dumps(
+            {'pid': 1, 'start_time': '1', 'started': 'now', 'repo': str(self.repo)}))
+        result = self.run_runner('--status')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('Release:', result.stdout)
+
     def test_status_and_dry_run_change_nothing(self):
         before = self.git(self.repo, 'status', '--porcelain', '--untracked-files=all')
         for option in ('--dry-run', '--status'):

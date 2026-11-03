@@ -941,7 +941,10 @@ facilities, not evidence that a live task was delivered or that a bill was paid.
 ## Runner health reads
 
 `runner.json` and the runner's own `job.json` record both the PID and its Linux
-process start ticks (`start_time`), separately from the wall-clock start time.
+process start ticks (`start_time`), separately from the wall-clock start time. It
+also records the release the process runs (`toolset_rev`, and its directory as
+`toolset`). A release is retained only while a live process uses it, so the record can
+outlive the directory it names.
 Status, fleet health and update-checkpoint reads require matching ticks and a
 non-zombie process; a reused PID reads `not running`, and cannot keep an old job
 current. Status also requires the runner lock to be held. Older records without
@@ -1073,6 +1076,16 @@ original timestamp and the read error. A second consecutive failure marks health
 successful read clears the failure episode without resetting an unchanged state's
 stall clock. In `autowork status`, an unavailable Health line shows when reads
 began failing, not when the previous healthy or blocked state began.
+
+`autowork status` names the engine build, not only the toolset. `Toolset:` is the
+package or checkout a new start or reload loads; `Release:` is the build that wrote
+the state, with its commit date and the directory it imports from, marked `running`
+or `last`, and it says so when that directory is gone. A runner pinned to an older
+release therefore cannot read as current source: measuring the old build's behavior
+as a defect of the reported `Toolset:` revision is the mistake this line prevents.
+The two revisions are not compared, because `Toolset:` can be another checkout whose
+revisions are not comparable. Repositories where no runner has recorded a release
+show no `Release:` line, and status still writes nothing.
 
 `autowork status` lists every unfinished task, with running, integrating, reported,
 held and waiting tasks first, in that order. Rows retain the task, lifecycle and

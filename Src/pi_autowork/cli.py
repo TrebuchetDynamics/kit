@@ -445,7 +445,10 @@ def run(argv, start, identity):
         # `autowork restart` reloads a runner that records this, and sees the reload land when it grows.
         'reloads': int(os.environ.get('PI_AUTOWORK_RELOADS') or 0),
         # The release this process runs: status compares it with the configured one (TOOLSET-236-4d).
-        'toolset_rev': toolset_rev}))
+        'toolset_rev': toolset_rev,
+        # ...and where it imports from. A release is pruned once no live process uses it, so the
+        # record outlives the directory: status must name the build even when it is gone.
+        'toolset': toolset}))
     push_guard()
     os.environ.update(PI_BIN=pi)
     summarize(repo, base, toolset, toolset_rev, skill_args, opts, settings, state)
@@ -473,6 +476,38 @@ def summarize(repo, base, toolset, rev, skill_args, opts, settings, state):
     print(f'Mode:       {opts["mode"]}; state in {state}; new worktrees in {repo}/.worktrees', flush=True)
 
 
+def engine_release(owner, state, toolset, live=False):
+    """The engine build that wrote this state, the directory it imports from, and its date.
+
+    `Toolset:` names the package or checkout a *new* start or reload loads, which need not be
+    what runs now. A runner pinned to an older release therefore read as current source: a
+    report against `releases/<old>` measured the old build's behavior as a defect of HEAD, and
+    the directory had already been pruned, so nothing on disk could show the difference.
+    Status names the release itself, and says when it is no longer on disk. It does not compare
+    the two revisions: `Toolset:` may be another checkout, whose revisions are not comparable.
+    """
+    rev = str(owner.get('toolset_rev') or '').strip()
+    if not re.fullmatch(r'[0-9a-f]{7,64}', rev):
+        return ''  # a record from before the runner named its release
+    path = Path(str(owner.get('toolset') or '').strip()) if owner.get('toolset') else None
+    if path is None:  # older records: the newest snapshot the short revision names
+        try:
+            path = next(iter(sorted(Path(state).parent.joinpath('releases').glob(f'{rev}*'))), None)
+        except OSError:
+            path = None
+    present = bool(path and path.is_dir())
+    date = (git(path, 'log', '-1', '--format=%cs') if present else None) or (
+        git(toolset, 'log', '-1', '--format=%cs', rev)
+        if git_ok(toolset, 'cat-file', '-e', f'{rev}^{{commit}}') else None)
+    line = f"{'running' if live else 'last'} {rev}" + (f' ({" ".join(date.split())})' if date else '')
+    if path is None:
+        return line + ' — its release directory is not on this host'
+    line += f' from {path}'
+    if not present:
+        return line + ' — that directory is gone, so its code cannot be inspected'
+    return line
+
+
 def status_view(repo, base, toolset, state):
     lock = state / 'lock'
     locked = False
@@ -487,13 +522,14 @@ def status_view(repo, base, toolset, state):
         owner = json.loads((state / 'runner.json').read_text())
     except (OSError, ValueError):
         owner = {}
-    if locked and running(owner):
-        running_rev, current = owner.get('toolset_rev'), git(toolset, 'rev-parse', '--short', 'HEAD')
-        behind = (f'; runs {running_rev} and moves to {current} at its next reload'
-                  if running_rev and current and running_rev != current else '')
-        print(f"Runner:     running (PID {owner['pid']}, since {owner.get('started', '?')}{behind})")
+    live = bool(locked and running(owner))
+    if live:
+        print(f"Runner:     running (PID {owner['pid']}, since {owner.get('started', '?')})")
     else:
         print('Runner:     not running')
+    released = engine_release(owner, state, toolset, live=live)
+    if released:
+        print(f'Release:    {released}')
     view = repo
     try:
         session = json.loads((state / 'session.json').read_text())
