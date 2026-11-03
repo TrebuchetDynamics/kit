@@ -2,7 +2,7 @@
 
 ## Offline build result
 
-`npm run check` passed: **88 tests across 7 test files**, plus both strict TypeScript configurations. Client code typechecks without DOM or Node globals. `git diff --check` passed. The packed source archive was audited to exclude node_modules, Git/worktrees, runtime artifacts, environment files, logs and session histories.
+`npm run check` passed: **91 tests across 7 test files**, plus both strict TypeScript configurations. Client code typechecks without DOM or Node globals. `git diff --check` passed. The packed source archive was audited to exclude node_modules, Git/worktrees, runtime artifacts, environment files, logs and session histories.
 
 Versions inspected/tested:
 

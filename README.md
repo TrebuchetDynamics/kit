@@ -24,6 +24,7 @@ The diagram describes the control flow. It is not a screenshot. Inspection is re
 - **Review tasks:** filter by task, goal, runtime or section. Browse 25 summaries per page. Inspect committed contracts and distinguish manual closure from verified closure.
 - **Resolve blockers:** inspect current owner questions separately from technical holds. With permission, prepare a revision-bound owner answer.
 - **Plan with review:** start an owned planning session, inspect the proposal and explicitly apply an exact preview. Planning does not start a runner.
+- **Act deliberately:** the screen is a compact dashboard with summary counts, a horizontal repository picker, per-runner Tasks/Blockers/Planning/Logs actions and collapsible evidence. Read-only hosts state why Prepare controls are disabled; a daemon operator grant adds the confirmed action buttons. Evidence is shown as readable fields, not raw JSON.
 
 ## Requirements
 

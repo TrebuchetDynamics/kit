@@ -31,7 +31,7 @@ vi.mock('@getpaseo/plugin/client', () => ({
   useRpc: (contract: { name: string }) => (input: unknown) => env.invoke(contract.name, input),
 }));
 import { AutoworkScreen, WorkspacePanel } from '../client/screens';
-import { closureLabel, canAnswer, previewForApply, taskMatches } from '../client/presentation';
+import { closureLabel, canAnswer, mainCheckSummary, previewForApply, taskMatches } from '../client/presentation';
 
 const fleet = (instance = 'generation-1') => fleetSchema.parse({ instance, capturedAt: Date.now(), release: 'configured-release', executable: '/bin/autowork', prepareApi: 4,
   permissions: { controls: ['pause'], planning: true, decisions: true }, warnings: [], repos: [{ id: 'repo', label: 'Repository', path: '/repo', identity: 'identity', revision: 'rev',
@@ -79,6 +79,12 @@ describe('canonical presentation', () => {
     expect(canAnswer(task, fleet().repos[0]!.runner!, detail)).toBe(true);
     expect(canAnswer({ ...task, id: 'T-2' }, fleet().repos[0]!.runner!, detail)).toBe(false);
     expect(canAnswer({ ...task, status: 'done' }, fleet().repos[0]!.runner!, detail)).toBe(false);
+  });
+  it('formats main-check and evidence objects instead of dumping raw JSON', () => {
+    const summary = mainCheckSummary({ state: 'green', result_class: 'PASS', checked_rev: '7c9960e54149a2e7b5a12cbc', main_head: '7c9960e54149a2e7b5a12cbc', finished: 1793507113.748 });
+    expect(summary).toContain('green · PASS');
+    expect(summary).not.toContain('{"');
+    expect(summary).toContain('checked 7c9960e5');
   });
   it('requires a valid exact preview revision and supports task, goal, runtime and section filters', () => {
     expect(previewForApply({ revision: 'r', valid: true, files: ['a'], diff: 'diff', errors: [] })?.revision).toBe('r');
@@ -462,6 +468,22 @@ describe('native host-scoped surfaces', () => {
     expect(text()).toContain('Task read unavailable');
     expect(text()).not.toContain('No tasks observed.');
     expect(text()).not.toContain('No tasks match these filters.');
+  });
+  it('shows read-only policy and navigation actions when the host grants nothing', async () => {
+    const value = fleet(); value.permissions = { controls: [], planning: false, decisions: false };
+    env.invoke.mockResolvedValue(value);
+    await mount({ params: { view: 'runner' } });
+    expect(text()).toContain('read-only');
+    expect(text()).toContain('Runner controls are read-only by operator policy');
+    expect(button('Tasks')).toBeTruthy();
+    expect(button('Prepare pause')).toBeUndefined();
+  });
+  it('renders the main-check summary rather than a raw object in the runner view', async () => {
+    const value = fleet(); value.repos[0]!.runner!.main_check = { state: 'green', result_class: 'PASS', checked_rev: '7c9960e54149a2e7b5a12cbc565167f0', main_head: '7c9960e54149a2e7b5a12cbc565167f0', finished: 1793507113.748 };
+    env.invoke.mockResolvedValue(value);
+    await mount({ params: { view: 'runner' } });
+    expect(text()).toContain('Main check: green · PASS');
+    expect(text()).not.toContain('{"state"');
   });
   it('uses minimum 48px accessible native action targets and theme tokens', async () => {
     await mount({ params: { view: 'runner' } });
