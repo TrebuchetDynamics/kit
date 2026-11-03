@@ -19,6 +19,6 @@ exclusions = []
 closure = "manual"
 closure_actor = "interactive Claude Code session"
 closure_timestamp = "2026-11-03T05:11:28.636085+00:00"
-closure_reason = "git subtree import d1500ebb and cutover 9f12f55b; npm run check passed in integrations/paseo; scripts/check.py --list reports the plugin check; paseo plugin ls reports paseo-autowork running from the kit checkout's integrations/paseo"
+closure_reason = "git subtree import a452b909 and cutover 09fbb10a; npm run check passed in integrations/paseo; scripts/check.py --list reports the plugin check; paseo plugin ls reports paseo-autowork running from the kit checkout's integrations/paseo"
 closure_evidence = "integrations/paseo/docs/qualification.md#management-surface-2026-11-02"
 +++

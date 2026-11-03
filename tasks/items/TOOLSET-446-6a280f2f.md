@@ -19,6 +19,6 @@ exclusions = []
 closure = "manual"
 closure_actor = "interactive Claude Code session"
 closure_timestamp = "2026-11-03T05:11:30.950200+00:00"
-closure_reason = "restart with stop-workers/now, remove, update, model with fallback from autowork models, clear-held, attention, status text and scorecard in the plugin (542a52c9); scorecard tolerates a missing repository (942acf30), verified against the live fleet"
+closure_reason = "restart with stop-workers/now, remove, update, model with fallback from autowork models, clear-held, attention, status text and scorecard in the plugin (538c3459); scorecard tolerates a missing repository (e70cab6f), verified against the live fleet"
 closure_evidence = "integrations/paseo/tests/client.test.tsx; Src/pi_autowork/scorecard.py"
 +++

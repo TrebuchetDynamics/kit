@@ -19,6 +19,6 @@ exclusions = []
 closure = "manual"
 closure_actor = "interactive Claude Code session"
 closure_timestamp = "2026-11-03T05:11:31.735592+00:00"
-closure_reason = "long-poll autowork.watch RPC over task records, Git heads and runner state files with a client loop that invalidates reads; sidebar decision count; toasts on settled operations (542a52c9). Paseo 0.14 has no plugin subscriptions, recorded as follow-up 7"
+closure_reason = "long-poll autowork.watch RPC over task records, Git heads and runner state files with a client loop that invalidates reads; sidebar decision count; toasts on settled operations (538c3459). Paseo 0.14 has no plugin subscriptions, recorded as follow-up 7"
 closure_evidence = "integrations/paseo/tests/server.test.ts; integrations/paseo/tests/client.test.tsx"
 +++

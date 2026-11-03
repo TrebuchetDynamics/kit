@@ -19,6 +19,6 @@ exclusions = []
 closure = "manual"
 closure_actor = "interactive Claude Code session"
 closure_timestamp = "2026-11-03T05:11:29.407046+00:00"
-closure_reason = "default policy path with private-file rule, all/selective grants, Settings screen; server tests for the default path and refusals, client test for the read-only settings screen (commit 542a52c9)"
+closure_reason = "default policy path with private-file rule, all/selective grants, Settings screen; server tests for the default path and refusals, client test for the read-only settings screen (commit 538c3459)"
 closure_evidence = "integrations/paseo/tests/server.test.ts"
 +++
