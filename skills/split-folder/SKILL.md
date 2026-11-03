@@ -35,8 +35,11 @@ has one more file in the refactor: that map.
 ## Steps
 
 1. **Map the move.** List files, exported symbols, package boundaries, external
-   callers, tests, fixtures and generated files. Name what must keep working: import
-   paths, package exports, CLI/API routes and observable output.
+   callers, tests, fixtures and generated files. List cross-folder callers from a local
+   code graph when one exists, record its
+   [declared graph state](../shared/COMMON-CONTRACT.md#graph-state), then confirm each
+   caller in source. Name what must keep working: import paths, package exports,
+   CLI/API routes and observable output.
    **Pass when:** you can list every caller outside the folder and the check that
    covers them.
 2. **Choose the topology.** One responsibility per subfolder, named for the domain

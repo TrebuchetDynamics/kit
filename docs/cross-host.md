@@ -106,8 +106,9 @@ the local [adapter](../adapters/skills/graphify/SKILL.md), which calls the same
 
 Portable invocation is explicit-only. The adapter never installs `graphifyy`, adds
 hooks, changes settings or requests a semantic pass. It reuses a graph that matches
-the current revision or builds code-only output into an ignored directory, and it
-reports the tool version, graph path, counts and exit codes. A graph is orientation,
+the current revision or whose queried nodes no changed file touches, or builds
+code-only output into an ignored directory, and it reports the declared state, the
+tool version, graph path, counts and exit codes. A graph is orientation,
 not proof: `EXTRACTED` and `INFERRED` edges still need live-source checks, and Unused
 Code keeps its own liveness rules. `graphify-out/` is never committed. See
 [workflow and evidence requirements](workflows.md#graphify).

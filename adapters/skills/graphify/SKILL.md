@@ -30,11 +30,13 @@ Autowork scope, evidence, limit and reporting rules that follow.
 ## Build or reuse a graph
 
 1. Inspect repository instructions, `git status --short --branch` and existing output.
-2. Reuse `graphify-out/graph.json` only when `graph.schema_version`,
-   `graph.graphify_version` and `built_at_commit` are readable and that commit matches
-   the current `git rev-parse HEAD`. Treat a different commit, uncommitted candidate
-   files or a missing version as stale orientation. Read the keys this file actually
-   has; other releases can rename them.
+2. Reuse `graphify-out/graph.json` only when `graph.schema_version` and
+   `graph.graphify_version` are readable and one of two conditions holds: that commit
+   matches the current `git rev-parse HEAD`, or every node you intend to query is
+   untouched by the files changed since `built_at_commit`. Check the second condition
+   against the graph's own `source_file` values and the actual changed set, not a
+   guess. A missing version, an unknown changed set or a changed node makes the reuse
+   stale. Read the keys this file actually has; other releases can rename them.
 3. Build code-only output. Parsing is local, deterministic and needs no key:
 
    ```sh
@@ -42,11 +44,30 @@ Autowork scope, evidence, limit and reporting rules that follow.
    ```
 
    Use one repository or folder, add `--exclude` for large unrelated trees, and keep
-   the run bounded. Do not request a semantic pass or network call unless the user
+   the run bounded. Keep one shared graph per repository: the first need builds it and
+   other readers query it with `--graph`; do not rebuild a graph another worker is
+   building or reading. Do not request a semantic pass or network call unless the user
    asks for it.
 4. Verify the result before use: a nonempty `graph.json`, `nodes` and `links` counts
    read from that file, its schema and tool version, and `graphify --version`. Each
    link carries `relation` and `confidence`. Empty output is not a map.
+
+## Declared state
+
+A graph is never perfectly current. Report the state defined in the
+[shared contract](../../../skills/shared/COMMON-CONTRACT.md#graph-state), and reach it
+from these facts:
+
+- `graphify_fresh` only when both reuse conditions above held, `nodes` and `links` are
+  nonzero and `graphify --version` is recorded.
+- `graphify_stale` or `graphify_partial` for a commit mismatch, an unknown or changed
+  node in the queried scope, uncommitted or excluded files, or an integrity warning.
+- `graphify_unavailable` for a missing command, missing skill or failed extraction;
+  include the exact failure.
+
+Freshness is a statement about the inputs a graph represents, never proof that its
+edges are correct. Coverage gaps such as unsupported languages and zero-symbol files
+belong in the report under every state.
 
 ## Query instead of wide reading
 
@@ -81,8 +102,9 @@ not guess. `path` can also exit `0` and report that no directed path exists; add
 
 ## Report
 
-State the scope, the command and tool version, the graph path and source revision,
-node and link counts, the queries with their exit codes, verified findings, coverage
-gaps such as unsupported languages or zero-symbol files, and any stale or mixed-state
-input. Separate what the graph returned from what the source confirmed. Do not claim
-dead code, runtime behavior or effort savings from the graph alone.
+State the declared state and which reuse condition it rests on, the scope, the command
+and tool version, the graph path and source revision, node and link counts, the queries
+with their exit codes, verified findings, coverage gaps such as unsupported languages
+or zero-symbol files, and any stale or mixed-state input. Separate what the graph
+returned from what the source confirmed. Do not claim dead code, runtime behavior or
+effort savings from the graph alone.

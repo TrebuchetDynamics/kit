@@ -262,15 +262,25 @@ Codex and Pi load the local [adapter](../adapters/skills/graphify/SKILL.md).
 
 The adapter requires the `graphify` command (PyPI `graphifyy`, Python 3.10+) and
 never installs it, adds hooks or asks a model for a semantic pass. It reuses a graph
-that matches the current revision or builds code-only output into an ignored
-directory, then verifies the file, node and link counts, schema and tool version.
-`explain`, `path`, `affected`, `query` and `god-nodes` accept the usual exit codes
-`0`, `3` (several candidates) and `4` (no match).
+whose commit matches the current revision or whose queried nodes no changed file
+touches, or builds code-only output into an ignored directory, then verifies the
+file, node and link counts, schema and tool version. One shared graph serves a
+repository; later readers query it instead of rebuilding. `explain`, `path`,
+`affected`, `query` and `god-nodes` accept the usual exit codes `0`, `3` (several
+candidates) and `4` (no match).
+
+A graph is never perfectly current, so the adapter reports `graphify_fresh`,
+`graphify_stale`, `graphify_partial` or `graphify_unavailable` and says which reuse
+condition the state rests on. Only `graphify_fresh` supports a topology claim without a
+live-source check. The vocabulary is one home in the
+[shared contract](../skills/shared/COMMON-CONTRACT.md#graph-state).
 
 A graph is orientation. `EXTRACTED` edges are explicit in the source and `INFERRED`
 edges are resolved by Graphify; neither is runtime proof, and absent inbound edges
 never prove dead code. Unused Code keeps its own proof rules and uses the graph only
-to rank candidates. `graphify-out/` is a generated artifact and stays uncommitted.
+to rank candidates. Unused Code, Bug Harvest, Improve Codebase Architecture, Split
+Folder and Test Optimizer record that declared state; other skills do not need a
+graph and pay nothing for its absence. `graphify-out/` is a generated artifact and stays uncommitted.
 A read-only request builds nothing.
 
 Examples (Hermes CLI; Pi uses `/graphify`, Claude Code `/kit:graphify`, Codex

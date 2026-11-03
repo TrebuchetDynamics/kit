@@ -38,7 +38,10 @@ or backlog. Load its relevant sections once.
    timings. A failing baseline is not permission to delete its failing detectors.
 2. **Map protection:** for each candidate name the public behavior, preconditions,
    layer, oracle, unique boundary/incident and cost. Trace helpers and real callers;
-   equal coverage, similar names and never failing are not equivalence.
+   equal coverage, similar names and never failing are not equivalence. A local code
+   graph shows which production nodes carry no test edge; record its [declared graph
+   state](../shared/COMMON-CONTRACT.md#graph-state) and confirm every candidate in
+   source before removing a detector.
 3. **Remove before polishing:** prioritize evidence-backed deletion of redundant,
    vacuous and obsolete tests. Prune equivalent inputs to useful representatives,
    retaining distinct boundaries. Then shrink fixtures and share immutable setup.

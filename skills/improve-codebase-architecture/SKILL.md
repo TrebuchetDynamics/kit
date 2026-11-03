@@ -31,7 +31,10 @@ before naming anything; a decision an ADR records is not yours to re-open silent
    the hot spots. Read the glossary and the ADRs for those areas.
 2. **Scan read-only.** Walk the code where understanding one concept means bouncing
    between many small modules, where seams leak, and where behavior is hard to test
-   through the current interface. Delegate one bounded exploration with the host's own
+   through the current interface. A local graph ranks the hubs, communities and
+   cross-component seams to inspect; record its [declared graph
+   state](../shared/COMMON-CONTRACT.md#graph-state), and remember that hub size is not
+   defect severity. Delegate one bounded exploration with the host's own
    sub-agent tool in a fresh context window when the codebase is large; otherwise read
    directly. Change no file.
 3. **Report.** Write one self-contained HTML file into the OS temp directory, never into
