@@ -4,7 +4,7 @@
 
 **Goal:** Deliver an installable native control/observation plugin with tested authority boundaries.
 **Architecture:** Paseo host-bound client RPC -> bounded local Autowork adapter, no new service or engine.
-**Tech stack:** official scaffold, Paseo SDK 0.13.0, React Native, Zod, TypeScript, Node subprocess API, Vitest.
+**Tech stack:** official scaffold, Paseo SDK 0.14.0, React Native, Zod, TypeScript, Node subprocess API, Vitest.
 **Spec:** [design.md](design.md).
 
 ## Global constraints

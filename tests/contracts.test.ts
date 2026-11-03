@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { actionSchema, fleetSchema, prepareSchema, taskDetailSchema, taskSchema } from '../shared/contracts';
+import { actionSchema, fleetSchema, prepareSchema, runnerSchema, taskDetailSchema, taskSchema } from '../shared/contracts';
 
 describe('wire contracts', () => {
   it('does not accept arbitrary commands, paths or authority fields', () => {
     expect(actionSchema.safeParse({ kind: 'control', repoId: 'repo', action: 'rm -rf /' }).success).toBe(false);
     expect(actionSchema.safeParse({ kind: 'control', repoId: 'repo', action: 'pause', executable: '/tmp/evil' }).success).toBe(false);
     expect(prepareSchema.safeParse({ instance: 'host-a', action: { kind: 'control', repoId: 'repo', action: 'pause' } }).success).toBe(true);
+  });
+  it('treats a null Autowork count as zero', () => {
+    const runner = runnerSchema.parse({ name: 'example', repo: '/repo', state: 'not running',
+      running: null, waiting: null, stopped: null, decisions: null });
+    expect([runner.running, runner.waiting, runner.stopped, runner.decisions]).toEqual([0, 0, 0, 0]);
+    expect(runnerSchema.parse({ name: 'example', repo: '/repo', state: 'running', running: 2 }).running).toBe(2);
   });
   it('preserves absence of closure evidence for canonical open tasks', () => {
     expect(taskSchema.parse({ id: 'T-1', title: 'Open', section: 'Now', status: 'open', goal: 'G', rank: 1000,

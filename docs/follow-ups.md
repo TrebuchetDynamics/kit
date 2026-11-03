@@ -4,7 +4,7 @@ Offline implementation and live qualification are separate. No pending item gran
 
 ## 1. Qualify Android and Linux Desktop against one owned development daemon
 
-**Value:** highest; **dependency:** explicit permission to install/enable/reload this trusted plugin on a named isolated daemon, plus access to the actual Android/Desktop clients.
+**Value:** highest; **dependency:** access to the actual Android/Desktop clients. Local Paseo 0.14.0 installation, load, reload and read-only fleet/tasks RPC are recorded in [qualification](qualification.md); physical clients remain untested. Installing into another existing user daemon still needs explicit permission.
 
 Acceptance: record exact app/daemon versions; native navigation and touch targets; real host selection/offline behavior; background/foreground and reconnect without operation replay; long task/log expansion; normal read-only fleet/task/blocker use; plugin disable/reload/removal with no orphaned owned children. Keep existing user daemons/services untouched. Node renderer and compiler evidence do not close this item.
 
@@ -30,7 +30,7 @@ Acceptance: representative large queues/logs, virtualized task rows or bounded p
 
 **Dependency:** qualification evidence and explicit remote publication authority.
 
-Acceptance: create the chosen public repository/release only after approval, include real approved interface screenshots/registry media, publish a reviewed artifact with reproducible package contents, test newer Paseo versions before widening the manifest range. No registry entry or public Git repository was created by this build.
+Acceptance: create the chosen public repository/release only after approval, include real approved interface screenshots/registry media, publish a reviewed artifact with reproducible package contents, and test each newer Paseo minor before widening the manifest range. Paseo 0.14.0 is tested and the range is `>=0.13.0 <0.15.0`; 0.15 remains untested. No registry entry or public Git repository was created by this build.
 
 ## 6. Reconcile retained planning sessions across plugin generations
 

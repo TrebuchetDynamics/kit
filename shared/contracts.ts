@@ -12,10 +12,12 @@ export const questionSchema = z.object({
 export const laneSchema = z.object({ task: z.string(), phase: z.string(), detail: z.string().default(''),
   attempt: z.number().default(1), minutes: z.number().nullable().optional(),
   activity: z.string().default(''), activity_age: z.number().nullable().optional() });
+// Autowork emits null for an unavailable count, not only an absent one.
+const countSchema = z.number().nullish().transform(value => value ?? 0);
 export const runnerSchema = z.object({
   name: z.string(), repo: z.string(), state: z.string(), service: z.string().default(''),
-  mode: z.string().default(''), running: z.number().default(0), waiting: z.number().default(0),
-  stopped: z.number().default(0), decisions: z.number().default(0), push: z.boolean().default(false),
+  mode: z.string().default(''), running: countSchema, waiting: countSchema,
+  stopped: countSchema, decisions: countSchema, push: z.boolean().default(false),
   enabled: z.boolean().default(false), blocker: z.string().default(''), stop_reason: z.string().default(''),
   gate: z.string().default(''), toolset: z.string().default(''), model: z.string().default(''),
   lanes: z.array(laneSchema).default([]), questions: z.array(questionSchema).default([]),

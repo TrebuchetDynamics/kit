@@ -8,7 +8,7 @@ This is a **plugin**, not a provider, scheduler or bundled Autowork engine. It t
 
 > **Read-only by default.** No model calls or mutation grants without operator configuration.
 >
-> **Qualification:** offline checks include the real Paseo compiler and an isolated server load. Physical Android and Linux Desktop UI checks, real planning and service-control qualification remain **pending**. No existing daemon was installed, enabled or reloaded during development. See the [qualification record](docs/qualification.md).
+> **Qualification:** offline checks include the real Paseo 0.14 compiler and an isolated server load. A local Paseo 0.14.0 daemon load passed, including read-only `fleet` and `tasks` RPC and a refused mutation. Physical Android and Linux Desktop UI checks, real planning and service-control qualification remain **pending**. See the [qualification record](docs/qualification.md).
 
 [Install](#install-only-after-reviewing-trusted-code) · [Host policy](#opt-in-host-policy) · [Planning](#planning-and-decisions) · [Security](docs/security.md) · [Qualification](docs/qualification.md)
 
@@ -27,7 +27,7 @@ The diagram describes the control flow. It is not a screenshot. Inspection is re
 
 ## Requirements
 
-- Paseo **0.13.x**, for both the daemon and connected app. The manifest rejects unqualified later minor versions.
+- Paseo **0.13.x or 0.14.x**, for both the daemon and connected app. The manifest accepts `>=0.13.0 <0.15.0`; it rejects a later minor until that release is tested.
 - A Linux daemon host with Node 24+, Git, Python 3.11+ and an existing `autowork` on its trusted PATH.
 - Autowork with `prepare_api: 4`, JSON fleet/task commands and current planning controller interfaces. The development read-only smoke check used release `01e37ea049c3153948ebfbbdb54aff38fe749266`.
 - For opt-in planning: an existing configured Pi installation/provider and ignored canonical `.worktrees/`. The plugin does not install a model/runtime or edit credentials.
@@ -79,7 +79,7 @@ Missing transport, runtime-version or delivery evidence is **unknown**. The plug
 
 There is **no client toggle that grants execution**. An operator can supply a private JSON policy file and set `PASEO_AUTOWORK_CONFIG` in the **daemon's environment**. Omit grants you do not need.
 
-> Paseo 0.13 requires `daemon.manage` for plugin RPC, but its public handler has no end-user principal. These grants are **shared by authenticated daemon managers**, not a per-user ACL. Do not use this policy model with mutually untrusted managers.
+> Paseo 0.13 and 0.14 require `daemon.manage` for plugin RPC, but their public handler has no end-user principal. These grants are **shared by authenticated daemon managers**, not a per-user ACL. Do not use this policy model with mutually untrusted managers.
 
 <details>
 <summary><strong>Policy example and deployment limits</strong></summary>
@@ -162,7 +162,7 @@ Remove with `paseo plugin remove paseo-autowork`. Source repositories, Autowork 
 
 - [Paseo plugins](https://paseo.sh/docs/plugins)
 - [Paseo plugin reference](https://paseo.sh/docs/plugins/reference)
-- [Pinned Paseo SDK source](https://github.com/getpaseo/paseo/tree/72e3316f4f5dfe775c77dbf998968c92e2de9019/packages/plugin)
+- [Pinned Paseo SDK source](https://github.com/getpaseo/paseo/tree/d34d17a9072149320ace35ec2a2e5c7dcd992cb3/packages/plugin)
 - [Autowork](https://github.com/TrebuchetDynamics/autowork)
 
 [MIT license](LICENSE)
