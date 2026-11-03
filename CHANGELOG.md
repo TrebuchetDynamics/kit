@@ -74,6 +74,11 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Fixed
 
+- The `test` workflow is green again on a bare runner: the job sets `TMPDIR` (runner, worker
+  and check fixtures take one for granted, as every Autowork host sets one), the planning
+  specimen fixture disables Git auto-maintenance in its disposable repositories so a transient
+  `objects/maintenance.lock` no longer makes the before and after inventories differ, and the
+  TUI layout test skips without `uv` like its siblings.
 - `./install.sh` enables the installed Pi package's skills and commands. An empty
   `skills: []` or `extensions: []` filter in `~/.pi/agent/settings.json` survives
   `pi install` and `pi update`, including one recorded under the package's previous

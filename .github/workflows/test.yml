@@ -3,6 +3,10 @@ on: [push, pull_request]
 jobs:
   unit:
     runs-on: ubuntu-latest
+    env:
+      # Runner, worker and check fixtures take an existing $TMPDIR for granted, as every
+      # host that runs Autowork sets one; the runner image leaves it unset.
+      TMPDIR: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

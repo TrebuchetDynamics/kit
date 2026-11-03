@@ -267,6 +267,10 @@ def prepare_fixture(root, repository, *, seed=True, existing_task=True, active=F
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text)
     git(root, 'init', '-q', '--template=')
+    # Commits here and in the tasks CLI would otherwise start Git's detached auto
+    # maintenance, whose transient objects/maintenance.lock made inventories differ.
+    git(root, 'config', 'gc.auto', '0')
+    git(root, 'config', 'maintenance.auto', 'false')
     if seed:
         tasks(root, 'goal', 'FORMAT', '--title', 'Formatter', '--priority', '10',
               '--source', 'docs/plan.md#accepted-scope', '--focus')
@@ -304,7 +308,10 @@ def snapshot(root):
     """
     inventory = {}
     for path in (root, *sorted(root.rglob('*'))):
-        mode = path.lstat().st_mode
+        try:
+            mode = path.lstat().st_mode
+        except FileNotFoundError:
+            continue  # a lock another process removed after the listing
         item = {'mode': stat.S_IMODE(mode)}
         if stat.S_ISLNK(mode):
             item.update(kind='symlink', target=os.readlink(path))

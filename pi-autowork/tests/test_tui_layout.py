@@ -3,6 +3,7 @@ import asyncio
 from dataclasses import replace
 from contextlib import asynccontextmanager
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -161,6 +162,8 @@ async def layout_pilot():
 
 class TuiLayoutTests(unittest.TestCase):
     def test_responsive_layout_preserves_evidence_and_read_only_controls(self):
+        if not shutil.which('uv'):
+            self.skipTest('uv is needed for pinned Textual')
         result = subprocess.run(['uv', 'run', '--offline', '--quiet', '--no-project', '--with', 'textual==8.2.8',
                                  'python3', __file__, '--pilot'], capture_output=True, text=True, timeout=90)
         if textual_unavailable(result):
