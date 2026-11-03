@@ -42,13 +42,14 @@ export function Button({ label, onPress, disabled = false, selected = false, var
 }) {
   const colors = useColors();
   // A disabled control never wears the accent: it looks inert, not like a green action that ignores taps.
-  const primary = !disabled && (variant === 'primary' || selected);
-  const background = primary ? colors.accent : colors.surface2;
-  const foreground = disabled ? colors.foregroundMuted : primary ? colors.accentForeground : variant === 'danger' ? colors.statusDanger : colors.foreground;
+  const danger = variant === 'danger';
+  const primary = !disabled && !danger && (variant === 'primary' || selected);
+  const background = danger && selected ? colors.statusDanger : primary ? colors.accent : colors.surface2;
+  const foreground = disabled ? colors.foregroundMuted : danger ? (selected ? colors.accentForeground : colors.statusDanger) : primary ? colors.accentForeground : colors.foreground;
   return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? label} accessibilityState={{ disabled, selected }} disabled={disabled} onPress={onPress}
     style={{ alignSelf: 'flex-start', minHeight: 48, minWidth: 48, paddingHorizontal: compact ? 10 : 16, paddingVertical: compact ? 6 : 10,
       justifyContent: 'center', borderRadius: 9, borderWidth: 1, borderStyle: disabled ? 'dashed' : 'solid',
-      borderColor: disabled ? colors.border : selected ? colors.accent : variant === 'danger' ? colors.statusDanger : colors.border, backgroundColor: background, opacity: disabled ? 0.6 : 1 }}>
+      borderColor: disabled ? colors.border : danger ? colors.statusDanger : selected ? colors.accent : colors.border, backgroundColor: background, opacity: disabled ? 0.6 : 1 }}>
     <Text style={{ color: foreground, fontSize: compact ? 13 : 14, fontWeight: '600', textAlign: 'center' }}>{label}</Text>
   </Pressable>;
 }
@@ -126,11 +127,11 @@ export function Input({ label, value, onChange, multiline = false, placeholder, 
   </View>;
 }
 /** A segmented choice: one selected option, the rest quiet. */
-export function Choice<T extends string>({ label, value, options, onChange, disabled = false }: { label: string; value: T; options: readonly (T | readonly [T, string])[]; onChange: (value: T) => void; disabled?: boolean }) {
+export function Choice<T extends string>({ label, value, options, onChange, disabled = false, danger = [] }: { label: string; value: T; options: readonly (T | readonly [T, string])[]; onChange: (value: T) => void; disabled?: boolean; danger?: readonly T[] }) {
   const items = options.map(option => (typeof option === 'string' ? [option, option] : [option[0], option[1]]) as [T, string]);
   return <View style={{ gap: 4 }}>
     <Caption>{label}</Caption>
-    <Row>{items.map(([key, title]) => <Button key={key} label={title} compact selected={value === key} disabled={disabled} onPress={() => onChange(key)} />)}</Row>
+    <Row>{items.map(([key, title]) => <Button key={key} label={title} compact variant={danger.includes(key) ? 'danger' : 'secondary'} selected={value === key} disabled={disabled} onPress={() => onChange(key)} />)}</Row>
   </View>;
 }
 export function Expand({ title, children, open = false, hint }: { title: string; children: ReactNode; open?: boolean; hint?: string }) {

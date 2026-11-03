@@ -161,6 +161,8 @@ describe('native host-scoped surfaces', () => {
     await mount({ params: { view: 'runner' } });
     expect(text()).toContain('Cached');
     expect(button('Pause')!.props.disabled).toBe(true);
+    expect(text()).toContain('Actions disabled');
+    expect(text()).toContain('cached; refresh for live authority');
   });
   it('does not query a workspace without a known directory', async () => {
     env.directory = '';
@@ -528,7 +530,10 @@ describe('management surface', () => {
     const captured = capture(grantAll());
     await mount({ params: { view: 'runner' } });
     for (const title of ['Start', 'Pause', 'Resume', 'Stop', 'Restart', 'Remove service', 'Update all runners']) expect(button(title), title).toBeTruthy();
-    await press('Interrupt merges now'); await press('Restart');
+    await press('Interrupt merges now');
+    expect(button('Interrupt merges now')!.props.style.backgroundColor).toBe(props.theme.colors.statusDanger);
+    expect(text()).toContain('Interrupting merges now can leave an integration incomplete.');
+    await press('Restart');
     expect(captured.action).toEqual({ kind: 'control', repoId: 'repo', action: 'restart', stopWorkers: true, now: true });
     await press('Service model'); await press('Choose model'); await press('provider/model-a'); await press('Change model');
     expect(captured.action).toEqual({ kind: 'model', repoId: 'repo', model: 'provider/model-a' });

@@ -258,8 +258,10 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
     <Card>
       <Heading level={2}>Controls</Heading>
       {safe.length ? <>
+        {!enabled ? <Notice tone="warning"><Label bold>Actions disabled</Label><Caption>{repo.error ? 'Repository identity is unavailable.' : !host.online ? 'Host is offline.' : !host.current ? 'This observation is cached; refresh for live authority.' : 'Another action is being prepared.'}</Caption></Notice> : null}
         <Row>{safe.map(action => <Button key={action} label={controlTitles[action] ?? action} variant="primary" disabled={!enabled} onPress={() => control(action)} />)}</Row>
-        {controls.includes('restart') ? <Choice label="Restart mode" value={restartMode} options={restartModes} onChange={setRestartMode} /> : null}
+        {controls.includes('restart') ? <Choice label="Restart mode" value={restartMode} options={restartModes} onChange={setRestartMode} disabled={!enabled} danger={['now']} /> : null}
+        {restartMode === 'now' ? <Notice tone="danger"><Label bold>Interrupting merges now can leave an integration incomplete.</Label></Notice> : null}
         <Caption>Each control is prepared, shown for confirmation with its exact effect, then dispatched once.</Caption>
       </> : <Caption>Runner controls are read-only by operator policy. Grant controls in the daemon-side policy file to enable start, pause, resume, stop or restart.</Caption>}
     </Card>
