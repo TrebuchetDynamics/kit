@@ -2294,8 +2294,11 @@ sys.exit(result.returncode)
         while not self.done('A'):
             self.assertLess(time.monotonic(), deadline, 'runner never picked up the new tasks')
             time.sleep(0.5)
+        stopping = time.monotonic()
         runner.send_signal(signal.SIGINT)
         runner.communicate(timeout=60)
+        # Stopping waits for the worker still verifying B, not for four empty 5 s engine waits.
+        self.assertLess(time.monotonic() - stopping, 12, 'an almost idle runner stopped slowly')
 
     def test_a_running_runner_restarts_on_an_updated_toolset(self):
         """A `pi update` under a live runner mixed the old script with the new engine."""

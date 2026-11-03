@@ -216,7 +216,10 @@ Python processes, with a 600-second timeout per directory (the Autowork suite
 alone takes about 150 seconds on an idle machine). The directories run at the same
 time by default, and each one's output is printed whole and in the usual order, so a
 full run takes about as long as the Autowork suite; `--jobs N` limits how many run at
-once and `--jobs 1` runs them one after another. `--list` prints the
+once and `--jobs 1` runs them one after another. `--exclude PATH` (repeatable) leaves
+a module or directory out of the selection, and `--shard I/N` keeps every N-th test id
+from the I-th, so several machines can share one selection; a module whose tests cannot
+be listed without importing runs whole on the first shard. `--list` prints the
 inventory without importing tests. Symlinked test modules and maintained-directory
 components below the resolved checkout root are skipped, so a linked `skills` or
 workflow parent cannot redirect discovery into external tests. Checkout-root aliases
@@ -325,8 +328,12 @@ check at your live profile; plugin loading may write runtime records.
 HERMES_HOME="/path/to/isolated-installed-profile" PYTHONPATH="$HERMES_SOURCE" "$HERMES_PYTHON" -c 'import hermes_bootstrap, runpy, sys; runpy.run_path(sys.argv[1], run_name="__main__")' tests/integration_bundle.py
 ```
 
-The offline suite runs in GitHub Actions; CI byte-compiles only `__init__.py`, not
-the four files above. Live Telegram delivery and model
+The offline suite runs in GitHub Actions as two jobs: `fast` runs every module except
+`tests/test_pi_autowork.py` (`scripts/check.py --exclude tests/test_pi_autowork.py`),
+and `runner` runs that module alone on three machines
+(`scripts/check.py tests/test_pi_autowork.py --shard I/3`), because its tests each start
+a real runner over a Git fixture and were three quarters of a 17-minute single job.
+CI byte-compiles only `__init__.py`, not the four files above. Live Telegram delivery and model
 execution require your configured Hermes installation.
 
 ## Compatibility

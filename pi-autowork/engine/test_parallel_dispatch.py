@@ -1571,6 +1571,17 @@ Path(report).write_text(json.dumps({'task': 'A', 'commit': git('rev-parse', 'HEA
         time.sleep(0.2)
         self.assertEqual(dispatch.coordinator_host(process.pid), 'hermes')
 
+    def test_wait_answers_at_once_when_no_worker_is_dispatched_or_running(self):
+        """A stopping runner waited out four 5 s timeouts after its last worker had gone."""
+        self.write_todo(task('A', 'a.txt'))
+        self.set_spec({'A': {'files': {'a.txt': 'done'}, 'sleep': 0.1}})
+        self.apply()
+        self.wait_until_idle()
+        started = time.monotonic()
+        _, result = self.wait(20)
+        self.assertLess(time.monotonic() - started, 3, result)
+        self.assertEqual((result['outcome'], result['active_workers']), ('TIMEOUT', 0))
+
     def test_worker_keeps_the_timeout_it_was_started_with(self):
         self.write_todo(task('A', 'a.txt'))
         self.set_spec({'A': {'files': {'a.txt': 'partial'}, 'sleep': 60, 'commit': False}})

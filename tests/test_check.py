@@ -504,6 +504,45 @@ class Check(unittest.TestCase):
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertNotIn('CHECK', result.stdout)
 
+    def test_shards_and_exclusions_split_a_selection_across_machines(self):
+        body = ''.join(f'''    def test_{n}(self):
+        Path('ran-{n}').write_text(str(os.getpid()))
+''' for n in range(24))
+        split = self.write('tests/test_pi_autowork.py', 'import os, unittest\nfrom pathlib import Path\n'
+                           'class Runner(unittest.TestCase):\n' + body)
+        self.write('tests/test_other.py', 'import unittest\nfrom pathlib import Path\n'
+                   'class Other(unittest.TestCase):\n'
+                   "    def test_a(self): Path('ran-other-a').write_text('')\n"
+                   "    def test_b(self): Path('ran-other-b').write_text('')\n")
+        # Tests the inventory cannot list without importing run whole, on the first shard only.
+        self.write('tests/test_dynamic.py', 'import unittest\nfrom pathlib import Path\n'
+                   'def load_tests(loader, tests, pattern):\n'
+                   "    return unittest.TestSuite([unittest.FunctionTestCase(lambda: Path('ran-dynamic').write_text(''))])\n")
+        folder = split.parent
+        seen = {}
+        for shard in ('1/3', '2/3', '3/3'):
+            for marker in folder.glob('ran-*'):
+                marker.unlink()
+            result = self.run_check('tests', '--shard', shard)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(f'Shard {shard[0]} of 3', result.stdout)
+            seen[shard] = {p.name for p in folder.glob('ran-*')}
+        self.assertEqual(set.union(*seen.values()), {f'ran-{n}' for n in range(24)} | {'ran-other-a', 'ran-other-b', 'ran-dynamic'})
+        self.assertEqual(len(seen['1/3'] & seen['2/3'] & seen['3/3']), 0)
+        self.assertEqual([shard for shard, names in seen.items() if 'ran-dynamic' in names], ['1/3'])
+        self.assertEqual(sorted(len(names & {f'ran-{n}' for n in range(24)}) for names in seen.values()), [8, 8, 8])
+        for marker in folder.glob('ran-*'):
+            marker.unlink()
+        result = self.run_check('tests', '--exclude', 'tests/test_pi_autowork.py', '--exclude', 'tests/test_dynamic.py')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual({p.name for p in folder.glob('ran-*')}, {'ran-other-a', 'ran-other-b'})
+        self.assertIn('Offline inventory: 1 modules', result.stdout)
+        for invalid in (('--exclude', 'tests/missing.py'), ('--exclude', '../outside'), ('--shard', '4/3'), ('--shard', 'x')):
+            with self.subTest(invalid=invalid):
+                result = self.run_check('tests', *invalid)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertNotIn('CHECK', result.stdout)
+
     def test_default_jobs_follow_idle_cpus_between_four_and_eight(self):
         from unittest import mock
         spec = importlib.util.spec_from_file_location('check_jobs', SCRIPT)

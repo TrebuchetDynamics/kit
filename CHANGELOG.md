@@ -25,6 +25,9 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- `scripts/check.py --exclude PATH` leaves modules out of a selection and `--shard I/N`
+  splits a selection across machines by test id. The `test` workflow runs as two jobs: `fast`
+  (every module but `tests/test_pi_autowork.py`) and `runner` (that module in three shards).
 - The Paseo plugin's screens pass a five-second test instead of dumping state: one banner per screen
   with the single next action, a host-wide blocker said once, colour by meaning with an icon and the
   word (green only for live or verified states, grey for *not running*), short hashes with copy,
@@ -82,6 +85,10 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Fixed
 
+- The engine's `--parallel --wait` answers at once when no worker is dispatched or running,
+  and a stopping runner stops reaping once the engine reports no active worker. A runner that
+  had just finished its last task took 20 s to stop (four empty 5 s waits); every test that
+  stops an idle runner paid the same.
 - The `test` workflow is green again on a bare runner: the job sets `TMPDIR` (runner, worker
   and check fixtures take one for granted, as every Autowork host sets one), the planning
   specimen fixture disables Git auto-maintenance in its disposable repositories so a transient

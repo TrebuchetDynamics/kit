@@ -3404,9 +3404,12 @@ class Coordinator:
                     os.killpg(group, signal.SIGINT)
                 except OSError:
                     pass
-        # Interrupted workers stay in their worktrees; the next start resumes them.
+        # Interrupted workers stay in their worktrees; the next start resumes them. Each wait
+        # returns as a worker exits; once none is active there is nothing left to reap.
         for _ in range(4):
-            self.engine('--parallel', str(self.workers), '--max-workers', '16', '--wait', '--timeout', '5')
+            answer = self.engine('--parallel', str(self.workers), '--max-workers', '16', '--wait', '--timeout', '5')
+            if answer.get('active_workers') == 0:
+                break
         self.settle()
         self.finish(130, 'Stopped. Unfinished tasks keep their worktrees and resume on the next start.')
 

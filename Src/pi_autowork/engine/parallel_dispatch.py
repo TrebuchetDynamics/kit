@@ -1223,7 +1223,12 @@ def dispatch_locked(args, repo, common, count, template, host):
 
 
 def wait(args, timeout):
-    """Block in the helper (no model tokens) until a worker exits or the timeout passes."""
+    """Block in the helper (no model tokens) until a worker exits or the timeout passes.
+
+    With no worker dispatched or running there is nothing that can exit, so the answer comes
+    at once: a stopping runner waited out four full timeouts (20 s) after its last worker had
+    already gone, and every test that stopped an idle runner paid for it.
+    """
     repo = Path(execution.git(Path(args.consumer).expanduser().resolve(), 'rev-parse', '--show-toplevel')).resolve()
     common = state.common_dir(repo)
     state.require_owner(common, args.owner_pid)
@@ -1233,9 +1238,10 @@ def wait(args, timeout):
         try:
             with execution.lock(common / 'dispatch.lock'):
                 timed_out = enforce_timeouts(repo, args.owner_pid, common, args.worker_timeout)
-                finished = [s for s in state.slots(common)
-                            if s['state'] in ('dispatched', 'running') and not state.worker_live(s)]
-                if timed_out or finished or time.time() >= deadline:
+                slots = state.slots(common)
+                live = [s for s in slots if s['state'] in ('dispatched', 'running')]
+                finished = [s for s in live if not state.worker_live(s)]
+                if timed_out or finished or not live or time.time() >= deadline:
                     current = state.reconcile(repo, args.owner_pid)
                     changed = [summary(common, s) for s in current if before.get(s['task_id']) != s['state']]
                     active = sum(1 for s in current
