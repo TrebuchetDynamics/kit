@@ -74,7 +74,6 @@ states its own boundaries and what "done" means.
 - `/unused-code` — remove code whose unreachability is proven.
 - `/improve-codebase-architecture` — find shallow modules and report the candidates.
 - `/autonomous-codebase-improver` — work several improvement lanes in one campaign.
-- `/engineering` — load one method for a concrete gap (TDD, review, debugging).
 - `/autoresearch` — bounded research or a measured experiment loop.
 
 **Design, capture and write**

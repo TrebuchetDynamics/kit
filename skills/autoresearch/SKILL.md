@@ -93,7 +93,7 @@ under the existing research owner (avoid minute-timestamp collisions).
 
 The selected Autoresearch protocol is normally sufficient. For a concrete method
 gap or explicit protocol request, select one technique through
-[engineering](../engineering/SKILL.md); consult
+[engineering](../engineering/REFERENCE.md); consult
 [engineering cycle](../shared/ENGINEERING-CYCLE.md) only if routing is unclear.
 Do not add a phase
 sequence or separate review/versioning workflow to an analysis-only command.

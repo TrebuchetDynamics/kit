@@ -88,7 +88,10 @@ def install(source, profiles, *, dry_run=False, report=print, skills=None):
         shared_support = skill.name == 'shared' and all(
             (skill / name).is_file() for name in
             ('COMMON-CONTRACT.md', 'PLAN-HANDOFF.md', 'WORKTREE-ISOLATION.md'))
-        if not (shared_support or (skill / 'SKILL.md').is_file()):
+        # A reference container has REFERENCE.md and no SKILL.md: install its files
+        # so other skills can read them, but never register it as a skill.
+        reference = (skill / 'REFERENCE.md').is_file() and not (skill / 'SKILL.md').is_file()
+        if not (shared_support or reference or (skill / 'SKILL.md').is_file()):
             raise ValueError(f'Invalid skill folder or missing SKILL.md: {skill}')
         installable.append(skill)
 
@@ -101,8 +104,35 @@ def install(source, profiles, *, dry_run=False, report=print, skills=None):
             continue
         for skill in installable:
             target = destination / skill.name
-            required = ('COMMON-CONTRACT.md', 'PLAN-HANDOFF.md', 'WORKTREE-ISOLATION.md') if skill.name == 'shared' else ('SKILL.md',)
+            reference = (skill / 'REFERENCE.md').is_file() and not (skill / 'SKILL.md').is_file()
+            if skill.name == 'shared':
+                required = ('COMMON-CONTRACT.md', 'PLAN-HANDOFF.md', 'WORKTREE-ISOLATION.md')
+            elif reference:
+                required = ('REFERENCE.md',)
+            else:
+                required = ('SKILL.md',)
             if target.exists() or target.is_symlink():
+                legacy_pack = ((target / 'SKILL.md').is_file()
+                               and (target / 'UPSTREAM.json').is_file()
+                               and (target / 'scripts/route.py').is_file())
+                if reference and not target.is_symlink() and legacy_pack:
+                    # Retire the toolset's previously installed skill entry without
+                    # deleting its other files: drop only SKILL.md and add the index.
+                    if dry_run:
+                        report(f'Plan: {skill.name} ({name}): retire SKILL.md and install REFERENCE.md')
+                        planned += 1
+                        continue
+                    try:
+                        if not (target / 'REFERENCE.md').is_file():
+                            shutil.copy2(skill / 'REFERENCE.md', target / 'REFERENCE.md')
+                        (target / 'SKILL.md').unlink()
+                    except OSError as error:
+                        report(f'Failed: {skill.name} ({name}): {error}')
+                        failed += 1
+                        continue
+                    report(f'Installed: {skill.name} ({name}): retired the skill entry, kept the reference files')
+                    installed += 1
+                    continue
                 if not all((target / filename).is_file() for filename in required):
                     report(f'Failed: {skill.name} ({name}): incomplete existing skill at {target}; preserved')
                     failed += 1

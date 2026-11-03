@@ -50,7 +50,7 @@ not ask for.
 | Queue work is held and the owner must decide | `/blockers` |
 | Docs or task records drifted | `/docs-sync` |
 | A question needs measured evidence | `/autoresearch` |
-| One engineering method is missing (TDD, review, debugging) | `/engineering` |
+| One engineering method is missing (TDD, review, debugging) | Read [engineering](../engineering/REFERENCE.md) directly; no command |
 | A compact Android release build is needed | `/apk-get` |
 
 ## Design and writing

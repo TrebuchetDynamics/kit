@@ -191,7 +191,7 @@ values whenever they differ, preserving other settings:
 | `plugins.entries.kit.allow_gateway_injection` | `true` |
 | `skills.disabled` | Your entries, plus OMH skills outside `omh_keep_skills` in profiles with OMH; bundled toolset skills removed |
 | `plugins.entries.kit.omh_trim` | The OMH skill names the bundle added to `skills.disabled`, so it can remove them later |
-| `platforms.telegram.extra.command_menu.priority` | Your entries first, then the workflow commands and the `ui_taste`, `beautify_github_readme`, `impeccable`, `lgtm`, `engineering` and `git_commit_push` skill commands appended; retired bundle names and `autoresearch_*` entries removed. Other menu settings such as the mode and cap are not changed ([`telegram_menu_policy.py`](../telegram_menu_policy.py)). |
+| `platforms.telegram.extra.command_menu.priority` | Your entries first, then the workflow commands and the `ui_taste`, `beautify_github_readme`, `impeccable`, `lgtm` and `git_commit_push` skill commands appended; retired bundle names and `autoresearch_*` entries removed. Other menu settings such as the mode and cap are not changed ([`telegram_menu_policy.py`](../telegram_menu_policy.py)). |
 
 Every setup, including `--bundle-only`, also clears the per-platform skill disable
 lists, except in opted-out profiles. Full setup additionally applies the `omh` block of `defaults.json`

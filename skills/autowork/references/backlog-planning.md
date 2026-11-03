@@ -71,7 +71,7 @@ Do not duplicate its unchanged plan or evade a shared integration conflict.
    callers and tests; Verify to concrete acceptance checks. Inspect existing
    tasks, worktrees and receipts before proposing work. Existing planning instructions
    normally suffice. For a concrete method gap or explicit protocol request, select
-   one technique through [engineering](../../engineering/SKILL.md); consult
+   one technique through [engineering](../../engineering/REFERENCE.md); consult
    [the engineering cycle](../../shared/ENGINEERING-CYCLE.md) only if routing is unclear.
    Resolve ordinary implementation choices autonomously. Missing product intent
    remains one precise question, not invented acceptance.

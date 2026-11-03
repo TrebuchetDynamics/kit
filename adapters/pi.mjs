@@ -9,7 +9,6 @@ const workflows = {
   'docs-sync': ['docs-sync', 'Keep documentation and the tasks/ store accurate'],
   autowork: ['autowork', 'Plan, execute, verify and commit a useful task'],
   autoresearch: ['autoresearch', 'Run bounded research or experiments'],
-  engineering: ['engineering', 'Apply a focused engineering method'],
   'apk-get': ['apk-get', 'Find the app, build an ARM64 release APK and upload with s3upload'],
   'test-optimizer': ['test-optimizer', 'Reduce redundant tests while preserving real regression protection'],
   graphify: ['graphify', 'Query a local Graphify code graph before wide reading'],

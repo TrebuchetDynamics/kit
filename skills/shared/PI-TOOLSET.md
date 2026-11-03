@@ -38,7 +38,7 @@ package, extension, hooks, shell controller or scanner is installed by these ski
 Upstream names describe capabilities, not tools granted by the protocol:
 
 - `diagnose`, `systematic-debugging` and `tdd` map to the bundled
-  [engineering methods](../engineering/SKILL.md) for debugging and test-first
+  [engineering methods](../engineering/REFERENCE.md) for debugging and test-first
   regression protection. Respect the existing [test budget](ENGINEERING-CYCLE.md#test-budget).
 - `folder_refactor_scan/state/audit` and Understand graphs are optional. Use native
   tree/reference inspection and the existing task receipt instead; never invent

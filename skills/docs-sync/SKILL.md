@@ -54,7 +54,7 @@ edits. State mode/scope briefly, then make the authorized changes.
 Decide routine engineering choices within accepted scope, record material reasoning
 in existing task records and reuse accepted decisions; ask only for genuinely missing
 owner intent or authority. For a concrete method gap or explicit protocol request,
-select one technique through [engineering](../engineering/SKILL.md); consult
+select one technique through [engineering](../engineering/REFERENCE.md); consult
 [the engineering cycle](../shared/ENGINEERING-CYCLE.md) only if routing is unclear.
 Carry evidence of materially applied methods into the same task records.
 

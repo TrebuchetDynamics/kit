@@ -206,6 +206,12 @@ def register(ctx):
     shared = SKILLS_DIR / 'shared'
     if shared.is_dir():
         native_skills.append(shared)
+    # The engineering pack is a reference tree, not a registered skill: install it
+    # beside the skills so links from autowork and Docs Sync resolve, without a
+    # command or skill entry that invites direct use.
+    engineering = SKILLS_DIR / 'engineering'
+    if engineering.is_dir():
+        native_skills.append(engineering)
     messages = []
     if install(SKILLS_DIR, [('current', get_hermes_home())], skills=native_skills, report=messages.append):
         # Commands load skills by qualified name, so a preserved native folder must not block them.

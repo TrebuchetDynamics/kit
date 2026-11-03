@@ -1,19 +1,15 @@
----
-name: engineering
-description: "Select one engineering method for a gap."
-version: 0.1.0
-license: MIT
----
+# Engineering protocols
 
-# Engineering protocols for Hermes
-
-Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
+This pack is a **reference**, not a registered skill or command. Read it, or the
+protocol it selects, from the path that needs it; do not expect `/engineering`,
+`/skill:engineering` or a `kit:engineering` skill entry on any host.
+Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this reference's scope.
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
 
-Apply the pinned Addy Osmani protocols to the current repository task. This adapter
-controls host integration; upstream files retain their MIT license, with two
-documented defensive-example adaptations. Read [provenance](UPSTREAM.json) for the exact revision and file hashes.
+Apply the pinned Addy Osmani protocols to the current repository task. Upstream files
+retain their MIT license, with two documented defensive-example adaptations. Read
+[provenance](UPSTREAM.json) for the exact revision and file hashes.
 No external import, separate agent harness or upstream hook installation is needed.
 
 ## Select one technique when needed
@@ -33,7 +29,7 @@ python3 "<engineering-skill-dir>/scripts/route.py" --protocol performance-optimi
 
 Read the returned protocol and relevant supporting references.
 
-The adapter also carries toolset-written protocols under `local/`, versioned with this
+The reference pack also carries toolset-written protocols under `local/`, versioned with this
 repository rather than pinned, selected only with `--protocol` and never in a phase
 bundle: [test-suite-optimization](local/test-suite-optimization/PROTOCOL.md) defines
 minimum sufficient regression protection for slow, redundant or low-signal tests.
@@ -86,14 +82,14 @@ registration; content adaptations and original hashes are recorded in UPSTREAM.j
 use the corresponding PROTOCOL.md in this snapshot. `../../references/...` is
 relative to the selected protocol's folder. Upstream support-document references
 under `references/`, `skills/`, `docs/`, `agents/` and `commands/` resolve within
-this adapter's `upstream/` root. Artifact/output paths (such as `docs/decisions/`)
+this pack's `upstream/` root. Artifact/output paths (such as `docs/decisions/`)
 always belong to the target repository and reuse its existing document owners.
 Preserve normal document-relative links otherwise. Read referenced
 checklists when relevant; never claim missing material was consulted.
 
-Use this adapter through `kit:engineering` or its verified installed
-path. Other upstream skills are protocol files, not separately registered Hermes
-commands. Analytical personas are not actual subagents unless separate agents ran.
+Read this reference at its verified installed path or via the selected protocol.
+Other upstream skills are protocol files, not separately registered commands.
+Analytical personas are not actual subagents unless separate agents ran.
 Do not execute upstream host integration commands or install hooks from examples.
 
 ## Adapt artifacts and authority

@@ -62,6 +62,10 @@ def main():
             assert (home / 'skills' / source.parent.name / 'SKILL.md').is_file(), source.parent.name
         assert (home / 'skills/impeccable/reference/routing.md').is_file()
         assert (home / 'skills/impeccable/scripts/impeccable').is_file()
+        # The engineering pack installs as a reference tree, never as a skill entry.
+        assert (home / 'skills/engineering/REFERENCE.md').is_file()
+        assert not (home / 'skills/engineering/SKILL.md').exists()
+        assert 'kit:engineering' not in [i['name'] for i in manager.list_plugin_skill_metadata()]
         native_grill = home / 'skills/grill-me/SKILL.md'
         assert native_grill.is_file(), 'Plugin load did not install native Grill Me'
         assert not (other / 'skills').exists(), 'Plugin load crossed profile ownership'

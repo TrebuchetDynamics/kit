@@ -65,7 +65,7 @@ who answers consequential intent. It does not change the sequence.
 2. **Investigate and decide.** Read the actual source, tests, docs and current task
    state. Resolve consequential engineering choices within delegated scope. Ask the
    owner only for missing intent, authority or an external input. For a concrete
-   method gap, select one technique through [engineering](../engineering/SKILL.md);
+   method gap, select one technique through [engineering](../engineering/REFERENCE.md);
    routine planning needs no experiment loop. Apply
    [decision closure](PLANNING-CRAFT.md#decision-closure) before calling a task ready.
 3. **Save.** Write accepted decisions in their existing document owners. Save tasks

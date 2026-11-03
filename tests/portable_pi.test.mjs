@@ -7,8 +7,9 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 46);
+  assert.equal(commands.size, 45);
   assert.equal(commands.has('apk-get'), true);
+  assert.equal(commands.has('engineering'), false);
   assert.equal(commands.has('goal'), true);
   assert.equal(commands.has('autogoal'), false);
   for (const name of commands.keys()) assert.match(name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, name);
@@ -68,7 +69,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   for (const [name, skill] of Object.entries({
     'plan-with-me': 'plan-with-me', 'plan-for-me': 'plan-for-me', 'docs-sync': 'docs-sync',
     autowork: 'autowork', autoresearch: 'autoresearch',
-    engineering: 'engineering', impeccable: 'impeccable', 'ui-taste': 'ui-taste',
+    impeccable: 'impeccable', 'ui-taste': 'ui-taste',
     'beautify-github-readme': 'beautify-github-readme', 'grill-me': 'plan-with-me',
     lgtm: 'lgtm', goal: 'goal', blockers: 'blockers',
     'git-commit-push': 'git-commit-push',
@@ -183,7 +184,7 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
-    assert.equal(skillCount, 33);
+    assert.equal(skillCount, 32);
     // Execute the packaged CommonJS helper under Autowork's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
@@ -200,7 +201,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 46);
+    assert.equal(commands.size, 45);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {
       assert.match(name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, name);

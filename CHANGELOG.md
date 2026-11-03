@@ -7,6 +7,15 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- The engineering pack is now a **reference**, not a callable skill: `/engineering`
+  and `/skill:engineering` are no longer registered in Hermes, Pi, Claude Code or
+  Codex, and the Telegram menu no longer advertises it. `skills/engineering/SKILL.md`
+  became `REFERENCE.md`; autowork, Docs Sync, Autoresearch and Plan With Me read it
+  or its selected protocol directly. The plugin still installs the reference files
+  beside the skills so their links resolve. An existing profile copy is migrated by
+  removing only its `SKILL.md` and keeping the protocols, provenance and support
+  files. No command or skill entry means no direct invocation.
+
 - `./install.sh` installs from the published Git source even when Claude Code's
   marketplace is registered from a folder this host does not have (a moved or renamed
   checkout, or settings carried from another machine): that stale `directory`

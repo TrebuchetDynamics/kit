@@ -55,7 +55,7 @@ Load one specialist at the seam that needs it. Do not load every skill.
 | Answer missing owner intent | `/plan-with-me` |
 | Execute one ready task in the repository queue | `/autowork` |
 | Run many independent improvement lanes with review | `/autonomous-codebase-improver` |
-| Select one engineering method | `/engineering` |
+| Select one engineering method | [engineering](../../engineering/REFERENCE.md) (reference only) |
 | Hunt an unreproduced defect | `/bug-harvest` |
 | Reduce redundant tests | `/test-optimizer` |
 | Remove proven dead code | `/unused-code` |

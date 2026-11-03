@@ -2,12 +2,14 @@
 
 Autowork provides native packages for four hosts. Claude Code, Codex and Pi
 use the portable adapters, not the Hermes plugin loader. None requires Hermes installed.
-These adapters expose 26 skills: Plan With Me, Plan For Me, Docs Sync, Autowork,
-Cron Autowork, Autoresearch, Engineering, Impeccable, UI Taste, Beautify GitHub README,
+These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Autowork,
+Autoresearch, Impeccable, UI Taste, Beautify GitHub README,
 LGTM, Git Commit Push, Blockers, Pending, the six bundled Ponytail skills,
 and Bug Harvest, Autonomous Codebase Improver, Skill Folder Refactor, Unused Code
 and Test Optimizer, plus APK Get.
 Grill Me is Plan With Me's challenge mode, not a separate skill.
+The pinned engineering protocols are a **reference pack**, not a command or skill
+on any host; autowork and Docs Sync read them directly when a method gap needs one.
 Every adapter is explicit-only: Claude Code and Pi read `disable-model-invocation: true`
 in its frontmatter and Codex reads `agents/openai.yaml`, so the model never starts a
 workflow on its own.
@@ -391,10 +393,12 @@ Local installs refer to this checkout; keep it in place. The extension registers
 ```
 
 All 13 `/autoresearch-<protocol>` commands are available. The other commands are
-`/autoresearch`, `/engineering`, `/impeccable`, `/ui-taste`, `/beautify-github-readme`,
+`/autoresearch`, `/impeccable`, `/ui-taste`, `/beautify-github-readme`,
 `/lgtm` and `/git-commit-push` (`/git-commit-push pull` or `merge <branch>` integrates
-upstream changes). Native `/skill:<name>` invocation is also
-available; both skill names and command aliases use hyphens. Underscore aliases
+upstream changes). The engineering pack is a reference, not a command; no
+`/engineering` or `/skill:engineering` entry is registered. Native `/skill:<name>`
+invocation is available for the registered skills; both skill names and command
+aliases use hyphens. Underscore aliases
 are no longer registered in Pi; update saved prompts and shortcuts, then `/reload`
 after updating the package. Hermes Telegram aliases are unchanged.
 Command arguments remain literal prompt text.

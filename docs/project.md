@@ -208,7 +208,7 @@ These additional user requirements belong to TOOLSET-012's accepted implementati
   checks. A smaller prompt or router response is not evidence those gates passed.
 
 At requirement capture (`f617808`),
-[the engineering adapter](../skills/engineering/SKILL.md) already called itself
+[the engineering reference pack](../skills/engineering/REFERENCE.md) already called itself
 guidance rather than a coordinator, but
 [its router](../skills/engineering/scripts/route.py) required a phase and prepended
 that phase's protocol list. Exact single-protocol selection and conditional routing
@@ -776,10 +776,11 @@ Planner's calls (reversible; reject any of them):
 - Expose it on Codex and Pi like the other workflows (explicit-only Codex policy, Pi
   command `/ui_taste`); it is not added to the Telegram menu priority. Superseded
   2026-10-15: the user chose to advertise `/ui_taste` and `/beautify_github_readme`,
-  then `/impeccable` and `/lgtm`, then `/engineering`, `/git_commit_push` and
+  then `/impeccable` and `/lgtm`, then `/git_commit_push` and
   `/git_pull_merge`, in the bundle's menu priority, displacing the last seven
   built-ins at the default 60-entry cap. `/git_pull_merge` was retired the same day
-  when Git Pull Merge merged into Git Commit Push, so six are advertised.
+  when Git Pull Merge merged into Git Commit Push, so five are advertised. Engineering
+  is a reference pack, not an advertised command or skill on any host.
 
 Anti-goals: rewriting upstream text, fetching anything at runtime, adding an MCP or
 account dependency, or presenting the vendored copy as an endorsement by Uizze or
@@ -793,7 +794,7 @@ Decision: On 2026-10-15 the user asked to add
 [oil-oil/beautify-github-readme](https://github.com/oil-oil/beautify-github-readme)
 (MIT, pinned at `d6562a5f5c484d069f8560b39c215c9cda4b5a55`) to the bundle, vendor
 it, adapt it to this toolset, and then use it on this README. The layout follows the
-engineering pack: a toolset-owned `SKILL.md` adapter, the upstream skill byte-exact
+vendored-pack pattern: a toolset-owned entry file, the upstream skill byte-exact
 under `upstream/` (its `SKILL.md` renamed `PROTOCOL.md` so it is not registered as a
 second skill), and `UPSTREAM.json` with file hashes checked by a test. The repository's
 showcase images, translated READMEs and Codex agent manifest are excluded.

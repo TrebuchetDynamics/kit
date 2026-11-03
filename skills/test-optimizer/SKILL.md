@@ -117,7 +117,8 @@ from a focused green run.
 [Evaluation scenarios and evidence limits](references/evaluation.md).
 ## Boundaries
 
-- Not test-first authoring; use the `tdd` protocol through `/engineering`.
+- Not test-first authoring; use the `tdd` protocol through
+  [the engineering reference](../engineering/REFERENCE.md).
 - Not dead-code removal; use `/unused-code`.
 
 **Done when:** supported removals are applied with an oracle mapping and the affected checks pass, or a read-only report is delivered.

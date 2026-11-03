@@ -77,7 +77,8 @@ python -m unittest discover -s tests -p 'test_install_plugins.py'
 Native command reference: [Hermes plugins](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins).
 
 Addy engineering protocols are pinned under `skills/engineering/` and distributed
-with the bundle; they no longer require an external skill-source entry.
+with the bundle; they no longer require an external skill-source entry. That pack is
+a reference, not a command or registered skill on any host.
 Ponytail is likewise pinned and bundled on all four hosts. Its six skills and optional
 read-only map script use Autowork's existing installer; no external Ponytail plugin,
 mode hooks, band UI or telemetry is installed. Existing external installs are preserved.

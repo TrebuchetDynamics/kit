@@ -10,7 +10,7 @@ Use `/autowork` with an explicit whole-spec request and accepted spec/tracker po
 
 Execute accepted tasks under the ownership and review rules below. For a concrete
 method gap or explicit protocol request, select one verified technique through
-[engineering](../../engineering/SKILL.md); consult
+[engineering](../../engineering/REFERENCE.md); consult
 [the engineering cycle](../../shared/ENGINEERING-CYCLE.md) only if routing is unclear.
 Use default `worker` ownership; this agent handles canonical integration and
 closure after checks and required review. Proposal/external-owner roles are opt-in.

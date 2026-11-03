@@ -65,7 +65,6 @@ capacity limit, so some commands must be typed rather than selected in the menu.
 | `/impeccable` | `/impeccable` | Design and front-end quality workflow |
 | `/ui-taste` | `/ui_taste` | Uizze's UI Taste playbooks for building, polishing and reviewing web and iOS interfaces |
 | `/beautify-github-readme` | `/beautify_github_readme` | Redesign or audit a GitHub README with project-native SVG assets |
-| `/engineering` | `/engineering` | Select one engineering protocol for a concrete method gap |
 | `/autowork status [NAME]` | `/autowork status [NAME]` | Read runner fleet/repository status without a model call or state changes |
 | `/autowork plugin status` | `/autowork plugin status` | Inspect registered capabilities and setup gaps; `/autowork update [--check\|status [full]]` updates all profiles |
 
@@ -132,7 +131,7 @@ spellings remain typeable but are deliberately omitted from Telegram menu
 advertising, not merely displaced by capacity. Plan With Me and Docs Sync do not
 register the old repo-interview or repo-docs aliases. The Telegram menu prioritizes
 the five current workflow commands, then `/ui_taste`, `/beautify_github_readme`,
-`/impeccable`, `/lgtm`, `/engineering` and `/git_commit_push`.
+`/impeccable`, `/lgtm` and `/git_commit_push`.
 Hermes' default menu holds 60 entries and its built-ins alone exceed that, so each
 prioritized command displaces the lowest-ranked built-in (currently `/yolo`,
 `/approvals`, `/fast`, `/voice`, `/busy`, `/memory` and `/bundles`), which stays
@@ -146,7 +145,7 @@ Docs Sync and autowork decide routine engineering choices autonomously within th
 accepted scope. The executing session (or an optional authorized delegate) works
 from the selected task, accepted decisions, scope, checks
 and completion rules. For a concrete method gap or explicit request, they select one
-[Addy protocol](../skills/engineering/SKILL.md). Autowork retains workflow authority;
+[Addy protocol](../skills/engineering/REFERENCE.md). Autowork retains workflow authority;
 protocols supply techniques within its contract. Handoffs record methods that
 materially changed a decision or artifact, with their check results.
 Missing owner intent or authority remains an explicit question;
@@ -379,19 +378,20 @@ Grill Me remains Plan With Me's challenge mode; it loads Grilling for the mechan
 adds only the plan-specific question branches. Offline link and packaging checks do not
 qualify a live interview or a rendered report.
 
-## Pinned engineering protocols
+## Pinned engineering reference
 
-`/engineering` (the same spelling in Telegram) selects a technique for a specific
-method gap. Autowork, Docs Sync and Autoresearch can consult this adapter on demand;
-ready tasks need no separate command. Examples:
+The engineering pack is a **reference**, not a command: there is no `/engineering`
+entry in Hermes, Claude Code, Codex or Pi. Autowork, Docs Sync and Autoresearch read
+it on demand; ready tasks need no separate invocation. Select a technique when a
+method gap is concrete:
 
-```text
-/engineering use performance-optimization to diagnose this cache bottleneck
-/engineering use code-review-and-quality for the current task's existing review
+```sh
+python3 "<toolset>/skills/engineering/scripts/route.py" --protocol performance-optimization
+python3 "<toolset>/skills/engineering/scripts/route.py" --protocol code-review-and-quality
 ```
 
-The [adapter](../skills/engineering/SKILL.md) provides 25 pinned protocols and their
-shared references. Its router's `--protocol NAME` selects exactly one method;
+The [reference](../skills/engineering/REFERENCE.md) provides 25 pinned protocols and
+their shared references. Its router's `--protocol NAME` selects exactly one method;
 explicit phase commands remain available as optional bundles. Both modes verify
 selected protocol and shared reference hashes. It translates upstream plan/task
 paths into existing task records and preserves prior authorization,
