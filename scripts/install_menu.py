@@ -27,8 +27,10 @@ import os
 from pathlib import Path
 import shutil
 import shlex
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -194,6 +196,66 @@ class Item:
     @property
     def available(self):
         return not self.missing and not host_unavailable(self.needs)
+
+
+def pi_settings_path():
+    """The Pi settings file that stores package filters (PI_CODING_AGENT_DIR wins)."""
+    return Path(os.environ.get('PI_CODING_AGENT_DIR') or HOME / '.pi/agent') / 'settings.json'
+
+
+def same_pi_source(left, right):
+    """Compare package sources the way Pi does, ignoring a trailing slash or .git."""
+    def canonical(value):
+        value = str(value).strip().rstrip('/')
+        return value[:-4] if value.endswith('.git') else value
+    return canonical(left) == canonical(right)
+
+
+def enable_pi_package(source=PI_SOURCE, settings=None):
+    """Let the installed package load its skills and commands.
+
+    Pi records a package resource filter as an object such as
+    ``{"source": ..., "skills": [], "extensions": []}``; an empty list hides every
+    resource of that type. A filter written for the package's previous name
+    (autowork -> kit) survives both ``pi install`` and ``pi update``, so the
+    package stays installed but filtered: no commands and no ``/skill:<name>``.
+    Remove only empty filters; keep deliberate partial filters untouched.
+    """
+    path = Path(settings) if settings else pi_settings_path()
+    if not path.is_file():
+        return f'no Pi settings at {path}; the package manifest applies'
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f'cannot read {path}: {exc}') from exc
+    packages = data.get('packages') if isinstance(data, dict) else None
+    if not isinstance(packages, list):
+        return f'no package filter in {path}; the package manifest applies'
+    changed = False
+    for index, entry in enumerate(packages):
+        if not isinstance(entry, dict) or not same_pi_source(entry.get('source', ''), source):
+            continue
+        for key in ('skills', 'extensions'):
+            if entry.get(key) == []:
+                del entry[key]
+                changed = True
+        if set(entry) == {'source'}:
+            packages[index] = entry['source']  # no filter left: the plain source form
+            changed = True
+    if not changed:
+        return f'{path} already loads the {source} package resources'
+    # Write beside the original and replace, so an interrupted install cannot truncate it.
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+            json.dump(data, stream, indent=2, ensure_ascii=False)
+            stream.write('\n')
+        os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+    return f'enabled {source} package resources in {path}'
 
 
 def pi_package(source=PI_SOURCE):
@@ -421,6 +483,9 @@ def items(hermes_args):
         pi.steps.append(Step(f'pi update {PI_SOURCE}', ['pi', 'update', PI_SOURCE]))
     else:
         pi.steps.append(Step(f'pi install {PI_SOURCE}', ['pi', 'install', PI_SOURCE]))
+    # `pi config` filters outlive the install, so enable the package resources here.
+    pi.steps.append(Step('enable the package skills and commands in Pi settings',
+                         run=enable_pi_package))
     # The command follows the package the runners update, once it is installed.
     def command():
         installed = pi_package()

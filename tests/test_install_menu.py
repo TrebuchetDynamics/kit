@@ -314,6 +314,17 @@ exit 0
         self.assertIn('$ codex plugin add kit@autowork-marketplace', result.stdout)
         self.assertRegex(result.stdout, r'hermes\s+skipped.*hermes not found')
 
+    def test_default_install_enables_the_pi_package_without_extra_flags(self):
+        settings = self.home / '.pi/agent/settings.json'
+        settings.parent.mkdir(parents=True)
+        settings.write_text(json.dumps({'packages': [
+            {'source': NEW, 'skills': [], 'extensions': []},
+        ]}))
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(settings.read_text())['packages'], [NEW])
+        self.assertIn('enabled', result.stdout)
+
     def test_dry_run_defaults_to_the_full_suite_without_installing(self):
         self.fake('hermes', LOGGING)
         (self.home / '.hermes').mkdir()
@@ -325,6 +336,7 @@ exit 0
         self.assertEqual(self.calls('codex'), [])
         self.assertEqual(self.calls('hermes'), [])
         self.assertFalse((self.home / '.local/bin').exists())
+        self.assertIn('enable the package skills and commands in Pi settings', result.stdout)
 
     def test_tx_keeps_an_existing_tmux_config(self):
         mine = b'set -g mouse on\n# mine\n'
@@ -623,6 +635,40 @@ fi
         self.assertEqual(self.calls('pi install'), [])
         self.assertEqual(self.calls('pi update'), [f'pi update {NEW}'])
         self.assertEqual(Path(os.readlink(self.home / '.local/bin/autowork')), package / 'pi-autowork/bin/autowork')
+
+    def test_install_clears_empty_pi_filters_that_hide_skills_and_commands(self):
+        settings = self.home / '.pi/agent/settings.json'
+        settings.parent.mkdir(parents=True)
+        other = {'source': 'npm:other', 'skills': []}
+        settings.write_text(json.dumps({'packages': [
+            {'source': NEW, 'skills': [], 'extensions': []},
+            other,
+        ]}))
+        result = self.install('--only', 'pi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(settings.read_text())['packages'], [NEW, other])
+        self.assertIn('enabled', result.stdout)
+
+    def test_install_keeps_a_deliberate_partial_pi_filter(self):
+        settings = self.home / '.pi/agent/settings.json'
+        settings.parent.mkdir(parents=True)
+        settings.write_text(json.dumps({'packages': [
+            {'source': NEW, 'skills': ['+./adapters/skills'], 'extensions': []},
+        ]}))
+        result = self.install('--only', 'pi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(settings.read_text())['packages'],
+                         [{'source': NEW, 'skills': ['+./adapters/skills']}])
+
+    def test_pi_agent_directory_override_is_honored(self):
+        agent = self.home / 'custom-agent'
+        agent.mkdir()
+        settings = agent / 'settings.json'
+        settings.write_text(json.dumps({'packages': [{'source': NEW, 'skills': []}]}))
+        result = self.install('--only', 'pi', env={'PI_CODING_AGENT_DIR': str(agent)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(settings.read_text())['packages'], [NEW])
+        self.assertFalse((self.home / '.pi/agent/settings.json').exists())
 
     def test_setup_only_hermes_options_are_refused_for_profile_clones(self):
         self.fake('hermes', LOGGING)

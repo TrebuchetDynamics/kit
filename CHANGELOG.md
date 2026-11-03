@@ -37,6 +37,16 @@ claim of a tagged release, completed installation or live workflow qualification
   markers in `BLOCKERS.md`, the runner CLI, its skill and its state directory are
   unchanged.
 
+### Fixed
+
+- `./install.sh` enables the installed Pi package's skills and commands. An empty
+  `skills: []` or `extensions: []` filter in `~/.pi/agent/settings.json` survives
+  `pi install` and `pi update`, including one recorded under the package's previous
+  `autowork` name, so `/git-commit-push` and `/skill:<name>` were unavailable even
+  though `pi list` showed the package. The installer now removes only those empty
+  filters (deliberate partial filters stay) and rewrites the entry in the plain
+  source form. `PI_CODING_AGENT_DIR` is honored.
+
 ### Removed
 
 - `profile-create`: the skill and its test are gone, with the router row, README line and workflow table entry. Hermes profiles are still created with the host's own commands (`hermes -p PROFILE …`, `install-plugins.sh`); nothing in the runtime depended on the skill.

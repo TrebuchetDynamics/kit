@@ -410,7 +410,11 @@ warns; same-name extension commands are all kept but renamed `/name:1`, `/name:2
 without a warning. Check `/` completions rather than assuming this package replaced them.
 
 Use Pi's package controls (`pi list`, `pi update --extensions`, `pi remove <source>`)
-for management. Removing the package leaves repository documents and commits intact.
+for management. `./install.sh` also clears an empty `skills: []` or `extensions: []`
+filter on this package: a filter recorded in `pi config`, including one carried from
+the package's previous `autowork` name, survives `pi install` and `pi update` and
+hides every command and `/skill:<name>`. Non-empty filters are kept. Removing the
+package leaves repository documents and commits intact.
 
 ### Nous Portal through the local proxy
 
