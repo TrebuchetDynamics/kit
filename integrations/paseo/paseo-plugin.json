@@ -1,0 +1,6 @@
+{
+  "id": "paseo-autowork",
+  "name": "Autowork",
+  "description": "Native fleet, tasks, owner decisions and staged planning for an existing Linux Autowork installation.",
+  "requirements": { "paseo": ">=0.13.0 <0.15.0" }
+}

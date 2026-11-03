@@ -1,0 +1,45 @@
+{
+  "name": "paseo-autowork",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Native Paseo fleet, task and planning interface for the existing Autowork engine",
+  "license": "MIT",
+  "files": [
+    "paseo-plugin.json",
+    "OVERVIEW.md",
+    "OVERVIEW.*.md",
+    "index.client.ts",
+    "index.client.tsx",
+    "index.server.ts",
+    "index.server.tsx",
+    "client/",
+    "server/",
+    "shared/",
+    "README.md",
+    "assets/readme/",
+    "docs/",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "test": "vitest run --maxWorkers=2 --exclude '**/.worktrees/**'",
+    "check": "npm run typecheck && npm test",
+    "package:check": "npm pack --dry-run --json"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.14.0",
+    "@getpaseo/server": "0.14.0",
+    "@tanstack/react-query": "^5.90.11",
+    "@types/node": "^24.19.2",
+    "@types/react": "~19.2.0",
+    "@types/react-test-renderer": "^19.3.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-test-renderer": "19.1.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.6",
+    "zod": "^4.4.3"
+  }
+}

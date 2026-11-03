@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node", "react"] },
+  "include": ["index.server.ts", "server/**/*.ts", "shared/**/*.ts", "tests/**/*.ts", "tests/**/*.tsx"]
+}
