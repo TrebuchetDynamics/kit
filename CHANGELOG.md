@@ -34,6 +34,12 @@ claim of a tagged release, completed installation or live workflow qualification
   checkout replaced or marked `core.bare=true` (for example by a consumer test that inherited
   `GIT_*`) now stops deliberately with exit 4 ("needs attention") instead of looping under
   systemd. The startup refusal and `RestartPreventExitStatus` contract are unchanged.
+- The runner keeps one worker slot for the owner's own continuation. An attempt a person
+  paused, restarted or answered may resume beside a full pool (N+1 workers) instead of
+  waiting for fresh autonomous work to finish; one attempt at most, after a free normal
+  slot, with the host memory/load gates unchanged. `--parallel-status` adds
+  `configured_max_workers` and `owner_slot` beside the cycle's effective `max_workers`,
+  and the journal records one `owner_slot` event per use.
 - `scripts/affected_tests.py` no longer selects the whole suite for a document no test reads,
   and a document reaches at most the tests that read it and the tests of the code that reads
   it (the engine names `CHANGELOG.md` because it edits one in target repositories, which used

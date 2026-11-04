@@ -339,6 +339,9 @@ def _snapshot(repo, common, now):
     awaiting = [r for r in settled if r.get('owner_decision_required')]
     return dict(outcome='PARALLEL_STATUS', workspace=str(repo), task_source=task_source,
                 active_workers=active, max_workers=capacity,
+                # The cycle's one reserved slot for a person's continuation, and the limit it adds to.
+                configured_max_workers=observed.get('configured_max_workers', capacity),
+                owner_slot=int(observed.get('owner_slot') or 0),
                 tasks=rows, roots=root_rows, completed=sum(r['state'] == 'closed' for r in rows),
                 failed=len([r for r in settled if not r.get('owner_decision_required')]),
                 awaiting_owner=len(awaiting),
@@ -353,7 +356,8 @@ def render(value):
     def text(value, width):
         # Keep untrusted task reasons on one terminal line and bound table width.
         return ' '.join(str(value).split())[:width]
-    lines = ['AUTOWORK — PARALLEL', f"Workers: {value['active_workers']}/{value['max_workers']} active",
+    reserved = " (one slot reserved for a person's continuation)" if value.get('owner_slot') else ''
+    lines = ['AUTOWORK — PARALLEL', f"Workers: {value['active_workers']}/{value['max_workers']} active{reserved}",
              f"{'Task':<20} {'State':<12} {'Slot':>4} {'Elapsed':>9}  Blocked reason"]
     for row in value['tasks']:
         word = 'paused' if row.get('paused') and row['state'] in ('interrupted', 'released') else row['state']

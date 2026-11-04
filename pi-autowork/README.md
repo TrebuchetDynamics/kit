@@ -779,6 +779,16 @@ autowork scorecard --days 30 --csv . > evaluation.csv
 autowork scorecard --days 30 --baseline /private/baseline.json .
 ```
 
+### A slot kept for the owner's own continuation
+
+A worker limit does not make a person wait behind the runner's own work. An attempt a person
+paused, restarted or answered already held a slot, so when new autonomous work has filled the
+pool, one such attempt may resume beside it: N+1 workers run until that attempt ends. The
+reserve is one attempt at most, it takes a free normal slot first, fresh work never uses it,
+and the host memory and load gates still apply. That cycle's status reports the larger
+`max_workers` with `configured_max_workers` and `owner_slot` naming the configured limit and
+the one reserved slot.
+
 ### Evaluation report
 
 Text, `--json` and `--csv` render the same evaluation metrics. JSON adds

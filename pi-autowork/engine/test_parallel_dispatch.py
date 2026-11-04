@@ -24,6 +24,7 @@ import parallel_state as state
 import store_fixture
 import task_queue
 import task_execution as execution
+import parallel_status as status
 
 FAKE = SCRIPTS / 'fixtures' / 'fake_worker.py'
 
@@ -1413,6 +1414,50 @@ Path(report).write_text(json.dumps({'task': 'A', 'commit': git('rev-parse', 'HEA
         self.wait_until_idle()  # this unpaused death spends attempt 1 as before
         _, retry = self.apply()
         self.assertEqual([(d['task'], d['attempt']) for d in retry['dispatched']], [('A', 2)])
+
+    def test_one_paused_attempt_resumes_beside_a_full_pool_without_a_second_reserve(self):
+        """An owner's answer already held a slot; new autonomous work must not displace it.
+
+        At one worker, A blocks, then B takes the slot. A's answer makes it paused, and the
+        resume uses the one reserved slot; fresh C still waits and gets no second one.
+        """
+        self.write_todo(task('A', 'a.txt'), task('B', 'b.txt'), task('C', 'c.txt'))
+        self.git('add', '.')
+        self.commit_if_changed('A B C')
+        self.set_spec({'A': {'files': {'a.txt': 'half'}, 'sleep': 0.1, 'commit': False,
+                             'blockers': ['Which unit?']},
+                       'B': {'files': {'b.txt': 'half'}, 'sleep': 60, 'commit': False},
+                       'C': {'files': {'c.txt': 'half'}, 'sleep': 60, 'commit': False}})
+        _, first = self.apply('1', '--max-workers', '1')
+        self.assertEqual([d['task'] for d in first['dispatched']], ['A'])
+        self.wait_until_idle()
+        self.assertEqual([(s['task_id'], s['state'], s.get('cause')) for s in state.slots(self.common)],
+                         [('A', 'held', 'blocker')])
+        _, fresh = self.apply('1', '--max-workers', '1')
+        self.assertEqual([d['task'] for d in fresh['dispatched']], ['B'])  # the pool is now full
+        answer = self.root / 'answer.txt'
+        answer.write_text('Use metres.')
+        _, answered = self.run_cli('--parallel-answer', 'A', '--answer-file', str(answer), worker=False)
+        self.assertEqual(answered['outcome'], 'ANSWERED')
+        self.set_spec({'A': {'files': {'a.txt': 'done'}, 'sleep': 60, 'commit': False},
+                       'B': {'files': {'b.txt': 'half'}, 'sleep': 60, 'commit': False},
+                       'C': {'files': {'c.txt': 'half'}, 'sleep': 60, 'commit': False}})
+        _, resumed = self.apply('1', '--max-workers', '1')
+        self.assertEqual([d['task'] for d in resumed['dispatched']], ['A'])
+        self.assertEqual((resumed['max_workers'], resumed['configured_max_workers'], resumed['owner_slot']),
+                         (2, 1, 1))
+        self.assertEqual(resumed['active_workers'], 2)  # B still runs beside the resumed attempt
+        self.assertEqual([w['id'] for w in resumed['waiting']], ['C'])
+        self.assertIn('all 1 worker slots busy', resumed['waiting'][0]['reason'])
+        self.assertEqual(fresh['owner_slot'], 0)  # fresh work never reserved the slot
+        _, observed = self.run_cli('--parallel-status', '--json', worker=False)
+        self.assertEqual((observed['max_workers'], observed['configured_max_workers'], observed['owner_slot']),
+                         (2, 1, 1))  # the status reads the same reserve as the dispatch answer
+        self.assertIn('one slot reserved', status.render(observed))
+        _, more = self.apply('1', '--max-workers', '1')  # fresh work gets no second reserved slot
+        self.assertEqual((more['dispatched'], more['owner_slot'], more['max_workers']), ([], 0, 1))
+        self.assertEqual([w['id'] for w in more['waiting']], ['C'])
+        self.assertEqual([e['event'] for e in state.journal.read(self.common)['events']].count('owner_slot'), 1)
 
     def test_the_memory_gate_counts_only_what_one_more_worker_needs(self):
         """TOOLSET-162-d2: running workers' memory is already out of MemAvailable."""
