@@ -137,6 +137,19 @@ describe('native host-scoped surfaces', () => {
     const colors = root.root.findAll(node => String(node.type) === 'Text' && node.props.style?.color).map(node => node.props.style.color);
     expect(colors).toContain(props.theme.colors.foreground);
   });
+  // After an Autowork update the daemon-side generation refuses every read until the owner
+  // reloads the plugin, so a bare "Retry now" and an automatic-retry promise are both wrong.
+  it('names the reload step instead of promising an automatic recovery', async () => {
+    env.invoke.mockImplementation(async () => { throw new Error('Autowork executable changed; reload the plugin to qualify its new release'); });
+    await mount(); await flush();
+    expect(text()).toContain('Autowork updated on this host');
+    expect(text()).toContain('Paseo Settings → Plugins');
+    expect(text()).toContain('a retry cannot succeed before that reload');
+    expect(text()).not.toContain('bounded backoff');
+    expect(text()).not.toContain('..');
+    expect(button('Retry after reload')).toBeTruthy();
+    expect(button('Retry now')).toBeUndefined();
+  });
   it('does not query an offline/missing host or use another online host as fallback', async () => {
     env.hosts = [{ serverId: 'b', label: 'B', status: 'online' }];
     await mount(); expect(env.invoke).not.toHaveBeenCalled(); expect(text()).toContain('offline');

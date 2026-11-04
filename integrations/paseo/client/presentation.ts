@@ -186,12 +186,17 @@ export function headline(text: string, max = 160): string {
   const sentence = asked ? `${asked}?` : plain.match(/^.{1,}?[.!?](?=\s|$)/)?.[0] ?? plain;
   return sentence.length > max ? `${sentence.slice(0, max - 1).trimEnd()}…` : sentence;
 }
+/** A stale daemon-side plugin generation refuses every read until the owner reloads it. */
+export function reloadRequired(error: unknown): boolean {
+  const raw = error instanceof Error ? error.message : String(error);
+  return /source release changed|executable changed/i.test(raw);
+}
 /** Host failures as one sentence; raw RPC metadata belongs in Diagnostics. */
 export function friendlyError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   const clean = raw.replace(/\s*requestType=.*$/s, '').replace(/\s*code=.*$/s, '').replace(/^Request failed:\s*/i, '').trim();
   if (/request limit reached/i.test(clean)) return 'Autowork is busy; refresh later.';
-  if (/source release changed|executable changed/i.test(clean)) return 'Autowork updated; reload the plugin, then refresh.';
+  if (reloadRequired(clean)) return 'Autowork updated on this host; this plugin needs a reload.';
   if (/plugin stopped/i.test(clean)) return 'The plugin restarted; refresh.';
   return clean || 'The request failed; retry when the host is available.';
 }

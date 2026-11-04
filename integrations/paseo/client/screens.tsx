@@ -6,7 +6,7 @@ import { RefreshControl, View } from 'react-native';
 import type { ScrollView as NativeScrollView } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
-import { blockedReason, canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, revisionParts, runnerFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
+import { blockedReason, canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
 import { operationsKey, readForHost, rememberOperation, useConfirmedAction, useHostState, useReadBackoff, useWatch, type HostState } from './state';
 import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme, useColors } from './ui';
 
@@ -40,9 +40,19 @@ function HostScreen(props: PluginScreenProps) {
     </Row>
     {!host.online ? <Banner tone="danger" title="Host offline" body="Cached observations are not current authority. Nothing can be dispatched until the host is back." /> : null}
     {host.online && !host.foreground ? <Banner tone="warning" title="App backgrounded: polling paused" body="Reads resume when the app returns to the foreground." /> : null}
-    {fleet.error ? <Banner tone="danger" title="Fleet unavailable" body={`${friendlyError(fleet.error)}. Automatic refresh retries with bounded backoff.`} action={{ label: 'Retry now', onPress: host.refresh, disabled: !host.enabled }} /> : null}
+    {fleet.error ? <FleetUnavailable error={fleet.error} enabled={host.enabled} onRetry={host.refresh} /> : null}
     {fleet.data ? <FleetContent key={fleet.data.instance} props={props} host={host} fleet={fleet.data} scrollRef={scrollRef} /> : null}
   </ScrollView>;
+}
+
+/** A stale plugin generation cannot answer a retry; say where the reload happens instead. */
+function FleetUnavailable({ error, enabled, onRetry }: { error: unknown; enabled: boolean; onRetry: () => void }) {
+  const reload = reloadRequired(error);
+  return <Banner tone="danger" title="Fleet unavailable"
+    body={reload
+      ? `${friendlyError(error)} In Paseo Settings → Plugins, reload Autowork, then refresh; a retry cannot succeed before that reload.`
+      : `${friendlyError(error)} Automatic refresh retries with bounded backoff.`}
+    action={{ label: reload ? 'Retry after reload' : 'Retry now', onPress: onRetry, disabled: !enabled }} />;
 }
 
 function grantSummary(fleet: Fleet): string[] {

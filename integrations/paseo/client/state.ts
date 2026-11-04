@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useHosts, useRpc } from '@getpaseo/plugin/client';
 import { commitRpc, fleetRpc, prepareRpc, watchRpc, type ActionInput, type Operation, type Ticket } from '../shared/contracts';
+import { reloadRequired } from './presentation';
 
 export function useReadBackoff() {
   const failures = useRef(0);
@@ -32,7 +33,9 @@ export function useHostState(hostId: string) {
   const fleet = useQuery({
     queryKey: ['autowork', hostId, 'fleet'], enabled, staleTime: 15000, gcTime: 300000,
     retry: false, refetchOnMount: 'always', refetchOnWindowFocus: false, refetchOnReconnect: false,
-    refetchInterval: () => enabled ? backoff.delay(20000, 120000) : false,
+    // A stale plugin generation refuses every read until the owner reloads it; polling cannot
+    // recover that state and would only burn battery until the reload remounts this tree.
+    refetchInterval: query => enabled && !reloadRequired(query.state.error) ? backoff.delay(20000, 120000) : false,
     queryFn: () => backoff.run(async () => {
       const epoch = scope.current.epoch;
       if (!scope.current.enabled) throw new Error('Host offline or polling paused');
