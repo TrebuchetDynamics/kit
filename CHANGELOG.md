@@ -112,6 +112,14 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Fixed
 
+- The reserved owner slot reports capacity honestly. `max_workers` never reads below the
+  workers actually running, so a granted reserve stays visible with `owner_slot` 1 while its
+  worker lives and `--parallel-status` cannot print `2/1 active`; the `owner_slot` journal
+  event is written under the writer lock, and a second paused attempt's wait says the reserved
+  slot is in use. Offline tests now cover the admission constraints the reserve must not
+  bypass: an exclusive holder, a serial holder, a free normal slot first, a memory-gate
+  refusal, a launch failure, two paused attempts, and the hard slot limit. Source:
+  `Src/pi_autowork/engine/parallel_dispatch.py`, `pi-autowork/engine/test_parallel_dispatch.py`.
 - A live grant and an owner waiver are structured, attributed and bound to their scope.
   `live = "authorized"` dispatches only with `live_actor`, `live_at` and a `live_scope`
   that covers every declared `live`/`exclusive` resource and names nothing undeclared;

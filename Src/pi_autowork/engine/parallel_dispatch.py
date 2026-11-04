@@ -1142,18 +1142,21 @@ def dispatch_locked(args, repo, common, count, template, host):
     waiting.extend({'id': t['id'], 'reason': requeue_waits.get(t['id']) or
                     'closed slot with open record; committed reopen evidence required before requeue',
                     'blocked_by': []} for t in unclosed)
-    # One slot is kept for the owner's own continuation. Work a person paused, restarted or
-    # answered already held a slot; fresh autonomous work that started meanwhile must not make
-    # it wait for a worker to finish. At most one such attempt resumes beside a full pool, it
-    # takes a free normal slot first, and host memory/load still governs it.
-    owner_slot = 0
+    # One slot is kept for a continuation that already held one: a person's stop, answer or
+    # restart, or a runner recovery resume (all pause the slot). Fresh autonomous work that
+    # started meanwhile must not make it wait for a worker to finish. At most one such attempt
+    # resumes beside a full pool, it takes a free normal slot first, host memory/load still
+    # governs it, and its admission checks are unchanged: plan() already refused any conflict.
+    owner_slot, reserved_launches = 0, []
     for task in planned['dispatch']:
         previous = restartable.get(task['id'])
         continuation = bool(previous and previous.get('paused'))
         reserved = 1 if (continuation and not owner_slot and count < HARD_LIMIT
                          and len(live) + len(started) >= count) else 0
         if len(live) + len(started) >= count + reserved:
-            waiting.append({'id': task['id'], 'reason': f'all {count} worker slots busy', 'blocked_by': []})
+            why = (f'all {count} worker slots busy; the reserved slot is in use'
+                   if owner_slot and not reserved else f'all {count} worker slots busy')
+            waiting.append({'id': task['id'], 'reason': why, 'blocked_by': []})
             continue
         gate = resource_gate(len(live) + len(started), args.min_free_mem_mb, repo)
         if gate:
@@ -1209,25 +1212,31 @@ def dispatch_locked(args, repo, common, count, template, host):
             waiting.append({'id': task['id'], 'reason': slot['reason']})
             used.discard(index)
             continue
-        if reserved:  # only a launched worker holds the reserved slot
+        if reserved:  # only a launched worker holds the reserved slot; journal it under the lock
             owner_slot += reserved
-            state.event(common, 'owner_slot', task_id=task['id'], configured=count, attempt=attempt)
+            reserved_launches.append((task['id'], attempt))
         slot = state.transition(repo, args.owner_pid, task['id'], 'running', worker=worker,
                                 log_path=str(data / 'worker.log'))
         started.append(summary(common, slot))
     slots = [summary(common, s) for s in state.slots(common)]
     active = sum(1 for s in state.slots(common) if s['state'] in ('dispatched', 'running') and state.worker_live(s))
+    # The limit is never reported below the workers actually running: a granted reserve stays
+    # visible on later passes while its worker lives, even though that pass starts nothing.
+    reported = max(count + owner_slot, active)
+    reserve = reported - count
     outcome = 'DISPATCHED' if started else ('WAITING' if active else 'IDLE')
     with execution.lock(common / 'writer.lock'):
         state.require_owner(common, args.owner_pid)
+        for task_id, attempt in reserved_launches:
+            state.event(common, 'owner_slot', task_id=task_id, configured=count, attempt=attempt)
         from pi_autowork.engine.parallel_status import pending_tasks
         pending_ids = {v['id'] for v in waiting}
         pending = waiting + [v for v in pending_tasks(repo, {s['task_id'] for s in state.slots(common)} | closed)
                              if v['id'] not in pending_ids]
-        state.event(common, 'dispatch_observed', waiting=pending, max_workers=count + owner_slot,
-                    configured_max_workers=count, owner_slot=owner_slot, merge_backlog=backlog)
-    return {'outcome': outcome, 'workspace': str(repo), 'host': host, 'max_workers': count + owner_slot,
-            'configured_max_workers': count, 'owner_slot': owner_slot,
+        state.event(common, 'dispatch_observed', waiting=pending, max_workers=reported,
+                    configured_max_workers=count, owner_slot=reserve, merge_backlog=backlog)
+    return {'outcome': outcome, 'workspace': str(repo), 'host': host, 'max_workers': reported,
+            'configured_max_workers': count, 'owner_slot': reserve,
             'active_workers': active, 'dispatched': started, 'waiting': waiting, 'merge_backlog': backlog,
             'timed_out': [s['task_id'] for s in timeouts], 'slots': slots,
             'next': {'DISPATCHED': 'Run --wait to block until a worker finishes, then review its report.',

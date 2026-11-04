@@ -1455,9 +1455,153 @@ Path(report).write_text(json.dumps({'task': 'A', 'commit': git('rev-parse', 'HEA
                          (2, 1, 1))  # the status reads the same reserve as the dispatch answer
         self.assertIn('one slot reserved', status.render(observed))
         _, more = self.apply('1', '--max-workers', '1')  # fresh work gets no second reserved slot
-        self.assertEqual((more['dispatched'], more['owner_slot'], more['max_workers']), ([], 0, 1))
+        # The reserve stays reported while its worker lives, so the limit never reads below
+        # the workers actually running; nothing new starts.
+        self.assertEqual((more['dispatched'], more['owner_slot'], more['max_workers']), ([], 1, 2))
+        self.assertEqual((more['active_workers'], more['configured_max_workers']), (2, 1))
         self.assertEqual([w['id'] for w in more['waiting']], ['C'])
+        _, observed = self.run_cli('--parallel-status', '--json', worker=False)
+        self.assertEqual((observed['max_workers'], observed['owner_slot']), (2, 1))
+        self.assertIn('2/2 active', status.render(observed))
+        self.assertIn('one slot reserved', status.render(observed))
         self.assertEqual([e['event'] for e in state.journal.read(self.common)['events']].count('owner_slot'), 1)
+
+
+    def pause_attempt_and_fill_the_pool(self, task_text, pool_text, spec):
+        """Set up a blocked then answered attempt A, and a fresh E filling the one-worker pool."""
+        self.write_todo(task_text, pool_text)
+        self.git('add', '.')
+        self.commit_if_changed('setup')
+        self.set_spec(spec)
+        _, first = self.apply('1', '--max-workers', '1')
+        self.assertEqual([d['task'] for d in first['dispatched']], ['A'])
+        self.wait_until_idle()
+        self.assertEqual([(s['task_id'], s['state'], s.get('cause')) for s in state.slots(self.common)],
+                         [('A', 'held', 'blocker')])
+        answer = self.root / 'answer.txt'
+        answer.write_text('Go on.')
+        _, answered = self.run_cli('--parallel-answer', 'A', '--answer-file', str(answer), worker=False)
+        self.assertEqual(answered['outcome'], 'ANSWERED')
+        self.set_spec({**spec, 'A': {'files': {'a.txt': 'done'}, 'sleep': 60, 'commit': False}})
+        _, occupied = self.apply('1', '--max-workers', '1', '--tasks', 'E')
+        self.assertEqual([d['task'] for d in occupied['dispatched']], ['E'])
+
+    def test_the_reserved_slot_never_bypasses_an_exclusive_holder(self):
+        self.pause_attempt_and_fill_the_pool(
+            task('A', 'a.txt') + '- Resources: exclusive\n', task('E', 'e.txt'),
+            {'A': {'files': {'a.txt': 'half'}, 'sleep': 0.1, 'commit': False, 'blockers': ['Which unit?']},
+             'E': {'files': {'e.txt': 'half'}, 'sleep': 60, 'commit': False}})
+        _, result = self.apply('1', '--max-workers', '1')
+        self.assertEqual((result['dispatched'], result['owner_slot'], result['max_workers']), ([], 0, 1))
+        self.assertIn('must run alone', result['waiting'][0]['reason'])
+        self.assertEqual([e['event'] for e in state.journal.read(self.common)['events']].count('owner_slot'), 0)
+
+    def test_the_reserved_slot_never_bypasses_a_serial_holder(self):
+        self.pause_attempt_and_fill_the_pool(
+            task('A', 'package.json'), task('E', 'package.json'),
+            {'A': {'files': {'package.json': '{}'}, 'sleep': 0.1, 'commit': False, 'blockers': ['Which one?']},
+             'E': {'files': {'package.json': '{"e": 1}'}, 'sleep': 60, 'commit': False}})
+        _, result = self.apply('1', '--max-workers', '1')
+        self.assertEqual((result['dispatched'], result['owner_slot'], result['max_workers']), ([], 0, 1))
+        self.assertIn('serial path shared with E', result['waiting'][0]['reason'])
+
+    def test_a_free_normal_slot_is_taken_before_the_reserve(self):
+        self.write_todo(task('A', 'a.txt'), task('E', 'e.txt'), task('F', 'f.txt'))
+        self.git('add', '.')
+        self.commit_if_changed('setup')
+        spec = {'A': {'files': {'a.txt': 'half'}, 'sleep': 0.1, 'commit': False, 'blockers': ['Which unit?']},
+                'E': {'files': {'e.txt': 'half'}, 'sleep': 60, 'commit': False},
+                'F': {'files': {'f.txt': 'half'}, 'sleep': 60, 'commit': False}}
+        self.set_spec(spec)
+        self.apply('1', '--max-workers', '1')
+        self.wait_until_idle()
+        answer = self.root / 'answer.txt'
+        answer.write_text('Go on.')
+        self.run_cli('--parallel-answer', 'A', '--answer-file', str(answer), worker=False)
+        self.set_spec({**spec, 'A': {'files': {'a.txt': 'done'}, 'sleep': 60, 'commit': False}})
+        _, occupied = self.apply('1', '--max-workers', '1', '--tasks', 'E')
+        self.assertEqual([d['task'] for d in occupied['dispatched']], ['E'])
+        _, result = self.apply('2', '--max-workers', '2')  # one normal slot is free
+        self.assertEqual([d['task'] for d in result['dispatched']], ['A'])
+        self.assertEqual((result['owner_slot'], result['max_workers'], result['active_workers']), (0, 2, 2))
+        self.assertEqual([w['id'] for w in result['waiting']], ['F'])
+        self.assertEqual([e['event'] for e in state.journal.read(self.common)['events']].count('owner_slot'), 0)
+
+    def test_a_memory_gate_refusal_does_not_spend_the_reserve(self):
+        self.pause_attempt_and_fill_the_pool(
+            task('A', 'a.txt'), task('E', 'e.txt'),
+            {'A': {'files': {'a.txt': 'half'}, 'sleep': 0.1, 'commit': False, 'blockers': ['Which unit?']},
+             'E': {'files': {'e.txt': 'half'}, 'sleep': 60, 'commit': False}})
+        _, gated = self.apply('1', '--max-workers', '1', '--min-free-mem-mb', '999999')
+        self.assertEqual((gated['dispatched'], gated['owner_slot'], gated['max_workers']), ([], 0, 1))
+        self.assertIn('resource gate', gated['waiting'][0]['reason'])
+
+    def test_a_launch_failure_does_not_spend_or_report_the_reserve(self):
+        self.pause_attempt_and_fill_the_pool(
+            task('A', 'a.txt'), task('E', 'e.txt'),
+            {'A': {'files': {'a.txt': 'half'}, 'sleep': 0.1, 'commit': False, 'blockers': ['Which unit?']},
+             'E': {'files': {'e.txt': 'half'}, 'sleep': 60, 'commit': False}})
+        original = dispatch.launch
+
+        def boom(argv, worktree, data, index, prompt_file):
+            if 'autowork-A' in str(worktree):
+                raise OSError('boom')
+            return original(argv, worktree, data, index, prompt_file)
+
+        with patch.object(dispatch, 'launch', boom):
+            _, failed = self.apply('1', '--max-workers', '1')
+        self.assertEqual((failed['dispatched'], failed['owner_slot'], failed['max_workers']), ([], 0, 1))
+        slot = next(s for s in state.slots(self.common) if s['task_id'] == 'A')
+        self.assertEqual((slot['state'], slot.get('cause')), ('held', 'launch'))
+        self.assertEqual([e['event'] for e in state.journal.read(self.common)['events']].count('owner_slot'), 0)
+
+    def test_only_one_of_two_paused_attempts_takes_the_reserve(self):
+        self.write_todo(task('A', 'a.txt'), task('B', 'b.txt'), task('E', 'e.txt'))
+        self.git('add', '.')
+        self.commit_if_changed('setup')
+        spec = {'A': {'files': {'a.txt': 'half'}, 'sleep': 0.1, 'commit': False, 'blockers': ['A unit?']},
+                'B': {'files': {'b.txt': 'half'}, 'sleep': 0.1, 'commit': False, 'blockers': ['B unit?']},
+                'E': {'files': {'e.txt': 'half'}, 'sleep': 60, 'commit': False}}
+        self.set_spec(spec)
+        _, both = self.apply('2', '--max-workers', '2')
+        self.assertEqual(sorted(d['task'] for d in both['dispatched']), ['A', 'B'])
+        self.wait_until_idle()
+        self.assertEqual({s['task_id']: (s['state'], s.get('cause')) for s in state.slots(self.common)},
+                         {'A': ('held', 'blocker'), 'B': ('held', 'blocker')})
+        answer = self.root / 'answer.txt'
+        answer.write_text('Go on.')
+        for tid in ('A', 'B'):
+            self.assertEqual(self.run_cli('--parallel-answer', tid, '--answer-file', str(answer),
+                                          worker=False)[1]['outcome'], 'ANSWERED')
+        self.set_spec({**spec, 'A': {'files': {'a.txt': 'done'}, 'sleep': 60, 'commit': False},
+                       'B': {'files': {'b.txt': 'done'}, 'sleep': 60, 'commit': False}})
+        _, occupied = self.apply('1', '--max-workers', '1', '--tasks', 'E')
+        self.assertEqual([d['task'] for d in occupied['dispatched']], ['E'])
+        _, result = self.apply('1', '--max-workers', '1')
+        self.assertEqual([d['task'] for d in result['dispatched']], ['A'])
+        self.assertEqual((result['owner_slot'], result['max_workers'], result['active_workers']), (1, 2, 2))
+        self.assertEqual([w['id'] for w in result['waiting']], ['B'])
+        self.assertIn('the reserved slot is in use', result['waiting'][0]['reason'])
+        self.assertEqual([e['event'] for e in state.journal.read(self.common)['events']].count('owner_slot'), 1)
+
+    def test_the_reserve_is_disabled_at_the_hard_slot_limit(self):
+        self.write_todo(task('A', 'a.txt'), task('E', 'e.txt'))
+        self.git('add', '.')
+        self.commit_if_changed('setup')
+        spec = {'A': {'files': {'a.txt': 'half'}, 'sleep': 0.1, 'commit': False, 'blockers': ['Which unit?']},
+                'E': {'files': {'e.txt': 'half'}, 'sleep': 60, 'commit': False}}
+        self.set_spec(spec)
+        self.apply('1', '--max-workers', '1')
+        self.wait_until_idle()
+        answer = self.root / 'answer.txt'
+        answer.write_text('Go on.')
+        self.run_cli('--parallel-answer', 'A', '--answer-file', str(answer), worker=False)
+        self.set_spec({**spec, 'A': {'files': {'a.txt': 'done'}, 'sleep': 60, 'commit': False}})
+        self.apply('1', '--max-workers', '1', '--tasks', 'E')
+        with patch.object(dispatch, 'HARD_LIMIT', 1):
+            _, result = self.apply('1', '--max-workers', '1')
+        self.assertEqual((result['dispatched'], result['owner_slot'], result['max_workers']), ([], 0, 1))
+        self.assertEqual([w['id'] for w in result['waiting']], ['A'])
 
     def test_the_memory_gate_counts_only_what_one_more_worker_needs(self):
         """TOOLSET-162-d2: running workers' memory is already out of MemAvailable."""

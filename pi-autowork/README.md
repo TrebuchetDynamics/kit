@@ -782,12 +782,14 @@ autowork scorecard --days 30 --baseline /private/baseline.json .
 ### A slot kept for the owner's own continuation
 
 A worker limit does not make a person wait behind the runner's own work. An attempt a person
-paused, restarted or answered already held a slot, so when new autonomous work has filled the
-pool, one such attempt may resume beside it: N+1 workers run until that attempt ends. The
-reserve is one attempt at most, it takes a free normal slot first, fresh work never uses it,
-and the host memory and load gates still apply. That cycle's status reports the larger
-`max_workers` with `configured_max_workers` and `owner_slot` naming the configured limit and
-the one reserved slot.
+paused, restarted or answered — or one the runner paused to resume safely — already held a
+slot, so when new autonomous work has filled the pool, one such attempt may resume beside it:
+N+1 workers run until that attempt ends. The reserve is one attempt at most, it takes a free
+normal slot first, fresh work never uses it, the plan's exclusive, serial, dependency and
+resource checks still apply, and the host memory and load gates still apply. While the
+reserved worker lives, status keeps `max_workers` at N+1 with `owner_slot` 1 and
+`configured_max_workers` at N, so the reported limit never reads below the workers actually
+running; it returns to N when that worker ends.
 
 ### Evaluation report
 
