@@ -86,7 +86,13 @@ export function StatusPill({ state, tone }: { state: string; tone?: Tone }) {
 }
 export function Notice({ children, tone = 'neutral' }: { children: ReactNode; tone?: Tone }) {
   const colors = useColors();
-  return <View style={{ padding: 10, gap: 4, borderLeftWidth: 3, borderLeftColor: toneColor(colors, tone), backgroundColor: colors.surface2, borderRadius: 6 }}>{children}</View>;
+  const color = tone === 'neutral' ? colors.border : toneColor(colors, tone);
+  return <View accessibilityRole="summary" style={{ padding: 10, borderWidth: 1, borderColor: color, backgroundColor: colors.surface2, borderRadius: 8 }}>
+    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+      <Icon name={toneIcon(tone)} size={16} color={tone === 'neutral' ? colors.foregroundMuted : color} />
+      <View style={{ flex: 1, gap: 4 }}>{children}</View>
+    </View>
+  </View>;
 }
 /** The one line a screen leads with: what state matters most and the single next action. */
 export function Banner({ tone, title, body, action, secondary }: { tone: Tone; title: string; body?: string; action?: { label: string; onPress: () => void; disabled?: boolean }; secondary?: { label: string; onPress: () => void } }) {

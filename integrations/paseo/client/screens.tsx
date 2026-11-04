@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
 import { blockedReason, canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, revisionParts, runnerFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
 import { operationsKey, readForHost, rememberOperation, useConfirmedAction, useHostState, useReadBackoff, useWatch, type HostState } from './state';
-import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme } from './ui';
+import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme, useColors } from './ui';
 
 type ViewName = 'fleet' | 'runner' | 'tasks' | 'blockers' | 'planning' | 'scorecard';
 const views: Array<[ViewName, string]> = [['fleet', 'Fleet'], ['runner', 'Runner'], ['tasks', 'Tasks'], ['blockers', 'Blockers'], ['planning', 'Planning'], ['scorecard', 'Scorecard']];
@@ -33,8 +33,8 @@ function HostScreen(props: PluginScreenProps) {
   return <ScrollView ref={scrollRef} style={{ flex: 1, backgroundColor: props.theme.colors.surface0 }} contentContainerStyle={{ padding: props.layout.compact ? 14 : 22, paddingBottom: props.layout.compact ? 128 : 48, gap: 12, maxWidth: 1100, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={fleet.isFetching} enabled={host.enabled} onRefresh={host.refresh} tintColor={props.theme.colors.accent} />}>
     <Row between>
       <View style={{ flexShrink: 1, gap: 2, paddingRight: 56 }}>
-        <Heading>Autowork</Heading>
-        <Caption>{props.host.label} · {checked}</Caption>
+        <Heading>{props.host.label}</Heading>
+        <Caption>Autowork · {checked}</Caption>
       </View>
       <Button label={fleet.isFetching ? 'Refreshing…' : 'Refresh'} compact disabled={!host.enabled || fleet.isFetching} onPress={host.refresh} />
     </Row>
@@ -436,10 +436,12 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
 }
 
 function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; question: boolean; selected: boolean; onOpen: () => void; onAnswer: () => void }) {
+  const colors = useColors();
   const closure = closureBadge(task.closure);
   const blocked = isActionable(task) && !!task.blocked_by;
   const meta = [task.section, task.position ? `position ${task.position}` : null, blocked ? `blocked by ${blockedReason(task.blocked_by!)}` : null].filter(Boolean).join(' · ');
-  return <Card compact tone={question ? 'warning' : undefined}>
+  // A row inside the queue, not a card inside a card.
+  return <View style={{ gap: 6, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
     <Row><Label mono>{task.id}</Label><StatusPill state={question ? 'needs decision' : blocked ? 'blocked' : task.status} tone={blocked ? 'warning' : undefined} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}</Row>
     <Label>{task.title}</Label>
     {meta ? <Caption>{meta}</Caption> : null}
@@ -448,7 +450,7 @@ function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; q
       {question ? <Button label="Answer" compact variant="primary" accessibilityLabel={`Answer task ${task.id}`} onPress={onAnswer} /> : null}
       <Button label={selected ? 'Close' : 'Open'} compact accessibilityLabel={`Open task ${task.id}`} selected={selected} onPress={onOpen} />
     </Row>
-  </Card>;
+  </View>;
 }
 
 /** Decisions lead with the question and the answer action; evidence waits behind a tap. */
