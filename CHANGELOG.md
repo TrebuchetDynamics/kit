@@ -29,6 +29,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- fix(check): make the declared full check provision CPython 3.12 and requirements-test.txt via uv, so `python3 scripts/check.py` runs the documented check on any host. (MAIN-005-5e68ffc0)
 - `autowork remove NAME` now removes the saved service directly instead of re-entering repository startup, so a service whose checkout was renamed or deleted can still be uninstalled. It also removes the matching pause marker; state, worktrees and unmerged sessions stay.
 - A running coordinator re-reads its repository identity before every cycle, merge and push. A
   checkout replaced or marked `core.bare=true` (for example by a consumer test that inherited
