@@ -25,6 +25,7 @@ import store_fixture
 import task_queue
 import task_execution as execution
 import parallel_status as status
+from pi_autowork.engine import provenance
 
 FAKE = SCRIPTS / 'fixtures' / 'fake_worker.py'
 
@@ -1414,6 +1415,116 @@ Path(report).write_text(json.dumps({'task': 'A', 'commit': git('rev-parse', 'HEA
         self.wait_until_idle()  # this unpaused death spends attempt 1 as before
         _, retry = self.apply()
         self.assertEqual([(d['task'], d['attempt']) for d in retry['dispatched']], [('A', 2)])
+
+    def provenance_records(self, task):
+        slot = next(item for item in state.slots(self.common) if item['task_id'] == task)
+        return provenance.read(dispatch.data_dir(self.common, slot) / 'provenance.jsonl')
+
+    def test_a_launch_records_provenance_before_the_worker_starts(self):
+        self.write_todo(task('A', 'a.txt').replace('- Scope: change a.txt.', '- Scope: change a.txt (MARKER-XYZ).'))
+        (self.repo / 'AGENTS.md').write_text('repository instructions\n')
+        self.git('add', '.')
+        self.commit_if_changed('A and AGENTS.md')
+        self.set_spec({'A': {'files': {'a.txt': 'done'}, 'sleep': 60, 'commit': False}})
+        with patch.dict(os.environ, AUTOWORK_TELEMETRY_MODEL='provider/model',
+                        AUTOWORK_TELEMETRY_TOOLSET='abc1234', PI_AUTOWORK_TEST_SECRET='tok-9f3c'):
+            _, result = self.apply('1', '--max-workers', '1')
+        self.assertEqual([d['task'] for d in result['dispatched']], ['A'])
+        records = self.provenance_records('A')
+        self.assertEqual(len(records), 1)
+        record, slot = records[0], state.slots(self.common)[0]
+        data = dispatch.data_dir(self.common, slot)
+        prompt = (data / 'prompt.md').read_bytes()
+        self.assertEqual(record['prompt'], dict(sha256=hashlib.sha256(prompt).hexdigest(), bytes=len(prompt)))
+        self.assertEqual((record['task'], record['attempt']), ('A', 1))
+        self.assertEqual(record['contract_hash'], execution.read(data / 'contract.json')['contract_hash'])
+        self.assertEqual((record['host'], record['model'], record['toolset']),
+                         ('custom', 'provider/model', 'abc1234'))
+        self.assertEqual(record['instructions'][0], dict(
+            path='AGENTS.md', sha256=hashlib.sha256(b'repository instructions\n').hexdigest(), state='present'))
+        self.assertEqual(record['instructions'][1]['state'], 'unavailable')
+        self.assertEqual(record['authorization']['ownership'], 'worker')
+        text = (data / 'provenance.jsonl').read_text()
+        self.assertNotIn('MARKER-XYZ', text)  # the prompt is evidence only as a hash
+        self.assertNotIn('repository instructions', text)  # so are instruction files
+        self.assertNotIn('tok-9f3c', text)  # no environment dump
+        self.assertNotIn('PI_AUTOWORK_TEST_SECRET', text)
+
+    def test_provenance_sanitizes_a_secret_telemetry_value(self):
+        self.write_todo(task('A', 'a.txt'))
+        self.git('add', '.')
+        self.commit_if_changed('A')
+        self.set_spec({'A': {'files': {'a.txt': 'done'}, 'sleep': 60, 'commit': False}})
+        with patch.dict(os.environ, AUTOWORK_TELEMETRY_MODEL='/private/sk-secret',
+                        AUTOWORK_TELEMETRY_TOOLSET='sk-toolset'):
+            self.apply('1', '--max-workers', '1')
+        record = self.provenance_records('A')[0]
+        self.assertEqual((record['model'], record['toolset']), ('unknown', 'unknown'))
+        text = (dispatch.data_dir(self.common, state.slots(self.common)[0]) / 'provenance.jsonl').read_text()
+        self.assertNotIn('sk-secret', text)
+        self.assertNotIn('/private', text)
+
+    def test_a_provenance_capture_failure_never_blocks_or_consumes_a_launch(self):
+        self.write_todo(task('A', 'a.txt'))
+        self.git('add', '.')
+        self.commit_if_changed('A')
+        self.set_spec({'A': {'files': {'a.txt': 'done'}, 'sleep': 60, 'commit': False}})
+        with patch.object(provenance, 'capture', side_effect=OSError('unwritable')):
+            _, result = self.apply('1', '--max-workers', '1')
+        self.assertEqual([d['task'] for d in result['dispatched']], ['A'])
+        self.assertEqual(state.slots(self.common)[0]['attempt'], 1)
+        self.assertFalse((dispatch.data_dir(self.common, state.slots(self.common)[0])
+                          / 'provenance.jsonl').exists())
+    def test_missing_provenance_metadata_is_null_and_does_not_block(self):
+        self.write_todo(task('A', 'a.txt'))
+        self.git('add', '.')
+        self.commit_if_changed('A')
+        self.set_spec({'A': {'files': {'a.txt': 'done'}, 'sleep': 60, 'commit': False}})
+        with patch.dict(os.environ, AUTOWORK_TELEMETRY_MODEL='', AUTOWORK_TELEMETRY_TOOLSET=''):
+            _, result = self.apply('1', '--max-workers', '1')
+        self.assertEqual([d['task'] for d in result['dispatched']], ['A'])
+        record = self.provenance_records('A')[0]
+        self.assertEqual((record['model'], record['toolset']), (None, None))
+
+    def test_a_resume_appends_provenance_and_keeps_the_first_record(self):
+        self.write_todo(task('A', 'a.txt'))
+        self.git('add', '.')
+        self.commit_if_changed('A')
+        spec = {'A': {'files': {'a.txt': 'half'}, 'sleep': 0.1, 'commit': False, 'blockers': ['Which unit?']}}
+        self.set_spec(spec)
+        with patch.dict(os.environ, AUTOWORK_TELEMETRY_TOOLSET=''):
+            self.apply('1', '--max-workers', '1')
+        self.wait_until_idle()
+        answer = self.root / 'answer.txt'
+        answer.write_text('Use metres.')
+        self.run_cli('--parallel-answer', 'A', '--answer-file', str(answer), worker=False)
+        self.set_spec({**spec, 'A': {'files': {'a.txt': 'done'}, 'sleep': 60, 'commit': False}})
+        data = dispatch.data_dir(self.common, state.slots(self.common)[0])
+        first = (data / 'provenance.jsonl').read_bytes()
+        with patch.dict(os.environ, AUTOWORK_TELEMETRY_TOOLSET='second'):
+            _, resumed = self.apply('1', '--max-workers', '1')
+        self.assertEqual([d['task'] for d in resumed['dispatched']], ['A'])
+        records = self.provenance_records('A')
+        self.assertEqual([(r['attempt'], r['toolset']) for r in records], [(1, None), (1, 'second')])
+        self.assertNotEqual(records[0]['prompt']['sha256'], records[1]['prompt']['sha256'])
+        self.assertTrue((data / 'provenance.jsonl').read_bytes().startswith(first))
+
+    def test_a_retry_records_provenance_under_its_own_attempt(self):
+        self.write_todo(task('A', 'a.txt'))
+        self.git('add', '.')
+        self.commit_if_changed('A')
+        self.set_spec({'A': {'files': {'a.txt': 'partial'}, 'sleep': 0.1, 'commit': False, 'exit': 1}})
+        self.apply('1', '--max-workers', '1')
+        self.wait_until_idle()
+        self.assertEqual([r['attempt'] for r in self.provenance_records('A')], [1])
+        attempt1 = (self.common / 'slot-data' / 'A' / 'attempt-1' / 'provenance.jsonl').read_bytes()
+        self.set_spec({'A': {'files': {'a.txt': 'done'}, 'sleep': 60, 'commit': False}})
+        with patch.dict(os.environ, AUTOWORK_TELEMETRY_TOOLSET='second'):
+            self.apply('1', '--max-workers', '1')
+        self.assertEqual(state.slots(self.common)[0]['attempt'], 2)
+        self.assertEqual([(r['attempt'], r['toolset']) for r in self.provenance_records('A')], [(2, 'second')])
+        self.assertEqual((self.common / 'slot-data' / 'A' / 'attempt-1' / 'provenance.jsonl').read_bytes(),
+                         attempt1)
 
     def test_one_paused_attempt_resumes_beside_a_full_pool_without_a_second_reserve(self):
         """An owner's answer already held a slot; new autonomous work must not displace it.

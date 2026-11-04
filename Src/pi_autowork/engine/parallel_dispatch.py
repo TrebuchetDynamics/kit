@@ -24,6 +24,7 @@ from pi_autowork.engine import closed_requeue
 from pi_autowork.engine import task_queue
 from pi_autowork.engine import parallel_state as state
 from pi_autowork.engine import task_execution as execution
+from pi_autowork.engine import provenance
 from pi_autowork.engine.worktree_paths import worktree_path
 from pi_autowork.common import ponytail_prompt
 
@@ -1083,6 +1084,39 @@ def dispatch(args):
         return dispatch_locked(args, repo, common, count, template, host)
 
 
+def capture_provenance(common, data, task, slot, *, prompt, worktree, host, model):
+    """Append this launch's provenance record. Evidence only: it never changes a launch.
+
+    A failure (unwritable or symlinked path, unreadable prompt, bad env value) is swallowed:
+    the absence of the file is the signal, and evidence must not abort a dispatch pass or
+    consume an attempt. Values are captured now; nothing is inferred after the run.
+    """
+    fields = task.get('fields', {})
+    # A missing value stays null; a present one is sanitized by the same label rule the slot
+    # and journal use, so an exported credential or private path never becomes durable evidence.
+    def label(value, *, sentinel=False):
+        value = str(value or '').strip()
+        if not value or (sentinel and value == 'unknown'):
+            return None  # the slot's own sentinel is not an observed identity
+        return state.journal.label(value)
+    try:
+        record = provenance.manifest(
+            task=task.get('id'), attempt=int(slot.get('attempt') or 1), attempt_id=slot.get('attempt_id'),
+            contract_hash=task.get('contract_hash'), record_revision=task.get('record_revision'),
+            rev=task.get('rev'), worktree_revision=execution.git(worktree, 'rev-parse', 'HEAD'),
+            toolset=label(os.environ.get('AUTOWORK_TELEMETRY_TOOLSET')),
+            host=label(host) or label(slot.get('host'), sentinel=True),
+            model=label(model) or label(slot.get('model'), sentinel=True),
+            prompt=Path(prompt).read_bytes(),
+            instructions=provenance.instructions_from(worktree),
+            ownership=fields.get('Ownership', 'worker'), live=fields.get('Live authorization', ''),
+            live_actor=fields.get('Live actor'), live_at=fields.get('Live at'),
+            live_scope=[item.strip() for item in str(fields.get('Live scope') or '').split(',') if item.strip()])
+        provenance.capture(data / 'provenance.jsonl', record)
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        pass
+
+
 def dispatch_locked(args, repo, common, count, template, host):
     task_queue.store(repo)  # Refuse before reconciliation can change a held/reported slot.
     timeouts = enforce_timeouts(repo, args.owner_pid, common, args.worker_timeout)
@@ -1199,9 +1233,14 @@ def dispatch_locked(args, repo, common, count, template, host):
         if previous:
             state.transition(repo, args.owner_pid, task['id'], 'dispatched', worktree=str(worktree),
                              branch=branch, baseline=base)
+            slot = next(s for s in state.slots(common) if s['task_id'] == task['id'])
         execution.save(data / 'meta.json', {'slot_index': index, 'command': argv, 'host': host,
                                             'prompt_file': str(prompt_file), 'report_file': str(report),
                                             'worker_timeout': args.worker_timeout})
+        # Evidence of what shaped this launch, captured before the worker starts. It describes
+        # the attempt; nothing reads it to decide or authorize anything.
+        capture_provenance(common, data, task, slot, prompt=prompt_file, worktree=worktree, host=host,
+                           model=os.environ.get('AUTOWORK_TELEMETRY_MODEL'))
         try:
             worker = launch(argv, worktree, data, index, prompt_file)
         except (OSError, ValueError) as exc:

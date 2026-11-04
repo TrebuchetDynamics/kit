@@ -3732,7 +3732,8 @@ class Coordinator:
         if not self.draining or resumes:
             # Workers leave the full check to the gate the runner runs on the merged tree (TOOLSET-227-a8).
             os.environ['AUTOWORK_RUNNER_FULL_CHECK'] = main_check.full_check(self.integ) if self.integ else ''
-            os.environ.update(AUTOWORK_TELEMETRY_HOST='pi', AUTOWORK_TELEMETRY_MODEL=chosen)
+            os.environ.update(AUTOWORK_TELEMETRY_HOST='pi', AUTOWORK_TELEMETRY_MODEL=chosen,
+                              AUTOWORK_TELEMETRY_TOOLSET=self.toolset_rev)
             result = self.engine('--apply', '--parallel', str(self.workers), '--max-workers', '16',
                                  '--worker-command', self.worker_command, '--worker-timeout', self.task_timeout,
                                  '--min-free-mem-mb', self.min_free_mb,

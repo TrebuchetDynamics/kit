@@ -7,6 +7,18 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Added
 
+- Each worker launch records an immutable attempt provenance file
+  (`slot-data/<task>/attempt-N/provenance.jsonl`): task, attempt and attempt id, contract hash
+  and record revision, the worktree revision the worker reads, resolved toolset revision,
+  host and model, prompt SHA-256 and byte length, instruction-file hashes as that worktree
+  has them, and the attempt's descriptive authority. Every launch of an attempt records one
+  line, including a fresh retry of a held attempt; records are append-only and captured
+  before the worker starts; unavailable values are `null` and are never inferred later. A
+  capture failure is recorded by its absence and never blocks or consumes a launch, and the
+  environment identities are sanitized by the same label rule the slot and journal use. No prompt text, instruction text, environment or
+  credential is stored, and nothing reads the file to decide or authorize anything. Source:
+  `Src/pi_autowork/engine/provenance.py`, `Src/pi_autowork/engine/parallel_dispatch.py`,
+  `pi-autowork/engine/test_provenance.py`.
 - `scripts/pre_push_check.py`: a pre-push hook (`--install`) that runs only the tests the push
   can affect, from the sha the remote already has; `KIT_PRE_PUSH=0` or `--no-verify` leaves a
   push to CI, which runs the whole suite. The hook runs the tests without the variables Git

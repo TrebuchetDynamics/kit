@@ -35,6 +35,7 @@ release until a supported reload or restart selects a committed replacement.
 | `pi_autowork/engine/task_store.py` | Read-only, pinned-commit TaskStore used by the engine and committed fleet inventory; [schema and API](task-store.md) |
 | `pi_autowork/engine/parallel_integrate.py` | Integration and closure transaction authority, locks, replay and cleanup; compatibility facades compose changelog proposals after document preparation |
 | `pi_autowork/engine/integration/closure_documents.py` | Read-only task, receipt and live-followup preparation returning `{path: text}`; frozen `ClosurePorts` binds current `git`, `passed`, `task_path` and `live_items` callables per facade call |
+| `pi_autowork/engine/provenance.py` | Append-only attempt evidence: toolset, host, model, contract, prompt and instruction hashes, and the attempt's descriptive authority, captured before launch; never read to decide or authorize anything |
 | `pi_autowork/cli.py` | Options, repository and toolset resolution (one release per run), `--status`, `--dry-run`, `--fleet`, `--set-aside`, the runner lock |
 | `pi_autowork/coordinator.py` | The loop: engine lease owner, session branch and final merge, settle and close, requests, priority drift, Touches proposals and widening, health, self-update and restart, graceful stop |
 | `pi_autowork/supervision/main_checks.py` | Main-check supervision behind unchanged Coordinator methods; stateless helpers use the owner's phase callbacks and current Git/planning predicates. Coordinator retains policy, state, port leases and regression mutation. Child checks use Layout's public entrypoint. |
@@ -578,6 +579,24 @@ When a task runs fresh after set-aside, its prompt lists earlier task branches
 and any retained set-aside worktrees with their uncommitted paths. These files
 are not restored automatically: inspect them and reuse only work relevant to the
 current task, without modifying the retained worktree.
+
+### Attempt provenance
+
+Each launch appends one record to `slot-data/<task>/attempt-N/provenance.jsonl`
+before the worker starts: the task, attempt and attempt id, contract hash and
+record revision, the worktree revision the worker reads, the resolved toolset
+revision, host and model, the prompt's SHA-256 and byte length, the SHA-256 of
+the repository instruction files as that worktree has them (`AGENTS.md`,
+`CLAUDE.md`; absent ones are named `unavailable`, not guessed), and the
+attempt's descriptive authority (ownership and live-grant identity). Records are
+append-only: a resume adds a record for the same attempt with its new prompt
+hash, a retry writes under its own attempt directory, and no earlier byte is
+rewritten. A missing identity is `null` and is never inferred after the run; a
+record marks a prepared launch, while the slot and journal record whether the
+worker then started. The prompt text, instruction text, environment
+and credentials are not stored. This file is evidence, not a grant: admission,
+authorization, integration and closure never import or read it, so a recorded
+profile cannot widen what an attempt may do.
 
 ## Nous Portal setup (opt-in)
 
