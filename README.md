@@ -211,9 +211,9 @@ autowork status india         # one repository's tasks, workers and what blocks 
   limit admission. An empty queue waits without a model call rather than inventing work.
 - **Evidence before closure.** Worker commits and reports are claims; project checks and
   a separate review gate integration and closure.
-- **Local delivery is automatic, push is opt-in.** Each closed task merges into
-  `main`/`master`. Publishing needs an explicit `PI_AUTOWORK_PUSH=1` grant; workers never
-  push. What cannot land is reported as `Merge pending`.
+- **Local delivery and publication are automatic.** Each closed task merges into
+  `main`/`master` and is published to its upstream by default; set `PI_AUTOWORK_PUSH=0` to
+  keep main local. Workers never push. What cannot land is reported as `Merge pending`.
 - **Configure checks and limits before unattended use.** The runner defaults to the
   SDK-backed Pi RPC transport; see [RPC setup](docs/pi-rpc.md).
 
