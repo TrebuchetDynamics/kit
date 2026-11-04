@@ -523,8 +523,9 @@ a consumer's touched-project command, time bound, model execution or live hardwa
 
 Manual closure is available for implementation, plan and inspection tasks, but writes no
 receipt or passing-check claim. It alone qualifies neither a goal nor a prerequisite
-explicitly listed in `verified_depends_on`. An authorized owner can record
-`owner_waiver` or `owner_qualification` through `tasks field`; a met-goal write names
+explicitly listed in `verified_depends_on`. An authorized owner records a structured
+waiver through `tasks field`: `owner_waiver` or `owner_qualification`, plus `waiver_actor`,
+`waiver_at` and `waiver_for` naming one Acceptance or Checks item; a met-goal write names
 these exceptions. See [closure provenance and owner qualification](task-store.md#writing-and-autowork-tasks).
 
 Skills leave tasks active by default. Only an explicit user request permits a

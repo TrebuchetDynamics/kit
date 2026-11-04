@@ -106,6 +106,15 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Fixed
 
+- A live grant and an owner waiver are structured, attributed and bound to their scope.
+  `live = "authorized"` dispatches only with `live_actor`, `live_at` and a `live_scope`
+  that covers every declared `live`/`exclusive` resource and names nothing undeclared;
+  `owner_waiver`/`owner_qualification` qualifies a verified dependency only with
+  `waiver_actor`, `waiver_at` and `waiver_for` naming one Acceptance or Checks item.
+  A legacy or migrated prose grant or waiver stays readable but neither dispatches nor
+  qualifies, and a worker edit under `tasks/` or a merge can never add either. Source:
+  `Src/pi_autowork/engine/task_store.py`, `task_queue.py`, `parallel_plan.py`,
+  `Src/pi_autowork/task_commands.py`, `pi-autowork/task-store.md`.
 - The owner's questions file is replaced atomically. The coordinator writes `BLOCKERS.md`
   through a sibling file plus `os.replace`, then commits exactly the bytes it wrote; an
   interrupted replacement leaves the previous file, and a commit that failed after a

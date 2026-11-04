@@ -53,12 +53,36 @@ Task fields:
 | `depends_on`, `touches`, `resources`, `acceptance`, `checks`, `exclusions` | Arrays of nonempty strings |
 | `kind` | `"implementation"`, `"plan"`, `"inspection"`, `"unknown"` |
 | `ownership` | `"worker"`, `"coordinator"`, `"owner"`, `"unknown"` |
-| `live` | `"denied"`, `"authorized"`; defaults to denied |
+| `live` | `"denied"`, `"authorized"`; defaults to denied. An authorized record also needs the three grant fields below to dispatch |
+| `live_actor`, `live_at`, `live_scope` | The structured grant: who authorized it, the `YYYY-MM-DD` date, and the resources or Touches path prefixes it covers |
 | `verified_depends_on` | Optional array of prerequisite IDs; must be a subset of `depends_on` |
 | `closure` | Optional `"manual"` or `"coordinator_verified"`, written by the closing path |
 | `closure_actor`, `closure_timestamp`, `closure_reason` | Nonempty strings required for manual closure; UTC ISO timestamp |
 | `closure_evidence` | Optional evidence reference for manual closure; receipt path for verified closure |
-| `owner_waiver`, `owner_qualification` | Optional nonempty owner records explaining the exact waived criterion or qualification and its authority/evidence |
+| `owner_waiver`, `owner_qualification` | Optional nonempty owner attestation for one named criterion; qualifies only with `waiver_actor`, `waiver_at` and `waiver_for` |
+| `waiver_actor`, `waiver_at`, `waiver_for` | The structured waiver: who attested it, the `YYYY-MM-DD` date, and the Acceptance or Checks item it covers |
+
+A live grant is structured. `live = "authorized"` is only the typed bit; the runner also
+requires `live_actor`, `live_at` (`YYYY-MM-DD`) and a nonempty `live_scope`. Scope items are
+declared resource tokens or Touches path prefixes; every declared `live` or `exclusive`
+resource must be covered, and an undeclared item is refused. A grant field on a record whose
+`live` is not `"authorized"` is refused, as is a complete grant that names foreign scope or
+misses a declared live/exclusive resource. A legacy or migrated grant without the three
+companions stays valid history but never dispatches: the task waits with
+`grant lacks live_actor, live_at, live_scope`, and the owner completes it with
+`autowork tasks field`.
+
+An owner waiver is structured the same way. `owner_waiver` or `owner_qualification` needs
+`waiver_actor`, `waiver_at` (`YYYY-MM-DD`) and `waiver_for` naming one of the task's own
+Acceptance or Checks items. A legacy free-text waiver stays readable but qualifies nothing:
+`record.qualified` is false, so a dependent that lists the task in `verified_depends_on`
+keeps waiting. A complete waiver whose `waiver_for` is not a listed criterion is refused.
+Incremental `field` writes are allowed; the task simply waits until the grant or waiver is
+complete.
+
+Neither authority is derived from a worker report, a commit message, a body note or a merge:
+only the owner's task-store write sets them, a worker's edit under `tasks/` is held, and a
+merge value must come from one of its parents.
 
 The closure fields and `verified_depends_on` are optional. All other fields except
 `live` are needed for a complete task contract. Missing fields
@@ -148,8 +172,9 @@ remains an object. Every row and every why result (including unknown IDs) adds a
   again after cleanup. `why` has no `--worktree` option.
 
 A dependency in `verified_depends_on` additionally needs a done prerequisite with an
-explicit coordinator-verified closure and a matching passing receipt, or a recorded
-`owner_waiver`/`owner_qualification`. Otherwise `why` returns `DEPENDENCY_UNVERIFIED`.
+explicit coordinator-verified closure and a matching passing receipt, or a complete
+structured `owner_waiver`/`owner_qualification` naming one of that prerequisite's criteria.
+Otherwise `why` returns `DEPENDENCY_UNVERIFIED`.
 This applies to named dispatch, sequential execution and task-wait retries too. Ordinary
 `depends_on` still accepts any done prerequisite. A superseded prerequisite satisfies neither.
 
@@ -263,8 +288,9 @@ command as `x` Delete, including in the Closed view.
 `goal` adds a goal or changes its fields, needs `--evidence` for `--status met`, and moves
 focus from any other goal. Meeting a goal also requires every non-superseded owned task
 to be done and qualified. Manual closure alone is not qualification. With owner authority,
-record an exception using `field ID owner_waiver "WHO DATE: exact criterion, reason, risk"`
-or `field ID owner_qualification "WHO DATE: qualification and evidence reference"`.
+record an exception as four structured fields: `field ID owner_waiver "exact criterion,
+reason, risk"` (or `owner_qualification`), then `field ID waiver_actor WHO`,
+`field ID waiver_at YYYY-MM-DD` and `field ID waiver_for "the Acceptance or Checks item"`.
 These are explicit owner attestations, not inferred authority from a body note or a
 worker report. A met-goal write names each used exception in its output and Evidence
 note. The task remains Manual and never acquires a receipt from this exception.

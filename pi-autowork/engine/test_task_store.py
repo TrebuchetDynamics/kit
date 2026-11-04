@@ -9,7 +9,7 @@ import tempfile
 import unittest
 import unittest.mock
 
-from task_store import TaskStore, StoreError, Kind, Ownership, LiveAuthorization
+from task_store import TaskStore, StoreError, Kind, Ownership, LiveAuthorization, edit
 
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'task_store'
@@ -209,6 +209,46 @@ class TaskStoreTests(unittest.TestCase):
         self.assertTrue(task.draft)
         self.assertIn('acceptance', task.missing_fields)
         self.assertFalse(task.runnable)
+
+
+    def test_a_live_grant_is_attributed_and_bound_to_its_declared_scope(self):
+        base = self.original.replace('resources = []', 'resources = ["live"]')
+        task = self.load_edit(edit(base, {'live': 'authorized', 'live_actor': 'owner',
+                                          'live_at': '2026-11-04', 'live_scope': ['live']}))
+        self.assertEqual((task.live, task.live_actor, task.live_at, task.live_scope),
+                         (LiveAuthorization.AUTHORIZED, 'owner', '2026-11-04', ('live',)))
+        with self.assertRaisesRegex(StoreError, 'live grant fields require live'):
+            self.load_edit(edit(base, {'live_actor': 'owner'}))
+        for changes, message in (
+                ({'live': 'authorized', 'live_actor': 'owner', 'live_at': '2026-02-30',
+                  'live_scope': ['live']}, 'live_at must be a YYYY-MM-DD date'),
+                ({'live': 'authorized', 'live_actor': 'owner', 'live_at': '2026-11-04',
+                  'live_scope': ['network']}, 'grant names undeclared scope network'),
+                ({'live': 'authorized', 'live_actor': 'owner', 'live_at': '2026-11-04',
+                  'live_scope': ['src/']}, 'grant does not cover resource live')):
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(StoreError, message):
+                    self.load_edit(edit(base, changes))
+        # An incomplete grant stays valid history; the admission gate names what is missing.
+        partial = self.load_edit(edit(base, {'live': 'authorized', 'live_actor': 'owner'}))
+        self.assertEqual((partial.live, partial.live_at, partial.live_scope),
+                         (LiveAuthorization.AUTHORIZED, None, ()))
+
+    def test_a_waiver_qualifies_only_with_an_actor_date_and_named_criterion(self):
+        closed = {'status': 'done', 'closure': 'manual', 'closure_actor': 'owner',
+                  'closure_timestamp': '2026-11-04T00:00:00Z', 'closure_reason': 'kept'}
+        legacy = self.load_edit(edit(self.original, {**closed, 'owner_waiver': 'free text'}))
+        self.assertEqual((legacy.owner_waiver, legacy.qualified), ('free text', False))
+        complete = self.load_edit(edit(self.original, {**closed, 'owner_waiver': 'waived',
+                                                       'waiver_actor': 'owner', 'waiver_at': '2026-11-04',
+                                                       'waiver_for': 'Pinned reads'}))
+        self.assertTrue(complete.qualified)
+        with self.assertRaisesRegex(StoreError, 'waiver_for must name one of'):
+            self.load_edit(edit(self.original, {**closed, 'owner_waiver': 'waived',
+                                                'waiver_actor': 'owner', 'waiver_at': '2026-11-04',
+                                                'waiver_for': 'not a criterion'}))
+        with self.assertRaisesRegex(StoreError, 'waiver fields require owner_waiver'):
+            self.load_edit(edit(self.original, {'waiver_actor': 'owner'}))
 
 
 if __name__ == '__main__':

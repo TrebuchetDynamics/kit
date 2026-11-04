@@ -1877,7 +1877,10 @@ finally:
         """Supervisor review: a worker may not grant itself or another task authority."""
         module = self.module()
         record = self.task_text('B').replace('resources = []', 'resources = ["live"]').replace(
-            'kind = "implementation"', 'kind = "implementation"\nlive = "authorized"')
+            'kind = "implementation"',
+            'kind = "implementation"\nlive = "authorized"\nlive_actor = "worker"\n'
+            'live_at = "2026-11-04"\nlive_scope = ["live"]\nowner_waiver = "self-granted"\n'
+            'waiver_actor = "worker"\nwaiver_at = "2026-11-04"\nwaiver_for = "do the work"')
         self.worker('A', {'A.txt': 'worker\n', 'tasks/items/B.md': record})
         result = module.integrate(self.repo, self.owner, 'A', ['true'], 10)
         self.assertEqual((result['outcome'], result['cause'], result['outside']),

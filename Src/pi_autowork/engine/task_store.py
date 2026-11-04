@@ -9,6 +9,7 @@ component's task-store.md for the schema and the precise runnable/hash boundary.
 """
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from datetime import date
 from enum import Enum
 import hashlib
 import json
@@ -91,6 +92,12 @@ class TaskRecord(Record):
     closure_evidence: str | None = None
     owner_waiver: str | None = None
     owner_qualification: str | None = None
+    live_actor: str | None = None
+    live_at: str | None = None
+    live_scope: tuple[str, ...] = ()
+    waiver_actor: str | None = None
+    waiver_at: str | None = None
+    waiver_for: str | None = None
     receipt_valid: bool = False
 
     @property
@@ -99,7 +106,17 @@ class TaskRecord(Record):
 
     @property
     def qualified(self):
-        return self.verified or bool(self.owner_waiver or self.owner_qualification)
+        """Evidence, or a complete owner waiver bound to one of this task's criteria.
+
+        A legacy free-text waiver with no actor, date or criterion qualifies nothing: it is
+        visible in the record, but a dependent task keeps waiting for verified evidence.
+        """
+        if self.verified:
+            return True
+        if not (self.owner_waiver or self.owner_qualification):
+            return False
+        return bool(self.waiver_actor and self.waiver_at and self.waiver_for
+                    and self.waiver_for in (*self.acceptance, *self.checks))
 
     @property
     def closure_info(self):
@@ -132,8 +149,12 @@ class TaskRecord(Record):
 
 
 _TASK_LISTS = ('depends_on', 'touches', 'resources', 'acceptance', 'checks', 'exclusions')
+_GRANT_STRINGS = ('live_actor', 'live_at')
+_GRANT_FIELDS = (*_GRANT_STRINGS, 'live_scope')
+_WAIVER_FIELDS = ('waiver_actor', 'waiver_at', 'waiver_for')
+_AUTHORITY_FIELDS = (*_GRANT_FIELDS, *_WAIVER_FIELDS)
 _CLOSURE_FIELDS = ('closure', 'closure_actor', 'closure_timestamp', 'closure_reason', 'closure_evidence',
-                   'owner_waiver', 'owner_qualification')
+                   'owner_waiver', 'owner_qualification', *_WAIVER_FIELDS)
 # Notes a planner may not invent or release; the task record is the authority owner.
 _PLANNER_NOTE = re.compile(
     r'\s*-?\s*(Evidence|Verified|Held by|Owner (decision|waiver|qualification)|Live authorization)\s*:', re.I)
@@ -255,7 +276,8 @@ class _Document:
 
     def validate(self, goal=False):
         required = _GOAL_REQUIRED if goal else _TASK_REQUIRED
-        allowed = {'schema', *required} | ({'depends_on'} if goal else {'live', 'verified_depends_on', *_CLOSURE_FIELDS})
+        allowed = {'schema', *required} | ({'depends_on'} if goal else
+                                           {'live', 'verified_depends_on', *_CLOSURE_FIELDS, *_AUTHORITY_FIELDS})
         for key in self.data.keys() - allowed:
             self.fail(f'unknown field {key}', key)
         for key in (_GOAL_REQUIRED if goal else _TASK_STRINGS):
@@ -316,6 +338,24 @@ class _Document:
                     enum(self.data[key])
                 except (ValueError, TypeError):
                     self.fail(f'unknown {key} value', key)
+        for key in _GRANT_STRINGS:
+            if key in self.data and (not isinstance(self.data[key], str) or not self.data[key].strip()):
+                self.fail(f'{key} must be a nonempty string', key)
+        for key in ('live_at', 'waiver_at'):
+            if key in self.data:
+                try:
+                    date.fromisoformat(self.data[key])
+                except (TypeError, ValueError):
+                    self.fail(f'{key} must be a YYYY-MM-DD date', key)
+        if 'live_scope' in self.data:
+            scope = self.data['live_scope']
+            if (not isinstance(scope, list) or not scope
+                    or any(not isinstance(v, str) or not _RESOURCE.fullmatch(v) for v in scope)):
+                self.fail('live_scope must be an array of resource tokens or Touches path prefixes', 'live_scope')
+        if problem := authorization_problem(self.data):
+            self.fail(problem, next((key for key in _GRANT_FIELDS if key in self.data), 'live'))
+        if problem := waiver_problem(self.data):
+            self.fail(problem, next((key for key in _WAIVER_FIELDS if key in self.data), 'owner_waiver'))
 
     def record(self, blob, goal=False):
         self.validate(goal)
@@ -334,6 +374,11 @@ class _Document:
             contract['verified_depends_on'] = data['verified_depends_on']
         contract['section_group'] = ('runnable' if data.get('section') in ('Now', 'Next')
                                      else data.get('section'))
+        # Only records that carry a structured grant or waiver change their contract hash; every
+        # pre-existing record keeps the hash its verification receipt pinned.
+        for key in _AUTHORITY_FIELDS:
+            if data.get(key) not in (None, (), []):
+                contract[key] = data[key]
         fields = {key: tuple(data.get(key, ())) for key in _TASK_LISTS}
         fields.update({key: data.get(key) for key in ('status', 'goal', 'section', 'rank')})
         fields.update(short=data.get('short', ''), scope=data.get('scope', ''),
@@ -341,6 +386,8 @@ class _Document:
                       ownership=Ownership(data.get('ownership', 'unknown')),
                       live=LiveAuthorization(data.get('live', 'denied')))
         fields.update({key: data.get(key) for key in _CLOSURE_FIELDS})
+        fields.update({key: data.get(key) for key in _GRANT_STRINGS})
+        fields['live_scope'] = tuple(data.get('live_scope', ()))
         fields['verified_depends_on'] = tuple(data.get('verified_depends_on', ()))
         missing = [key for key in _TASK_REQUIRED if key not in data]
         missing.extend(key for key in ('acceptance', 'checks', 'touches') if key in data and not data[key])
@@ -349,6 +396,64 @@ class _Document:
             missing = [key for key in missing if key in ('id', 'title', 'status')]
         return TaskRecord(**common, **fields, contract_hash=_hash(contract),
                           missing_fields=tuple(missing))
+
+
+def _scope_covers(scope, resources, touches):
+    """Whether each grant scope item is a declared resource or a Touches path prefix."""
+    declared = set(resources)
+    for item in scope:
+        if item in declared:
+            continue
+        prefix = item if item.endswith('/') else item + '/'
+        if not any(path == item or path.startswith(prefix) for path in touches):
+            return item
+    return ''
+
+
+def authorization_problem(data):
+    """Why a live grant is not usable, or ''. Structured, attributed and bound to its scope.
+
+    A legacy or migrated record may still hold ``live = "authorized"`` with no structured
+    grant; it is not refused (the whole store would stop) but it never dispatches: the
+    engine's authorization gate names what is missing. A partial grant, a foreign scope item
+    or an uncovered live/exclusive resource is refused when written.
+    """
+    grant = [key for key in _GRANT_FIELDS if data.get(key) not in (None, (), [])]
+    if not grant:
+        return ''
+    if data.get('live') != 'authorized':
+        return 'live grant fields require live = "authorized"'
+    missing = [key for key in _GRANT_STRINGS if not str(data.get(key) or '').strip()]
+    scope = [str(v).strip() for v in data.get('live_scope') or () if str(v).strip()]
+    if not scope:
+        missing.append('live_scope')
+    if missing:
+        return ''  # an incomplete grant is a gate result, not a refused write; the task waits
+    resources = [str(v) for v in data.get('resources') or ()]
+    touches = [str(v) for v in data.get('touches') or ()]
+    if foreign := _scope_covers(scope, resources, touches):
+        return f'grant names undeclared scope {foreign}'
+    uncovered = [r for r in resources if r in ('live', 'exclusive') and r not in scope]
+    if uncovered:
+        return 'grant does not cover resource ' + ', '.join(uncovered)
+    return ''
+
+
+def waiver_problem(data):
+    """Why an owner waiver is not usable, or ''. Same rule: a partial or scoped-out waiver is refused."""
+    notes = [data.get(key) for key in ('owner_waiver', 'owner_qualification') if data.get(key)]
+    fields = [key for key in _WAIVER_FIELDS if data.get(key) not in (None, ())]
+    if not fields:
+        return ''
+    if not notes:
+        return 'waiver fields require owner_waiver or owner_qualification'
+    missing = [key for key in _WAIVER_FIELDS if not str(data.get(key) or '').strip()]
+    if missing:
+        return ''  # incomplete waivers qualify nothing; the write stays possible
+    criteria = [str(v) for group in ('acceptance', 'checks') for v in (data.get(group) or ())]
+    if data['waiver_for'] not in criteria:
+        return 'waiver_for must name one of the task\'s Acceptance or Checks criteria'
+    return ''
 
 
 def planner_authority(before, after, *, goal=False, path=None):
@@ -376,6 +481,8 @@ def planner_authority(before, after, *, goal=False, path=None):
         if new.data.get('status', 'open') != old_data.get('status', 'open'):
             raise StoreError(f'{path}: planner cannot close, supersede or reopen tasks')
         if new.data.get('live', 'denied') != old_data.get('live', 'denied'):
+            raise StoreError(f'{path}: planner cannot change live authorization')
+        if any(new.data.get(key) != old_data.get(key) for key in _GRANT_FIELDS):
             raise StoreError(f'{path}: planner cannot change live authorization')
         if old_data and new.data.get('ownership', 'unknown') != old_data.get('ownership', 'unknown'):
             raise StoreError(f'{path}: planner cannot change existing ownership')
@@ -509,8 +616,9 @@ class TaskStore:
 # header lines it is asked to change; anything it cannot reproduce is refused, not dropped.
 
 TASK_ORDER = ('schema', 'id', 'title', 'short', 'status', 'goal', 'section', 'rank', 'depends_on',
-              'touches', 'resources', 'kind', 'ownership', 'live', 'scope', 'acceptance', 'checks',
-              'exclusions', 'verified_depends_on', *_CLOSURE_FIELDS)
+              'touches', 'resources', 'kind', 'ownership', 'live', 'live_actor', 'live_at', 'live_scope',
+              'scope', 'acceptance', 'checks', 'exclusions', 'verified_depends_on',
+              'waiver_actor', 'waiver_at', 'waiver_for', *_CLOSURE_FIELDS)
 GOAL_ORDER = ('schema', 'id', 'title', 'priority', 'source', 'status', 'focus', 'depends_on')
 _CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 _STRINGS = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'[^\'\n]*\'')  # TOML one-line strings

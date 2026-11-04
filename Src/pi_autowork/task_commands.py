@@ -37,7 +37,8 @@ OCCUPYING = ('dispatched', 'running', 'reported', 'integrating', 'integrated', '
 ACTIVE = ('dispatched', 'running', 'reported', 'integrating', 'integrated')
 # The fields a task's contract hash covers, plus its goal: what an admitted attempt ran against.
 CONTRACT = ('scope', 'acceptance', 'checks', 'depends_on', 'touches', 'resources', 'kind', 'ownership',
-            'live', 'exclusions', 'goal', 'verified_depends_on')
+            'live', 'live_actor', 'live_at', 'live_scope', 'waiver_actor', 'waiver_at', 'waiver_for',
+            'exclusions', 'goal', 'verified_depends_on')
 
 
 class CommandError(Exception):
@@ -444,6 +445,8 @@ def cmd_show(repo, tid, rev='HEAD', worktree=False):
                 rank=t.rank, depends_on=list(t.depends_on), verified_depends_on=list(t.verified_depends_on),
                 closure=t.closure_info, touches=list(t.touches), resources=list(t.resources),
                 kind=t.kind.value, ownership=t.ownership.value, live=t.live.value, scope=t.scope,
+                live_actor=t.live_actor, live_at=t.live_at, live_scope=list(t.live_scope),
+                waiver_actor=t.waiver_actor, waiver_at=t.waiver_at, waiver_for=t.waiver_for,
                 acceptance=list(t.acceptance), checks=list(t.checks), exclusions=list(t.exclusions),
                 draft=t.draft, missing_fields=list(t.missing_fields), contract_hash=t.contract_hash,
                 record_revision=t.record_revision, path=t.path, rev=store.rev, notes=t.body)
@@ -621,7 +624,8 @@ def cmd_goal(repo, gid, title=None, source=None, priority=None, status=None, foc
 TYPED = {'rank': int, 'depends_on': list, 'touches': list, 'resources': list, 'acceptance': list,
          'checks': list, 'exclusions': list, 'title': str, 'short': str, 'scope': str, 'goal': str,
          'kind': str, 'ownership': str, 'live': str, 'verified_depends_on': list,
-         'owner_waiver': str, 'owner_qualification': str}
+         'owner_waiver': str, 'owner_qualification': str, 'live_actor': str, 'live_at': str,
+         'live_scope': list, 'waiver_actor': str, 'waiver_at': str, 'waiver_for': str}
 
 
 @_serialized
