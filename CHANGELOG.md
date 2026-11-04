@@ -106,6 +106,13 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Fixed
 
+- A push whose remote outcome is unknown no longer ends the runner. `push()` catches a
+  timeout and an I/O error, reports the unknown outcome once, and reconciles the remote refs
+  with a read-only `git ls-remote` before the next ordinary push, so a push that landed while
+  its client timed out reads as published and is not sent again. A deterministic client
+  refusal (authentication, permission, missing repository) stays a known failure with no
+  probe, and `PI_AUTOWORK_PUSH=1` remains the only publication grant.
+  Source: `Src/pi_autowork/coordinator.py`, `tests/test_pi_autowork.py`.
 - The uncommitted-planning runner test no longer flakes: it tolerates the instant in which Git
   replaces `BLOCKERS.md` as the questions commit lands, and each subtest stops its own runner,
   so a failing first subtest cannot pollute the second one's fake-Pi log.

@@ -130,6 +130,14 @@ TRIAGE_PROMPT = (
     'blocks: the line PI_AUTOWORK_TRIAGE: owner and then one line saying what the person must provide, or the '
     'line PI_AUTOWORK_TRIAGE: answer and then the answer for the worker, at most 15 lines.')
 TRIAGE = re.compile(r'^PI_AUTOWORK_TRIAGE:\s*(answer|owner)\s*$', re.M)
+# A push that fails for one of these reasons certainly did not publish: the remote refused the
+# client before accepting the ref. Any other failure (a reset connection, an unexplained exit,
+# a timeout, a killed process) may have landed, so it is reconciled from the remote refs
+# instead of retried blind.
+PUSH_REFUSED = re.compile(
+    r'authentication failed|could not read (?:username|password)|terminal prompts disabled'
+    r'|permission (?:to .* )?denied|not appear to be a git repository|could not resolve host'
+    r'|repository .* does not exist|no such remote|invalid (?:username|credentials)', re.I)
 
 
 def triage_verdict(text):
@@ -1571,13 +1579,13 @@ class Coordinator:
             if self.seen.get('push-note') != 'no grant':
                 self.seen['push-note'] = 'no grant'
                 LOG.say(f'Not pushed: {self.base} stays local (no PI_AUTOWORK_PUSH=1 grant for this repository)')
-            return
+            return 'no-grant'
         upstream = git(self.repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', f'{self.base}@{{u}}')
         if not upstream or '/' not in upstream:
             if self.seen.get('push-note') != 'no upstream':
                 self.seen['push-note'] = 'no upstream'
                 LOG.say(f'Not pushed: {self.base} has no upstream branch')
-            return
+            return 'no-upstream'
         remote, branch = upstream.split('/', 1)
         source = self.base
         if post_merge_barrier.enabled() or optimistic.enabled():
@@ -1585,21 +1593,24 @@ class Coordinator:
             # revision, when that is on main and ahead of the upstream.
             green = main_check.read(self.state).get('green')
             if green and git_ok(self.repo, 'merge-base', '--is-ancestor', green, upstream):
-                return  # the upstream already has main's last green revision; the rest waits for its check
+                return 'already-published'  # the upstream has main's last green revision; the rest waits
             if not green or not git_ok(self.repo, 'merge-base', '--is-ancestor', green, self.base):
                 if self.seen.get('push-note') != 'waiting for green':
                     self.seen['push-note'] = 'waiting for green'
                     LOG.say(f'Not pushed yet: {self.base} has commits main\'s full check has not passed')
-                return
+                return 'waiting-for-green'
             source = green
         env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_CONFIG_')}
-        result = subprocess.run(['git', '-C', str(self.repo), 'push', '--quiet', remote, f'{source}:refs/heads/{branch}'],
-                                capture_output=True, text=True, env=env, timeout=300)
+        argv = ['git', '-C', str(self.repo), 'push', '--quiet', remote, f'{source}:refs/heads/{branch}']
+        try:
+            result = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=300)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return self.push_unknown(remote, branch, source, f'{type(exc).__name__}: {exc}')
         if result.returncode == 0:
             self.seen.pop('push-note', None)
             LOG.say(f'Pushed {self.base} to {upstream}')
             telemetry.observe(self.repo, self.base)
-            return
+            return 'published'
         text = (result.stdout + result.stderr).strip()
         if retry and re.search(r'rejected|non-fast-forward|fetch first', text):
             if git_ok(self.repo, 'fetch', '--quiet', remote, branch) and self.integ \
@@ -1610,9 +1621,50 @@ class Coordinator:
             if self.integ:
                 git(self.integ, 'merge', '--abort')
         note = text.splitlines()[-1] if text else f'exit {result.returncode}'
+        if not PUSH_REFUSED.search(text):
+            return self.push_unknown(remote, branch, source, note)
         if self.seen.get('push-note') != note:
             self.seen['push-note'] = note
             LOG.say(f'Push of {self.base} to {upstream} failed: {note}; the merge stays local and the next merge retries')
+        return 'failed'
+
+    def remote_head(self, remote, branch):
+        """The remote branch's commit, '' when it does not exist, or None when the probe
+        cannot answer. Read-only: it never writes or pushes."""
+        try:
+            result = subprocess.run(['git', '-C', str(self.repo), 'ls-remote', '--heads', remote, branch],
+                                    capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode:
+            return None
+        for line in result.stdout.splitlines():
+            sha, _, name = line.partition('\t')
+            if name.strip() == f'refs/heads/{branch}':
+                return sha.strip()
+        return ''
+
+    def push_unknown(self, remote, branch, source, detail):
+        """Reconcile a push whose remote outcome is unknown from the remote refs.
+
+        A push can land and still report a timeout, a reset connection or a killed process.
+        The remote ref decides: when it already names the revision, publication happened;
+        otherwise this call records the unknown outcome once and returns without another
+        push. The next cycle's ordinary ahead/behind comparison decides whether the same
+        fast-forward is pushed again. A read-only probe that cannot answer stays unknown.
+        """
+        local = git(self.repo, 'rev-parse', '--verify', f'{source}^{{commit}}')
+        head = self.remote_head(remote, branch)
+        if local and head and head == local:
+            self.seen.pop('push-note', None)
+            LOG.say(f'Pushed {self.base} to {remote}/{branch} (the remote already had it)')
+            telemetry.observe(self.repo, self.base)
+            return 'published'
+        if self.seen.get('push-note') != 'unknown':
+            self.seen['push-note'] = 'unknown'
+            LOG.say(f'Push of {self.base} to {remote}/{branch} has an unknown outcome ({detail}); '
+                    'the remote refs are reconciled before the next attempt')
+        return 'unknown'
 
     def merge_waiting(self):
         """While every remaining task waits (on the owner, a dependency or the resource gate)

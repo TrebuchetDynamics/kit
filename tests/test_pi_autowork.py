@@ -4238,5 +4238,124 @@ class ServiceTests(Fixture):
         self.assertEqual(self.run_runner('--install-service', '--dry-run').returncode, 2)
 
 
+class PushOutcomeTests(unittest.TestCase):
+    """A push whose remote outcome is unknown is reconciled from the refs, never retried blind."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='awp-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.origin = self.root / 'origin.git'
+        self.repo = self.root / 'repo'
+        subprocess.run(['git', 'init', '-q', '--bare', str(self.origin)], check=True)
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.repo)], check=True)
+        self.git('config', 'user.email', 'fixture@example.invalid')
+        self.git('config', 'user.name', 'Fixture')
+        (self.repo / 'a.txt').write_text('a\n')
+        self.git('add', 'a.txt')
+        self.git('commit', '-qm', 'base')
+        self.git('remote', 'add', 'origin', str(self.origin))
+        self.git('push', '-q', '-u', 'origin', 'main')
+        sys.path.insert(0, str(ROOT / 'pi-autowork'))
+        from pi_autowork import coordinator
+        self.module = coordinator
+        self.messages = []
+        for target, attr, value in (
+                (coordinator.LOG, 'say', self.messages.append),
+                (coordinator.telemetry, 'observe', lambda *args, **kwargs: None),
+                (coordinator.post_merge_barrier, 'enabled', lambda: False),
+                (coordinator.optimistic, 'enabled', lambda: False),
+                (coordinator.main_check, 'read', lambda state: {})):
+            patcher = patch.object(target, attr, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.real_run = subprocess.run
+        granted = patch.dict(os.environ, PI_AUTOWORK_PUSH='1')
+        granted.start()
+        self.addCleanup(granted.stop)
+
+    def git(self, *argv):
+        return subprocess.run(['git', '-C', str(self.repo), *argv], check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def ahead(self):
+        (self.repo / 'b.txt').write_text('b\n')
+        self.git('add', 'b.txt')
+        self.git('commit', '-qm', 'ahead')
+        return self.git('rev-parse', 'HEAD')
+
+    def push_outcome(self, on_push):
+        """push() with only the push call replaced; the read-only probe and other Git stay real."""
+        calls = []
+
+        def fake_run(argv, *args, **kwargs):
+            if 'push' in argv and 'ls-remote' not in argv:
+                calls.append('push')
+                return on_push(argv, args, kwargs)
+            if 'ls-remote' in argv:
+                calls.append('ls-remote')
+            return self.real_run(argv, *args, **kwargs)
+
+        with patch.object(self.module.subprocess, 'run', fake_run):
+            outcome = self.coordinator().push()
+        return outcome, calls
+
+    def coordinator(self):
+        value = self.module.Coordinator.__new__(self.module.Coordinator)
+        value.repo, value.base, value.integ, value.seen = str(self.repo), 'main', None, {}
+        value.state = self.root / 'state'
+        value.state.mkdir(exist_ok=True)
+        value.ensure_repository = lambda: None
+        return value
+
+    def test_a_push_timeout_records_an_unknown_outcome_and_does_not_retry(self):
+        before = self.git('rev-parse', 'HEAD')
+        head = self.ahead()
+        def timeout(argv, args, kwargs):
+            raise self.module.subprocess.TimeoutExpired(argv, 300)
+        outcome, calls = self.push_outcome(timeout)
+        self.assertEqual((outcome, calls), ('unknown', ['push', 'ls-remote']))
+        self.assertEqual(self.git('rev-parse', 'origin/main'), before)
+        self.assertTrue(any('unknown outcome' in line for line in self.messages), self.messages)
+        self.assertEqual(sum('unknown outcome' in line for line in self.messages), 1)
+        # The next ordinary push publishes the same fast-forward once, never twice.
+        outcome, calls = self.push_outcome(lambda argv, args, kwargs: self.real_run(argv, *args, **kwargs))
+        self.assertEqual(outcome, 'published')
+        self.assertEqual(self.git('rev-parse', 'origin/main'), head)
+
+    def test_a_push_that_landed_before_its_timeout_reads_as_published(self):
+        head = self.ahead()
+        self.git('push', '-q', 'origin', 'main')  # the push landed but the client never heard
+        def timeout(argv, args, kwargs):
+            raise self.module.subprocess.TimeoutExpired(argv, 300)
+        outcome, calls = self.push_outcome(timeout)
+        self.assertEqual((outcome, calls), ('published', ['push', 'ls-remote']))
+        self.assertTrue(any('already had it' in line for line in self.messages), self.messages)
+        self.assertFalse(any('unknown outcome' in line for line in self.messages), self.messages)
+        self.assertEqual(self.git('rev-parse', 'origin/main'), head)
+
+    def test_a_client_refusal_is_a_known_failure_without_a_reconcile_probe(self):
+        self.ahead()
+        def refused(argv, args, kwargs):
+            return subprocess.CompletedProcess(argv, 1, '', 'fatal: Authentication failed for https://example.invalid/')
+        outcome, calls = self.push_outcome(refused)
+        self.assertEqual((outcome, calls), ('failed', ['push']))
+        self.assertTrue(any('failed:' in line for line in self.messages), self.messages)
+
+    def test_an_unexplained_push_failure_is_reconciled_as_unknown(self):
+        self.ahead()
+        def reset(argv, args, kwargs):
+            return subprocess.CompletedProcess(argv, 1, '', 'fatal: the remote end hung up unexpectedly')
+        outcome, calls = self.push_outcome(reset)
+        self.assertEqual((outcome, calls), ('unknown', ['push', 'ls-remote']))
+
+    def test_no_grant_never_probes_or_pushes(self):
+        self.ahead()
+        with patch.dict(os.environ, PI_AUTOWORK_PUSH='0'):
+            outcome, calls = self.push_outcome(lambda argv, args, kwargs: self.fail('no push without a grant'))
+        self.assertEqual((outcome, calls), ('no-grant', []))
+        self.assertTrue(any('no PI_AUTOWORK_PUSH=1 grant' in line for line in self.messages), self.messages)
+
+
 if __name__ == '__main__':
     unittest.main()
