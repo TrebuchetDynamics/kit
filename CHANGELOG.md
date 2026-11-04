@@ -29,6 +29,10 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- A running coordinator re-reads its repository identity before every cycle, merge and push. A
+  checkout replaced or marked `core.bare=true` (for example by a consumer test that inherited
+  `GIT_*`) now stops deliberately with exit 4 ("needs attention") instead of looping under
+  systemd. The startup refusal and `RestartPreventExitStatus` contract are unchanged.
 - `scripts/affected_tests.py` no longer selects the whole suite for a document no test reads,
   and a document reaches at most the tests that read it and the tests of the code that reads
   it (the engine names `CHANGELOG.md` because it edits one in target repositories, which used

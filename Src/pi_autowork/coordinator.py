@@ -1476,6 +1476,7 @@ class Coordinator:
 
     def fast_forward_main(self):
         """Land the already merged session; return the reason main must wait, or ''."""
+        self.ensure_repository()
         current = git(self.repo, 'symbolic-ref', '--short', '-q', 'HEAD')
         if current != self.base:
             return f'{self.repo} is on {current or "a detached HEAD"}, not {self.base}'
@@ -1565,6 +1566,7 @@ class Coordinator:
         it into the session, lands that and pushes once more. Only an explicit
         PI_AUTOWORK_PUSH=1 grant enables publication; saved repository grants are reused.
         """
+        self.ensure_repository()
         if os.environ.get('PI_AUTOWORK_PUSH', '0') != '1':
             if self.seen.get('push-note') != 'no grant':
                 self.seen['push-note'] = 'no grant'
@@ -3523,9 +3525,51 @@ class Coordinator:
         self.pause(self.interval)
         return False
 
+    def repository_problem(self):
+        """Why this runner's repository is no longer the one it started with, or ''.
+
+        A consumer test that inherits GIT_DIR/GIT_WORK_TREE and runs `git init`/`config` can
+        replace the checkout (for example with core.bare=true) while a runner is idle. Re-read
+        the identity without inherited Git routing before every cycle and before a merge or
+        publication, so that becomes a deliberate stop instead of a restart loop.
+        """
+        cfg = getattr(self, 'cfg', None) or {}
+        if not cfg.get('git_common'):
+            return ''  # a unit-test Coordinator without the launcher's identity
+        expected = (os.path.realpath(self.repo), os.path.realpath(cfg['git_common']))
+        current = release.repository_identity(self.repo, clean=True)
+        if current == expected:
+            return ''
+        if current is None:
+            return (f'{self.repo} is no longer a usable Git work tree; it may be missing, '
+                    'replaced, or marked core.bare=true')
+        return f'Repository identity changed for {self.repo}: expected {expected}, found {current}'
+
+    def stop_for_repository(self, problem):
+        """Stop without merging or publishing when the repository changed under us."""
+        self.stop = True
+        self.stop_maintainer()
+        self.stop_integration()
+        try:
+            groups = self.worker_groups()
+        except (OSError, ValueError, KeyError):
+            groups = []
+        for group in groups:
+            try:
+                os.killpg(group, signal.SIGINT)
+            except OSError:
+                pass
+        raise Finish(4, f'Needs attention: {problem}. Stopped before any merge or push.')
+
+    def ensure_repository(self):
+        problem = self.repository_problem()
+        if problem:
+            self.stop_for_repository(problem)
+
     def cycle(self):
         """One pass of the loop: refresh the session, dispatch, read the engine's answer, then
         settle finished work and decide how long to wait."""
+        self.ensure_repository()
         self.plan_seen = self.plan_signature()
         if self.stop:
             self.stop_now()
