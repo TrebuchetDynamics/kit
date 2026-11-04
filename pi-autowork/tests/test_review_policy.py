@@ -1,4 +1,6 @@
 """Selective review exercises committed diffs, never a worker's risk label."""
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -374,6 +376,26 @@ Accepted documentation task.
             self.assertEqual(worker.batch_review(state, 'T-1', str(self.repo),
                                                  {'note': worker.OPTIMISTIC_NOTE}), 1)
             self.assertFalse(json.loads(worker.batch_record(state, 'T-1').read_text())['ok'])
+
+    def test_the_default_reason_names_what_decides_it(self):
+        """A repeated "review is required: review is required" named nothing to act on."""
+        decision = self.decide(env={})
+        self.assertTrue(decision['required'])
+        self.assertIn('PI_AUTOWORK_REVIEW=1', decision['reason'])
+        self.assertIn('auto', decision['reason'])
+        self.assertNotEqual(decision['reason'], 'model review is required')
+
+    def test_an_unchanged_decision_is_stated_once_per_tree(self):
+        state = self.root / 'state'
+        first = io.StringIO()
+        with contextlib.redirect_stderr(first):
+            worker.review_decision(str(state), 'T-1', str(self.repo))
+        second = io.StringIO()
+        with contextlib.redirect_stderr(second):
+            worker.review_decision(str(state), 'T-1', str(self.repo))
+        self.assertIn('model review required for T-1', first.getvalue())
+        self.assertIn('unchanged for tree', second.getvalue())
+        self.assertIn('model review required for T-1', second.getvalue())
 
 
 if __name__ == '__main__':

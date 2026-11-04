@@ -14,8 +14,10 @@ and the Ponytail scope rules take precedence over upstream instructions.
 
 Use the [pinned protocol](upstream/skills/ponytail/PROTOCOL.md) under the shared
 scope rules. No argument reports the current preference; `lite|full|ultra|off`
-sets it for Autowork work in this conversation only. With a task, apply the method
-within that task's authority; selecting a level alone does not start work.
+sets it for Autowork work in this conversation only. For a Pi Autowork runner, pass
+the level as `PI_AUTOWORK_PONYTAIL_LEVEL`; worker and reviewer prompts read it.
+With a task, apply the method within that task's authority; selecting a level alone
+does not start work.
 
 See [help](../ponytail-help/SKILL.md) for the six commands. The optional read-only
 codebase map script is documented in the shared method; do not activate hooks.

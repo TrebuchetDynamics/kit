@@ -5,20 +5,170 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/pre_push_check.py`: a pre-push hook (`--install`) that runs only the tests the push
+  can affect, from the sha the remote already has; `KIT_PRE_PUSH=0` or `--no-verify` leaves a
+  push to CI, which runs the whole suite. The hook runs the tests without the variables Git
+  exports to hooks (`GIT_EDITOR=true` alone failed the planning suite).
+- The Paseo plugin now lives in this repository at `integrations/paseo/` (subtree of the
+  former private `paseo-autowork` repository, history kept) and manages every Autowork
+  operation: every `autowork tasks` verb and goal edits bound to the working-tree record
+  revision, a tasks-only commit after a diff preview, runner start/pause/resume/stop/
+  restart (with stop-workers and now)/remove/update, model with fallback, clear-held and
+  attention, planning mode, task scope and model, plus goal, status, scorecard, model and
+  store reads. Grants come from a daemon-side policy file at
+  `~/.config/paseo-autowork/policy.json` (or `PASEO_AUTOWORK_CONFIG`) with an `all`
+  shorthand; a Settings screen shows them. A long-poll change watch refreshes open views,
+  the sidebar row shows the pending-decision count and settled operations toast.
+  `python3 scripts/check.py` runs the plugin's `npm run check` when its dependencies are
+  installed; `.github/workflows/paseo.yml` runs it in CI.
+- `autowork tasks goals` lists every goal record as JSON and `autowork tasks commit`
+  commits the working tree's `tasks/` edits and nothing else (`--dry-run` shows the paths
+  and diff). `Planner.create` accepts a per-session model.
+
 ### Changed
+
+- `autowork remove NAME` now removes the saved service directly instead of re-entering repository startup, so a service whose checkout was renamed or deleted can still be uninstalled. It also removes the matching pause marker; state, worktrees and unmerged sessions stay.
+- A running coordinator re-reads its repository identity before every cycle, merge and push. A
+  checkout replaced or marked `core.bare=true` (for example by a consumer test that inherited
+  `GIT_*`) now stops deliberately with exit 4 ("needs attention") instead of looping under
+  systemd. The startup refusal and `RestartPreventExitStatus` contract are unchanged.
+- The runner keeps one worker slot for the owner's own continuation. An attempt a person
+  paused, restarted or answered may resume beside a full pool (N+1 workers) instead of
+  waiting for fresh autonomous work to finish; one attempt at most, after a free normal
+  slot, with the host memory/load gates unchanged. `--parallel-status` adds
+  `configured_max_workers` and `owner_slot` beside the cycle's effective `max_workers`,
+  and the journal records one `owner_slot` event per use.
+- `scripts/affected_tests.py` no longer selects the whole suite for a document no test reads,
+  and a document reaches at most the tests that read it and the tests of the code that reads
+  it (the engine names `CHANGELOG.md` because it edits one in target repositories, which used
+  to pull in every importer): a changelog line selects 38 modules instead of 144, a testing
+  doc none. The pre-push hook now runs the core contracts (docs check, task-store validation)
+  before the affected tests, so documents stay covered.
+- `autowork ls` (and every fleet lookup behind the TUI and the Paseo plugin) no longer runs
+  the legacy-reference inventory of a converted task store, which read every tracked file and
+  ran `git grep` over each repository: 6.2 s became 1.6 s for eleven repositories. The full
+  inventory stays in `autowork tasks prepare` and in the lookup of a legacy or pending store.
+  Runners are observed in parallel threads (`PI_AUTOWORK_FLEET_JOBS`, default 8; 1 keeps the
+  old order), which helps on an idle host; under a saturated host the gain is small.
+- `scripts/check.py --exclude PATH` leaves modules out of a selection and `--shard I/N`
+  splits a selection across machines by test id. The `test` workflow runs as two jobs: `fast`
+  (every module but `tests/test_pi_autowork.py`) and `runner` (that module in three shards).
+- The Paseo plugin's screens pass a five-second test instead of dumping state: one banner per screen
+  with the single next action, a host-wide blocker said once, colour by meaning with an icon and the
+  word (green only for live or verified states, grey for *not running*), short hashes with copy,
+  relative times, owner Markdown rendered as words, unknown fields omitted, fleet rows sorted by
+  urgency with Open/Answer/More, a task queue that hides completed work and keeps filters behind one
+  button, decisions that lead with the question and **Answer**, plain control names (Start, Pause…)
+  with Remove and Update in a danger zone that asks for the repository name, a searchable model
+  picker, and bottom clearance for the navigation bar (plugin 0.3.0).
+- `/lgtm` is now a low-effort yes skill. It accepts the latest assistant
+  recommendation, including every recommended answer in a question round, and
+  continues the proposed work. It no longer replies "LGTM is not plan approval" or
+  asks for a second `confirmed` when a recommendation exists. It takes the safe
+  reversible default before asking, acts before narrating, and asks only when
+  materially different outcomes have no recommendation and no safe default fits the
+  stated goal.
+
+- The engineering pack is now a **reference**, not a callable skill: `/engineering`
+  and `/skill:engineering` are no longer registered in Hermes, Pi, Claude Code or
+  Codex, and the Telegram menu no longer advertises it. `skills/engineering/SKILL.md`
+  became `REFERENCE.md`; autowork, Docs Sync, Autoresearch and Plan With Me read it
+  or its selected protocol directly. The plugin still installs the reference files
+  beside the skills so their links resolve. An existing profile copy is migrated by
+  removing only its `SKILL.md` and keeping the protocols, provenance and support
+  files. No command or skill entry means no direct invocation.
+
+- `./install.sh` installs from the published Git source even when Claude Code's
+  marketplace is registered from a folder this host does not have (a moved or renamed
+  checkout, or settings carried from another machine): that stale `directory`
+  registration is dropped and re-added, instead of failing
+  `claude plugin marketplace update` with ENOENT and stopping the component. A
+  registration whose folder exists is still used as the owner's choice.
+
+- The router is renamed to **`ask-kit`**, matching the toolset it maps: `/ask-kit`
+  in Hermes and Pi, `/kit:ask-kit` in Claude Code, `$kit:ask-kit` in Codex. It still
+  names one command per situation and grants no authority; the rename is a move, not
+  a behaviour change.
+
+- The repository is renamed to **`TrebuchetDynamics/kit`**. GitHub redirects the old
+  `autowork` URLs, and every live reference in this repository, the installers, the Pi
+  package source and the documentation now names `kit`. Historical records
+  (`CHANGELOG`, `docs/research`, `docs/plans`, `TODO.archive.md`) keep the old URL on
+  purpose, because they describe what was true then.
 
 - The toolset is now named **Kit**, with **Autowork** kept as the runner and its
   command-line name. The plugin, its command namespace and its settings key follow:
   `/kit:plan-with-me`, `$kit:…`, `kit:…` in `skill_view`, and `plugins.entries.kit`.
   A profile configured under `plugins.entries.autowork` keeps its approvals mode, menu
   priority and opt-out for one release, and a native install that landed under
-  `plugins/kit` is recognized instead of being duplicated. The updater still accepts a
+  `plugins/kit` is recognized instead of being duplicated. Installation stays on the
+  Git source; nothing is published to npm, so `@trebuchet/kit` is local metadata only. The updater still accepts a
   checkout whose manifest says `autowork`, so an older release can be recovered. The
   installed plugin directory, the `# autowork:` script marker, the `pi-autowork:`
   markers in `BLOCKERS.md`, the runner CLI, its skill and its state directory are
   unchanged.
 
+### Fixed
+
+- The reserved owner slot reports capacity honestly. `max_workers` never reads below the
+  workers actually running, so a granted reserve stays visible with `owner_slot` 1 while its
+  worker lives and `--parallel-status` cannot print `2/1 active`; the `owner_slot` journal
+  event is written under the writer lock, and a second paused attempt's wait says the reserved
+  slot is in use. Offline tests now cover the admission constraints the reserve must not
+  bypass: an exclusive holder, a serial holder, a free normal slot first, a memory-gate
+  refusal, a launch failure, two paused attempts, and the hard slot limit. Source:
+  `Src/pi_autowork/engine/parallel_dispatch.py`, `pi-autowork/engine/test_parallel_dispatch.py`.
+- A live grant and an owner waiver are structured, attributed and bound to their scope.
+  `live = "authorized"` dispatches only with `live_actor`, `live_at` and a `live_scope`
+  that covers every declared `live`/`exclusive` resource and names nothing undeclared;
+  `owner_waiver`/`owner_qualification` qualifies a verified dependency only with
+  `waiver_actor`, `waiver_at` and `waiver_for` naming one Acceptance or Checks item.
+  A legacy or migrated prose grant or waiver stays readable but neither dispatches nor
+  qualifies, and a worker edit under `tasks/` or a merge can never add either. Source:
+  `Src/pi_autowork/engine/task_store.py`, `task_queue.py`, `parallel_plan.py`,
+  `Src/pi_autowork/task_commands.py`, `pi-autowork/task-store.md`.
+- The owner's questions file is replaced atomically. The coordinator writes `BLOCKERS.md`
+  through a sibling file plus `os.replace`, then commits exactly the bytes it wrote; an
+  interrupted replacement leaves the previous file, and a commit that failed after a
+  successful replacement is repaired on the next pass instead of leaving an uncommitted
+  file forever. A torn or duplicated questions block is repaired to one block, keeping the
+  owner's text outside the markers. Source: `Src/pi_autowork/coordinator.py`,
+  `Src/pi_autowork/common.py`, `Src/pi_autowork/questions.py`, `tests/test_pi_autowork.py`.
+- A push whose remote outcome is unknown no longer ends the runner. `push()` catches a
+  timeout and an I/O error, reports the unknown outcome once, and reconciles the remote refs
+  with a read-only `git ls-remote` before the next ordinary push, so a push that landed while
+  its client timed out reads as published and is not sent again. A deterministic client
+  refusal (authentication, permission, missing repository) stays a known failure with no
+  probe, and `PI_AUTOWORK_PUSH=1` remains the only publication grant.
+  Source: `Src/pi_autowork/coordinator.py`, `tests/test_pi_autowork.py`.
+- The uncommitted-planning runner test no longer flakes: it tolerates the instant in which Git
+  replaces `BLOCKERS.md` as the questions commit lands, and each subtest stops its own runner,
+  so a failing first subtest cannot pollute the second one's fake-Pi log.
+- The runner tests set their own `XDG_CONFIG_HOME`, so a host's real `pi-autowork@.service`
+  no longer leaks into them: a unit pointing at a removed checkout made the CLI judge every
+  fixture service stale and restart without waiting, failing one test only on that host.
+- The engine's `--parallel --wait` answers at once when no worker is dispatched or running,
+  and a stopping runner stops reaping once the engine reports no active worker. A runner that
+  had just finished its last task took 20 s to stop (four empty 5 s waits); every test that
+  stops an idle runner paid the same.
+- The `test` workflow is green again on a bare runner: the job sets `TMPDIR` (runner, worker
+  and check fixtures take one for granted, as every Autowork host sets one), the planning
+  specimen fixture disables Git auto-maintenance in its disposable repositories so a transient
+  `objects/maintenance.lock` no longer makes the before and after inventories differ, and the
+  TUI layout test skips without `uv` like its siblings.
+- `./install.sh` enables the installed Pi package's skills and commands. An empty
+  `skills: []` or `extensions: []` filter in `~/.pi/agent/settings.json` survives
+  `pi install` and `pi update`, including one recorded under the package's previous
+  `autowork` name, so `/git-commit-push` and `/skill:<name>` were unavailable even
+  though `pi list` showed the package. The installer now removes only those empty
+  filters (deliberate partial filters stay) and rewrites the entry in the plain
+  source form. `PI_CODING_AGENT_DIR` is honored.
+
 ### Removed
+
+- `profile-create`: the skill and its test are gone, with the router row, README line and workflow table entry. Hermes profiles are still created with the host's own commands (`hermes -p PROFILE …`, `install-plugins.sh`); nothing in the runtime depended on the skill.
 
 - `cron-autowork`: the scheduling skill and its Claude Code, Codex and Pi adapters
   are gone, with their command, menu priority and documentation. Use the host's own

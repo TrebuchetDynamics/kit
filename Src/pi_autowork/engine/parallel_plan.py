@@ -196,12 +196,20 @@ def _resources(task):
 
 
 def authorization_wait(task):
-    """An unattended runner needs an explicit record for owner-only or live work.
+    """An unattended runner needs an explicit, structured record for owner-only or live work.
 
     Name the missing authorization as an outside condition, not a running claim,
     so status roots and owner questions also work when this is the only task.
+    A live grant without an actor, a date and a declared scope never dispatches: the task's
+    contract names what is missing, and the owner completes it in the record.
     """
     fields = task.get('fields', {})
+    if str(fields.get('Live authorization', '')).strip():
+        missing = [label for label in ('Live actor', 'Live at', 'Live scope')
+                   if not str(fields.get(label, '')).strip()]
+        if missing:
+            return {'id': task['id'], 'reason': 'grant lacks ' + ', '.join(missing),
+                    'blocked_by': ['Live authorization: ' + task['id']]}
     ownership = ' '.join(fields.get('Ownership', '').split()).strip(' .`*_')
     owner_only = re.fullmatch(r'owner(?: only| or (?:a )?coordinator with live authorization)?',
                               ownership, re.I)

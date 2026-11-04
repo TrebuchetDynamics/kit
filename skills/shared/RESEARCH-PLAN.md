@@ -51,6 +51,56 @@ proposed/unrun. Preserve someone else's dirty work. If this occurrence crosses i
 own boundary, stop the offending action and report attributable changes; do not
 hide them with reset/clean or overwrite unrelated work.
 
+
+## Shared planning interface
+
+Plan With Me and Plan For Me are two adapters over one sequence. The mode changes
+who answers consequential intent. It does not change the sequence.
+
+1. **Brief.** Inventory every requested outcome, existing task ID, accepted decision
+   and unresolved choice. For a discovery request, inventory accepted goals, the
+   existing backlog and the evidenced gaps before adding anything. A clear one-line
+   task still gets a complete saved record; “no interview” means no unnecessary
+   questions, not “implement now”.
+2. **Investigate and decide.** Read the actual source, tests, docs and current task
+   state. Resolve consequential engineering choices within delegated scope. Ask the
+   owner only for missing intent, authority or an external input. For a concrete
+   method gap, select one technique through [engineering](../engineering/REFERENCE.md);
+   routine planning needs no experiment loop. Apply
+   [decision closure](PLANNING-CRAFT.md#decision-closure) before calling a task ready.
+3. **Save.** Write accepted decisions in their existing document owners. Save tasks
+   and goals through `autowork tasks`, with scope, acceptance, exact checks, bounded
+   `touches`, real dependencies and shared `resources`. Use the
+   [single-pass handoff](PLAN-HANDOFF.md#one-planning-pass-one-handoff); do not run a
+   documentation, task-store or validation pass after every answer.
+4. **Validate and report.** Run `autowork tasks validate --worktree .` once on the
+   final batch, read back the saved records and report the actual paths, IDs, checks
+   and next action. A saved plan is not execution authority.
+
+| Mode | Unique behavior |
+| --- | --- |
+| Plan With Me | Interviews the owner for consequential missing intent, then saves the answered plan. |
+| Plan For Me | Investigates and chooses within delegated scope; bare or vague requests run project discovery. |
+
+### Rolling plans
+
+When future work depends on implementation evidence, save only the first batch whose
+content is known now. Use at most eight new tasks, including one closing planning task
+(`kind = "plan"`) with dependencies on every building task. Note
+`Plan round: 1 of 10` by default. The chain will continue on its own; move the planning
+task to `Needs decision` to stop it. Load
+[rolling planning](TODO-WORKCENTER.md#rolling-planning) for the exact fields and flow.
+
+### Task records
+
+Each executable task names its observable acceptance, the exact checks that prove it,
+bounded `touches` and real dependencies. A task that still says “choose the storage
+model/API/migration behavior” is not ready when that choice changes the accepted
+outcome. Keep only the affected slice pending; independent accepted work stays ready.
+Load the [work center](TODO-WORKCENTER.md) for the record fields, write rules and
+selection boundary.
+
+
 ## Full requested batch
 
 1. Inventory **every requested outcome**, existing task ID and unresolved choice.

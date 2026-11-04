@@ -56,17 +56,15 @@ capacity limit, so some commands must be typed rather than selected in the menu.
 | `/autowork` | `/autowork` | Inspect the repo, plan missing tasks, execute a useful slice, verify and commit owned changes |
 | `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only clean unmerged ones, keep dirty and locked worktrees |
-| `/lgtm` | `/lgtm` | Continue the understood next step with existing authorization |
+| `/lgtm` | `/lgtm` | Accept the latest recommendation, including a question round, and continue |
 | `/docs_sync` | `/docs_sync` | Maintain repository documentation |
 | `/plan_with_me` | `/plan_with_me` | Answer focused questions, then update docs and plans |
 | `/plan_for_me` | `/plan_for_me` | Discover the project's best next work, or investigate a supplied goal, then save the plan and tasks |
 | `/grill-me` | `/grill_me` | Stress-test a plan through questions |
 | `/autoresearch` | `/autoresearch` | Route a research goal or run a bounded metric loop |
-| `/profile-create` | `/profile_create` | Create a repository-bound profile with shared setup |
 | `/impeccable` | `/impeccable` | Design and front-end quality workflow |
 | `/ui-taste` | `/ui_taste` | Uizze's UI Taste playbooks for building, polishing and reviewing web and iOS interfaces |
 | `/beautify-github-readme` | `/beautify_github_readme` | Redesign or audit a GitHub README with project-native SVG assets |
-| `/engineering` | `/engineering` | Select one engineering protocol for a concrete method gap |
 | `/autowork status [NAME]` | `/autowork status [NAME]` | Read runner fleet/repository status without a model call or state changes |
 | `/autowork plugin status` | `/autowork plugin status` | Inspect registered capabilities and setup gaps; `/autowork update [--check\|status [full]]` updates all profiles |
 
@@ -133,7 +131,7 @@ spellings remain typeable but are deliberately omitted from Telegram menu
 advertising, not merely displaced by capacity. Plan With Me and Docs Sync do not
 register the old repo-interview or repo-docs aliases. The Telegram menu prioritizes
 the five current workflow commands, then `/ui_taste`, `/beautify_github_readme`,
-`/impeccable`, `/lgtm`, `/engineering` and `/git_commit_push`.
+`/impeccable`, `/lgtm` and `/git_commit_push`.
 Hermes' default menu holds 60 entries and its built-ins alone exceed that, so each
 prioritized command displaces the lowest-ranked built-in (currently `/yolo`,
 `/approvals`, `/fast`, `/voice`, `/busy`, `/memory` and `/bundles`), which stays
@@ -147,7 +145,7 @@ Docs Sync and autowork decide routine engineering choices autonomously within th
 accepted scope. The executing session (or an optional authorized delegate) works
 from the selected task, accepted decisions, scope, checks
 and completion rules. For a concrete method gap or explicit request, they select one
-[Addy protocol](../skills/engineering/SKILL.md). Autowork retains workflow authority;
+[Addy protocol](../skills/engineering/REFERENCE.md). Autowork retains workflow authority;
 protocols supply techniques within its contract. Handoffs record methods that
 materially changed a decision or artifact, with their check results.
 Missing owner intent or authority remains an explicit question;
@@ -264,15 +262,25 @@ Codex and Pi load the local [adapter](../adapters/skills/graphify/SKILL.md).
 
 The adapter requires the `graphify` command (PyPI `graphifyy`, Python 3.10+) and
 never installs it, adds hooks or asks a model for a semantic pass. It reuses a graph
-that matches the current revision or builds code-only output into an ignored
-directory, then verifies the file, node and link counts, schema and tool version.
-`explain`, `path`, `affected`, `query` and `god-nodes` accept the usual exit codes
-`0`, `3` (several candidates) and `4` (no match).
+whose commit matches the current revision or whose queried nodes no changed file
+touches, or builds code-only output into an ignored directory, then verifies the
+file, node and link counts, schema and tool version. One shared graph serves a
+repository; later readers query it instead of rebuilding. `explain`, `path`,
+`affected`, `query` and `god-nodes` accept the usual exit codes `0`, `3` (several
+candidates) and `4` (no match).
+
+A graph is never perfectly current, so the adapter reports `graphify_fresh`,
+`graphify_stale`, `graphify_partial` or `graphify_unavailable` and says which reuse
+condition the state rests on. Only `graphify_fresh` supports a topology claim without a
+live-source check. The vocabulary is one home in the
+[shared contract](../skills/shared/COMMON-CONTRACT.md#graph-state).
 
 A graph is orientation. `EXTRACTED` edges are explicit in the source and `INFERRED`
 edges are resolved by Graphify; neither is runtime proof, and absent inbound edges
 never prove dead code. Unused Code keeps its own proof rules and uses the graph only
-to rank candidates. `graphify-out/` is a generated artifact and stays uncommitted.
+to rank candidates. Unused Code, Bug Harvest, Improve Codebase Architecture, Split
+Folder and Test Optimizer record that declared state; other skills do not need a
+graph and pay nothing for its absence. `graphify-out/` is a generated artifact and stays uncommitted.
 A read-only request builds nothing.
 
 Examples (Hermes CLI; Pi uses `/graphify`, Claude Code `/kit:graphify`, Codex
@@ -331,9 +339,9 @@ is correct.
 /responsive-screenshots https://staging.example.com/pricing; fail on overflow
 ```
 
-## Ask Autowork
+## Ask Kit
 
-`/ask-autowork` is the map over this bundle: one router that names the skill for a
+`/ask-kit` is the map over this bundle: one router that names the skill for a
 situation and the next step it implies. It answers "which command do I want?", never
 "what does that command decide?". It reads the chosen skill before describing it, names
 one command, and sends you to that skill's `## Boundaries` when two look close.
@@ -380,19 +388,20 @@ Grill Me remains Plan With Me's challenge mode; it loads Grilling for the mechan
 adds only the plan-specific question branches. Offline link and packaging checks do not
 qualify a live interview or a rendered report.
 
-## Pinned engineering protocols
+## Pinned engineering reference
 
-`/engineering` (the same spelling in Telegram) selects a technique for a specific
-method gap. Autowork, Docs Sync and Autoresearch can consult this adapter on demand;
-ready tasks need no separate command. Examples:
+The engineering pack is a **reference**, not a command: there is no `/engineering`
+entry in Hermes, Claude Code, Codex or Pi. Autowork, Docs Sync and Autoresearch read
+it on demand; ready tasks need no separate invocation. Select a technique when a
+method gap is concrete:
 
-```text
-/engineering use performance-optimization to diagnose this cache bottleneck
-/engineering use code-review-and-quality for the current task's existing review
+```sh
+python3 "<toolset>/skills/engineering/scripts/route.py" --protocol performance-optimization
+python3 "<toolset>/skills/engineering/scripts/route.py" --protocol code-review-and-quality
 ```
 
-The [adapter](../skills/engineering/SKILL.md) provides 25 pinned protocols and their
-shared references. Its router's `--protocol NAME` selects exactly one method;
+The [reference](../skills/engineering/REFERENCE.md) provides 25 pinned protocols and
+their shared references. Its router's `--protocol NAME` selects exactly one method;
 explicit phase commands remain available as optional bundles. Both modes verify
 selected protocol and shared reference hashes. It translates upstream plan/task
 paths into existing task records and preserves prior authorization,

@@ -87,7 +87,7 @@ def env_paths(env=os.environ):
     }
 
 
-PI_SOURCE = 'git:github.com/TrebuchetDynamics/autowork'
+PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
 
 
 def package_script():
@@ -334,8 +334,14 @@ def cmd_model(args, paths):
 
 
 def cmd_remove(args, paths):
-    repo, _ = resolve(args.target, paths)
-    return subprocess.run(['bash', script(paths), '--remove-service', '--repo', repo]).returncode
+    repo, name = resolve(args.target, paths)
+    # Remove from the saved settings, not by re-entering repository startup: the saved
+    # checkout may have been renamed or removed, and uninstalling must still work.
+    code = service.run('remove', repo=repo, base='', script=script(paths), workers=8,
+                       state_root=paths['state_root'], hermes_jobs='', argv0=self_path())
+    if not code:
+        fleet_view.paused_marker(paths['env_dir'], name).unlink(missing_ok=True)
+    return code
 
 
 def cmd_run(args, paths):

@@ -53,7 +53,7 @@ def main():
         if result.stdout.strip()!=VERSION:
             parser.error('Existing runtime environment has the wrong SDK; refusing to overwrite it')
     print('RPC SDK ready:',target/'bin/python')
-    print('Qualified Pi version: 1.4.0. No Pi upgrade or service restart performed.')
+    print('Qualified Pi floor: 1.4.0 or newer. No Pi upgrade or service restart performed.')
     return 0
 
 

@@ -5,6 +5,38 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
+
+
+PONYTAIL_LEVELS = ('lite', 'full', 'ultra', 'off')
+
+
+def ponytail_level(env=None):
+    """The explicit runner level, or full for an absent or invalid value."""
+    value = str((env if env is not None else os.environ).get('PI_AUTOWORK_PONYTAIL_LEVEL', 'full'))
+    value = value.strip().lower()
+    return value if value in PONYTAIL_LEVELS else 'full'
+
+
+def ponytail_prompt(level=None, *, review=False, toolset=None):
+    """A short pointer and level for worker and reviewer prompts.
+
+    The shared method remains the owner. Workers and reviewers get the level, the
+    method path and a compact reminder; material work still reads the method.
+    """
+    level = level or ponytail_level()
+    root = Path(toolset) if toolset is not None else Path(__file__).resolve().parents[2]
+    method = root / 'skills/shared/PONYTAIL.md'
+    if level == 'off':
+        text = 'Ponytail is off for this task. Preserve acceptance, safety, scope and verification.'
+    else:
+        text = (f'Ponytail level: {level}. Read and apply `{method}` for material choices; '
+                'choose the smallest complete change, reuse existing code and owners, preserve '
+                'acceptance, safety, tests and scope, and report reuse and omissions.')
+    if review:
+        text += f' Review with `{root / "skills/ponytail/upstream/skills/ponytail-review/PROTOCOL.md"}`.'
+    return text
+
 
 
 class Log:
@@ -44,6 +76,33 @@ def die(code, text):
 # an owner's `git commit` at that moment failed with "index.lock: File exists". Writes still
 # take the locks they need; only Git's optional ones are declined.
 GIT = ('git', '--no-optional-locks')
+
+
+def atomic_write(path, data, *, mode=None):
+    """Replace one file in a single step: write a sibling, fsync it, then os.replace it.
+
+    A crash leaves either the previous bytes or the complete new bytes, never a torn file.
+    The target's current mode is kept unless ``mode`` is given.
+    """
+    path = Path(path)
+    payload = data.encode() if isinstance(data, str) else data
+    if mode is None:
+        try:
+            mode = path.stat().st_mode & 0o777
+        except OSError:
+            mode = 0o644
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f'.{path.name}.', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def git(repo, *argv, check=False):

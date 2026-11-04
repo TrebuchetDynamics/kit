@@ -191,7 +191,7 @@ values whenever they differ, preserving other settings:
 | `plugins.entries.kit.allow_gateway_injection` | `true` |
 | `skills.disabled` | Your entries, plus OMH skills outside `omh_keep_skills` in profiles with OMH; bundled toolset skills removed |
 | `plugins.entries.kit.omh_trim` | The OMH skill names the bundle added to `skills.disabled`, so it can remove them later |
-| `platforms.telegram.extra.command_menu.priority` | Your entries first, then the workflow commands and the `ui_taste`, `beautify_github_readme`, `impeccable`, `lgtm`, `engineering` and `git_commit_push` skill commands appended; retired bundle names and `autoresearch_*` entries removed. Other menu settings such as the mode and cap are not changed ([`telegram_menu_policy.py`](../telegram_menu_policy.py)). |
+| `platforms.telegram.extra.command_menu.priority` | Your entries first, then the workflow commands and the `ui_taste`, `beautify_github_readme`, `impeccable`, `lgtm` and `git_commit_push` skill commands appended; retired bundle names and `autoresearch_*` entries removed. Other menu settings such as the mode and cap are not changed ([`telegram_menu_policy.py`](../telegram_menu_policy.py)). |
 
 Every setup, including `--bundle-only`, also clears the per-platform skill disable
 lists, except in opted-out profiles. Full setup additionally applies the `omh` block of `defaults.json`
@@ -212,6 +212,7 @@ lists, except in opted-out profiles. Full setup additionally applies the `omh` b
 | `PI_AUTOWORK_WORKER_CHECK_SLOTS` | [`autowork_run.py`](../pi-autowork/engine/autowork_run.py) | Positive host-wide worker suite/build concurrency per user: default CPU count divided by 4, rounded down, at least 2. Set consistently across runners. Independent of `PI_AUTOWORK_CHECK_SLOTS`; focused tests run directly. |
 | `PI_AUTOWORK_COMMAND_TIMEOUT` | [`pi_runtime.py`](../pi-autowork/pi_autowork/pi_runtime.py) | Worker tool-command execution limit, default 1800 s (capped below the overall worker timeout). `autowork-run` slot waiting is excluded; the overall task timeout is not extended. |
 | `PI_AUTOWORK_QUIET_WAIT` | [`worker.py`](../pi-autowork/pi_autowork/worker.py) | Seconds a review waits for a quiet window (this repository's main check done and a host check slot free) before rerunning a merged tree's failures one at a time; default 900. Past it, the failures rerun one at a time without a slot instead of queueing behind other runners' full suites. |
+| `PI_AUTOWORK_FLEET_JOBS` | [`fleet_view.py`](../pi-autowork/pi_autowork/fleet_view.py) | Runners observed at once by `autowork ls`, the TUI and the Paseo plugin's fleet read (default 8; `1` observes them one after another in order). Each observation is dozens of read-only Git commands on its own repository. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`, `TELEGRAM_HOME_CHANNEL` | Update menu healing, from each profile's `.env` (not the process environment) | For each distinct bot token, the chats whose leftover command lists the updater checks; see [installation](installation.md#update-all-profiles). |
 
 Once both merge-backlog thresholds are met, fresh tasks show

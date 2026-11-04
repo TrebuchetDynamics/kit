@@ -1,6 +1,7 @@
 """Offline selection/planning contracts; no worker launch or repository writes."""
 from copy import deepcopy
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,6 +10,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 import store_fixture
 import task_execution
+import task_store
 
 
 class RunnableTests(unittest.TestCase):
@@ -37,11 +39,21 @@ class RunnableTests(unittest.TestCase):
             # The engine reads `port:8080` as the resource `port`; the record keeps that meaning.
             self.assertEqual(tasks[0]['fields']['Resources'], 'network, port')
 
-    def test_owner_or_live_work_waits_for_recorded_authorization(self):
+    def test_owner_or_live_work_waits_for_a_structured_recorded_authorization(self):
         import json
         from types import SimpleNamespace
         import parallel_dispatch as dispatch
         import parallel_status
+
+        def structure(repo, fields):
+            """Complete the prose grant into the structured, scope-bound record."""
+            record = repo / 'tasks/items/T-1.md'
+            scope = ['live'] if fields.startswith('Resources:') and 'live' in fields else ['profiles/']
+            record.write_text(task_store.edit(record.read_text(), dict(
+                live_actor='owner', live_at='2026-10-17', live_scope=scope)))
+            subprocess.run(['git', '-C', str(repo), 'add', '-A'], check=True)
+            subprocess.run(['git', '-C', str(repo), 'commit', '-qm', 'structured grant'], check=True)
+
         with tempfile.TemporaryDirectory() as folder:
             repo = Path(folder)
             common = repo / 'execution'
@@ -49,7 +61,7 @@ class RunnableTests(unittest.TestCase):
             for fields in ('Ownership: Owner', 'Ownership: owner only.',
                            'Ownership: Owner or a coordinator with live authorization.',
                            'Resources: live', 'Resources: network, live'):
-                for authorization in ('', 'Live authorization: owner approved this run on 2026-10-17'):
+                for authorization in ('', 'prose', 'structured'):
                     with self.subTest(fields=fields, authorization=authorization):
                         store_fixture.write_todo(repo, f'''# Work
 ## Now
@@ -57,8 +69,9 @@ class RunnableTests(unittest.TestCase):
   Scope: installed profiles
   Acceptance: migration verified
   Checks: verify migration
+  Touches: profiles/
   {fields}
-  {authorization}
+  {'Live authorization: owner approved this run on 2026-10-17' if authorization else ''}
 - [ ] T-2 — Offline repair
   Scope: b.py
   Acceptance: works
@@ -66,12 +79,14 @@ class RunnableTests(unittest.TestCase):
   Touches: b.py
   Ownership: Toolset coordinator.
 ''')
+                        if authorization == 'structured':
+                            structure(repo, fields)
                         tasks = dispatch.contracts(repo)
                         result = dispatch.admit(tasks, [], set(), [], everything=tasks, parked=[], protected=[])
                         common.joinpath('journal.jsonl').write_text(json.dumps(dict(
                             event='dispatch_observed', timestamp=1, waiting=result['waiting'])) + '\n')
                         status = parallel_status._snapshot(repo, common, 2)
-                        if 'owner approved' in authorization:
+                        if authorization == 'structured':
                             self.assertIn('T-1', [t['id'] for t in result['dispatch']])
                             self.assertFalse(any(r['kind'] == 'outside' for r in status['roots']))
                         else:
@@ -96,6 +111,7 @@ class RunnableTests(unittest.TestCase):
   Scope: profiles
   Acceptance: verified
   Checks: verify
+  Touches: profiles/
   Ownership: Owner or a coordinator with live authorization.
 '''
             slot_path = common / 'slots' / 'T-1.json'
@@ -112,6 +128,11 @@ class RunnableTests(unittest.TestCase):
                     common.joinpath('journal.jsonl').write_text(json.dumps(dict(
                         event='dispatch_observed', timestamp=1, waiting=status.pending_tasks(repo))) + '\n')
                     store_fixture.write_todo(repo, todo + '  Live authorization: owner approved this run\n')
+                    record = repo / 'tasks/items/T-1.md'
+                    record.write_text(task_store.edit(record.read_text(), dict(
+                        live_actor='owner', live_at='2026-10-17', live_scope=['profiles/'])))
+                    subprocess.run(['git', '-C', str(repo), 'add', '-A'], check=True)
+                    subprocess.run(['git', '-C', str(repo), 'commit', '-qm', 'structured grant'], check=True)
                     self.assertFalse(any(r['kind'] == 'outside' for r in status.snapshot(repo, now=3)['roots']))
 
 
@@ -279,7 +300,8 @@ class PlanTests(unittest.TestCase):
     def test_solo_task_drains_pool_and_blocks_lower_priorities(self):
         from parallel_plan import plan
         live = task('A', 'a.py', resources='live')
-        live['fields']['Live authorization'] = 'owner approved this run on 2026-10-17'
+        live['fields'].update({'Live authorization': 'owner approved this run on 2026-10-17',
+                               'Live actor': 'owner', 'Live at': '2026-10-17', 'Live scope': 'live'})
         for solo in (live, task('A', 'a.py', resources='exclusive')):
             with self.subTest(solo=solo):
                 tasks = [solo, task('B', 'b.py')]

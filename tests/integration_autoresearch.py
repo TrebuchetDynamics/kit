@@ -25,7 +25,8 @@ def main():
         loaded = manager._plugins['kit']
         assert loaded.enabled and not loaded.error, loaded.error
         commands = get_plugin_commands()
-        assert 'kit:engineering' in [i['name'] for i in manager.list_plugin_skill_metadata()]
+        assert 'kit:engineering' not in [i['name'] for i in manager.list_plugin_skill_metadata()]
+        assert (home / 'skills/engineering/REFERENCE.md').is_file()
         assert (home / 'skills/engineering/upstream/references/security-checklist.md').is_file()
         assert 'No update receipt yet' in commands['autowork']['handler']('update status')
         names = json.loads((root / 'skills/autoresearch/UPSTREAM.json').read_text())['commands']

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
+  <title id="title">Autowork for Paseo: inspect, prepare, confirm</title>
+  <desc id="desc">Conceptual workflow, not a screenshot. Inspection is read-only. Optional actions require an operator grant, an exact-action review and explicit confirmation. Autowork revalidates authority before execution.</desc>
+  <rect width="1200" height="660" rx="12" fill="#f6f8fa"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#17253b">
+    <text x="64" y="66" font-size="28" fill="#586779" letter-spacing="2">ONE HOST · EXISTING AUTOWORK · CONCEPTUAL FLOW</text>
+    <path d="M104 160 V510" stroke="#ccd5e0" stroke-width="4"/>
+    <g id="inspect">
+      <circle cx="104" cy="160" r="28" fill="#225bd6"/>
+      <text x="104" y="171" text-anchor="middle" font-size="32" fill="#ffffff">1</text>
+      <text x="166" y="178" font-size="56" font-weight="600">Inspect</text>
+      <text x="594" y="176" font-size="46">Read-only by default</text>
+      <path d="M166 228 H1136" stroke="#ccd5e0" stroke-width="2"/>
+    </g>
+    <g id="prepare">
+      <circle cx="104" cy="330" r="28" fill="#f6f8fa" stroke="#225bd6" stroke-width="3"/>
+      <text x="104" y="341" text-anchor="middle" font-size="32" fill="#225bd6">2</text>
+      <text x="166" y="348" font-size="56" font-weight="600">Prepare</text>
+      <text x="594" y="346" font-size="46">Review the exact action</text>
+      <path d="M166 398 H1136" stroke="#ccd5e0" stroke-width="2"/>
+    </g>
+    <g id="confirm">
+      <circle cx="104" cy="500" r="28" fill="#f6f8fa" stroke="#225bd6" stroke-width="3"/>
+      <text x="104" y="511" text-anchor="middle" font-size="32" fill="#225bd6">3</text>
+      <text x="166" y="518" font-size="56" font-weight="600">Confirm</text>
+      <text x="594" y="516" font-size="46">Autowork revalidates</text>
+    </g>
+    <text x="64" y="608" font-size="32" fill="#586779">Optional actions need an operator grant. Navigation never grants execution.</text>
+  </g>
+</svg>

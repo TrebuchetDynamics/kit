@@ -89,17 +89,25 @@ So the order is: compatibility first, identity second, prose last.
 - **Pass when:** a documented install command from a clean machine resolves, and the
   repo has no prose that tells a reader to use `/autowork:` for a skill.
 
-## Stage 4: publication
+## Stage 4: rename and live proof
 
-- GitHub repository rename (owner action, redirects keep old clones working).
-- npm scope `@trebuchet` and the published name; a deprecation notice on the old name
-  if it was ever published.
-- Publish and install, then verify a real profile that predates the rename keeps its
-  settings.
+- GitHub repository rename (owner action, redirects keep old clones working). **Done:**
+  the repository is `TrebuchetDynamics/kit` and the old URLs redirect.
+- **No npm publication is required.** Installs come from the Git source (`install.sh`,
+  `pi install git:github.com/TrebuchetDynamics/kit`, the Claude Code and Codex
+  marketplaces). `package.json` keeps the scoped name `@trebuchet/kit` as local
+  metadata only: no scope, deprecation notice or registry release is part of this
+  rename.
+- The one remaining evidence step is the pre-rename profile proof, and it is a live
+  check: install the renamed plugin into a profile configured under
+  `plugins.entries.autowork` and show approvals mode, menu priority and opt-out are
+  unchanged. The stage 1 fixtures prove the read logic; they do not qualify a live
+  profile.
 
 ## Verification that closes the rename
 
-Not "tests pass". A pre-rename profile must be shown to keep its state:
+Not "tests pass". A pre-rename profile must be shown to keep its state. The offline
+fixtures prove the read logic; only a live Hermes profile proves the migration:
 
 1. Snapshot `plugins.entries.autowork` (approvals mode, menu priority, opt-out) in a
    fixture profile.

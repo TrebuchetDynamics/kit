@@ -44,6 +44,13 @@ class TaskCommandTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
         return result
 
+    def qualify(self, tid, criterion, note='owner_waiver', text='waived for this scope'):
+        """A complete structured waiver: actor, date and the criterion it covers."""
+        self.tasks('field', tid, note, text)
+        self.tasks('field', tid, 'waiver_actor', 'owner')
+        self.tasks('field', tid, 'waiver_at', '2026-10-21')
+        self.tasks('field', tid, 'waiver_for', criterion)
+
     def show(self, tid):
         self.commit()
         return json.loads(self.tasks('show', tid).stdout)
@@ -212,6 +219,32 @@ class TaskCommandTests(unittest.TestCase):
         self.assertEqual(self.tasks('field', 'T-1', 'rank', 'high', ok=False).returncode, 1)
         self.assertEqual(self.tasks('field', 'T-1', 'status', 'done', ok=False).returncode, 1)
 
+    def test_a_live_grant_is_structured_and_scope_bound(self):
+        self.tasks('field', 'T-1', 'resources', 'live')
+        self.tasks('field', 'T-1', 'live', 'authorized')
+        self.tasks('field', 'T-1', 'live_actor', 'owner')
+        self.tasks('field', 'T-1', 'live_at', '2026-11-04')
+        self.tasks('field', 'T-1', 'live_scope', 'live')
+        record = self.show('T-1')
+        self.assertEqual((record['live'], record['live_actor'], record['live_at'], record['live_scope']),
+                         ('authorized', 'owner', '2026-11-04', ['live']))
+        refused = self.tasks('field', 'T-1', 'live_scope', 'network', ok=False)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('undeclared scope network', refused.stderr)
+        self.assertEqual(self.show('T-1')['live_scope'], ['live'])  # nothing written
+
+    def test_a_waiver_is_structured_and_names_its_criterion(self):
+        self.tasks('field', 'T-1', 'owner_waiver', 'criterion waived')
+        self.tasks('field', 'T-1', 'waiver_actor', 'owner')
+        self.tasks('field', 'T-1', 'waiver_at', '2026-11-04')
+        record = self.show('T-1')
+        self.assertEqual((record['waiver_actor'], record['waiver_at']), ('owner', '2026-11-04'))
+        refused = self.tasks('field', 'T-1', 'waiver_for', 'not a criterion', ok=False)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('waiver_for must name one of', refused.stderr)
+        self.tasks('field', 'T-1', 'waiver_for', 'Pinned reads')
+        self.assertEqual(self.show('T-1')['waiver_for'], 'Pinned reads')
+
     def test_place_into_needs_decision_changes_the_contract(self):
         sys.path.insert(0, str(ROOT / 'pi-autowork'))
         import parallel_status
@@ -312,7 +345,7 @@ class TaskCommandTests(unittest.TestCase):
         self.assertTrue(json.loads(self.tasks('why', ordinary).stdout)['eligible'])
         why = json.loads(self.tasks('why', verified).stdout)
         self.assertEqual(why['reasons'], [{'code': 'DEPENDENCY_UNVERIFIED', 'detail': 'T-1'}])
-        self.tasks('field', 'T-1', 'owner_waiver', 'Owner 2026-10-21: waive prerequisite proof for this scope')
+        self.qualify('T-1', 'Pinned reads', text='Owner 2026-10-21: waive prerequisite proof for this scope')
         self.commit()
         self.assertTrue(json.loads(self.tasks('why', verified).stdout)['eligible'])
 
@@ -321,7 +354,8 @@ class TaskCommandTests(unittest.TestCase):
         refused = self.tasks('goal', 'G-1', '--status', 'met', '--evidence', 'goal check: pass', ok=False)
         self.assertEqual(refused.returncode, 1)
         self.assertIn('T-1', refused.stderr)
-        self.tasks('field', 'T-1', 'owner_qualification', 'Owner 2026-10-21: inspected result docs/review.md')
+        self.qualify('T-1', 'Pinned reads', note='owner_qualification',
+                     text='Owner 2026-10-21: inspected result docs/review.md')
         accepted = self.tasks('goal', 'G-1', '--status', 'met', '--evidence', 'goal check: pass')
         self.assertIn('T-1', accepted.stdout)
         self.assertIn('docs/review.md', accepted.stdout)
@@ -348,6 +382,32 @@ class TaskCommandTests(unittest.TestCase):
         record = json.loads(self.tasks('show', 'T-1', '--worktree').stdout)
         self.assertEqual(record['section'], 'Next')
         self.assertEqual(record['live'], 'denied')
+
+    def test_goals_lists_every_goal_record_in_priority_order(self):
+        goals = json.loads(self.tasks('goals').stdout)
+        self.assertTrue(goals)
+        for goal in goals:
+            self.assertLessEqual({'id', 'title', 'priority', 'source', 'status', 'focus', 'depends_on',
+                                  'contract_hash', 'record_revision', 'path', 'notes', 'rev'}, set(goal))
+        priorities = [g['priority'] for g in goals if g['priority'] is not None]
+        self.assertEqual(priorities, sorted(priorities))
+
+    def test_commit_commits_only_task_edits_and_previews_first(self):
+        (self.repo / 'unrelated.txt').write_text('stays uncommitted\n')
+        self.tasks('decide', 'T-1', 'Use the smaller design')
+        head = self.git('rev-parse', 'HEAD').strip()
+        preview = json.loads(self.tasks('commit', '--dry-run').stdout)
+        self.assertEqual((preview['files'], preview['commit'], preview['dry_run']), (['tasks/items/T-1.md'], None, True))
+        self.assertIn('Owner decision', preview['diff'])
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), head)
+        result = json.loads(self.tasks('commit', '--message', 'answer T-1').stdout)
+        self.assertEqual(result['commit'], self.git('rev-parse', 'HEAD').strip())
+        self.assertNotEqual(result['commit'], head)
+        self.assertEqual(self.git('log', '-1', '--format=%s').strip(), 'answer T-1')
+        self.assertEqual(self.git('show', '--name-only', '--format=', 'HEAD').split(), ['tasks/items/T-1.md'])
+        self.assertIn('unrelated.txt', self.git('status', '--porcelain'))
+        self.assertNotIn('tasks/', self.git('status', '--porcelain'))
+        self.assertEqual(json.loads(self.tasks('commit', '--dry-run').stdout)['files'], [])
 
     def test_decide_refuses_closed_task_without_rewriting_history(self):
         self.tasks('done', 'T-1', '--by', 'owner', '--reason', 'manual closure')

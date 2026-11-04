@@ -27,17 +27,34 @@ import os
 from pathlib import Path
 import shutil
 import shlex
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = 'TrebuchetDynamics/autowork'
-PI_SOURCE = 'git:github.com/TrebuchetDynamics/autowork'
+SOURCE = 'TrebuchetDynamics/kit'
+PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
 HOME = Path(os.environ.get('HOME', str(Path.home())))
 BIN = Path(os.environ.get('AUTOWORK_BIN_DIR') or HOME / '.local' / 'bin')
 # Claude Code's refusal when settings name this marketplace from another source.
 TOLERATE_CLAUDE_SOURCE = "its source doesn't match its extraKnownMarketplaces entry"
+
+
+def manifest_name(relative, key='name'):
+    """A plugin or marketplace name declared by a manifest in this checkout."""
+    try:
+        data = json.loads((ROOT / relative).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return ''
+    return str(data.get(key) or '')
+
+
+CLAUDE_PLUGIN = manifest_name('.claude-plugin/plugin.json') or 'kit'
+CLAUDE_MARKETPLACE = manifest_name('.claude-plugin/marketplace.json') or 'autowork'
+CODEX_PLUGIN = manifest_name('.codex-plugin/plugin.json') or CLAUDE_PLUGIN
+CODEX_MARKETPLACE = manifest_name('.agents/plugins/marketplace.json') or 'autowork-marketplace'
 
 
 class Output:
@@ -181,6 +198,66 @@ class Item:
         return not self.missing and not host_unavailable(self.needs)
 
 
+def pi_settings_path():
+    """The Pi settings file that stores package filters (PI_CODING_AGENT_DIR wins)."""
+    return Path(os.environ.get('PI_CODING_AGENT_DIR') or HOME / '.pi/agent') / 'settings.json'
+
+
+def same_pi_source(left, right):
+    """Compare package sources the way Pi does, ignoring a trailing slash or .git."""
+    def canonical(value):
+        value = str(value).strip().rstrip('/')
+        return value[:-4] if value.endswith('.git') else value
+    return canonical(left) == canonical(right)
+
+
+def enable_pi_package(source=PI_SOURCE, settings=None):
+    """Let the installed package load its skills and commands.
+
+    Pi records a package resource filter as an object such as
+    ``{"source": ..., "skills": [], "extensions": []}``; an empty list hides every
+    resource of that type. A filter written for the package's previous name
+    (autowork -> kit) survives both ``pi install`` and ``pi update``, so the
+    package stays installed but filtered: no commands and no ``/skill:<name>``.
+    Remove only empty filters; keep deliberate partial filters untouched.
+    """
+    path = Path(settings) if settings else pi_settings_path()
+    if not path.is_file():
+        return f'no Pi settings at {path}; the package manifest applies'
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f'cannot read {path}: {exc}') from exc
+    packages = data.get('packages') if isinstance(data, dict) else None
+    if not isinstance(packages, list):
+        return f'no package filter in {path}; the package manifest applies'
+    changed = False
+    for index, entry in enumerate(packages):
+        if not isinstance(entry, dict) or not same_pi_source(entry.get('source', ''), source):
+            continue
+        for key in ('skills', 'extensions'):
+            if entry.get(key) == []:
+                del entry[key]
+                changed = True
+        if set(entry) == {'source'}:
+            packages[index] = entry['source']  # no filter left: the plain source form
+            changed = True
+    if not changed:
+        return f'{path} already loads the {source} package resources'
+    # Write beside the original and replace, so an interrupted install cannot truncate it.
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+            json.dump(data, stream, indent=2, ensure_ascii=False)
+            stream.write('\n')
+        os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+    return f'enabled {source} package resources in {path}'
+
+
 def pi_package(source=PI_SOURCE):
     """The directory Pi installed this package source in, or None."""
     if not shutil.which('pi'):
@@ -309,18 +386,89 @@ def hermes_item(hermes_args):
     return item
 
 
+def claude_marketplace_folders():
+    """The folders Claude Code's configuration records for this marketplace.
+
+    A marketplace added from a checkout is recorded as a `directory` source in the user
+    settings and in Claude Code's own known-marketplaces registry. A published Git source
+    records a repository instead and yields nothing here.
+    """
+    for path, key in ((HOME / '.claude/settings.json', 'extraKnownMarketplaces'),
+                      (HOME / '.claude/plugins/known_marketplaces.json', '')):
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        entries = data.get(key, {}) if key else data
+        if not isinstance(entries, dict):
+            continue
+        source = (entries.get(CLAUDE_MARKETPLACE) or {}).get('source')
+        if isinstance(source, dict) and source.get('source') == 'directory':
+            yield Path(str(source.get('path') or ''))
+
+
+def missing_claude_marketplace():
+    """The folder a marketplace registration names when this host no longer has it.
+
+    Settings follow their owner between machines and outlive a renamed checkout, so a
+    registered folder is often gone. That path is not a source choice any more: it is a
+    stale registration that breaks `claude plugin marketplace update` with ENOENT, which
+    would stop the suite installing from the published source.
+    """
+    for folder in claude_marketplace_folders():
+        if not str(folder):
+            continue
+        try:
+            if not folder.is_dir():
+                return folder
+        except OSError:
+            return folder
+    return None
+
+
+def drop_stale_claude_marketplace():
+    """Re-register from the published source when the recorded folder is gone (see
+    missing_claude_marketplace); the component's own add step then adds that source."""
+    folder = missing_claude_marketplace()
+    if folder is None:
+        return ''
+    done = subprocess.run(['claude', 'plugin', 'marketplace', 'remove', CLAUDE_MARKETPLACE],
+                          stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+    text = (done.stdout + done.stderr).strip()
+    if done.returncode and 'not found' not in text.lower() and 'no marketplace' not in text.lower():
+        raise OSError(f'claude plugin marketplace remove {CLAUDE_MARKETPLACE}: {failure_summary(text)}')
+    return f'dropped the stale registration: {folder} is gone'
+
+
+def claude_steps():
+    steps = []
+    if missing_claude_marketplace() is not None:
+        steps.append(Step('drop the marketplace registration whose folder is gone',
+                          run=drop_stale_claude_marketplace))
+    return steps + [
+        Step(f'claude plugin marketplace add {SOURCE}', ['claude', 'plugin', 'marketplace', 'add', SOURCE],
+             tolerate=(TOLERATE_CLAUDE_SOURCE, 'already added', 'already exists')),
+        Step(f'claude plugin marketplace update {CLAUDE_MARKETPLACE}',
+             ['claude', 'plugin', 'marketplace', 'update', CLAUDE_MARKETPLACE]),
+        Step('drop the cached plugin, keeping its data', run=drop_claude_plugin),
+        Step(f'claude plugin install {CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}',
+             ['claude', 'plugin', 'install', f'{CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}'])]
+
+
 def drop_claude_plugin():
     """Claude Code caches a plugin by its version, which changes rarely: a reinstall of the same
     version kept the old workflows (sessions lacked two skills a release had added). Uninstalling
     first makes the install copy the current release; not being installed yet is fine."""
-    done = subprocess.run(['claude', 'plugin', 'uninstall', '--keep-data', 'autowork@autowork'], stdin=subprocess.DEVNULL,
+    done = subprocess.run(['claude', 'plugin', 'uninstall', '--keep-data',
+                           f'{CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}'], stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, timeout=120)
     return 'dropped the cached plugin' if done.returncode == 0 else 'no cached plugin to drop'
 
 
 def drop_codex_plugin():
     """Codex caches a plugin by its version too (see drop_claude_plugin)."""
-    done = subprocess.run(['codex', 'plugin', 'remove', 'autowork@autowork-marketplace'], stdin=subprocess.DEVNULL,
+    done = subprocess.run(['codex', 'plugin', 'remove',
+                           f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'], stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, timeout=120)
     return 'dropped the cached plugin' if done.returncode == 0 else 'no cached plugin to drop'
 
@@ -335,6 +483,9 @@ def items(hermes_args):
         pi.steps.append(Step(f'pi update {PI_SOURCE}', ['pi', 'update', PI_SOURCE]))
     else:
         pi.steps.append(Step(f'pi install {PI_SOURCE}', ['pi', 'install', PI_SOURCE]))
+    # `pi config` filters outlive the install, so enable the package resources here.
+    pi.steps.append(Step('enable the package skills and commands in Pi settings',
+                         run=enable_pi_package))
     # The command follows the package the runners update, once it is installed.
     def command():
         installed = pi_package()
@@ -352,21 +503,23 @@ def items(hermes_args):
              # Claude Code refuses `marketplace add` when the owner's settings list that
              # marketplace from another source, such as this repository's checkout. That
              # source is the owner's choice: install from it, and never rewrite it here.
+             # A recorded folder that is gone is not a choice, and claude_steps drops it
+             # first so the published source installs on a host that never had it.
              # The update step below proves the configured marketplace is usable.
-             steps=[Step(f'claude plugin marketplace add {SOURCE}', ['claude', 'plugin', 'marketplace', 'add', SOURCE],
-                         tolerate=(TOLERATE_CLAUDE_SOURCE, 'already added', 'already exists')),
-                    Step('claude plugin marketplace update autowork',
-                         ['claude', 'plugin', 'marketplace', 'update', 'autowork']),
-                    Step('drop the cached plugin, keeping its data', run=drop_claude_plugin),
-                    Step('claude plugin install autowork@autowork', ['claude', 'plugin', 'install', 'autowork@autowork'])]),
+             steps=claude_steps()),
         Item('codex', 'Codex plugin and full suite + bundled Ponytail', needs='codex',
-             steps=[Step(f'codex plugin marketplace add {SOURCE} --ref main',
+             # The registration carries the source URL, so a renamed repository is a
+             # different source for the same marketplace id. Drop it before adding.
+             steps=[Step(f'codex plugin marketplace remove {CODEX_MARKETPLACE}',
+                         ['codex', 'plugin', 'marketplace', 'remove', CODEX_MARKETPLACE],
+                         tolerate=('not found', 'no marketplace', 'not registered')),
+                    Step(f'codex plugin marketplace add {SOURCE} --ref main',
                          ['codex', 'plugin', 'marketplace', 'add', SOURCE, '--ref', 'main']),
-                    Step('codex plugin marketplace upgrade autowork-marketplace',
-                         ['codex', 'plugin', 'marketplace', 'upgrade', 'autowork-marketplace']),
+                    Step(f'codex plugin marketplace upgrade {CODEX_MARKETPLACE}',
+                         ['codex', 'plugin', 'marketplace', 'upgrade', CODEX_MARKETPLACE]),
                     Step('drop the cached plugin', run=drop_codex_plugin),
-                    Step('codex plugin add autowork@autowork-marketplace',
-                         ['codex', 'plugin', 'add', 'autowork@autowork-marketplace'])]),
+                    Step(f'codex plugin add {CODEX_PLUGIN}@{CODEX_MARKETPLACE}',
+                         ['codex', 'plugin', 'add', f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'])]),
     ]
 
 

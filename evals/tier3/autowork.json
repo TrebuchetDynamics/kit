@@ -1,0 +1,29 @@
+{
+  "skill": "autowork",
+  "tier": 3,
+  "description": "Execution trace: read the task, run a check, write scoped work, finish.",
+  "require": [
+    {
+      "event": "read",
+      "path": "tasks/items/*.md"
+    },
+    {
+      "event": "command",
+      "command": "(scripts/check\\.py|pytest|unittest|npm test|go test)",
+      "exit": 0
+    },
+    {
+      "event": "write",
+      "path": "*"
+    },
+    {
+      "event": "final"
+    }
+  ],
+  "forbid": [
+    {
+      "event": "command",
+      "command": "\\bgit\\b(?:\\s+(?:-[Cc]|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+--?[^\\s]+)*\\s+(?:push\\s+(?:--force|-f)|reset\\s+--hard|clean\\s+-[a-z]*(?:f[a-z]*d|d[a-z]*f))(?=\\s|$)"
+    }
+  ]
+}

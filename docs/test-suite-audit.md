@@ -860,7 +860,6 @@ Directory headings supply each filename's path prefix. Totals: **104 K / six T /
 | `test_portable_package.py:11` | 7 | T — F2 editorial predicates only; keep authorization metadata/manifests/closure. |
 | `test_preflight.py:25` | 12 | K — malformed/foreign facts and safe prerequisite refusal before profile writes. |
 | `test_profile_consult.py:50` | 45 | K — cache/expiry, secret grammars, original session and timeout tree cleanup. |
-| `test_profile_create.py:14` | 2 | I — prose plus actual discovery/argument dispatch; no blanket deletion. |
 | `test_project_status.py:34` | 5 | I — historical prose versus local link/anchor checks; keep live/offline distinction. |
 | `test_removed_memory_integration.py:13` | 2 | K — retired assets/defaults and removed-flag refusal before writes. |
 | `test_repo_docs_graphify.py:9` | 2 | I — guidance/authority phrase guards; no executable-equivalence evidence. |

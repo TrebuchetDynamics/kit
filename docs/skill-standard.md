@@ -38,7 +38,8 @@ sibling to use instead, by command name. Sibling pairs that must stay distinct:
 
 Each skill ends on a `**Done when:**` line the agent can evaluate, plus the receipt it
 already reports. "Understanding reached" is not a criterion; "frontier empty and the
-owner confirmed" is.
+owner confirmed" is. The [Definition of Done](../skills/shared/DEFINITION-OF-DONE.md)
+is the standing bar beyond task acceptance; it never replaces a task's own criteria.
 
 ## 4. Steps first, reference behind a pointer
 
@@ -91,11 +92,30 @@ read-only. A fork inherits the context the dispatch was meant to escape.
 ## 12. One map over the set
 
 A growing set of user-invoked skills needs one router skill that names the others and
-when to reach for each: `ask-autowork` here, upstream's `ask-matt`. The router is
+when to reach for each: `ask-kit` here, upstream's `ask-matt`. The router is
 orientation, never authority, and it reads a skill's `SKILL.md` before describing it.
 
 *Source:* upstream `.agents/invocation.md` (router skills) and
 `skills/engineering/ask-matt`.
+
+## 13. Name the excuses and warning signs
+
+High-risk skills carry `## Common Rationalizations` and `## Red Flags` before
+`## Boundaries`. The table names the excuses that skip the process and the reality
+that rejects them. The list names observable signs that the skill is being violated.
+Keep `**Done when:**` as the single completion line; do not add a second checklist.
+Link the [Definition of Done](../skills/shared/DEFINITION-OF-DONE.md) where the skill
+closes or reviews work.
+
+*Source:* addyosmani/agent-skills at revision
+`1be8e34187e34647bb83adc3a1323b26ae6f6abe`, adapted to Kit's explicit-only standard.
+General criteria come from its pinned
+[Definition of Done](../skills/engineering/upstream/references/definition-of-done.md);
+Kit-specific gates live in the shared reference.
+
+Tier 3 trace grading lives in [evals/README.md](../evals/README.md). It grades a
+recorded trace against `evals/tier3/<skill>.json`; it does not call a model or prove
+live adherence. The checked-in traces are synthetic fixtures.
 
 ## Deliberate differences from upstream
 
@@ -107,6 +127,10 @@ orientation, never authority, and it reads a skill's `SKILL.md` before describin
   [shared/COMMUNICATION.md](../skills/shared/COMMUNICATION.md) own prose style.
 - **Pinned vendoring.** Upstream bytes live under `upstream/` with `UPSTREAM.json`
   hashes and the license; policy lives in the local adapter.
+- **No auto-activation or Addy lifecycle commands.** Kit keeps explicit-only
+  commands and `ask-kit` as its only router; Addy's phases map to existing
+  owners instead of a second command set. High-risk skills adopt Addy's
+  rationalization and red-flag sections.
 
 ## Review checklist
 
@@ -119,7 +143,13 @@ orientation, never authority, and it reads a skill's `SKILL.md` before describin
 - [ ] Claims stop at executed evidence.
 - [ ] The adapter adds host mechanics only.
 - [ ] A dispatching skill says to start the child in a fresh context window.
-- [ ] The router (`ask-autowork`) lists the skill, and the skill's Boundaries name
+- [ ] The router (`ask-kit`) lists the skill, and the skill's Boundaries name
       the sibling a confused caller should use instead.
+- [ ] High-risk skills carry `## Common Rationalizations` and `## Red Flags`,
+      and link the Definition of Done.
+- [ ] The standing Definition of Done is separate from task acceptance and names
+      local commit, integration, push, deployment and live qualification separately.
+- [ ] Tier 3 trace specs have a passing fixture and the evaluator refuses a
+      forbidden action; `tests/test_skill_trace_evals.py` passes.
 - [ ] Checks pass: `python3 scripts/check.py tests/test_skill_standard.py` plus the
       modules that read the touched files.

@@ -25,7 +25,7 @@ priorities, focus or product scope need authority not supplied by routine orderi
 
 Produce the outputs below using existing repository instructions. The named
 protocols are optional techniques for an unresolved method gap or explicit request;
-select through [engineering](../../engineering/SKILL.md) and consult
+select through [engineering](../../engineering/REFERENCE.md) and consult
 [the engineering cycle](../../shared/ENGINEERING-CYCLE.md) only if routing is unclear:
 
 - `planning-and-task-breakdown`: Now/Next IDs, dependency order, likely files,

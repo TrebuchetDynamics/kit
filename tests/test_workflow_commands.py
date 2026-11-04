@@ -2,6 +2,7 @@
 import re
 import tomllib
 import unittest
+import yaml
 import test_plugin as fixture
 
 
@@ -77,8 +78,9 @@ class WorkflowCommands(unittest.TestCase):
         self.plugin.SKILLS_DIR = fixture.ROOT / 'skills'
         self.plugin.register(self.ctx)
         work_center = (fixture.ROOT / 'skills/shared/TODO-WORKCENTER.md').read_text()
+        protocol = (fixture.ROOT / 'skills/shared/RESEARCH-PLAN.md').read_text()
         for command, skill in (('plan_for_me', 'plan-for-me'), ('plan_with_me', 'plan-with-me')):
-            text = self.ctx.skills[skill].read_text()
+            text = self.ctx.skills[skill].read_text() + protocol
             for required in ('TODO-WORKCENTER.md#rolling-planning', 'kind = "plan"',
                              'Plan round: 1 of 10', 'every building task', 'Needs decision',
                              'continue on its own'):
@@ -142,6 +144,19 @@ class WorkflowCommands(unittest.TestCase):
         self.assertNotIn('repo-docs',self.ctx.commands)
         self.assertNotIn('repo_docs',self.ctx.commands)
         self.assertIn('docs_sync',self.ctx.commands)
+
+    def test_pilot_command_descriptions_are_distinct_and_routed(self):
+        router = (fixture.ROOT / 'skills/ask-kit/SKILL.md').read_text()
+        descriptions = {}
+        for name in ('autowork', 'plan-for-me', 'ponytail-review',
+                     'git-commit-push', 'docs-sync', 'plan-with-me'):
+            with self.subTest(name=name):
+                text = (fixture.ROOT / f'skills/{name}/SKILL.md').read_text()
+                metadata = yaml.safe_load(text.split('---', 2)[1])
+                descriptions[name] = metadata['description']
+                self.assertIn(f'`/{name}`', router)
+                self.assertNotIn('use when', metadata['description'].lower())
+        self.assertEqual(len(set(descriptions.values())), len(descriptions))
 
     def test_missing_skills_do_not_advertise_workflows(self):
         self.skill('other')

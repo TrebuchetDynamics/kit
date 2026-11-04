@@ -144,13 +144,14 @@ never relabel it Accepted merely because the engineering choice is reversible.
 
 ## Load the skill needed at the current step
 
-Resolve bundled skills through `kit:docs-sync`, `kit:autowork`
-and [kit:engineering](../engineering/SKILL.md), or their actual loaded
-SKILL.md paths. The engineering adapter's pinned Addy snapshot is the default;
-select one technique with `scripts/route.py --protocol NAME` when a method is needed.
+Resolve bundled skills through `kit:docs-sync` and `kit:autowork`, or their
+actual loaded SKILL.md paths. The engineering pack is a [reference](../engineering/REFERENCE.md),
+not a registered skill: read it or the selected protocol directly when a method is
+needed. Its pinned Addy snapshot is the default; select one technique with
+`scripts/route.py --protocol NAME`.
 Phase bundles are optional; load selected support only. This works without
 external imports and avoids ambiguous bare names. Preserve recorded vendored
-adaptations and apply the adapter's task-store, authorization and host-tool translations.
+adaptations and apply the reference's task-store, authorization and host-tool translations.
 
 An explicit user request to use a separate installed Addy version wins: verify its
 source/revision through the profile catalog and `skills/.hub/lock.json`, disclose
@@ -202,7 +203,7 @@ Now/Next ordering, bounded records and repaired task contracts are the outputs.
 Record selected skill → changed owner/decision/check; a list of loaded skills does
 not establish application. A usable accepted backlog does not need repeated planning.
 
-TDD identity collision: use the engineering adapter's pinned
+TDD identity collision: use the engineering reference's pinned
 `upstream/skills/test-driven-development/PROTOCOL.md` by default. Neither a bare
 `test-driven-development` name nor Hermes's bundled
 `software-development/test-driven-development` establishes Addy provenance.

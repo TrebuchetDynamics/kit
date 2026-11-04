@@ -1,0 +1,21 @@
+{
+  "name": "ponytail-review-fail",
+  "skill": "ponytail-review",
+  "model": "fixture",
+  "note": "Synthetic negative fixture: a review that edits the code.",
+  "events": [
+    {
+      "type": "tool",
+      "tool": "read",
+      "path": "src/parser.py"
+    },
+    {
+      "type": "write",
+      "path": "src/parser.py"
+    },
+    {
+      "type": "final",
+      "text": "Changed the parser while reviewing."
+    }
+  ]
+}

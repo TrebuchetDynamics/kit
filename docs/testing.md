@@ -216,7 +216,10 @@ Python processes, with a 600-second timeout per directory (the Autowork suite
 alone takes about 150 seconds on an idle machine). The directories run at the same
 time by default, and each one's output is printed whole and in the usual order, so a
 full run takes about as long as the Autowork suite; `--jobs N` limits how many run at
-once and `--jobs 1` runs them one after another. `--list` prints the
+once and `--jobs 1` runs them one after another. `--exclude PATH` (repeatable) leaves
+a module or directory out of the selection, and `--shard I/N` keeps every N-th test id
+from the I-th, so several machines can share one selection; a module whose tests cannot
+be listed without importing runs whole on the first shard. `--list` prints the
 inventory without importing tests. Symlinked test modules and maintained-directory
 components below the resolved checkout root are skipped, so a linked `skills` or
 workflow parent cannot redirect discovery into external tests. Checkout-root aliases
@@ -325,8 +328,21 @@ check at your live profile; plugin loading may write runtime records.
 HERMES_HOME="/path/to/isolated-installed-profile" PYTHONPATH="$HERMES_SOURCE" "$HERMES_PYTHON" -c 'import hermes_bootstrap, runpy, sys; runpy.run_path(sys.argv[1], run_name="__main__")' tests/integration_bundle.py
 ```
 
-The offline suite runs in GitHub Actions; CI byte-compiles only `__init__.py`, not
-the four files above. Live Telegram delivery and model
+Before a push, the pre-push hook runs the checker's core contracts (docs check and
+task-store validation, a few seconds) and then `scripts/affected_tests.py --run` from the sha
+the remote already has. A document no test reads selects no test module, and a document
+reaches at most the tests that read it and the tests of the code that reads it; code no test
+reaches still selects the whole suite (`python3 scripts/pre_push_check.py --install` writes the hook,
+or chains it after an existing one-line exec hook such as the private-terms check).
+A push with nothing new, a deletion, or `KIT_PRE_PUSH=0` runs nothing; `git push
+--no-verify` skips every hook. The full suite is CI's job.
+
+The offline suite runs in GitHub Actions as two jobs: `fast` runs every module except
+`tests/test_pi_autowork.py` (`scripts/check.py --exclude tests/test_pi_autowork.py`),
+and `runner` runs that module alone on three machines
+(`scripts/check.py tests/test_pi_autowork.py --shard I/3`), because its tests each start
+a real runner over a Git fixture and were three quarters of a 17-minute single job.
+CI byte-compiles only `__init__.py`, not the four files above. Live Telegram delivery and model
 execution require your configured Hermes installation.
 
 ## Compatibility
@@ -436,6 +452,25 @@ execution, publication or Telegram reporting. Keep those live gates separate.
 At the repository root, `python3 -m unittest discover -s tests -p test_owner_cron.py`
 checks prompt generation, repair-mode opt-in and preserved job settings without
 scheduling or executing a live repair.
+
+## Paseo plugin checks
+
+The Paseo plugin in `integrations/paseo/` has its own Node 24+ dependency tree and CI
+job (`.github/workflows/paseo.yml`). From the repository root:
+
+```sh
+npm --prefix integrations/paseo ci --ignore-scripts
+npm --prefix integrations/paseo run check
+npm --prefix integrations/paseo run package:check
+```
+
+These run the strict native-client and server TypeScript checks, the offline fixtures,
+the pinned Paseo 0.14 compiler and an isolated plugin runtime. `python3 scripts/check.py`
+runs the same `npm run check` when the dependencies are installed and reports a skip
+reason otherwise. None of this installs into or reloads a user daemon. See the
+[plugin qualification record](../integrations/paseo/docs/qualification.md); physical
+Android and desktop clients, provider planning and real service controls remain
+separate live acceptance.
 
 ## Portable package checks
 

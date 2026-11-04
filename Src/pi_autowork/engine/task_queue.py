@@ -15,7 +15,8 @@ import subprocess
 import tomllib
 
 from pi_autowork.engine import task_select
-from pi_autowork.engine.task_store import Ownership, LiveAuthorization, Kind, StoreError, TaskStore, _Document, _blobs, _git
+from pi_autowork.engine.task_store import (Ownership, LiveAuthorization, Kind, StoreError, TaskStore,
+                                           _Document, _blobs, _git)
 
 NOTE = re.compile(r'^- ([A-Za-z][A-Za-z \'-]*): (.*)$', re.M)
 UNCONVERTED = 'no tasks/ store: run `autowork migrate {repo}` to convert this repository once'
@@ -87,8 +88,9 @@ def merge_record_error(repo, ours, theirs, result='HEAD'):
             trees.append(tree)
         task_fields = ('status', 'goal', 'section', 'scope', 'acceptance', 'checks', 'depends_on',
                        'verified_depends_on', 'touches', 'resources', 'kind', 'ownership', 'live',
-                       'exclusions', 'closure', 'closure_actor', 'closure_timestamp', 'closure_reason',
-                       'closure_evidence', 'owner_waiver', 'owner_qualification')
+                       'live_actor', 'live_at', 'live_scope', 'exclusions', 'closure', 'closure_actor',
+                       'closure_timestamp', 'closure_reason', 'closure_evidence', 'owner_waiver',
+                       'owner_qualification', 'waiver_actor', 'waiver_at', 'waiver_for')
         goal_fields = ('status', 'priority', 'source', 'focus', 'depends_on')
         evidence = lambda d: tuple(re.findall(r'^- Evidence:[^\n]*(?:\n[ \t]+[^\n]*)*', d.body, re.M | re.I))
         for path in sorted(paths):
@@ -166,7 +168,8 @@ def fields(record):
     """The labels the admission and planning rules read, from the record's typed values."""
     view = dict(notes(record))
     view.update(Status=record.status or '', Goal=record.goal or '', Short=record.short)
-    for label in ('Ownership', 'Resources', 'Live authorization', 'Kind', 'Touches', 'Held by'):
+    for label in ('Ownership', 'Resources', 'Live authorization', 'Live actor', 'Live at',
+                  'Live scope', 'Kind', 'Touches', 'Held by'):
         view.pop(label, None)  # only the typed value grants or limits anything
     if (holder := task_select.held_by(record)) is not None:
         view['Held by'] = holder  # a current hold only; an expired one is history
@@ -185,7 +188,15 @@ def fields(record):
     if record.ownership == Ownership.OWNER:
         view['Ownership'] = 'Owner only'
     if record.live == LiveAuthorization.AUTHORIZED:
+        # A legacy or migrated grant without actor, date and scope never dispatches: the
+        # admission gate names the missing field instead of trusting the typed bit.
         view['Live authorization'] = 'authorized in the task record'
+        if record.live_actor:
+            view['Live actor'] = record.live_actor
+        if record.live_at:
+            view['Live at'] = record.live_at
+        if record.live_scope:
+            view['Live scope'] = ', '.join(record.live_scope)
     if record.kind == Kind.PLAN:
         view['Kind'] = 'plan'
     return view

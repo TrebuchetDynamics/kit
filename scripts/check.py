@@ -8,6 +8,7 @@ from fnmatch import fnmatchcase
 import math
 import runpy
 import os
+import shutil
 from pathlib import Path
 import signal
 import subprocess
@@ -27,6 +28,7 @@ EXCLUSIONS = {
 # Modules whose tests run in several processes: tests/test_pi_autowork.py alone took
 # 764s of a 1324s run as one process, while its tests are independent runner fixtures.
 SPLIT = {'tests/test_pi_autowork.py': 12, 'pi-autowork/engine/test_parallel_integrate.py': 4}
+PASEO = 'integrations/paseo'
 LIVE_FLAGS = ('CONTAINMENT_LINUX_TESTS', 'RUN_CONTROLLER_BRIDGE_LINUX',
               'HERMES_NATIVE_HANDOFF_TEST', 'HERMES_NATIVE_REGISTRATION_TEST')
 
@@ -61,13 +63,23 @@ def test_ids(path):
             and item.name.startswith('test')]
 
 
-def units(root, tests, pattern=None):
+def units(root, tests, pattern=None, shard=None):
     """Each module runs in its own process; a module in SPLIT spreads its tests round-robin
-    over that many processes."""
+    over that many processes. ``shard`` = (index, count) keeps every count-th test id from
+    index on, so several machines can share one selection; a module whose tests cannot be
+    listed runs whole, on the first shard only."""
     for path in tests:
         shards = SPLIT.get(path.relative_to(root).as_posix(), 1)
-        ids = test_ids(path) if shards > 1 else []
-        if len(ids) > 1:
+        ids = test_ids(path) if shards > 1 or shard else []
+        if shard and not ids:
+            if shard[0] == 0:
+                yield path.parent, [path.stem]
+            continue
+        if shard:
+            ids = ids[shard[0]::shard[1]]
+            if not ids:
+                continue
+        if len(ids) > 1 or (shard and ids):
             if pattern:
                 match = pattern if '*' in pattern else f'*{pattern}*'
                 ids = [name for name in ids if fnmatchcase(name, match)]
@@ -75,6 +87,17 @@ def units(root, tests, pattern=None):
                 yield path.parent, ids[index::shards]
         else:
             yield path.parent, [path.stem]
+
+
+def shard_spec(value):
+    """``I/N``: shard I of N, 1-based."""
+    try:
+        index, count = (int(part) for part in value.split('/'))
+    except ValueError:
+        raise argparse.ArgumentTypeError('expected I/N, for example 2/3') from None
+    if count <= 0 or not 1 <= index <= count:
+        raise argparse.ArgumentTypeError('expected 1 <= I <= N')
+    return index - 1, count
 
 
 def run_unit(directory, names, env, timeout, pattern=None):
@@ -225,6 +248,28 @@ def affected_core(root):
     return all(subprocess.run(command, cwd=root).returncode == 0 for command in commands)
 
 
+def paseo_check(root, env, list_only=False):
+    """The Paseo plugin's own check (strict TypeScript and vitest) when its dependencies
+    are installed; otherwise a stated skip. Returns False only when the check fails."""
+    folder = root / PASEO
+    if not (folder / 'package.json').is_file():
+        return True
+    npm = shutil.which('npm')
+    reason = ('npm is not installed' if npm is None
+              else f'run `npm --prefix {PASEO} ci --ignore-scripts` first' if not (folder / 'node_modules').is_dir()
+              else None)
+    if reason:
+        print(f'SKIP {PASEO} [paseo plugin]: {reason}', flush=True)
+        return True
+    print(f'RUN {PASEO} (npm run check)', flush=True)
+    if list_only:
+        return True
+    result = subprocess.run([npm, 'run', 'check'], cwd=folder, env=env, text=True, encoding='utf-8',
+                            errors='replace', stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    print(f'CHECK {PASEO} (npm run check)\n' + result.stdout[-6000:], flush=True)
+    return result.returncode == 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('paths', nargs='*', help='owned test modules or directories (default: all offline tests)')
@@ -232,6 +277,10 @@ def main(argv=None):
     parser.add_argument('--list', action='store_true', help='list inventory without importing or running tests')
     parser.add_argument('--affected', metavar='BASE..HEAD',
                         help='run affected modules and core contracts; unresolved changes select the full suite')
+    parser.add_argument('--exclude', action='append', default=[], metavar='PATH',
+                        help='leave out these owned test modules or directories (repeatable)')
+    parser.add_argument('--shard', type=shard_spec, metavar='I/N',
+                        help='run shard I of N of the selected tests (round-robin by test id), for CI matrices')
     parser.add_argument('--timeout', type=float, default=1800, help='seconds allowed per test process (default: 1800)')
     parser.add_argument('--jobs', type=positive_int,
                         help='test processes run at once (default: idle CPUs, 4 to 8; 1 runs them in order)')
@@ -262,6 +311,14 @@ def main(argv=None):
                 parser.error(f'no owned offline tests match: {name}')
             selected.update(matches)
         tests = [test for test in tests if test in selected]
+    for name in args.exclude:
+        path = (root / name).resolve()
+        matches = [test for test in tests if test == path or path in test.parents]
+        if not path.is_relative_to(root) or not matches:
+            parser.error(f'--exclude matches no selected offline test: {name}')
+        tests = [test for test in tests if test not in matches]
+    if args.shard:
+        print(f'Shard {args.shard[0] + 1} of {args.shard[1]} of the selected tests', flush=True)
     groups = defaultdict(list)
     for path in tests:
         groups[path.parent].append(path)
@@ -275,6 +332,7 @@ def main(argv=None):
     print(f'Offline inventory: {len(tests)} modules in {len(groups)} directories; '
           f'{excluded} excluded. No model/native qualification.', flush=True)
     if args.list:
+        paseo_check(root, {}, list_only=True)
         return 0
     if not tests and (selection is None or selection['full']):
         print('FAIL: no offline tests found', flush=True)
@@ -298,13 +356,14 @@ def main(argv=None):
                               if k == 'AUTOWORK_PORT_BASE'
                               or (k not in LIVE_FLAGS and not k.startswith(('PI_AUTOWORK_', 'AUTOWORK_')))})
     passed = failed = gated = 0
-    work = list(units(root, tests, args.pattern))
+    work = list(units(root, tests, args.pattern, args.shard))
     # Modules (and shards of split ones) are independent processes; output is still printed
     # whole, by directory and in order. Shards of split modules are the longest, so they start
     # first.
     order = sorted(range(len(work)), key=lambda i: len(work[i][1]) == 1 and '.' not in work[i][1][0])
     with ThreadPoolExecutor(max_workers=args.jobs or default_jobs()) as pool:
         futures = {i: pool.submit(run_unit, *work[i], env, args.timeout, args.pattern) for i in order}
+        plugin = pool.submit(paseo_check, root, env) if not args.paths and not args.pattern and selection is None else None
         runs = [(work[i][0], futures[i]) for i in range(len(work))]
         for directory, modules in groups.items():
             print(f'CHECK {directory.relative_to(root)} ({len(modules)} modules)', flush=True)
@@ -318,6 +377,8 @@ def main(argv=None):
                 passed += 1
             else:
                 failed += 1
+    if plugin is not None and not plugin.result():
+        failed += 1
     print(f'Offline result: {passed} test directories passed; {failed} failed; '
           f'{excluded} modules excluded.', flush=True)
     if gated:  # skipped, not failed: the host was busy (TOOLSET-193-54); a quieter run checks them

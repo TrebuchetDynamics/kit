@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import parallel_plan
 import task_queue
+import task_store
 from task_store import StoreError, TaskStore
 
 GOAL = ('+++\nschema = 1\nid = "G"\ntitle = "g"\npriority = 1\nsource = "docs/plan.md#g"\n'
@@ -34,6 +35,11 @@ class ContractViewTests(unittest.TestCase):
     def git(self, *args):
         subprocess.run(['git', '-C', str(self.repo), '-c', 'user.email=f@example.invalid', '-c', 'user.name=F', *args],
                        check=True, capture_output=True)
+
+    def git_output(self, *args):
+        return subprocess.run(['git', '-C', str(self.repo), '-c', 'user.email=f@example.invalid',
+                               '-c', 'user.name=F', *args], check=True, capture_output=True,
+                              text=True).stdout.strip()
 
     def store(self, text):
         (self.repo / 'tasks/items/T-1.md').write_text(text)
@@ -68,7 +74,24 @@ class ContractViewTests(unittest.TestCase):
         self.assertEqual(contract['fields']['Resources'], 'live')
         self.assertIsNotNone(parallel_plan.authorization_wait(contract))
         granted = self.store(text.replace('live = "denied"', 'live = "authorized"'))
-        self.assertIsNone(parallel_plan.authorization_wait(task_queue.contract(granted.tasks['T-1'], granted)))
+        contract = task_queue.contract(granted.tasks['T-1'], granted)
+        gate = parallel_plan.authorization_wait(contract)
+        self.assertEqual(gate['reason'], 'grant lacks Live actor, Live at, Live scope')  # typed bit is not a grant
+        structured = self.store(task_store.edit(
+            text.replace('live = "denied"', 'live = "authorized"'),
+            {'live_actor': 'owner', 'live_at': '2026-11-04', 'live_scope': ['live']}))
+        self.assertIsNone(parallel_plan.authorization_wait(task_queue.contract(structured.tasks['T-1'], structured)))
+
+    def test_a_merge_cannot_invent_a_grant_value_absent_from_both_parents(self):
+        base = record().replace('resources = []', 'resources = ["live"]').replace(
+            'live = "denied"', 'live = "authorized"')
+        self.store(base)
+        parent = self.git_output('rev-parse', 'HEAD')
+        self.store(task_store.edit(base, {'live_actor': 'owner', 'live_at': '2026-11-04',
+                                          'live_scope': ['live']}))
+        merged = self.git_output('rev-parse', 'HEAD')
+        problem = task_queue.merge_record_error(self.repo, parent, parent, merged)
+        self.assertIn('live_actor is not a value from either merge parent', problem)
 
     def test_revision_discovery_ignores_git_routing_and_replace_refs_but_reports_errors(self):
         self.assertIsNone(task_queue.commit(self.repo))  # unborn, not a read failure

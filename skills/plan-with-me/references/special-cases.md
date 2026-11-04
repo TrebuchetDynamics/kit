@@ -85,7 +85,7 @@ not hold independent accepted work.
 ## Method gaps and supporting skills
 
 For a concrete method gap or explicit protocol request, select one technique through
-[engineering](../../engineering/SKILL.md); consult
+[engineering](../../engineering/REFERENCE.md); consult
 [the engineering cycle](../../shared/ENGINEERING-CYCLE.md) only if routing is unclear.
 `interview-me`, planning and documentation protocols are optional techniques for
 those gaps. Questions-only interviews need no planning, graph or documentation pass.

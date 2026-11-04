@@ -40,6 +40,13 @@ class PlanningTests(unittest.TestCase):
         self.id = self.session['id']
         self.worktree = Path(self.session['worktree'])
 
+    def test_create_can_pin_one_model_for_the_session(self):
+        pinned = self.planner.create('Pin a model', model='provider/model')
+        self.assertEqual(self.planner.get(pinned['id'])['model'], 'provider/model')
+        self.assertIsNone(self.planner.get(self.id)['model'])
+        with self.assertRaises(PlanningError):
+            self.planner.create('Bad model', model='two words')
+
     def test_create_resume_private_and_canonical_identity(self):
         self.assertEqual(self.session['repo'], str(self.repo))
         self.assertEqual(self.worktree.parent, self.repo / '.worktrees')

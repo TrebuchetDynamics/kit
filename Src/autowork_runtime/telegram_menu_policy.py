@@ -4,12 +4,12 @@ import re
 # Hermes' 60-entry default menu is already full of built-ins, so only these are advertised;
 # each one displaces the lowest-ranked built-in, which stays typeable.
 WORKFLOWS = ['plan_with_me', 'blockers', 'plan_for_me', 'docs_sync', 'autowork',
-             'ui_taste', 'beautify_github_readme', 'impeccable', 'lgtm',
-             'engineering', 'git_commit_push']
-# Names this bundle once promoted or registered; compatibility spellings stay
-# typeable but are no longer advertised, so earlier priority entries are removed.
+             'ui_taste', 'beautify_github_readme', 'impeccable', 'lgtm', 'git_commit_push']
+# Names this bundle once promoted or registered; they are no longer advertised, so
+# earlier priority entries are removed. A retired compatibility spelling may remain
+# typeable; a removed skill (engineering) has no command at all.
 RETIRED = {'autoresearch', 'autogoal', 'grill_me', 'repo_interview', 'repo_docs', 'git_pull_merge',
-           'cron_autowork'}
+           'engineering', 'cron_autowork'}
 
 
 def _bundle_owned(name):

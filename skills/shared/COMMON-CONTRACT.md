@@ -7,6 +7,18 @@ Apply the [shared Ponytail method](PONYTAIL.md) within each workflow's authority
 Reuse existing code and artifact owners; choose the smallest complete result,
 without weakening accepted behavior, safety or verification.
 
+## Operating behavior
+
+Apply these with [Ponytail](PONYTAIL.md) and the [communication rules](COMMUNICATION.md).
+
+- Check whether a bundled skill fits before a non-trivial response or action; use
+  [`/ask-kit`](../ask-kit/SKILL.md), then read the named skill.
+- Surface assumptions before non-trivial work; mark guesses.
+- Name confusion and conflicting requirements; stop and resolve them.
+- Disagree with evidence; propose the alternative.
+- Preserve scope and unrelated work.
+- Verify before claim; name unrun checks and missing coverage.
+
 User instructions and repository rules define the authorized scope. Read the
 relevant instructions, current source, tests and existing documentation before
 changing their owners. Keep proposals distinct from accepted requirements and
@@ -32,6 +44,18 @@ Static policy checks and offline fixtures do not prove model adherence, native
 worker execution, provider behavior or delivery. Review scoped diffs and links,
 and reconcile affected documentation and task state without inventing evidence.
 Report changed artifacts, verified behavior, limitations and remaining work.
+
+## Graph state
+
+A code graph never describes its input perfectly. When a workflow uses one, report
+exactly one state: `graphify_fresh` (version keys readable, nonzero nodes and links,
+queried inputs unchanged, tool version recorded), `graphify_stale` or
+`graphify_partial` (a changed or unknown input, an uncommitted or excluded file, or an
+integrity warning), or `graphify_unavailable` (the tool, the skill or the extraction
+failed; name the failure). Under any state except `graphify_fresh`, a graph result is
+orientation: verify it in live source before a conclusion, and claim no unreachability,
+runtime behavior, severity or effort saved. The Graphify workflow in
+`adapters/skills/graphify/SKILL.md` owns how this tool reaches each state.
 
 Resolve helper paths from the actual loaded skill directory, not an assumed
 Hermes home. Sibling bundled skills and this support directory retain their

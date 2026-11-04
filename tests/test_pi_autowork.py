@@ -492,7 +492,11 @@ class Fixture(unittest.TestCase):
                     'PI_AUTOWORK_MIN_FREE_DISK_GB': '0',  # tiny fixtures also run on a small TMPDIR
                     'PI_AUTOWORK_STATE_DIR': str(self.state), 'PI_AUTOWORK_HERMES_HOME': str(self.root / 'hermes'),
                     'PI_AUTOWORK_BACKOFF': '0', 'PI_AUTOWORK_MIN_FREE_MB': '0', 'PI_AUTOWORK_MIN_FREE_DISK_GB': '0',
-                    'XDG_STATE_HOME': str(self.root / 'xdg')}
+                    'XDG_STATE_HOME': str(self.root / 'xdg'),
+                    # No host unit or service settings leak in: this host's real
+                    # pi-autowork@.service pointed at a removed checkout, so the CLI judged
+                    # every fixture service stale and restarted without waiting.
+                    'XDG_CONFIG_HOME': str(self.root / 'xdg-config')}
         # Worker and review scratch in a short root this fixture owns and removes: each test left its
         # workers' /var/tmp/aw-* directories behind, and nothing could reclaim them once its repository
         # was gone (about 1.2 GB an hour on the fleet host).
@@ -2294,8 +2298,11 @@ sys.exit(result.returncode)
         while not self.done('A'):
             self.assertLess(time.monotonic(), deadline, 'runner never picked up the new tasks')
             time.sleep(0.5)
+        stopping = time.monotonic()
         runner.send_signal(signal.SIGINT)
         runner.communicate(timeout=60)
+        # Stopping waits for the worker still verifying B, not for four empty 5 s engine waits.
+        self.assertLess(time.monotonic() - stopping, 12, 'an almost idle runner stopped slowly')
 
     def test_a_running_runner_restarts_on_an_updated_toolset(self):
         """A `pi update` under a live runner mixed the old script with the new engine."""
@@ -2718,52 +2725,63 @@ sys.exit(result.returncode)
                     (self.root / 'interrupt-insertion').touch()
                 self.plan({'worker:A': ['blocked']})
                 runner = self.start_runner('--interval', '1')
-                self.addCleanup(lambda r=runner: r.poll() is None and r.kill())
                 common = self.git(self.repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')
                 folder = self.state / hashlib.sha256(common.encode()).hexdigest()[:16]
                 log = lambda: (folder / 'runner.log').read_text() if (folder / 'runner.log').exists() else ''
-                if not stage_all:
-                    runner.communicate(timeout=30)
-                    self.assertEqual(runner.returncode, 98, log())
-                    self.assertTrue((folder / 'planning-question.json').exists())
-                    time.sleep(1.1)  # cross a timestamp boundary before retrying the pending write
-                    runner = self.start_runner('--interval', '1')
-                    self.addCleanup(lambda r=runner: r.poll() is None and r.kill())
-                deadline = time.monotonic() + 30
-                while 'planning files are not committed on main' not in question.read_text():
-                    self.assertLess(time.monotonic(), deadline, log())
-                    self.assertIsNone(runner.poll(), log())
-                    time.sleep(0.1)
-                before = question.read_text()
-                time.sleep(3)  # several cycles: neither the log nor the question repeats
-                self.assertEqual(question.read_text(), before)
-                self.assertEqual(log().count('Runner blocked:'), 1, log())
-                status = json.loads((folder / 'status.json').read_text())
-                self.assertEqual(len([r for r in status['roots'] if r['kind'] == 'runner']), 1)
-                self.assertIn('planning files are not committed on main', status['blocker'])
-                self.assertEqual(self.runs(), [])
-                self.assertEqual(self.git(self.repo, 'ls-tree', '--name-only', 'main', 'tasks'), '')
-                if not stage_all:
-                    (self.root / 'interrupt-recovery').touch()
-                self.git(self.repo, 'add', '-A' if stage_all else 'tasks')
-                self.git(self.repo, 'commit', '-qm', 'commit planning')
-                if not stage_all:
-                    runner.communicate(timeout=30)
-                    self.assertEqual(runner.returncode, 99, log())
-                    self.assertTrue((folder / 'planning-question.json').exists())
-                    runner = self.start_runner('--interval', '1')
-                    self.addCleanup(lambda r=runner: r.poll() is None and r.kill())
-                deadline = time.monotonic() + 90
-                while '### Q-A ' not in question.read_text():
-                    self.assertLess(time.monotonic(), deadline, log())
-                    self.assertIsNone(runner.poll(), log())
-                    time.sleep(0.2)
-                self.assertTrue(self.runs('worker'))
-                runner.send_signal(signal.SIGINT)
-                runner.communicate(timeout=120)
-                self.assertNotIn('The engine needs attention', log())
-                self.assertNotIn('planning files are not committed', question.read_text())
-                self.assertIn('Owner note: preserve me.', question.read_text())
+
+                def read():
+                    # Git replaces the file for an instant when the questions commit lands on main.
+                    try:
+                        return question.read_text()
+                    except FileNotFoundError:
+                        return ''
+                try:
+                    if not stage_all:
+                        runner.communicate(timeout=30)
+                        self.assertEqual(runner.returncode, 98, log())
+                        self.assertTrue((folder / 'planning-question.json').exists())
+                        time.sleep(1.1)  # cross a timestamp boundary before retrying the pending write
+                        runner = self.start_runner('--interval', '1')
+                    deadline = time.monotonic() + 30
+                    while 'planning files are not committed on main' not in read():
+                        self.assertLess(time.monotonic(), deadline, log())
+                        self.assertIsNone(runner.poll(), log())
+                        time.sleep(0.1)
+                    before = read()
+                    time.sleep(3)  # several cycles: neither the log nor the question repeats
+                    self.assertEqual(read(), before)
+                    self.assertEqual(log().count('Runner blocked:'), 1, log())
+                    status = json.loads((folder / 'status.json').read_text())
+                    self.assertEqual(len([r for r in status['roots'] if r['kind'] == 'runner']), 1)
+                    self.assertIn('planning files are not committed on main', status['blocker'])
+                    self.assertEqual(self.runs(), [])
+                    self.assertEqual(self.git(self.repo, 'ls-tree', '--name-only', 'main', 'tasks'), '')
+                    if not stage_all:
+                        (self.root / 'interrupt-recovery').touch()
+                    self.git(self.repo, 'add', '-A' if stage_all else 'tasks')
+                    self.git(self.repo, 'commit', '-qm', 'commit planning')
+                    if not stage_all:
+                        runner.communicate(timeout=30)
+                        self.assertEqual(runner.returncode, 99, log())
+                        self.assertTrue((folder / 'planning-question.json').exists())
+                        runner = self.start_runner('--interval', '1')
+                    deadline = time.monotonic() + 90
+                    while '### Q-A ' not in read():
+                        self.assertLess(time.monotonic(), deadline, log())
+                        self.assertIsNone(runner.poll(), log())
+                        time.sleep(0.2)
+                    self.assertTrue(self.runs('worker'))
+                    runner.send_signal(signal.SIGINT)
+                    runner.communicate(timeout=120)
+                    self.assertNotIn('The engine needs attention', log())
+                    self.assertNotIn('planning files are not committed', read())
+                    self.assertIn('Owner note: preserve me.', read())
+                finally:
+                    # A failing subtest must not leave its runner working into the next one's
+                    # shared fake-Pi log: one did, and a legitimate maintainer re-cut failed it.
+                    if runner.poll() is None:
+                        runner.kill()
+                        runner.communicate(timeout=30)
 
     def test_nested_task_edit_wakes_coordinator(self):
         """Editing a task file in place need not change its directory's timestamp."""
@@ -2905,7 +2923,7 @@ sys.exit(result.returncode)
     def test_issue_2_reused_yarn_worker_tools_do_not_mutate_the_canonical_install(self):
         """Issue 2 part 2: automatic tool discovery works, but reuse is not mutation-isolated.
 
-        https://github.com/TrebuchetDynamics/autowork/issues/2
+        https://github.com/TrebuchetDynamics/kit/issues/2
         Synthetic executables check provisioning/resolution, not real Jest/TypeScript qualification.
         """
         from unittest.mock import patch
@@ -3162,7 +3180,7 @@ sys.exit(result.returncode)
     def test_issue_2_blocker_panel_distinguishes_saved_and_consumed_answers(self):
         """Issue 2 part 4 remains: the panel repeats a question without its answer-consumption state.
 
-        https://github.com/TrebuchetDynamics/autowork/issues/2
+        https://github.com/TrebuchetDynamics/kit/issues/2
         """
         sys.path.insert(0, str(ROOT / 'pi-autowork'))
         from pi_autowork import fleet_view, questions
@@ -3757,6 +3775,73 @@ sys.exit(result.returncode)
                     self.assertIn('Runner:     ' + expected, result.stdout)
                     self.assertEqual(path.read_bytes(), before)
 
+    def status_state(self):
+        common = self.git(self.repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+        state = self.state / hashlib.sha256(common.encode()).hexdigest()[:16]
+        state.mkdir(parents=True, exist_ok=True)
+        return state
+
+    def test_status_names_the_release_the_engine_ran_not_only_the_toolset(self):
+        """`Toolset:` names the code a start loads, which need not be what ran: a runner pinned
+        to an older release read as current source, and that release had already been pruned,
+        so a report against it measured the old build's behavior as a defect of HEAD."""
+        sys.path.insert(0, str(ROOT / 'pi-autowork'))
+        from pi_autowork import cli
+        checkout = self.root / 'checkout'
+        checkout.mkdir()
+        self.git(checkout, 'init', '-q', '-b', 'main')
+        (checkout / 'a.txt').write_text('a\n')
+        self.git(checkout, 'add', '-A')
+        self.git(checkout, 'commit', '-qm', 'the build')
+        rev = self.git(checkout, 'rev-parse', '--short', 'HEAD')
+        day = self.git(checkout, 'log', '-1', '--format=%cs')
+        state = self.root / 'state' / '0123456789abcdef'
+        state.mkdir(parents=True)
+        present = self.state / 'releases' / rev.ljust(40, '0')  # the snapshot an older record names
+        present.mkdir(parents=True)
+        cases = [
+            ({'toolset_rev': rev, 'toolset': str(present)}, False,
+             f'last {rev} ({day}) from {present}'),
+            ({'toolset_rev': rev, 'toolset': str(present)}, True,
+             f'running {rev} ({day}) from {present}'),
+            ({'toolset_rev': rev}, False, f'last {rev} ({day}) from {present}'),  # older record
+            ({}, False, ''),
+        ]
+        for record, live, expected in cases:
+            with self.subTest(record=record, live=live):
+                line = cli.engine_release(record, state, str(checkout), live=live)
+                self.assertTrue(line.startswith(expected), line)
+        gone = cli.engine_release({'toolset_rev': rev, 'toolset': str(self.state / 'releases' / ('c' * 40))},
+                                  state, str(checkout))
+        self.assertIn('that directory is gone', gone)
+        self.assertNotIn('gone', cli.engine_release({'toolset_rev': rev, 'toolset': str(present)},
+                                                    state, str(checkout)))
+
+    def test_status_prints_the_release_the_runner_recorded(self):
+        state = self.status_state()
+        rev = self.git(self.repo, 'rev-parse', '--short', 'HEAD')
+        gone = self.state / 'releases' / ('0' * 40)
+        (state / 'runner.json').write_text(json.dumps({
+            'pid': 1, 'start_time': '1', 'started': 'now', 'repo': str(self.repo),
+            'toolset_rev': rev, 'toolset': str(gone)}))
+        result = self.run_runner('--status')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        line = next(line for line in result.stdout.splitlines() if line.startswith('Release:    '))
+        self.assertTrue(line.startswith(f'Release:    last {rev}'), line)
+        self.assertIn(str(gone), line)
+        self.assertIn('that directory is gone', line)
+
+    def test_status_omits_a_release_no_runner_recorded(self):
+        state = self.status_state()
+        for record in ({'pid': 1, 'start_time': '1', 'started': 'now', 'repo': str(self.repo)},
+                       ['a malformed record health reports']):
+            with self.subTest(record=record):
+                (state / 'runner.json').write_text(json.dumps(record))
+                result = self.run_runner('--status')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertNotIn('Release:', result.stdout)
+                self.assertIn('Runner:     not running', result.stdout)
+
     def test_status_and_dry_run_change_nothing(self):
         before = self.git(self.repo, 'status', '--porcelain', '--untracked-files=all')
         for option in ('--dry-run', '--status'):
@@ -3804,7 +3889,7 @@ class SetupTests(Fixture):
         (old / 'cli.py').touch()
         (old / 'release.py').write_text('raise SystemExit(2)\n')
         self.env['FAKE_PI_LIST'] = (f'git:github.com/TrebuchetDynamics/old-toolset\n  {old.parents[1]}\n'
-                                    f'git:github.com/TrebuchetDynamics/autowork\n  {package}\n')
+                                    f'git:github.com/TrebuchetDynamics/kit\n  {package}\n')
         copied = self.repo / 'pi-autowork.sh'
         shutil.copy(RUNNER, copied)
         result = self.run_runner('--dry-run', script=copied)
@@ -3827,7 +3912,7 @@ class SetupTests(Fixture):
         self.git(package, 'remote', 'add', 'origin', str(self.origin))
         self.publish(lambda tree: (tree / 'RELEASE').write_text('2\n'), 'release 2')
         self.env.update(FAKE_PI_TOOLSET=str(package), PI_AUTOWORK_UPDATE_INTERVAL='1',
-                        FAKE_PI_SOURCE='git:github.com/TrebuchetDynamics/autowork')
+                        FAKE_PI_SOURCE='git:github.com/TrebuchetDynamics/kit')
         return package
 
     def publish(self, change, message):
@@ -3873,7 +3958,7 @@ class SetupTests(Fixture):
         self.assertGreaterEqual(len(starts), 2, out)
         self.assertEqual({pid for _, pid in starts}, {str(runner.pid)}, out)  # exec keeps the PID
         updates = [json.loads(l) for l in self.log.read_text().splitlines() if '"update"' in l]
-        self.assertEqual(updates[0]['update'], ['git:github.com/TrebuchetDynamics/autowork'])
+        self.assertEqual(updates[0]['update'], ['git:github.com/TrebuchetDynamics/kit'])
 
     def test_a_release_that_cannot_read_current_state_is_never_installed(self):
         package = self.installed_package()
@@ -4151,6 +4236,234 @@ class ServiceTests(Fixture):
         self.assertFalse((self.envs / 'project.env').exists())
         self.assertIn('--user disable --now pi-autowork@project.service', self.calls.read_text())
         self.assertEqual(self.run_runner('--install-service', '--dry-run').returncode, 2)
+
+
+class PushOutcomeTests(unittest.TestCase):
+    """A push whose remote outcome is unknown is reconciled from the refs, never retried blind."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='awp-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.origin = self.root / 'origin.git'
+        self.repo = self.root / 'repo'
+        subprocess.run(['git', 'init', '-q', '--bare', str(self.origin)], check=True)
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.repo)], check=True)
+        self.git('config', 'user.email', 'fixture@example.invalid')
+        self.git('config', 'user.name', 'Fixture')
+        (self.repo / 'a.txt').write_text('a\n')
+        self.git('add', 'a.txt')
+        self.git('commit', '-qm', 'base')
+        self.git('remote', 'add', 'origin', str(self.origin))
+        self.git('push', '-q', '-u', 'origin', 'main')
+        sys.path.insert(0, str(ROOT / 'pi-autowork'))
+        from pi_autowork import coordinator
+        self.module = coordinator
+        self.messages = []
+        for target, attr, value in (
+                (coordinator.LOG, 'say', self.messages.append),
+                (coordinator.telemetry, 'observe', lambda *args, **kwargs: None),
+                (coordinator.post_merge_barrier, 'enabled', lambda: False),
+                (coordinator.optimistic, 'enabled', lambda: False),
+                (coordinator.main_check, 'read', lambda state: {})):
+            patcher = patch.object(target, attr, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.real_run = subprocess.run
+        granted = patch.dict(os.environ, PI_AUTOWORK_PUSH='1')
+        granted.start()
+        self.addCleanup(granted.stop)
+
+    def git(self, *argv):
+        return subprocess.run(['git', '-C', str(self.repo), *argv], check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def ahead(self):
+        (self.repo / 'b.txt').write_text('b\n')
+        self.git('add', 'b.txt')
+        self.git('commit', '-qm', 'ahead')
+        return self.git('rev-parse', 'HEAD')
+
+    def push_outcome(self, on_push):
+        """push() with only the push call replaced; the read-only probe and other Git stay real."""
+        calls = []
+
+        def fake_run(argv, *args, **kwargs):
+            if 'push' in argv and 'ls-remote' not in argv:
+                calls.append('push')
+                return on_push(argv, args, kwargs)
+            if 'ls-remote' in argv:
+                calls.append('ls-remote')
+            return self.real_run(argv, *args, **kwargs)
+
+        with patch.object(self.module.subprocess, 'run', fake_run):
+            outcome = self.coordinator().push()
+        return outcome, calls
+
+    def coordinator(self):
+        value = self.module.Coordinator.__new__(self.module.Coordinator)
+        value.repo, value.base, value.integ, value.seen = str(self.repo), 'main', None, {}
+        value.state = self.root / 'state'
+        value.state.mkdir(exist_ok=True)
+        value.ensure_repository = lambda: None
+        return value
+
+    def test_a_push_timeout_records_an_unknown_outcome_and_does_not_retry(self):
+        before = self.git('rev-parse', 'HEAD')
+        head = self.ahead()
+        def timeout(argv, args, kwargs):
+            raise self.module.subprocess.TimeoutExpired(argv, 300)
+        outcome, calls = self.push_outcome(timeout)
+        self.assertEqual((outcome, calls), ('unknown', ['push', 'ls-remote']))
+        self.assertEqual(self.git('rev-parse', 'origin/main'), before)
+        self.assertTrue(any('unknown outcome' in line for line in self.messages), self.messages)
+        self.assertEqual(sum('unknown outcome' in line for line in self.messages), 1)
+        # The next ordinary push publishes the same fast-forward once, never twice.
+        outcome, calls = self.push_outcome(lambda argv, args, kwargs: self.real_run(argv, *args, **kwargs))
+        self.assertEqual(outcome, 'published')
+        self.assertEqual(self.git('rev-parse', 'origin/main'), head)
+
+    def test_a_push_that_landed_before_its_timeout_reads_as_published(self):
+        head = self.ahead()
+        self.git('push', '-q', 'origin', 'main')  # the push landed but the client never heard
+        def timeout(argv, args, kwargs):
+            raise self.module.subprocess.TimeoutExpired(argv, 300)
+        outcome, calls = self.push_outcome(timeout)
+        self.assertEqual((outcome, calls), ('published', ['push', 'ls-remote']))
+        self.assertTrue(any('already had it' in line for line in self.messages), self.messages)
+        self.assertFalse(any('unknown outcome' in line for line in self.messages), self.messages)
+        self.assertEqual(self.git('rev-parse', 'origin/main'), head)
+
+    def test_a_client_refusal_is_a_known_failure_without_a_reconcile_probe(self):
+        self.ahead()
+        def refused(argv, args, kwargs):
+            return subprocess.CompletedProcess(argv, 1, '', 'fatal: Authentication failed for https://example.invalid/')
+        outcome, calls = self.push_outcome(refused)
+        self.assertEqual((outcome, calls), ('failed', ['push']))
+        self.assertTrue(any('failed:' in line for line in self.messages), self.messages)
+
+    def test_an_unexplained_push_failure_is_reconciled_as_unknown(self):
+        self.ahead()
+        def reset(argv, args, kwargs):
+            return subprocess.CompletedProcess(argv, 1, '', 'fatal: the remote end hung up unexpectedly')
+        outcome, calls = self.push_outcome(reset)
+        self.assertEqual((outcome, calls), ('unknown', ['push', 'ls-remote']))
+
+    def test_no_grant_never_probes_or_pushes(self):
+        self.ahead()
+        with patch.dict(os.environ, PI_AUTOWORK_PUSH='0'):
+            outcome, calls = self.push_outcome(lambda argv, args, kwargs: self.fail('no push without a grant'))
+        self.assertEqual((outcome, calls), ('no-grant', []))
+        self.assertTrue(any('no PI_AUTOWORK_PUSH=1 grant' in line for line in self.messages), self.messages)
+
+
+class OwnerOutboxTests(unittest.TestCase):
+    """The owner's questions file is replaced atomically and committed as the bytes written."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='awo-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.repo = self.root / 'repo'
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.repo)], check=True)
+        self.git('config', 'user.email', 'fixture@example.invalid')
+        self.git('config', 'user.name', 'Fixture')
+        self.path = self.repo / 'BLOCKERS.md'
+        sys.path.insert(0, str(ROOT / 'pi-autowork'))
+        from pi_autowork import common, coordinator, questions
+        self.common, self.module, self.questions = common, coordinator, questions
+        self.messages = []
+        patcher = patch.object(coordinator.LOG, 'say', self.messages.append)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def git(self, *argv):
+        return subprocess.run(['git', '-C', str(self.repo), *argv], check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def commit(self, text):
+        self.path.write_text(text)
+        self.git('add', 'BLOCKERS.md')
+        self.git('commit', '-qm', 'questions')
+
+    def coordinator(self):
+        value = self.module.Coordinator.__new__(self.module.Coordinator)
+        value.integ, value.seen = str(self.repo), {}
+        return value
+
+    def test_an_interrupted_replace_leaves_the_previous_bytes_and_no_temporary(self):
+        self.commit('old\n')
+        with patch.object(self.common.os, 'replace', side_effect=OSError('interrupted')):
+            with self.assertRaises(OSError):
+                self.common.atomic_write(self.path, 'new\n')
+        self.assertEqual(self.path.read_text(), 'old\n')
+        self.assertEqual([entry.name for entry in self.repo.iterdir() if entry.name != '.git'],
+                         ['BLOCKERS.md'])
+
+    def test_a_commit_failure_after_replacement_is_repaired_on_the_next_pass(self):
+        self.commit('old\n')
+        value, attempts = self.coordinator(), []
+
+        def refuse(paths, *message):
+            attempts.append(list(paths))
+            raise OSError('disk full')
+
+        value.commit = refuse
+        self.assertEqual(value.store_questions(self.path, 'old\n', 'new\n'), 'commit-failed')
+        self.assertEqual(self.path.read_text(), 'new\n')  # complete, never torn
+        self.assertEqual(attempts, [['BLOCKERS.md']])
+
+        def commit(paths, *message):
+            attempts.append(list(paths))
+            self.git('add', *paths)
+            self.git('commit', '-qm', 'questions')
+            return True
+
+        value.commit = commit
+        self.assertEqual(value.store_questions(self.path, 'new\n', 'new\n'), 'written')
+        self.assertEqual(attempts, [['BLOCKERS.md'], ['BLOCKERS.md']])
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_an_unchanged_committed_block_is_neither_rewritten_nor_recommitted(self):
+        self.commit('same\n')
+        value = self.coordinator()
+        value.commit = lambda *args: self.fail('an unchanged, committed file has nothing to commit')
+        self.assertEqual(value.store_questions(self.path, 'same\n', 'same\n'), 'unchanged')
+
+    def test_a_concurrent_edit_between_replacement_and_commit_is_not_committed(self):
+        self.commit('old\n')
+        value = self.coordinator()
+        value.commit = lambda *args: self.fail('a raced file must not be committed')
+
+        def race(path, new, **kwargs):
+            Path(path).write_text(new + 'owner edit\n')
+
+        with patch.object(self.module, 'atomic_write', race):
+            self.assertEqual(value.store_questions(self.path, 'old\n', 'new\n'), 'raced')
+        self.assertIn('owner edit', self.path.read_text())
+
+    def test_a_torn_questions_block_is_repaired_without_losing_owner_text(self):
+        torn = ('# Blockers\n\n## Active\n\nowner note\n\n' + self.questions.START
+                + '\n\n### Q-A — USER_INPUT — effort input — unblocks 1\n- Needs: partial\n')
+        repaired = self.questions.update(torn, [dict(
+            id='A', type='USER_INPUT', effort='input', unblocks=1, task='A', needs='the full need',
+            answer='the answer', kind='blocker')])
+        self.assertEqual((repaired.count(self.questions.START), repaired.count(self.questions.END)), (1, 1))
+        self.assertTrue(repaired.startswith('# Blockers\n\n## Active\n\nowner note\n\n'))
+        self.assertIn('- Needs: the full need', repaired)
+        self.assertNotIn('- Needs: partial', repaired)
+
+    def test_a_duplicated_questions_block_collapses_to_one_and_keeps_text_between(self):
+        one = self.questions.update(None, [dict(
+            id='A', type='USER_INPUT', effort='input', unblocks=1, task='A', needs='need',
+            answer='answer', kind='blocker')])
+        text = '# Blockers\n\n## Active\n\n' + one + '\nowner tail\n\n' + one + '\n'
+        repaired = self.questions.update(text, [dict(
+            id='A', type='USER_INPUT', effort='input', unblocks=1, task='A', needs='need',
+            answer='answer', kind='blocker')])
+        self.assertEqual((repaired.count(self.questions.START), repaired.count(self.questions.END)), (1, 1))
+        self.assertIn('owner tail', repaired)
+        self.assertEqual(repaired.count('### Q-A'), 1)
 
 
 if __name__ == '__main__':

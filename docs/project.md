@@ -208,7 +208,7 @@ These additional user requirements belong to TOOLSET-012's accepted implementati
   checks. A smaller prompt or router response is not evidence those gates passed.
 
 At requirement capture (`f617808`),
-[the engineering adapter](../skills/engineering/SKILL.md) already called itself
+[the engineering reference pack](../skills/engineering/REFERENCE.md) already called itself
 guidance rather than a coordinator, but
 [its router](../skills/engineering/scripts/route.py) required a phase and prepended
 that phase's protocol list. Exact single-protocol selection and conditional routing
@@ -443,7 +443,7 @@ production runs and external message delivery are separate outcomes.
 
 At planning time, `pi-autowork/engine/owner_cycle.py::run_locked` reconciled a retained
 native handoff before selection and could return `BLOCKED` without selecting a TODO
-task. [`pi-autowork/engine/reconcile.py` (historical source)](https://github.com/TrebuchetDynamics/autowork/blob/0d7c2bf16d4baf549b3f90033a31a9d0021280e8/pi-autowork/engine/reconcile.py) calls
+task. [`pi-autowork/engine/reconcile.py` (historical source)](https://github.com/TrebuchetDynamics/kit/blob/0d7c2bf16d4baf549b3f90033a31a9d0021280e8/pi-autowork/engine/reconcile.py) calls
 `continuation_capability.assess(None)`, while
 `skills/autowork/references/historical-owner-cycle.md#original-card-continuation-capability`
 explicitly documents the missing binding. These are concrete native-integration
@@ -757,7 +757,7 @@ Findings:
   `CHECKSUMS.sha256`). All 16 files are plain, non-executable Markdown/JSON/YAML.
 - License: Apache-2.0 with NOTICE attribution to Impeccable (Paul Bakaus, 4.4.0) and
   ehmo's MIT platform-design-skills; Uizze's repository root is MIT. The playbooks
-  are adaptations of Impeccable 4.4.0, which this bundle already ships as 4.5.2.
+  are adaptations of Impeccable 4.4.0, which this bundle already ships as 4.8.0.
 - The skill works offline; it mentions an optional paid Uizze MCP
   (`find_ui_references`, `find_ui_materials`) and links a remote banner image.
 
@@ -776,10 +776,11 @@ Planner's calls (reversible; reject any of them):
 - Expose it on Codex and Pi like the other workflows (explicit-only Codex policy, Pi
   command `/ui_taste`); it is not added to the Telegram menu priority. Superseded
   2026-10-15: the user chose to advertise `/ui_taste` and `/beautify_github_readme`,
-  then `/impeccable` and `/lgtm`, then `/engineering`, `/git_commit_push` and
+  then `/impeccable` and `/lgtm`, then `/git_commit_push` and
   `/git_pull_merge`, in the bundle's menu priority, displacing the last seven
   built-ins at the default 60-entry cap. `/git_pull_merge` was retired the same day
-  when Git Pull Merge merged into Git Commit Push, so six are advertised.
+  when Git Pull Merge merged into Git Commit Push, so five are advertised. Engineering
+  is a reference pack, not an advertised command or skill on any host.
 
 Anti-goals: rewriting upstream text, fetching anything at runtime, adding an MCP or
 account dependency, or presenting the vendored copy as an endorsement by Uizze or
@@ -793,7 +794,7 @@ Decision: On 2026-10-15 the user asked to add
 [oil-oil/beautify-github-readme](https://github.com/oil-oil/beautify-github-readme)
 (MIT, pinned at `d6562a5f5c484d069f8560b39c215c9cda4b5a55`) to the bundle, vendor
 it, adapt it to this toolset, and then use it on this README. The layout follows the
-engineering pack: a toolset-owned `SKILL.md` adapter, the upstream skill byte-exact
+vendored-pack pattern: a toolset-owned entry file, the upstream skill byte-exact
 under `upstream/` (its `SKILL.md` renamed `PROTOCOL.md` so it is not registered as a
 second skill), and `UPSTREAM.json` with file hashes checked by a test. The repository's
 showcase images, translated READMEs and Codex agent manifest are excluded.
@@ -1600,7 +1601,7 @@ Status: Accepted
 Decision (owner, 2026-10-16): the repository, plugin and command namespace are renamed
 from `hermes-toolset` to `autowork`. Planning works in Hermes, Claude Code, Codex and Pi,
 and pi-autowork builds the queued work, so the name no longer names one host. The
-GitHub repository is `TrebuchetDynamics/autowork`.
+GitHub repository is `TrebuchetDynamics/kit`.
 
 - No backwards compatibility (owner direction): no aliases, no migration code and no
   legacy names in source. Hermes keys a plugin by its manifest `name`, so an installation
@@ -2282,3 +2283,54 @@ behavior, JSON/shared verdict consumers and diagnostic-only idle logging. Test
 inputs are task-owned fixtures; no external input or live operation is needed.
 All three are independently implementable with the overlap noted above. These
 findings are recorded in each task; no new product choice or scope change arose.
+
+
+## Planning authority and shared protocol (2026-11-01)
+
+Status: Accepted
+
+Decision: planning proposals use one machine authority for the rules that can be
+enforced. `Src/pi_autowork/planning_authority.py` owns the allowed paths, proposal
+size and secret checks, and generates the prompt block that the planning console
+injects. `Src/pi_autowork/engine/task_store.py::planner_authority` owns record
+schema and authority diffs: closure fields, owner attestations, holds, live
+authorization, ownership, task status and goal status. The console policy and the
+proposal validator call these owners instead of carrying their own copies.
+
+Plan With Me and Plan For Me are two adapters over the shared planning interface in
+`skills/shared/RESEARCH-PLAN.md#shared-planning-interface`. The shared sequence,
+rolling-plan rules and task-record requirements have one home. Each entry skill
+states only its mode-specific interview or discovery behavior and links to the
+protocol. Existing prose instruction guards remain only for rules that cannot be
+executed; machine-enforced rules are tested at the authority and CLI seam.
+
+Implementation keeps the accepted planning-skills split: Plan For Me remains
+decisive, Plan With Me remains interactive for consequential missing intent, and
+neither gains execution, dispatch or publication authority. The next change to a
+planning limit or a protected record field has one code owner to edit.
+
+
+## Skill adherence and Definition of Done (2026-11-01)
+
+Status: Accepted
+
+Decision: high-risk Kit skills adopt Addy Osmani's `## Common Rationalizations` and
+`## Red Flags` sections. Keep the single `**Done when:**` line; do not add a second
+verification checklist. Each high-risk skill links the shared
+[Definition of Done](../skills/shared/DEFINITION-OF-DONE.md), which owns Kit-specific
+gates and points to the pinned Addy checklist for general correctness, quality,
+integration, documentation and ship criteria.
+
+The initial pilot was `autowork`, `plan-for-me` and `ponytail-review`; the rollout
+adds `git-commit-push`, `docs-sync` and `plan-with-me`. `docs/skill-standard.md` and
+`writing-for-agents` carry the rule for later skills. Addy's core operating
+behaviors live in `skills/shared/COMMON-CONTRACT.md`, not a second meta-skill. Kit
+keeps explicit-only commands and `ask-kit` as the only router; Addy's lifecycle
+phases map to existing owners rather than a parallel command set.
+
+Tier 1 structural checks and Tier 2 routing/description checks cover the pilot.
+Tier 3 trace grading covers the six high-risk skills through
+`evals/tier3/<skill>.json` and `scripts/skill_trace_eval.py`. The checked-in traces
+are synthetic fixtures; live traces remain outside Git and are graded with the same
+command. The rollout does not create a new queue, command, auto-activation rule or
+delivery authority.

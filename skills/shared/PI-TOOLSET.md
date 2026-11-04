@@ -38,13 +38,14 @@ package, extension, hooks, shell controller or scanner is installed by these ski
 Upstream names describe capabilities, not tools granted by the protocol:
 
 - `diagnose`, `systematic-debugging` and `tdd` map to the bundled
-  [engineering methods](../engineering/SKILL.md) for debugging and test-first
+  [engineering methods](../engineering/REFERENCE.md) for debugging and test-first
   regression protection. Respect the existing [test budget](ENGINEERING-CYCLE.md#test-budget).
 - `folder_refactor_scan/state/audit` and Understand graphs are optional. Use native
   tree/reference inspection and the existing task receipt instead; never invent
   tool calls or generate a map just to satisfy a dependency.
 - Neighboring skills are optional handoffs only when available and relevant.
-  `lgtm` resumes only the actual latest approved action; it grants no new scope.
+  `lgtm` accepts the latest recommendation, including recommended answers to a
+  question round, and resumes that action; it grants no new scope.
 - pi-subagents examples are not portable API requirements. Use discovered native
   roles when available. Without delegation, in-session execution is permitted only
   if repository policy allows it and required independent review can still be

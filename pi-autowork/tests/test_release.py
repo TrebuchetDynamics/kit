@@ -226,7 +226,7 @@ class InstalledToolsetTests(unittest.TestCase):
                 pi.chmod(0o755)
                 return cli.installed_toolset(str(pi))
             self.assertEqual(listing(('git:github.com/TrebuchetDynamics/old-toolset', old),
-                                     ('git:github.com/TrebuchetDynamics/autowork (filtered)', new)),
+                                     ('git:github.com/TrebuchetDynamics/kit (filtered)', new)),
                              str(new.resolve()))
             self.assertEqual(listing(('npm:other', base), ('git:github.com/TrebuchetDynamics/old-toolset', old)),
                              str(old.resolve()))
@@ -242,7 +242,7 @@ class PackageUpdateTests(unittest.TestCase):
         self.package.mkdir()
         subprocess.run(['git', 'init', '-q', str(self.package)], check=True)
         subprocess.run(['git', '-C', str(self.package), 'remote', 'add', 'origin',
-                        'https://github.com/TrebuchetDynamics/autowork'], check=True)
+                        'https://github.com/TrebuchetDynamics/kit'], check=True)
         self.listing = self.root / 'listing'
         self.calls = self.root / 'updates.jsonl'
         self.pi = self.root / 'pi'
@@ -286,9 +286,9 @@ class PackageUpdateTests(unittest.TestCase):
                 self.assertEqual(checks, 0)
 
     def test_managed_packages_use_the_exact_registered_source_including_ref(self):
-        for source in ('git:github.com/TrebuchetDynamics/autowork',
-                       'git:github.com/TrebuchetDynamics/autowork@main',
-                       'https://github.com/TrebuchetDynamics/autowork'):
+        for source in ('git:github.com/TrebuchetDynamics/kit',
+                       'git:github.com/TrebuchetDynamics/kit@main',
+                       'https://github.com/TrebuchetDynamics/kit'):
             with self.subTest(source=source):
                 self.calls.unlink(missing_ok=True)
                 self.declare(source + ' (filtered)')
@@ -317,7 +317,7 @@ class PackageUpdateTests(unittest.TestCase):
                    PI_AUTOWORK_ENV_DIR=str(self.root / 'settings'))
         for source, installed in ((str(self.package), '0'),
                                   ('../../git/autowork', '0'),
-                                  ('git:github.com/TrebuchetDynamics/autowork', '1')):
+                                  ('git:github.com/TrebuchetDynamics/kit', '1')):
             with self.subTest(source=source):
                 self.declare(source)
                 result = subprocess.run([sys.executable, '-c',

@@ -139,7 +139,7 @@ def installed_toolset(pi):
         if line.startswith('/'):
             path = Path(line)
             if (path / 'pi-autowork/pi_autowork/cli.py').is_file():
-                found.append((source.split()[:1] != ['git:github.com/TrebuchetDynamics/autowork'], path))
+                found.append((source.split()[:1] != ['git:github.com/TrebuchetDynamics/kit'], path))
         else:
             source = line
     return next((p for other, p in found if not other), found[0][1] if found else None)

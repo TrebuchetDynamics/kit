@@ -1,0 +1,22 @@
+{
+  "name": "git-commit-push-pass",
+  "skill": "git-commit-push",
+  "model": "fixture",
+  "note": "Synthetic trace fixture; not a model run.",
+  "events": [
+    {
+      "type": "command",
+      "command": "git status --short",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git diff -- src/parser.py",
+      "exit": 0
+    },
+    {
+      "type": "final",
+      "text": "Committed owned path; push not requested."
+    }
+  ]
+}

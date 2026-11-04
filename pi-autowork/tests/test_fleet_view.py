@@ -140,6 +140,13 @@ class FleetViewTests(unittest.TestCase):
         self.assertEqual(row['Total'], ('4', 'bold'))
         self.assertIn('2 tasks in Needs decision', row['Needs'][0])
 
+    def test_attention_names_urgent_runners_and_owner_questions(self):
+        runners = [fleet_view.Runner('stalled', state='stalled'),
+                   fleet_view.Runner('idle', state='idle'),
+                   fleet_view.Runner('asked', state='idle', questions=[object()]),
+                   fleet_view.Runner('paused', state='paused')]
+        self.assertEqual([r.name for r in fleet_view.attention(runners)], ['stalled', 'asked'])
+
     def test_merges_services_and_runner_state(self):
         self.runner_state('/git/india', state='stalled', since=time.time() - 341 * 60, waiting=23,
                           roots=[{'id': 'TASK-036', 'kind': 'outside', 'blocks': 19},
@@ -267,8 +274,23 @@ class FleetViewTests(unittest.TestCase):
                                  (label, 'bold yellow') if label else
                                  ('Idle — nothing left to run in Now/Next', 'bold green'))
                 self.assertEqual(fleet_view.needs(runner), label)
-                self.assertTrue(all(call == mock.call(str(self.base), mode='check')
+                self.assertTrue(all(call == mock.call(str(self.base), mode='check', inventory=False)
                                     for call in prepare.call_args_list), 'display must remain read-only')
+
+    def test_fleet_lookups_skip_the_legacy_reference_inventory_of_a_converted_store(self):
+        """The inventory read every tracked file and ran git grep per repository on every listing."""
+        repo = self.base / 'inventory'
+        repo.mkdir()
+        store_fixture.write_todo(repo, '- [ ] A — Alpha\n')
+        migrate = fleet_view.task_prepare.task_migrate
+        with mock.patch.object(migrate, 'reference_inventory', wraps=migrate.reference_inventory) as audit:
+            runner = fleet_view._prepared_runner(fleet_view.Runner('inventory', repo=str(repo), state='idle'))
+            self.assertEqual((runner.prepare_state, audit.call_count), ('converted', 0))
+            report = fleet_view.task_prepare.prepare(str(repo), mode='check', inventory=False)
+            self.assertEqual((report['state'], report['inventory'], report['consumers']), ('converted', 'skipped', []))
+            full = fleet_view.task_prepare.prepare(str(repo), mode='check')
+            self.assertEqual((full['state'], audit.call_count), ('converted', 1))
+            self.assertNotIn('inventory', full)
 
     def test_tui_envelope_refreshes_inventory_but_bounds_and_invalidates_preparation(self):
         repo = self.base / 'cached'

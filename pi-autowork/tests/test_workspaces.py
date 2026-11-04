@@ -1,4 +1,6 @@
 """Linking ignored dependencies never shadows tracked content or leaves the checkout."""
+import contextlib
+import io
 import os
 from pathlib import Path
 import subprocess
@@ -111,6 +113,24 @@ class LinkTests(unittest.TestCase):
         self.assertEqual((self.tree / 'vendor/sdk/lib.c').read_text(), 'int x;\n')
         self.assertEqual((self.tree / 'build.cfg').stat().st_ino, (self.main / 'build.cfg').stat().st_ino)  # hard link
         self.assertEqual(dict(workspaces.link_ignored(self.main, self.tree, 'build.cfg')), {'build.cfg': 'present'})
+
+    def test_routine_link_lines_are_debug_only_while_a_refusal_is_printed(self):
+        from pi_autowork import worker
+        out = io.StringIO()
+        environment = dict(PI_AUTOWORK_REPO=str(self.main), PI_AUTOWORK_LINK_PATHS='vendor')
+        with patch.dict(os.environ, environment), contextlib.redirect_stderr(out):
+            worker.link_ignored(self.tree)
+        self.assertEqual(out.getvalue(), '')
+        self.assertTrue((self.tree / 'vendor/sdk/lib.c').is_file())
+        with patch.dict(os.environ, dict(environment, PI_AUTOWORK_VERBOSE='1')), \
+                contextlib.redirect_stderr(out):
+            worker.link_ignored(self.tree)
+        self.assertIn('linked path vendor: present', out.getvalue())
+        refused = io.StringIO()
+        with patch.dict(os.environ, dict(environment, PI_AUTOWORK_LINK_PATHS='not-in-main')), \
+                contextlib.redirect_stderr(refused):
+            worker.link_ignored(self.tree)
+        self.assertIn('refused', refused.getvalue())
 
     def test_a_mirrored_tree_is_ordinary_to_find_and_keeps_inner_symlinks(self):
         """sierra TASK-026: a self-test ran `find` on a linked build directory and saw nothing."""

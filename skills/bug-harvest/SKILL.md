@@ -21,7 +21,10 @@ Inspect current source, instructions, task state and ownership; quarantine unrel
 dirty files. Establish the user's scope and explicit stop limits before discovery.
 Use a bounded executable check to find evidence, not code smells or endless TODO
 searching. Keep at most three leads; select the clearest reproducible consequence
-with the smallest blast radius.
+with the smallest blast radius. Before wide reading, rank leads with a local code graph
+when one exists, record its [declared graph
+state](../shared/COMMON-CONTRACT.md#graph-state), and confirm every graph lead in live
+source.
 
 For the selected bug, record symptom, evidence, reproducer, expected post-fix
 signal and likely files. Confirm the failure, identify its root cause, make the

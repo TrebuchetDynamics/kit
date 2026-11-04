@@ -244,7 +244,7 @@ and the explicit agent commands below do.
 | Command | What it does |
 |---|---|
 | `autowork` | The live TUI on a terminal (help otherwise) |
-| `autowork start [dir]` | Install (if needed) and start the repository's service; refuses a directory without a committed `tasks/` store and its main branch checked out, saying what is missing (`autowork tasks prepare` converts legacy planning or reports the next step). Services run from the Pi package installed from `git:github.com/TrebuchetDynamics/autowork`; a service on another copy (a package under an older name) is moved onto it and restarted, and the others follow at their next restart |
+| `autowork start [dir]` | Install (if needed) and start the repository's service; refuses a directory without a committed `tasks/` store and its main branch checked out, saying what is missing (`autowork tasks prepare` converts legacy planning or reports the next step). Services run from the Pi package installed from `git:github.com/TrebuchetDynamics/kit`; a service on another copy (a package under an older name) is moved onto it and restarted, and the others follow at their next restart |
 | `autowork stop [target]` | Stop the service; workers pause and resume on the same attempt |
 | `autowork restart [target] [--stop-workers [--now]]` | Reload in place; running workers keep running. `--stop-workers` waits for in-flight merges, then restarts the service and pauses workers; `--now` interrupts immediately instead |
 | `autowork pause` / `resume [target]` | Stop the service and keep it off, also after a reboot (disable), or start it again (enable); only a paused service is listed as `paused`, any other stopped one as `not running` |
@@ -523,8 +523,9 @@ a consumer's touched-project command, time bound, model execution or live hardwa
 
 Manual closure is available for implementation, plan and inspection tasks, but writes no
 receipt or passing-check claim. It alone qualifies neither a goal nor a prerequisite
-explicitly listed in `verified_depends_on`. An authorized owner can record
-`owner_waiver` or `owner_qualification` through `tasks field`; a met-goal write names
+explicitly listed in `verified_depends_on`. An authorized owner records a structured
+waiver through `tasks field`: `owner_waiver` or `owner_qualification`, plus `waiver_actor`,
+`waiver_at` and `waiver_for` naming one Acceptance or Checks item; a met-goal write names
 these exceptions. See [closure provenance and owner qualification](task-store.md#writing-and-autowork-tasks).
 
 Skills leave tasks active by default. Only an explicit user request permits a
@@ -778,6 +779,18 @@ autowork scorecard --days 30 --csv . > evaluation.csv
 autowork scorecard --days 30 --baseline /private/baseline.json .
 ```
 
+### A slot kept for the owner's own continuation
+
+A worker limit does not make a person wait behind the runner's own work. An attempt a person
+paused, restarted or answered — or one the runner paused to resume safely — already held a
+slot, so when new autonomous work has filled the pool, one such attempt may resume beside it:
+N+1 workers run until that attempt ends. The reserve is one attempt at most, it takes a free
+normal slot first, fresh work never uses it, the plan's exclusive, serial, dependency and
+resource checks still apply, and the host memory and load gates still apply. While the
+reserved worker lives, status keeps `max_workers` at N+1 with `owner_slot` 1 and
+`configured_max_workers` at N, so the reported limit never reads below the workers actually
+running; it returns to N when that worker ends.
+
 ### Evaluation report
 
 Text, `--json` and `--csv` render the same evaluation metrics. JSON adds
@@ -941,7 +954,10 @@ facilities, not evidence that a live task was delivered or that a bill was paid.
 ## Runner health reads
 
 `runner.json` and the runner's own `job.json` record both the PID and its Linux
-process start ticks (`start_time`), separately from the wall-clock start time.
+process start ticks (`start_time`), separately from the wall-clock start time. It
+also records the release the process runs (`toolset_rev`, and its directory as
+`toolset`). A release is retained only while a live process uses it, so the record can
+outlive the directory it names.
 Status, fleet health and update-checkpoint reads require matching ticks and a
 non-zombie process; a reused PID reads `not running`, and cannot keep an old job
 current. Status also requires the runner lock to be held. Older records without
@@ -1073,6 +1089,16 @@ original timestamp and the read error. A second consecutive failure marks health
 successful read clears the failure episode without resetting an unchanged state's
 stall clock. In `autowork status`, an unavailable Health line shows when reads
 began failing, not when the previous healthy or blocked state began.
+
+`autowork status` names the engine build, not only the toolset. `Toolset:` is the
+package or checkout a new start or reload loads; `Release:` is the build that wrote
+the state, with its commit date and the directory it imports from, marked `running`
+or `last`, and it says so when that directory is gone. A runner pinned to an older
+release therefore cannot read as current source: measuring the old build's behavior
+as a defect of the reported `Toolset:` revision is the mistake this line prevents.
+The two revisions are not compared, because `Toolset:` can be another checkout whose
+revisions are not comparable. Repositories where no runner has recorded a release
+show no `Release:` line, and status still writes nothing.
 
 `autowork status` lists every unfinished task, with running, integrating, reported,
 held and waiting tasks first, in that order. Rows retain the task, lifecycle and

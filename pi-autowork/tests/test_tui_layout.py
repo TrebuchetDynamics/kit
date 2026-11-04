@@ -3,6 +3,7 @@ import asyncio
 from dataclasses import replace
 from contextlib import asynccontextmanager
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -80,6 +81,7 @@ async def layout_pilot():
                 shown = str(overview.render())
                 assert 'unavailable' in shown.lower() and 'execution unknown' in shown, shown
                 assert '3 waiting' in shown and '1 blocker' in shown, shown
+                assert 'need attention' in app.sub_title, app.sub_title
                 assert warning not in shown, 'raw paths belong in Details'
                 assert app.query_one('#lanes').region.height >= 2
                 log = app.query_one('#log')
@@ -160,6 +162,8 @@ async def layout_pilot():
 
 class TuiLayoutTests(unittest.TestCase):
     def test_responsive_layout_preserves_evidence_and_read_only_controls(self):
+        if not shutil.which('uv'):
+            self.skipTest('uv is needed for pinned Textual')
         result = subprocess.run(['uv', 'run', '--offline', '--quiet', '--no-project', '--with', 'textual==8.2.8',
                                  'python3', __file__, '--pilot'], capture_output=True, text=True, timeout=90)
         if textual_unavailable(result):

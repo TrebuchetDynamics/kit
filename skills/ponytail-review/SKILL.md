@@ -17,6 +17,27 @@ Review the named candidate and connected callers; otherwise inspect uncommitted
 changes, falling back to the last commit. Report findings without editing code.
 When supporting Autowork, contribute these criteria to its existing review lane.
 A `Ship` verdict does not authorize delivery or replace required independent review.
+## Common Rationalizations
+
+The [Definition of Done](../shared/DEFINITION-OF-DONE.md) is the standing bar beyond
+the changed diff.
+
+| Rationalization | Reality |
+| --- | --- |
+| "The diff is small, so skip the review." | Review the change and its connected callers. Size is not a reason to skip acceptance, safety or data-loss checks. |
+| "Tests pass, so the review is done." | Tests are evidence, not a review of correctness, security, data loss or scope. |
+| "I can fix the issue while reviewing." | Review reports; implementation needs its own scope and authority. |
+| "Style alone should block." | Block concrete acceptance failures, regressions, security issues or credible data-loss risks. Style is advisory unless a requirement says otherwise. |
+| "I can approve without evidence." | A verdict needs inspected code, checks or a named unverified area. Never invent approval. |
+
+## Red Flags
+
+- Approval without reading the changed code or tests.
+- A block based only on style.
+- Edits during review.
+- A pass claim with no evidence.
+- Connected callers or tests ignored.
+
 ## Boundaries
 
 - Not a repository audit; use `/ponytail-audit`.

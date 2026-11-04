@@ -1688,11 +1688,21 @@ class FleetApp(App):
         else:
             self.selected = None
         counts = ', '.join(f'{n} {state}' for state, n in fleet_view.summary(self.runners))
+        attention = fleet_view.attention(self.runners)
         errors = (*(self.fleet_snapshot.errors if self.fleet_snapshot else ()),
                   *(f'{kind}: stale / unavailable: {message}' for kind, message in self.__dict__.get('_read_errors', {}).items()))
-        self.sub_title = ('discovery unavailable: ' + ' · '.join(errors)) if errors else (
-            f'{len(self.runners)} runners: {counts}' if self.runners else
-            ('loading runners…' if self.fleet_snapshot is None else 'no runners'))
+        if errors:
+            self.sub_title = 'discovery unavailable: ' + ' · '.join(errors)
+        elif attention:
+            labels = ', '.join(
+                f'{r.name} {r.state}' if r.state in fleet_view.ATTENTION_STATES else f'{r.name} (questions)'
+                for r in attention[:3])
+            more = f' +{len(attention) - 3}' if len(attention) > 3 else ''
+            self.sub_title = (f'{len(self.runners)} runners · {len(attention)} need attention: '
+                              f'{labels}{more}')
+        else:
+            self.sub_title = (f'{len(self.runners)} runners: {counts}' if self.runners else
+                              ('loading runners…' if self.fleet_snapshot is None else 'no runners'))
         self.show_detail()
 
     def current(self):
@@ -1719,6 +1729,20 @@ class FleetApp(App):
         self.query_one('#overview').display = not self.details_open
         (pane if self.details_open else self.query_one('#runners')).focus()
         self.show_detail()
+
+    def next_hint(self, runner):
+        """The one or two actions most likely to move this runner now."""
+        if self.answerable_questions(runner):
+            return 'a Answer · b Blockers'
+        if runner.state in ('paused', 'not running'):
+            return 'p Play · l Log'
+        if runner.state in ('blocked', 'stalled', 'unavailable', 'not cycling'):
+            return 'l Log · i Details'
+        if runner.lanes:
+            return 'l Log · t Tasks'
+        if runner.questions:
+            return 'b Blockers'
+        return 'l Log · t Tasks · g Plan'
 
     def show_overview(self, runner):
         """Six bounded lines; full evidence stays in the scrollable Details pane."""
@@ -1751,13 +1775,14 @@ class FleetApp(App):
         if short_check:
             line('Main: ' + check, check_style)
         elif runner.questions:
-            line(f'{len(runner.questions)} recorded questions · b Blockers (read only)', 'yellow')
+            actions = 'a Answer · b Blockers' if self.answerable_questions(runner) else 'b Blockers (read only)'
+            line(f'{len(runner.questions)} recorded questions · {actions}', 'yellow')
         elif 'unavailable' in headline.lower():
-            line('Observation unavailable; inspect source errors with i Details.', 'yellow')
+            line('Observation unavailable · i Details · l Log', 'yellow')
         elif reason:
             line('Why: ' + ' '.join(reason.split()))
         else:
-            line('i Details · b Blockers · Enter Log', 'dim')
+            line('Next: ' + self.next_hint(runner), 'dim')
         if check and not short_check:
             line('Main: ' + check, check_style)
         text.rstrip()

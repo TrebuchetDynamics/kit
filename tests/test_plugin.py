@@ -142,6 +142,14 @@ class PluginTests(unittest.TestCase):
                 self.assertTrue(message.endswith('User arguments:\n' + args))
                 self.assertEqual(target, {})
 
+    def test_engineering_is_a_reference_not_a_registered_skill(self):
+        self.plugin.SKILLS_DIR = ROOT / 'skills'
+        self.plugin.register(self.ctx)
+        self.assertNotIn('engineering', self.ctx.skills)
+        self.assertNotIn('engineering', self.ctx.commands)
+        # Installed beside the skills so links from autowork and Docs Sync resolve.
+        self.assertTrue((Path(self.temp.name) / 'home/skills/engineering/REFERENCE.md').is_file())
+
     def test_gateway_routes_first_command_to_origin_including_topic_and_user(self):
         self.skill("git-commit-push")
         self.plugin.register(self.ctx)

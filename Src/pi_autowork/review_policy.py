@@ -39,9 +39,15 @@ def decide(checkout, task, *, evidence=None, env=None):
     gate receipt, not a worker report or a boolean claiming the gate passed.
     """
     mode = (os.environ if env is None else env).get('PI_AUTOWORK_REVIEW', '1')
-    result = {'required': True, 'mode': mode, 'version': version(), 'reason': 'model review is required'}
+    # A reason that only restates "review is required" named nothing to act on, and four tasks
+    # repeated it without a decision (2026-10-31). Name the setting that decides it, its value
+    # and the policy revision that would judge the diff.
+    policy = version()
+    reason = (f'PI_AUTOWORK_REVIEW={mode} keeps a model review for every task; '
+              f'policy {policy[:12]} judges a diff only in auto')
+    result = {'required': True, 'mode': mode, 'version': policy, 'reason': reason}
     if mode == '0':
-        return dict(result, required=False, reason='model review explicitly disabled (PI_AUTOWORK_REVIEW=0)')
+        return dict(result, required=False, reason='PI_AUTOWORK_REVIEW=0 skips model review')
     if mode != 'auto':
         return result
     try:

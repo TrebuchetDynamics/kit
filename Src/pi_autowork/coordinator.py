@@ -26,7 +26,7 @@ import time
 
 from . import (fleet_view, health, janitor, landing, main_check, maintainer, optimistic, pi_runtime, questions, release,
                post_merge_barrier, service, task_commands, telemetry, worker, workspaces)
-from .common import GIT, LOG, dirty, git, git_ok, lifecycle, open_for_writing, safe_name, summary_list
+from .common import GIT, LOG, atomic_write, dirty, git, git_ok, lifecycle, open_for_writing, safe_name, summary_list
 from .processes import own_process, process_name, start_time
 from .supervision import main_checks
 from pi_autowork.engine.task_queue import commit as task_revision
@@ -130,6 +130,14 @@ TRIAGE_PROMPT = (
     'blocks: the line PI_AUTOWORK_TRIAGE: owner and then one line saying what the person must provide, or the '
     'line PI_AUTOWORK_TRIAGE: answer and then the answer for the worker, at most 15 lines.')
 TRIAGE = re.compile(r'^PI_AUTOWORK_TRIAGE:\s*(answer|owner)\s*$', re.M)
+# A push that fails for one of these reasons certainly did not publish: the remote refused the
+# client before accepting the ref. Any other failure (a reset connection, an unexplained exit,
+# a timeout, a killed process) may have landed, so it is reconciled from the remote refs
+# instead of retried blind.
+PUSH_REFUSED = re.compile(
+    r'authentication failed|could not read (?:username|password)|terminal prompts disabled'
+    r'|permission (?:to .* )?denied|not appear to be a git repository|could not resolve host'
+    r'|repository .* does not exist|no such remote|invalid (?:username|credentials)', re.I)
 
 
 def triage_verdict(text):
@@ -1476,6 +1484,7 @@ class Coordinator:
 
     def fast_forward_main(self):
         """Land the already merged session; return the reason main must wait, or ''."""
+        self.ensure_repository()
         current = git(self.repo, 'symbolic-ref', '--short', '-q', 'HEAD')
         if current != self.base:
             return f'{self.repo} is on {current or "a detached HEAD"}, not {self.base}'
@@ -1565,17 +1574,18 @@ class Coordinator:
         it into the session, lands that and pushes once more. Only an explicit
         PI_AUTOWORK_PUSH=1 grant enables publication; saved repository grants are reused.
         """
+        self.ensure_repository()
         if os.environ.get('PI_AUTOWORK_PUSH', '0') != '1':
             if self.seen.get('push-note') != 'no grant':
                 self.seen['push-note'] = 'no grant'
                 LOG.say(f'Not pushed: {self.base} stays local (no PI_AUTOWORK_PUSH=1 grant for this repository)')
-            return
+            return 'no-grant'
         upstream = git(self.repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', f'{self.base}@{{u}}')
         if not upstream or '/' not in upstream:
             if self.seen.get('push-note') != 'no upstream':
                 self.seen['push-note'] = 'no upstream'
                 LOG.say(f'Not pushed: {self.base} has no upstream branch')
-            return
+            return 'no-upstream'
         remote, branch = upstream.split('/', 1)
         source = self.base
         if post_merge_barrier.enabled() or optimistic.enabled():
@@ -1583,21 +1593,24 @@ class Coordinator:
             # revision, when that is on main and ahead of the upstream.
             green = main_check.read(self.state).get('green')
             if green and git_ok(self.repo, 'merge-base', '--is-ancestor', green, upstream):
-                return  # the upstream already has main's last green revision; the rest waits for its check
+                return 'already-published'  # the upstream has main's last green revision; the rest waits
             if not green or not git_ok(self.repo, 'merge-base', '--is-ancestor', green, self.base):
                 if self.seen.get('push-note') != 'waiting for green':
                     self.seen['push-note'] = 'waiting for green'
                     LOG.say(f'Not pushed yet: {self.base} has commits main\'s full check has not passed')
-                return
+                return 'waiting-for-green'
             source = green
         env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_CONFIG_')}
-        result = subprocess.run(['git', '-C', str(self.repo), 'push', '--quiet', remote, f'{source}:refs/heads/{branch}'],
-                                capture_output=True, text=True, env=env, timeout=300)
+        argv = ['git', '-C', str(self.repo), 'push', '--quiet', remote, f'{source}:refs/heads/{branch}']
+        try:
+            result = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=300)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return self.push_unknown(remote, branch, source, f'{type(exc).__name__}: {exc}')
         if result.returncode == 0:
             self.seen.pop('push-note', None)
             LOG.say(f'Pushed {self.base} to {upstream}')
             telemetry.observe(self.repo, self.base)
-            return
+            return 'published'
         text = (result.stdout + result.stderr).strip()
         if retry and re.search(r'rejected|non-fast-forward|fetch first', text):
             if git_ok(self.repo, 'fetch', '--quiet', remote, branch) and self.integ \
@@ -1608,9 +1621,50 @@ class Coordinator:
             if self.integ:
                 git(self.integ, 'merge', '--abort')
         note = text.splitlines()[-1] if text else f'exit {result.returncode}'
+        if not PUSH_REFUSED.search(text):
+            return self.push_unknown(remote, branch, source, note)
         if self.seen.get('push-note') != note:
             self.seen['push-note'] = note
             LOG.say(f'Push of {self.base} to {upstream} failed: {note}; the merge stays local and the next merge retries')
+        return 'failed'
+
+    def remote_head(self, remote, branch):
+        """The remote branch's commit, '' when it does not exist, or None when the probe
+        cannot answer. Read-only: it never writes or pushes."""
+        try:
+            result = subprocess.run(['git', '-C', str(self.repo), 'ls-remote', '--heads', remote, branch],
+                                    capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode:
+            return None
+        for line in result.stdout.splitlines():
+            sha, _, name = line.partition('\t')
+            if name.strip() == f'refs/heads/{branch}':
+                return sha.strip()
+        return ''
+
+    def push_unknown(self, remote, branch, source, detail):
+        """Reconcile a push whose remote outcome is unknown from the remote refs.
+
+        A push can land and still report a timeout, a reset connection or a killed process.
+        The remote ref decides: when it already names the revision, publication happened;
+        otherwise this call records the unknown outcome once and returns without another
+        push. The next cycle's ordinary ahead/behind comparison decides whether the same
+        fast-forward is pushed again. A read-only probe that cannot answer stays unknown.
+        """
+        local = git(self.repo, 'rev-parse', '--verify', f'{source}^{{commit}}')
+        head = self.remote_head(remote, branch)
+        if local and head and head == local:
+            self.seen.pop('push-note', None)
+            LOG.say(f'Pushed {self.base} to {remote}/{branch} (the remote already had it)')
+            telemetry.observe(self.repo, self.base)
+            return 'published'
+        if self.seen.get('push-note') != 'unknown':
+            self.seen['push-note'] = 'unknown'
+            LOG.say(f'Push of {self.base} to {remote}/{branch} has an unknown outcome ({detail}); '
+                    'the remote refs are reconciled before the next attempt')
+        return 'unknown'
 
     def merge_waiting(self):
         """While every remaining task waits (on the owner, a dependency or the resource gate)
@@ -3251,13 +3305,46 @@ class Coordinator:
             new = questions.update(old, found)
         except (OSError, ValueError):
             return
-        if new is None or new == old:
+        if self.store_questions(path, old, new) in ('unchanged', 'write-failed', 'raced', 'commit-failed'):
             return
-        path.write_text(new)
-        self.commit(['BLOCKERS.md'], 'docs(blockers): questions for the owner (pi-autowork)',
-                    'Built from the engine status without a model; /blockers answers them.')
         LOG.say(f'Questions for the owner in BLOCKERS.md: {len(found)} open'
                 + (f" (easiest: {found[0]['id']}, {found[0]['effort']})" if found else ''))
+
+    def store_questions(self, path, old, new):
+        """Write the questions block atomically, then commit those exact bytes.
+
+        Returns 'unchanged', 'written', 'write-failed', 'raced' or 'commit-failed'. A file
+        already holding the new text is still committed when the session lacks it, so a
+        commit that failed after a successful replacement is repaired on the next pass.
+        """
+        if new is None:
+            return 'unchanged'
+        committed = git_ok(self.integ, 'diff', '--quiet', '--', 'BLOCKERS.md')
+        if new != old:
+            try:
+                atomic_write(path, new)
+            except OSError as exc:
+                LOG.say(f'Questions for the owner were not written: {exc}')
+                return 'write-failed'
+        elif committed:
+            return 'unchanged'  # the working file already matches the session's commit
+        try:
+            if path.read_bytes() != new.encode():
+                LOG.say('Questions for the owner changed while being written; the next pass reconciles them')
+                return 'raced'
+        except OSError as exc:
+            LOG.say(f'Questions for the owner were not committed: {exc}')
+            return 'write-failed'
+        try:
+            self.commit(['BLOCKERS.md'], 'docs(blockers): questions for the owner (pi-autowork)',
+                        'Built from the engine status without a model; /blockers answers them.')
+        except (OSError, subprocess.SubprocessError) as exc:
+            LOG.say(f'Questions for the owner stay uncommitted: {exc}')
+            return 'commit-failed'
+        if not git_ok(self.integ, 'diff', '--quiet', '--', 'BLOCKERS.md'):
+            LOG.say('Questions for the owner stay uncommitted; the next pass commits them')
+            return 'commit-failed'
+        return 'written'
 
     def resolving(self, rows):
         """Held conflicts the merge resolver is settling or will take next: not the owner's yet. One
@@ -3404,9 +3491,12 @@ class Coordinator:
                     os.killpg(group, signal.SIGINT)
                 except OSError:
                     pass
-        # Interrupted workers stay in their worktrees; the next start resumes them.
+        # Interrupted workers stay in their worktrees; the next start resumes them. Each wait
+        # returns as a worker exits; once none is active there is nothing left to reap.
         for _ in range(4):
-            self.engine('--parallel', str(self.workers), '--max-workers', '16', '--wait', '--timeout', '5')
+            answer = self.engine('--parallel', str(self.workers), '--max-workers', '16', '--wait', '--timeout', '5')
+            if answer.get('active_workers') == 0:
+                break
         self.settle()
         self.finish(130, 'Stopped. Unfinished tasks keep their worktrees and resume on the next start.')
 
@@ -3520,9 +3610,51 @@ class Coordinator:
         self.pause(self.interval)
         return False
 
+    def repository_problem(self):
+        """Why this runner's repository is no longer the one it started with, or ''.
+
+        A consumer test that inherits GIT_DIR/GIT_WORK_TREE and runs `git init`/`config` can
+        replace the checkout (for example with core.bare=true) while a runner is idle. Re-read
+        the identity without inherited Git routing before every cycle and before a merge or
+        publication, so that becomes a deliberate stop instead of a restart loop.
+        """
+        cfg = getattr(self, 'cfg', None) or {}
+        if not cfg.get('git_common'):
+            return ''  # a unit-test Coordinator without the launcher's identity
+        expected = (os.path.realpath(self.repo), os.path.realpath(cfg['git_common']))
+        current = release.repository_identity(self.repo, clean=True)
+        if current == expected:
+            return ''
+        if current is None:
+            return (f'{self.repo} is no longer a usable Git work tree; it may be missing, '
+                    'replaced, or marked core.bare=true')
+        return f'Repository identity changed for {self.repo}: expected {expected}, found {current}'
+
+    def stop_for_repository(self, problem):
+        """Stop without merging or publishing when the repository changed under us."""
+        self.stop = True
+        self.stop_maintainer()
+        self.stop_integration()
+        try:
+            groups = self.worker_groups()
+        except (OSError, ValueError, KeyError):
+            groups = []
+        for group in groups:
+            try:
+                os.killpg(group, signal.SIGINT)
+            except OSError:
+                pass
+        raise Finish(4, f'Needs attention: {problem}. Stopped before any merge or push.')
+
+    def ensure_repository(self):
+        problem = self.repository_problem()
+        if problem:
+            self.stop_for_repository(problem)
+
     def cycle(self):
         """One pass of the loop: refresh the session, dispatch, read the engine's answer, then
         settle finished work and decide how long to wait."""
+        self.ensure_repository()
         self.plan_seen = self.plan_signature()
         if self.stop:
             self.stop_now()

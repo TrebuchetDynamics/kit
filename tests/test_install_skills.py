@@ -134,6 +134,48 @@ class InstallSkillsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertFalse((self.home / 'skills').exists())
 
+    def reference_pack(self):
+        pack = self.repo / 'skills/reference-pack'
+        pack.mkdir()
+        (pack / 'REFERENCE.md').write_text('# Reference\n\nRead the protocol.\n')
+        (pack / 'PROTOCOL.md').write_text('Pinned protocol.\n')
+        return pack
+
+    def test_reference_pack_is_installed_without_a_skill_entry(self):
+        self.reference_pack()
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for home in (self.home, self.home / 'profiles/coder'):
+            target = home / 'skills/reference-pack'
+            self.assertTrue((target / 'REFERENCE.md').is_file())
+            self.assertTrue((target / 'PROTOCOL.md').is_file())
+            self.assertFalse((target / 'SKILL.md').exists())
+
+    def test_legacy_installed_skill_becomes_a_reference_and_keeps_its_other_files(self):
+        self.reference_pack()
+        target = self.home / 'skills/reference-pack'
+        target.mkdir(parents=True)
+        (target / 'SKILL.md').write_text('---\nname: reference-pack\n---\nOld skill.\n')
+        (target / 'UPSTREAM.json').write_text('{"revision": "old"}\n')
+        (target / 'scripts').mkdir()
+        (target / 'scripts/route.py').write_text('# old toolset router\n')
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((target / 'SKILL.md').exists())
+        self.assertEqual((target / 'REFERENCE.md').read_text(), '# Reference\n\nRead the protocol.\n')
+        self.assertEqual((target / 'UPSTREAM.json').read_text(), '{"revision": "old"}\n')
+        self.assertIn('retired the skill entry', result.stdout)
+
+    def test_a_non_toolset_skill_with_the_same_name_is_preserved(self):
+        self.reference_pack()
+        target = self.home / 'skills/reference-pack'
+        target.mkdir(parents=True)
+        (target / 'SKILL.md').write_text('---\nname: reference-pack\n---\nOwner skill.\n')
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual((target / 'SKILL.md').read_text(), '---\nname: reference-pack\n---\nOwner skill.\n')
+        self.assertIn('incomplete existing skill', result.stdout)
+
     def test_invalid_source_prevents_partial_install(self):
         invalid = self.repo / 'skills/broken'
         invalid.mkdir()

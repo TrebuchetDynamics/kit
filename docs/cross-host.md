@@ -2,12 +2,14 @@
 
 Autowork provides native packages for four hosts. Claude Code, Codex and Pi
 use the portable adapters, not the Hermes plugin loader. None requires Hermes installed.
-These adapters expose 26 skills: Plan With Me, Plan For Me, Docs Sync, Autowork,
-Cron Autowork, Autoresearch, Engineering, Impeccable, UI Taste, Beautify GitHub README,
+These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Autowork,
+Autoresearch, Impeccable, UI Taste, Beautify GitHub README,
 LGTM, Git Commit Push, Blockers, Pending, the six bundled Ponytail skills,
 and Bug Harvest, Autonomous Codebase Improver, Skill Folder Refactor, Unused Code
 and Test Optimizer, plus APK Get.
 Grill Me is Plan With Me's challenge mode, not a separate skill.
+The pinned engineering protocols are a **reference pack**, not a command or skill
+on any host; autowork and Docs Sync read them directly when a method gap needs one.
 Every adapter is explicit-only: Claude Code and Pi read `disable-model-invocation: true`
 in its frontmatter and Codex reads `agents/openai.yaml`, so the model never starts a
 workflow on its own.
@@ -104,8 +106,9 @@ the local [adapter](../adapters/skills/graphify/SKILL.md), which calls the same
 
 Portable invocation is explicit-only. The adapter never installs `graphifyy`, adds
 hooks, changes settings or requests a semantic pass. It reuses a graph that matches
-the current revision or builds code-only output into an ignored directory, and it
-reports the tool version, graph path, counts and exit codes. A graph is orientation,
+the current revision or whose queried nodes no changed file touches, or builds
+code-only output into an ignored directory, and it reports the declared state, the
+tool version, graph path, counts and exit codes. A graph is orientation,
 not proof: `EXTRACTED` and `INFERRED` edges still need live-source checks, and Unused
 Code keeps its own liveness rules. `graphify-out/` is never committed. See
 [workflow and evidence requirements](workflows.md#graphify).
@@ -149,22 +152,22 @@ a file as evidence of a render, not of a correct layout.
 See [workflow requirements](workflows.md#responsive-screenshots). Design review stays
 with `/ui-taste` and `/impeccable`.
 
-## Ask Autowork
+## Ask Kit
 
-[Ask Autowork](../skills/ask-autowork/SKILL.md) is the router over the bundle: it names
+[Ask Autowork](../skills/ask-kit/SKILL.md) is the router over the bundle: it names
 the skill for a situation, then the next step. It reads the chosen skill before
 describing it and names one command. Use it when you know the outcome you want but not
 the command.
 
 | Host | Example |
 | --- | --- |
-| Hermes | `/ask-autowork I need to stress-test a plan` |
-| Claude Code | `/kit:ask-autowork I need to stress-test a plan` |
-| Codex | `$kit:ask-autowork I need to stress-test a plan` |
-| Pi | `/ask-autowork I need to stress-test a plan` |
+| Hermes | `/ask-kit I need to stress-test a plan` |
+| Claude Code | `/kit:ask-kit I need to stress-test a plan` |
+| Codex | `$kit:ask-kit I need to stress-test a plan` |
+| Pi | `/ask-kit I need to stress-test a plan` |
 
 The map is orientation, not authority: the named skill keeps its own scope, review and
-delivery rules. See [workflow requirements](workflows.md#ask-autowork).
+delivery rules. See [workflow requirements](workflows.md#ask-kit).
 
 ## Grilling and architecture review
 
@@ -282,11 +285,19 @@ claude plugin install autowork@autowork
 Install the published Git source with:
 
 ```sh
-claude plugin marketplace add TrebuchetDynamics/autowork
+claude plugin marketplace add TrebuchetDynamics/kit
 claude plugin install autowork@autowork
 ```
 
-Inside a session, `/plugin marketplace add TrebuchetDynamics/autowork` and
+`./install.sh` accepts a marketplace registered from a checkout (a `directory`
+source), but not one whose folder this host does not have: settings follow their
+owner between machines, and a renamed checkout leaves that path behind. A missing
+folder is a stale registration, not a source choice, so the installer drops it and
+adds the published Git source; the folder does not need to be cloned for the suite
+to install. A registered folder that still exists is left alone and used as it is,
+because that source is the owner's choice.
+
+Inside a session, `/plugin marketplace add TrebuchetDynamics/kit` and
 `/plugin install autowork@autowork` do the same; run `/reload-plugins` or
 start a new session. Add `--scope project` to the install to record it in the
 repository's `.claude/settings.json` for everyone who works there. Invoke the
@@ -324,7 +335,7 @@ codex plugin add autowork@autowork-marketplace
 Install the published Git source with:
 
 ```sh
-codex plugin marketplace add TrebuchetDynamics/autowork --ref main
+codex plugin marketplace add TrebuchetDynamics/kit --ref main
 codex plugin add autowork@autowork-marketplace
 ```
 
@@ -366,7 +377,7 @@ pi install .
 Install the published Git source with:
 
 ```sh
-pi install git:github.com/TrebuchetDynamics/autowork
+pi install git:github.com/TrebuchetDynamics/kit
 ```
 
 Use `/reload` in an existing Pi session, or start a new one inside your project.
@@ -383,10 +394,12 @@ Local installs refer to this checkout; keep it in place. The extension registers
 ```
 
 All 13 `/autoresearch-<protocol>` commands are available. The other commands are
-`/autoresearch`, `/engineering`, `/impeccable`, `/ui-taste`, `/beautify-github-readme`,
+`/autoresearch`, `/impeccable`, `/ui-taste`, `/beautify-github-readme`,
 `/lgtm` and `/git-commit-push` (`/git-commit-push pull` or `merge <branch>` integrates
-upstream changes). Native `/skill:<name>` invocation is also
-available; both skill names and command aliases use hyphens. Underscore aliases
+upstream changes). The engineering pack is a reference, not a command; no
+`/engineering` or `/skill:engineering` entry is registered. Native `/skill:<name>`
+invocation is available for the registered skills; both skill names and command
+aliases use hyphens. Underscore aliases
 are no longer registered in Pi; update saved prompts and shortcuts, then `/reload`
 after updating the package. Hermes Telegram aliases are unchanged.
 Command arguments remain literal prompt text.
@@ -402,7 +415,11 @@ warns; same-name extension commands are all kept but renamed `/name:1`, `/name:2
 without a warning. Check `/` completions rather than assuming this package replaced them.
 
 Use Pi's package controls (`pi list`, `pi update --extensions`, `pi remove <source>`)
-for management. Removing the package leaves repository documents and commits intact.
+for management. `./install.sh` also clears an empty `skills: []` or `extensions: []`
+filter on this package: a filter recorded in `pi config`, including one carried from
+the package's previous `autowork` name, survives `pi install` and `pi update` and
+hides every command and `/skill:<name>`. Non-empty filters are kept. Removing the
+package leaves repository documents and commits intact.
 
 ### Nous Portal through the local proxy
 
@@ -484,9 +501,9 @@ Run it from the checkout of the repository's main branch (`main`, `master` or
 `origin/HEAD`'s branch), or name that checkout; it refuses any other branch:
 
 ```sh
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --dry-run
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --status
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --dry-run
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --status
 ```
 
 It selects the autowork package Pi has installed (found with `pi list`), or an
@@ -498,7 +515,7 @@ that path through `PI_AUTOWORK_TOOLSET`, including for late imports; updating th
 package never rewrites a selected release. Local-path installs run committed code,
 not uncommitted working-tree edits. Engine commands (including `--status` and
 `--dry-run`) require a committed Git checkout; use
-`pi install git:github.com/TrebuchetDynamics/autowork`.
+`pi install git:github.com/TrebuchetDynamics/kit`.
 
 The bootstrap serializes release creation and pruning. It retains the newest two
 snapshots plus any older snapshot referenced by a live process, including children
@@ -553,8 +570,8 @@ autowork remove my-project     # stop and remove the service; state and worktree
 (run it from the repository, or add `--repo PATH`):
 
 ```sh
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --install-service
-~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --remove-service
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --install-service
+~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --remove-service
 ```
 
 Each repository gets `pi-autowork@<repository name>.service`, for example
@@ -809,7 +826,7 @@ conflicting saved setting rather than silently changing it. To explicitly grant
 (or revoke with `0`), run the supported installer for that repository:
 
 ```sh
-PI_AUTOWORK_PUSH=1 ~/.pi/agent/git/github.com/TrebuchetDynamics/autowork/scripts/pi-autowork.sh --install-service --repo /path/to/my-project
+PI_AUTOWORK_PUSH=1 ~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --install-service --repo /path/to/my-project
 ```
 
 This explicit edit reloads/restarts the service. `autowork status my-project` shows

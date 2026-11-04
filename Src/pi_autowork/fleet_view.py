@@ -161,7 +161,7 @@ class Runner:
             return ''
         state = self.prepare_state
         if state is None:
-            state = task_prepare.prepare(self.repo, mode='check').get('state')
+            state = task_prepare.prepare(self.repo, mode='check', inventory=False).get('state')
         return SETUP_LABELS.get(state, '')
 
     @property
@@ -1176,7 +1176,7 @@ def _health_runner(found: dict[str, Runner], row: dict, now: float) -> Runner | 
 def _prepared_runner(runner: Runner) -> Runner:
     if not runner.repo or not Path(runner.repo).is_dir():
         return runner
-    report = task_prepare.prepare(runner.repo, mode='check')
+    report = task_prepare.prepare(runner.repo, mode='check', inventory=False)
     return replace(runner, prepare_state=report.get('state'),
                    decisions=(report.get('counts') or {}).get('open:Needs decision', 0))
 
@@ -1240,21 +1240,46 @@ def collect(state_root, env_dir, *, systemctl='systemctl', now=None, strict=Fals
     retained = _last_good or _cached
     previous = {s.workspace: s for s in retained.snapshots} if retained else {}
     audits = {p.workspace: p for p in _cached.preparation} if _cached else {}
-    for name, runner in found.items():
+
+    def observe(item):
+        """One runner's read-only observation: its own error list keeps the report in order."""
+        name, runner = item
+        errors = [] if _errors is not None else None
         if _errors is None:  # Full CLI diagnostics remain uncached.
             runner = _prepared_runner(runner)
         active = _active_runner(runner, now)
         runner = _service_lifecycle(active, env_dir)
         snap = snapshot_for(runner, generation=_generation, last_good=previous.get(str(Path(runner.repo).resolve())))
-        if _errors is not None:
-            _errors.extend(f'{name}: {error}' for error in snap.errors)
-            preparation = _preparation(runner, env_dir, now, audits, _errors)
+        if errors is not None:
+            errors.extend(f'{name}: {error}' for error in snap.errors)
+            preparation = _preparation(runner, env_dir, now, audits, errors)
             runner = replace(runner, preparation=preparation, prepare_state=preparation.state)
         # Both public consumers use current committed Decision membership.
         runner.decisions = snap.counts[4] if snap.counts is not None else 0
+        return name, runner, errors
+
+    # Each runner's observation is dozens of short Git reads of its own repository; eleven
+    # repositories took 1.6 s one after another. PI_AUTOWORK_FLEET_JOBS=1 observes in order.
+    jobs = max(1, min(_fleet_jobs(), len(found)))
+    if jobs > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            observed = list(pool.map(observe, found.items()))
+    else:
+        observed = [observe(item) for item in found.items()]
+    for name, runner, errors in observed:
         found[name] = runner
+        if errors:
+            _errors.extend(errors)
     # Put the owner's decisions and setup work first; keep each group alphabetical.
     return sorted(found.values(), key=lambda r: (not (r.questions or r.setup_required), r.name))
+
+
+def _fleet_jobs(env=os.environ):
+    try:
+        return int(env.get('PI_AUTOWORK_FLEET_JOBS', '8'))
+    except ValueError:
+        return 8
 
 
 @dataclass(frozen=True)
@@ -1311,7 +1336,7 @@ def _preparation(runner, env_dir, now, cached, errors):
         return previous
     problems = []
     try:
-        report = task_prepare.prepare(runner.repo, mode='check')
+        report = task_prepare.prepare(runner.repo, mode='check', inventory=False)
         state = report.get('state') or 'unknown'
         if state == 'unknown' or report.get('outcome') in ('INVALID_STORE', 'TOOLCHAIN_MISMATCH'):
             problems.append(f'{runner.name}: preparation: {report}')
@@ -1389,6 +1414,18 @@ def runner_rows(runners):
                      'Needs': (' '.join((needs(runner) or '-').split()), 'yellow' if runner.questions else ''),
                      'Now': (now or '-', '')})
     return tuple(rows)
+
+
+ATTENTION_STATES = ('blocked', 'stalled', 'unavailable', 'not running', 'not cycling')
+
+
+def attention(runners):
+    """Runners that need a person or a repair. Order is left to the caller.
+
+    Paused is intentional and omitted; a recorded owner question is included even when
+    the runner itself is idle.
+    """
+    return tuple(r for r in runners if r.state in ATTENTION_STATES or r.questions)
 
 
 def summary(runners):

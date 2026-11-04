@@ -4,7 +4,7 @@ For an existing Hermes profile, the native plugin manager avoids maintaining a
 source checkout. Replace `work` with your actual profile; omit `-p work` for default:
 
 ```sh
-hermes -p work plugins install TrebuchetDynamics/autowork
+hermes -p work plugins install TrebuchetDynamics/kit
 hermes -p work plugins enable autowork
 hermes -p work autowork doctor --core
 ```
@@ -138,8 +138,9 @@ restoring configuration. Removal alone does not undo prior setup writes.
 
 The picker advertises the current workflow commands: `/plan_with_me`,
 `/plan_for_me`, `/docs_sync` and `/autowork`, plus `/ui_taste`,
-`/beautify_github_readme`, `/impeccable`, `/lgtm`, `/engineering` and
-`/git_commit_push`. Plugin runtime defaults put them in
+`/beautify_github_readme`, `/impeccable`, `/lgtm` and `/git_commit_push`.
+The engineering protocols are a reference pack, not a menu command. Plugin runtime
+defaults put the current commands in
 Hermes' menu priority, keep your own entries, mode and cap, and remove compatibility
 entries this bundle added earlier. Compatibility spellings such as `/autoresearch`,
 `/autoresearch_plan` and `/autoresearch_debug` still run when typed but are not

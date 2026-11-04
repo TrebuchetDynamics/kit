@@ -10,26 +10,33 @@ import fcntl
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
-import re
+from pathlib import Path
 import stat
 import subprocess
 import tempfile
-import tomllib
 
-from . import landing, task_commands
+from . import landing, planning_authority, task_commands
+from .engine import task_store
 
 
 class PlanningError(RuntimeError):
     """A planning refusal; retained sessions/worktrees are not discarded."""
 
 
-MAX_FILE = 256 * 1024
-MAX_TOTAL = 2 * 1024 * 1024
-MAX_FILES = 64
-SECRET = re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bsk-[A-Za-z0-9_-]{12,}'
-                    r'|\bBearer [A-Za-z0-9._~+/=-]{12,}'
-                    r'|(?i:API_KEY|ACCESS_TOKEN|PASSWORD|CLIENT_SECRET)\s*[=:]\s*["\']?[^\s"\']{8,}')
+def path_allowed(name):
+    """Compatibility wrapper; the rule lives in planning_authority."""
+    try:
+        return planning_authority.path_allowed(name)
+    except planning_authority.PlanningAuthorityError as exc:
+        raise PlanningError(str(exc)) from exc
+
+
+def check_files(files):
+    """Compatibility wrapper; the rule lives in planning_authority."""
+    try:
+        planning_authority.check_files(files)
+    except planning_authority.PlanningAuthorityError as exc:
+        raise PlanningError(str(exc)) from exc
 
 
 def run_git(repo, *args, env=None, data=None, check=True):
@@ -57,21 +64,6 @@ def canonical(repo):
     return Path(git(listing[0][9:], 'rev-parse', '--show-toplevel')).resolve()
 
 
-def path_allowed(name):
-    if not isinstance(name, str) or len(name) > 240:
-        raise PlanningError('invalid planning path')
-    parts = name.split('/')
-    if any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', p) or p in ('.', '..') for p in parts):
-        raise PlanningError('unsafe planning path: ' + name)
-    if any(re.search(r'(?i)credential|secret|evidence|^\.git$', p) for p in parts):
-        raise PlanningError('sensitive planning path refused: ' + name)
-    task = re.fullmatch(r'tasks/(?:items|goals)/[A-Za-z0-9][A-Za-z0-9_-]*\.md', name)
-    doc = len(parts) >= 3 and parts[:2] in (['docs', 'plans'], ['docs', 'specs']) and name.endswith('.md')
-    if not task and not doc:
-        raise PlanningError('path outside planning allowlist: ' + name)
-    return PurePosixPath(name)
-
-
 def safe_file(root, name):
     path_allowed(name)
     path = Path(root) / name
@@ -84,22 +76,6 @@ def safe_file(root, name):
         if info.st_mode & 0o111:
             raise PlanningError('executable planning file refused: ' + name)
     return path
-
-
-def check_files(files):
-    if not isinstance(files, dict) or not files or len(files) > MAX_FILES:
-        raise PlanningError('proposal must contain 1–64 complete files')
-    total = 0
-    for name, content in files.items():
-        path_allowed(name)
-        if not isinstance(content, str) or '\x00' in content:
-            raise PlanningError('planning files must contain UTF-8 text')
-        size = len(content.encode('utf-8'))
-        total += size
-        if size > MAX_FILE or total > MAX_TOTAL:
-            raise PlanningError('proposal exceeds size budget')
-        if SECRET.search(content):
-            raise PlanningError('credential-like content refused in proposal')
 
 
 def stage(meta, files):
@@ -136,7 +112,7 @@ def snapshot(meta):
         path = safe_file(root, name)
         if not path.exists():
             raise PlanningError('deletions are not planning proposals: ' + name)
-        if path.stat().st_size > MAX_FILE:
+        if path.stat().st_size > planning_authority.MAX_FILE:
             raise PlanningError('proposal exceeds size budget')
         try:
             files[name] = path.read_bytes().decode('utf-8')
@@ -154,47 +130,12 @@ def original(meta, name):
     return result.stdout.decode('utf-8')
 
 
-def header(text):
-    lines = text.split('\n')
-    if lines[0] != '+++' or '+++' not in lines[1:]:
-        raise PlanningError('task record requires TOML frontmatter')
-    end = lines.index('+++', 1)
-    try:
-        return tomllib.loads('\n'.join(lines[1:end])), '\n'.join(lines[end + 1:])
-    except ValueError as exc:
-        raise PlanningError('invalid task TOML') from exc
-
-
 def authority(meta, files):
     for name, content in files.items():
         if not name.startswith('tasks/'):
             continue
-        new, body = header(content)
-        old_content = original(meta, name)
-        old, old_body = header(old_content) if old_content is not None else ({}, '')
-        protected = ('closure', 'closure_actor', 'closure_timestamp', 'closure_reason', 'closure_evidence',
-                     'owner_waiver', 'owner_qualification')
-        for field in protected:
-            if new.get(field) != old.get(field):
-                raise PlanningError(name + ': planner cannot change closure/owner evidence field ' + field)
-        if '/items/' in name:
-            if new.get('status', 'open') != old.get('status', 'open'):
-                raise PlanningError(name + ': planner cannot close, supersede or reopen tasks')
-            if new.get('live', 'denied') != old.get('live', 'denied'):
-                raise PlanningError(name + ': planner cannot change live authorization')
-            if old and new.get('ownership', 'unknown') != old.get('ownership', 'unknown'):
-                raise PlanningError(name + ': planner cannot change existing ownership')
-            if ('live' in new.get('resources', [])) != ('live' in old.get('resources', [])):
-                raise PlanningError(name + ': planner cannot change the live resource authorization gate')
-        elif new.get('status') != old.get('status', 'unmet'):
-            raise PlanningError(name + ': planner cannot invent goal progress or completion')
-        # Evidence/holds and owner attestations are not free planning prose.
-        def notes(text):
-            return [line for line in text.splitlines() if re.match(
-                r'\s*-?\s*(Evidence|Verified|Held by|Owner (decision|waiver|qualification)|Live authorization)\s*:',
-                line, re.I)]
-        if notes(body) != notes(old_body):
-            raise PlanningError(name + ': planner cannot invent evidence, owner authority or release holds')
+        task_store.planner_authority(original(meta, name), content,
+                                     goal='/goals/' in name, path=name)
 
 
 def revision(meta, files):

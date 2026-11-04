@@ -8,8 +8,9 @@ profile change or persistent mode is needed.
 For material implementation choices, load the bundled
 [Ponytail protocol](../../ponytail/upstream/skills/ponytail/PROTOCOL.md) once.
 Respect an explicit level (including `off`) in delegated contracts and review;
-otherwise use `full` within the task. Reuse instructions already read for the same
-task and revision. Trivial edits use the shared method without ceremonial receipts.
+the Pi runner carries `PI_AUTOWORK_PONYTAIL_LEVEL` (default `full`) into worker and
+reviewer prompts. Otherwise use `full` within the task. Reuse instructions already
+read for the same task and revision. Trivial edits use the shared method without ceremonial receipts.
 
 Carry a material decision in the existing contract/receipt:
 `Ponytail: source=<verified revision>; decision=<choice>; reuse=<paths>;

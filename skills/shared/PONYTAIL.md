@@ -28,8 +28,11 @@ Default to `full` within Autowork workflows. An explicit `lite`, `full`, `ultra`
 `off` preference wins and travels with delegated work. `off` disables this optional
 method, not repository safety or acceptance requirements. With no argument,
 `ponytail` reports the current preference (or `full`); an explicit level changes
-only the conversation's Autowork preference. Do not write mode/config files or
-change unrelated skills. No startup hook, persistent activation, band UI, transcript
+only the conversation's Autowork preference. A Pi Autowork runner reads
+`PI_AUTOWORK_PONYTAIL_LEVEL` (default `full`) and carries that level, with this
+method's path, into worker and reviewer prompts. Set it on the runner process when
+a non-default level must outlive this conversation. Do not write mode/config files
+or change unrelated skills. No startup hook, persistent activation, band UI, transcript
 import, telemetry or upstream plugin installation is part of this bundle.
 
 These scope rules override upstream session-wide activation and host-specific setup

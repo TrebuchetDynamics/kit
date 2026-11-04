@@ -70,6 +70,25 @@ class AffectedTestsTests(unittest.TestCase):
                 self.assertNotIn('unrelated/owner.py', graph['Src/pi_autowork/engine/consumer.py'])
                 self.assertNotIn('Src/pi_autowork/engine/owner.py', graph['tests/test_other.py'])
 
+    def test_an_unmapped_document_selects_nothing_but_unmapped_code_selects_the_whole_suite(self):
+        """A changelog line cost the whole suite before every push; code with no mapped test still does."""
+        for change in ('docs/new-note.md', 'docs/new-note.txt'):
+            with self.subTest(change=change):
+                tests, _, full = affected_tests.select([change], conservative=True)
+                self.assertEqual(([t for t in tests if t != SELF], full), ([], False))
+        # A document reaches the tests that read it and the tests of the code that reads it, no
+        # further: the engine names CHANGELOG.md because it edits one in target repositories.
+        for change in ('CHANGELOG.md', 'README.md'):
+            with self.subTest(change=change):
+                tests, reasons, full = affected_tests.select([change], conservative=True)
+                self.assertFalse(full)
+                self.assertTrue(tests)
+                self.assertLess(len(tests), len(affected_tests.check_module().discover_tests(ROOT)) // 2, tests)
+                self.assertTrue(all(len(reason.split(' <- ')) <= 3 for reason in reasons.values()), reasons)
+        tests, reasons, full = affected_tests.select(['scripts/new_tool.py'], conservative=True)
+        self.assertTrue(full)
+        self.assertIn('the whole suite', next(iter(reasons.values())))
+
     def test_planning_records_select_nothing(self):
         tests, _, full = affected_tests.select(['tasks/items/TOOLSET-001-00.md'])
         self.assertEqual(([t for t in tests if t != SELF], full), ([], False))

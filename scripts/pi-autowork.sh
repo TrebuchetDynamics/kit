@@ -31,7 +31,7 @@ if ! { [[ -n $COMPONENT ]] && is_component "$COMPONENT"; }; then
       if [[ $line == /* ]]; then
         if is_component "$line/pi-autowork"; then
           [[ -z $COMPONENT ]] && COMPONENT=$line/pi-autowork
-          if [[ ${source%% *} == git:github.com/TrebuchetDynamics/autowork ]]; then
+          if [[ ${source%% *} == git:github.com/TrebuchetDynamics/kit ]]; then
             COMPONENT=$line/pi-autowork
             break
           fi
@@ -43,7 +43,7 @@ if ! { [[ -n $COMPONENT ]] && is_component "$COMPONENT"; }; then
   fi
 fi
 if [[ -z $COMPONENT ]]; then
-  printf 'pi-autowork: Autowork not found. Install it in Pi (pi install git:github.com/TrebuchetDynamics/autowork) or set PI_AUTOWORK_TOOLSET.\n' >&2
+  printf 'pi-autowork: Autowork not found. Install it in Pi (pi install git:github.com/TrebuchetDynamics/kit) or set PI_AUTOWORK_TOOLSET.\n' >&2
   exit 2
 fi
 command -v python3 >/dev/null 2>&1 || { printf 'pi-autowork: Missing required command: python3\n' >&2; exit 2; }

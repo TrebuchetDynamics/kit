@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BANNED_OPENERS = ('use when', 'use to', 'use for', 'use if', 'use after', 'use before')
 # Hermes installs Graphify's own skill into profiles, so Autowork ships the adapter only.
 ADAPTER_ONLY = {'graphify'}
+PILOT = ('autowork', 'plan-for-me', 'ponytail-review',
+         'git-commit-push', 'docs-sync', 'plan-with-me')
 
 
 class SkillStandardTests(unittest.TestCase):
@@ -31,6 +33,19 @@ class SkillStandardTests(unittest.TestCase):
                 self.assertRegex(description, r'\.$')
                 self.assertEqual(description.count('.'), 1, description)
 
+    def test_lgtm_is_a_yes_skill_not_a_second_approval_round(self):
+        skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())
+        adapter = ' '.join((ROOT / 'adapters/skills/lgtm/SKILL.md').read_text().split())
+        self.assertIn('LGTM is a yes', skill)
+        self.assertIn('low-effort', skill)
+        self.assertIn('accept every recommendation', skill)
+        self.assertIn('question round', skill)
+        self.assertIn('default first, ask last', skill.lower())
+        self.assertNotIn('Not a plan approval', skill)
+        self.assertIn('LGTM is a yes', adapter)
+        self.assertIn('low-effort', adapter)
+        self.assertIn('question round', adapter)
+
     def test_every_native_skill_states_boundaries_and_a_done_line(self):
         for path in self.skills('skills'):
             if path.parent.name == 'shared':
@@ -42,6 +57,22 @@ class SkillStandardTests(unittest.TestCase):
                 self.assertRegex(boundaries, r'(?m)^- \S', 'a boundary with no cut')
                 self.assertIn('**Done when:**', text)
                 self.assertEqual(text.count('**Done when:**'), 1, 'one completion line')
+
+    def test_high_risk_skills_name_excuses_red_flags_and_dod(self):
+        for name in PILOT:
+            with self.subTest(skill=name):
+                text = (ROOT / 'skills' / name / 'SKILL.md').read_text()
+                self.assertIn('## Common Rationalizations', text)
+                self.assertIn('| Rationalization | Reality |', text)
+                self.assertIn('## Red Flags', text)
+                self.assertIn('../shared/DEFINITION-OF-DONE.md', text)
+                self.assertEqual(text.count('**Done when:**'), 1)
+
+    def test_definition_of_done_is_one_shared_reference(self):
+        text = (ROOT / 'skills/shared/DEFINITION-OF-DONE.md').read_text()
+        self.assertIn('../engineering/upstream/references/definition-of-done.md', text)
+        self.assertIn('Task acceptance is met', text)
+        self.assertIn('NOT_CHECKED', text)
 
     def test_sibling_pairs_name_each_other(self):
         # The pairs from docs/skill-standard.md, in both directions.
@@ -61,10 +92,10 @@ class SkillStandardTests(unittest.TestCase):
     def test_the_router_names_every_skill(self):
         # Upstream's rule: a router that never mentions a skill, or still names a
         # removed one, is a router that lies.
-        router = (ROOT / 'skills/ask-autowork/SKILL.md').read_text()
+        router = (ROOT / 'skills/ask-kit/SKILL.md').read_text()
         for path in self.skills('skills'):
             name = path.parent.name
-            if name in ('shared', 'ask-autowork'):
+            if name in ('shared', 'ask-kit'):
                 continue
             with self.subTest(skill=name):
                 self.assertIn(f'`/{name}`', router)

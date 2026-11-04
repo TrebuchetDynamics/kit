@@ -1,7 +1,7 @@
 ---
 name: impeccable
 description: "Design, audit or polish frontend UI."
-version: 4.5.2
+version: 4.8.0
 license: Apache 2.0
 ---
 

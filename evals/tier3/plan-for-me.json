@@ -1,0 +1,28 @@
+{
+  "skill": "plan-for-me",
+  "tier": 3,
+  "description": "Planning trace: investigate, save a task record, do not write implementation.",
+  "require": [
+    {
+      "event": "read",
+      "path": "*"
+    },
+    {
+      "event": "write",
+      "path": "tasks/items/*.md"
+    },
+    {
+      "event": "final"
+    }
+  ],
+  "forbid": [
+    {
+      "event": "write",
+      "path": "src/**"
+    },
+    {
+      "event": "write",
+      "path": "tests/**"
+    }
+  ]
+}

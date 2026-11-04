@@ -54,7 +54,7 @@ edits. State mode/scope briefly, then make the authorized changes.
 Decide routine engineering choices within accepted scope, record material reasoning
 in existing task records and reuse accepted decisions; ask only for genuinely missing
 owner intent or authority. For a concrete method gap or explicit protocol request,
-select one technique through [engineering](../engineering/SKILL.md); consult
+select one technique through [engineering](../engineering/REFERENCE.md); consult
 [the engineering cycle](../shared/ENGINEERING-CYCLE.md) only if routing is unclear.
 Carry evidence of materially applied methods into the same task records.
 
@@ -415,6 +415,8 @@ repository. Read first, then write:
 | Close manually (any task kind, not verified) | `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]` |
 | Retire for a successor | `autowork tasks supersede ID --by OTHER --reason TEXT` |
 | Check the result | `autowork tasks validate --worktree .` |
+| Read the goals | `autowork tasks goals [--worktree]` |
+| Commit only the task edits | `autowork tasks commit [--message TEXT] [--dry-run]` |
 
 **Use literal JSON for prose.** If a value contains quotes, backticks, `$`
 (including `$(...)` or `$VAR`) or newlines, write one UTF-8 JSON object with a
@@ -650,6 +652,28 @@ tasks or a secondary detail, and do not reopen already answered defaults.
 When graph analysis was used or required, include Graphify coverage/limitations,
 freshness, actual queries, source corroboration
 and the evidence chain behind changed docs and tasks; graph output alone is not delivery.
+
+## Common Rationalizations
+
+The [Definition of Done](../shared/DEFINITION-OF-DONE.md) is the standing bar; a docs
+pass does not replace implementation or verification.
+
+| Rationalization | Reality |
+| --- | --- |
+| "A docs pass should also fix the code." | Docs Sync writes documentation and task records. Implementation uses `/autowork`. |
+| "The task looks done, so I can close it." | Close only with the required evidence. A manual close is not a verified receipt. |
+| "A small doc change needs a full bootstrap." | Use Maintain for affected owners. Bootstrap only when the requested scope needs it. |
+| "The other writer's dirty files are in the way." | Preserve them. Coordinate, or stage only attributable owned hunks. |
+| "The graph or links prove the docs." | Graph output is orientation. Check source, targets and current bytes. |
+
+## Red Flags
+
+- Code, tests, fixtures or CI changed during a docs pass.
+- A task closed without its required verification.
+- Broad bootstrap or conversion for a narrow request.
+- Another writer's dirty work overwritten or absorbed.
+- A report claims checks that did not run.
+
 ## Boundaries
 
 - Not implementation; use `/autowork`.

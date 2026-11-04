@@ -1,0 +1,9 @@
+node_modules/
+.worktrees/
+.pi-subagents/
+parallel-*/
+coverage/
+artifacts/
+*.tgz
+.env*
+!.env.example

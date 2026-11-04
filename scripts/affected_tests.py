@@ -8,7 +8,9 @@ working tree, untracked files included. A test module is selected when it change
 when it reaches a changed file through what it imports (``import parallel_integrate``,
 ``from pi_autowork import coordinator``) or the repository files it names (a script it runs, a
 document it reads), followed transitively. Each selection prints the chain that selected it.
-A change to the check itself, CI or packaging selects the whole suite, as does `--full`.
+A change to the check itself, CI or packaging selects the whole suite, as does `--full`; any
+other changed file no test reaches does too, except a document (Markdown or text), which the
+core contracts cover and which selects nothing.
 
 Workers and reviewers ran whole test directories, or the full check, for a change that two
 modules could reach; this runs those two.
@@ -107,6 +109,7 @@ def python_references(source, path=''):
 
 
 CODE = ('.py', '.sh', '.js', '.mjs')
+DOCUMENTS = ('.md', '.txt')
 
 
 def dependency_graph(files, tests=(), *, conservative=False):
@@ -216,6 +219,11 @@ def select(changed, base='HEAD', *, conservative=False):
                 reached.add(path)
                 pending.extend(reverse.get(path, ()))
             if not reached & tests:
+                if changed_path.endswith(DOCUMENTS):
+                    # A document is read, not run: one no test names affects no test module.
+                    # The checker's core contracts (docs check, task-store validation) still
+                    # cover it; a changelog line used to cost the whole suite before a push.
+                    continue
                 return whole(f'{changed_path} has no resolved test mapping')
             for path in reached:
                 if path.endswith('.py'):
@@ -229,6 +237,11 @@ def select(changed, base='HEAD', *, conservative=False):
         queue.append(path)
     while queue:
         path = queue.popleft()
+        # A document reaches the tests that read it and the tests of the code that reads it,
+        # no further: the engine names CHANGELOG.md and README.md because it edits them in
+        # target repositories, and following every importer of that code reached the suite.
+        if reason[path][0].endswith(DOCUMENTS) and len(reason[path]) > 2:
+            continue
         for user in sorted(reverse.get(path, ())):
             if user not in reason:
                 reason[user] = reason[path] + [user]

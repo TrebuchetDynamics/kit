@@ -37,20 +37,21 @@ OCCUPYING = ('dispatched', 'running', 'reported', 'integrating', 'integrated', '
 ACTIVE = ('dispatched', 'running', 'reported', 'integrating', 'integrated')
 # The fields a task's contract hash covers, plus its goal: what an admitted attempt ran against.
 CONTRACT = ('scope', 'acceptance', 'checks', 'depends_on', 'touches', 'resources', 'kind', 'ownership',
-            'live', 'exclusions', 'goal', 'verified_depends_on')
+            'live', 'live_actor', 'live_at', 'live_scope', 'waiver_actor', 'waiver_at', 'waiver_for',
+            'exclusions', 'goal', 'verified_depends_on')
 
 
 class CommandError(Exception):
     """A refusal with its message; nothing was written."""
 
 
-def _git(repo, *args, env=None):
+def _git(repo, *args, env=None, raw=False):
     clean = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
     result = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True,
                             env={**clean, **(env or {})}, timeout=60)
     if result.returncode:
         raise CommandError(f'git {args[0]} failed: {result.stderr.strip()}')
-    return result.stdout.strip()
+    return result.stdout if raw else result.stdout.strip()
 
 
 _task_locks = threading.local()
@@ -444,6 +445,8 @@ def cmd_show(repo, tid, rev='HEAD', worktree=False):
                 rank=t.rank, depends_on=list(t.depends_on), verified_depends_on=list(t.verified_depends_on),
                 closure=t.closure_info, touches=list(t.touches), resources=list(t.resources),
                 kind=t.kind.value, ownership=t.ownership.value, live=t.live.value, scope=t.scope,
+                live_actor=t.live_actor, live_at=t.live_at, live_scope=list(t.live_scope),
+                waiver_actor=t.waiver_actor, waiver_at=t.waiver_at, waiver_for=t.waiver_for,
                 acceptance=list(t.acceptance), checks=list(t.checks), exclusions=list(t.exclusions),
                 draft=t.draft, missing_fields=list(t.missing_fields), contract_hash=t.contract_hash,
                 record_revision=t.record_revision, path=t.path, rev=store.rev, notes=t.body)
@@ -463,6 +466,48 @@ def cmd_validate(repo, rev='HEAD', worktree=False):
     drafts = sorted(t.id for t in store.tasks.values() if t.draft)
     return dict(ok=True, tasks=len(store.tasks), goals=len(store.goals), drafts=drafts,
                 pending=list(TaskStore.pending(repo)))
+
+
+def cmd_goals(repo, rev='HEAD', worktree=False):
+    """Every goal record, in priority order: the fields the TUI and the Paseo plugin show."""
+    store = _read(repo, rev, worktree)
+    return [dict(id=g.id, title=g.title, priority=g.priority, source=g.source, status=g.status, focus=g.focus,
+                 depends_on=list(g.depends_on), contract_hash=g.contract_hash, record_revision=g.record_revision,
+                 path=g.path, notes=g.body, rev=store.rev)
+            for g in sorted(store.goals.values(), key=lambda g: (g.priority if g.priority is not None else 10**9, g.id))]
+
+
+def _untracked_diff(repo, path):
+    """`git diff --no-index` exits 1 when the file differs from /dev/null, which is the point."""
+    clean = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+    result = subprocess.run(['git', '-C', str(repo), 'diff', '--no-index', '--no-color', '--', os.devnull, path],
+                            capture_output=True, text=True, env=clean, timeout=60)
+    if result.returncode not in (0, 1):
+        raise CommandError(f'git diff failed: {result.stderr.strip()}')
+    return result.stdout
+
+
+def cmd_commit(repo, message=None, dry_run=False):
+    """Commit the working tree's tasks/ edits and nothing else: an owner's answers, holds and
+    new records become one local commit. Returns the changed paths, their diff and the new
+    commit (None for a dry run or when nothing changed). Other dirty files stay as they are."""
+    repo = Path(repo)
+    if not (repo / 'tasks').is_dir():
+        raise CommandError('no tasks/ store in the working tree')
+    status = _git(repo, 'status', '--porcelain', '--untracked-files=all', '--', 'tasks', raw=True)
+    entries = [(line[:2], line[3:].split(' -> ')[-1]) for line in status.split('\n') if len(line) > 3]
+    files = sorted({path for _, path in entries})
+    if not files:
+        return dict(files=[], diff='', commit=None, dry_run=dry_run)
+    worktree_store(repo)  # a broken store is refused before it can be committed
+    diff = _git(repo, 'diff', '--no-color', 'HEAD', '--', 'tasks')
+    diff += ''.join(_untracked_diff(repo, path) for code, path in entries if code == '??')
+    if dry_run:
+        return dict(files=files, diff=diff, commit=None, dry_run=True)
+    _git(repo, 'add', '-A', '--', 'tasks')
+    text = ' '.join((message or '').split()) or f'tasks: {len(files)} record edit(s)'
+    _git(repo, 'commit', '-q', '-m', text, '--', 'tasks')
+    return dict(files=files, diff=diff, commit=_git(repo, 'rev-parse', 'HEAD'), dry_run=False)
 
 
 def cmd_new_id(repo, prefix=None):
@@ -579,7 +624,8 @@ def cmd_goal(repo, gid, title=None, source=None, priority=None, status=None, foc
 TYPED = {'rank': int, 'depends_on': list, 'touches': list, 'resources': list, 'acceptance': list,
          'checks': list, 'exclusions': list, 'title': str, 'short': str, 'scope': str, 'goal': str,
          'kind': str, 'ownership': str, 'live': str, 'verified_depends_on': list,
-         'owner_waiver': str, 'owner_qualification': str}
+         'owner_waiver': str, 'owner_qualification': str, 'live_actor': str, 'live_at': str,
+         'live_scope': list, 'waiver_actor': str, 'waiver_at': str, 'waiver_for': str}
 
 
 @_serialized
@@ -855,17 +901,26 @@ def add_parser(sub):
                    help='the one goal whose tasks go first')
     p.add_argument('--depends-on', action='append', default=argparse.SUPPRESS, help='a goal that must be met first')
     p.add_argument('--evidence', default=argparse.SUPPRESS, help='for --status met: the executed, passing check')
+    p = verbs.add_parser('goals', help='every goal record as JSON, in priority order')
+    p.add_argument('repo', nargs='?', default='.')
+    p.add_argument('--worktree', action='store_true', help='read uncommitted edits too')
+    p.add_argument('--rev', default='HEAD')
+    p = verbs.add_parser('commit', help="commit the working tree's tasks/ edits and nothing else")
+    p.add_argument('repo', nargs='?', default='.')
+    p.add_argument('--message', '-m', help='the commit message (default names the number of edits)')
+    p.add_argument('--dry-run', action='store_true', help='show the paths and their diff; commit nothing')
     for name in ('add', 'field', 'goal'):
         verbs.choices[name].add_argument('--json', dest='json_input', metavar='FILE',
                                         help='read literal values from one JSON object (use - for stdin)')
     for name in WRITES:
-        if name != 'add':
+        if name not in ('add', 'commit'):
             verbs.choices[name].add_argument('--expect', metavar='REVISION',
                                              help='refuse unless the record is still this revision (show --worktree)')
     return tasks
 
 
-WRITES = ('add', 'field', 'place', 'decide', 'move', 'hold', 'release', 'done', 'supersede', 'delete', 'goal')
+WRITES = ('add', 'field', 'place', 'decide', 'move', 'hold', 'release', 'done', 'supersede', 'delete', 'goal',
+          'commit')
 
 # JSON keys follow option names with underscores; `id` is the add option --id.
 _INPUT_TYPES = {
@@ -977,6 +1032,10 @@ def _run(args, repo):
         out = cmd_validate(repo, args.rev, args.worktree)
     elif verb == 'new-id':
         out = cmd_new_id(repo, args.prefix)
+    elif verb == 'goals':
+        out = cmd_goals(repo, args.rev, args.worktree)
+    elif verb == 'commit':
+        out = cmd_commit(repo, args.message, args.dry_run)
     elif verb == 'add':
         out = 'added ' + cmd_add(repo, args.goal, args.title, args.short, args.section, args.scope,
                                  args.acceptance, args.checks, args.touches, args.depends_on, args.task_id,
