@@ -5,6 +5,7 @@ import ast
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from fnmatch import fnmatchcase
+import importlib.util
 import math
 import runpy
 import os
@@ -270,6 +271,33 @@ def paseo_check(root, env, list_only=False):
     return result.returncode == 0
 
 
+PROVISIONED = 'AUTOWORK_CHECK_PROVISIONED'
+
+
+def provision(root):
+    """Run under the declared CPython 3.12 test environment, or return None to run here.
+
+    The runner reads `Full check: python3 scripts/check.py` from AGENTS.md and runs it with
+    whatever python3 is on PATH. On a host whose python3 is not the documented 3.12 with
+    requirements-test.txt, the offline modules fail on a missing PyYAML or a version-specific
+    message (MAIN-005). One uv run provides both; a prepared host (CI's pip install, the
+    documented uv command) already has them and skips this. Keeping the declared command
+    unchanged keeps the runner's full-check completeness and affected selection intact."""
+    requirements = root / 'requirements-test.txt'
+    if os.environ.get(PROVISIONED) or not requirements.is_file():
+        return None
+    if sys.version_info[:2] == (3, 12) and importlib.util.find_spec('yaml'):
+        return None
+    uv = shutil.which('uv')
+    if uv is None:
+        print('warning: the full check needs CPython 3.12 and requirements-test.txt, and uv is '
+              'not installed to provide them', file=sys.stderr)
+        return None
+    command = [uv, 'run', '--python', '3.12', '--no-project', '--with-requirements',
+               str(requirements), 'python', str(Path(__file__).resolve()), *sys.argv[1:]]
+    return subprocess.run(command, env=dict(os.environ, **{PROVISIONED: '1'})).returncode
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('paths', nargs='*', help='owned test modules or directories (default: all offline tests)')
@@ -288,6 +316,10 @@ def main(argv=None):
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error('--timeout must be positive')
     root = Path(__file__).resolve().parents[1]
+    if argv is None and not args.list:
+        code = provision(root)
+        if code is not None:
+            return code
     tests = discover_tests(root)
     selection = None
     if args.affected:
