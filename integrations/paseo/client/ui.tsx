@@ -168,7 +168,11 @@ export function HashChip({ value, name, suffix = '' }: { value: string; name: st
 }
 /** The host's sheet (bottom sheet on phones, dialog on desktop) for a step that must not be missed. */
 export function Sheet({ title, open, onClose, children }: { title: string; open: boolean; onClose: () => void; children: ReactNode }) {
+  // A native modal body renders in the host's portal host. The host rebuilds only its own
+  // runtime contexts there, so this plugin's theme context is absent and every label in the
+  // body would throw. Re-provide the ambient theme inside the body.
+  const theme = useContext(Theme);
   return <Modal title={title} open={open} onOpenChange={next => { if (!next) onClose(); }}>
-    <Modal.Content><View style={{ gap: 10 }}>{children}</View></Modal.Content>
+    <Modal.Content><Theme.Provider value={theme}><View style={{ gap: 10 }}>{children}</View></Theme.Provider></Modal.Content>
   </Modal>;
 }

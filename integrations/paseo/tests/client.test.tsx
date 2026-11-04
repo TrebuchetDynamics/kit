@@ -34,6 +34,7 @@ vi.mock('@getpaseo/plugin/client', () => ({
 }));
 import { AutoworkScreen, WorkspacePanel } from '../client/screens';
 import { SettingsScreen } from '../client/settings';
+import { Theme } from '../client/ui';
 import { blockedReason, closureLabel, canAnswer, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, stateTone, taskMatches } from '../client/presentation';
 
 const fleet = (instance = 'generation-1') => fleetSchema.parse({ instance, capturedAt: Date.now(), release: 'configured-release', executable: '/bin/autowork', prepareApi: 4,
@@ -122,6 +123,19 @@ describe('native host-scoped surfaces', () => {
     await press('Confirm operation');
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(1);
     expect(button('Confirm operation')).toBeUndefined();
+  });
+  // A native modal body renders in the host's portal host, which rebuilds only Paseo's own
+  // runtime contexts. The sheet must re-provide this plugin's theme, or every label inside it
+  // throws and takes the whole app down (Android report: "Autowork theme missing").
+  it('re-provides the plugin theme inside a host modal body', async () => {
+    await mount({ params: { view: 'runner' } }); await press('Pause');
+    const body = root.root.findAll(node => String(node.type) === 'ModalContent')[0];
+    expect(body, 'no modal body rendered').toBeTruthy();
+    const reProvided = React.Children.toArray(body.props.children as React.ReactNode)
+      .some(child => React.isValidElement(child) && child.type === Theme.Provider);
+    expect(reProvided).toBe(true);
+    const colors = root.root.findAll(node => String(node.type) === 'Text' && node.props.style?.color).map(node => node.props.style.color);
+    expect(colors).toContain(props.theme.colors.foreground);
   });
   it('does not query an offline/missing host or use another online host as fallback', async () => {
     env.hosts = [{ serverId: 'b', label: 'B', status: 'online' }];

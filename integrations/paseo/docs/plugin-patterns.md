@@ -25,6 +25,16 @@ This is local presentation pagination over the existing authoritative task snaps
 
 The implementation adapts the interaction patterns without copying third-party implementation code or adding dependencies.
 
+## Re-provide plugin context inside host portals
+
+A native `Modal` body renders in the host's portal host. The pinned 0.15 SDK rebuilds
+Paseo's own runtime contexts there (`runtime-context-bridge`), and it cannot rebuild a
+plugin's private React context. A plugin that reads its own context inside a modal body
+therefore sees nothing: this plugin's `useColors` threw `Autowork theme missing` on an
+Android client and the throw took the whole app down. `Sheet` now re-provides the
+ambient theme inside `Modal.Content`, and `tests/client.test.tsx` fails if that provider
+is removed. Any later surface that crosses a host portal needs the same treatment.
+
 ## Keep existing safeguards
 
 Foreground gating, bounded backoff, shared server-side read collection, explicit confirmations and server-only execution policy already exist here. Retain them rather than replacing them with simpler example code.
