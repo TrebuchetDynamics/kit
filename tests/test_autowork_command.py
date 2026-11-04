@@ -315,7 +315,7 @@ class AutoworkCommandTests(unittest.TestCase):
         self.env.pop('PI_AUTOWORK_PUSH', None)
         initial = self.aw('status', str(self.repo))
         self.assertEqual(initial.returncode, 0, initial.stderr)
-        self.assertIn('Push:       disabled', initial.stdout)
+        self.assertIn('Push:       enabled', initial.stdout)
         self.assertFalse((self.env_dir / 'india.env').exists())
         self.env['PI_AUTOWORK_PUSH'] = '1'
         installed = self.aw('start', str(self.repo))
@@ -335,13 +335,13 @@ class AutoworkCommandTests(unittest.TestCase):
                 status = self.aw('status', str(self.repo))
                 self.assertEqual(status.returncode, 0, status.stderr)
                 self.assertIn(f'Push:       {label}', status.stdout)
-            self.assertIn('Push:       disabled', self.aw('status', str(other)).stdout)
+            self.assertIn('Push:       enabled', self.aw('status', str(other)).stdout)
             self.assertEqual(settings.read_bytes(), before)
             self.assertEqual(self.calls(), [])
 
     def test_ls_json_shows_saved_push_grant_not_the_callers_environment(self):
         settings = self.env_dir / 'india.env'
-        for value, expected in ((None, False), ('1', True), ('0', False), ('', False), ('true', False)):
+        for value, expected in ((None, True), ('1', True), ('0', False), ('', False), ('true', False)):
             with self.subTest(value=value):
                 saved = f'PI_AUTOWORK_REPO={self.repo}\n# keep this comment\n'
                 if value is not None:

@@ -288,7 +288,11 @@ class PiRpcRuntime:
                                        session_dir=str(Path(self.spec.state) / 'sessions'),
                                        session_id=self.spec.session, extra_args=self.spec.extra_args,
                                        env=dict(self.spec.environment), inherit_env=False,
-                                       strict_version=True, limits=limits)
+                                       # The SDK's strict flag rejects any Pi that is not its exact
+                                       # TESTED_PI_VERSION. The kit already enforces its own floor
+                                       # below (pi_version_supported), so an up-to-date Pi above
+                                       # that floor must not be refused here as untested.
+                                       strict_version=False, limits=limits)
             from pi_autowork.processes import start_time
             before = set(pi_run_support._children(os.getpid()))
             try:
