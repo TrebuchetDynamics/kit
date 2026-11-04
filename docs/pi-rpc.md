@@ -1,7 +1,7 @@
 # Pi RPC runtime
 
 Autowork now defaults to **RPC through `pi-agent-python-sdk` 0.2.6 and Pi
-1.4.0**. JSON remains an explicit temporary rollback. This changes execution,
+1.4.0 or newer**. JSON remains an explicit temporary rollback. This changes execution,
 not task authority: the existing engine still owns contracts, attempts, admission,
 worktrees, checks, independent review, integration and closure.
 
@@ -22,7 +22,9 @@ coordinated update. Do not restart another active runner to apply this change.
 ## Install and readiness
 
 Execution requires Linux `/proc`, pidfds and parent-death/subreaper support,
-Python 3.11+, and the qualified Pi version. Read-only CLI imports need no SDK.
+Python 3.11+, and a Pi release at or above the qualified floor. A newer local Pi is
+accepted so an up-to-date host is never blocked; only a release below the floor is
+refused, and the refusal names the floor. Read-only CLI imports need no SDK.
 The `autowork` installer component includes SDK setup; installing Pi resources
 alone does not install a Python runtime or start a runner.
 
@@ -33,7 +35,7 @@ STATE_ROOT="${PI_AUTOWORK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/pi-au
 python3 scripts/install-pi-rpc.py --dry-run --state-root "$STATE_ROOT"
 python3 scripts/install-pi-rpc.py --state-root "$STATE_ROOT"
 export PI_AUTOWORK_RPC_PYTHON="$STATE_ROOT/runtimes/pi-rpc-0.2.6/bin/python"
-pi --version  # must be 1.4.0
+pi --version  # must be 1.4.0 or newer
 ```
 
 The installer uses an isolated venv, a versioned path, a wheel SHA256 from

@@ -465,4 +465,29 @@ class SdkTests(unittest.TestCase):
         asyncio.run(scenario())
 
 
+class VersionFloorTests(unittest.TestCase):
+    """The pin is a floor, not an exact match: an up-to-date host must never be blocked."""
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.root=Path(self.tmp.name)
+        self.pi=self.root/'pi'; self.pi.write_text(FAKE); self.pi.chmod(0o700)
+        self.sdk=self.root/'sdk-python'; self.sdk.write_text('#!/bin/sh\necho 0.2.6\n'); self.sdk.chmod(0o700)
+        self.settings=pi_runtime.Settings(self.root/'state',{'PI_BIN':str(self.pi),
+                                                             'PI_AUTOWORK_RPC_PYTHON':sys.executable})
+
+    def test_a_newer_pi_is_accepted_and_an_older_one_is_refused(self):
+        for value in ('1.4.0','1.4.9','1.5.0','1.10.0',' 1.5.0\n'):
+            with self.subTest(accepted=value): self.assertTrue(pi_rpc.pi_version_supported(value))
+        for value in ('1.3.9','0.9.0','1.5','',None,'garbage'):
+            with self.subTest(refused=value): self.assertFalse(pi_rpc.pi_version_supported(value))
+
+    def test_readiness_names_the_floor_only_below_it(self):
+        with patch.object(pi_rpc,'sdk_python',return_value=str(self.sdk)):
+            with patch.dict(os.environ,{'FAKE_VERSION':'1.5.0'}):
+                self.assertEqual(pi_rpc.readiness(self.settings),'')
+            with patch.dict(os.environ,{'FAKE_VERSION':'1.3.9'}):
+                message=pi_rpc.readiness(self.settings)
+        self.assertIn('1.4.0 or newer',message)
+
+
 if __name__=='__main__': unittest.main()

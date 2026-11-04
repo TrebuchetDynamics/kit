@@ -24,7 +24,17 @@ from pi_autowork.layout import LAYOUT
 from pi_autowork import pi_run_support
 
 SDK_VERSION = '0.2.6'
-PI_VERSION = '1.4.0'
+# The floor is the qualified release. An up-to-date local Pi must not be blocked by an
+# exact pin: a newer release is accepted, an older one is refused with the floor named.
+PI_MIN_VERSION = '1.4.0'
+
+
+def pi_version_supported(value):
+    """A MAJOR.MINOR.PATCH version at or above the qualified floor; unreadable is not."""
+    found = re.match(r'\s*(\d+)\.(\d+)\.(\d+)', str(value or ''))
+    if not found:
+        return False
+    return tuple(map(int, found.groups())) >= tuple(map(int, PI_MIN_VERSION.split('.')))
 MAX_PROMPT_BYTES = 2 * 1024 * 1024
 
 
@@ -293,7 +303,7 @@ class PiRpcRuntime:
                     else:
                         raise RuntimeError('cannot identify the exclusively owned Pi process')
                     self.pi_version = self.client.pi_version
-                    if self.pi_version != PI_VERSION:
+                    if not pi_version_supported(self.pi_version):
                         raise RuntimeError('toolchain')
                     self.active = True
                     async with self.client.stream(self.spec.prompt, timeout=self.spec.timeout) as stream:
@@ -383,8 +393,9 @@ def readiness(settings):
         if result.returncode or result.stdout.strip() != SDK_VERSION:
             return 'Pi RPC SDK 0.2.6 required; run python3 scripts/install-pi-rpc.py'
         result = subprocess.run([settings.pi, '--version'], capture_output=True, text=True, timeout=15)
-        if result.returncode or result.stdout.strip() != PI_VERSION:
-            return 'Pi RPC requires qualified Pi 1.4.0; installed executable is incompatible'
+        installed = '' if result.returncode else result.stdout.strip()
+        if not pi_version_supported(installed):
+            return f'Pi RPC requires Pi {PI_MIN_VERSION} or newer; installed executable is older or unreadable'
     except (OSError, subprocess.SubprocessError):
         return 'Pi RPC toolchain unavailable; run python3 scripts/install-pi-rpc.py (or explicitly select JSON rollback)'
     return ''
