@@ -4357,5 +4357,114 @@ class PushOutcomeTests(unittest.TestCase):
         self.assertTrue(any('no PI_AUTOWORK_PUSH=1 grant' in line for line in self.messages), self.messages)
 
 
+class OwnerOutboxTests(unittest.TestCase):
+    """The owner's questions file is replaced atomically and committed as the bytes written."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='awo-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.repo = self.root / 'repo'
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.repo)], check=True)
+        self.git('config', 'user.email', 'fixture@example.invalid')
+        self.git('config', 'user.name', 'Fixture')
+        self.path = self.repo / 'BLOCKERS.md'
+        sys.path.insert(0, str(ROOT / 'pi-autowork'))
+        from pi_autowork import common, coordinator, questions
+        self.common, self.module, self.questions = common, coordinator, questions
+        self.messages = []
+        patcher = patch.object(coordinator.LOG, 'say', self.messages.append)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def git(self, *argv):
+        return subprocess.run(['git', '-C', str(self.repo), *argv], check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def commit(self, text):
+        self.path.write_text(text)
+        self.git('add', 'BLOCKERS.md')
+        self.git('commit', '-qm', 'questions')
+
+    def coordinator(self):
+        value = self.module.Coordinator.__new__(self.module.Coordinator)
+        value.integ, value.seen = str(self.repo), {}
+        return value
+
+    def test_an_interrupted_replace_leaves_the_previous_bytes_and_no_temporary(self):
+        self.commit('old\n')
+        with patch.object(self.common.os, 'replace', side_effect=OSError('interrupted')):
+            with self.assertRaises(OSError):
+                self.common.atomic_write(self.path, 'new\n')
+        self.assertEqual(self.path.read_text(), 'old\n')
+        self.assertEqual([entry.name for entry in self.repo.iterdir() if entry.name != '.git'],
+                         ['BLOCKERS.md'])
+
+    def test_a_commit_failure_after_replacement_is_repaired_on_the_next_pass(self):
+        self.commit('old\n')
+        value, attempts = self.coordinator(), []
+
+        def refuse(paths, *message):
+            attempts.append(list(paths))
+            raise OSError('disk full')
+
+        value.commit = refuse
+        self.assertEqual(value.store_questions(self.path, 'old\n', 'new\n'), 'commit-failed')
+        self.assertEqual(self.path.read_text(), 'new\n')  # complete, never torn
+        self.assertEqual(attempts, [['BLOCKERS.md']])
+
+        def commit(paths, *message):
+            attempts.append(list(paths))
+            self.git('add', *paths)
+            self.git('commit', '-qm', 'questions')
+            return True
+
+        value.commit = commit
+        self.assertEqual(value.store_questions(self.path, 'new\n', 'new\n'), 'written')
+        self.assertEqual(attempts, [['BLOCKERS.md'], ['BLOCKERS.md']])
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_an_unchanged_committed_block_is_neither_rewritten_nor_recommitted(self):
+        self.commit('same\n')
+        value = self.coordinator()
+        value.commit = lambda *args: self.fail('an unchanged, committed file has nothing to commit')
+        self.assertEqual(value.store_questions(self.path, 'same\n', 'same\n'), 'unchanged')
+
+    def test_a_concurrent_edit_between_replacement_and_commit_is_not_committed(self):
+        self.commit('old\n')
+        value = self.coordinator()
+        value.commit = lambda *args: self.fail('a raced file must not be committed')
+
+        def race(path, new, **kwargs):
+            Path(path).write_text(new + 'owner edit\n')
+
+        with patch.object(self.module, 'atomic_write', race):
+            self.assertEqual(value.store_questions(self.path, 'old\n', 'new\n'), 'raced')
+        self.assertIn('owner edit', self.path.read_text())
+
+    def test_a_torn_questions_block_is_repaired_without_losing_owner_text(self):
+        torn = ('# Blockers\n\n## Active\n\nowner note\n\n' + self.questions.START
+                + '\n\n### Q-A — USER_INPUT — effort input — unblocks 1\n- Needs: partial\n')
+        repaired = self.questions.update(torn, [dict(
+            id='A', type='USER_INPUT', effort='input', unblocks=1, task='A', needs='the full need',
+            answer='the answer', kind='blocker')])
+        self.assertEqual((repaired.count(self.questions.START), repaired.count(self.questions.END)), (1, 1))
+        self.assertTrue(repaired.startswith('# Blockers\n\n## Active\n\nowner note\n\n'))
+        self.assertIn('- Needs: the full need', repaired)
+        self.assertNotIn('- Needs: partial', repaired)
+
+    def test_a_duplicated_questions_block_collapses_to_one_and_keeps_text_between(self):
+        one = self.questions.update(None, [dict(
+            id='A', type='USER_INPUT', effort='input', unblocks=1, task='A', needs='need',
+            answer='answer', kind='blocker')])
+        text = '# Blockers\n\n## Active\n\n' + one + '\nowner tail\n\n' + one + '\n'
+        repaired = self.questions.update(text, [dict(
+            id='A', type='USER_INPUT', effort='input', unblocks=1, task='A', needs='need',
+            answer='answer', kind='blocker')])
+        self.assertEqual((repaired.count(self.questions.START), repaired.count(self.questions.END)), (1, 1))
+        self.assertIn('owner tail', repaired)
+        self.assertEqual(repaired.count('### Q-A'), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

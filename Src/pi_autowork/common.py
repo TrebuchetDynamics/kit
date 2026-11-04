@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 
 PONYTAIL_LEVELS = ('lite', 'full', 'ultra', 'off')
@@ -75,6 +76,33 @@ def die(code, text):
 # an owner's `git commit` at that moment failed with "index.lock: File exists". Writes still
 # take the locks they need; only Git's optional ones are declined.
 GIT = ('git', '--no-optional-locks')
+
+
+def atomic_write(path, data, *, mode=None):
+    """Replace one file in a single step: write a sibling, fsync it, then os.replace it.
+
+    A crash leaves either the previous bytes or the complete new bytes, never a torn file.
+    The target's current mode is kept unless ``mode`` is given.
+    """
+    path = Path(path)
+    payload = data.encode() if isinstance(data, str) else data
+    if mode is None:
+        try:
+            mode = path.stat().st_mode & 0o777
+        except OSError:
+            mode = 0o644
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f'.{path.name}.', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def git(repo, *argv, check=False):

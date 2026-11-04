@@ -106,6 +106,13 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Fixed
 
+- The owner's questions file is replaced atomically. The coordinator writes `BLOCKERS.md`
+  through a sibling file plus `os.replace`, then commits exactly the bytes it wrote; an
+  interrupted replacement leaves the previous file, and a commit that failed after a
+  successful replacement is repaired on the next pass instead of leaving an uncommitted
+  file forever. A torn or duplicated questions block is repaired to one block, keeping the
+  owner's text outside the markers. Source: `Src/pi_autowork/coordinator.py`,
+  `Src/pi_autowork/common.py`, `Src/pi_autowork/questions.py`, `tests/test_pi_autowork.py`.
 - A push whose remote outcome is unknown no longer ends the runner. `push()` catches a
   timeout and an I/O error, reports the unknown outcome once, and reconciles the remote refs
   with a read-only `git ls-remote` before the next ordinary push, so a push that landed while

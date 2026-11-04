@@ -26,7 +26,7 @@ import time
 
 from . import (fleet_view, health, janitor, landing, main_check, maintainer, optimistic, pi_runtime, questions, release,
                post_merge_barrier, service, task_commands, telemetry, worker, workspaces)
-from .common import GIT, LOG, dirty, git, git_ok, lifecycle, open_for_writing, safe_name, summary_list
+from .common import GIT, LOG, atomic_write, dirty, git, git_ok, lifecycle, open_for_writing, safe_name, summary_list
 from .processes import own_process, process_name, start_time
 from .supervision import main_checks
 from pi_autowork.engine.task_queue import commit as task_revision
@@ -3305,13 +3305,46 @@ class Coordinator:
             new = questions.update(old, found)
         except (OSError, ValueError):
             return
-        if new is None or new == old:
+        if self.store_questions(path, old, new) in ('unchanged', 'write-failed', 'raced', 'commit-failed'):
             return
-        path.write_text(new)
-        self.commit(['BLOCKERS.md'], 'docs(blockers): questions for the owner (pi-autowork)',
-                    'Built from the engine status without a model; /blockers answers them.')
         LOG.say(f'Questions for the owner in BLOCKERS.md: {len(found)} open'
                 + (f" (easiest: {found[0]['id']}, {found[0]['effort']})" if found else ''))
+
+    def store_questions(self, path, old, new):
+        """Write the questions block atomically, then commit those exact bytes.
+
+        Returns 'unchanged', 'written', 'write-failed', 'raced' or 'commit-failed'. A file
+        already holding the new text is still committed when the session lacks it, so a
+        commit that failed after a successful replacement is repaired on the next pass.
+        """
+        if new is None:
+            return 'unchanged'
+        committed = git_ok(self.integ, 'diff', '--quiet', '--', 'BLOCKERS.md')
+        if new != old:
+            try:
+                atomic_write(path, new)
+            except OSError as exc:
+                LOG.say(f'Questions for the owner were not written: {exc}')
+                return 'write-failed'
+        elif committed:
+            return 'unchanged'  # the working file already matches the session's commit
+        try:
+            if path.read_bytes() != new.encode():
+                LOG.say('Questions for the owner changed while being written; the next pass reconciles them')
+                return 'raced'
+        except OSError as exc:
+            LOG.say(f'Questions for the owner were not committed: {exc}')
+            return 'write-failed'
+        try:
+            self.commit(['BLOCKERS.md'], 'docs(blockers): questions for the owner (pi-autowork)',
+                        'Built from the engine status without a model; /blockers answers them.')
+        except (OSError, subprocess.SubprocessError) as exc:
+            LOG.say(f'Questions for the owner stay uncommitted: {exc}')
+            return 'commit-failed'
+        if not git_ok(self.integ, 'diff', '--quiet', '--', 'BLOCKERS.md'):
+            LOG.say('Questions for the owner stay uncommitted; the next pass commits them')
+            return 'commit-failed'
+        return 'written'
 
     def resolving(self, rows):
         """Held conflicts the merge resolver is settling or will take next: not the owner's yet. One

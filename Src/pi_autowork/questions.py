@@ -285,7 +285,7 @@ def render(questions, since):
 
 def update(text, questions, now=None):
     """BLOCKERS.md text with the questions block rewritten; everything else unchanged."""
-    if not questions and block_of(text or '') is None:
+    if not questions and block_of(text or '') is None and START not in (text or ''):
         return text  # nothing to ask and no block yet: leave the file alone
     stamp = (now or datetime.now(timezone.utc)).strftime('%Y-%m-%dT%H:%M:%SZ')
     known = previous_since(text or '')
@@ -293,9 +293,23 @@ def update(text, questions, now=None):
     block = render(questions, since)
     if not text:
         return f'# Blockers\n\n## Active\n\n{block}\n'
-    if block_of(text) is not None:
-        start, end = text.index(START), text.index(END) + len(END)
-        return text[:start] + block + text[end:]
+    start = text.find(START)
+    if start >= 0:
+        first_end = text.find(END, start)
+        if first_end > start:
+            end = first_end + len(END)
+        else:
+            # A torn block (the end marker never reached disk, or a crash cut it) runs to the
+            # next top-level heading; its partial content was the block's, now regenerated.
+            tail = re.search(r'^## ', text[start + len(START):], re.M)
+            end = start + len(START) + (tail.start() if tail else len(text) - start - len(START))
+        text = text[:start] + block + text[end:]
+        # Additional blocks (a torn file rewritten twice) are removed one at a time, so text
+        # between them survives; a trailing torn duplicate is dropped with its partial content.
+        while (extra := text.find(START, start + len(block))) >= 0:
+            close = text.find(END, extra)
+            text = text[:extra] + text[close + len(END):] if close >= 0 else text[:extra]
+        return text
     active = re.search(r'^## Active[ \t]*\n', text, re.M)
     if active:
         return text[:active.end()] + '\n' + block + '\n' + text[active.end():]
