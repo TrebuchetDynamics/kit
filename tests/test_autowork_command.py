@@ -517,8 +517,22 @@ class AutoworkCommandTests(unittest.TestCase):
                 self.assertIn(f'systemctl --user {expected} pi-autowork@india.service', self.calls())
                 self.assertEqual((self.env_dir / 'india.paused').exists(), args[0] == 'pause')
         self.aw('remove', 'india')
-        self.assertIn(f'script --remove-service --repo {self.repo}', self.calls())
+        self.assertIn('systemctl --user disable --now pi-autowork@india.service', self.calls())
+        self.assertFalse((self.env_dir / 'india.env').exists())
         self.assertIn('no runner named nothing', self.aw('stop', 'nothing').stderr)
+
+    def test_remove_works_after_the_saved_repository_was_renamed_away(self):
+        missing = self.base / 'autowork'
+        (self.env_dir / 'autowork.env').write_text(f'PI_AUTOWORK_REPO={missing}\n')
+        (self.env_dir / 'autowork.paused').write_text('paused\n')
+        (self.units / 'pi-autowork@autowork.service.active').touch()
+        (self.units / 'pi-autowork@autowork.service.enabled').touch()
+        result = self.aw('remove', 'autowork')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Removed pi-autowork@autowork.service', result.stdout)
+        self.assertFalse((self.env_dir / 'autowork.env').exists())
+        self.assertFalse((self.env_dir / 'autowork.paused').exists())
+        self.assertIn('systemctl --user disable --now pi-autowork@autowork.service', self.calls())
 
     def running(self, reloads=0):
         """A live runner's record as the runner writes it; a reload grows its count."""
