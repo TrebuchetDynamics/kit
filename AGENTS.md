@@ -12,8 +12,8 @@ runtime state out of Git. Do not edit or patch upstream Hermes Agent.
   needed. Fall back to `rg` when tools are unavailable or results insufficient.
 - Use Context7 (resolve library ID, then query docs) for current external library
   or CLI contracts. Local business logic and instruction edits need no lookup.
-- Full check: `python3 scripts/check.py`; CI runs it on every push (two jobs), so a
-  push does not wait for it. The pre-push hook (`python3 scripts/pre_push_check.py
+- Full check: `python3 scripts/check.py`
+  CI runs it on every push (two jobs), so a push does not wait for it. The pre-push hook (`python3 scripts/pre_push_check.py
   --install` once per clone) runs the core contracts and only the affected tests; a
   document edit costs seconds, not the suite. `KIT_PRE_PUSH=0` or `git push --no-verify`
   leaves a push to CI.
