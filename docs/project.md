@@ -757,7 +757,7 @@ Findings:
   `CHECKSUMS.sha256`). All 16 files are plain, non-executable Markdown/JSON/YAML.
 - License: Apache-2.0 with NOTICE attribution to Impeccable (Paul Bakaus, 4.4.0) and
   ehmo's MIT platform-design-skills; Uizze's repository root is MIT. The playbooks
-  are adaptations of Impeccable 4.4.0, which this bundle already ships as 4.5.2.
+  are adaptations of Impeccable 4.4.0, which this bundle already ships as 4.8.0.
 - The skill works offline; it mentions an optional paid Uizze MCP
   (`find_ui_references`, `find_ui_materials`) and links a remote banner image.
 

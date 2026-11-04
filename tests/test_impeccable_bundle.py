@@ -13,7 +13,7 @@ class CompleteBundleTests(unittest.TestCase):
     def test_impeccable_snapshot_has_license_and_exact_hashes(self):
         pack = ROOT / 'skills/impeccable'
         manifest = json.loads((pack / 'UPSTREAM.json').read_text())
-        self.assertEqual(manifest['revision'], '245ad82def45831dc56a21b683c7a1ff530b06cc')
+        self.assertEqual(manifest['revision'], '414603bf14c7a344edb466bb1f85690c77ce8b7d')
         self.assertIn('Apache License', (pack / 'LICENSE').read_text())
         self.assertTrue((pack / 'NOTICE.md').is_file())
         notices = json.loads((pack / 'THIRD-PARTY.json').read_text())
