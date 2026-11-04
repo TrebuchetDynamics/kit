@@ -380,6 +380,23 @@ describe('native host-scoped surfaces', () => {
     expect(field.props.value).toBe('Changed objective');
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.prepare' || name === 'autowork.commit')).toHaveLength(0);
   });
+  // The repository owns its own failure: a detached notice above the picker named no path
+  // and repeated what the row and the runner banner already said.
+  it('carries a broken repository on its row instead of a detached notice', async () => {
+    const value = fleet();
+    value.repos[0]!.error = 'Repository unavailable or identity mismatch; actions disabled';
+    value.repos[0]!.identity = ''; value.repos[0]!.path = '/missing';
+    value.warnings = ['Repository Repository is unavailable'];
+    env.invoke.mockResolvedValue(value);
+    await mount();
+    expect(text()).not.toContain('Repository Repository is unavailable');
+    expect(text()).toContain('/missing');
+    await press('Connection details');
+    expect(text()).toContain('Daemon warnings: Repository Repository is unavailable');
+    await press('Open Repository');
+    expect(text()).toContain('/missing');
+    expect(text()).toContain("restore the path or remove it from the daemon policy's repositories list");
+  });
   it('disables actions on repository identity errors', async () => {
     const value = fleet(); value.repos[0]!.error = 'Repository unavailable'; value.repos[0]!.identity = '';
     env.invoke.mockResolvedValue(value);

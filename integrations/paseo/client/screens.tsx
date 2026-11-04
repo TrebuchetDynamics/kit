@@ -112,18 +112,18 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
     {view === 'fleet' ? <FleetBanner repos={repos} decisions={decisions} running={running} onOpen={open} /> : null}
     {view === 'fleet' && hostBlocker ? <Notice tone="danger"><Label bold>Host-wide blocker</Label><Label>{hostBlocker}</Label><Caption>Affects every runner on this host; repository rows do not repeat it.</Caption></Notice> : null}
     {readOnly ? <Notice tone="warning"><Label bold>Read-only</Label><Caption>The daemon operator has not granted runner controls, planning, task edits or owner answers. Grants live in the daemon-side policy file.</Caption></Notice> : null}
-    {fleet.warnings.map((warning, index) => <Notice key={index} tone="warning"><Label>{warning}</Label></Notice>)}
-    {fleet.warnings.length ? <Caption>Restore the path or remove it from the daemon policy's repositories list.</Caption> : null}
     {view !== 'fleet' && view !== 'scorecard' && repos.length ? <ScrollRow>{repos.map(item => <Button key={item.id} compact label={item.label} accessibilityLabel={`Repository ${item.label}`} selected={repo?.id === item.id} onPress={() => selectId(item.id)} />)}</ScrollRow> : null}
     {view === 'fleet' ? <>
       <Row>
         <Stat value={repos.length} label="repositories" />
+        {repos.some(item => item.error) ? <Stat value={repos.filter(item => item.error).length} label="unavailable" tone="danger" /> : null}
         <Stat value={running} label="running lanes" tone={running ? 'success' : 'neutral'} />
         <Stat value={decisions} label="need decision" tone={decisions ? 'warning' : 'neutral'} />
       </Row>
       {repos.map(item => <FleetRow key={item.id} repo={item} hostBlocker={hostBlocker} onOpen={open} />)}
       <Expand title="Connection details">
         <Facts rows={[['Release', fleet.release], ['Instance', fleet.instance], ['Executable', fleet.executable], ['Prepare API', String(fleet.prepareApi)], ['Policy', `${fleet.policy.path ?? 'none'} (${fleet.policy.source})`], ['Granted', readOnly ? 'nothing' : grants.join(' · ')], ['Transport', 'unknown'], ['Delivery', 'unknown']]} />
+        {fleet.warnings.length ? <Caption>Daemon warnings: {fleet.warnings.join(' · ')}</Caption> : null}
         {directory ? <Caption>Workspace directory: {directory} · known repositories only</Caption> : null}
         <Caption>Runners, transport and delivery are observed from the selected host only. Every action is prepared, shown for confirmation, then dispatched once.</Caption>
       </Expand>
@@ -135,7 +135,7 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
         <View style={{ flexShrink: 1, gap: 2 }}><Heading level={2}>{repo.label}</Heading>{repo.revision ? <HashChip value={revisionParts(repo.revision).hash} name="revision" suffix={revisionParts(repo.revision).suffix} /> : <Caption>revision unavailable</Caption>}</View>
         {repo.runner ? <StatusPill state={repo.runner.state} /> : null}
       </Row>
-      {repo.error ? <Notice tone="danger"><Label>{repo.error}</Label><Caption>Actions are disabled until the repository identity is readable.</Caption></Notice> : null}
+      {repo.error ? <Notice tone="danger"><Label bold>Repository unavailable</Label><Label mono>{repo.path}</Label><Caption>{repo.error}. Actions are disabled until this identity is readable: restore the path or remove it from the daemon policy's repositories list.</Caption></Notice> : null}
       {view === 'runner' ? <RunnerView key={repo.id} repo={repo} {...common} onView={setView} /> : null}
       {view === 'tasks' || view === 'blockers' ? <TasksView key={`${repo.id}:${view}`} repo={repo} {...common} blockers={view === 'blockers'} /> : null}
       {view === 'planning' ? <PlanningView key={repo.id} repo={repo} {...common} sessionId={sessions[repo.id]} operation={planningOperation} objective={props.params.objective ?? ''} /> : null}
@@ -183,7 +183,7 @@ function FleetRow({ repo, hostBlocker, onOpen }: { repo: Repo; hostBlocker: stri
       <StatusPill state={runner?.state ?? 'unknown'} />
     </Row>
     {ownBlocker ? <Caption>Blocked: {ownBlocker}</Caption> : null}
-    {repo.error ? <Caption>{repo.error}</Caption> : null}
+    {repo.error ? <><Caption>{repo.error}</Caption><Caption truncate>{repo.path} · restore or remove it in the daemon policy</Caption></> : null}
     <Row>
       <Button label="Open" compact variant="primary" accessibilityLabel={`Open ${repo.label}`} onPress={() => onOpen(repo, 'runner')} />
       {(runner?.decisions ?? 0) > 0 ? <Button label="Answer" compact accessibilityLabel={`Answer ${repo.label}`} onPress={() => onOpen(repo, 'blockers')} /> : null}
