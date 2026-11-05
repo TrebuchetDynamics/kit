@@ -299,7 +299,7 @@ name: the command namespace is `kit:` and the settings key is
 `plugins.entries.kit`. Settings under `plugins.entries.autowork` keep being read for
 one release, so an opt-out you already set still applies. Remove an older installation
 and [install](#install) again in each host; in Hermes, rewire existing cron jobs with
-`scripts/wire-owner-cron.py --apply`.
+`python3 scripts/wire-owner-cron.py --root DEFAULT_HERMES_HOME --apply`.
 
 </details>
 
@@ -311,7 +311,7 @@ and [install](#install) again in each host; in Hermes, rewire existing cron jobs
 | Claude Code | Plugin validation and an earlier isolated install are recorded; no live model workflow is demonstrated in that record. |
 | Codex | Earlier isolated installation and skill discovery, plus portable-package checks; the current package still needs renewed native/live qualification. |
 | Hermes | Offline tests, native registration/integration checks and gateway activation receipts. Live model behavior and Telegram delivery require separate live checks. |
-| Paseo | The plugin's offline checks (the real Paseo 0.14 compiler and an isolated runtime) and a live local daemon load with read-only reads are in [its qualification record](integrations/paseo/docs/qualification.md). Physical client and live control qualification remain pending. |
+| Paseo | The plugin's offline checks (the real Paseo 0.15 compiler and an isolated runtime) and a live local daemon load with read-only reads are in [its qualification record](integrations/paseo/docs/qualification.md). Physical client and live control qualification remain pending. |
 
 Package contents have changed since some isolated-install runs. The
 [cross-host verification record](docs/cross-host.md#behavior-and-verification) names the
@@ -339,7 +339,7 @@ The [Autowork Paseo plugin](integrations/paseo/README.md) lives in `integrations
 It shows runners, tasks, goals, owner questions, logs and the scorecard inside Paseo.
 With a daemon-side operator policy file it performs every `autowork` command through
 exact confirmations: task and goal edits with a tasks-only commit, runner controls and
-maintenance, owner answers and staged planning, all through the existing engine. Paseo 0.13 or 0.14 on a Linux daemon host
+maintenance, owner answers and staged planning, all through the existing engine. Paseo 0.13, 0.14 or 0.15 on a Linux daemon host
 is required. Its checks run with `npm --prefix integrations/paseo run check` after
 `npm --prefix integrations/paseo ci --ignore-scripts`; see [testing](docs/testing.md#paseo-plugin-checks).
 

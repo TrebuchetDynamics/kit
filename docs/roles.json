@@ -3,7 +3,6 @@
   "profile": "cli-plugin",
   "roles": {
     "readme": {
-      "reason": "Source-evidence gap at f589211d: historical verified_at is a non-ancestor; current install, update and runtime-default claims across the five covered files have not been reverified. See docs/project.md#role-source-evidence-gaps.",
       "status": "maintained",
       "path": "README.md",
       "covers": [
@@ -13,13 +12,12 @@
         "update_bundle.py",
         "runtime_defaults.py"
       ],
-      "verified_at": "8738cc636fdc"
+      "verified_at": "9e2cc1ad"
     },
     "reference": {
-      "reason": "Source-evidence gap at f589211d: historical verified_at is a non-ancestor; current command/configuration claims across the 13 covered files have not been reverified. The task prepare/migrate helpers linked by the page also fall outside covers. See docs/project.md#role-source-evidence-gaps.",
       "status": "created",
       "path": "docs/reference.md",
-      "verified_at": "41aaad8fccfe",
+      "verified_at": "9e2cc1ad",
       "covers": [
         "bundle.py",
         "setup_bundle.py",
@@ -37,7 +35,6 @@
       ]
     },
     "install-upgrade": {
-      "reason": "Source-evidence gap at f589211d: historical verified_at is a non-ancestor; current preflight, fleet-write, upgrade and recovery claims across the ten covered files have not been reverified. See docs/project.md#role-source-evidence-gaps.",
       "status": "maintained",
       "path": "docs/installation.md",
       "covers": [
@@ -52,13 +49,12 @@
         "runtime_defaults.py",
         "skills/grill-me/SKILL.md"
       ],
-      "verified_at": "8738cc636fdc"
+      "verified_at": "9e2cc1ad"
     },
     "troubleshooting": {
-      "reason": "Source-evidence gap at f589211d: historical verified_at is a non-ancestor; current diagnosis/remedy claims across the five covered files have not been reverified. Task-store and document-checker remedies also extend beyond covers. See docs/project.md#role-source-evidence-gaps.",
       "status": "created",
       "path": "docs/troubleshooting.md",
-      "verified_at": "8738cc636fdc",
+      "verified_at": "9e2cc1ad",
       "covers": [
         "bundle.py",
         "setup_runtime.py",
@@ -68,7 +64,7 @@
       ]
     },
     "architecture": {
-      "reason": "Source-evidence gap at f589211d: historical verified_at is a non-ancestor; the 282-file covered closure has not been reverified, and the current component map also links pi-autowork engine/task-store sources outside covers. See docs/project.md#role-source-evidence-gaps.",
+      "reason": "Source-evidence gap: TOOLSET-461 rechecked the pin at 9e2cc1ad without completing current-source reverification; the 282-file covered closure and the current component map remain unchecked, and the map links pi-autowork engine/task-store sources outside covers. See docs/project.md#role-source-evidence-gaps.",
       "status": "maintained",
       "path": "docs/project.md#current-components",
       "covers": [
@@ -86,7 +82,7 @@
       "path": "docs/project.md#accepted-requirements"
     },
     "test-plan": {
-      "reason": "Source-evidence gap at f589211d: historical verified_at is a non-ancestor; current inventory/qualification claims across the 67 covered files have not been reverified. Documented engine and Docs Sync test modules also fall outside covers. See docs/project.md#role-source-evidence-gaps.",
+      "reason": "Source-evidence gap: TOOLSET-461 rechecked the pin at 9e2cc1ad without completing current-source reverification; current inventory/qualification claims across the 67 covered files remain unchecked (the Paseo compiler version there was corrected). Documented engine and Docs Sync test modules also fall outside covers. See docs/project.md#role-source-evidence-gaps.",
       "status": "maintained",
       "path": "docs/testing.md",
       "covers": [
@@ -104,7 +100,7 @@
       "path": "docs/onboarding.md"
     },
     "workflows": {
-      "reason": "Source-evidence gap at f589211d: historical verified_at is a non-ancestor; current alias, routing and menu claims across the three covered files have not been reverified, nor do those registrars alone qualify the task-store workflow instructions. See docs/project.md#role-source-evidence-gaps.",
+      "reason": "Source-evidence gap: TOOLSET-461 rechecked the pin at 9e2cc1ad without completing current-source reverification; current alias, routing and menu claims remain unchecked, and the three covered registrar entrypoints now delegate to Src/ implementations outside covers. Those registrars alone do not qualify the task-store workflow instructions. See docs/project.md#role-source-evidence-gaps.",
       "status": "maintained",
       "path": "docs/workflows.md",
       "covers": [
@@ -119,7 +115,7 @@
       "path": "docs/uninstall.md"
     },
     "cross-host": {
-      "reason": "Source-evidence gap at f589211d: historical verified_at is a non-ancestor; current adapter/package/runner claims across the 36 covered files have not been reverified. Historical install/discovery records are not current model or host qualification. See docs/project.md#role-source-evidence-gaps.",
+      "reason": "Source-evidence gap: TOOLSET-461 rechecked the pin at 9e2cc1ad without completing current-source reverification; current adapter/package/runner claims across the 36 covered files remain unchecked. Historical install/discovery records are not current model or host qualification. See docs/project.md#role-source-evidence-gaps.",
       "status": "maintained",
       "path": "docs/cross-host.md",
       "covers": [
@@ -131,17 +127,15 @@
       "verified_at": "41aaad8fccfe"
     },
     "memory": {
-      "reason": "Source-evidence gap at f589211d: historical verified_at is a non-ancestor; current store-binding, provider-selection and capture-policy claims against the two covered files and referenced external OMH version have not been reverified. See docs/project.md#role-source-evidence-gaps.",
       "status": "maintained",
       "path": "docs/memory.md",
       "covers": [
         "install-omh.py",
         "plugins/defaults.json"
       ],
-      "verified_at": "6c2f4e51d8d2"
+      "verified_at": "9e2cc1ad"
     },
     "dependencies": {
-      "reason": "Source-evidence gap at f589211d: historical verified_at is a non-ancestor; current pin/license/install claims across the nine covered files have not been reverified. The page also cites additional vendored inventories and TUI dependency pins outside covers. See docs/project.md#role-source-evidence-gaps.",
       "status": "maintained",
       "path": "docs/dependencies.md",
       "covers": [
@@ -155,7 +149,7 @@
         "skills/engineering/UPSTREAM.json",
         "skills/ui-taste/UPSTREAM.json"
       ],
-      "verified_at": "8738cc636fdc"
+      "verified_at": "9e2cc1ad"
     },
     "contributing": {
       "status": "maintained",

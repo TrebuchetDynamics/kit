@@ -494,7 +494,7 @@ npm --prefix integrations/paseo run package:check
 ```
 
 These run the strict native-client and server TypeScript checks, the offline fixtures,
-the pinned Paseo 0.14 compiler and an isolated plugin runtime. `python3 scripts/check.py`
+the pinned Paseo 0.15 compiler and an isolated plugin runtime. `python3 scripts/check.py`
 runs the same `npm run check` when the dependencies are installed and reports a skip
 reason otherwise. None of this installs into or reloads a user daemon. See the
 [plugin qualification record](../integrations/paseo/docs/qualification.md); physical
