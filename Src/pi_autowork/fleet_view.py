@@ -1565,8 +1565,8 @@ def actions(runner, *, command, script, agent=None):
     return out
 
 
-# The Tasks window's views, in key order: what each shows (a TaskRow's kind).
-TASK_VIEWS = ('all', 'working', 'held', 'waiting', 'questions', 'closed')
+# The Tasks window's views, in key order: what each shows (a TaskRow's kind, or its committed section).
+TASK_VIEWS = ('all', 'working', 'held', 'waiting', 'questions', 'decisions', 'closed')
 
 
 TaskRow = task_snapshot.TaskRow
@@ -1700,6 +1700,9 @@ def task_view(rows, view):
         return [r for r in rows if r.kind not in ('closed', 'annotation')]
     if view == 'questions':
         return [r for r in rows if r.question]
+    if view == 'decisions':
+        # Owner-waiting rows never dispatch, so they are not a kind and stay out of every other view.
+        return [r for r in rows if r.section == 'Needs decision' and r.kind not in ('closed', 'annotation')]
     return [r for r in rows if r.kind == view]
 
 

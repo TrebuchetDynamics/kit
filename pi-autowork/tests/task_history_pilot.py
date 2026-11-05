@@ -42,7 +42,8 @@ async def main():
                         assert [r.task for r in screen.shown] == ['T-1']
                         tabs = screen.query_one('#task-views', Static)
                         assert '1 Open 1' in tabs.render().plain
-                        assert '6 Closed 2' in tabs.render().plain
+                        assert '6 Decisions 0' in tabs.render().plain
+                        assert '7 Closed 2' in tabs.render().plain
                         rendered = ''.join(tabs.render_line(i).text for i in range(tabs.size.height))
                         assert 'Closed 2' in rendered, 'closed tab must remain visible at narrow width'
                         assert screen.query_one('#tasks', DataTable).size.height >= 4, 'diagnostics hid the task rows'
@@ -57,11 +58,11 @@ async def main():
                         assert screen.view == 'all'
                         await pilot.press('f7', 'ctrl+c')
                         assert app.clipboard == info.text, 'copy must retain the complete diagnostics'
-                        await pilot.press('6')
+                        await pilot.press('7')
                         assert screen.view == 'closed', 'number keys should work from snapshot info'
                         await pilot.press('i')
                         assert screen.query_one('#tasks', DataTable).has_focus
-                        await pilot.press('6')
+                        await pilot.press('7')
                         await pilot.pause()
                         assert [r.task for r in screen.shown] == ['LEGACY', 'MANUAL']
                         assert screen.current().state == 'Unknown closure'
