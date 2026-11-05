@@ -69,6 +69,9 @@ commits. Choose reasonable reversible implementation details without waiting for
 an owner, parent session or another profile to approve them. This section replaces
 older owner-acknowledgement and blanket main-only development requirements for
 that local work; it does not override product safety or explicit task exclusions.
+For the delegated decision domains that the coordinator may settle without a new
+owner question, follow [the standing decision policy](docs/autonomy.md). It does
+not widen publication, live, money, secret or destructive authority.
 
 - Read the current task and repository state. Repair attributable task metadata,
   links and missing backlog structure from source evidence; preserve existing

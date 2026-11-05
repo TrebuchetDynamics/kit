@@ -283,7 +283,7 @@ async def task_inventory_viewport(app, pilot):
             if state != 'empty':
                 assert 'inventory read denied' in visible, (state, visible)
             counts = painted(screen.query_one('#task-views'))
-            for label in ('Open', 'Active', 'Blocker', 'Waiting', 'Questions', 'Closed'):
+            for label in ('Open', 'Active', 'Blocker', 'Waiting', 'Questions', 'Decisions', 'Closed'):
                 if state == 'unavailable':
                     assert label + ' ?' in counts and label + ' 0' not in counts, counts
                 elif state == 'empty':
@@ -400,7 +400,7 @@ async def immediate_deletion():
                         assert 'Deletion pending commit' in str(screen.query_one('#task-freshness').render())
                         assert 'No task in this view' in str(screen.query_one('#task-detail').render())
                         assert 'Delete' not in str(screen.query_one('#menubar').render())
-                        await pilot.press('6')
+                        await pilot.press('7')
                         assert screen.query_one('#tasks').row_count == 1  # closed history is independent
                         await pilot.press('x', 'y')
                         await app.workers.wait_for_complete()

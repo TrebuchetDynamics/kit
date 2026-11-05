@@ -746,6 +746,7 @@ class FleetViewTests(unittest.TestCase):
             ('T-4', 'Asked', 'Waiting · Needs decision', 'waiting')])
         self.assertEqual((rows[2].why, rows[3].why), ('dependency: T-1', 'in Needs decision; you: pick one'))
         self.assertEqual([r.task for r in fleet_view.task_view(rows, 'questions')], ['T-4'])
+        self.assertEqual([r.task for r in fleet_view.task_view(rows, 'decisions')], ['T-4'])
         self.assertEqual([r.task for r in fleet_view.task_view(rows, 'held')], ['T-2'])
 
     def test_readiness_needs_a_committed_task_store_and_main(self):

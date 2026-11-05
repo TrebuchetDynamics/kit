@@ -307,6 +307,7 @@ class Check(unittest.TestCase):
                      'PI_AUTOWORK_MAIN_CHECK', 'AUTOWORK_CACHE'):
             self.assertFalse(name in os.environ, name + ' leaked into offline tests')
         self.assertEqual(os.environ.get('AUTOWORK_PORT_BASE'), '20300')
+        self.assertTrue(os.path.isdir(os.environ['TMPDIR']), 'the offline check must supply TMPDIR')
 ''')
         self.write('tests/integration_bundle.py',
                    "raise RuntimeError('live integration imported')\n")

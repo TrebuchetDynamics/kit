@@ -14,6 +14,7 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 TEST_DIRS = ('tests', 'pi-autowork/engine', 'skills/docs-sync/scripts',
@@ -406,6 +407,10 @@ def main(argv=None):
     env = without_push_guard({k: v for k, v in os.environ.items()
                               if k == 'AUTOWORK_PORT_BASE'
                               or (k not in LIVE_FLAGS and not k.startswith(('PI_AUTOWORK_', 'AUTOWORK_')))})
+    # Three suites read os.environ['TMPDIR'] and their fixtures shell out to it. CI exports it and
+    # every Autowork host sets one, but a bare interactive shell does not, and the resulting errors
+    # read like a red tree rather than a missing setting.
+    env.setdefault('TMPDIR', tempfile.gettempdir())
     passed = failed = gated = 0
     work = list(units(root, tests, args.pattern, args.shard))
     # Modules (and shards of split ones) are independent processes; output is still printed

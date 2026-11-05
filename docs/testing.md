@@ -65,6 +65,12 @@ fix-of-a-fix chains; `--json`) guides which files to refactor or test first.
 
 ## Verify
 
+The offline check gives its test subprocesses a `TMPDIR` when the shell has none.
+Three suites read it with `os.environ['TMPDIR']` and their fixtures shell out to it,
+so an unset value used to report as a red tree in an interactive shell and invited
+`--no-verify`. CI already exports one; the checker now supplies a real directory
+instead of relying on the host.
+
 ### Prepare the pinned Textual cache
 
 The optional renderer checks use `uv run --offline --no-project --with textual==8.2.8`.

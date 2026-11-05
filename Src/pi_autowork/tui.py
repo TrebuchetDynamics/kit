@@ -249,6 +249,11 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
             f'ownership {record.get("ownership", "unknown")} · live {record.get("live", "denied")}\n'
             + record.get('scope', '') + '\n\n' + self.context
             + ('\n' + previous if previous else ''))
+        # A task in Needs decision is waiting for this answer. Default the save to move it
+        # back to Now so the decision count falls and the runner can select it; the owner
+        # can still choose keep-current or defer explicitly.
+        if record.get('section') == 'Needs decision':
+            self.query_one('#decision-section', Select).value = 'Now'
         self.query_one('#decision-save', Button).disabled = False
         self.query_one('#decision-text', TextArea).focus()
         self.query_one('#decision-status', Static).update(
@@ -620,7 +625,7 @@ class TasksScreen(ReadScreen, Screen):
     """One runner's open tasks in priority (section, then rank) order: filter them, re-sort them, clear or
     set aside a hold, answer the owner's questions. Refreshed like the main screen."""
     VIEW_NAMES = {'all': 'Open', 'working': 'Active', 'held': 'Blocker', 'waiting': 'Waiting',
-                  'questions': 'Questions', 'closed': 'Closed'}
+                  'questions': 'Questions', 'decisions': 'Decisions', 'closed': 'Closed'}
     BINDINGS = [Binding('escape,q', 'app.pop_screen', 'Back', show=False),
                 Binding('tab', 'step_view(1)', 'next view', show=False),
                 Binding('shift+tab', 'step_view(-1)', 'previous view', show=False),
@@ -800,8 +805,12 @@ class TasksScreen(ReadScreen, Screen):
 
     def action_task(self, key):
         row = self.current()
+        if row is None:
+            return
         action = next((a for a in self.actions(row) if a.key == key), None)
         if action is None:
+            if key == 'a' and row.kind != 'closed':  # Answer, as on the fleet: no hold to set aside
+                self.action_decide()
             return
         self.follow = row.task
         if key == 's':

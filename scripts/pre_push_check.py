@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ZERO = '0' * 40
@@ -61,9 +62,13 @@ HOOK_VARIABLES = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_EDITOR', 'G
 def test_environment(env=os.environ):
     """The environment the tests see: Git exports GIT_EDITOR=true, GIT_EXEC_PATH and GIT_PREFIX to a
     hook, and GIT_EDITOR=true alone failed eight planning tests whose fixtures expect a plain shell.
-    GIT_CONFIG_* entries stay (scripts/check.py handles the runner's push guard itself)."""
-    return {key: value for key, value in env.items()
+    GIT_CONFIG_* entries stay (scripts/check.py handles the runner's push guard itself).
+    TMPDIR gets a real directory: three suites read it with os.environ['TMPDIR'] and an interactive
+    shell that never set it made them fail as if the tree were red, which invites --no-verify."""
+    kept = {key: value for key, value in env.items()
             if key not in HOOK_VARIABLES and not key.startswith('GIT_PUSH_OPTION_')}
+    kept.setdefault('TMPDIR', tempfile.gettempdir())
+    return kept
 
 
 def run_core():

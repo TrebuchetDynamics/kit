@@ -55,8 +55,13 @@ class MainTests(unittest.TestCase):
         env = {'GIT_EDITOR': 'true', 'GIT_EXEC_PATH': '/usr/lib/git-core', 'GIT_PREFIX': '', 'GIT_DIR': '.git',
                'GIT_PUSH_OPTION_COUNT': '1', 'GIT_PUSH_OPTION_0': 'x', 'GIT_CONFIG_COUNT': '1',
                'GIT_CONFIG_KEY_0': 'push.default', 'GIT_CONFIG_VALUE_0': 'simple', 'PATH': '/usr/bin', 'HOME': '/h'}
-        self.assertEqual(pre_push_check.test_environment(env), {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'push.default',
-                                                                 'GIT_CONFIG_VALUE_0': 'simple', 'PATH': '/usr/bin', 'HOME': '/h'})
+        kept = pre_push_check.test_environment(env)
+        self.assertEqual({key: value for key, value in kept.items() if key != 'TMPDIR'},
+                         {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'push.default',
+                          'GIT_CONFIG_VALUE_0': 'simple', 'PATH': '/usr/bin', 'HOME': '/h'})
+        # Three suites read os.environ['TMPDIR']; an unset one made a clean tree look red.
+        self.assertTrue(Path(kept['TMPDIR']).is_dir(), kept['TMPDIR'])
+        self.assertEqual(pre_push_check.test_environment(dict(env, TMPDIR='/keep/me'))['TMPDIR'], '/keep/me')
 
     def test_nothing_to_push_and_the_skip_flag_run_no_tests(self):
         calls = []

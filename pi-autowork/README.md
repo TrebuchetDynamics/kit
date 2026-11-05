@@ -380,13 +380,15 @@ The directory tree marks legacy or interrupted conversions **legacy planning**, 
 The headless pilot exercises preparation on disposable repositories, with faked
 service starts and forced service/worker effects; it does not qualify a live service.
 The Tasks window lists open tasks in priority order (section, then rank) with their short title, state and reason.
-`1`–`6` (or Tab) show Open, Active, Blocker, Waiting, Questions or Closed. Closed
-history shows **Verified** with the receipt, or **Manual** with the reason
+`1`–`7` (or Tab) show Open, Active, Blocker, Waiting, Questions, Decisions or
+Closed. Decisions is the committed **Needs decision** section: open tasks that wait
+for the owner and never dispatch. Closed history shows **Verified** with the receipt, or **Manual** with the reason
 (a missing/invalid verified receipt is explicitly warned, never relabelled Manual).
 On the selected task `u`/`d`
 move it **U**p or **D**own (its rank is the priority), `s` to another **S**ection (Now,
-Next, Needs decision), `c` **C**lears its hold, `a` sets it **A**side, `e` **Decide** records
-an owner direction without AI, `g` **Discuss** and `v` **Investigate** open the planning
+Next, Needs decision), `c` **C**lears its hold, `a` sets a held task **A**side, `e`
+(or `a` on a row without a hold) **Decide** records an owner direction without AI,
+`g` **Discuss** and `v` **Investigate** open the planning
 console scoped to that task, and `n` adds a **N**ew task from a form. Enter opens the
 task: its question and the runner's suggested answer, its whole task record and its
 worker's last actions. Answer it there, written to the task's record where the runner reads
