@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-460-c838ac54"
 title = "Give a second empty hold one bounded recovery without an owner edit"
 short = "Recover a second empty hold"
-status = "open"
+status = "done"
 goal = "RELIABILITY-2026-10"
 section = "Next"
 rank = 3000
@@ -16,6 +16,8 @@ scope = "A held slot with `cause = empty` or `no_change` at attempt 2 has no rec
 acceptance = ["An attempt-2 empty or no_change hold with no commit is requeued once from the current main by an explicit supported request, recording actor, reason and the previous attempt evidence.", "A second empty failure after that requeue is parked and becomes a visible engineering hold; no automatic loop and no third attempt.", "A held commit still goes through the existing clear-held path; no commit, branch or worktree is discarded by the new recovery.", "Deterministic tests cover requeue once, refusal of a second requeue, unchanged behaviour for an attempt-1 empty hold, and unchanged behaviour for a held commit."]
 checks = ["python3 scripts/check.py pi-autowork/engine/test_parallel_integrate.py pi-autowork/engine/test_parallel_dispatch.py pi-autowork/engine/test_parallel_state.py pi-autowork/engine/test_hold_causes.py", "python3 skills/docs-sync/scripts/docs.py check ."]
 exclusions = ["No increase of the automatic attempt budget and no silent re-run loop: the recovery is explicit and once per contract.", "No bypass of validation, scope, closure evidence or ownership, and no owner question for a technical hold.", "No live service change is required or claimed by the offline checks."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-460-c838ac54.toml"
 +++
 - Sources: docs/research/authorized-autonomy-audit-2026-11-04.md#2-durable-effects-and-crash-recovery
 - Overlap repair: CHANGELOG.md is a coordinator file and never a worker Touches entry (PLANNING-CRAFT.md); the changelog proposal still lands from the worker report. pi-autowork/README.md stays: this engine recovery is documented there and the wait for running TOOLSET-453-525f9994 is a legitimate shared-output wait, so no dependency or graph rewrite was added. See docs/tasks/TOOLSET-442-459-460-overlap.md.
