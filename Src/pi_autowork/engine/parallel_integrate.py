@@ -1935,6 +1935,8 @@ def retry_held(args):
             index = next(i for i in range(1, dispatch.HARD_LIMIT + 1) if i not in used)
             execution.save(data / 'meta.json', {'slot_index': index, 'command': argv, 'host': host,
                            'prompt_file': str(prompt), 'report_file': str(report), 'worker_timeout': args.worker_timeout})
+            dispatch.capture_provenance(common, data, task, slot, prompt=prompt, worktree=root, host=host,
+                                        model=os.environ.get('AUTOWORK_TELEMETRY_MODEL'))
             try:
                 worker = dispatch.launch(argv, root, data, index, prompt)
                 slot = state.change(common, slot, 'running', {'worker': worker, 'log_path': str(data / 'worker.log')})

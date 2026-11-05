@@ -16,6 +16,7 @@ import unittest.mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from offline_fixtures import fixture_runtime_root
 import parallel_dispatch as dispatch
+from pi_autowork.engine import provenance
 import parallel_state as state
 import store_fixture
 import task_queue
@@ -2706,6 +2707,11 @@ Path('untracked.pyo').unlink()
         self.assertEqual(result['outcome'], 'RETRIED', result)
         slot = next(s for s in state.slots(self.common) if s['task_id'] == 'A')
         self.addCleanup(dispatch.stop, slot['worker'])
+        # The fresh retry is a launch too: it carries its own attempt's provenance.
+        data = dispatch.data_dir(self.common, slot)
+        records = provenance.read(data / 'provenance.jsonl')
+        self.assertEqual([(r['task'], r['attempt']) for r in records], [('A', slot['attempt'])])
+        self.assertEqual(records[0]['prompt']['sha256'], hashlib.sha256((data / 'prompt.md').read_bytes()).hexdigest())
         self.assertTrue(state.worker_live(slot) and state.worker_live(other))
         self.assertNotEqual(dispatch.meta(self.common, slot)['slot_index'],
                             dispatch.meta(self.common, other)['slot_index'])
