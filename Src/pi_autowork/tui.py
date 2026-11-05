@@ -648,9 +648,10 @@ class TasksScreen(ReadScreen, Screen):
     # State and Why are cut to what the terminal has left; Why goes first on a narrow one.
     FIXED, TEXT = ('#', 'Task', 'Short'), ('State', 'Why')
 
-    def __init__(self, runner_name):
+    def __init__(self, runner_name, view='all'):
         super().__init__()
-        self.runner_name, self.view, self.rows, self.shown = runner_name, 'all', [], []
+        # opener: the blockers report routes here, so its recorded questions can be answered.
+        self.runner_name, self.view, self.rows, self.shown = runner_name, view, [], []
         self.history = []
 
     def compose(self) -> ComposeResult:
@@ -1276,6 +1277,7 @@ def save_report(text, directory):
 class BlockersScreen(Screen):
     """A frozen, copyable report. Refresh is explicit so selection is not disturbed."""
     BINDINGS = [Binding('escape', 'back', 'Back'),
+                Binding('a', 'answer_question', 'Answer', priority=True),
                 Binding('c', 'copy_report', 'Copy report', priority=True),
                 Binding('d', 'toggle_diagnostics', 'Details', priority=True),
                 Binding('e', 'export_report', 'Export', priority=True),
@@ -1284,7 +1286,7 @@ class BlockersScreen(Screen):
     BlockersScreen #report-state { height: auto; padding: 0 1; }
     BlockersScreen TextArea { height: 1fr; }
     BlockersScreen Horizontal { height: 3; }
-    BlockersScreen Button { margin-right: 1; min-width: 8; width: auto; padding: 0 1; }
+    BlockersScreen Button { margin-right: 1; min-width: 8; width: auto; padding: 0; }
     '''
 
     def __init__(self, runner):
@@ -1298,6 +1300,7 @@ class BlockersScreen(Screen):
         yield Static(Text(f'{self.runner.name} — read only; loading…'), id='report-state')
         yield TextArea(read_only=True, show_cursor=False, id='blockers-text')
         with Horizontal():
+            yield Button('Answer (a)', id='answer-report', variant='primary')
             yield Button('Copy (c)', id='copy-report', disabled=True)
             yield Button('Details (d)', id='details-report', disabled=True)
             yield Button('Export (e)', id='export-report', disabled=True)
@@ -1305,7 +1308,7 @@ class BlockersScreen(Screen):
             yield Button('Back (Esc)', id='back-report')
 
     def on_mount(self):
-        self.query_one(MenuBar).show([('escape', 'Back'), ('c', 'Copy'), ('d', 'Details'),
+        self.query_one(MenuBar).show([('a', 'Answer'), ('escape', 'Back'), ('c', 'Copy'), ('d', 'Details'),
                                       ('e', 'Export'), ('r', 'Refresh')], prefix='Blockers')
         self.action_refresh_report()
 
@@ -1326,8 +1329,13 @@ class BlockersScreen(Screen):
         self.query_one(TextArea).load_text(self.report_text)
         self.query_one('#details-report', Button).label = 'Summary (d)' if self.diagnostics else 'Details (d)'
         self.query_one('#report-state', Static).update(Text(
-            f'{self.runner.name} — read only; {"full diagnostics" if self.diagnostics else "summary"}. '
-            'Copy/export uses this view.'))
+            f'{self.runner.name} — read only report; {"full diagnostics" if self.diagnostics else "summary"}. '
+            'Copy/export uses this view. Answer (a) opens these questions in Tasks.'))
+
+    def action_answer_question(self):
+        # The report is a frozen read: answering happens in the tasks screens, which own the
+        # decision form, its default section and the one-pass dispatch.
+        self.app.open_tasks(self.runner, 'decisions')
 
     def action_toggle_diagnostics(self):
         if self.full_report_text is not None:
@@ -1382,7 +1390,7 @@ class BlockersScreen(Screen):
         event.stop()
         {'copy-report': self.action_copy_report, 'details-report': self.action_toggle_diagnostics,
          'export-report': self.action_export_report, 'refresh-report': self.action_refresh_report,
-         'back-report': self.action_back}[event.button.id]()
+         'answer-report': self.action_answer_question, 'back-report': self.action_back}[event.button.id]()
 
 
 class FleetApp(App):
@@ -1980,6 +1988,13 @@ class FleetApp(App):
         if not self.view_only:
             self.push_screen(PlanScreen(repo, task=task, mode=mode))
 
+    def open_tasks(self, runner, view='all'):
+        """One owner for opening a runner's tasks, so the read-only blockers report can route
+        to the decision form instead of leaving every recorded question unreachable."""
+        if isinstance(self.screen, BlockersScreen):
+            self.pop_screen()
+        self.push_screen(TasksScreen(runner.name, view))
+
     def decide_task(self, runner, task):
         current = next((r for r in self.runners if (r.name, r.repo) == (runner.name, runner.repo)), None)
         if self.view_only or current is None or self.deletion_pending(current, task):
@@ -2052,7 +2067,7 @@ class FleetApp(App):
                 runner, lines=lines, journalctl=journal)))
             return
         if key == 't':  # view-only shows the tasks too, without their actions
-            self.push_screen(TasksScreen(runner.name))
+            self.open_tasks(runner)
             return
         if self.view_only:
             return

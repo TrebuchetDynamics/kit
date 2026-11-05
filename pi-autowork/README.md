@@ -188,6 +188,12 @@ not a last-good inventory. Selection eligibility is never runtime admission.
 Full producer reasons replace matching truncated questions; unavailable full
 reasons remain explicitly truncated. Source: `Src/pi_autowork/blockers_report.py:build`.
 
+**a Answer** leaves the frozen report for that runner's Tasks in the **Decisions**
+view, where the answer form, its default destination section and the single dispatch
+live. The report itself stays read-only: it lists the recorded questions, and
+answering never happens inside a frozen capture. View-only navigation opens the same
+list without its actions. Source: `Src/pi_autowork/tui.py:BlockersScreen`.
+
 **c Copy** requests the plain text of the current summary/details view, without
 terminal padding. **F7** selects all; **Ctrl+C** requests copying a selection.
 Textual emits OSC 52; SSH/tmux, terminal policy or browser permissions can prevent
