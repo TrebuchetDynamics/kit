@@ -41,6 +41,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- docs(provenance): reverify six doc role pins at 9e2cc1ad and correct docs/project.md so it no longer claims the manifest keeps every original verified_at (TOOLSET-461-61800c0c)
 - Add a strict mypy allowlist and typecheck step for task selection and planning authority. (LANG-002-72648a0e)
 - Add coordinator and fleet /proc resource fields to autowork ls --json. (LANG-001-8d4fe384)
 - Add an on-demand A-E live qualification harness that exercises the five reliability fixes against disposable real repositories and a local bare remote. (TOOLSET-465-936fd6b6)
