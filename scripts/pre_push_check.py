@@ -71,6 +71,23 @@ def test_environment(env=os.environ):
     return kept
 
 
+def load_note(loadavg=None, cpus=None):
+    """A failing affected run is not proof of a red tree on a host busy with its own runners.
+
+    Window-based tests (runner/worker timing, slot waits) fail under load that has nothing to
+    do with the push. Return the note to print, or None when the host is quiet.
+    """
+    try:
+        one = (os.getloadavg() if loadavg is None else loadavg)[0]
+        count = (os.cpu_count() or 1) if cpus is None else cpus
+    except (OSError, AttributeError, TypeError, IndexError):
+        return None
+    if one < max(2.0, count * 1.5):
+        return None
+    return (f'pre-push: host load {one:.1f} on {count} cpus: runner and worker timing tests can fail\n'
+            '  under this load. Run one failing module alone before treating the tree as red.')
+
+
 def run_core():
     """The checker's cheap core contracts (docs check, task-store validation): they cover the
     documents the selector leaves to them, in a few seconds."""
@@ -132,6 +149,9 @@ def main(argv=None, stdin=None, run=run_affected, core=run_core):
         if code:
             print('pre-push: affected tests failed; nothing was pushed. Fix them, or leave this one to CI with\n'
                   '  git push --no-verify', file=sys.stderr, flush=True)
+            note = load_note()
+            if note:
+                print(note, file=sys.stderr, flush=True)
             return code
     return 0
 

@@ -63,6 +63,19 @@ class MainTests(unittest.TestCase):
         self.assertTrue(Path(kept['TMPDIR']).is_dir(), kept['TMPDIR'])
         self.assertEqual(pre_push_check.test_environment(dict(env, TMPDIR='/keep/me'))['TMPDIR'], '/keep/me')
 
+    def test_a_failed_run_says_when_the_host_was_loaded(self):
+        # A loaded host made window-based tests fail twice for me today; the message was silent on it.
+        self.assertIsNone(pre_push_check.load_note((1.0, 1.0, 1.0), 8))
+        note = pre_push_check.load_note((30.0, 20.0, 10.0), 8)
+        self.assertIn('host load 30.0 on 8 cpus', note)
+        self.assertIn('Run one failing module alone', note)
+        err = io.StringIO()
+        with mock.patch('sys.stderr', new=err), mock.patch.object(pre_push_check, 'load_note',
+                                                                return_value='pre-push: host load 30.0 on 8 cpus'):
+            pre_push_check.main([], io.StringIO(f'refs/heads/main {B} refs/heads/main {A}\n'),
+                                run=lambda base: 1, core=lambda: 0)
+        self.assertIn('host load 30.0 on 8 cpus', err.getvalue())
+
     def test_nothing_to_push_and_the_skip_flag_run_no_tests(self):
         calls = []
         self.assertEqual(pre_push_check.main([], io.StringIO(''), run=lambda base: calls.append(base) or 1, core=lambda: calls.append('core') or 1), 0)
