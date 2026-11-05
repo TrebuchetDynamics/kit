@@ -124,7 +124,8 @@ def self_path():
 
 
 def runners(paths, *, strict=False):
-    return fleet_view.collect(paths['state_root'], paths['env_dir'], systemctl=paths['systemctl'], strict=strict)
+    return fleet_view.collect(paths['state_root'], paths['env_dir'], systemctl=paths['systemctl'], strict=strict,
+                              proc=paths.get('proc', '/proc'))
 
 
 def resolve(target, paths):

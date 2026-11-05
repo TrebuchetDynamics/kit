@@ -1084,6 +1084,24 @@ object. It separates coordinator activity from successful task reads:
 | `task_state` | `current` for trustworthy provenance within the existing 600-second bound; `stale` for valid older evidence; `unavailable` for a failed read or invalid source; `unknown` without trustworthy provenance. |
 | `error` | Read/source error, or `null`. |
 
+Each `autowork ls --json` runner record also carries a `resources` object sampled
+from `/proc` when the record is read; there is no sampler, journal event or
+background service. It describes the coordinator and its live descendants:
+
+| Field | Meaning |
+| --- | --- |
+| `coordinator_rss_mb` | Coordinator resident set size in MiB, or `null`. |
+| `coordinator_cpu_seconds` | Coordinator user plus system CPU seconds, or `null`. |
+| `process_count` | Live descendants of the coordinator, excluding the coordinator itself. |
+| `fleet_rss_mb` | Summed resident set size of those descendants, excluding the coordinator. |
+| `sampled_at` | Epoch time of this sample, or `null`. |
+| `reason` | Why the sample is unknown, or `''` when it succeeded. |
+
+A missing, dead or unreadable coordinator makes every value `null` with a stated
+`reason`; a live coordinator with no live descendant reports `process_count` 0 and
+`fleet_rss_mb` 0. One sample is a status observation, not a benchmark or a language
+decision. External-wait time remains in `autowork scorecard` phase diagnostics.
+
 A verified runner with a fresh health write can be **cycling** while task state
 is stale or unavailable. Even the first failed read is unavailable in this display
 object; the existing one-read grace for the execution-state label is unchanged.

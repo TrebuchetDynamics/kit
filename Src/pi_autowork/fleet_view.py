@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 
-from pi_autowork import health, main_check, portal, questions as owner_questions, task_prepare, task_snapshot, task_status
+from pi_autowork import health, main_check, portal, processes, questions as owner_questions, task_prepare, task_snapshot, task_status
 from pi_autowork.common import safe_name
 
 KINDS = {'runner': 'runner', 'cycle': 'dependency cycle', 'held': 'blocker', 'contract': 'not runnable',
@@ -146,6 +146,7 @@ class Runner:
     main_check: dict = field(default_factory=dict)  # main's full offline check (TOOLSET-176-98)
     job: dict | None = None   # the runner's own Pi job running now (TOOLSET-177-d0)
     observation: dict = field(default_factory=dict)  # additive ls JSON diagnostics
+    resources: dict = field(default_factory=dict)  # coordinator/fleet /proc sample, additive ls JSON
 
     prepare_state: str | None = None  # one read-only preparation probe per fleet refresh
 
@@ -184,6 +185,31 @@ class Runner:
 
 
 IN_FLIGHT, PHASES = task_status.IN_FLIGHT, task_status.PHASES
+RESOURCE_FIELDS = ('coordinator_rss_mb', 'coordinator_cpu_seconds', 'process_count',
+                   'fleet_rss_mb', 'sampled_at')
+
+
+def unknown_resources(reason):
+    """Every resource value unknown, with the reason a sample could not be taken."""
+    return {**dict.fromkeys(RESOURCE_FIELDS), 'reason': reason}
+
+
+def sample_resources(pid, started=None, proc='/proc', now=None):
+    """One /proc sample of the coordinator and its live descendants, or nulls and a reason."""
+    stat = processes.process_stat(pid, proc)
+    if not stat:
+        return unknown_resources(f'coordinator {pid} is not readable' if pid else 'coordinator pid is unknown')
+    if stat.state in ('Z', 'X'):
+        return unknown_resources(f'coordinator {pid} is not running')
+    if started is not None and stat.started != str(started):
+        return unknown_resources(f'coordinator {pid} identity changed')
+    rss, cpu = processes.rss_mb(pid, proc), processes.cpu_seconds(pid, proc)
+    if rss is None or cpu is None:
+        return unknown_resources(f'coordinator {pid} resource files are unreadable')
+    children = processes.descendants(pid, proc)
+    return dict(coordinator_rss_mb=rss, coordinator_cpu_seconds=cpu, process_count=len(children),
+                fleet_rss_mb=sum(r for child in children if (r := processes.rss_mb(child, proc)) is not None),
+                sampled_at=time.time() if now is None else now, reason='')
 
 
 @dataclass
@@ -1121,7 +1147,8 @@ def _service_runner(name: str, sub: str, env_dir, systemctl: str, errors=None) -
                   fallback=settings.get('PI_AUTOWORK_FALLBACK') or DEFAULT_FALLBACK,
                   push=settings.get('PI_AUTOWORK_PUSH', '0') == '1',
                   toolset=toolset, toolset_problem=f'PI_AUTOWORK_TOOLSET {fault}' if fault else '',
-                  enabled=enabled, observation=health.observation({}))
+                  enabled=enabled, observation=health.observation({}),
+                  resources=unknown_resources('no runner state'))
 
 
 def _triage_failures(state_dir, held, errors):
@@ -1156,7 +1183,7 @@ def _triage_failures(state_dir, held, errors):
     return tuple(failures)
 
 
-def _health_runner(found: dict[str, Runner], row: dict, now: float) -> Runner | None:
+def _health_runner(found: dict[str, Runner], row: dict, now: float, proc='/proc') -> Runner | None:
     """Merge a health row into its installed service; orphaned state is only history."""
     if not row.get('repo'):
         return None  # a state-folder basename is not repository/service identity
@@ -1185,6 +1212,7 @@ def _health_runner(found: dict[str, Runner], row: dict, now: float) -> Runner | 
                        stop_reason=row.get('stop_reason') or '', max_workers=row.get('max_workers'),
                        maintainer=row.get('maintainer') or {}, main_check=check, job=job,
                        observation=row.get('observation') or health.observation({}),
+                       resources=sample_resources(row.get('pid'), row.get('start_time'), proc=proc, now=now),
                        acquisition_errors=errors, triage_failures=triage_failures)
     except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError) as exc:
         error = f'{state_dir}: runtime projection unavailable: {exc}'
@@ -1230,7 +1258,7 @@ def _service_lifecycle(runner: Runner, env_dir) -> Runner:
     return runner
 
 
-def collect(state_root, env_dir, *, systemctl='systemctl', now=None, strict=False,
+def collect(state_root, env_dir, *, systemctl='systemctl', now=None, strict=False, proc='/proc',
             _generation=0, _cached=None, _last_good=None, _errors=None) -> list[Runner]:
     """Every runner: pi-autowork@ services and their runner state, merged by name."""
     now = time.time() if now is None else now
@@ -1244,7 +1272,7 @@ def collect(state_root, env_dir, *, systemctl='systemctl', now=None, strict=Fals
     for row in rows:
         if _errors is not None:
             _errors.extend(row.get('errors') or [])
-        runner = _health_runner(found, row, now)
+        runner = _health_runner(found, row, now, proc=proc)
         if runner is not None:
             if runner.name in associated:
                 retained = found[runner.name]

@@ -41,6 +41,17 @@ class FleetViewTests(unittest.TestCase):
         path.chmod(0o755)
         return str(path)
 
+    def fake_proc(self, root, rows):
+        """A deterministic /proc tree: (pid, ppid, start, rss_kb, utime, stime)."""
+        root.mkdir(parents=True, exist_ok=True)
+        for pid, ppid, start, rss_kb, utime, stime in rows:
+            folder = root / str(pid)
+            folder.mkdir()
+            fields = ['R', str(ppid)] + ['0'] * 18
+            fields[11], fields[12], fields[19] = str(utime), str(stime), str(start)
+            (folder / 'stat').write_text(f'{pid} (fake) ' + ' '.join(fields) + '\n')
+            (folder / 'status').write_text(f'Name:\tfake\nVmRSS:\t{rss_kb} kB\n')
+
     def with_inventory(self, runner, states, decisions=()):
         """Explicit committed census and identity-bearing observations for count fixtures."""
         import task_queue
@@ -121,10 +132,10 @@ class FleetViewTests(unittest.TestCase):
             {'pid': os.getpid(), 'start_time': start_time(os.getpid()), 'repo': repo}))
         (folder / 'status.json').write_text(json.dumps({'repo': repo, 'updated_at': time.time(), **status}))
 
-    def collect(self, units=''):
+    def collect(self, units='', **kw):
         os.environ['FAKE_UNITS'] = units
         self.addCleanup(os.environ.pop, 'FAKE_UNITS', None)
-        return {r.name: r for r in fleet_view.collect(self.state, self.env, systemctl=self.systemctl)}
+        return {r.name: r for r in fleet_view.collect(self.state, self.env, systemctl=self.systemctl, **kw)}
 
     def test_fleet_rows_are_a_pure_projection(self):
         from pi_autowork import task_snapshot
@@ -182,17 +193,72 @@ class FleetViewTests(unittest.TestCase):
                     if path.suffix == '.in':
                         path.rename(path.with_suffix(''))
         units = 'pi-autowork@demo-escaped.service loaded active running demo\n'
+        proc = self.base / 'proc'
+        ticks = os.sysconf('SC_CLK_TCK')
+        self.fake_proc(proc, [(os.getpid(), 1, start_time(os.getpid()), 2048, ticks, ticks)])
         with mock.patch.dict(os.environ, FAKE_UNITS=units, FAKE_ENABLED='1'), \
                 mock.patch.object(fleet_view.time, 'time', return_value=2000000000), \
                 contextlib.redirect_stdout(io.StringIO()) as output:
             result = command.cmd_ls(type('Args', (), {'json': True})(), dict(
-                state_root=self.state, env_dir=self.env, systemctl=self.systemctl))
+                state_root=self.state, env_dir=self.env, systemctl=self.systemctl, proc=str(proc)))
         self.assertEqual(result, 0)
         expected = json.loads((fixture / 'ls.json').read_text())
         expected['runners'][0].update(running=None, waiting=None, stopped=None, observation=dict(
             runner_alive=True, health_written_at=2000000000, snapshot_at=None, snapshot_age_seconds=None,
             task_state='unknown', error=None))
         self.assertEqual(json.loads(output.getvalue().replace(str(self.base), '$BASE')), expected)
+
+    def test_ls_json_reports_coordinator_and_fleet_resources(self):
+        from pi_autowork import command
+        repo = self.base / 'resources'
+        repo.mkdir()
+        store_fixture.write_todo(repo, '- [ ] A — Alpha\n')
+        (self.env / 'resources.env').write_text(f'PI_AUTOWORK_REPO={repo}\n')
+        self.runner_state(str(repo), state='working')
+        ticks = os.sysconf('SC_CLK_TCK')
+        proc = self.base / 'proc'
+        self.fake_proc(proc, [
+            (os.getpid(), 1, start_time(os.getpid()), 2048, ticks, ticks),
+            (1001, os.getpid(), 1, 1024, 0, 0),
+            (1002, os.getpid(), 1, 3072, 0, 0),
+        ])
+        with mock.patch.object(fleet_view.time, 'time', return_value=2000000000):
+            runner = self.collect('pi-autowork@resources.service loaded active running x', proc=str(proc))['resources']
+        record = command.runner_json(runner)
+        self.assertEqual(record['resources'], dict(
+            coordinator_rss_mb=2.0, coordinator_cpu_seconds=2.0, process_count=2,
+            fleet_rss_mb=4.0, sampled_at=2000000000, reason=''))
+        empty = self.base / 'proc-empty'
+        self.fake_proc(empty, [(os.getpid(), 1, start_time(os.getpid()), 2048, ticks, ticks)])
+        resources = fleet_view.sample_resources(os.getpid(), start_time(os.getpid()), proc=str(empty),
+                                                now=2000000000)
+        self.assertEqual((resources['process_count'], resources['fleet_rss_mb']), (0, 0))
+
+    def test_ls_json_keeps_unknown_resources_null_and_explained(self):
+        from pi_autowork import command
+        repo = self.base / 'dead'
+        repo.mkdir()
+        store_fixture.write_todo(repo, '- [ ] A — Alpha\n')
+        (self.env / 'dead.env').write_text(f'PI_AUTOWORK_REPO={repo}\n')
+        self.runner_state(str(repo), state='working')
+        folder = self.state / 'dead'
+        for label, unreadable in (('dead', False), ('unreadable', True)):
+            with self.subTest(label=label):
+                proc = self.base / f'proc-{label}'
+                proc.mkdir()
+                if unreadable:
+                    (proc / '99999999').mkdir()
+                (folder / 'runner.json').write_text(json.dumps(
+                    {'pid': 99999999, 'start_time': '1', 'repo': str(repo)}))
+                with mock.patch.object(fleet_view.time, 'time', return_value=2000000000):
+                    runner = self.collect('pi-autowork@dead.service loaded active running x', proc=str(proc))['dead']
+                record = command.runner_json(runner)
+                resources = record['resources']
+                self.assertEqual({key: resources[key] for key in fleet_view.RESOURCE_FIELDS},
+                                 dict.fromkeys(fleet_view.RESOURCE_FIELDS))
+                self.assertTrue(resources['reason'])
+                self.assertEqual((record['name'], record['repo'], record['state']),
+                                 ('dead', str(repo), 'not running'))
 
     def test_a_dead_main_check_is_interrupted_even_when_the_health_snapshot_says_running(self):
         self.runner_state('/git/india', main_check={'state': 'running', 'rev': 'old'})

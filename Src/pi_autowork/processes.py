@@ -23,6 +23,50 @@ def start_time(pid):
     return stat.started if stat else None
 
 
+def rss_mb(pid, proc='/proc'):
+    """Resident set size in MiB, or None when the process or its status is unreadable."""
+    try:
+        for line in Path(f'{proc}/{pid}/status').read_text().splitlines():
+            if line.startswith('VmRSS:'):
+                return int(line.split()[1]) / 1024
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def cpu_seconds(pid, proc='/proc'):
+    """User plus system CPU seconds, or None when the process stat is unreadable."""
+    try:
+        fields = Path(f'{proc}/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+        return (int(fields[11]) + int(fields[12])) / os.sysconf('SC_CLK_TCK')
+    except (OSError, ValueError, IndexError, AttributeError):
+        return None
+
+
+def descendants(pid, proc='/proc'):
+    """Live descendant PIDs of pid, excluding pid itself."""
+    try:
+        pids = [int(path.name) for path in Path(proc).iterdir() if path.name.isdigit()]
+    except OSError:
+        return []
+    stats = {candidate: process_stat(candidate, proc) for candidate in pids}
+    found = []
+    for candidate, stat in stats.items():
+        if candidate == pid or not stat or stat.state in ('Z', 'X'):
+            continue
+        parent, seen = stat.parent, set()
+        while parent > 1 and parent not in seen:
+            if parent == pid:
+                found.append(candidate)
+                break
+            seen.add(parent)
+            parent_stat = stats.get(parent) or process_stat(parent, proc)
+            if not parent_stat or parent_stat.state in ('Z', 'X'):
+                break
+            parent = parent_stat.parent
+    return found
+
+
 def alive(pid, started=None):
     """A non-zombie process, matching start ticks when supplied.
 
