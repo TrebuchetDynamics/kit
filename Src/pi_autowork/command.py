@@ -194,6 +194,7 @@ def cmd_start(args, paths):
             raise Fail(f'requested service settings conflict with {env_file}: {", ".join(conflicts)}. '
                        f'Apply them with: bash {script(paths)} --install-service --repo {ready.repo}')
     fleet_view.paused_marker(paths['env_dir'], name).unlink(missing_ok=True)  # starting ends a pause
+    service.stop_marker(Path(paths['env_dir']) / f'{name}.env').unlink(missing_ok=True)  # explicit start re-verifies
     # Services run from the Pi package installed from PI_SOURCE. A unit that runs another
     # copy (a package installed under an older name) is moved onto it:
     # reinstalling rewrites the shared unit and restarts this service, whose workers pause
@@ -224,6 +225,7 @@ def cmd_start(args, paths):
 def restart(paths, name, repo, stop_workers=False, now=False):
     """(code, message): reload a running runner in place, else restart its service."""
     unit = f'pi-autowork@{name}.service'
+    service.stop_marker(Path(paths['env_dir']) / f'{name}.env').unlink(missing_ok=True)  # explicit restart re-verifies
     if not stop_workers and service_state(paths, name) == 'active':
         done, text = service.reload_in_place(paths['systemctl'], unit, paths['state_root'], repo)
         if done is not None:
@@ -256,8 +258,13 @@ def cmd_stop(args, paths, action='stop'):
     unit = f'pi-autowork@{name}.service'
     if service_state(paths, name) == 'none':
         raise Fail(f'{name} has no service; start one with: autowork start {repo}')
+    marker = service.stop_marker(Path(paths['env_dir']) / f'{name}.env')
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(f'deliberate stop of {unit}\n')  # before the stop: a restart must see it
     if systemctl(paths, action, unit, quiet=False).returncode:
+        marker.unlink(missing_ok=True)
         raise Fail(f'could not {action} {unit}')
+    systemctl(paths, 'reset-failed', unit, quiet=True)  # a stopped unit is not left failed
     print(f'Stopped {unit}.')
     return 0
 
@@ -345,6 +352,7 @@ def cmd_remove(args, paths):
                        state_root=paths['state_root'], hermes_jobs='', argv0=self_path())
     if not code:
         fleet_view.paused_marker(paths['env_dir'], name).unlink(missing_ok=True)
+        service.stop_marker(Path(paths['env_dir']) / f'{name}.env').unlink(missing_ok=True)
     return code
 
 

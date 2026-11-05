@@ -596,7 +596,11 @@ Cancelling the command also releases its request. `autowork restart --stop-worke
 An older runner without this handshake needs a plain restart to reload first,
 or an explicit `--stop-workers --now` interruption. A stopped service needs no wait.
 Crashes and kills restart after a minute; the runner's own exits (failures, another
-runner, needs attention) do not.
+runner, needs attention) do not. `autowork stop` is deliberate and terminal: it
+records the stop beside the settings file and clears a failed unit, so a
+`Restart=on-failure` restart refuses that record until `autowork start`. A restarted
+runner re-resolves the release and re-asserts `PI_AUTOWORK_PUSH` from the saved
+settings before its first cycle, refusing dispatch when it cannot confirm them.
 Without user lingering (`loginctl enable-linger $USER`) the service stops at logout.
 
 `autowork run` runs a repository's runner in the foreground of the current terminal
@@ -947,8 +951,11 @@ How it works:
   runner pushes main to its upstream (`main@{u}`):
   fast-forward only, never forced. A rejected push fetches the upstream, merges it
   into the session, fast-forwards main and tries once more; a failure is logged once
-  and the next merge retries. A main without an upstream is left local. Workers and
-  Pi tools still cannot push. Without a grant (the default), or with
+  and the next merge retries. A main without an upstream is left local. Publication
+  is bound to the revision the runner verified: a push refuses, naming both values,
+  when HEAD, the running release or the effective grant differs from that record,
+  and reconciles an unknown outcome from the recorded revision, never a force-push.
+  Workers and Pi tools still cannot push. Without a grant (the default), or with
   `PI_AUTOWORK_PUSH=0`, main stays local and upstream synchronization does not run.
 - **Models.** `openai-codex/gpt-6.1-sol` first; the script switches to
   `openrouter/deepseek/deepseek-v4.1-flash` for 30 minutes when the primary is

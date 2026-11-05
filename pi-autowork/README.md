@@ -246,7 +246,7 @@ and the explicit agent commands below do.
 |---|---|
 | `autowork` | The live TUI on a terminal (help otherwise) |
 | `autowork start [dir]` | Install (if needed) and start the repository's service; refuses a directory without a committed `tasks/` store and its main branch checked out, saying what is missing (`autowork tasks prepare` converts legacy planning or reports the next step). Services run from the Pi package installed from `git:github.com/TrebuchetDynamics/kit`; a service on another copy (a package under an older name) is moved onto it and restarted, and the others follow at their next restart |
-| `autowork stop [target]` | Stop the service; workers pause and resume on the same attempt |
+| `autowork stop [target]` | Stop the service; workers pause and resume on the same attempt. A deliberate stop is terminal: a restart will not revive the previous release or its push grant until `autowork start` |
 | `autowork restart [target] [--stop-workers [--now]]` | Reload in place; running workers keep running. `--stop-workers` waits for in-flight merges, then restarts the service and pauses workers; `--now` interrupts immediately instead |
 | `autowork pause` / `resume [target]` | Stop the service and keep it off, also after a reboot (disable), or start it again (enable); only a paused service is listed as `paused`, any other stopped one as `not running` |
 | `autowork model [target] [provider/model] [--fallback provider/model]` | Show or set this service's Pi model (checked against Pi's list), then reload it |
@@ -288,6 +288,18 @@ with plain `autowork restart` first, or explicitly interrupt it with `--stop-wor
 --now`. A stopped service restarts without waiting. Offline command/coordinator
 fixtures cover idle, wait, timeout refusal, recorded batch results and immediate
 interruption; they do not qualify a live systemd service.
+
+A deliberate stop is not a failure. `autowork stop` records it beside the unit's
+settings file and clears any failed unit state, so a `Restart=on-failure` restart
+refuses to run rather than revive the previous release or its push grant; only
+`autowork start` or `autowork restart` clears the record and re-resolves the release.
+A runner also records the release and effective `PI_AUTOWORK_PUSH` it verified at
+start, re-asserts the grant from the saved settings before its first cycle, and
+refuses dispatch with the named difference when its running release or grant no
+longer matches. Publication is bound to the verified revision: a push refuses,
+naming both values, when HEAD, the running release or the effective grant differs
+from that record, and an unknown outcome reconciles from the recorded revision,
+never a force-push.
 
 Before reusing an installed or running service, `autowork start` refuses if an
 explicitly supplied supported service setting differs from its saved env file

@@ -50,6 +50,8 @@ SuccessExitStatus=130
 # A crash (exit 70) or an OS error such as a full disk comes back; deliberate stops do not
 # (1: failures the owner must see, 2: bootstrap/usage errors,
 # 3: another runner holds it, 4: needs attention, including checked setup failures).
+# `autowork stop` also writes its deliberate-stop marker, so even a forced restart cannot
+# revive the previous release or push grant.
 Restart=on-failure
 RestartPreventExitStatus=1 2 3 4
 RestartSec=60
@@ -57,6 +59,25 @@ RestartSec=60
 [Install]
 WantedBy=default.target
 """
+
+
+def stop_marker(env_file):
+    """The deliberate-stop marker beside a service's environment file.
+
+    `autowork stop` writes it before `systemctl stop`; `autowork start`/`restart` removes it.
+    A runner that finds it refuses to start, so an automatic `Restart=on-failure` cannot revive
+    the previous release or its push grant after a deliberate stop.
+    """
+    return Path(f'{env_file}.stopped') if env_file else None
+
+
+def deliberate_stop(env_file):
+    """Whether a deliberate stop is still terminal for this service's authority."""
+    marker = stop_marker(env_file)
+    try:
+        return bool(marker and marker.exists())
+    except OSError:
+        return False
 
 
 def runner_record(state_root, repo):

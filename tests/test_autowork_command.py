@@ -521,6 +521,16 @@ class AutoworkCommandTests(unittest.TestCase):
         self.assertFalse((self.env_dir / 'india.env').exists())
         self.assertIn('no runner named nothing', self.aw('stop', 'nothing').stderr)
 
+    def test_stop_is_terminal_and_start_clears_the_deliberate_stop(self):
+        """A deliberate stop leaves a marker an automatic restart must honour; start clears it."""
+        self.aw('start', str(self.repo))
+        self.aw('stop', 'india')
+        marker = self.env_dir / 'india.env.stopped'
+        self.assertTrue(marker.exists())
+        self.assertIn('systemctl --user reset-failed pi-autowork@india.service', self.calls())
+        self.aw('start', str(self.repo))
+        self.assertFalse(marker.exists())
+
     def test_remove_works_after_the_saved_repository_was_renamed_away(self):
         missing = self.base / 'autowork'
         (self.env_dir / 'autowork.env').write_text(f'PI_AUTOWORK_REPO={missing}\n')
