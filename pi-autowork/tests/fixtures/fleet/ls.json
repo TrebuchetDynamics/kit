@@ -84,6 +84,14 @@
         "started": 1999999880
       },
       "job": null,
+      "resources": {
+        "coordinator_rss_mb": 2.0,
+        "coordinator_cpu_seconds": 2.0,
+        "process_count": 0,
+        "fleet_rss_mb": 0,
+        "sampled_at": 2000000000,
+        "reason": ""
+      },
       "prepare_state": null
     }
   ]

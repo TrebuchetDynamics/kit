@@ -535,6 +535,7 @@ def fleet(state_root, *, now=None, service=_service):
         current = observed['task_state'] == 'current' and alive
         rows.append(dict(name=name, repo=repo, service=service(name) if repo else '-', state=state,
                          observation=observed, state_dir=str(folder), runner_alive=alive,
+                         pid=runner.get('pid'), start_time=runner.get('start_time'),
                          **(dict(errors=errors) if errors else {}),
                          since=status.get('snapshot_at') if error else status.get('since'),
                          workers=status.get('active_workers', 0) if current else None,
