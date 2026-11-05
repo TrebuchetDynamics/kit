@@ -36,7 +36,7 @@ FLUTTER_FAILURE = re.compile(r'^\s*\d{1,2}:\d{2} \+\d+(?:\s*~\d+)?\s+-\d+:\s+(.+
 FLUTTER_SUMMARY = re.compile(r'^\s*\d{1,2}:\d{2} \+\d+(?:\s*~\d+)?(?:\s+-\d+)?:\s+(?:All tests passed!|Some tests failed\.)\s*$', re.M)
 
 
-FULL_CHECK = re.compile(r'^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?Full check:(?:\*\*)?[ \t]*`?([^`\n]+?)`?[ \t]*$', re.M)
+FULL_CHECK = re.compile(r'^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?Full check:(?:\*\*)?[ \t]*`?([^`\n;]+?)`?[ \t]*(?:;[ \t]*.*)?$', re.M)
 
 
 def full_check(repo, env=os.environ):

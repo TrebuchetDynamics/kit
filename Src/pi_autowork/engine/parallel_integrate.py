@@ -704,8 +704,36 @@ def prune_ignored_bytecode(root):
             parent = parent.parent
 
 
+def quarantine_worktree(common, path, reason):
+    """Move an orphaned worktree aside, preserving every byte; return its new path.
+
+    The repository rename from autowork to kit left a worktree whose .git file
+    pointed at the removed checkout. It was not registered in this repository, so
+    no Git operation could use it, and every integration failed on it. Quarantine
+    only a path that is not a worktree of this common directory; a registered but
+    unjournaled path is still refused by integration_worktree.
+    """
+    stamp = time.strftime('%Y%m%d-%H%M%S')
+    kept = path.with_name(f'{path.name}-set-aside-{stamp}')
+    number = 1
+    while kept.exists() or kept.is_symlink():
+        kept = path.with_name(f'{path.name}-set-aside-{stamp}-{number}')
+        number += 1
+    path.rename(kept)
+    state.event(common, 'worktree_quarantined', worktree=str(path), kept=str(kept), reason=reason)
+    return kept
+
+
 def integration_worktree(repo, common, baseline):
     path = worktree_path(repo, 'autowork-integration')
+    if path.exists() and not dispatch.created_by_autowork(common, path, '(detached)'):
+        try:
+            same_common = state.common_dir(path) == common
+        except (OSError, ValueError):
+            same_common = False
+        if same_common:
+            raise ValueError('integration worktree was not created by this coordinator')
+        quarantine_worktree(common, path, 'orphaned integration worktree')
     if path.exists():
         if not dispatch.created_by_autowork(common, path, '(detached)'):
             raise ValueError('integration worktree was not created by this coordinator')
