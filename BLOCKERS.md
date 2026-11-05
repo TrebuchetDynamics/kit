@@ -30,3 +30,14 @@ owner to decide whether incorrect work is acceptable.
 ## Resolved
 
 None.
+
+## Planning stops
+
+### Q-TOOLSET-468-d0554d9d — Planning stopped
+
+- Goal: PLANNING-AUTHORITY — One planning authority and shared protocol.
+- Task: TOOLSET-468-d0554d9d — Plan the remaining planning-authority proof after the policy audit
+- Needs: The accepted decision is implemented and audited and all member tasks are done, but PLANNING-AUTHORITY stays partial because TOOLSET-432-d98e9678 and TOOLSET-433-3eba7cfe closed as manual agent closures without an executed goal Evidence note.
+- Question: Should PLANNING-AUTHORITY be marked met on the recorded offline checks plus the coordinator-verified audit, or does it need a fresh coordinator-verified full pass?
+- Kind: decision
+- Continuation: TOOLSET-469-7ba77973 in Needs decision.
