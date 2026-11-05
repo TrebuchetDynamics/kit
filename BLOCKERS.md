@@ -16,14 +16,6 @@ no extra approval step or execution authority.
 - Answer: Run it yourself, set `live = "authorized"` in tasks/items/TOOLSET-463-8af43073.md with an `Owner decision:` note (who authorized which live scope and when), or move it to Needs decision. Only the owner grants it; a worker's edit to the record never does.
 - Kind: outside
 
-### Q-TOOLSET-467-69e39d8c — USER_INPUT — effort input — unblocks 1
-
-- Task: TOOLSET-467-69e39d8c — Record the standing autonomy policy audit of open owner questions
-- Needs: the worker edited the task store, which only the coordinator writes: tasks/items/TOOLSET-431-47a7152e.md, tasks/items/TOOLSET-450-e643cb7a.md, tasks/items/TOOLSET-451-ba324296.md
-- Since: 2026-11-05T08:17:27Z
-- Answer: Answer in tasks/items/TOOLSET-467-69e39d8c.md with the evidence or a dated `Owner decision:` deferral. Review the specific requested `touches` change against the worker report; approve only that file scope if appropriate, otherwise split or defer the task. Keep the task in Needs decision if the input is unavailable; preserve the acceptance criteria, live authorization and ownership gates. A record edit does not supply signatures or transfer live ownership, and does not by itself establish that the blocker is resolved.
-- Kind: held
-
 <!-- pi-autowork:questions:end -->
 
 None.
