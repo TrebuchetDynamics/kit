@@ -7,9 +7,12 @@ are done, its goal is not met and its goal's dependencies are met. Authority
 (ownership, live resources) is not a selection rule: admission applies it afterwards,
 the same way for every task.
 """
+from collections.abc import Iterable
 from dataclasses import dataclass
 import datetime
 import re
+
+from pi_autowork.engine.task_store import GoalRecord, TaskRecord, TaskStore
 
 SECTION_RANK = {'Now': 0, 'Next': 1}
 # Lower runs first: unverified goals before partial ones, partial before unmet.
@@ -28,11 +31,11 @@ class Reason:
     detail: str = ''
 
 
-def _finished(store, done):
+def _finished(store: TaskStore, done: Iterable[str]) -> set[str]:
     return {tid for tid, task in store.tasks.items() if task.status == 'done'} | set(done)
 
 
-def blocking(store, task, done=()):
+def blocking(store: TaskStore, task: TaskRecord, done: Iterable[str] = ()) -> Reason | None:
     """The first rule that keeps ``task`` out of the order, or None when it is selectable."""
     if task.status == 'done':
         return Reason('DONE')
@@ -44,7 +47,7 @@ def blocking(store, task, done=()):
         return Reason('DRAFT', ', '.join(task.missing_fields))
     if (holder := held_by(task)) is not None:
         return Reason('HELD', holder)
-    goal = store.goals.get(task.goal)
+    goal = store.goals.get(task.goal) if task.goal is not None else None
     if goal is None:
         return Reason('NO_GOAL', task.goal or '')
     if goal.status == 'met':
@@ -63,38 +66,39 @@ def blocking(store, task, done=()):
     return None
 
 
-def held_by(task, today=None):
+def held_by(task: TaskRecord, today: datetime.date | None = None) -> str | None:
     """Who holds an open task, from its last `Held by:` note, or None (no note, or past its date)."""
     lines = HELD_BY.findall(task.body or '')
     if not lines:
         return None
-    holder = lines[-1].strip()
+    holder: str = lines[-1].strip()
     until = UNTIL.search(holder)
     if until and datetime.date.fromisoformat(until[1]) < (today or datetime.date.today()):
         return None
     return holder
 
 
-def _key(store, task):
-    goal = store.goals[task.goal]
+def _key(store: TaskStore, task: TaskRecord) -> tuple[int, int, int, int, int, str]:
+    assert task.goal is not None and task.section is not None and task.rank is not None
+    goal: GoalRecord = store.goals[task.goal]
     return (0 if goal.focus else 1, SECTION_RANK[task.section], task.rank, goal.priority,
             GOAL_STATUS_RANK[goal.status], task.id)
 
 
-def order(store, done=()):
+def order(store: TaskStore, done: Iterable[str] = ()) -> list[TaskRecord]:
     """Every selectable task, highest priority first, planning tasks included. ``done``
     adds IDs known closed outside this snapshot."""
     ready = [task for task in store.tasks.values() if blocking(store, task, done) is None]
     return sorted(ready, key=lambda task: _key(store, task))
 
 
-def next(store, done=()):
+def next(store: TaskStore, done: Iterable[str] = ()) -> TaskRecord | None:
     """The first selectable task that is not a planning task, or None."""
     return min((task for task in order(store, done) if task.kind.value != 'plan'),
                key=lambda task: _key(store, task), default=None)
 
 
-def why(store, task_id, done=()):
+def why(store: TaskStore, task_id: str, done: Iterable[str] = ()) -> tuple[bool, list[Reason]]:
     """(first, [Reason]) for one task: the rule that blocks it, or its 1-based position and
     the part of the sort key that put the task ahead of it first."""
     task = store.tasks.get(task_id)
@@ -112,6 +116,7 @@ def why(store, task_id, done=()):
     return position == 0, reasons
 
 
-def next_rule(ahead, behind):
+def next_rule(ahead: tuple[int, int, int, int, int, str],
+              behind: tuple[int, int, int, int, int, str]) -> str:
     """The first sort-key rule on which two keys differ."""
     return KEY_RULES[[a != b for a, b in zip(ahead, behind)].index(True)]

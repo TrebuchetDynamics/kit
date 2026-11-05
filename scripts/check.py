@@ -249,6 +249,20 @@ def affected_core(root):
     return all(subprocess.run(command, cwd=root).returncode == 0 for command in commands)
 
 
+def typecheck(root, list_only=False):
+    """Strict mypy on the selection/authority allowlist; a tree without the config skips it."""
+    script = root / 'scripts/typecheck.py'
+    if not (script.is_file() and (root / 'mypy.ini').is_file()):
+        return True
+    print('RUN scripts/typecheck.py (strict mypy allowlist)', flush=True)
+    if list_only:
+        return True
+    result = subprocess.run([sys.executable, str(script)], cwd=root, text=True, encoding='utf-8',
+                            errors='replace', stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    print('CHECK scripts/typecheck.py\n' + result.stdout[-6000:], flush=True)
+    return result.returncode == 0
+
+
 def paseo_check(root, env, list_only=False):
     """The Paseo plugin's own check (strict TypeScript and vitest) when its dependencies
     are installed; otherwise a stated skip. Returns False only when the check fails."""
@@ -286,7 +300,8 @@ def provision(root):
     requirements = root / 'requirements-test.txt'
     if os.environ.get(PROVISIONED) or not requirements.is_file():
         return None
-    if sys.version_info[:2] == (3, 12) and importlib.util.find_spec('yaml'):
+    if (sys.version_info[:2] == (3, 12) and importlib.util.find_spec('yaml')
+            and importlib.util.find_spec('mypy')):
         return None
     uv = shutil.which('uv')
     if uv is None:
@@ -364,6 +379,7 @@ def main(argv=None):
     print(f'Offline inventory: {len(tests)} modules in {len(groups)} directories; '
           f'{excluded} excluded. No model/native qualification.', flush=True)
     if args.list:
+        typecheck(root, list_only=True)
         paseo_check(root, {}, list_only=True)
         return 0
     if not tests and (selection is None or selection['full']):
@@ -379,6 +395,9 @@ def main(argv=None):
         return 1
     if selection is not None and not affected_core(root):
         print('FAIL: an affected core contract refused this tree; no tests ran', flush=True)
+        return 1
+    if not typecheck(root):
+        print('FAIL: the strict typecheck refused this tree; no tests ran', flush=True)
         return 1
     # No live-test flags, and no settings of the runner whose worker or reviewer runs this:
     # tests start their own runners, and a service's PI_AUTOWORK_MAIN_CHECK and

@@ -202,6 +202,7 @@ newest completed responses and original run identity still need separate verific
 ```sh
 uv run --python 3.12 --no-project --with-requirements requirements-test.txt python scripts/check.py
 python3 scripts/check.py --list
+python3 scripts/typecheck.py
 python -m py_compile __init__.py bundle.py install-omh.py install-graphify.py
 node --test tests/portable_pi.test.mjs
 ```
@@ -383,7 +384,7 @@ minimum-version guarantee:
 | Host | Ubuntu 24.04.4, x86_64 |
 | Hermes | `v0.21.6+556.g6a2662a`, source `6a2662a4aaad68e1b75f6e7ac789409aa653abf7` |
 | Native integration interpreter | Hermes-managed Python 3.14.7 |
-| Offline tests | Python 3.12; the suite also requires PyYAML (profile audit, portable package and Telegram menu tests) |
+| Offline tests | Python 3.12; the suite also requires PyYAML (profile audit, portable package and Telegram menu tests) and mypy 1.19.1 for the strict selection/authority typecheck |
 | CI declaration | Ubuntu runner and Python 3.12 in [.github/workflows/test.yml](../.github/workflows/test.yml); a declaration is not a current passing CI result |
 | Required Hermes APIs | `register_skill`, `register_command`, origin-aware `inject_message`, profile-scoped loader and native gateway control socket |
 | Other Hermes revisions / macOS / Windows | Not qualified by these receipts; shell setup requires Bash |

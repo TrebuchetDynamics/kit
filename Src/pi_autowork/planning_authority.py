@@ -24,7 +24,7 @@ class PlanningAuthorityError(ValueError):
     """A planning proposal refused by a machine-enforced rule."""
 
 
-def path_allowed(name):
+def path_allowed(name: str) -> PurePosixPath:
     """Return the normalized path, or refuse a path outside the planning allowlist."""
     if not isinstance(name, str) or len(name) > 240:
         raise PlanningAuthorityError('invalid planning path')
@@ -40,7 +40,7 @@ def path_allowed(name):
     return PurePosixPath(name)
 
 
-def check_files(files):
+def check_files(files: dict[str, str]) -> None:
     """Refuse an empty, oversized or secret-bearing proposal before any write."""
     if not isinstance(files, dict) or not files or len(files) > MAX_FILES:
         raise PlanningAuthorityError(f'proposal must contain 1-{MAX_FILES} complete files')
@@ -57,7 +57,7 @@ def check_files(files):
             raise PlanningAuthorityError('credential-like content refused in proposal')
 
 
-def policy_text():
+def policy_text() -> str:
     """The machine limits injected into the planning prompt, generated once."""
     return (
         'Machine-enforced planning rules:\n'
