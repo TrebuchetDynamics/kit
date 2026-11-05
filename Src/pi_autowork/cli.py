@@ -34,8 +34,8 @@ which must have its main branch checked out and a tasks/ store.
 Each session builds on an integration branch (pi-autowork/<session>) in its own
 worktree; after each closed task, and when the queue drains or the runner stops, the
 session is merged into the main branch (Pi resolves conflicts with newer main commits)
-and main is published to its upstream by default (fast-forward only); set
-PI_AUTOWORK_PUSH=0 to keep main local. Workers never push.
+and main stays local unless PI_AUTOWORK_PUSH=1 explicitly grants publication to its
+upstream, fast-forward only. Workers never push.
 
 Options:
   --once               Run at most one task, then exit
@@ -87,8 +87,8 @@ Environment (optional):
                             can land; any other uncommitted file keeps the merge pending (600)
   PI_AUTOWORK_PLAN_SETTLE   seconds a plan change must be quiet before an idle runner reads it
                             (default 3)
-  PI_AUTOWORK_PUSH          0 disables automatic upstream publication for this repository
-                            (default 1: merged main is published); saved settings are reused
+  PI_AUTOWORK_PUSH          1 grants automatic upstream publication for this repository
+                            (default 0: merged main stays local); saved grants are reused
   PI_AUTOWORK_POST_MERGE_POLICY async (default), or revision-barrier: require an exact green
                             command verdict before the next canonical landing
   PI_AUTOWORK_MAIN_CHECK    explicit repository command required by revision-barrier
@@ -471,8 +471,8 @@ def summarize(repo, base, toolset, rev, skill_args, opts, settings, state):
     print(f'Primary:    {settings.primary} ({ready(settings.primary)})')
     print(f'Fallback:   {settings.fallback} ({ready(settings.fallback)})' if settings.fallback_enabled
           else 'Fallback:   disabled')
-    print('Push:       ' + ('enabled' if os.environ.get('PI_AUTOWORK_PUSH', '1') == '1'
-                            else 'disabled (main stays local; PI_AUTOWORK_PUSH=0)'))
+    print('Push:       ' + ('enabled (PI_AUTOWORK_PUSH=1)' if os.environ.get('PI_AUTOWORK_PUSH', '0') == '1'
+                            else 'disabled (main stays local; requires PI_AUTOWORK_PUSH=1)'))
     print(f'Mode:       {opts["mode"]}; state in {state}; new worktrees in {repo}/.worktrees', flush=True)
 
 

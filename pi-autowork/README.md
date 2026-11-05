@@ -291,27 +291,26 @@ interruption; they do not qualify a live systemd service.
 Before reusing an installed or running service, `autowork start` refuses if an
 explicitly supplied supported service setting differs from its saved env file
 (including a setting absent there).
-For example, `PI_AUTOWORK_PUSH=1 autowork start` cannot silently start a service saved
-with push disabled. The error names the conflicting settings and file and prints the
+For example, `PI_AUTOWORK_PUSH=0 autowork start` cannot silently start a service saved
+with push enabled. The error names the conflicting settings and file and prints the
 `--install-service` command to apply them; run it with the requested environment.
 A refusal leaves the service and its pause marker unchanged. Matching settings keep
-start idempotent. Publication is enabled by default: without a saved or explicitly
-supplied `PI_AUTOWORK_PUSH=0`, automatic publication runs, including upstream-sync
-publication. Setting `0` keeps a repository's main local while local commits and
-merges still proceed.
+start idempotent. Without a saved or explicitly supplied `PI_AUTOWORK_PUSH=1` grant,
+automatic publication is disabled, including upstream-sync publication; local commits
+and merges still proceed.
 
-Opt out of automatic push once when installing a new repository's runner:
+Grant automatic push once when installing a new repository's runner:
 
 ```sh
-PI_AUTOWORK_PUSH=0 autowork start /path/to/my-project
+PI_AUTOWORK_PUSH=1 autowork start /path/to/my-project
 ```
 
-The installer saves the setting in that repository's settings file; later cycles and
-launches reuse it without asking again. It does not affect another repository, even
-one with the same directory name. For an existing service, use the
-`--install-service --repo /path/to/my-project` command above with `PI_AUTOWORK_PUSH=0`
-to disable, or `PI_AUTOWORK_PUSH=1` to enable; reinstalling applies the settings and
-reloads/restarts that service. A shell-only override is not a persisted setting.
+The installer saves the grant in that repository's settings file; later cycles and
+launches reuse it without asking again. It does not grant permission to another
+repository, even one with the same directory name. For an existing service, use the
+`--install-service --repo /path/to/my-project` command above with `PI_AUTOWORK_PUSH=1`
+to grant, or `PI_AUTOWORK_PUSH=0` to revoke; reinstalling applies the settings and
+reloads/restarts that service. A shell-only override is not a persisted grant.
 
 `autowork status /path/to/my-project` (or `pi-autowork.sh --status`) shows
 `Push: enabled` or `Push: disabled` after loading repository settings, with an explicitly
@@ -322,8 +321,8 @@ by a settings load or status read. No live service migration is part of this def
 
 `autowork ls --json` includes a boolean `push` for each runner, and the TUI detail
 pane shows `Push enabled` or `Push disabled`. Both read the saved service env file,
-not the viewing shell's overrides: a missing value means enabled; only
-`PI_AUTOWORK_PUSH=0` disables push. Like status, these are read-only settings displays,
+not the viewing shell's overrides: only `PI_AUTOWORK_PUSH=1` enables push; a missing
+or other value means disabled. Like status, these are read-only settings displays,
 not probes of an unreloaded process's environment. Offline command tests and the
 headless TUI pilot cover these displays; they do not qualify live publication.
 

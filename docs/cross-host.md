@@ -555,9 +555,9 @@ Bare `autowork` opens the live TUI, where `d` browses directories and starts a
 service for a repository that has a `tasks/` store committed on its main branch:
 
 ```sh
-autowork start                 # install (if needed) and start; publication is automatic
-# Optional one-time opt-out when installing a NEW repository's runner:
-PI_AUTOWORK_PUSH=0 autowork start /path/to/my-project
+autowork start                 # install (if needed) and start; no automatic push without a grant
+# Optional one-time publication grant when installing a NEW repository's runner:
+PI_AUTOWORK_PUSH=1 autowork start /path/to/my-project
 autowork                       # the TUI: every runner, its workers, blockers and log
 autowork ls                    # one line per runner
 autowork logs -f my-project    # follow its journal
@@ -813,21 +813,20 @@ Per-repository settings live in `~/.config/pi-autowork/<repository>.env`
 the service, `autowork run` and a terminal; variables already set in the environment
 win. Disabling a service (`systemctl --user disable --now pi-autowork@<name>`) keeps it.
 
-Automatic push is **on by default**: after a merge the runner publishes the main branch
-to its upstream. Set `PI_AUTOWORK_PUSH=0` to keep a repository's main local; local
-commits and merges then continue but neither normal publication nor upstream-sync
-publication runs. The opt-out command above saves `0` for that repository only and is
-reused on later launches/cycles. Existing saved `1`/`0` values are retained; loading
-settings or checking status does not rewrite them or migrate running services. A
-different repository cannot inherit the saved setting, even if it has the same
-directory name.
+Automatic push is **opt-in**: with no `PI_AUTOWORK_PUSH=1` grant, local commits and
+merges continue but neither normal publication nor upstream-sync publication runs.
+The new-runner grant command above saves `1` for that repository only and is reused
+on later launches/cycles without repeated approval. Existing saved `1`/`0` values
+are retained; loading settings or checking status does not rewrite them or migrate
+running services. A different repository cannot inherit the saved grant, even if it
+has the same directory name.
 
-For an already installed service, `PI_AUTOWORK_PUSH=0 autowork start` refuses a
-conflicting saved setting rather than silently changing it. To explicitly change
-(or grant with `1`), run the supported installer for that repository:
+For an already installed service, `PI_AUTOWORK_PUSH=1 autowork start` refuses a
+conflicting saved setting rather than silently changing it. To explicitly grant
+(or revoke with `0`), run the supported installer for that repository:
 
 ```sh
-PI_AUTOWORK_PUSH=0 ~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --install-service --repo /path/to/my-project
+PI_AUTOWORK_PUSH=1 ~/.pi/agent/git/github.com/TrebuchetDynamics/kit/scripts/pi-autowork.sh --install-service --repo /path/to/my-project
 ```
 
 This explicit edit reloads/restarts the service. `autowork status my-project` shows
@@ -943,12 +942,13 @@ How it works:
   main revision; otherwise, or when your uncommitted changes in the main checkout
   would be overwritten, the runner reports `Merge pending`, shows it as its blocker in
   `autowork` and keeps the branch for the next attempt.
-- **Push (default).** After a merge the runner pushes main to its upstream
-  (`main@{u}`): fast-forward only, never forced. A rejected push fetches the upstream,
-  merges it into the session, fast-forwards main and tries once more; a failure is
-  logged once and the next merge retries. A main without an upstream is left local.
-  Workers and Pi tools still cannot push. Set `PI_AUTOWORK_PUSH=0` to keep main local;
-  upstream synchronization then does not run.
+- **Push (opt-in).** With an explicit `PI_AUTOWORK_PUSH=1` grant, after a merge the
+  runner pushes main to its upstream (`main@{u}`):
+  fast-forward only, never forced. A rejected push fetches the upstream, merges it
+  into the session, fast-forwards main and tries once more; a failure is logged once
+  and the next merge retries. A main without an upstream is left local. Workers and
+  Pi tools still cannot push. Without a grant (the default), or with
+  `PI_AUTOWORK_PUSH=0`, main stays local and upstream synchronization does not run.
 - **Models.** `openai-codex/gpt-6.1-sol` first; the script switches to
   `openrouter/deepseek/deepseek-v4.1-flash` for 30 minutes when the primary is
   unauthenticated or a run ends on a provider error (read from Pi's JSON events, even
