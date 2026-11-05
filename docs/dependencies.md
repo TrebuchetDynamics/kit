@@ -30,6 +30,7 @@ Sources: [plugin manifest](../plugin.yaml), [installation inventory](../plugins/
 | Graphify | Dedicated setup helper | Not covered by a unified bundle lockfile. |
 | textual-serve 1.1.3 (MIT), `autowork web` only | Pinned in [`command.py`](../pi-autowork/pi_autowork/command.py) (`AUTOWORK_TEXTUAL_SERVE`), fetched by `uv run --with` like Textual | Not a runner dependency; only the browser view uses it. |
 | Textual 8.2.8 (MIT), the `autowork` TUI only | Pinned in [`command.py`](../pi-autowork/pi_autowork/command.py) (`AUTOWORK_TEXTUAL`); fetched by `uv run --with` into uv's cache on first use | Not a runner dependency: pi-autowork itself stays standard-library Python, and every other `autowork` command works without it. |
+| mypy 1.19.1 (test-only) | Pinned in [`requirements-test.txt`](../requirements-test.txt) and the `uv run --with` fallback in [`scripts/typecheck.py`](../scripts/typecheck.py) | Not a runtime dependency; it checks only the two allowlisted selection and authority modules. |
 
 Ordinary installation preserves existing resources, adding only missing Markdown
 files in the bundled `shared/` support directory (without overwriting local edits).

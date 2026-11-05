@@ -1,2 +1,4 @@
 # YAML parsing in the offline profile audit, portable package and menu policy tests.
 PyYAML==6.0.3
+# Strict type-checking of the selection and authority allowlist; test-only.
+mypy==1.19.1
