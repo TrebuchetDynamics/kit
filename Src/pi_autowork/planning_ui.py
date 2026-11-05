@@ -22,12 +22,13 @@ class DecisionPrompt(ModalScreen[dict]):
                 Binding('ctrl+s,ctrl+enter', 'save', 'Save answer', priority=True)]
     DEFAULT_CSS = '''
     DecisionPrompt { align: center middle; }
-    #decision-form { width: 84; max-width: 100%; height: auto; max-height: 95%; padding: 0 1; background: $surface; border: thick $accent; }
+    #decision-form { width: 84; max-width: 100%; height: 24; max-height: 100%; padding: 0 1; background: $surface; border: thick $accent; }
     #decision-fields { height: 1fr; }
-    #decision-context { height: 6; }
-    #decision-text { height: 5; }
-    #decision-status { height: auto; max-height: 3; }
-    #decision-form Horizontal { height: 3; }
+    #decision-context { height: 8; border: round $panel; }
+    #decision-text { height: 3; border: round $panel; }
+    #decision-text:focus { border: round $accent; }
+    #decision-status { height: auto; max-height: 3; margin-top: 1; color: $text-muted; }
+    #decision-form Horizontal { height: 3; margin-top: 1; }
     '''
 
     def __init__(self, task, context='', *, loading=False):
@@ -41,11 +42,12 @@ class DecisionPrompt(ModalScreen[dict]):
             with VerticalScroll(id='decision-fields'):
                 yield TextArea(self.context, read_only=True, show_cursor=False, id='decision-context')
                 yield TextArea(id='decision-text')
-                yield Select([('Save answer — keep section', ''), ('Move to Next', 'Next'),
-                              ('Defer — Needs decision', 'Needs decision'), ('Move to Now', 'Now')],
+                yield Select([('After save: keep current section', ''), ('After save: move to Next', 'Next'),
+                              ('After save: defer to Needs decision', 'Needs decision'),
+                              ('After save: move to Now', 'Now')],
                              value='', allow_blank=False, id='decision-section')
             yield Static('Loading current task…' if not self.ready else
-                         'Saves locally, pending commit. Does not grant live permission or verify completion.',
+                         'Local save, pending commit. No live permission, holds or verification.',
                          markup=False, id='decision-status')
             with Horizontal():
                 yield Button('Save answer', id='decision-save', variant='primary', disabled=not self.ready)

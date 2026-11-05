@@ -70,11 +70,15 @@ async def main():
                             break
                         await pilot.pause(.05)
                     assert screen.record is not None, 'Invalidation during load must reschedule the current record read'
+                    assert screen.focused is screen.query_one('#decision-text', TextArea), 'The answer editor must own first focus'
                     context = screen.query_one('#decision-context', TextArea).text
                     assert 'Which design should we use?' in context and 'Choose the smaller design' in context
                     assert '2' in context and 'T-1' in context
                     assert 'T-2' in context, 'Show the dependent task, not only an unblock count'
                     assert screen.query_one('#decision-text', TextArea).text == '', 'Never silently accept a suggestion'
+                    form = screen.query_one('#decision-form')
+                    assert form.region.width <= width, form.region
+                    assert form.region.height < 29, form.region
                     assert screen.query_one('#decision-save', Button).region.bottom <= 30
                     await pilot.press('ctrl+enter')
                     assert app.screen is screen and not any(a[2] == 'decide' for a in calls)
