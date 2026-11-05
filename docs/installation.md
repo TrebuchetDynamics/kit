@@ -53,7 +53,9 @@ automatic on terminals (`NO_COLOR=1` or `TERM=dumb` disables them); use
 `--color always`, `--color never`, or `--color auto` to override. Each summary
 reports installed, planned, skipped and failed components with total elapsed
 time. A failed command stops that component, continues independent components,
-and causes a nonzero exit. Even an error mentioning “already” remains a failure.
+and causes a nonzero exit. A Claude marketplace-add that reports the source
+already present, an existing registration, or a stale source entry is treated as
+holding the goal rather than as a failure.
 For a structured updater receipt, the summary includes its status, cause (including
 per-profile recovery errors) and supported next action, rather than its closing
 JSON brace. Non-JSON or truncated output gets a bounded diagnostic fallback.
@@ -194,7 +196,7 @@ updated/removed, avoiding finalization through stale code.
 
 ## Bundled Grill Me
 
-`skills/grill-me/SKILL.md` (version 2.1.0) adapts the MIT-licensed official
+`skills/grill-me/SKILL.md` (version 2.1.1) adapts the MIT-licensed official
 `official/software-development/grill-me` skill (version 2.0.0) with
 mattpocock/skills grilling guidance, preserving their attribution. `/grill-me` (CLI)
 and `/grill_me` (Telegram) remain typeable compatibility commands that run

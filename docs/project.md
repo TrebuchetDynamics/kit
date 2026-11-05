@@ -659,10 +659,26 @@ Historical identifiers, expanded with `git rev-parse PIN^{commit}`:
 | `41aaad8fccfe` | `41aaad8fccfeb5706a655fdf31c7ec6f9f2e9d6d` |
 | `6c2f4e51d8d2` | `6c2f4e51d8d2efc8b338088e892bf34e60bef105` |
 
-The [manifest](roles.json) retains each original `verified_at`, `covers`, path
-and outcome status. Its supported `reason` field records the explicit gap for
-that role; a `maintained` or `created` status is not a fresh verification receipt.
-No new `verified_at` or current passing content-review claim is recorded.
+TOOLSET-461-61800c0c resumed the pin review at `9e2cc1ad` (the review baseline,
+which is an ancestor of the change commit). It reverified six roles against
+their current covered source, following the top-level compatibility shims into
+`Src/autowork_runtime/` and `Src/pi_autowork/`, corrected the drift it found, and
+advanced those `verified_at` values to `9e2cc1ad`: [readme](../README.md),
+[reference](reference.md), [install-upgrade](installation.md),
+[troubleshooting](troubleshooting.md), [memory](memory.md) and
+[dependencies](dependencies.md). Corrections were the Paseo 0.15 support range
+and the `wire-owner-cron.py --root` form in README.md, the reference-table and
+state entries listed below, the Grill Me 2.1.1 version in installation.md and
+dependencies.md, and the Claude marketplace tolerance sentence in
+installation.md. The pass was read-only source review, not runtime or live
+qualification. The other four roles remain unverified; their manifest `reason`
+fields name the unchecked claims.
+
+The [manifest](roles.json) keeps each original `covers`, path and outcome status.
+The six roles reviewed above now carry `verified_at` `9e2cc1ad`; the other four
+retain their historical pins and a supported `reason` field that records the
+explicit current gap. A `maintained` or `created` status is not by itself a fresh
+verification receipt.
 Counts below are tracked files selected by `git ls-files -- COVERED_PATHS` at the
 inventory revision, not reviewed-file totals. The exact source paths remain in
 `covers`; coverage omissions below must be reconciled during the relevant review,
@@ -670,24 +686,26 @@ not silently treated as historically covered.
 
 | Role / document | Historical pin | Covered files | Current source-evidence gap / next review |
 | --- | --- | --- | --- |
-| [readme](../README.md) | `8738cc636fdc` | 5 | Recheck installation, update and runtime-policy claims against all five covered sources; link checks do not execute or qualify them. |
-| [reference](reference.md) | `41aaad8fccfe` | 13 | Recheck command/configuration entries against their implementations. The page links `task_prepare.py` and `task_migrate.py`, which are outside its current `covers`. |
-| [install-upgrade](installation.md) | `8738cc636fdc` | 10 | Recheck preflight ordering, fleet-write boundaries, upgrade and recovery procedures against the covered installers/defaults. No setup or profile operation was run. |
-| [troubleshooting](troubleshooting.md) | `8738cc636fdc` | 5 | Recheck diagnosis/remedy pairs against the covered runtime/update/menu sources. Task-store and docs-checker remedies additionally require sources outside `covers`. |
+| [readme](../README.md) | `8738cc636fdc` | 5 | Reverified at `9e2cc1ad` against all five covered sources; corrected the Paseo support range and the `wire-owner-cron.py --root` command form. Link checks still do not execute or qualify them. |
+| [reference](reference.md) | `41aaad8fccfe` | 13 | Reverified at `9e2cc1ad`; corrected the `check.py --timeout` default/unit, the missing `autowork tasks goals`/`commit` verbs, the `install-skills.sh` reference-container behavior, omitted installer flags, the `record.json` `target` key and the check-slot waiter wording. The page links `task_prepare.py` and `task_migrate.py`, which are outside its current `covers`. |
+| [install-upgrade](installation.md) | `8738cc636fdc` | 10 | Reverified at `9e2cc1ad` against the covered installers/defaults; corrected the Grill Me 2.1.1 version and the Claude marketplace tolerance sentence. No setup or profile operation was run. |
+| [troubleshooting](troubleshooting.md) | `8738cc636fdc` | 5 | Reverified at `9e2cc1ad` against the covered runtime/update/menu sources. Task-store and docs-checker remedies additionally require sources outside `covers`, which remain unchecked. |
 | [architecture](#current-components) | `41aaad8fccfe` | 282 | Recheck registration, all covered skills and the Pi adapter. The current map also links engine/task-store implementations outside `covers`; registration alone does not qualify execution. |
 | [test-plan](testing.md) | `41aaad8fccfe` | 67 | Reconcile documented checks and their evidence limits with the covered inventory/tests, plus documented engine and Docs Sync tests outside `covers`. Listing tests is not running them. |
 | [workflows](workflows.md) | `8738cc636fdc` | 3 | Recheck aliases, routing and menu behavior against all three registrars; separately reconcile task-store instructions with their skill/CLI sources. |
 | [cross-host](cross-host.md) | `41aaad8fccfe` | 36 | Recheck adapter/package contents and runner claims. Retain historical install/discovery records separately from current host/model qualification. |
-| [memory](memory.md) | `6c2f4e51d8d2` | 2 | Recheck store binding/provider selection against installer/defaults and externally owned capture-policy claims against the named OMH version. No store access or live replay was performed. |
-| [dependencies](dependencies.md) | `8738cc636fdc` | 9 | Reconcile pin/license/install claims with all covered inputs. The page also cites Impeccable/Beautify inventories and `pi-autowork/pi_autowork/command.py` dependency pins outside `covers`. |
+| [memory](memory.md) | `6c2f4e51d8d2` | 2 | Reverified at `9e2cc1ad` against the covered installer/defaults. Externally owned capture-policy claims against the named OMH version still need live qualification; no store access or live replay was performed. |
+| [dependencies](dependencies.md) | `8738cc636fdc` | 9 | Reverified at `9e2cc1ad` against the covered inputs; corrected the Grill Me 2.1.1 version. The page also cites Impeccable/Beautify inventories and `pi-autowork/pi_autowork/command.py` dependency pins outside `covers`. |
 
 Checker boundaries are source-backed in
 [`docs.py`](../skills/docs-sync/scripts/docs.py): `validate` accepts `reason` on
 mapped roles, `check` scans entire mapped documents (including combined roles),
 and `stale` uses only `covers`, `verified_at` and Git history. It does not consume
 these gap notes or inspect content accuracy, uncommitted source drift, external
-URLs or live behavior. Thus `stale` still exits 1 with ten non-ancestor findings;
-that is retained unqualified evidence, not a fresh/pass verdict. Roles without
+URLs or live behavior. Thus `stale` still exits 1 with four non-ancestor findings
+(architecture, test-plan, workflows and cross-host); the six reverified roles no
+longer appear. The four findings are retained unqualified evidence, not a
+fresh/pass verdict. Roles without
 `covers` are not assessed by `stale`, so silence for PRD, changelog, user-guide,
 removal or contributing is not proof of freshness either.
 
@@ -700,8 +718,9 @@ now passes all mapped-document link/anchor, script-path, covered-path and
 baseline-role checks. This rework retains the earlier provenance inventory and
 changes no CHANGELOG bytes, task contracts, ranks or frozen archives. It does not
 recreate TODO.md, remap the changelog role or weaken the checker. The structural
-pass is not current-source content verification or runtime qualification; the ten
-explicit source-evidence gaps above remain.
+pass is not current-source content verification or runtime qualification; it left
+the ten explicit source-evidence gaps recorded above, of which TOOLSET-461 has
+since reverified six.
 
 ## Reliability bug harvest (2026-10-15)
 
