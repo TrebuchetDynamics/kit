@@ -13,6 +13,18 @@ set -uo pipefail
 # re-executes, must not end it: systemd counts death by SIGHUP as a clean exit and does not
 # restart the unit. Ignored here, and so through exec, until the runner's handler replaces it.
 trap '' HUP
+# A deliberate `autowork stop` is terminal for authority: an automatic `Restart=on-failure`
+# must not resolve and run any release after it. `autowork start`/`restart` clears the marker
+# beside the unit's settings file before starting again. Workers and verifiers already
+# launched by a stopping runner keep their own path.
+helper=
+for arg in "$@"; do
+  case $arg in --worker|--verify|--verify-batch) helper=1 ;; esac
+done
+if [[ -z $helper && -n ${PI_AUTOWORK_ENV_FILE:-} && -e ${PI_AUTOWORK_ENV_FILE}.stopped ]]; then
+  printf 'pi-autowork: deliberately stopped; not reviving the previous release or push grant. Run autowork start to re-verify and start.\n' >&2
+  exit 0
+fi
 LAUNCHER=$(readlink -f "${BASH_SOURCE[0]}")
 SCRIPT=${PI_AUTOWORK_SCRIPT:-$LAUNCHER}
 is_component() { [[ -f $1/pi_autowork/cli.py ]]; }

@@ -2197,6 +2197,23 @@ sys.exit(result.returncode)
         self.assertEqual([r['task'] for r in self.runs('worker')].count('A'), 1, log())
         self.assertEqual((workers['A'], workers['B']), ('gpt-6.1-sol', 'gpt-6-luna'))
 
+    def test_a_deliberate_stop_is_terminal_for_an_automatic_restart(self):
+        """A stop marker left by `autowork stop` refuses the restart before any dispatch."""
+        settings = self.root / 'india.env'
+        settings.write_text('PI_AUTOWORK_COOLDOWN=0\n')
+        marker = Path(f'{settings}.stopped')
+        marker.write_text('deliberate stop\n')
+        env = {**self.env, 'PI_AUTOWORK_ENV_FILE': str(settings)}
+        stopped = self.run_runner('--once', env=env)
+        self.assertEqual(stopped.returncode, 0, stopped.stdout + stopped.stderr)
+        self.assertIn('deliberately stopped', stopped.stdout + stopped.stderr)
+        self.assertEqual(self.runs(), [])  # no worker, no model call
+        # An explicit start clears the marker and re-verifies the release and grant.
+        marker.unlink()
+        started = self.run_runner('--once', env=env)
+        self.assertEqual(started.returncode, 0, started.stdout + started.stderr)
+        self.assertNotIn('deliberately stopped', started.stdout + started.stderr)
+
     def test_a_task_integrates_while_another_worker_is_still_running(self):
         """Live qualification: a running worker's prompt path under .git made the engine
         treat it as a writer in the main checkout and hold every other integration."""
@@ -4306,6 +4323,10 @@ class PushOutcomeTests(unittest.TestCase):
         value.state = self.root / 'state'
         value.state.mkdir(exist_ok=True)
         value.ensure_repository = lambda: None
+        value.toolset_rev, value.toolset = 'fixture', str(ROOT)
+        value.verified = {'release': 'fixture', 'toolset': str(ROOT), 'push': self.module.effective_push(),
+                          'head': self.git('rev-parse', 'HEAD')}
+        (value.state / 'authority.json').write_text(json.dumps(value.verified))
         return value
 
     def test_a_push_timeout_records_an_unknown_outcome_and_does_not_retry(self):
@@ -4355,6 +4376,103 @@ class PushOutcomeTests(unittest.TestCase):
             outcome, calls = self.push_outcome(lambda argv, args, kwargs: self.fail('no push without a grant'))
         self.assertEqual((outcome, calls), ('no-grant', []))
         self.assertTrue(any('no PI_AUTOWORK_PUSH=1 grant' in line for line in self.messages), self.messages)
+
+
+class VerifiedAuthorityTests(unittest.TestCase):
+    """Publication and dispatch stay bound to the release, grant and revision a runner verified."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='awa-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.origin = self.root / 'origin.git'
+        self.repo = self.root / 'repo'
+        subprocess.run(['git', 'init', '-q', '--bare', str(self.origin)], check=True)
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.repo)], check=True)
+        self.git('config', 'user.email', 'fixture@example.invalid')
+        self.git('config', 'user.name', 'Fixture')
+        (self.repo / 'a.txt').write_text('a\n')
+        self.git('add', 'a.txt')
+        self.git('commit', '-qm', 'base')
+        self.git('remote', 'add', 'origin', str(self.origin))
+        self.git('push', '-q', '-u', 'origin', 'main')
+        sys.path.insert(0, str(ROOT / 'pi-autowork'))
+        from pi_autowork import coordinator
+        self.module = coordinator
+        self.messages = []
+        for target, attr, value in (
+                (coordinator.LOG, 'say', self.messages.append),
+                (coordinator.telemetry, 'observe', lambda *args, **kwargs: None),
+                (coordinator.post_merge_barrier, 'enabled', lambda: False)):
+            patcher = patch.object(target, attr, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        granted = patch.dict(os.environ, PI_AUTOWORK_PUSH='1')
+        granted.start()
+        self.addCleanup(granted.stop)
+
+    def git(self, *argv):
+        return subprocess.run(['git', '-C', str(self.repo), *argv], check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def ahead(self):
+        (self.repo / 'b.txt').write_text('b\n')
+        self.git('add', 'b.txt')
+        self.git('commit', '-qm', 'ahead')
+        return self.git('rev-parse', 'HEAD')
+
+    def coordinator(self, release='fixture', push=None, head=None):
+        value = self.module.Coordinator.__new__(self.module.Coordinator)
+        value.repo, value.base, value.integ, value.seen = str(self.repo), 'main', None, {}
+        value.state = self.root / 'state'
+        value.state.mkdir(exist_ok=True)
+        value.toolset_rev, value.toolset = release, str(ROOT)
+        value.ensure_repository = lambda: None
+        value.last_waiting = ''
+        value.verified = {'release': release, 'toolset': str(ROOT),
+                          'push': self.module.effective_push() if push is None else push,
+                          'head': self.git('rev-parse', 'HEAD') if head is None else head}
+        (value.state / 'authority.json').write_text(json.dumps(value.verified))
+        return value
+
+    def test_push_refuses_a_head_that_moved_past_the_verified_revision(self):
+        verified = self.git('rev-parse', 'HEAD')
+        moved = self.ahead()
+        value = self.coordinator(head=verified)
+        self.assertEqual(value.push(), 'head-changed')
+        self.assertEqual(self.git('rev-parse', 'origin/main'), verified)
+        self.assertTrue(any(verified[:7] in line and moved[:7] in line for line in self.messages), self.messages)
+
+    def test_push_refuses_a_grant_changed_between_start_and_push(self):
+        self.ahead()
+        value = self.coordinator(push='1')
+        with patch.dict(os.environ, PI_AUTOWORK_PUSH='0'):
+            self.assertEqual(value.push(), 'unverified')
+        self.assertEqual(self.git('rev-parse', 'origin/main'), self.git('rev-parse', 'HEAD^'))
+        self.assertTrue(any('effective 0' in line and 'verified 1' in line for line in self.messages), self.messages)
+
+    def test_a_release_changed_under_the_unit_refuses_dispatch(self):
+        value = self.coordinator(release='old')
+        value.toolset_rev = 'new'
+        value.mode, value.interval, value.pause_until = 'continuous', 0, 0
+        value.draining, value.snapshot = False, None
+        value.pause = lambda seconds: None
+        value.health_update = lambda *args, **kwargs: None
+        self.assertFalse(value.begin_cycle())
+        self.assertIn('release changed', value.runner_blocker)
+        self.assertIn('running new', value.runner_blocker)
+        self.assertIn('verified old', value.runner_blocker)
+
+    def test_an_unconfirmed_configuration_refuses_dispatch(self):
+        value = self.coordinator()
+        (value.state / 'authority.json').unlink()
+        value.verified = None
+        value.mode, value.interval, value.pause_until = 'continuous', 0, 0
+        value.draining, value.snapshot = False, None
+        value.pause = lambda seconds: None
+        value.health_update = lambda *args, **kwargs: None
+        self.assertFalse(value.begin_cycle())
+        self.assertIn('no verified release and push grant', value.runner_blocker)
 
 
 class OwnerOutboxTests(unittest.TestCase):

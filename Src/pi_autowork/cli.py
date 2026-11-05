@@ -166,6 +166,28 @@ def main(argv):
     load_repo_settings(repo)
     state_root = os.environ.get('PI_AUTOWORK_STATE_DIR') or state_root
     state = health.state_directory(state_root, repo, identity[1] if identity else None)
+    env_file = os.environ.get('PI_AUTOWORK_ENV_FILE')
+    if env_file:
+        # Re-assert the effective publication grant from the service's saved configuration
+        # before the first cycle: only an explicit PI_AUTOWORK_PUSH=1 enables it, so a restart
+        # cannot inherit a previous release's default or a stale manager environment.
+        try:
+            saved = dict(line.split('=', 1) for line in Path(env_file).read_text().splitlines()
+                         if '=' in line and not line.startswith('#'))
+        except OSError:
+            saved = {}
+        os.environ['PI_AUTOWORK_PUSH'] = '1' if saved.get('PI_AUTOWORK_PUSH') == '1' else '0'
+        if service.deliberate_stop(env_file):
+            # A deliberate stop is terminal for authority: an automatic `Restart=on-failure`
+            # must not revive the previous release or its push grant. `autowork start` clears it.
+            reason = ('deliberately stopped; an automatic restart must not revive the previous '
+                      'release or push grant. Run `autowork start` to re-verify and start')
+            if '--status' in argv:
+                print(f'Repository: {repo}\nRunner:     not running\nStopped:    {reason}')
+                return 0
+            health.record_setup_stop(state, repo, reason)
+            print(f'pi-autowork: {reason}', file=sys.stderr, flush=True)
+            return 0
     if '--status' in argv:
         stopped = health.setup_stop(state)
         if stopped:

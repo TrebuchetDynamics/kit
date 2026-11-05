@@ -202,6 +202,26 @@ def reread_settings(path, started_with):
     os.environ.update(now)
 
 
+AUTHORITY_FILE = 'authority.json'
+
+
+def effective_push(env=None):
+    """The effective publication grant: only an explicit PI_AUTOWORK_PUSH=1 enables it."""
+    return '1' if (env if env is not None else os.environ).get('PI_AUTOWORK_PUSH', '0') == '1' else '0'
+
+
+def authority_record(state):
+    """The release, push grant and verified head this runner recorded at its last verification,
+    or {} when the configuration was never confirmed."""
+    if not state:
+        return {}
+    try:
+        value = json.loads((Path(state) / AUTHORITY_FILE).read_text())
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def batchable(rows, handled=()):
     """(task, commit) of each candidate a batch may take: reported, or integrating with no review
     running (one runs only while the session is busy, and no batch starts then). Reported alone,
@@ -1483,7 +1503,14 @@ class Coordinator:
         return True
 
     def fast_forward_main(self):
-        """Land the already merged session; return the reason main must wait, or ''."""
+        """Land the already merged session and record the revision it verified for publication;
+        return the reason main must wait, or ''."""
+        reason = self._fast_forward_main()
+        if not reason:
+            self.note_verified_head()
+        return reason
+
+    def _fast_forward_main(self):
         self.ensure_repository()
         current = git(self.repo, 'symbolic-ref', '--short', '-q', 'HEAD')
         if current != self.base:
@@ -1548,7 +1575,7 @@ class Coordinator:
         """Pull, then push: merge commits the upstream gained into the session and the main
         branch, then publish the main branch if it is ahead. Called after every landing and once
         at start, so a backlog is published and the session never drifts behind the upstream."""
-        if os.environ.get('PI_AUTOWORK_PUSH', '0') != '1':
+        if effective_push() != '1':
             return self.push()  # says once that main stays local
         upstream = git(self.repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', f'{self.base}@{{u}}')
         if not upstream or '/' not in upstream:
@@ -1575,7 +1602,13 @@ class Coordinator:
         PI_AUTOWORK_PUSH=1 grant enables publication; saved repository grants are reused.
         """
         self.ensure_repository()
-        if os.environ.get('PI_AUTOWORK_PUSH', '0') != '1':
+        problem = self.authority_problem()
+        if problem:
+            if self.seen.get('push-note') != 'authority':
+                self.seen['push-note'] = 'authority'
+                LOG.say(f'Not pushed: {problem}; restart to re-verify the release and push grant')
+            return 'unverified'
+        if effective_push() != '1':
             if self.seen.get('push-note') != 'no grant':
                 self.seen['push-note'] = 'no grant'
                 LOG.say(f'Not pushed: {self.base} stays local (no PI_AUTOWORK_PUSH=1 grant for this repository)')
@@ -1587,7 +1620,6 @@ class Coordinator:
                 LOG.say(f'Not pushed: {self.base} has no upstream branch')
             return 'no-upstream'
         remote, branch = upstream.split('/', 1)
-        source = self.base
         if post_merge_barrier.enabled() or optimistic.enabled():
             # Optimistic landing publishes only what main's full check passed: its last green
             # revision, when that is on main and ahead of the upstream.
@@ -1600,6 +1632,21 @@ class Coordinator:
                     LOG.say(f'Not pushed yet: {self.base} has commits main\'s full check has not passed')
                 return 'waiting-for-green'
             source = green
+        else:
+            # Publication is bound to the revision this runner verified: HEAD moving past it
+            # between verification and push refuses rather than publishing an unverified commit.
+            state = getattr(self, 'state', None)
+            if state:
+                source = str(authority_record(state).get('head') or '')
+                current = git(self.repo, 'rev-parse', '--verify', f'{self.base}^{{commit}}') or ''
+                if not source or current != source:
+                    if self.seen.get('push-note') != 'head-changed':
+                        self.seen['push-note'] = 'head-changed'
+                        LOG.say(f'Not pushed: {self.base} is {current or "unknown"} but the verified revision is '
+                                f'{source or "unknown"}; re-verify before publishing')
+                    return 'head-changed'
+            else:
+                source = self.base
         env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_CONFIG_')}
         argv = ['git', '-C', str(self.repo), 'push', '--quiet', remote, f'{source}:refs/heads/{branch}']
         try:
@@ -3651,6 +3698,49 @@ class Coordinator:
         if problem:
             self.stop_for_repository(problem)
 
+    def verify_authority(self):
+        """Bind this process to the release and publication grant it resolved before its first
+        cycle. Returns a named problem when they cannot be proved; records them otherwise."""
+        release = str(getattr(self, 'toolset_rev', '') or '')
+        toolset = str(getattr(self, 'toolset', '') or '')
+        if not release or release == 'unknown' or not toolset or not Path(toolset).is_dir():
+            return (f'the running release is not confirmed ({release or "unknown"}'
+                    + (f' at {toolset}' if toolset else '') + ')')
+        self.verified = {'release': release, 'toolset': toolset, 'push': effective_push(),
+                         'head': git(self.repo, 'rev-parse', '--verify', f'{self.base}^{{commit}}') or ''}
+        atomic_write(self.state / AUTHORITY_FILE, json.dumps(self.verified) + '\n')
+        return ''
+
+    def authority_problem(self):
+        """Why dispatch or publication is no longer bound to the verified configuration, or ''."""
+        verified = getattr(self, 'verified', 'missing')
+        if verified == 'missing':
+            # A partial/unit-test Coordinator that never verified; run() refuses before cycling.
+            return ''
+        verified = verified or authority_record(getattr(self, 'state', None))
+        if not verified:
+            return 'no verified release and push grant are recorded for this runner'
+        release = str(verified.get('release') or '')
+        running = str(getattr(self, 'toolset_rev', '') or '')
+        if release != running:
+            return (f'the release changed under the running unit: running {running or "unknown"}, '
+                    f'verified {release or "unknown"}')
+        grant, saved = effective_push(), str(verified.get('push') or '0')
+        if grant != saved:
+            return f'the push grant changed under the running unit: effective {grant}, verified {saved}'
+        return ''
+
+    def note_verified_head(self):
+        """Record the revision this runner itself just landed, so publication stays bound to it."""
+        state = getattr(self, 'state', None)
+        if not state:
+            return
+        record = authority_record(state)
+        if not record:
+            return
+        record['head'] = git(self.repo, 'rev-parse', '--verify', f'{self.base}^{{commit}}') or ''
+        atomic_write(state / AUTHORITY_FILE, json.dumps(record) + '\n')
+
     def cycle(self):
         """One pass of the loop: refresh the session, dispatch, read the engine's answer, then
         settle finished work and decide how long to wait."""
@@ -3681,6 +3771,18 @@ class Coordinator:
     def begin_cycle(self):
         """Update, follow the plan and land what is due before dispatching; False when the plan
         is not ready and the cycle ends here."""
+        problem = self.authority_problem()
+        if problem:
+            # No task runs under an unconfirmed release or push grant. Naming the difference
+            # and not touching questions keeps the guard side-effect free.
+            self.runner_blocker = f'configuration not confirmed: {problem}'
+            if self.mode != 'continuous':
+                self.finish(4, f'Refusing dispatch: {problem}')
+            if self.last_waiting != 'authority:' + problem:
+                LOG.say(f'Refusing dispatch: {problem}; restart to re-verify the release and push grant')
+            self.last_waiting = 'authority:' + problem
+            self.pause(self.interval)
+            return False
         if not self.draining and not self.in_flight():
             self.update_toolset()
         self.restart_if_updated()
@@ -3947,6 +4049,10 @@ class Coordinator:
         signal.signal(signal.SIGTERM, self.on_signal)
         signal.signal(signal.SIGHUP, self.on_reload)
         LOG.say(f'Started (PID {os.getpid()}). Stop with Ctrl+C.')
+        problem = self.verify_authority()
+        if problem:
+            LOG.warn(f'Refusing to run: {problem}; re-verify the release and push grant before starting')
+            return 4
         try:
             self.recover_batches()
             while True:

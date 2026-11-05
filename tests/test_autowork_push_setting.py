@@ -1,4 +1,5 @@
 """No-push service settings against an offline, disposable bare upstream."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -32,6 +33,12 @@ class PushSettingTests(unittest.TestCase):
         self.runner = Coordinator.__new__(Coordinator)
         self.runner.repo, self.runner.base = str(self.repo), 'main'
         self.runner.integ, self.runner.seen = None, {}
+        self.runner.state = root / 'state'
+        self.runner.state.mkdir()
+        self.runner.toolset_rev, self.runner.toolset = 'fixture', str(ROOT)
+        self.runner.verified = {'release': 'fixture', 'toolset': str(ROOT), 'push': '0',
+                                'head': self.git(self.repo, 'rev-parse', 'HEAD')}
+        (self.runner.state / 'authority.json').write_text(json.dumps(self.runner.verified))
 
     def git(self, repo, *args):
         return subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True,
