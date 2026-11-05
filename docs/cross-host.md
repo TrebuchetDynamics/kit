@@ -863,8 +863,9 @@ existing integration authority instead of asking which session should own delive
 Resolving an entry means editing the task's record (`autowork tasks field`, `place`, `hold`); the question leaves the block once its cause is gone. Writing the block costs no model call.
 
 `pi-autowork.sh --fleet` shows every runner on the machine in one line each: its
-service state, health (`working`, `blocked`, `stalled`, `paused`, `idle`, or `not
-running`/`not cycling` when the process is gone or silent) and, when it cannot
+service state, health (`working`, `blocked`, `stalled`, `paused`, `idle`, `waiting on
+you` for an owner decision, or `not running`/`not cycling` when the process is gone or
+silent) and, when it cannot
 progress, the root blockers: a held task, another session's claim, an outside
 condition or a dependency cycle, each with how many tasks it holds up. `--status`
 shows the same health for one repository. A runner with nothing running while work

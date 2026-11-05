@@ -239,6 +239,19 @@ class FleetViewTests(unittest.TestCase):
                 if rev == old:
                     self.assertIn(head[:7], text)
 
+    def test_a_runner_waiting_on_a_needs_decision_is_not_idle(self):
+        repo = self.base / 'decision'
+        repo.mkdir()
+        store_fixture.write_todo(repo, '## Needs decision\n\n- [ ] D-1 — Decide\n')
+        (self.env / 'decision.env').write_text(f'PI_AUTOWORK_REPO={repo}\n')
+        self.runner_state(str(repo), state='idle')
+        runner = self.collect('pi-autowork@decision.service loaded active running x')['decision']
+        self.assertEqual(runner.decisions, 1)
+        self.assertEqual(runner.state, 'waiting on you')
+        self.assertEqual(fleet_view.summary([runner]), [('waiting on you', 1)])
+        self.assertIn('Needs decision', fleet_view.verdict(runner)[0])
+        self.assertIn(runner, fleet_view.attention([runner]))
+
     def test_fleet_puts_owner_questions_and_setup_before_idle_and_working(self):
         for name, state in (('a-idle', 'idle'), ('b-working', 'working'),
                             ('y-setup', 'idle'), ('z-question', 'idle')):

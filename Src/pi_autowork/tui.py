@@ -1736,6 +1736,8 @@ class FleetApp(App):
             return 'a Answer · b Blockers'
         if runner.state in ('paused', 'not running'):
             return 'p Play · l Log'
+        if runner.state == 'waiting on you':
+            return 't Tasks · b Blockers'
         if runner.state in ('blocked', 'stalled', 'unavailable', 'not cycling'):
             return 'l Log · i Details'
         if runner.lanes:

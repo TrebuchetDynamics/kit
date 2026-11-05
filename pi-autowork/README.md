@@ -536,8 +536,8 @@ workspace locks instead. For an explicitly requested pause, use
 nothing about it. `autowork tasks release TASK` lifts the hold; a dated hold ends by itself.
 
 The fleet lists runners with open owner questions or task-store setup/repair first,
-then other runners; each group is alphabetical. An idle runner with open questions
-reads `Waiting on you`, not `Idle`. The headline and Needs field follow the
+then other runners; each group is alphabetical. An idle runner with open questions or
+tasks in `Needs decision` reads `Waiting on you`, not `Idle`. The headline and Needs field follow the
 read-only `autowork tasks prepare --check` result: no store reads
 `Setup required — run /docs-sync`; a legacy TODO.md + goals.json
 queue reads `Migration required — Force converts legacy planning`; an invalid store
