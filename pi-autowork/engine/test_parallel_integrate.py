@@ -94,6 +94,22 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         return p.stdout.strip()
 
+    def drop_journal_event(self, event, **fields):
+        """Remove journal lines matching an event, as a restart whose journal lost them leaves it."""
+        path = self.common / 'journal.jsonl'
+        lines = path.read_text().splitlines() if path.exists() else []
+        kept = []
+        for line in lines:
+            try:
+                value = json.loads(line)
+            except ValueError:
+                kept.append(line)
+                continue
+            if value.get('event') == event and all(value.get(k) == v for k, v in fields.items()):
+                continue
+            kept.append(line)
+        path.write_text('\n'.join(kept) + ('\n' if kept else ''))
+
     def worker(self, task='A', files=None):
         root, branch, base = dispatch.create_worktree(self.repo, self.common, task, self.baseline)
         state.create_slot(self.repo, self.owner, task, worktree=str(root), branch=branch, baseline=base)
@@ -408,6 +424,65 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(state.slot_path(self.common, 'A').exists() and state.slots(self.common)[0]['state'], 'reported')
         self.assertEqual(self.git('rev-parse', 'HEAD'), self.baseline)
         self.assertFalse((self.repo / '.worktrees/autowork-integration').exists())
+
+    def test_a_stale_engine_integration_worktree_is_archived_and_recreated(self):
+        """TOOLSET-459: a restart that lost the journal's record of the path still recovers
+        the engine's own disposable worktree from its durable marker, with one reason."""
+        module = self.module()
+        path = module.integration_worktree(self.repo, self.common, self.baseline)
+        (path / 'wip.txt').write_text('left by validation\n')
+        self.drop_journal_event('worktree_created', worktree=str(path), branch='(detached)')
+        recovered = module.integration_worktree(self.repo, self.common, self.baseline)
+        self.assertEqual(recovered, path)
+        self.assertTrue(path.is_dir())
+        self.assertEqual(self.git('rev-parse', '--abbrev-ref', 'HEAD', cwd=path), 'HEAD')
+        events = [json.loads(line) for line in (self.common / 'journal.jsonl').read_text().splitlines()]
+        recovered_events = [e for e in events if e['event'] == 'worktree_recovered']
+        self.assertEqual(len(recovered_events), 1)
+        kept = Path(recovered_events[0]['kept'])
+        self.assertTrue(kept.is_dir())
+        self.assertEqual((kept / 'wip.txt').read_text(), 'left by validation\n')  # nothing lost
+
+    def test_a_foreign_worktree_at_the_integration_path_is_refused_with_its_recovery(self):
+        module = self.module()
+        path = module.worktree_path(self.repo, 'autowork-integration')
+        self.git('worktree', 'add', '--detach', str(path), self.baseline)
+        with self.assertRaises(ValueError) as caught:
+            module.integration_worktree(self.repo, self.common, self.baseline)
+        self.assertIn(str(path), str(caught.exception))
+        self.assertIn('git worktree remove --force', str(caught.exception))
+
+    def test_an_integration_worktree_whose_identity_changed_is_refused(self):
+        module = self.module()
+        path = module.integration_worktree(self.repo, self.common, self.baseline)
+        self.git('checkout', '-q', '-b', 'moved', cwd=path)  # no longer detached
+        self.drop_journal_event('worktree_created', worktree=str(path), branch='(detached)')
+        with self.assertRaises(ValueError) as caught:
+            module.integration_worktree(self.repo, self.common, self.baseline)
+        self.assertIn(str(path), str(caught.exception))
+
+    def test_an_interrupted_recovery_is_replayed_without_loss(self):
+        module = self.module()
+        path = module.integration_worktree(self.repo, self.common, self.baseline)
+        (path / 'wip.txt').write_text('unsaved\n')
+        kept = module.quarantine_worktree(self.common, path, 'interrupted recovery',
+                                          event='worktree_recovered')
+        self.assertEqual(module.integration_worktree(self.repo, self.common, self.baseline), path)
+        self.assertTrue(path.is_dir())
+        self.assertEqual((kept / 'wip.txt').read_text(), 'unsaved\n')
+
+    def test_recovery_drops_only_the_engine_worktrees_registration(self):
+        """TOOLSET-459: recovery clears only its own path's registration. A stale
+        registration for an unrelated worktree whose directory is gone is left alone,
+        though a repository-wide prune would have dropped it."""
+        module = self.module()
+        path = module.integration_worktree(self.repo, self.common, self.baseline)
+        other = self.repo / '.worktrees/autowork-unrelated'
+        self.git('worktree', 'add', '-q', '--detach', str(other), self.baseline)
+        other.rename(other.with_name('autowork-unrelated-moved'))  # registered, directory absent
+        self.drop_journal_event('worktree_created', worktree=str(path), branch='(detached)')
+        self.assertEqual(module.integration_worktree(self.repo, self.common, self.baseline), path)
+        self.assertIn(f'worktree {other}', self.git('worktree', 'list', '--porcelain').splitlines())
 
     def test_session_appearing_during_validation_holds_only_the_files_it_holds(self):
         self.worker()

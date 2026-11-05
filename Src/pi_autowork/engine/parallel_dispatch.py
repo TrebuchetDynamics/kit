@@ -430,6 +430,37 @@ def created_by_autowork(common, path, branch):
         for e in state.journal.read(common)['events'])
 
 
+# Durable engine marker for a worktree it created. The journal is best-effort telemetry,
+# and a repository rename leaves its recorded path stale, so a coordinator restart cannot
+# always recognize its own disposable worktree from the journal alone. The marker lives in
+# the worktree's own Git admin directory: it survives a restart and moves with a rename.
+WORKTREE_MARKER = 'autowork-worktree.json'
+
+
+def worktree_marker(common, path):
+    """The engine's own record that it created this worktree, or None.
+
+    Only a worktree registered in ``common`` is read; a foreign path or one whose Git
+    admin directory cannot be read returns None, never another repository's marker.
+    """
+    try:
+        if state.common_dir(path) != common:
+            return None
+        gitdir = Path(execution.git(path, 'rev-parse', '--path-format=absolute', '--git-dir'))
+        record = execution.read(gitdir / WORKTREE_MARKER)
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) and record.get('version') == 1 else None
+
+
+def mark_worktree(path, baseline):
+    """Write the engine's marker into a worktree it just created; caller holds the lock."""
+    record = {'version': 1, 'worktree': str(path), 'baseline': baseline}
+    gitdir = Path(execution.git(path, 'rev-parse', '--path-format=absolute', '--git-dir'))
+    execution.save(gitdir / WORKTREE_MARKER, record)
+    return record
+
+
 def set_aside_number(repo, pairs, start=1):
     """Next suffix free for every attempt's branch and worktree; never overwrite prior work."""
     number = start
