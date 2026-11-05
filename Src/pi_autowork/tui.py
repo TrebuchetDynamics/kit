@@ -620,7 +620,7 @@ class TasksScreen(ReadScreen, Screen):
     """One runner's open tasks in priority (section, then rank) order: filter them, re-sort them, clear or
     set aside a hold, answer the owner's questions. Refreshed like the main screen."""
     VIEW_NAMES = {'all': 'Open', 'working': 'Active', 'held': 'Blocker', 'waiting': 'Waiting',
-                  'questions': 'Questions', 'closed': 'Closed'}
+                  'questions': 'Questions', 'decisions': 'Decisions', 'closed': 'Closed'}
     BINDINGS = [Binding('escape,q', 'app.pop_screen', 'Back', show=False),
                 Binding('tab', 'step_view(1)', 'next view', show=False),
                 Binding('shift+tab', 'step_view(-1)', 'previous view', show=False),
@@ -800,8 +800,12 @@ class TasksScreen(ReadScreen, Screen):
 
     def action_task(self, key):
         row = self.current()
+        if row is None:
+            return
         action = next((a for a in self.actions(row) if a.key == key), None)
         if action is None:
+            if key == 'a' and row.kind != 'closed':  # Answer, as on the fleet: no hold to set aside
+                self.action_decide()
             return
         self.follow = row.task
         if key == 's':
