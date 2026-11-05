@@ -1824,6 +1824,17 @@ Path(report).write_text(json.dumps({'task': 'A', 'commit': git('rev-parse', 'HEA
         self.assertEqual(busy['dispatched'], [])
         self.assertIn('A', [w['id'] for w in busy['waiting']])
 
+    def test_the_engine_marker_recognizes_only_a_worktree_of_this_repository(self):
+        """TOOLSET-459: the durable marker proves the engine created a worktree; a path that
+        is not a worktree of this repository never returns one."""
+        baseline = self.git('rev-parse', 'HEAD')
+        root = self.repo / '.worktrees/autowork-marker-check'
+        self.git('worktree', 'add', '-q', '--detach', str(root), baseline)
+        self.assertIsNone(dispatch.worktree_marker(self.common, root))  # not marked yet
+        dispatch.mark_worktree(root, baseline)
+        self.assertEqual(dispatch.worktree_marker(self.common, root)['baseline'], baseline)
+        self.assertIsNone(dispatch.worktree_marker(self.common, self.root / 'absent'))
+
     def test_clean_leftover_worktree_is_replaced_without_losing_its_commit(self):
         self.write_todo(task('A', 'a.txt'))
         baseline = self.git('rev-parse', 'HEAD')

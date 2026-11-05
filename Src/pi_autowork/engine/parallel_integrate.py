@@ -704,7 +704,7 @@ def prune_ignored_bytecode(root):
             parent = parent.parent
 
 
-def quarantine_worktree(common, path, reason):
+def quarantine_worktree(common, path, reason, event='worktree_quarantined'):
     """Move an orphaned worktree aside, preserving every byte; return its new path.
 
     The repository rename from autowork to kit left a worktree whose .git file
@@ -720,42 +720,94 @@ def quarantine_worktree(common, path, reason):
         kept = path.with_name(f'{path.name}-set-aside-{stamp}-{number}')
         number += 1
     path.rename(kept)
-    state.event(common, 'worktree_quarantined', worktree=str(path), kept=str(kept), reason=reason)
+    state.event(common, event, worktree=str(path), kept=str(kept), reason=reason)
+    return kept
+
+
+def save_integration_residue(common, path):
+    """Keep the integration worktree's uncommitted bytes as a patch; return its path or None.
+
+    Validation or review left changes in this exclusive, disposable worktree (integration.lock
+    is held). Keep them, then reset it; never anywhere else.
+    """
+    if not git(path, 'status', '--porcelain', '--untracked-files=all'):
+        return None
+    residue = execution.safe_path(common / 'integration-residue')
+    residue.mkdir(exist_ok=True, mode=0o700)
+    git(path, 'add', '-A')
+    patch = residue / (time.strftime('%Y%m%d-%H%M%S') + '-' + git(path, 'rev-parse', '--short', 'HEAD') + '.patch')
+    patch.write_text(git(path, 'diff', '--cached', '--binary', 'HEAD'))
+    git(path, 'reset', '-q', '--hard', 'HEAD')
+    state.event(common, 'integration_residue_saved', worktree=str(path), patch=str(patch))
+    return patch
+
+
+def recover_integration_worktree(repo, common, path):
+    """Archive the engine's own stale integration worktree and drop its registration.
+
+    Called only under integration.lock for a path that carries the engine's marker, belongs
+    to this common directory and is detached. The directory is renamed aside, preserving every
+    byte; when it cannot be moved, its uncommitted bytes are kept as a patch and the
+    registration is removed. A canonical commit is never discarded: the archive (or patch)
+    keeps it, and a fresh worktree is created by the caller.
+    """
+    reason = 'stale engine integration worktree from an earlier coordinator'
+    try:
+        kept = quarantine_worktree(common, path, reason, event='worktree_recovered')
+    except OSError:
+        patch = save_integration_residue(common, path)
+        git(repo, 'worktree', 'remove', '--force', str(path))
+        state.event(common, 'worktree_recovered', worktree=str(path), patch=str(patch or ''), reason=reason)
+        return None
+    # The directory is archived; drop only this path's stale registration. A repository-wide
+    # prune would unregister unrelated worktrees of this repository whose directory is absent.
+    git(repo, 'worktree', 'remove', '--force', str(path))
     return kept
 
 
 def integration_worktree(repo, common, baseline):
     path = worktree_path(repo, 'autowork-integration')
-    if path.exists() and not dispatch.created_by_autowork(common, path, '(detached)'):
-        try:
-            same_common = state.common_dir(path) == common
-        except (OSError, ValueError):
-            same_common = False
-        if same_common:
-            raise ValueError('integration worktree was not created by this coordinator')
-        quarantine_worktree(common, path, 'orphaned integration worktree')
     if path.exists():
-        if not dispatch.created_by_autowork(common, path, '(detached)'):
-            raise ValueError('integration worktree was not created by this coordinator')
+        recorded = dispatch.created_by_autowork(common, path, '(detached)')
+        if not recorded and dispatch.worktree_marker(common, path) is None:
+            try:
+                same_common = state.common_dir(path) == common
+            except (OSError, ValueError):
+                same_common = False
+            if same_common:
+                raise ValueError(f'{path} is a worktree of this repository but not the Autowork integration '
+                                 f'worktree; remove it with `git worktree remove --force {path}` and integrate again')
+            quarantine_worktree(common, path, 'orphaned integration worktree')
+        elif not recorded:
+            # The engine's own disposable worktree from an earlier coordinator, recognized by its
+            # durable marker though this coordinator's journal no longer records the path (a restart
+            # or a canonical-root move). Never adopt a changed identity: archive it and create fresh.
+            if state.common_dir(path) != common or git(path, 'rev-parse', '--show-toplevel') != str(path):
+                raise ValueError(f'{path} was the Autowork integration worktree but its identity changed; '
+                                 f'remove it with `git worktree remove --force {path}` and integrate again')
+            if git(path, 'rev-parse', '--abbrev-ref', 'HEAD') != 'HEAD':
+                raise ValueError(f'{path} was the Autowork integration worktree but is no longer detached; '
+                                 f'remove it with `git worktree remove --force {path}` and integrate again')
+            recover_integration_worktree(repo, common, path)
+    if path.exists():
         if state.common_dir(path) != common or git(path, 'rev-parse', '--show-toplevel') != str(path):
-            raise ValueError('integration worktree identity changed')
-        if git(path, 'status', '--porcelain', '--untracked-files=all'):
-            # Validation or review left changes in this exclusive, journaled, disposable
-            # worktree (integration.lock is held). Keep them as a patch, then reset it;
-            # never anywhere else.
-            residue = execution.safe_path(common / 'integration-residue')
-            residue.mkdir(exist_ok=True, mode=0o700)
-            git(path, 'add', '-A')
-            patch = residue / (time.strftime('%Y%m%d-%H%M%S') + '-' + git(path, 'rev-parse', '--short', 'HEAD') + '.patch')
-            patch.write_text(git(path, 'diff', '--cached', '--binary', 'HEAD'))
-            git(path, 'reset', '-q', '--hard', 'HEAD')
-            state.event(common, 'integration_residue_saved', worktree=str(path), patch=str(patch))
+            raise ValueError(f'{path} integration worktree identity changed; '
+                             f'remove it with `git worktree remove --force {path}` and integrate again')
+        save_integration_residue(common, path)
         if git(path, 'rev-parse', '--abbrev-ref', 'HEAD') != 'HEAD':
             raise ValueError('integration worktree is no longer detached')
         git(path, 'checkout', '--detach', baseline)
     else:
-        git(repo, 'worktree', 'add', '--detach', str(path), baseline)
+        try:
+            git(repo, 'worktree', 'add', '--detach', str(path), baseline)
+        except ValueError:
+            # An interrupted recovery left this path registered though its directory is gone;
+            # clear only this registration and retry. The archive (or its patch) is untouched.
+            git(repo, 'worktree', 'remove', '--force', str(path))
+            git(repo, 'worktree', 'add', '--detach', str(path), baseline)
+        # Journal first (best effort) so a failed marker write still leaves the path recognized.
         state.event(common, 'worktree_created', worktree=str(path), branch='(detached)', baseline=baseline)
+        dispatch.mark_worktree(path, baseline)
     return path
 
 

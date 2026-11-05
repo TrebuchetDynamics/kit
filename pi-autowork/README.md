@@ -1184,6 +1184,16 @@ message, not as an unknown-file conflict. Only actual unmerged paths trigger the
 Pi conflict resolver. Overlapping uncommitted bookkeeping can still prevent the
 merge; its contents and session worktree are kept for retry.
 
+The engine's own disposable integration worktree is durable across a restart. When a
+restart leaves it on disk, the next integration recognizes it by the marker the engine
+writes into the worktree's Git admin directory, not only by the best-effort journal. A
+registered, detached worktree carrying that marker is archived under a
+`-set-aside-<timestamp>` name and recreated cleanly, with one `worktree_recovered` reason;
+its uncommitted bytes are kept as an `integration-residue` patch when it cannot be moved.
+A worktree of this repository without the marker, one from another repository, or one
+whose recorded identity changed is never adopted: integration refuses it, naming the exact
+path and `git worktree remove --force <path>` as the supported recovery.
+
 If a merge invents a task/goal status, Evidence or closure value, or synthesizes a
 contract field absent from both parents, the runner rejects it before landing or
 adoption. The diagnostic names the record and field; the pre-merge head is restored
