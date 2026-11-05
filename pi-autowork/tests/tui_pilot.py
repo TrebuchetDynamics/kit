@@ -334,7 +334,10 @@ async def immediate_deletion():
         command = Path(__file__).resolve().parents[1] / 'pi_autowork/command.py'
         calls = []
         def run(argv, **kwargs):
-            calls.append(argv)
+            # The tasks screen reads the saved-edit state with `tasks commit --dry-run`;
+            # that is a read, so it is not recorded as an action.
+            if not (argv[1:3] == ['tasks', 'commit'] and '--dry-run' in argv):
+                calls.append(argv)
             result = subprocess.run([sys.executable, str(command), *argv[1:]], **kwargs)
             return subprocess.CompletedProcess(argv, result.returncode, result.stdout + '; warning: retained worker evidence', result.stderr)
         blocked_calls = []
@@ -355,7 +358,9 @@ async def immediate_deletion():
                 action = next(a for a in screen.actions(screen.current()) if a.key == 'x')
                 assert action.argv[-1] == str(repo)
                 await pilot.press('x', 'n')  # cancelled confirmation never reaches the command
-                assert not calls and screen.query_one('#tasks').row_count == 1
+                # The saved-edit read (tasks commit --dry-run) is a read, not an action.
+                assert not [c for c in calls if not (c[1:3] == ['tasks', 'commit'] and '--dry-run' in c)] \
+                    and screen.query_one('#tasks').row_count == 1
                 for result in (subprocess.CompletedProcess([], 1, '', 'refused'), OSError('command failed')):
                     with mock.patch.object(app, 'runner_cmd', side_effect=result if isinstance(result, Exception) else None,
                                            return_value=result):
@@ -579,7 +584,8 @@ async def main():
 
         def run(argv, **kwargs):
             time.sleep(slow['seconds'])
-            calls.append(argv)
+            if not (argv[1:3] == ['tasks', 'commit'] and '--dry-run' in argv):
+                calls.append(argv)
             if argv[1:3] == ['tasks', 'prepare']:
                 if Path(argv[-1]).name == 'toolchain':
                     return subprocess.CompletedProcess(argv, 1, json.dumps(dict(
@@ -936,8 +942,8 @@ async def main():
             form.query_one('#add').press()
             await pilot.pause()
             await app.workers.wait_for_complete()
-            assert calls[-1] == ['aw', 'tasks', 'add', '--title', 'Add a thing', '--short', 'A thing', '--goal', 'FIXTURE',
-                                 '--section', 'Next', 'india'], calls
+            assert calls[-1] == ['aw', 'tasks', 'add', '--title', 'Add a thing', '--short', 'A thing',
+                                          '--goal', 'FIXTURE', '--section', 'Next', 'india'], calls
             await pilot.press('escape')
             await pilot.pause()
             (india / 'BLOCKERS.md').unlink()            # the later views expect no question

@@ -397,7 +397,10 @@ Next, Needs decision), `c` **C**lears its hold, `a` sets a held task **A**side, 
 `g` **Discuss** and `v` **Investigate** open the planning
 console scoped to that task, and `n` adds a **N**ew task from a form. Enter opens the
 task: its question and the runner's suggested answer, its whole task record and its
-worker's last actions. Answer it there, written to the task's record where the runner reads
+worker's last actions. `C` **C**ommits the saved owner answers that a reading runner
+cannot see yet: one line above the rows names how many edits wait, and the form asks
+for a commit message before it moves tasks/ paths only (no push, no execution).
+Answer it there, written to the task's record where the runner reads
 it: `w` **W**rite a dated `Owner decision:` note, `d` **D**efer it to Needs decision with your
 reason; a repeated quick hold takes `r` **R**esolve with the producer or decision. Stop,
 restart, pause, uninstall, clear, set-aside and model changes ask first.

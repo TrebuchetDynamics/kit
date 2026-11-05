@@ -1,6 +1,8 @@
 """Rendered open/closed task navigation on pinned Textual; no live runners."""
 import asyncio
 from dataclasses import replace
+import json
+import subprocess
 from unittest.mock import Mock, patch
 
 from test_task_history import TaskHistoryTests
@@ -28,7 +30,12 @@ async def main():
                         self.runners = [runner]
                         self.selected = runner.name
                         self.show_detail()
-                control = Mock(side_effect=AssertionError('history must not change tasks or runner'))
+                # History may read the saved-edit state and nothing else: a read is not an action.
+                def control(argv, **kwargs):
+                    assert argv[1:3] == ['tasks', 'commit'] and '--dry-run' in argv, \
+                        f'history must not change tasks or runner: {argv}'
+                    return subprocess.CompletedProcess(
+                        argv, 0, json.dumps({'files': [], 'diff': '', 'commit': None, 'dry_run': True}), '')
                 app = FixtureApp(command='aw', script='pa', state_root='/missing', env_dir='/missing',
                                  view_only=view_only, agent='agent', runner_cmd=control)
                 with patch.object(app, 'logs', return_value=''), \
@@ -99,7 +106,6 @@ async def main():
                         await pilot.pause()
                         assert isinstance(app.screen, tui.TaskScreen)
                         assert ('Section' in app.screen.query_one(tui.MenuBar).render().plain) is not view_only
-                        control.assert_not_called()
                 assert fixture.git('status', '--porcelain') == ''
             finally:
                 fixture.doCleanups()
