@@ -344,6 +344,12 @@ or chains it after an existing one-line exec hook such as the private-terms chec
 A push with nothing new, a deletion, or `KIT_PRE_PUSH=0` runs nothing; `git push
 --no-verify` skips every hook. The full suite is CI's job.
 
+A failing affected run is not proof of a red tree on a busy host. Every runner and
+worker test that waits on a window or a check slot can fail while the machine runs
+its own suites: the hook now prints the load average and cpu count when it refuses,
+so the failure can be attributed instead of bypassed. Run one failing module alone
+before you treat the tree as broken; a second failure there is the tree's.
+
 The offline suite runs in GitHub Actions as two jobs: `fast` runs every module except
 `tests/test_pi_autowork.py` (`scripts/check.py --exclude tests/test_pi_autowork.py`),
 and `runner` runs that module alone on three machines
