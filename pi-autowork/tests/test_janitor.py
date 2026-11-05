@@ -149,6 +149,54 @@ class JanitorTests(unittest.TestCase):
             self.assertEqual(janitor.prune_build_caches(worktrees, busy=[str(busy)], urgent=True)[0], 1)
             self.assertFalse((fresh / 'target').exists())  # a low disk does not wait for its age
 
+    def test_bounded_retention_keeps_referenced_evidence_and_a_live_stranger(self):
+        """TOOLSET-442: engine.err and per-run evidence are bounded without dropping what is read."""
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            repo = root / 'repo'
+            subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+            slots = repo / '.git' / 'autowork-execution' / 'slots'
+            slots.mkdir(parents=True)
+            (slots / 'T-OPEN.json').write_text(json.dumps({'task_id': 'T-OPEN', 'attempt': 1, 'state': 'running'}))
+            (slots / 'T-DONE.json').write_text(json.dumps({'task_id': 'T-DONE', 'attempt': 1, 'state': 'released'}))
+            state = root / 'state'
+            (state / 'full-check').mkdir(parents=True)
+            (state / 'runs').mkdir()
+            (state / 'runner.json').write_text(json.dumps({'repo': str(repo)}))
+            receipt = state / 'full-check' / 'T-OPEN.gate.jsonl'
+            receipt.write_text('open gate\n')
+            closed_gate = state / 'full-check' / 'T-DONE.gate.jsonl'
+            closed_gate.write_text('closed gate\n')
+            open_run = state / 'runs' / 'T-OPEN.run.log'
+            open_run.write_text('open slot evidence\n')
+            closed_run = state / 'runs' / 'T-DONE.run.log'
+            closed_run.write_text('x' * 8192)
+            (state / 'engine.err').write_text('old\n' + 'n' * 4096)
+            live = root / 'live'
+            (live / 'runs').mkdir(parents=True)
+            busy = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+            self.addCleanup(lambda: (busy.kill(), busy.wait()))
+            stat = Path(f'/proc/{busy.pid}/stat').read_text().rsplit(')', 1)[1].split()
+            (live / 'runner.json').write_text(json.dumps({'repo': str(repo), 'pid': busy.pid,
+                                                          'start_time': int(stat[19])}))
+            (live / 'runs' / 'T-DONE.old.log').write_text('live stranger\n')
+            writing = state / 'runs' / 'T-DONE.open.log'
+            writing.write_text('still being written\n')
+            handle = open(writing, 'rb')
+            self.addCleanup(handle.close)
+            patch.dict(os.environ, PI_AUTOWORK_ENGINE_ERR_BYTES='1024').start()
+            self.addCleanup(patch.stopall)
+            removed, freed = janitor.retain_state(root, stale=10 ** 9, max_bytes=0)
+            self.assertTrue(receipt.exists())
+            self.assertTrue(closed_gate.exists())  # a gate receipt is never trimmed
+            self.assertTrue(open_run.exists())  # an open slot's run evidence stays
+            self.assertFalse(closed_run.exists())
+            self.assertTrue((live / 'runs' / 'T-DONE.old.log').exists())
+            self.assertTrue(writing.exists())  # a file being written is skipped
+            self.assertLessEqual((state / 'engine.err').stat().st_size, 1024)
+            self.assertEqual(removed, 1)
+            self.assertGreater(freed, 8192)
+
     def test_one_sweep_per_host_per_interval(self):
         state = self.tmp / 'state'
         stale = self.make('task-review.AbC123', 3)
