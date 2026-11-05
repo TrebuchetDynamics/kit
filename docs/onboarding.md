@@ -5,7 +5,7 @@ source checkout. Replace `work` with your actual profile; omit `-p work` for def
 
 ```sh
 hermes -p work plugins install TrebuchetDynamics/kit
-hermes -p work plugins enable autowork
+hermes -p work plugins enable kit
 hermes -p work autowork doctor --core
 ```
 
@@ -118,7 +118,7 @@ These are operator-run live checks, not recorded model or Telegram test results.
 
 ## Update or remove
 
-For a native Git install, use `hermes -p work plugins update autowork`, then
+For a native Git install, use `hermes -p work plugins update kit`, then
 reload or restart the gateway through your normal service procedure and reopen CLI
 sessions. `plugins update` does not refresh skill copies already in the profile's
 skill directory; `/autowork update` synchronizes them. Recheck `doctor --core` and

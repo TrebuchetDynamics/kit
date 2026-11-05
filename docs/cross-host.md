@@ -279,14 +279,14 @@ Requires Claude Code with plugin marketplaces. From this checkout:
 
 ```sh
 claude plugin marketplace add .
-claude plugin install autowork@autowork
+claude plugin install kit@autowork
 ```
 
 Install the published Git source with:
 
 ```sh
 claude plugin marketplace add TrebuchetDynamics/kit
-claude plugin install autowork@autowork
+claude plugin install kit@autowork
 ```
 
 `./install.sh` accepts a marketplace registered from a checkout (a `directory`
@@ -298,7 +298,7 @@ to install. A registered folder that still exists is left alone and used as it i
 because that source is the owner's choice.
 
 Inside a session, `/plugin marketplace add TrebuchetDynamics/kit` and
-`/plugin install autowork@autowork` do the same; run `/reload-plugins` or
+`/plugin install kit@autowork` do the same; run `/reload-plugins` or
 start a new session. Add `--scope project` to the install to record it in the
 repository's `.claude/settings.json` for everyone who works there. Invoke the
 namespaced skills:
@@ -318,8 +318,8 @@ so the Hermes-only skills in the repository's root `skills/` folder are never lo
 the plugin itself ships no hooks, agents, MCP servers or settings. Claude Code copies
 the whole repository into its plugin cache, so adapter links into `skills/` resolve
 there. Update with `claude plugin marketplace update autowork` and then
-`claude plugin update autowork@autowork`; remove with
-`claude plugin uninstall autowork@autowork` (add the same `--scope` used
+`claude plugin update kit@autowork`; remove with
+`claude plugin uninstall kit@autowork` (add the same `--scope` used
 to install) and `claude plugin marketplace remove autowork`. Removal does not
 undo repository work or delete plans.
 
@@ -329,14 +329,14 @@ Requires a Codex CLI with `codex plugin` support. From this checkout:
 
 ```sh
 codex plugin marketplace add .
-codex plugin add autowork@autowork-marketplace
+codex plugin add kit@autowork-marketplace
 ```
 
 Install the published Git source with:
 
 ```sh
 codex plugin marketplace add TrebuchetDynamics/kit --ref main
-codex plugin add autowork@autowork-marketplace
+codex plugin add kit@autowork-marketplace
 ```
 
 Start a new Codex session in your project. Invoke the namespaced native skills:
@@ -361,7 +361,7 @@ are explicit-only in Codex (`allow_implicit_invocation: false` in each
 `agents/openai.yaml`) so installation does not automatically invoke a workflow.
 Update a Git install with `codex plugin marketplace upgrade autowork-marketplace`
 (it refreshes Git marketplace snapshots only); remove with
-`codex plugin remove autowork@autowork-marketplace`. Removal does not
+`codex plugin remove kit@autowork-marketplace`. Removal does not
 undo repository work or delete plans. The marketplace registration remains until
 `codex plugin marketplace remove autowork-marketplace`.
 
