@@ -1867,7 +1867,9 @@ class FleetApp(App):
         if runner.model:
             detail_row(text, 'Model', f'{runner.model.rsplit("/", 1)[-1]} · fallback {runner.fallback.rsplit("/", 1)[-1]}', 'dim')
         detail_row(text, 'Push', 'enabled' if runner.push else 'disabled', 'dim')
-        if runner.toolset:  # a development checkout instead of the Pi package: say so
+        if runner.toolset_problem:
+            detail_row(text, 'Toolset', runner.toolset_problem, 'bold red')
+        elif runner.toolset:  # a development checkout instead of the Pi package: say so
             detail_row(text, 'Toolset', f'{runner.toolset} (PI_AUTOWORK_TOOLSET, not the Pi package)', 'yellow')
         if text.plain != getattr(self, '_detail', None):
             self._detail = text.plain

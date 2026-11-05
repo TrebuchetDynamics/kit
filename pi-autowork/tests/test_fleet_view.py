@@ -744,6 +744,34 @@ class FleetViewTests(unittest.TestCase):
         fleet_view.paused_marker(self.env, 'india').write_text('paused\n')  # `autowork pause` leaves this
         self.assertEqual(self.collect()['india'].state, 'paused')
 
+    def test_a_saved_toolset_that_is_missing_or_invalid_is_marked_but_a_healthy_one_is_not(self):
+        from pi_autowork import command
+        healthy = self.base / 'toolset'
+        (healthy / 'pi-autowork/engine').mkdir(parents=True)
+        for marker in ('owner_cycle.py', 'task_store.py'):
+            (healthy / 'pi-autowork/engine' / marker).touch()
+        invalid = self.base / 'not-a-toolset'
+        invalid.mkdir()
+        missing = self.base / 'gone'
+        for name, toolset in (('healthy', healthy), ('missing', missing), ('invalid', invalid)):
+            (self.env / f'{name}.env').write_text(f'PI_AUTOWORK_REPO=/git/{name}\nPI_AUTOWORK_TOOLSET={toolset}\n')
+        found = self.collect()
+        self.assertEqual(found['healthy'].toolset_problem, '')
+        self.assertIn(f'is missing: {missing}', found['missing'].toolset_problem)
+        self.assertIn(f'is not an Autowork checkout: {invalid}', found['invalid'].toolset_problem)
+        self.assertIn(found['missing'].toolset_problem, fleet_view.needs(found['missing']))
+        paths = dict(state_root=self.state, env_dir=self.env, systemctl=self.systemctl)
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(command.cmd_ls(type('Args', (), {'json': False, 'long': False})(), paths), 0)
+        self.assertIn(found['missing'].toolset_problem, output.getvalue())
+        self.assertIn(found['invalid'].toolset_problem, output.getvalue())
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(command.cmd_ls(type('Args', (), {'json': True})(), paths), 0)
+        listed = {r['name']: r for r in json.loads(output.getvalue())['runners']}
+        self.assertEqual(listed['healthy']['toolset_problem'], '')
+        self.assertIn(f'is missing: {missing}', listed['missing']['toolset_problem'])
+        self.assertIn(f'is not an Autowork checkout: {invalid}', listed['invalid']['toolset_problem'])
+
     def test_the_owners_questions_come_from_the_session_first_and_say_what_is_needed(self):
         block = ('# Blockers\n\n## Active\n\n<!-- pi-autowork:questions:start -->\n\n'
                  '### Q-TASK-036 — USER_DECISION — effort decision — unblocks 19\n\n- Task: TASK-036\n'

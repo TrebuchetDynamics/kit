@@ -354,6 +354,36 @@ def cmd_run(args, paths):
     os.execvp('bash', ['bash', script(paths), '--repo', target])
 
 
+def saved_service_diagnosis(name, paths):
+    """Read-only diagnosis of a saved service whose checkout or toolset is gone.
+
+    Returns the lines to print, or None when the saved paths are usable. It reads the
+    saved env file and service state only: no start, import, model call or rewrite.
+    """
+    settings = fleet_view.read_env(Path(paths['env_dir']) / f'{name}.env')
+    repo = settings.get('PI_AUTOWORK_REPO', '').strip()
+    toolset = settings.get('PI_AUTOWORK_TOOLSET', '').strip()
+    problems = []
+    if not repo:
+        problems.append('PI_AUTOWORK_REPO is not set')
+    elif not Path(repo).is_dir():
+        problems.append(f'PI_AUTOWORK_REPO is missing: {repo}')
+    fault = fleet_view.toolset_fault(toolset)
+    if fault:
+        problems.append(f'PI_AUTOWORK_TOOLSET {fault}')
+    if not problems:
+        return None
+    state = service_state(paths, name)
+    lines = [f'{name}: saved service cannot use its checkout or toolset ({state}).',
+             f'  Repository: {repo or "(not set)"}',
+             f'  Toolset:    {toolset or "(not set)"}',
+             f'  Service:    {state}']
+    lines += [f'  Missing:    {problem}' for problem in problems]
+    lines.append(f'  Next:       autowork remove {name}')
+    lines.append(f'              or restore the missing path and reinstall: autowork start {repo or "<repository>"}')
+    return lines
+
+
 def cmd_status(args, paths):
     target = args.target or '.'
     if '/' in target or target in ('.', '..') or Path(target).is_dir():
@@ -361,6 +391,12 @@ def cmd_status(args, paths):
         # inherited Git routing. The CLI resolves its identity and saved stop.
         repo = str(Path(target).expanduser().resolve())
     else:
+        env_file = Path(paths['env_dir']) / f'{target}.env'
+        if env_file.is_file():
+            diagnosis = saved_service_diagnosis(target, paths)
+            if diagnosis is not None:
+                print('\n'.join(diagnosis))
+                return 0
         repo, _ = resolve(target, paths)
     os.execvp('bash', ['bash', script(paths), '--repo', repo, '--status'])
 
@@ -421,6 +457,8 @@ def cmd_ls(args, paths):
             print(row.replace(f'{label:<14}', paint(f'{label:<14}', r.color, color), 1))
             if observation:
                 print('    ' + observation)
+            if r.toolset_problem:
+                print('    ' + r.toolset_problem)
             continue
         print(f'\n{r.name}  {r.mode or "-"}  {paint(label, r.color, color)}')
         print(fit(f'  {counts}  {r.repo}'))
@@ -428,6 +466,8 @@ def cmd_ls(args, paths):
             print('  ' + observation)
         if r.model:
             print(fit(f'  model {r.model}, fallback {r.fallback}'))
+        if r.toolset_problem:
+            print(fit('  ' + r.toolset_problem))
         for lane in r.lanes:
             print(fit(f'  {lane.task}: {lane.phase} {fleet_view.duration(lane.minutes)}'
                       + (f'  {lane.activity} ({fleet_view.ago(lane.activity_age)})' if lane.activity else '')))

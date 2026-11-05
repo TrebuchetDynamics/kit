@@ -79,6 +79,19 @@ def write_env(path, updates):
         os.umask(old)
 
 
+def toolset_fault(toolset):
+    """Why a saved PI_AUTOWORK_TOOLSET cannot be used, or '' when it is absent or valid."""
+    if not toolset:
+        return ''
+    path = Path(toolset)
+    if not path.exists():
+        return f'is missing: {toolset}'
+    if not path.is_dir() or not ((path / 'pi-autowork/engine/owner_cycle.py').is_file()
+                                 and (path / 'pi-autowork/engine/task_store.py').is_file()):
+        return f'is not an Autowork checkout: {toolset}'
+    return ''
+
+
 def models(pi='pi', search=None, timeout=60, *, agent_dir=None):
     """provider/model IDs from `pi --list-models` (Pi's own catalog)."""
     argv = [pi, '--list-models'] + ([search] if search else [])
@@ -122,6 +135,7 @@ class Runner:
     questions: list = field(default_factory=list)  # the owner's open questions in BLOCKERS.md
     decisions: int = 0  # open tasks in Needs decision: never dispatched, so not in the engine's status
     toolset: str = ''         # PI_AUTOWORK_TOOLSET: the service runs this checkout, not the Pi package
+    toolset_problem: str = ''  # why the saved PI_AUTOWORK_TOOLSET cannot be used, '' when healthy
     waiting_groups: list = field(default_factory=list)  # why tasks wait, grouped (status.json)
     blocker: str = ''         # what keeps the runner itself from dispatching (status.json)
     stop_reason: str = ''     # saved startup refusal, even when generic setup checks also fail
@@ -942,6 +956,8 @@ def needs(runner):
     setup = runner.setup_label
     if setup:
         return setup
+    if runner.toolset_problem:
+        return runner.toolset_problem
     if runner.state == 'restarting':
         return ('restarting ' + runner.restarting).strip() if runner.restarting != 'service' else 'restarting'
     if runner.state in ('paused', 'not running'):
@@ -1094,13 +1110,15 @@ def _service_runner(name: str, sub: str, env_dir, systemctl: str, errors=None) -
         enabled = False
         if errors is not None:
             errors.append(f'{name}: service enabled query: {exc}')
+    toolset = settings.get('PI_AUTOWORK_TOOLSET', '').strip()
+    fault = toolset_fault(toolset)
     return Runner(name=name, service=sub, mode='service',
                   repo=settings.get('PI_AUTOWORK_REPO', '').strip(),
                   model=settings.get('PI_AUTOWORK_PRIMARY') or DEFAULT_MODEL,
                   fallback=settings.get('PI_AUTOWORK_FALLBACK') or DEFAULT_FALLBACK,
                   push=settings.get('PI_AUTOWORK_PUSH', '0') == '1',
-                  toolset=settings.get('PI_AUTOWORK_TOOLSET', '').strip(), enabled=enabled,
-                  observation=health.observation({}))
+                  toolset=toolset, toolset_problem=f'PI_AUTOWORK_TOOLSET {fault}' if fault else '',
+                  enabled=enabled, observation=health.observation({}))
 
 
 def _triage_failures(state_dir, held, errors):

@@ -1119,6 +1119,16 @@ The two revisions are not compared, because `Toolset:` can be another checkout w
 revisions are not comparable. Repositories where no runner has recorded a release
 show no `Release:` line, and status still writes nothing.
 
+A saved service can outlive its checkout, for example after a repository rename or
+a deleted toolset checkout. `autowork status NAME` then reports the saved
+`PI_AUTOWORK_REPO` and `PI_AUTOWORK_TOOLSET` paths, the service state and the exact
+missing path, and prints `autowork remove NAME` or the reinstall action after the
+checkout is restored; it starts nothing and rewrites no settings. `autowork ls`
+(and its JSON `toolset_problem`) and the TUI detail mark a saved toolset that is
+missing or is not an Autowork checkout, while a healthy saved toolset stays
+unmarked. `autowork start` still refuses the missing checkout or invalid toolset
+with its explicit setup error and never falls back to the current release.
+
 `autowork status` lists every unfinished task, with running, integrating, reported,
 held and waiting tasks first, in that order. Rows retain the task, lifecycle and
 reason columns; closed tasks appear as one finished-task count after the rows.
