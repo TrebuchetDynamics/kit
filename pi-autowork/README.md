@@ -589,6 +589,16 @@ and any retained set-aside worktrees with their uncommitted paths. These files
 are not restored automatically: inspect them and reuse only work relevant to the
 current task, without modifying the retained worktree.
 
+When a first attempt and its fresh retry both end with a dead worker or a report that
+nothing needed changing, the slot is exhausted with no commit: `--parallel-clear-held`
+has nothing to clear and the ordinary refill retries neither. One explicit, bounded
+request, `--parallel-requeue-empty TASK --requeue-by ACTOR --requeue-reason TEXT`,
+requeues that task once from current main and records the actor, the reason and the
+held attempt's evidence on the new slot. Every earlier worktree and branch is kept
+under its `-set-aside-N` name, and a held commit still goes through
+`--parallel-clear-held`. A second empty or no-change hold after that requeue is parked
+as a visible engineering hold and is never retried automatically.
+
 ### Attempt provenance
 
 Each launch appends one record to `slot-data/<task>/attempt-N/provenance.jsonl`

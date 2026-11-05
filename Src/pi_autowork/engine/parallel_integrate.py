@@ -1514,6 +1514,64 @@ def clear_held(repo, owner_pid, task=None):
         return {'outcome': 'CLEARED', 'tasks': cleared}
 
 
+EMPTY_REQUEUE_CAUSES = ('empty', 'no_change')
+
+
+def requeue_empty(repo, owner_pid, task, actor, reason):
+    """One explicit, bounded requeue of an attempt-2 empty/no_change hold with no commit.
+
+    ``retry_held`` retries only attempt 1 and ``clear_held`` needs a held commit, so such
+    a hold had no recovery. An operator or maintainer request gives the task exactly one
+    fresh attempt from the current main; the actor, the reason and the held attempt's
+    evidence are recorded, and the request is refused once that recovery was used. The
+    fresh run keeps attempt 2, so an empty or no_change hold after it is parked as an
+    exhausted engineering hold with no automatic retry. Every worktree and branch of the
+    held attempt is kept under its ``-set-aside-N`` name, and a held commit still uses
+    ``clear_held`` unchanged.
+    """
+    actor, reason = str(actor or '').strip(), str(reason or '').strip()
+    if not actor or not reason:
+        raise ValueError('an empty-hold requeue needs an actor and a reason')
+    repo, common = context(repo, owner_pid)
+    with execution.lock(common / 'dispatch.lock'), execution.lock(common / 'integration.lock'), \
+            execution.lock(common / 'writer.lock'):
+        state.require_owner(common, owner_pid)
+        task_queue.store(repo)  # Refuse before reconciliation can change a held slot.
+        slot = slot_for(common, task)
+        if slot is None:
+            raise ValueError('unknown worker slot for an empty-hold requeue')
+        if slot.get('empty_requeue'):
+            raise ValueError('this task already used its one empty-hold requeue')
+        if state.worker_live(slot):
+            raise ValueError('empty-hold requeue needs an idle slot')
+        if slot.get('commit'):
+            raise ValueError('a held commit still uses the clear-held path')
+        if (slot['state'] != 'held' or slot['attempt'] != 2
+                or state.hold_cause(slot) not in EMPTY_REQUEUE_CAUSES):
+            raise ValueError('empty-hold requeue is only for an attempt-2 empty or no_change hold without a commit')
+        baseline = git(repo, 'rev-parse', 'HEAD')
+        evidence = {'cause': state.hold_cause(slot), 'reason': slot.get('reason'),
+                    'attempt': slot['attempt'], 'held_at': slot.get('held_at'),
+                    'held_seconds': slot.get('held_seconds')}
+        # Keep every commit and worktree of the held attempt; the next run is a new attempt.
+        retired = _retire(repo, common, slot, True)
+        branch, root = 'autowork/' + task, worktree_path(repo, 'autowork-' + task)
+        if root.exists() or git(repo, 'branch', '--list', branch):
+            raise ValueError('requeue branch or worktree already exists; preserve and reconcile by hand')
+        git(repo, 'worktree', 'add', '-b', branch, str(root), baseline)
+        state.event(common, 'worktree_created', task_id=task, worktree=str(root),
+                    branch=branch, baseline=baseline)
+        state.write_slot(common, dict(
+            task_id=task, worktree=str(root), branch=branch, baseline=baseline, worker=None,
+            state='interrupted', paused=True, attempt=2, started_at=time.time(),
+            previous_attempts=[slot],
+            empty_requeue={'actor': actor, 'reason': reason, 'at': time.time(),
+                           'evidence': evidence, 'history': retired['history']}))
+        state.event(common, 'empty_requeue', task_id=task, actor=actor, reason=reason,
+                    attempt=2, cause=evidence['cause'], history=retired['history'])
+        return {'outcome': 'REQUEUED', 'task': task, 'attempt': 2, 'history': retired['history']}
+
+
 VALIDATION_HOLD = 'integration validation failed'
 
 
