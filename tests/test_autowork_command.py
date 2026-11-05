@@ -534,6 +534,24 @@ class AutoworkCommandTests(unittest.TestCase):
         self.assertFalse((self.env_dir / 'autowork.paused').exists())
         self.assertIn('systemctl --user disable --now pi-autowork@autowork.service', self.calls())
 
+    def test_status_diagnoses_a_saved_service_whose_checkout_and_toolset_are_gone(self):
+        missing_repo = self.base / 'renamed-away'
+        missing_toolset = self.base / 'deleted-toolset'
+        env_file = self.env_dir / 'autowork.env'
+        env_file.write_text(f'PI_AUTOWORK_REPO={missing_repo}\nPI_AUTOWORK_TOOLSET={missing_toolset}\n')
+        (self.units / 'pi-autowork@autowork.service.active').touch()
+        (self.units / 'pi-autowork@autowork.service.enabled').touch()
+        before = env_file.read_bytes()
+        result = self.aw('status', 'autowork')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for text in (str(missing_repo), str(missing_toolset), 'active',
+                     f'PI_AUTOWORK_REPO is missing: {missing_repo}',
+                     f'PI_AUTOWORK_TOOLSET is missing: {missing_toolset}',
+                     'autowork remove autowork', f'autowork start {missing_repo}'):
+            self.assertIn(text, result.stdout)
+        self.assertEqual(env_file.read_bytes(), before)
+        self.assertEqual([c for c in self.calls() if c.startswith('script')], [])
+
     def running(self, reloads=0):
         """A live runner's record as the runner writes it; a reload grows its count."""
         folder = self.state / 'abc123'

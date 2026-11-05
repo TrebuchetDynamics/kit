@@ -63,7 +63,8 @@ async def layout_pilot():
         lane = fleet_view.Lane('EXAMPLE-400-a1b2c3d4', 'running', minutes=11, activity_age=660)
         runner = fleet_view.Runner('example-data-pipeline', repo=str(root), state='unavailable',
             service='running', blocker=warning, prepare_state='converted', snapshot=snap, lanes=[lane],
-            model='provider/model', toolset=str(root))
+            model='provider/model', toolset=str(root),
+            toolset_problem='PI_AUTOWORK_TOOLSET is missing: /gone')
         runners = [runner, *(replace(runner, name=f'repository-{i}') for i in range(8))]
         envelope = fleet_view.FleetSnapshot(tuple(runners), (snap,), 1, time.time())
         def no_command(*args, **kwargs):
@@ -93,6 +94,7 @@ async def layout_pilot():
                 pane = app.query_one('#detail-scroll')
                 assert pane.display and app.focused is pane
                 assert warning in str(app.query_one('#detail').render())
+                assert 'PI_AUTOWORK_TOOLSET is missing: /gone' in str(app.query_one('#detail').render())
                 await pilot.press('end')
                 await pilot.pause()
                 assert pane.scroll_y > 0

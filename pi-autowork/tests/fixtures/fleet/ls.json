@@ -50,7 +50,8 @@
         }
       ],
       "decisions": 0,
-      "toolset": "/opt/autowork",
+      "toolset": "$BASE/missing-toolset",
+      "toolset_problem": "PI_AUTOWORK_TOOLSET is missing: $BASE/missing-toolset",
       "waiting_groups": [
         {
           "label": "on dependencies",
