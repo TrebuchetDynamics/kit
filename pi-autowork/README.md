@@ -574,6 +574,16 @@ runners, rather than relying on cached health; incomplete reservation discovery
 defers the sweep. Released, closed and set-aside slots no longer reserve scratch;
 close and set-aside also remove their allocated temp directories directly.
 
+The same host-wide pass bounds each state key: `engine.err` keeps only its newest
+bytes (`PI_AUTOWORK_ENGINE_ERR_BYTES`, default 1 MiB), and `full-check/`, `runs/`,
+`sessions/` and `review-tmp/` evidence is trimmed by age (`PI_AUTOWORK_STATE_STALE`,
+default 30 days) and total size (`PI_AUTOWORK_STATE_MAX_BYTES`, default 512 MiB).
+Evidence named for an unfinished slot's task, a live `aw-r-`/`aw-b-` review scratch,
+a gate receipt (`full-check/` `.json`/`.jsonl`), or a file a process still holds open
+is never removed; a state key whose record names another live runner is skipped,
+and incomplete slot discovery bounds `engine.err` but trims no evidence. The pass
+reports the reclaimed bytes with the `/tmp` sweep.
+
 When a task runs fresh after set-aside, its prompt lists earlier task branches
 and any retained set-aside worktrees with their uncommitted paths. These files
 are not restored automatically: inspect them and reuse only work relevant to the

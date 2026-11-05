@@ -15,6 +15,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -86,6 +87,239 @@ def size(path):
     return total if os.path.isdir(path) else (os.lstat(path).st_size if os.path.lexists(path) else 0)
 
 
+# Bounded runner-state retention (TOOLSET-442): engine.err and the per-run evidence of each
+# state key grow without limit. Keep the newest diagnostics and the evidence an unfinished
+# slot, an unread gate receipt or a live review still reads; trim the rest by age and size.
+ENGINE_ERR_BYTES = 1 << 20
+STATE_STALE = 30 * 24 * 3600
+STATE_MAX_BYTES = 512 * 1024 * 1024
+EVIDENCE_DIRS = ('full-check', 'runs', 'sessions', 'review-tmp')
+OPEN_SLOT_STATES = ('held', 'interrupted', 'dispatched', 'running', 'reported', 'integrating', 'integrated')
+
+
+def _setting(name, default):
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _running(record):
+    """Only recorded start ticks establish that a runner lives (mirrors processes.running)."""
+    if not isinstance(record, dict) or not record.get('start_time'):
+        return False
+    try:
+        fields = (Path(f'/proc/{int(record["pid"])}/stat')).read_text().rsplit(')', 1)[1].split()
+    except (OSError, KeyError, TypeError, ValueError, IndexError):
+        return False
+    return fields[0] not in ('Z', 'X') and fields[19] == str(record['start_time'])
+
+
+def common_dir(repo):
+    """The repository's shared Git directory, or None when Git cannot resolve it."""
+    try:
+        result = subprocess.run(['git', '-C', str(repo), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                                env={k: v for k, v in os.environ.items() if not k.startswith('GIT_')},
+                                capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return Path(result.stdout.strip()) if not result.returncode and result.stdout.strip() else None
+
+
+def state_record(state_dir):
+    """The state key's runner/status record, or an empty mapping when neither reads."""
+    for name in ('runner.json', 'status.json'):
+        try:
+            value = json.loads((Path(state_dir) / name).read_text())
+            if isinstance(value, dict):
+                return value
+        except (OSError, ValueError):
+            continue
+    return {}
+
+
+def open_tasks(state_dir):
+    """Task names of this state's unfinished slots, or None when discovery is incomplete."""
+    repo = state_record(state_dir).get('repo')
+    if not repo:
+        return None
+    common = common_dir(repo)
+    if common is None:
+        return None
+    try:
+        paths = list((common / 'autowork-execution' / 'slots').glob('*.json'))
+    except OSError:
+        return None
+    tasks = set()
+    for path in paths:
+        try:
+            slot = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return None
+        if isinstance(slot, dict) and slot.get('state') in OPEN_SLOT_STATES:
+            tasks.add(str(slot.get('task_id') or path.stem))
+    return tasks
+
+
+def open_files():
+    """Real paths that live processes hold open right now (files, directories, deleted paths)."""
+    held = set()
+    for proc in Path('/proc').iterdir():
+        if not proc.name.isdigit():
+            continue
+        links = [proc / 'cwd']
+        try:
+            links += list((proc / 'fd').iterdir())
+        except OSError:
+            pass
+        for fd in links:
+            try:
+                held.add(os.readlink(fd).removesuffix(' (deleted)'))
+            except OSError:
+                continue
+    return held
+
+
+def _held(path, held):
+    """Whether ``path`` or a file under it is in the open-path set."""
+    real = os.path.realpath(Path(path))
+    return real in held or any(open_path.startswith(real.rstrip('/') + '/')
+                               for open_path in held)
+
+
+def bound_engine_err(state_dir, limit=None, held=None):
+    """Keep only the newest ``limit`` bytes of a state key's engine.err: bytes freed."""
+    limit = _setting('PI_AUTOWORK_ENGINE_ERR_BYTES', ENGINE_ERR_BYTES) if limit is None else limit
+    path = Path(state_dir) / 'engine.err'
+    try:
+        if limit <= 0 or path.is_symlink() or not path.is_file():
+            return 0
+        total = path.stat().st_size
+        if total <= limit or _held(path, open_files() if held is None else held):
+            return 0  # small enough, or a writer still holds it open; bound it once the writer closes
+        with open(path, 'rb') as stream:
+            stream.seek(total - limit)
+            keep = stream.read()
+    except OSError:
+        return 0
+    if b'\n' in keep:
+        keep = keep[keep.index(b'\n') + 1:]  # start at a line boundary, not mid-diagnostic
+    try:
+        path.write_bytes(keep)
+    except OSError:
+        return 0
+    return total - len(keep)
+
+
+def state_evidence(state_dir):
+    """Top-level entries under a state key's evidence directories."""
+    for name in EVIDENCE_DIRS:
+        base = Path(state_dir) / name
+        if not base.is_dir() or base.is_symlink():
+            continue
+        try:
+            yield from base.iterdir()
+        except OSError:
+            continue
+
+
+def _live_review(entry):
+    """A review/batch scratch (`aw-r-<pid>-*`) whose creating process still lives."""
+    match = re.match(r'aw-[rb]-(\d+)-', entry.name)
+    if not match:
+        return False
+    try:
+        return (Path(f'/proc/{int(match.group(1))}/stat')).read_text().rsplit(')', 1)[1].split()[0] not in ('Z', 'X')
+    except (OSError, ValueError, IndexError):
+        return False
+
+
+def _named_for(name, task):
+    """Whether a file name carries ``task`` as a whole segment (so T-1 never matches T-12)."""
+    safe = re.sub(r'[^A-Za-z0-9._-]', '-', str(task))
+    return bool(re.search(r'(?<![A-Za-z0-9])' + re.escape(safe) + r'(?![A-Za-z0-9])', name))
+
+
+def _referenced(entry, tasks, held):
+    """Whether an evidence entry is still read by an open slot, gate receipt or review."""
+    if _held(entry, held):
+        return True
+    if entry.parent.name == 'full-check' and entry.suffix in ('.json', '.jsonl'):
+        return True  # a gate receipt stays, even after its task closes
+    if entry.parent.name == 'review-tmp':
+        return _live_review(entry)
+    return any(_named_for(entry.name, task) for task in tasks)
+
+
+def _remove(path):
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        try:
+            path.unlink()
+        except OSError:
+            return False
+    return not os.path.lexists(path)
+
+
+def _trim_evidence(state_dir, tasks, *, now, stale, max_bytes, held):
+    """(count, bytes) removed of unreferenced evidence, oldest first by age then size."""
+    removed = freed = 0
+    kept = []
+    for entry in state_evidence(state_dir):
+        try:
+            info = entry.lstat()
+        except OSError:
+            continue
+        if _referenced(entry, tasks, held):
+            continue  # evidence still read is never trimmed
+        if stale > 0 and info.st_mtime < now - stale:
+            amount = size(entry)
+            if _remove(entry):
+                removed, freed = removed + 1, freed + amount
+            continue
+        kept.append((info.st_mtime, entry))
+    kept.sort(key=lambda item: item[0])  # oldest first, so a size cap frees the least recent
+    total = sum(size(entry) for _, entry in kept)
+    for _, entry in kept:
+        if total <= max_bytes:
+            break
+        amount = size(entry)
+        if _remove(entry):
+            total, removed, freed = total - amount, removed + 1, freed + amount
+    return removed, freed
+
+
+def retain_state(state_root, *, now=None, stale=None, max_bytes=None):
+    """Bound engine.err and per-run evidence of every state key that is not a live stranger.
+
+    A state key whose record names a live process other than this one is skipped entirely.
+    Incomplete slot discovery bounds engine.err but trims no evidence. Returns
+    ``(removed, bytes_freed)``.
+    """
+    now = time.time() if now is None else now
+    stale = _setting('PI_AUTOWORK_STATE_STALE', STATE_STALE) if stale is None else stale
+    max_bytes = _setting('PI_AUTOWORK_STATE_MAX_BYTES', STATE_MAX_BYTES) if max_bytes is None else max_bytes
+    removed = freed = 0
+    try:
+        states = [p for p in Path(state_root).iterdir() if p.is_dir() and not p.is_symlink()]
+    except OSError:
+        return removed, freed
+    held = open_files()
+    for state_dir in states:
+        record = state_record(state_dir)
+        if _running(record) and record.get('pid') != os.getpid():
+            continue  # another live runner's evidence stays untouched
+        freed += bound_engine_err(state_dir, held=held)
+        tasks = open_tasks(state_dir)
+        if tasks is None:
+            continue
+        count, amount = _trim_evidence(state_dir, tasks, now=now, stale=stale,
+                                       max_bytes=max_bytes, held=held)
+        removed, freed = removed + count, freed + amount
+    return removed, freed
+
+
 CACHE_DIRS = ('target', 'build', '.dart_tool')
 # The review's integration checkout, main-check and maintainer scratch, and session worktrees.
 NEVER_PRUNED = ('autowork-integration', 'pi-scratch-', 'pi-autowork-')
@@ -150,19 +384,16 @@ def reserved_tmp(tmp, state_root=None):
         except (OSError, ValueError, AttributeError, TypeError):
             return None
     for repo in repos:
+        common = common_dir(repo)
+        if common is None:
+            return None
         try:
-            result = subprocess.run(['git', '-C', repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-                                    env={k: v for k, v in os.environ.items() if not k.startswith('GIT_')},
-                                    capture_output=True, text=True, timeout=10)
-            if result.returncode:
-                return None
-            common = Path(result.stdout.strip()) / 'autowork-execution'
-            for slot in (common / 'slots').glob('*.json'):
+            for slot in (common / 'autowork-execution' / 'slots').glob('*.json'):
                 try:
                     phase = json.loads(slot.read_text()).get('state')
-                    if phase not in ('held', 'interrupted', 'dispatched', 'running', 'reported', 'integrating', 'integrated'):
+                    if phase not in OPEN_SLOT_STATES:
                         continue
-                    data = common / 'slot-data' / slot.stem
+                    data = common / 'autowork-execution' / 'slot-data' / slot.stem
                     try:
                         paths = [Path(json.loads((data / 'tmp.json').read_text())['path'])]
                     except FileNotFoundError:  # old slots allocated scratch beside each attempt's report
@@ -178,7 +409,7 @@ def reserved_tmp(tmp, state_root=None):
                     continue  # a slot retired while being read
                 except (OSError, ValueError, KeyError, TypeError, AttributeError):
                     return None
-        except (OSError, subprocess.TimeoutExpired):
+        except OSError:
             return None
     return reserved
 
@@ -253,7 +484,10 @@ def sweep_if_due(state_root, tmp='/tmp', now=None):
         if now - last < SWEEP_EVERY:
             return None
         count, freed = sweep(tmp, now=now, state_root=root)
-        record.write_text(json.dumps({'at': now, 'removed': count, 'freed_bytes': freed}))
+        state_count, state_freed = retain_state(root, now=now)
+        count, freed = count + state_count, freed + state_freed
+        record.write_text(json.dumps({'at': now, 'removed': count, 'freed_bytes': freed,
+                                      'state_removed': state_count, 'state_freed_bytes': state_freed}))
         return count, freed
 
 
