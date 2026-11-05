@@ -244,13 +244,15 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
         previous = '\n'.join(line for line in record.get('notes', '').splitlines()
                              if line.startswith('- Owner decision:'))
         self.query_one('#decision-context', TextArea).load_text(
-            self.context + f'\n\n{self.task_id}: {record.get("title", "")}\n'
+            f'{self.task_id}: {record.get("title", "")}\n'
             f'Current working record: {record.get("section", "unknown")} · '
             f'ownership {record.get("ownership", "unknown")} · live {record.get("live", "denied")}\n'
-            + record.get('scope', '') + ('\n' + previous if previous else ''))
+            + record.get('scope', '') + '\n\n' + self.context
+            + ('\n' + previous if previous else ''))
         self.query_one('#decision-save', Button).disabled = False
+        self.query_one('#decision-text', TextArea).focus()
         self.query_one('#decision-status', Static).update(
-            'Saves locally, pending commit. Does not grant live permission, clear holds or verify completion.')
+            'Local save, pending commit. No live permission, holds or verification.')
 
     def submit(self, value):
         runner = next((r for r in self.app.runners if (r.name, r.repo) == (self.runner_name, self.repo)), None)
