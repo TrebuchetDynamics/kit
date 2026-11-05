@@ -117,6 +117,29 @@ async def controls_pilot(case):
                         assert body.scroll_y == body.max_scroll_y > 0, 'All consent details must be reachable'
                         await pilot.click('#no')
                         assert decisions == [False] and not calls
+                    elif case == 'blockers':
+                        # The report lists every recorded question. Before this route it offered
+                        # no way to answer them, so an owner reading it was stuck.
+                        await pilot.press('b')
+                        await app.workers.wait_for_complete()
+                        await settle(app, pilot)
+                        screen = app.screen
+                        assert isinstance(screen, tui.BlockersScreen), type(screen).__name__
+                        visible(screen.query_one('#answer-report', Button), screen)
+                        await pilot.press('a')
+                        await settle(app, pilot)
+                        assert isinstance(app.screen, tui.TasksScreen), type(app.screen).__name__
+                        assert app.screen.view == 'decisions', app.screen.view
+                        assert not calls, 'opening the decision form must not execute a command'
+                        await pilot.press('escape')
+                        app.view_only = True
+                        await pilot.press('b')
+                        await app.workers.wait_for_complete()
+                        await settle(app, pilot)
+                        await pilot.press('a')
+                        await settle(app, pilot)
+                        assert isinstance(app.screen, tui.TasksScreen), 'view only still navigates'
+                        assert not calls
                     elif case == 'menus':
                         # Mouse mode is opt-in in the real terminal; its advertised menu
                         # must route to the same screen/confirmation as the keyboard.
@@ -161,6 +184,9 @@ class TuiControlsTests(unittest.TestCase):
 
     def test_fleet_menu_clicks_match_keyboard_without_running_commands(self):
         self.run_case('menus')
+
+    def test_the_blockers_report_routes_to_the_decision_form(self):
+        self.run_case('blockers')
 
 
 if __name__ == '__main__':
