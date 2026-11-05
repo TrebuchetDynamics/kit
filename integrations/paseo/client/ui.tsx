@@ -140,10 +140,16 @@ export function Choice<T extends string>({ label, value, options, onChange, disa
     <Row>{items.map(([key, title]) => <Button key={key} label={title} compact variant={danger.includes(key) ? 'danger' : 'secondary'} selected={value === key} disabled={disabled} onPress={() => onChange(key)} />)}</Row>
   </View>;
 }
-export function Expand({ title, children, open = false, hint }: { title: string; children: ReactNode; open?: boolean; hint?: string }) {
+/** A quiet disclosure row: expanded content never turns the header into a primary action. */
+export function Expand({ title, children, open = false, hint, onToggle }: { title: string; children: ReactNode; open?: boolean; hint?: string; onToggle?: (expanded: boolean) => void }) {
+  const colors = useColors();
   const [expanded, setExpanded] = useState(open);
   return <View style={{ gap: 4 }}>
-    <Button label={title} onPress={() => setExpanded(!expanded)} selected={expanded} compact />
+    <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ expanded }} onPress={() => { const next = !expanded; setExpanded(next); onToggle?.(next); }}
+      style={{ alignSelf: 'flex-start', minHeight: 48, minWidth: 48, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, borderRadius: 9, backgroundColor: colors.surface2 }}>
+      <Icon name={expanded ? 'ChevronDown' : 'ChevronRight'} size={16} color={colors.foregroundMuted} />
+      <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '600' }}>{title}</Text>
+    </Pressable>
     {hint ? <Caption>{hint}</Caption> : null}
     {expanded ? <View style={{ gap: 6 }}>{children}</View> : null}</View>;
 }

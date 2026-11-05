@@ -35,7 +35,7 @@ vi.mock('@getpaseo/plugin/client', () => ({
 import { AutoworkScreen, WorkspacePanel } from '../client/screens';
 import { SettingsScreen } from '../client/settings';
 import { Theme } from '../client/ui';
-import { blockedReason, closureLabel, canAnswer, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, stateTone, taskMatches } from '../client/presentation';
+import { blockedReason, closureLabel, canAnswer, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, selectionFacts, stateTone, taskMatches, taskState } from '../client/presentation';
 
 const fleet = (instance = 'generation-1') => fleetSchema.parse({ instance, capturedAt: Date.now(), release: 'configured-release', executable: '/bin/autowork', prepareApi: 4,
   permissions: { controls: ['pause'], planning: true, decisions: true, tasks: true, commit: true, maintenance: ['model', 'clear-held', 'attention'] }, policy: { path: '/policy.json', source: 'default' }, capabilities: { commands: ['ls', 'tasks', 'plan', 'logs', 'status', 'scorecard', 'models'], tasks: ['list', 'show', 'decide', 'goals', 'commit', 'validate', 'prepare', 'why'] }, warnings: [], repos: [{ id: 'repo', label: 'Repository', path: '/repo', identity: 'identity', revision: 'rev',
@@ -102,6 +102,18 @@ describe('canonical presentation', () => {
     expect(previewForApply({ revision: 'r', valid: true, files: [] })).toBeNull();
     expect(taskMatches(task, { task: 'T-1', goal: 'goal', runtime: 'waiting', section: 'Needs decision' }, 'waiting')).toBe(true);
     expect(taskMatches(task, { task: '', goal: 'other', runtime: '', section: '' }, 'waiting')).toBe(false);
+  });
+  it('uses one task state for the queue row and detail, and reads a selection explanation as facts', () => {
+    expect(taskState({ status: 'open', blocked_by: null }, true)).toBe('needs decision');
+    expect(taskState({ status: 'open', blocked_by: 'NEEDS_DECISION' }, false)).toBe('blocked');
+    expect(taskState({ status: 'done', blocked_by: null }, false)).toBe('done');
+    const rows = selectionFacts({ task: 'T-1', eligible: false, first: false, reasons: [{ code: 'DONE', detail: '' }],
+      closure: { provenance: 'manual', actor: 'DOCS-MAINTAINER', timestamp: '2026-10-29T08:37:02.447894+00:00', reason: 'Final reconciliation' } }, Date.parse('2026-10-29T09:37:02Z'));
+    expect(rows).toContainEqual(['Eligible now', 'no']);
+    expect(rows).toContainEqual(['Reasons', 'done']);
+    expect(rows.find(([name]) => name === 'Closed at')?.[1]).toBe('1h ago');
+    expect(rows.find(([name]) => name === 'Closure reason')?.[1]).toBe('Final reconciliation');
+    expect(relativeTime('2026-10-29T08:37:02.447894+00:00', Date.parse('2026-10-29T08:39:02Z'))).toBe('2m ago');
   });
 });
 
@@ -239,6 +251,16 @@ describe('native host-scoped surfaces', () => {
     expect(button('Confirm operation')).toBeUndefined();
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(1);
   });
+  it('renders the selection explanation as sentences and keeps the raw payload collapsed', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.store' && (data as { view: string }).view === 'why'
+      ? Promise.resolve({ value: { task: 'T-1', eligible: false, first: false, reasons: [{ code: 'DONE', detail: '' }], closure: { provenance: 'manual', actor: 'DOCS-MAINTAINER', timestamp: Date.now() - 3600000, reason: 'Final reconciliation' } }, capturedAt: Date.now() })
+      : initial(name, data));
+    await mount({ params: { view: 'tasks' } }); await press('Open task T-1'); await press('Selection explanation');
+    expect(text()).toContain('Eligible now'); expect(text()).toContain('Reasons'); expect(text()).toContain('Final reconciliation');
+    expect(text()).not.toContain('"eligible"'); expect(button('Raw selection data')).toBeTruthy();
+    expect(button('Close details')).toBeUndefined();
+  });
   it('sends only the current owner record revision through confirmation', async () => {
     await mount({ params: { view: 'tasks' } }); await press('Open task T-1');
     await input('Owner answer', 'Literal answer; no command execution'); await press('Send answer');
@@ -253,7 +275,9 @@ describe('native host-scoped surfaces', () => {
     expect(text()).toContain('technical hold');
     await press('Open task T-2');
     expect(button('Send answer')).toBeUndefined();
-    expect(text()).toContain('not a current canonical owner question');
+    expect(text()).toContain('Blocked by technical');
+    expect(text()).toContain('No owner question is recorded for this task');
+    expect(text()).not.toContain('not a current canonical owner question');
   });
   it('stages empty-objective planning, learns session from operation, previews then confirms exact Apply', async () => {
     let prepared: import('../shared/contracts').Action | undefined;
@@ -596,9 +620,12 @@ describe('management surface', () => {
     expect(captured.action).toEqual({ kind: 'commit', repoId: 'repo', message: 'answer T-1' });
     await press('Open task T-1');
     expect(env.invoke.mock.calls.some(([name, value]) => name === 'autowork.task' && (value as { working: boolean }).working === true)).toBe(true);
-    await press('Edit task'); await input('Closed by', 'owner'); await input('Closure reason', 'obsolete'); await press('Mark done');
+    const field = (label: string) => root.root.findAll(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === label).length;
+    await press('Edit task');
+    expect(field('Closed by')).toBe(0); expect(field('Hold by')).toBe(0);
+    await press('Close task'); await input('Closed by', 'owner'); await input('Closure reason', 'obsolete'); await press('Mark done');
     expect(captured.action).toEqual({ kind: 'task-done', repoId: 'repo', task: 'T-1', revision: 'working-rev', by: 'owner', reason: 'obsolete' });
-    await press('Move up');
+    await press('Placement'); expect(field('Closed by')).toBe(0); await press('Move up');
     expect(captured.action).toEqual({ kind: 'task-move', repoId: 'repo', task: 'T-1', revision: 'working-rev', direction: 'up' });
     await press('New task'); await press('goal'); await input('Title', 'New work'); await input('Short (at most 80 characters)', 'New'); await input('Acceptance (one per line)', 'a\nb'); await press('Add task');
     expect(captured.action).toEqual({ kind: 'task-add', repoId: 'repo', fields: { goal: 'goal', title: 'New work', short: 'New', section: 'Next', kind: 'implementation', ownership: 'worker', acceptance: ['a', 'b'] } });
@@ -717,9 +744,15 @@ describe('management surface', () => {
     env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [blocked] }) : initial(name, data));
     await mount({ params: { view: 'blockers' } });
     expect(text()).toContain('Blocked open task');
-    expect(text()).toContain('blocked by needs decision');
+    expect(text()).toContain('Blocked by needs decision');
     expect(root.root.find(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'status blocked')).toBeTruthy();
-    expect(text()).not.toContain('blocked by NEEDS_DECISION');
+    expect(text()).not.toContain('NEEDS_DECISION');
+    await press('Open task T-BLOCK');
+    // Both the queue row and the open detail sheet report the same state.
+    expect(root.root.findAll(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'status blocked')).toHaveLength(2);
+    expect(button('Send answer')).toBeUndefined();
+    expect(text()).toContain('Blocked by needs decision');
+    expect(text()).toContain('No owner question is recorded for this task');
   });
   it('keeps completed blocked work out of the blocked queue until completed is requested', async () => {
     const initial = env.invoke.getMockImplementation()!;

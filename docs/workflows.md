@@ -489,7 +489,10 @@ engineering uncertainty; Docs Sync persists the affected batch. They share the
 Autowork consumes the saved decisions and check results, then verifies current
 source and actual process/workspace ownership before implementation. No changes means no repeat documentation
 pass. An optional unanswered question holds its dependent tasks only. Standalone
-planning still does not authorize implementation.
+planning still does not authorize implementation. At handoff, name the first
+selection-ready task and choose a current-session or continuous-runner mode in the
+shared [execution handoff](../skills/shared/PLAN-HANDOFF.md#execution-handoff).
+Planning starts neither.
 
 Each task now carries a **Repo obligations triggered:** body note naming normative
 doc sections, generated outputs, guards and fixtures; required writes and checks

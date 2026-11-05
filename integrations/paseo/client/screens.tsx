@@ -6,7 +6,7 @@ import { RefreshControl, View } from 'react-native';
 import type { ScrollView as NativeScrollView } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
-import { blockedReason, canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
+import { blockedReason, canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, taskState, whyStopped, type TaskFilters } from './presentation';
 import { operationsKey, readForHost, rememberOperation, useConfirmedAction, useHostState, useReadBackoff, useWatch, type HostState } from './state';
 import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme, useColors } from './ui';
 
@@ -437,7 +437,7 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
       {!query.isFetching && !query.isError && query.data && !visibleTasks.length ? <Notice><Label>{!all.length ? 'No tasks observed.' : hasFilters ? 'No tasks match these filters.' : blockers ? 'No blocked tasks observed.' : counts.done ? 'No open tasks; completed work is hidden.' : 'No tasks observed.'}</Label></Notice> : null}
     </Card>
     <Sheet title="Task detail" open={!!selected} onClose={() => select('')}>
-      {selected ? <TaskView key={selected} task={all.find(task => task.id === selected)} taskId={selected} {...common} enabled={enabled && !query.isStale && !query.isError} fromBlockers={blockers} onClose={() => select('')} /> : null}
+      {selected ? <TaskView key={selected} task={all.find(task => task.id === selected)} taskId={selected} {...common} enabled={enabled && !query.isStale && !query.isError} /> : null}
     </Sheet>
     {!blockers && editing ? <AddTaskCard {...common} /> : null}
     {!blockers && editing ? <GoalsCard {...common} /> : null}
@@ -449,16 +449,16 @@ function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; q
   const colors = useColors();
   const closure = closureBadge(task.closure);
   const blocked = isActionable(task) && !!task.blocked_by;
-  const meta = [task.section, task.position ? `position ${task.position}` : null, blocked ? `blocked by ${blockedReason(task.blocked_by!)}` : null].filter(Boolean).join(' · ');
+  const meta = [task.position ? `Position ${task.position}` : null, blocked ? `Blocked by ${blockedReason(task.blocked_by!)}` : !question && task.section ? `Section: ${task.section}` : null].filter(Boolean).join(' · ');
   // A row inside the queue, not a card inside a card.
   return <View style={{ gap: 6, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
-    <Row><Label mono>{task.id}</Label><StatusPill state={question ? 'needs decision' : blocked ? 'blocked' : task.status} tone={blocked ? 'warning' : undefined} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}</Row>
+    <Row><Label mono>{task.id}</Label><StatusPill state={taskState(task, question)} tone={blocked ? 'warning' : undefined} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}</Row>
     <Label>{task.title}</Label>
     {meta ? <Caption>{meta}</Caption> : null}
     {!isActionable(task) ? <Caption>Provenance: {closureLabel(task.closure)}</Caption> : null}
     <Row>
       {question ? <Button label="Answer" compact variant="primary" accessibilityLabel={`Answer task ${task.id}`} onPress={onAnswer} /> : null}
-      <Button label={selected ? 'Close' : 'Open'} compact accessibilityLabel={`Open task ${task.id}`} selected={selected} onPress={onOpen} />
+      <Button label={selected ? 'Hide details' : 'Details'} compact accessibilityLabel={`Open task ${task.id}`} selected={selected} onPress={onOpen} />
     </Row>
   </View>;
 }
@@ -476,7 +476,7 @@ function DecisionsCard({ runner, onAnswer }: { runner: Runner | null; onAnswer: 
       <Divider />
     </View>) : <Caption>No canonical owner question observed.</Caption>}
     <Expand title="Technical holds and blocker evidence">
-      <Label>Technical holds are not new owner questions.</Label>
+      <Label>Held commits and stopped groups are technical state, not owner questions.</Label>
       <Facts rows={[['Held', human(runner?.held)], ['Roots', human(runner?.roots)], ['Waiting groups', human(runner?.waiting_groups)], ['Stopped groups', human(runner?.stopped_groups)], ['Main check', mainCheckSummary(runner?.main_check)]]} />
     </Expand>
   </Card>;
@@ -624,7 +624,7 @@ function StoreCard({ repo, fleet, host, hostId, enabled, request }: RepoViewProp
   </Card>;
 }
 
-function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request, fromBlockers, onClose }: RepoViewProps & { task?: Task; taskId: string; fromBlockers: boolean; onClose?: () => void }) {
+function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }: RepoViewProps & { task?: Task; taskId: string }) {
   const load = useRpc(taskRpc);
   const why = useRpc(storeRpc);
   const editing = fleet.permissions.tasks;
@@ -641,6 +641,9 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request, f
   const detail = query.data;
   const question = repo.runner?.questions.find(item => item.id === taskId);
   const answerable = !!(task && repo.runner && detail && canAnswer(task, repo.runner, detail));
+  const blocked = !!task && isActionable(task) && !!task.blocked_by;
+  const state = taskState({ status: detail?.status ?? task?.status ?? 'unknown', blocked_by: task?.blocked_by ?? null }, answerable);
+  const meta = detail ? [detail.section ? `Section: ${detail.section}` : null, detail.goal ? `Goal: ${detail.goal}` : null].filter(Boolean).join(' · ') : '';
   const closure = detail ? closureBadge(detail.closure) : null;
   const list = (items: string[]) => items.length ? items.map(item => `• ${item}`).join('\n') : null;
   const contract: Array<[string, string]> = detail ? ([
@@ -654,10 +657,10 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request, f
     .filter(key => detail.closure[key] !== undefined && detail.closure[key] !== null && detail.closure[key] !== '')
     .map(key => [key.replace(/_/g, ' '), key === 'timestamp' ? relativeTime(detail.closure[key]) : human(detail.closure[key])]) : [];
   return <Card tone={answerable ? 'warning' : undefined}>
-    <Row between><View style={{ flexShrink: 1, gap: 2 }}><Heading level={2}>{taskId}</Heading><Caption>{detail?.title ?? task?.title ?? 'Task detail'}</Caption></View>{onClose ? <Button label="Close details" compact onPress={onClose} /> : null}</Row>
+    <View style={{ gap: 2 }}><Heading level={2}>{taskId}</Heading><Caption>{detail?.title ?? task?.title ?? 'Task detail'}</Caption></View>
     {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
     {detail ? <>
-      <Row><StatusPill state={answerable ? 'needs decision' : detail.status} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}{detail.section ? <Caption>{detail.section}</Caption> : null}</Row>
+      <Row><StatusPill state={state} tone={blocked ? 'warning' : undefined} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}{meta ? <Caption>{meta}</Caption> : null}</Row>
       {answerable ? <>
         <Heading level={3}>Decision needed</Heading>
         <Markdown text={question?.needs ?? ''} />
@@ -665,20 +668,28 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request, f
         <Input label="Owner answer" value={answer} onChange={setAnswer} multiline placeholder="Your decision, in your words. It is recorded on the task, never executed." />
         <Button label="Send answer" variant="primary" disabled={!enabled || query.isStale || !answer.trim() || !fleet.permissions.decisions} onPress={() => request({ kind: 'decision', repoId: repo.id, task: taskId, revision: detail.record_revision, text: answer })} />
         {!fleet.permissions.decisions ? <Caption>Owner answers are not granted by operator policy.</Caption> : null}
-      </> : fromBlockers && task?.status === 'open' ? <Notice><Label>No answer action: this is not a current canonical owner question for an open task.</Label></Notice> : null}
+      </> : blocked ? <Notice tone="warning">
+        <Label bold>Blocked by {blockedReason(task!.blocked_by!)}</Label>
+        <Caption>No owner question is recorded for this task, so there is nothing to answer here. Refresh for a current blocker; a technical hold clears without an owner answer.</Caption>
+      </Notice> : null}
       <Expand title="Contract and evidence">
-        {detail.notes ? <Markdown text={detail.notes} /> : null}
         <Facts rows={contract} />
+        {detail.notes ? <Expand title="Task notes"><Markdown text={detail.notes} /></Expand> : null}
         <Row><Caption>Contract</Caption><HashChip value={detail.contract_hash} name="contract hash" /><Caption>Record</Caption><HashChip value={detail.record_revision} name="record revision" /></Row>
         {closureRows.length ? <><Caption>Closure</Caption><Facts rows={closureRows} /></> : null}
       </Expand>
-      <Row><Button label="Explain selection" compact selected={explain} onPress={() => setExplain(!explain)} /></Row>
-      {explain ? (explanation.error ? <Notice tone="danger"><Label>{friendlyError(explanation.error)}</Label></Notice> : <Label mono>{explanation.data ? display(explanation.data.value) : 'Reading…'}</Label>) : null}
+      <Expand title="Selection explanation" onToggle={setExplain}>
+        {explanation.error ? <Notice tone="danger"><Label>{friendlyError(explanation.error)}</Label></Notice> : explanation.data ? <>
+          <Facts rows={selectionFacts(explanation.data.value)} />
+          <Expand title="Raw selection data"><Label mono>{display(explanation.data.value)}</Label></Expand>
+        </> : <Caption>Reading…</Caption>}
+      </Expand>
       {editing ? <TaskActions detail={detail} repo={repo} enabled={enabled && !query.isStale} request={request} /> : null}
     </> : <Caption>Loading task…</Caption>}
   </Card>;
 }
 
+type TaskEditMode = 'placement' | 'hold' | 'close' | 'supersede' | 'fields';
 function TaskActions({ detail, repo, enabled, request }: { detail: TaskDetail; repo: Repo; enabled: boolean; request: (action: ActionInput) => void }) {
   const base = { repoId: repo.id, task: detail.id, revision: detail.record_revision };
   const [section, setSection] = useState<typeof sections[number]>(sections.find(item => item === detail.section) ?? 'Now');
@@ -692,40 +703,56 @@ function TaskActions({ detail, repo, enabled, request }: { detail: TaskDetail; r
   const [supersedeReason, setSupersedeReason] = useState('');
   const [label, setLabel] = useState('');
   const [value, setValue] = useState('');
+  const [mode, setMode] = useState<TaskEditMode | ''>('');
+  const choose = (next: TaskEditMode) => setMode(mode === next ? '' : next);
   const open = detail.status === 'open';
   return <Expand title="Edit task">
-    <Caption>Every edit binds to record revision {detail.record_revision.slice(0, 8)} and writes the working tree; commit from Pending task edits.</Caption>
-    <Choice label="Section" value={section} options={sections} onChange={setSection} />
-    <Input label="Placement decision (optional)" value={placement} onChange={setPlacement} />
+    <Caption>Changes apply to the working-tree record at revision {detail.record_revision.slice(0, 8)}. Commit them from Pending task edits.</Caption>
     <Row>
+      <Button label="Placement" compact selected={mode === 'placement'} onPress={() => choose('placement')} />
+      <Button label="Hold" compact selected={mode === 'hold'} onPress={() => choose('hold')} />
+      <Button label="Close task" compact selected={mode === 'close'} onPress={() => choose('close')} />
+      <Button label="Supersede" compact selected={mode === 'supersede'} onPress={() => choose('supersede')} />
+      <Button label="Fields" compact selected={mode === 'fields'} onPress={() => choose('fields')} />
+    </Row>
+    {!mode ? <Caption>Choose one change; only its form is shown.</Caption> : null}
+    {mode === 'placement' ? <>
+      <Choice label="Section" value={section} options={sections} onChange={setSection} />
+      <Input label="Placement decision (optional)" value={placement} onChange={setPlacement} />
       <Button label="Place task" compact variant="primary" disabled={!enabled || !open} onPress={() => request({ kind: 'task-place', ...base, section, ...(placement.trim() ? { decision: placement.trim() } : {}) })} />
-      <Button label="Move up" compact disabled={!enabled || !open} onPress={() => request({ kind: 'task-move', ...base, direction: 'up' })} />
-      <Button label="Move down" compact disabled={!enabled || !open} onPress={() => request({ kind: 'task-move', ...base, direction: 'down' })} />
-    </Row>
-    <Divider />
-    <Input label="Hold by" value={holdBy} onChange={setHoldBy} placeholder="who or what holds it" />
-    <Input label="Hold until (YYYY-MM-DD)" value={holdUntil} onChange={setHoldUntil} placeholder="optional" />
-    <Row>
-      <Button label="Hold task" compact variant="primary" disabled={!enabled || !open || !holdBy.trim()} onPress={() => request({ kind: 'task-hold', ...base, by: holdBy.trim(), ...(holdUntil.trim() ? { until: holdUntil.trim() } : {}) })} />
-      <Button label="Release task" compact disabled={!enabled || !open} onPress={() => request({ kind: 'task-release', ...base })} />
-    </Row>
-    <Divider />
-    <Input label="Closed by" value={doneBy} onChange={setDoneBy} placeholder="owner" />
-    <Input label="Closure reason" value={reason} onChange={setReason} multiline />
-    <Input label="Closure evidence reference (optional)" value={evidence} onChange={setEvidence} />
-    <Button label="Mark done" compact variant="primary" disabled={!enabled || !open || !doneBy.trim() || !reason.trim()} onPress={() => request({ kind: 'task-done', ...base, by: doneBy.trim(), reason: reason.trim(), ...(evidence.trim() ? { evidence: evidence.trim() } : {}) })} />
-    <Caption>A manual close records provenance; it does not verify acceptance.</Caption>
-    <Divider />
-    <Input label="Successor IDs" value={successors} onChange={setSuccessors} placeholder="T-12 T-13" />
-    <Input label="Supersede reason" value={supersedeReason} onChange={setSupersedeReason} />
-    <Button label="Supersede task" compact disabled={!enabled || !words(successors).length || !supersedeReason.trim()} onPress={() => request({ kind: 'task-supersede', ...base, by: words(successors), reason: supersedeReason.trim() })} />
-    <Divider />
-    <Input label="Field label" value={label} onChange={setLabel} />
-    <Input label="Field value (JSON array for lists)" value={value} onChange={setValue} multiline />
-    <Button label="Set field" compact disabled={!enabled || !label.trim()} onPress={() => request({ kind: 'task-field', ...base, label: label.trim(), value })} />
-    <Divider />
-    <Button label="Delete task" compact variant="danger" disabled={!enabled} onPress={() => request({ kind: 'task-delete', ...base })} />
-    <Caption>Delete removes the record only and asks for the repository name first; worktrees, commits, evidence and goals stay.</Caption>
+      <Row>
+        <Button label="Move up" compact disabled={!enabled || !open} onPress={() => request({ kind: 'task-move', ...base, direction: 'up' })} />
+        <Button label="Move down" compact disabled={!enabled || !open} onPress={() => request({ kind: 'task-move', ...base, direction: 'down' })} />
+      </Row>
+    </> : null}
+    {mode === 'hold' ? <>
+      <Input label="Hold by" value={holdBy} onChange={setHoldBy} placeholder="who or what holds it" />
+      <Input label="Hold until (YYYY-MM-DD)" value={holdUntil} onChange={setHoldUntil} placeholder="optional" />
+      <Row>
+        <Button label="Hold task" compact variant="primary" disabled={!enabled || !open || !holdBy.trim()} onPress={() => request({ kind: 'task-hold', ...base, by: holdBy.trim(), ...(holdUntil.trim() ? { until: holdUntil.trim() } : {}) })} />
+        <Button label="Release task" compact disabled={!enabled || !open} onPress={() => request({ kind: 'task-release', ...base })} />
+      </Row>
+    </> : null}
+    {mode === 'close' ? <>
+      <Input label="Closed by" value={doneBy} onChange={setDoneBy} placeholder="owner" />
+      <Input label="Closure reason" value={reason} onChange={setReason} multiline />
+      <Input label="Closure evidence reference (optional)" value={evidence} onChange={setEvidence} />
+      <Button label="Mark done" compact variant="primary" disabled={!enabled || !open || !doneBy.trim() || !reason.trim()} onPress={() => request({ kind: 'task-done', ...base, by: doneBy.trim(), reason: reason.trim(), ...(evidence.trim() ? { evidence: evidence.trim() } : {}) })} />
+      <Caption>A manual close records provenance; it does not verify acceptance.</Caption>
+    </> : null}
+    {mode === 'supersede' ? <>
+      <Input label="Successor IDs" value={successors} onChange={setSuccessors} placeholder="T-12 T-13" />
+      <Input label="Supersede reason" value={supersedeReason} onChange={setSupersedeReason} />
+      <Button label="Supersede task" compact disabled={!enabled || !words(successors).length || !supersedeReason.trim()} onPress={() => request({ kind: 'task-supersede', ...base, by: words(successors), reason: supersedeReason.trim() })} />
+    </> : null}
+    {mode === 'fields' ? <>
+      <Input label="Field label" value={label} onChange={setLabel} />
+      <Input label="Field value (JSON array for lists)" value={value} onChange={setValue} multiline />
+      <Button label="Set field" compact disabled={!enabled || !label.trim()} onPress={() => request({ kind: 'task-field', ...base, label: label.trim(), value })} />
+      <Divider />
+      <Button label="Delete task" compact variant="danger" disabled={!enabled} onPress={() => request({ kind: 'task-delete', ...base })} />
+      <Caption>Delete removes the record only and asks for the repository name first; worktrees, commits, evidence and goals stay.</Caption>
+    </> : null}
   </Expand>;
 }
 

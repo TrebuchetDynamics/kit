@@ -35,10 +35,11 @@ export function revisionParts(revision: string): { hash: string; short: string; 
   const [hash = '', ...rest] = revision.split('+');
   return { hash, short: shortHash(hash), suffix: rest.length ? `+${rest.join('+')}` : '' };
 }
-/** Seconds or milliseconds since the epoch become "5m ago"; the unit is inferred from magnitude. */
+/** Seconds, milliseconds or an ISO timestamp become "5m ago"; the unit is inferred from magnitude. */
 export function relativeTime(value: unknown, now = Date.now()): string {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 'unknown time';
-  const millis = value < 1e11 ? value * 1000 : value;
+  const parsed = typeof value === 'string' ? Date.parse(value) : value;
+  if (typeof parsed !== 'number' || !Number.isFinite(parsed) || parsed <= 0) return 'unknown time';
+  const millis = parsed < 1e11 ? parsed * 1000 : parsed;
   const seconds = Math.round((now - millis) / 1000);
   if (seconds < 0) return 'just now';
   if (seconds < 45) return seconds < 5 ? 'just now' : `${seconds}s ago`;
@@ -80,8 +81,14 @@ export function taskMatches(task: Task, filters: TaskFilters, runtime: string): 
   return contains(`${task.id} ${task.title}`, filters.task) && contains(task.goal ?? '', filters.goal) && contains(runtime, filters.runtime) && contains(task.section ?? '', filters.section);
 }
 /** Work someone can still act on; closed records are shown only on request. */
-export function isActionable(task: Task): boolean {
+export function isActionable(task: Pick<Task, 'status'>): boolean {
   return !/^(done|superseded|closed|cancelled)$/i.test(task.status);
+}
+/** One state for the queue row and the detail sheet: an owner question wins, then a blocker, then the record status. */
+export function taskState(task: Pick<Task, 'status' | 'blocked_by'>, question: boolean): string {
+  if (question) return 'needs decision';
+  if (isActionable(task) && task.blocked_by) return 'blocked';
+  return task.status;
 }
 export function knownDirectory(path: string, directory: string): boolean {
   const root = path.replace(/\/+$/, '');
@@ -105,6 +112,25 @@ export function mainCheckSummary(value: unknown, now = Date.now()): string {
   const checked = shortHash(item.checked_rev ?? item.rev);
   const main = shortHash(item.main_head ?? item.green);
   return `${human(item.state)}${state ? ` · ${human(state)}` : ''} · checked ${checked} · main ${main} · ${relativeTime(item.finished, now)}`;
+}
+/** A selection explanation as sentences with the technical payload kept one tap away. */
+export function selectionFacts(value: unknown, now = Date.now()): Array<[string, string]> {
+  const item = record(value);
+  if (!item) return [];
+  const rows: Array<[string, string]> = [];
+  if (item.eligible !== undefined) rows.push(['Eligible now', item.eligible === true ? 'yes' : 'no']);
+  if (item.first !== undefined) rows.push(['Next in queue', item.first === true ? 'yes' : 'no']);
+  const reasons = (Array.isArray(item.reasons) ? item.reasons : []).map(record).filter((reason): reason is Record<string, unknown> => !!reason)
+    .map(reason => [known(reason.code) ? human(reason.code).replace(/_/g, ' ').toLowerCase() : '', known(reason.detail) ? human(reason.detail) : ''].filter(Boolean).join(': '))
+    .filter(Boolean);
+  if (reasons.length) rows.push(['Reasons', reasons.join(' · ')]);
+  const closure = record(item.closure);
+  const labels: Array<[string, string]> = [['provenance', 'Closed by provenance'], ['actor', 'Closed by'], ['timestamp', 'Closed at'], ['reason', 'Closure reason'], ['evidence', 'Closure evidence']];
+  for (const [key, label] of labels) {
+    if (!closure || !known(closure[key])) continue;
+    rows.push([label, key === 'timestamp' ? relativeTime(closure[key], now) : human(closure[key])]);
+  }
+  return rows;
 }
 export function mainCheckTone(value: unknown): Tone {
   const item = record(value);

@@ -24,8 +24,8 @@ KINDS = {'runner': 'runner', 'cycle': 'dependency cycle', 'held': 'blocker', 'co
          'claim': 'claimed elsewhere', 'outside': 'outside Now/Next'}
 CAUSES = task_status.CAUSES
 ORDER = ['runner', 'cycle', 'held', 'contract', 'claim', 'outside']
-COLORS = {'working': 'green', 'idle': 'green', 'blocked': 'yellow', 'paused': 'yellow', 'starting': 'yellow',
-          'restarting': 'cyan', health.HOST_WAIT: 'yellow'}
+COLORS = {'working': 'green', 'idle': 'green', 'waiting on you': 'yellow', 'blocked': 'yellow',
+          'paused': 'yellow', 'starting': 'yellow', 'restarting': 'cyan', health.HOST_WAIT: 'yellow'}
 # systemd sub-states of a unit that is stopping or starting again, not stopped.
 RESTARTING = ('stop', 'stop-sigterm', 'stop-sigkill', 'stop-post', 'final-sigterm', 'auto-restart', 'start-pre',
               'start-post', 'activating', 'deactivating')
@@ -640,6 +640,9 @@ def verdict(runner: Runner) -> Verdict:
         return _recovery_verdict(runner)
     if runner.questions:
         return _question_verdict(runner)
+    if runner.decisions:
+        count = runner.decisions
+        return f'{count} task{"s" if count != 1 else ""} in Needs decision', 'bold yellow'
     if runner.state == 'idle':
         return 'Idle — nothing left to run in Now/Next', 'bold green'
     if runner.state == health.HOST_WAIT:
@@ -1274,6 +1277,9 @@ def collect(state_root, env_dir, *, systemctl='systemctl', now=None, strict=Fals
             runner = replace(runner, preparation=preparation, prepare_state=preparation.state)
         # Both public consumers use current committed Decision membership.
         runner.decisions = snap.counts[4] if snap.counts is not None else 0
+        if runner.state == 'idle' and runner.decisions:
+            # An owner decision is not idle work: nothing can start until it is answered.
+            runner = replace(runner, state='waiting on you')
         return name, runner, errors
 
     # Each runner's observation is dozens of short Git reads of its own repository; eleven
@@ -1434,7 +1440,7 @@ def runner_rows(runners):
     return tuple(rows)
 
 
-ATTENTION_STATES = ('blocked', 'stalled', 'unavailable', 'not running', 'not cycling')
+ATTENTION_STATES = ('waiting on you', 'blocked', 'stalled', 'unavailable', 'not running', 'not cycling')
 
 
 def attention(runners):
@@ -1450,7 +1456,7 @@ def summary(runners):
     counts = {}
     for runner in runners:
         counts[runner.state] = counts.get(runner.state, 0) + 1
-    order = ['working', 'idle', 'restarting', 'paused', health.HOST_WAIT, 'blocked', 'stalled', 'not running', 'not cycling',
+    order = ['working', 'idle', 'waiting on you', 'restarting', 'paused', health.HOST_WAIT, 'blocked', 'stalled', 'not running', 'not cycling',
              'starting', 'unknown']
     return [(state, counts[state]) for state in order + sorted(set(counts) - set(order)) if state in counts]
 
