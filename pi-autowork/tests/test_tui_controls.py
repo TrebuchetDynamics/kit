@@ -52,7 +52,9 @@ async def controls_pilot(case):
             command = str(Path(__file__).resolve().parents[1] / 'bin/autowork')
             calls = []
             def run(argv, **kwargs):
-                assert argv[:2] == [command, 'tasks'] and argv[2] in ('show', 'decide'), argv
+                assert argv[:2] == [command, 'tasks'] and argv[2] in ('show', 'decide', 'commit'), argv
+                # The tasks screen may only read the pending-edit state; a commit is a question later.
+                assert argv[2] != 'commit' or '--dry-run' in argv, argv
                 calls.append(argv)
                 return subprocess.run(argv, **kwargs)
             app = tui.FleetApp(command=command, script='unused', state_root=fixture.repo, env_dir=fixture.repo,
@@ -88,6 +90,25 @@ async def controls_pilot(case):
                             'Answering a Needs decision task must move it out of that section'
                         assert fixture.git('rev-parse', 'HEAD') == baseline
                         assert 'live = "authorized"' not in second.read_text()
+                        # An answer is an uncommitted record edit: the runner cannot read it yet,
+                        # so the pipeline has to name that step instead of dismissing silently.
+                        await pilot.press('t')
+                        await settle(app, pilot)
+                        assert isinstance(app.screen, tui.TasksScreen), type(app.screen).__name__
+                        pending = app.screen.query_one('#task-pending', tui.Static)
+                        assert pending.display and 'not committed' in pending.render().plain, pending.render().plain
+                        await pilot.press('C')
+                        await settle(app, pilot)
+                        editor = app.screen
+                        assert isinstance(editor, tui.CommitEdits), type(editor).__name__
+                        visible(editor.query_one('#commit-message'), editor)
+                        assert editor.query_one('#commit-message').value == 'tasks: record owner answers'
+                        await pilot.press('escape')
+                        await settle(app, pilot)
+                        assert isinstance(app.screen, tui.TasksScreen)
+                        await pilot.press('escape')
+                        await settle(app, pilot)
+                        assert len(app.screen_stack) == 1, 'back on the fleet before the picker check'
                         await pilot.press('e')
                         assert isinstance(app.screen, tui.QuestionPicker), 'Keep the previous Answer key working'
                         await pilot.press('escape')
@@ -130,7 +151,9 @@ async def controls_pilot(case):
                         await settle(app, pilot)
                         assert isinstance(app.screen, tui.TasksScreen), type(app.screen).__name__
                         assert app.screen.view == 'decisions', app.screen.view
-                        assert not calls, 'opening the decision form must not execute a command'
+                        # Reading the pending-edit state is allowed; changing anything is not.
+                        assert not [c for c in calls if c[2] != 'commit' or '--dry-run' not in c], \
+                            'opening the decision form must not execute a command'
                         await pilot.press('escape')
                         app.view_only = True
                         await pilot.press('b')
@@ -139,7 +162,8 @@ async def controls_pilot(case):
                         await pilot.press('a')
                         await settle(app, pilot)
                         assert isinstance(app.screen, tui.TasksScreen), 'view only still navigates'
-                        assert not calls
+                        assert not [c for c in calls if c[2] != 'commit' or '--dry-run' not in c], \
+                            'view only must not execute a command'
                     elif case == 'menus':
                         # Mouse mode is opt-in in the real terminal; its advertised menu
                         # must route to the same screen/confirmation as the keyboard.

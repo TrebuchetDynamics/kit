@@ -257,7 +257,8 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
         self.query_one('#decision-save', Button).disabled = False
         self.query_one('#decision-text', TextArea).focus()
         self.query_one('#decision-status', Static).update(
-            'Local save, pending commit. No live permission, holds or verification.')
+            'Local save, not committed. The runner reads committed records: commit the edit '
+            '(C on Tasks) before it can see this answer. No live permission, hold or verification.')
 
     def submit(self, value):
         runner = next((r for r in self.app.runners if (r.name, r.repo) == (self.runner_name, self.repo)), None)
@@ -621,9 +622,68 @@ class WorkerScreen(ReadScreen, Screen):
             self.shown = actions
 
 
+def pending_edits(runner_cmd, command, repo):
+    """Saved-but-uncommitted task edits through the CLI's own dry run: a list, or None when the
+    read failed. None is unknown, never clean."""
+    try:
+        result = runner_cmd([command, 'tasks', 'commit', '--dry-run', repo],
+                            capture_output=True, text=True)
+        if result.returncode:
+            return None
+        data = json.loads(result.stdout)
+        files = data.get('files') if isinstance(data, dict) else None
+        return [str(item) for item in files] if isinstance(files, list) else None
+    except (OSError, ValueError):
+        return None
+
+
+class CommitEdits(ReadScreen, ModalScreen[dict]):
+    """Commit the saved task edits that the runner cannot read yet. Only tasks/ paths move."""
+    BINDINGS = [Binding('escape', 'cancel', 'cancel')]
+    DEFAULT_CSS = '''
+    CommitEdits { align: center middle; }
+    CommitEdits > Vertical { width: 80; max-width: 100%; height: auto; border: thick $accent; background: $surface; padding: 1 2; }
+    CommitEdits Input { margin: 1 0; }
+    CommitEdits Horizontal { height: auto; align-horizontal: right; }
+    CommitEdits Button { margin-left: 2; }
+    '''
+
+    def __init__(self, count, example):
+        super().__init__()
+        self.count, self.example = count, example
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label(Text('Commit saved answers', style='bold'))
+            yield Static(Text(
+                f'{self.count} saved edit(s) are not committed; the runner reads committed records, '
+                'so it cannot see these answers yet. Only tasks/ paths are committed. Other dirty '
+                'files stay. No push, no execution, no live authorization.'))
+            yield Input(value=self.example, id='commit-message', placeholder='Commit message')
+            with Horizontal():
+                yield Button('Commit', variant='primary', id='commit-save')
+                yield Button('Cancel', id='commit-cancel')
+
+    def on_mount(self):
+        self.query_one('#commit-message', Input).focus()
+
+    def on_button_pressed(self, event):
+        if event.button.id == 'commit-cancel':
+            self.dismiss(None)
+            return
+        message = ' '.join(str(self.query_one('#commit-message', Input).value or '').split())
+        if not message:
+            self.notify('A commit message is required.', severity='warning')
+            return
+        self.dismiss({'message': message})
+
+    def action_cancel(self):
+        self.dismiss(None)
+
+
 class TasksScreen(ReadScreen, Screen):
     """One runner's open tasks in priority (section, then rank) order: filter them, re-sort them, clear or
-    set aside a hold, answer the owner's questions. Refreshed like the main screen."""
+    set aside a hold, answer the owner's questions, commit those answers. Refreshed like the main screen."""
     VIEW_NAMES = {'all': 'Open', 'working': 'Active', 'held': 'Blocker', 'waiting': 'Waiting',
                   'questions': 'Questions', 'decisions': 'Decisions', 'closed': 'Closed'}
     BINDINGS = [Binding('escape,q', 'app.pop_screen', 'Back', show=False),
@@ -637,10 +697,12 @@ class TasksScreen(ReadScreen, Screen):
                 Binding('g', 'plan("discuss")', 'Discuss', show=False),
                 Binding('v', 'plan("investigate")', 'Investigate', show=False),
                 Binding('e', 'decide', 'Decide', show=False),
+                Binding('C', 'commit_tasks', 'Commit', show=False),
                 Binding('i', 'snapshot_info', 'Snapshot info', show=False, priority=True)]
     DEFAULT_CSS = '''
     #task-views { height: auto; max-height: 3; padding: 0 1; }
     #task-freshness { height: auto; padding: 0 1; }
+    #task-pending { height: auto; padding: 0 1; }
     #task-provenance { height: 3; border: none; padding: 0 1; }
     #tasks { height: 1fr; }
     #task-detail { height: auto; max-height: 7; padding: 0 1; border-top: solid $panel; }
@@ -653,12 +715,14 @@ class TasksScreen(ReadScreen, Screen):
         # opener: the blockers report routes here, so its recorded questions can be answered.
         self.runner_name, self.view, self.rows, self.shown = runner_name, view, [], []
         self.history = []
+        self.pending = None  # None: not read yet; []: nothing to commit
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield MenuBar(id='menubar')
         yield Static(id='task-views')
         yield Static(id='task-freshness')
+        yield Static(id='task-pending')
         yield TextArea(read_only=True, show_cursor=False, id='task-provenance')
         yield DataTable(id='tasks', cursor_type='row', zebra_stripes=True)
         yield Static(id='task-detail')
@@ -667,6 +731,7 @@ class TasksScreen(ReadScreen, Screen):
         self.title = f'{self.runner_name}: tasks'
         self.query_one('#tasks', DataTable).add_columns(*self.FIXED, *self.TEXT)
         self.refresh_tasks()
+        self.read_pending()
         self.query_one('#tasks', DataTable).focus()
         self.set_interval(REFRESH, self.refresh_tasks)
 
@@ -675,6 +740,67 @@ class TasksScreen(ReadScreen, Screen):
 
     def view_rows(self, view):
         return self.history if view == 'closed' else fleet_view.task_view(self.rows, view)
+
+    def on_screen_resume(self):
+        # Coming back from the decision form is exactly when a new answer waits to be committed.
+        if self.is_mounted:
+            self.refresh_tasks()
+            self.read_pending()
+
+    def read_pending(self):
+        """An answer is a record edit; the runner reads committed records, so say when one waits."""
+        runner = self.runner()
+        if runner is None or not runner.repo:
+            return
+        self.read('pending', (self.runner_name, runner.repo),
+                  lambda: pending_edits(self.app.runner_cmd, self.app.command, runner.repo),
+                  self.loaded_pending)
+
+    def loaded_pending(self, files):
+        # None is unknown (the dry run did not answer), not "nothing waits".
+        self.pending = None if files is None else list(files)
+        self.show_pending()
+
+    def show_pending(self):
+        # A read can land while this screen is composing or leaving; a missing line is not an error.
+        found = self.query('#task-pending')
+        if not found:
+            return
+        line = found.first()
+        files = self.pending
+        if files is None:
+            # Unknown is not clean: say the state is unread, do not imply nothing waits.
+            line.display = True
+            line.update(Text('Saved-edit state unknown; tasks commit --dry-run did not answer.', style='dim'))
+            return
+        if not files:
+            line.update(Text(''))
+            line.display = False
+            return
+        line.display = True
+        message = (f'{len(files)} saved edit(s) not committed — the runner reads committed records, '
+                   'so it cannot see these answers yet.  ')
+        body = Text(message, style='yellow')
+        if self.app.view_only:
+            body.append('View only: commit in a writable session.', style='yellow')
+        else:
+            body.append('C Commit', style='bold yellow')
+        line.update(body)
+
+    def action_commit_tasks(self):
+        runner = self.runner()
+        if runner is None or self.app.view_only or not self.pending:
+            return
+        self.app.push_screen(CommitEdits(len(self.pending), 'tasks: record owner answers'), self.commit_edits)
+
+    def commit_edits(self, result):
+        runner = self.runner()
+        if not result or runner is None:
+            return
+        self.app.execute(
+            fleet_view.Action('C', 'Commit task edits',
+                              [self.app.command, 'tasks', 'commit', '-m', result['message'], runner.repo]),
+            on_complete=lambda _ok, _message: self.read_pending())
 
     def action_snapshot_info(self):
         info = self.query_one('#task-provenance', TextArea)
