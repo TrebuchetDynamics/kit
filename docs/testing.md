@@ -345,6 +345,34 @@ a real runner over a Git fixture and were three quarters of a 17-minute single j
 CI byte-compiles only `__init__.py`, not the four files above. Live Telegram delivery and model
 execution require your configured Hermes installation.
 
+## Live qualification harness (A–E)
+
+The [authorized-autonomy audit](research/authorized-autonomy-audit-2026-11-04.md)
+adopted five reliability fixes, and their deterministic tests do not exercise the real
+process, filesystem and remote path. The qualification harness is one disposable-target
+scenario set for those five checks. It runs on demand, is not part of `scripts/check.py`,
+and its exact path and command live in the task record that creates it.
+
+| Scenario | What it drives | Evidence |
+| --- | --- | --- |
+| A | a real `git push` to a local bare remote whose pre-receive hook stalls past the 300 s timeout, then the remote reconciliation | the push outcome, the remote refs, and that the process did not raise |
+| B | a torn `BLOCKERS.md` (start marker, no end marker) and a failed replacement/commit, then the real recovery | the file bytes before and after, the commit, and the repaired block |
+| C | real dispatch in a disposable repository: a legacy prose grant, a structured grant, a foreign scope, and a worker edit to `tasks/` | the waiting and dispatched rows, and the held reason |
+| D | real dispatch with a paused or answered attempt and a full pool, plus an exclusive holder | the launched count, the reserve, and the typed waiting reason |
+| E | one real dispatch with a stub worker, then a resume | the `provenance.jsonl` records, the prompt hash, the append-only prefix, and the absence of prompt or environment text |
+
+Rules:
+
+- Each scenario builds a temporary Git repository and its own state, then removes
+  them. It uses no real remote, model, service, credential or production checkout.
+- The harness prints one JSON object per scenario and exits nonzero on any failure.
+  Its transcript is private; the command and its summary are the evidence.
+- A stub worker exercises the engine's launch path. A model-driven delivery and an
+  interrupted real runner remain the owner's live qualification (TOOLSET-451), not
+  this harness.
+- A product defect found by a scenario is reported with its record, never fixed by
+  changing the harness's expectation.
+
 ## Compatibility
 
 Verified locally on October 11, 2026; this is a tested baseline, not a discovered
