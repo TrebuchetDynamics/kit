@@ -30,14 +30,16 @@ def visible(widget, screen):
 
 async def controls_pilot(case):
     from pi_autowork import tui
-    from textual.widgets import Button, OptionList, TextArea
+    from textual.widgets import Button, OptionList, Select, TextArea
 
     for size in ((80, 24), (60, 18)):
         fixture = test_task_history.TaskHistoryTests()
         fixture.setUp()
         try:
             second = fixture.repo / 'tasks/items/T-2.md'
-            second.write_text((fixture.repo / 'tasks/items/T-1.md').read_text().replace('id = "T-1"', 'id = "T-2"'))
+            second.write_text((fixture.repo / 'tasks/items/T-1.md').read_text()
+                              .replace('id = "T-1"', 'id = "T-2"')
+                              .replace('section = "Now"', 'section = "Needs decision"'))
             fixture.git('add', '.')
             fixture.git('commit', '-qm', 'two questions')
             baseline = fixture.git('rev-parse', 'HEAD')
@@ -70,6 +72,8 @@ async def controls_pilot(case):
                         screen = app.screen
                         assert isinstance(screen, tui.DecisionScreen) and screen.task_id == 'T-2'
                         assert screen.ready
+                        assert screen.query_one('#decision-section', Select).value == 'Now', \
+                            'A task in Needs decision must default to moving back to Now'
                         visible(screen.query_one('#decision-text', TextArea), screen)
                         visible(screen.query_one('#decision-save', Button), screen)
                         visible(screen.query_one('#decision-cancel', Button), screen)
@@ -80,6 +84,8 @@ async def controls_pilot(case):
                         await settle(app, pilot)
                         assert len(app.screen_stack) == 1, 'Portable Save shortcut must complete the answer'
                         assert 'Use the bounded offline option' in second.read_text()
+                        assert 'section = "Now"' in second.read_text(), \
+                            'Answering a Needs decision task must move it out of that section'
                         assert fixture.git('rev-parse', 'HEAD') == baseline
                         assert 'live = "authorized"' not in second.read_text()
                         await pilot.press('e')

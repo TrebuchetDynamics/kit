@@ -249,6 +249,11 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
             f'ownership {record.get("ownership", "unknown")} · live {record.get("live", "denied")}\n'
             + record.get('scope', '') + '\n\n' + self.context
             + ('\n' + previous if previous else ''))
+        # A task in Needs decision is waiting for this answer. Default the save to move it
+        # back to Now so the decision count falls and the runner can select it; the owner
+        # can still choose keep-current or defer explicitly.
+        if record.get('section') == 'Needs decision':
+            self.query_one('#decision-section', Select).value = 'Now'
         self.query_one('#decision-save', Button).disabled = False
         self.query_one('#decision-text', TextArea).focus()
         self.query_one('#decision-status', Static).update(
