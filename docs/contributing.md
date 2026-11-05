@@ -61,7 +61,7 @@ plugin command only logs a warning and skips that command.
 For a GitHub installation, publish your skill changes and run:
 
 ```sh
-hermes plugins update autowork
+hermes plugins update kit
 hermes gateway restart
 ```
 

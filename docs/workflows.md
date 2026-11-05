@@ -376,7 +376,7 @@ directory with a candidate card and one top recommendation. It proposes no inter
 until the owner picks a candidate, then interviews that candidate.
 
 Examples (Hermes CLI; Pi uses the same hyphen names, Claude Code prefixes
-`/autowork:`, Codex prefixes `$autowork:`):
+`/kit:`, Codex prefixes `$kit:`):
 
 ```text
 /grilling the retry design; recommend answers; read-only

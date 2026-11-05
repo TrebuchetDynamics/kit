@@ -28,8 +28,8 @@ Stop active work that depends on this plugin before removing it.
 
 ```sh
 hermes -p PROFILE config set plugins.entries.kit.settings.apply_runtime_defaults false
-hermes -p PROFILE plugins disable autowork
-hermes -p PROFILE plugins remove autowork
+hermes -p PROFILE plugins disable kit
+hermes -p PROFILE plugins remove kit
 ```
 
 These are Hermes' native removal commands. `plugins remove` also deletes the whole
