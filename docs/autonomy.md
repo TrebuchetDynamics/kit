@@ -79,3 +79,4 @@ names the audited task IDs, each delegated or owner-only disposition, the moved 
 and the remaining owner questions.
 
 - 2026-11-05: Policy accepted. No queue audit recorded yet.
+- 2026-11-05: Standing-policy audit of open Needs decision tasks. Audited: TOOLSET-431-47a7152e (owner-only: live-profile proof authorization), TOOLSET-450-e643cb7a (owner-only: security-default policy change), TOOLSET-451-ba324296 (owner-only: authorized spend and target for live delivery). Moved IDs: none. Remaining owner questions: TOOLSET-431-47a7152e needs owner authorization for a live Hermes profile write; TOOLSET-450-e643cb7a needs an owner decision on the default Hermes approvals security stance; TOOLSET-451-ba324296 needs owner authorization for model spend and a disposable-repository target.
