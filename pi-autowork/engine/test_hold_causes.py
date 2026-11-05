@@ -3,6 +3,7 @@ import contextlib
 import copy
 import io
 import json
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -165,6 +166,74 @@ class HoldCausesTests(unittest.TestCase):
                 else:
                     expected = {'integrate': 'HELD', 'set_aside': 'SET_ASIDE', 'close': 'CLOSED'}
                     self.assertEqual(calls[operation]()['outcome'], expected[operation])
+
+    def second_empty(self, fx, task='A', cause='empty'):
+        """An attempt-2 held slot with no commit, as the red-main period left three tasks."""
+        root, _ = fx.worker(task)
+        state.transition(fx.repo, fx.owner, task, 'held', reason='fixture first failure')
+        slot = state.slots(fx.common)[0]
+        retry = Path(str(root) + '-r2')
+        fx.git('worktree', 'add', '-q', '-b', 'autowork/' + task + '-r2', str(retry), fx.baseline)
+        state.change(fx.common, slot, 'dispatched', {'worktree': str(retry),
+                     'branch': 'autowork/' + task + '-r2', 'baseline': fx.baseline})
+        if cause == 'empty':
+            return state.transition(fx.repo, fx.owner, task, 'released', reason=state.EMPTY)
+        return state.change(fx.common, state.slots(fx.common)[0], 'held',
+                            {'reason': 'its worker found nothing to change: fixture', 'cause': 'no_change'})
+
+    def test_an_attempt_two_empty_hold_is_requeued_once_by_an_explicit_request(self):
+        for cause in ('empty', 'no_change'):
+            with self.subTest(cause=cause):
+                fx = self.fixture()
+                held = self.second_empty(fx, cause=cause)
+                self.assertEqual((held['state'], held['attempt'], held.get('commit')), ('held', 2, None))
+                self.assertTrue(state.exhausted(held))
+                result = fx.module().requeue_empty(fx.repo, fx.owner, 'A', 'maintainer@example',
+                                                   'main is green again')
+                self.assertEqual(result['outcome'], 'REQUEUED', result)
+                fresh = state.slots(fx.common)[0]
+                self.assertEqual((fresh['state'], fresh['attempt'], fresh.get('paused')),
+                                 ('interrupted', 2, True))
+                self.assertEqual(fresh['baseline'], fx.git('rev-parse', 'HEAD'))
+                self.assertEqual(fresh['empty_requeue']['actor'], 'maintainer@example')
+                self.assertEqual(fresh['empty_requeue']['reason'], 'main is green again')
+                self.assertEqual(fresh['empty_requeue']['evidence']['cause'], cause)
+                self.assertTrue(fx.git('branch', '--list', 'autowork/A-set-aside-*'))
+                with self.assertRaisesRegex(ValueError, 'already used its one empty-hold requeue'):
+                    fx.module().requeue_empty(fx.repo, fx.owner, 'A', 'maintainer@example', 'again')
+
+    def test_a_second_empty_failure_after_a_requeue_is_parked(self):
+        fx = self.fixture()
+        self.second_empty(fx)
+        fx.module().requeue_empty(fx.repo, fx.owner, 'A', 'maintainer@example', 'main is green again')
+        fresh = state.slots(fx.common)[0]
+        # The next refill resumes the fresh attempt from current main; it ends empty again.
+        state.transition(fx.repo, fx.owner, 'A', 'dispatched', worktree=fresh['worktree'],
+                         branch=fresh['branch'], baseline=fresh['baseline'])
+        held = state.transition(fx.repo, fx.owner, 'A', 'released', reason=state.EMPTY)
+        self.assertEqual((held['state'], held['cause'], held['attempt']), ('held', 'empty', 2))
+        self.assertTrue(state.exhausted(held))
+        self.assertEqual(fx.module().retry_held(fx.retry_args())['outcome'], 'IDLE')
+        with self.assertRaisesRegex(ValueError, 'already used its one empty-hold requeue'):
+            fx.module().requeue_empty(fx.repo, fx.owner, 'A', 'maintainer@example', 'once more')
+
+    def test_the_requeue_leaves_attempt_one_and_held_commits_unchanged(self):
+        # An attempt-1 empty hold keeps its ordinary automatic retry.
+        fx = self.fixture()
+        fx.worker('A')
+        slot = state.slots(fx.common)[0]
+        value = {k: v for k, v in slot.items() if k != 'commit'}
+        state.write_slot(fx.common, dict(value, state='held', cause='empty', reason=state.EMPTY), slot)
+        self.assertFalse(state.exhausted(state.slots(fx.common)[0]))
+        with self.assertRaisesRegex(ValueError, 'attempt-2'):
+            fx.module().requeue_empty(fx.repo, fx.owner, 'A', 'maintainer@example', 'reason')
+        # A held commit still goes through clear-held.
+        fx = self.fixture()
+        fx.worker('A')
+        state.transition(fx.repo, fx.owner, 'A', 'held', cause='validation', reason='fixture')
+        with self.assertRaisesRegex(ValueError, 'clear-held path'):
+            fx.module().requeue_empty(fx.repo, fx.owner, 'A', 'maintainer@example', 'reason')
+        self.assertEqual(fx.module().clear_held(fx.repo, fx.owner, 'A')['outcome'], 'CLEARED')
 
     def test_each_cause_follows_its_rule(self):
         # Literal policies and observable effects: a wrong dispatch branch must fail,

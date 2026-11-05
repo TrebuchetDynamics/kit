@@ -768,7 +768,7 @@ def parallel_main(args):
             raise ValueError('parallel mode requires --owner-pid of the persistent coordinator session')
         if sum(bool(v) for v in (args.wait, args.release, args.integrate, args.parallel_close,
                                  args.parallel_pause, args.parallel_set_aside, args.parallel_reverify,
-                                 args.parallel_merged, args.parallel_answer)) > 1:
+                                 args.parallel_merged, args.parallel_answer, args.parallel_requeue_empty)) > 1:
             raise ValueError('choose one parallel operation: wait, release, integrate, close, pause or set-aside')
         if args.parallel_pause:
             result = parallel_state.pause(Path(args.consumer).expanduser().resolve(), args.owner_pid)
@@ -798,6 +798,11 @@ def parallel_main(args):
             if args.run is not None or args.timeout is not None:
                 raise ValueError('--parallel-clear-held does not accept --run or --timeout')
             result = parallel_integrate.clear_held(args.consumer, args.owner_pid, args.parallel_clear_held)
+        elif args.parallel_requeue_empty:
+            if args.run is not None or args.timeout is not None:
+                raise ValueError('--parallel-requeue-empty does not accept --run or --timeout')
+            result = parallel_integrate.requeue_empty(args.consumer, args.owner_pid, args.parallel_requeue_empty,
+                                                      args.requeue_by, args.requeue_reason)
         elif args.wait:
             if args.timeout is None or args.timeout <= 0:
                 raise ValueError('--wait requires a positive --timeout')
@@ -881,6 +886,11 @@ def main(argv=None):
     parallel.add_argument('--parallel-clear-held', metavar='TASK',
                           help='Return held commit(s) to integration as technical recovery (TASK, a comma-separated list, '
                                'or all). The commit and its worktrees are kept; integration repeats every check.')
+    parallel.add_argument('--parallel-requeue-empty', metavar='TASK',
+                          help='One explicit requeue of an attempt-2 empty or no_change hold without a commit: '
+                               'a fresh attempt from current main, at most once per task contract.')
+    parallel.add_argument('--requeue-by', help='Actor requesting the bounded empty-hold requeue.')
+    parallel.add_argument('--requeue-reason', help='Why the empty hold gets one fresh attempt from current main.')
     parallel.add_argument('--parallel-status', action='store_true', help='Read-only parallel progress and journal metrics; no owner required.')
     parallel.add_argument('--json', action='store_true', help='Machine-readable output with --parallel-status.')
     args = parser.parse_args(argv)
@@ -888,7 +898,8 @@ def main(argv=None):
         try:
             if any((args.apply, args.wait, args.release, args.integrate, args.parallel_close, args.parallel_pause,
                     args.parallel_set_aside, args.parallel_clear_held, args.parallel_reverify, args.parallel_merged,
-                    args.parallel_answer, args.run is not None, args.writers, args.parallel is not None)):
+                    args.parallel_answer, args.parallel_requeue_empty, args.run is not None, args.writers,
+                    args.parallel is not None)):
                 raise ValueError('--parallel-status cannot be combined with execution operations')
             from pi_autowork.engine import parallel_status
             result = parallel_status.snapshot(args.consumer)
@@ -901,7 +912,7 @@ def main(argv=None):
         parser.error('--json requires --parallel-status')
     if (args.parallel is not None or args.wait or args.integrate or args.parallel_close or args.parallel_pause
             or args.parallel_set_aside or args.parallel_clear_held or args.parallel_reverify or args.parallel_merged
-            or args.parallel_answer):
+            or args.parallel_answer or args.parallel_requeue_empty):
         return parallel_main(args)
     if args.writers:
         try:
