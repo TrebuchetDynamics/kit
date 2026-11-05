@@ -1,0 +1,9 @@
+schema = 1
+task = "LANG-002-72648a0e"
+candidate = "14dd00d42359290ce5e450b4cb4cfde95339c194"
+integration = "3e27bfec40f2a9e1ffbbaa05ba28003a9be434ca"
+tree = "29082ac5284465766ee69f404721d1a0c1e2e03b"
+contract_hash = "990d005affdfdbdd33624352eceadcecfcdf5daeb65790b4aad9326a21405d33"
+checks = ["<path>", "<path>", "--verify", "<path>", "LANG-002-72648a0e"]
+result = "pass"
+review = "passed"
