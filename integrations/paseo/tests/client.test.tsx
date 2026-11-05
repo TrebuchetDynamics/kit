@@ -128,6 +128,14 @@ describe('native host-scoped surfaces', () => {
     expect(text()).toContain('Must preserve contract');
     expect(button('Send answer')).toBeTruthy();
   });
+  // The owner answers on this view; the runner reads committed records, so the commit step
+  // has to be visible here too instead of only in Tasks.
+  it('shows the commit step where the answer is recorded', async () => {
+    await mount({ params: { view: 'blockers' } }); await flush();
+    expect(text()).toContain('Pending task edits');
+    expect(text()).toContain('The runner reads committed records');
+    expect(button('Commit task edits')).toBeTruthy();
+  });
   it('prepares, requires explicit confirmation, consumes once and never auto-replays', async () => {
     await mount(); await press('Runner'); await press('Pause');
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(0);
