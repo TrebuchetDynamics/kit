@@ -41,6 +41,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- Add coordinator and fleet /proc resource fields to autowork ls --json. (LANG-001-8d4fe384)
 - Add an on-demand A-E live qualification harness that exercises the five reliability fixes against disposable real repositories and a local bare remote. (TOOLSET-465-936fd6b6)
 - Bound runner-state growth: cap each state key's engine.err at its newest bytes and trim full-check/runs/sessions/review-tmp evidence by age and size, keeping gate receipts, unfinished slots, live review scratch and files still open. (TOOLSET-442-6c1f2ab0)
 - autowork: diagnose saved services whose checkout or toolset is gone; ls, its JSON and the TUI detail mark missing or invalid saved toolsets. (TOOLSET-453-525f9994)
