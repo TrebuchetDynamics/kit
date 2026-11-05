@@ -18,3 +18,4 @@ checks = ["python3 scripts/check.py tests/test_preflight.py tests/test_install_p
 exclusions = ["No live Hermes profile, gateway, plugin install or approval setting is changed by this task's offline checks.", "No removal of Hermes hard blocks, deny rules, the runner's review/publication gates or the existing opt-out.", "No npm publication, deployment or remote service change."]
 +++
 - Sources: docs/evaluation.md#risks; docs/installation.md#install; docs/reference.md#plugin-settings
+- Question: The owner must decide whether the default Hermes approvals stance changes from implicit widening to an explicit interactive/autonomous policy. Resume condition: the owner records the security-default decision.
