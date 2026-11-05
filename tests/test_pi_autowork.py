@@ -4349,12 +4349,12 @@ class PushOutcomeTests(unittest.TestCase):
         outcome, calls = self.push_outcome(reset)
         self.assertEqual((outcome, calls), ('unknown', ['push', 'ls-remote']))
 
-    def test_an_explicit_opt_out_never_probes_or_pushes(self):
+    def test_no_grant_never_probes_or_pushes(self):
         self.ahead()
         with patch.dict(os.environ, PI_AUTOWORK_PUSH='0'):
             outcome, calls = self.push_outcome(lambda argv, args, kwargs: self.fail('no push without a grant'))
         self.assertEqual((outcome, calls), ('no-grant', []))
-        self.assertTrue(any('push disabled with PI_AUTOWORK_PUSH=0' in line for line in self.messages), self.messages)
+        self.assertTrue(any('no PI_AUTOWORK_PUSH=1 grant' in line for line in self.messages), self.messages)
 
 
 class OwnerOutboxTests(unittest.TestCase):

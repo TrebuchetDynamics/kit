@@ -118,7 +118,7 @@ class Runner:
     enabled: bool = False     # its service starts at login; paused also needs `autowork pause`'s marker
     model: str = ''
     fallback: str = ''
-    push: bool = True        # publication is on by default; PI_AUTOWORK_PUSH=0 opts out
+    push: bool = False       # saved service grant; only PI_AUTOWORK_PUSH=1 enables publication
     questions: list = field(default_factory=list)  # the owner's open questions in BLOCKERS.md
     decisions: int = 0  # open tasks in Needs decision: never dispatched, so not in the engine's status
     toolset: str = ''         # PI_AUTOWORK_TOOLSET: the service runs this checkout, not the Pi package
@@ -1098,7 +1098,7 @@ def _service_runner(name: str, sub: str, env_dir, systemctl: str, errors=None) -
                   repo=settings.get('PI_AUTOWORK_REPO', '').strip(),
                   model=settings.get('PI_AUTOWORK_PRIMARY') or DEFAULT_MODEL,
                   fallback=settings.get('PI_AUTOWORK_FALLBACK') or DEFAULT_FALLBACK,
-                  push=settings.get('PI_AUTOWORK_PUSH', '1') == '1',
+                  push=settings.get('PI_AUTOWORK_PUSH', '0') == '1',
                   toolset=settings.get('PI_AUTOWORK_TOOLSET', '').strip(), enabled=enabled,
                   observation=health.observation({}))
 

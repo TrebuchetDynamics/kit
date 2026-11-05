@@ -645,7 +645,7 @@ async def main():
             assert '1 on dependencies' in str(runners.get_row_at(0)[8]), runners.get_row_at(0)
             assert 'Tasks      3 open · 0 active · 0 mergeable · 2 waiting · 1 blocker' in detail, detail
             assert 'revision ' + store.rev in detail and 'execution fresh' in detail, detail
-            assert 'Push       enabled' in detail, detail  # default on; no saved opt-out
+            assert 'Push       disabled' in detail, detail  # no saved grant: local only
             await blocked_readers(app, pilot)
             # Label readers use real fixture snapshots, not repeated live preparation
             # probes whose subprocess cost depends on the rest of the offline suite.

@@ -1,4 +1,4 @@
-"""Push settings against an offline, disposable bare upstream."""
+"""No-push service settings against an offline, disposable bare upstream."""
 import os
 from pathlib import Path
 import subprocess
@@ -37,39 +37,24 @@ class PushSettingTests(unittest.TestCase):
         return subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True,
                               text=True, timeout=20).stdout.strip()
 
-    def test_push_is_enabled_by_default_and_an_explicit_zero_disables_it(self):
+    def test_push_requires_an_explicit_grant(self):
         env = {k: v for k, v in os.environ.items() if k != 'PI_AUTOWORK_PUSH'}
-        with mock.patch.dict(os.environ, env, clear=True):
-            outcome = self.runner.push()
-            self.assertEqual(outcome, 'published')
-            remote_after = self.git(self.remote, 'show-ref')
-            self.assertNotEqual(remote_after, self.remote_before)
-        # An explicit opt-out keeps the local commit unpublished.
-        self.git(self.repo, 'reset', '--hard', 'origin/main')
-        self.git(self.repo, 'commit', '--allow-empty', '-qm', 'local work to keep local')
-        with mock.patch.dict(os.environ, env, clear=True):
-            os.environ['PI_AUTOWORK_PUSH'] = '0'
-            outcome = self.runner.push()
-        self.assertEqual(outcome, 'no-grant')
-        self.assertEqual(self.git(self.remote, 'show-ref'), remote_after)
+        for setting in ('0', None):
+            with self.subTest(setting=setting), mock.patch.dict(os.environ, env, clear=True):
+                if setting is not None:
+                    os.environ['PI_AUTOWORK_PUSH'] = setting
+                self.runner.push()
+                self.assertEqual(self.git(self.remote, 'show-ref'), self.remote_before)
 
-    def test_sync_upstream_is_enabled_by_default_and_an_explicit_zero_disables_it(self):
+    def test_sync_upstream_requires_an_explicit_grant(self):
         env = {k: v for k, v in os.environ.items() if k != 'PI_AUTOWORK_PUSH'}
-        with mock.patch.dict(os.environ, env, clear=True):
-            self.runner.sync_upstream()
-            self.assertTrue((self.repo / '.git' / 'FETCH_HEAD').exists())
-            remote_after = self.git(self.remote, 'show-ref')
-            self.assertNotEqual(remote_after, self.remote_before)
-        # An explicit opt-out neither fetches nor pushes.
-        self.git(self.repo, 'reset', '--hard', 'origin/main')
-        self.git(self.repo, 'commit', '--allow-empty', '-qm', 'local work to keep local')
-        fetch_head = self.repo / '.git' / 'FETCH_HEAD'
-        fetch_head.unlink(missing_ok=True)
-        with mock.patch.dict(os.environ, env, clear=True):
-            os.environ['PI_AUTOWORK_PUSH'] = '0'
-            self.runner.sync_upstream()
-        self.assertFalse(fetch_head.exists())
-        self.assertEqual(self.git(self.remote, 'show-ref'), remote_after)
+        for setting in ('0', None):
+            with self.subTest(setting=setting), mock.patch.dict(os.environ, env, clear=True):
+                if setting is not None:
+                    os.environ['PI_AUTOWORK_PUSH'] = setting
+                self.runner.sync_upstream()
+                self.assertFalse((self.repo / '.git' / 'FETCH_HEAD').exists())
+                self.assertEqual(self.git(self.remote, 'show-ref'), self.remote_before)
 
 
 if __name__ == '__main__':
