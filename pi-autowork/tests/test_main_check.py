@@ -258,6 +258,8 @@ class MainCheckTests(unittest.TestCase):
             self.assertEqual(main_check.full_check(root, {}), '')
             Path(root, 'AGENTS.md').write_text('# Rules\n\n- Full check: `python3 scripts/check.py`\n')
             self.assertEqual(main_check.full_check(root, {}), 'python3 scripts/check.py')
+            Path(root, 'AGENTS.md').write_text('# Rules\n\n- Full check: `python3 scripts/check.py`; CI runs it.\n')
+            self.assertEqual(main_check.full_check(root, {}), 'python3 scripts/check.py')
             self.assertEqual(main_check.full_check(root, {'PI_AUTOWORK_VALIDATE': 'make test'}), 'make test')
             self.assertEqual(main_check.command({}, root), 'python3 scripts/check.py')  # main check falls back
             self.assertEqual(main_check.command({'PI_AUTOWORK_MAIN_CHECK': 'x'}, root), 'x')

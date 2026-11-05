@@ -26,6 +26,9 @@
     autowork attention MINUTES [--task ID] [--note TEXT] [target]
                                   record other owner time in private runner state
     autowork update [flags]       update the installed suite in place (install.sh update)
+    autowork retry [target] [TASK...]
+                                  retire exhausted attempts with no commit; work is kept
+                                  as -set-aside-N and the task dispatches fresh
     autowork clear-held [target] [TASK...]
                                   return held commits to integration as technical recovery
                                   (keeps the worktrees); no owner decision is asked
@@ -549,6 +552,56 @@ def cmd_plan(args, paths):
     return planning_commands.run(args, repo, paths['state_root'])
 
 
+def cmd_retry(args, paths):
+    """Retire exhausted attempts that produced no commit, so their tasks dispatch fresh.
+
+    This is the supported recovery for a crashed worker with no commit. Its worktree,
+    branch and slot history are preserved by the engine's existing set-aside path.
+    It never retries a task with a held commit; use clear-held for that.
+    """
+    repo, name = resolve(args.target, paths)
+    runner = next((r for r in runners(paths) if r.name == name), None)
+    if runner is None:
+        raise Fail(f'no runner named {name}')
+    if not runner.state_dir:
+        raise Fail(f'{name}: no state directory yet; start the runner once: autowork start {repo}')
+    result = subprocess.run(
+        ['git', '-C', repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+        capture_output=True, text=True, timeout=30)
+    if result.returncode:
+        raise Fail(f'{name}: cannot resolve the repository state: {result.stderr.strip()}')
+    common = Path(result.stdout.strip()) / 'autowork-execution'
+    tasks = []
+    for path in (common / 'slots').glob('*.json'):
+        try:
+            slot = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if (slot.get('state') == 'held' and not slot.get('commit')
+                and int(slot.get('attempt') or 1) >= 2):
+            tasks.append(slot.get('task_id'))
+    tasks = sorted(t for t in tasks if t)
+    if args.tasks:
+        wanted = {t for t in re.split(r'[,\s]+', ' '.join(args.tasks)) if t}
+        unknown = sorted(wanted - set(tasks))
+        if unknown:
+            raise Fail('not an exhausted no-commit attempt: ' + ', '.join(unknown))
+        tasks = [t for t in tasks if t in wanted]
+    if not tasks:
+        print(f'{name}: no exhausted no-commit attempt to retry.')
+        return 0
+    if args.dry_run:
+        print(f'{name}: would retry {len(tasks)} task(s) with no commit: ' + ', '.join(tasks))
+        return 0
+    requests = Path(runner.state_dir) / 'requests'
+    requests.mkdir(parents=True, exist_ok=True)
+    for task in tasks:
+        (requests / f'set-aside-{task}').touch()
+    print(f'{name}: requested a fresh attempt for {len(tasks)} task(s): ' + ', '.join(tasks))
+    print('Their earlier worktrees and branches stay as -set-aside-N; the runner acts within a cycle.')
+    return 0
+
+
 def cmd_clear_held(args, paths):
     """Return held commits to integration as technical recovery; no owner decision is asked."""
     repo, name = resolve(args.target, paths)
@@ -641,6 +694,10 @@ def parser():
     attention.add_argument('target', nargs='?', help='runner name, repository path or . (default: .)')
     attention.add_argument('--task', help='task ID (otherwise runner-level attention)')
     attention.add_argument('--note', help='private note, never committed')
+    retry = sub.add_parser('retry', help='retire exhausted failed attempts and dispatch fresh (keeps work)')
+    retry.add_argument('target', nargs='?', help='runner name, repository path or . (default: .)')
+    retry.add_argument('tasks', nargs='*', help='task IDs to retry (default: every exhausted no-commit attempt)')
+    retry.add_argument('--dry-run', action='store_true', help='list what would be retried')
     clear = sub.add_parser('clear-held', help='return held commits to integration (technical recovery, no decision)')
     clear.add_argument('target', nargs='?', help='runner name, repository path or . (default: .)')
     clear.add_argument('tasks', nargs='*', help='task IDs to clear (default: every held task)')
@@ -699,7 +756,7 @@ COMMANDS = {'ls': cmd_ls, 'status': cmd_status, 'logs': cmd_logs, 'start': cmd_s
             'run': cmd_run, 'web': cmd_web, 'tui': cmd_tui, 'blockers': cmd_blockers, 'plan': cmd_plan,
             'pause': cmd_pause, 'resume': lambda a, p: cmd_pause(a, p, resume=True),
             'model': cmd_model, 'models': cmd_models, 'setup-portal': cmd_setup_portal, 'scorecard': cmd_scorecard,
-            'clear-held': cmd_clear_held, 'update': cmd_update, 'tasks': cmd_tasks,
+            'retry': cmd_retry, 'clear-held': cmd_clear_held, 'update': cmd_update, 'tasks': cmd_tasks,
             'capabilities': cmd_capabilities, 'attention': cmd_attention,
             'migrate': lambda a, p: task_migrate.run(a, resolve(a.repo, p)[0])}
 
