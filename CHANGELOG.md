@@ -41,6 +41,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- Bound runner-state growth: cap each state key's engine.err at its newest bytes and trim full-check/runs/sessions/review-tmp evidence by age and size, keeping gate receipts, unfinished slots, live review scratch and files still open. (TOOLSET-442-6c1f2ab0)
 - autowork: diagnose saved services whose checkout or toolset is gone; ls, its JSON and the TUI detail mark missing or invalid saved toolsets. (TOOLSET-453-525f9994)
 - Planning handoffs now name the first selection-ready task and distinguish a current-session `/autowork <ID> in this session` request from the continuous `autowork start` runner. Planning starts neither.
 - docs: rename current install/update/removal and namespace instructions to the kit plugin (kit, kit@autowork, kit@autowork-marketplace, /kit:, $kit:) (TOOLSET-452-3dcf8df2)

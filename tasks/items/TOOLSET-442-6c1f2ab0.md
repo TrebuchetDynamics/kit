@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-442-6c1f2ab0"
 title = "Bound per-run evidence and engine.err in runner state"
 short = "Bound runner state growth"
-status = "open"
+status = "done"
 goal = "RELIABILITY-2026-10"
 section = "Next"
 rank = 1000
@@ -16,5 +16,7 @@ scope = "engine.err is append-only across the life of a state key, and full-chec
 acceptance = ["engine.err is bounded per state key, retaining the newest diagnostics.", "Per-run evidence for closed tasks is bounded by age and size, while files an open slot, an unread gate receipt or an unfinished review references are never removed.", "The pass reports reclaimed bytes and is safe under concurrent runners: it skips another live runner's state and a file being written.", "A fixture proves an open slot's gate receipt survives while a closed task's run evidence is trimmed."]
 checks = ["python3 pi-autowork/tests/test_janitor.py"]
 exclusions = []
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-442-6c1f2ab0.toml"
 +++
 - Sources: ["pi-autowork/README.md#runner-health-reads"]
