@@ -41,6 +41,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- autowork: diagnose saved services whose checkout or toolset is gone; ls, its JSON and the TUI detail mark missing or invalid saved toolsets. (TOOLSET-453-525f9994)
 - Planning handoffs now name the first selection-ready task and distinguish a current-session `/autowork <ID> in this session` request from the continuous `autowork start` runner. Planning starts neither.
 - docs: rename current install/update/removal and namespace instructions to the kit plugin (kit, kit@autowork, kit@autowork-marketplace, /kit:, $kit:) (TOOLSET-452-3dcf8df2)
 - fix(check): make the declared full check provision CPython 3.12 and requirements-test.txt via uv, so `python3 scripts/check.py` runs the documented check on any host. (MAIN-005-5e68ffc0)
