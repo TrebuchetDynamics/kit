@@ -161,6 +161,13 @@ recovery; do not reopen the product interview or create duplicate tasks. An
 Autowork-owned planning substep returns the batch to its same coordinator without
 another permission question; preserve its review and owned-commit requirements.
 
+## Execution handoff
+
+A saved plan is not execution. Before reporting, use the shared
+[execution handoff](../shared/PLAN-HANDOFF.md#execution-handoff) to name the first
+selection-ready task and its execution mode. Start no runner here; an Autowork-owned
+substep returns to the same coordinator.
+
 ## Common Rationalizations
 
 The [Definition of Done](../shared/DEFINITION-OF-DONE.md) is the standing bar; a saved

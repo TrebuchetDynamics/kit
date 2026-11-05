@@ -155,6 +155,21 @@ No historical card lookup, release, native continuation or review transition is 
 prerequisite. Reconcile affected docs/tasks against verified outcomes and preserve
 remaining milestone gaps. Do not mark unverified work complete.
 
+## Execution handoff
+
+A saved plan is not execution. In a standalone planning session, stop after the
+committed batch and give the user agent the first selection-ready task ID. Offer one
+explicit mode:
+
+- **Current session:** `/autowork <ID> in this session` runs that named task under
+  the same host and user authority.
+- **Continuous runner:** `autowork start` installs or starts the service, and the
+  runner owns selection. Offer this only when the user asks for background work.
+
+The user agent names the mode. Do not imply that a bare `/autowork` ran the plan,
+start a runner, dispatch a worker or claim delivery. An Autowork-owned substep
+returns to the same coordinator and does not start either mode.
+
 ## Scoped Skills convention
 
 An optional `Skills:` note stays in the existing task record, not a new required

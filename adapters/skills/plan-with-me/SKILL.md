@@ -46,5 +46,8 @@ planning or competing workers, without asking again for settled authorization.
 When existing execution fails without new product uncertainty, return the exact task
 ID, attempt evidence and failed operation to the same coordinator for supported
 recovery; do not reopen the product interview or create duplicate tasks.
-A later explicit implementation instruction enters the execution workflow. The shared
-contract requires neither Hermes-native tooling nor a claimed hard sandbox on this host.
+Before reporting, use the shared [execution
+handoff](../../../skills/shared/PLAN-HANDOFF.md#execution-handoff) to name the first
+selection-ready task and its execution mode. Start no runner here. A later explicit
+implementation instruction enters the execution workflow. The shared contract
+requires neither Hermes-native tooling nor a claimed hard sandbox on this host.
