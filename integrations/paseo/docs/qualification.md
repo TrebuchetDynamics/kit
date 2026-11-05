@@ -1,5 +1,11 @@
 # Qualification record
 
+## Task-detail simplification (2026-11-05)
+
+The owner's mobile critique showed a task sheet that contradicted the queue (OPEN in detail, BLOCKED in the list), refused to answer with “No answer action: this is not a current canonical owner question…”, filled evidence headers with accent green, dumped the selection payload as JSON and exposed every edit verb at once. `npm run check` passed: **119 tests across 7 test files** plus both strict TypeScript configurations. The queue row and the sheet now derive one state (`taskState`): owner question, then blocker, then record status, so a blocked task opened from Blockers keeps the BLOCKED pill and explains in plain words that no owner question is recorded. The redundant “Close details” button is gone because the host sheet owns dismissal; section metadata is labelled instead of reading as status. Disclosure headers are neutral chips with an icon, never accent-filled actions; “Contract and evidence” leads with the contract, notes sit behind “Task notes”, and the selection explanation renders as facts (`Eligible now`, reasons, closure provenance and time) with the raw payload behind a nested disclosure. “Edit task” asks which change to make — Placement, Hold, Close task, Supersede or Fields — and shows only that form. `relativeTime` also reads ISO timestamps.
+
+Not performed: a fresh physical 0.15.0 Android or desktop pass with this client bundle. The critique's screenshots remain the owner's baseline.
+
 ## Paseo 0.15 app compatibility (2026-11-03)
 
 The connected Android app reported **0.15.0** while the local daemon/CLI was **0.14.0**. The previous manifest range `>=0.13.0 <0.15.0` made the app's plugin card fail with `Plugin "paseo-autowork" requires Paseo >=0.13.0 <0.15.0. Your app is 0.15.0.` The 0.15.0 plugin SDK/server suite passes (**109 tests**, both TypeScript configurations), the plugin reloaded on the 0.14.0 daemon, and a live fleet read returned 11 repositories. The manifest is now `>=0.13.0 <0.16.0`; 0.16 remains untested. The app must reconnect or refresh the Plugin settings after the manifest change.
