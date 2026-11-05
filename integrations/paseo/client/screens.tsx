@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { PluginAgentPanelProps, PluginScreenProps, PluginWorkspacePanelProps } from '@getpaseo/plugin/client';
 import { useRpc, useWorkspace } from '@getpaseo/plugin/client';
 import { ScrollView, useToast } from '@getpaseo/plugin/client/ui';
-import { RefreshControl, View } from 'react-native';
+import { Pressable, RefreshControl, View } from 'react-native';
 import type { ScrollView as NativeScrollView } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
@@ -67,11 +67,41 @@ function dangerOf(action: ActionInput): string {
   if (action.kind === 'task-delete') return 'deletes the task record';
   return '';
 }
+/** The consequence an owner needs before a ticket is consumed; the frozen summary carries the exact payload. */
+function confirmationEffect(action: ActionInput, repoLabel: string): string {
+  const label = repoLabel || 'this repository';
+  switch (action.kind) {
+    case 'control':
+      if (action.action === 'restart') return `Restarts ${label} ${action.now ? 'now, interrupting merges' : action.stopWorkers ? 'after waiting for merges, then pausing workers' : 'after waiting for merges'}.`;
+      if (action.action === 'remove') return `Removes the ${label} runner service. Task records and worktrees stay.`;
+      if (action.action === 'update') return 'Replaces the installed Autowork suite for every runner on this host. Reload the plugin afterwards.';
+      return `Runs ${action.action} once on ${label}.`;
+    case 'model': return `Restarts ${label} with ${action.model}${action.fallback ? ` and fallback ${action.fallback}` : ''}.`;
+    case 'attention': return `Records ${action.minutes} attention minutes${action.task ? ` for ${action.task}` : ''} in private runner state.`;
+    case 'clear-held': return action.tasks?.length ? `Returns ${action.tasks.join(', ')} to integration.` : 'Returns every held commit to integration.';
+    case 'decision': return `Records your answer on ${action.task}. It does not start work.`;
+    case 'commit': return 'Commits the pending tasks/ edits. It does not push.';
+    case 'task-add': return `Adds a task record under ${action.fields.goal}. Commit it separately.`;
+    case 'goal': return `Writes goal ${action.goal}. Commit it separately.`;
+    case 'task-delete': return `Deletes the ${action.task} record. It does not delete worktrees or commits.`;
+    case 'task-field': case 'task-place': case 'task-move': case 'task-hold': case 'task-release': case 'task-done': case 'task-supersede':
+      return `Writes the ${action.task} task record. Commit it separately.`;
+    case 'store-prepare': return action.mode === 'stage' ? 'Stages the tasks/ store without moving HEAD.' : 'Prepares the tasks/ store and may create one local commit.';
+    case 'store-migrate': return 'Converts the tasks/ store and creates one local commit.';
+    case 'plan-start': return 'Starts an owned planning session. It does not start a runner.';
+    case 'plan-send': return 'Sends a message to the owned planning session.';
+    case 'plan-cancel': return 'Cancels the owned planning turn.';
+    case 'plan-steer': return 'Steers the owned planning turn.';
+    case 'plan-apply': return 'Applies the reviewed preview. It does not push or start a runner.';
+  }
+}
 
 function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenProps; host: HostState; fleet: Fleet; scrollRef: RefObject<NativeScrollView | null> }) {
   const [view, setView] = useState<ViewName>(validView(props.params.view));
   const [selectedId, selectId] = useState('');
-  const [pending, setPending] = useState<{ danger: string; label: string; phrase: string; prompt: string } | null>(null);
+  const [picker, setPicker] = useState(false);
+  const [repoSearch, setRepoSearch] = useState('');
+  const [pending, setPending] = useState<{ danger: string; label: string; phrase: string; prompt: string; action: ActionInput } | null>(null);
   const [typed, setTyped] = useState('');
   const queryClient = useQueryClient();
   const { data: operations } = useQuery<Operation[]>({ queryKey: operationsKey(props.host.id, fleet.instance), queryFn: async () => [], enabled: false, initialData: [], staleTime: Infinity, gcTime: 1800000 });
@@ -79,6 +109,7 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
   const directory = props.params.directory;
   const repos = sortByUrgency(directory ? fleet.repos.filter(repo => knownDirectory(repo.path, directory)) : fleet.repos);
   const repo = repos.find(item => item.id === selectedId) ?? repos[0];
+  const repoMatches = repos.filter(item => `${item.label} ${item.path}`.toLowerCase().includes(repoSearch.trim().toLowerCase()));
   const latestOperations = [...operations].reverse();
   const planningOperation = latestOperations.find(item => item.repoId === repo?.id && ['plan-start', 'plan-send'].includes(item.kind) && ['running', 'uncertain'].includes(item.status))
     ?? latestOperations.find(item => item.repoId === repo?.id && item.kind.startsWith('plan-'));
@@ -92,7 +123,7 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
     const updateAll = action.kind === 'control' && action.action === 'update';
     const repoLabel = label || repos.find(item => item.id === action.repoId)?.label || '';
     setPending({ danger: dangerOf(action), label: repoLabel, phrase: updateAll ? 'all runners' : repoLabel,
-      prompt: updateAll ? 'Type all runners to update every runner' : 'Type the repository name to confirm' }); setTyped('');
+      prompt: updateAll ? 'Type all runners to update every runner' : 'Type the repository name to confirm', action }); setTyped('');
     void mutation.request(action);
   };
   useEffect(() => { setView(validView(props.params.view)); }, [props.params.view]);
@@ -105,14 +136,19 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
   const open = (target: Repo, next: ViewName) => { selectId(target.id); setView(next); };
   const hostBlocker = sharedBlocker(repos);
   const confirmation = mutation.confirmation;
+  const effect = pending ? confirmationEffect(pending.action, pending.label) : '';
   const dangerous = !!pending?.danger;
   const typedOk = !dangerous || (typed.trim() === pending?.phrase && !!pending.phrase);
   return <>
-    <ScrollRow>{views.map(([name, title]) => <Button key={name} label={title} compact selected={view === name} onPress={() => setView(name)} />)}</ScrollRow>
+    <Row>{views.map(([name, title]) => <Button key={name} label={title} compact selected={view === name} onPress={() => setView(name)} />)}</Row>
     {view === 'fleet' ? <FleetBanner repos={repos} decisions={decisions} running={running} onOpen={open} /> : null}
     {view === 'fleet' && hostBlocker ? <Notice tone="danger"><Label bold>Host-wide blocker</Label><Label>{hostBlocker}</Label><Caption>Affects every runner on this host; repository rows do not repeat it.</Caption></Notice> : null}
     {readOnly ? <Notice tone="warning"><Label bold>Read-only</Label><Caption>The daemon operator has not granted runner controls, planning, task edits or owner answers. Grants live in the daemon-side policy file.</Caption></Notice> : null}
-    {view !== 'fleet' && view !== 'scorecard' && repos.length ? <ScrollRow>{repos.map(item => <Button key={item.id} compact label={item.label} accessibilityLabel={`Repository ${item.label}`} selected={repo?.id === item.id} onPress={() => selectId(item.id)} />)}</ScrollRow> : null}
+    {view !== 'fleet' && view !== 'scorecard' && repos.length ? <Sheet title="Choose repository" open={picker} onClose={() => setPicker(false)}>
+      {repos.length > 6 ? <Input label="Search repositories" value={repoSearch} onChange={setRepoSearch} placeholder="name or path" /> : null}
+      {repoMatches.map(item => <RepositoryOption key={item.id} repo={item} selected={repo?.id === item.id} onPress={() => { selectId(item.id); setPicker(false); }} />)}
+      {!repoMatches.length ? <Caption>No repository matches the search.</Caption> : null}
+    </Sheet> : null}
     {view === 'fleet' ? <>
       <Row>
         <Stat value={repos.length} label="repositories" />
@@ -133,7 +169,10 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
     {view !== 'fleet' && view !== 'scorecard' && repo ? <>
       <Row between>
         <View style={{ flexShrink: 1, gap: 2 }}><Heading level={2}>{repo.label}</Heading>{repo.revision ? <HashChip value={revisionParts(repo.revision).hash} name="revision" suffix={revisionParts(repo.revision).suffix} /> : <Caption>revision unavailable</Caption>}</View>
-        {repo.runner ? <StatusPill state={repo.runner.state} /> : null}
+        <View style={{ alignItems: 'flex-end', gap: 6 }}>
+          {repo.runner ? <StatusPill state={repo.runner.state} /> : null}
+          <Button label="Switch repository" compact onPress={() => { setRepoSearch(''); setPicker(true); }} />
+        </View>
       </Row>
       {repo.error ? <Notice tone="danger"><Label bold>Repository unavailable</Label><Label mono>{repo.path}</Label><Caption>{repo.error}. Actions are disabled until this identity is readable: restore the path or remove it from the daemon policy's repositories list.</Caption></Notice> : null}
       {view === 'runner' ? <RunnerView key={repo.id} repo={repo} {...common} onView={setView} /> : null}
@@ -144,12 +183,13 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
     <Sheet title="Confirm operation" open={!!confirmation} onClose={mutation.dismiss}>
       {confirmation ? <>
         <Label bold>{confirmation.summary}</Label>
-        <Caption>Push stays {confirmation.pushAllowed ? 'allowed' : 'not allowed'} (unchanged). Expires {relativeTime(confirmation.expiresAt).replace(' ago', '').replace('just now', 'now')} from now.</Caption>
+        <Label>{effect}</Label>
+        <Caption>Single use; a lost response stays uncertain and is never retried.</Caption>
+        <Caption>Expires {relativeTime(confirmation.expiresAt).replace(' ago', '').replace('just now', 'now')} from now · Push {confirmation.pushAllowed ? 'allowed' : 'not allowed'} (unchanged).</Caption>
         {dangerous ? <Notice tone="danger">
           <Label bold>This {pending!.danger}.</Label>
           <Input label={pending!.prompt} value={typed} onChange={setTyped} placeholder={pending!.phrase} />
         </Notice> : null}
-        <Notice tone="neutral"><Caption>Confirming dispatches once. Nothing is replayed automatically and a lost response is reported as uncertain, never retried.</Caption></Notice>
         <Row>
           <Button label="Confirm operation" variant={dangerous ? 'danger' : 'primary'} disabled={!enabled || !typedOk} onPress={() => { void mutation.confirm(); }} />
           <Button label="Dismiss confirmation" onPress={mutation.dismiss} />
@@ -172,9 +212,8 @@ function FleetBanner({ repos, decisions, running, onOpen }: { repos: Repo[]; dec
   return <Banner tone="neutral" title="No runner is active" body="Every runner is paused, stopped or not running. Start one from its runner view." action={{ label: `Open ${first.label}`, onPress: () => onOpen(first, 'runner') }} />;
 }
 
-/** Two lines per repository, then one overflow; the host-wide blocker is said once above. */
+/** Two lines per repository, then Open and Answer; the host-wide blocker is said once above. */
 function FleetRow({ repo, hostBlocker, onOpen }: { repo: Repo; hostBlocker: string | null; onOpen: (repo: Repo, view: ViewName) => void }) {
-  const [more, setMore] = useState(false);
   const runner = repo.runner;
   const ownBlocker = runner?.blocker.trim() && runner.blocker.trim() !== hostBlocker ? runner.blocker.trim() : '';
   return <Card compact tone={repo.error ? 'danger' : undefined}>
@@ -187,13 +226,17 @@ function FleetRow({ repo, hostBlocker, onOpen }: { repo: Repo; hostBlocker: stri
     <Row>
       <Button label="Open" compact variant="primary" accessibilityLabel={`Open ${repo.label}`} onPress={() => onOpen(repo, 'runner')} />
       {(runner?.decisions ?? 0) > 0 ? <Button label="Answer" compact accessibilityLabel={`Answer ${repo.label}`} onPress={() => onOpen(repo, 'blockers')} /> : null}
-      <Button label="More" compact variant="ghost" accessibilityLabel={`More ${repo.label}`} selected={more} onPress={() => setMore(!more)} />
-      {more ? <>
-        <Button label="Tasks" compact accessibilityLabel={`Tasks ${repo.label}`} onPress={() => onOpen(repo, 'tasks')} />
-        <Button label="Plan" compact accessibilityLabel={`Plan ${repo.label}`} onPress={() => onOpen(repo, 'planning')} />
-      </> : null}
     </Row>
   </Card>;
+}
+
+function RepositoryOption({ repo, selected, onPress }: { repo: Repo; selected: boolean; onPress: () => void }) {
+  const colors = useColors();
+  return <Pressable accessibilityRole="button" accessibilityLabel={`Repository ${repo.label}`} accessibilityState={{ selected }} onPress={onPress}
+    style={{ minHeight: 48, minWidth: 48, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 9, borderWidth: 1, borderColor: selected ? colors.accent : colors.border, backgroundColor: colors.surface2 }}>
+    <View style={{ flex: 1, gap: 2 }}><Label bold>{repo.label}</Label><Caption truncate>{countSummary(repo.runner)}</Caption></View>
+    <StatusPill state={repo.runner?.state ?? 'unknown'} />
+  </Pressable>;
 }
 
 type RepoViewProps = { repo: Repo; fleet: Fleet; host: HostState; hostId: string; enabled: boolean; request: (action: ActionInput) => void; onView?: (view: ViewName) => void };

@@ -136,6 +136,64 @@ describe('native host-scoped surfaces', () => {
     expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.commit')).toHaveLength(1);
     expect(button('Confirm operation')).toBeUndefined();
   });
+  it('shows every view and repository from a compact picker', async () => {
+    const value = fleet(); const base = value.repos[0]!;
+    const labels = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta', 'Iota', 'Kappa', 'Lambda', 'Mu'];
+    value.repos = labels.map((label, index) => ({ ...base, id: `repo-${index}`, label, path: `/repo/repo-${index}`, runner: { ...base.runner!, repo: `/repo/repo-${index}` } }));
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.fleet' ? Promise.resolve(value) : initial(name, data));
+    await mount({ params: { view: 'tasks' } });
+    for (const title of ['Fleet', 'Runner', 'Tasks', 'Blockers', 'Planning', 'Scorecard']) expect(button(title), title).toBeTruthy();
+    expect(root.root.findAll(node => String(node.type) === 'ScrollView' && node.props.horizontal === true)).toHaveLength(0);
+    await press('Switch repository');
+    expect(text()).toContain('Choose repository');
+    await input('Search repositories', 'beta');
+    expect(button('Repository Beta')).toBeTruthy();
+    expect(button('Repository Alpha')).toBeUndefined();
+    const rows = root.root.findAll(node => String(node.type) === 'Pressable' && /^Repository /.test(node.props.accessibilityLabel));
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.props.style.minHeight).toBeGreaterThanOrEqual(48);
+      expect(row.props.style.minWidth).toBeGreaterThanOrEqual(48);
+    }
+    await press('Repository Beta');
+    expect(button('Search repositories')).toBeUndefined();
+    expect(text()).toContain('Beta');
+    expect(env.invoke.mock.calls.some(([name, data]) => name === 'autowork.tasks' && (data as { repoId: string }).repoId === 'repo-1')).toBe(true);
+  });
+  it('names the exact effect and one safety limit before confirmation', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => {
+      if (name === 'autowork.prepare') {
+        const action = (data as { action: { kind: string } }).action;
+        return Promise.resolve({ ticket: 'ticket', expiresAt: Date.now() + 60000, summary: action.kind === 'decision' ? 'Answer T-1' : 'Pause repository', pushAllowed: false });
+      }
+      return initial(name, data);
+    });
+    await mount({ params: { view: 'runner' } });
+    await press('Pause');
+    expect(text()).toContain('Pause repository');
+    expect(text()).toContain('Runs pause once on Repository.');
+    expect(text()).toContain('Single use; a lost response stays uncertain and is never retried.');
+    expect(text()).toContain('Push not allowed (unchanged).');
+    expect(text()).not.toContain('Confirming dispatches once');
+    await press('Dismiss confirmation');
+    await press('Tasks'); await press('Open task T-1');
+    await input('Owner answer', 'Approved scope'); await press('Send answer');
+    expect(text()).toContain('Answer T-1');
+    expect(text()).toContain('Records your answer on T-1. It does not start work.');
+  });
+  it('keeps one Open action and Answer on a fleet row', async () => {
+    const value = fleet(); value.repos[0]!.runner!.decisions = 1;
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.fleet' ? Promise.resolve(value) : initial(name, data));
+    await mount();
+    expect(button('Open Repository')).toBeTruthy();
+    expect(button('Answer Repository')).toBeTruthy();
+    expect(button('More Repository')).toBeUndefined();
+    await press('Tasks');
+    expect(text()).toContain('Owner task');
+  });
   // A native modal body renders in the host's portal host, which rebuilds only Paseo's own
   // runtime contexts. The sheet must re-provide this plugin's theme, or every label inside it
   // throws and takes the whole app down (Android report: "Autowork theme missing").

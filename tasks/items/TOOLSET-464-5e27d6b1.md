@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-464-5e27d6b1"
 title = "Make the Paseo mobile shell and confirmations fit a phone"
 short = "Compact Paseo navigation and confirms"
-status = "open"
+status = "done"
 goal = "PASEO-PLUGIN"
 section = "Now"
 rank = 1000
@@ -16,6 +16,11 @@ scope = "Make the top-level Paseo shell usable on a 360dp phone and make each co
 acceptance = ["A new renderer test integrations/paseo/tests/client.test.tsx::shows every view and repository from a compact picker mounts the Tasks view with 12 repositories and fails on current code: all six view labels are present without a horizontal scroll row; pressing Switch repository opens Choose repository; typing beta in Search repositories narrows the list; selecting the beta row closes the sheet and the heading and view read beta; every picker row target has minHeight and minWidth at least 48.", "A new renderer test integrations/paseo/tests/client.test.tsx::names the exact effect and one safety limit before confirmation prepares a pause and an owner answer. It asserts Runs pause once on Repository, Records your answer on T-1, does not start work, Single use, never retried, the frozen summary and push not allowed. It asserts the generic Confirming dispatches once. Nothing is replayed automatically text is absent.", "A new renderer test integrations/paseo/tests/client.test.tsx::keeps one Open action and Answer on a fleet row mounts the fleet with a repository that has one decision. It asserts the row has Open and Answer and no More, then presses the Tasks view tab and asserts the selected repository's task queue is shown."]
 checks = ["npm --prefix integrations/paseo run check"]
 exclusions = ["No server, RPC contract, policy, prepare/commit or operation change.", "No physical Android or desktop qualification and no performance claim; Node renderer evidence only.", "No task-detail, task-queue filter, planning or scorecard redesign in this slice.", "No new dependency, second navigation state store or search RPC; repository filtering is local over the fleet snapshot."]
+closure = "manual"
+closure_actor = "interactive session"
+closure_timestamp = "2026-11-05T02:27:04.414245+00:00"
+closure_reason = "Implemented the compact mobile shell and action-specific confirmation; npm run check passes 122 tests; README, design, follow-ups and qualification updated. Physical device qualification remains pending."
+closure_evidence = "commit bfd80491; integrations/paseo/docs/qualification.md#mobile-shell-simplification-2026-11-05"
 +++
 - Sources: integrations/paseo/docs/design.md#planned-mobile-shell-2026-11-05; integrations/paseo/docs/follow-ups.md#4-mobile-scale-and-presentation-qualification; integrations/paseo/docs/qualification.md#task-detail-simplification-2026-11-05; owner critique 2026-11-05, five Android screenshots: This UX is too complicated and does not really solve correctly.
 - Repo obligations triggered: update README.md Reading the screens, Task edits and commits, Planning and decisions, Runner controls and maintenance; docs/design.md Native presentation and the planned mobile shell section; docs/follow-ups.md item 4; docs/qualification.md with the new offline evidence. No generated outputs. Guards: tests/client.test.tsx 48px target test and the three new tests. No schema, migration or CI change.
