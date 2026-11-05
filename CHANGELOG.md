@@ -41,6 +41,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- docs(autonomy): record the 2026-11-05 standing-policy audit of TOOLSET-431-47a7152e, TOOLSET-450-e643cb7a and TOOLSET-451-ba324296; all three are owner-only and remain in Needs decision. (TOOLSET-467-69e39d8c)
 - fix(autowork): bind publication and restart to the verified release, grant and revision; a deliberate stop is terminal and a push refuses when HEAD, the running release or the effective grant differs. (TOOLSET-462-9f8caaab)
 - Give an attempt-2 empty or no_change hold without a commit one explicit, bounded requeue from current main (--parallel-requeue-empty TASK --requeue-by ACTOR --requeue-reason TEXT); a second empty failure parks as a visible engineering hold with no automatic retry. (TOOLSET-460-c838ac54)
 - fix(engine): recover a stale engine integration worktree after a coordinator restart by archiving and recreating it under integration.lock, clearing only its own registration instead of a repository-wide git worktree prune. (TOOLSET-459-d9214062)

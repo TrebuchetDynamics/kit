@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-467-69e39d8c"
 title = "Record the standing autonomy policy audit of open owner questions"
 short = "Record the policy audit"
-status = "open"
+status = "done"
 goal = "PLANNING-AUTHORITY"
 section = "Next"
 rank = 8000
@@ -16,6 +16,8 @@ scope = "Verify the standing-policy dispositions already recorded on the audited
 acceptance = ["docs/autonomy.md is linked from AGENTS.md and names the delegated domains, owner-only decisions, the Standing policy recording rule and change control; python3 skills/docs-sync/scripts/docs.py check . passes.", "Every open Needs decision task at audit time has either a Standing policy: note naming a delegated domain and the chosen option, reason and evidence, or a Question: note naming its owner-only reason. No acceptance, exclusion, dependency, owner decision or live authorization is invented or weakened. The dated audit entry is appended to docs/autonomy.md#audit-log and names the audited IDs, each disposition, the moved IDs and the remaining owner questions.", "autowork tasks validate --worktree . passes and the read-back report lists each audited task ID, the moved IDs and the remaining owner questions."]
 checks = ["autowork tasks validate --worktree .", "python3 skills/docs-sync/scripts/docs.py check ."]
 exclusions = ["No product, live, publication, deployment, credential, money, secret or destructive change.", "No change to task acceptance, exclusions, dependencies, ownership or history.", "No Owner decision note, owner waiver or owner qualification for a planner call.", "No automatic answer for a question outside the delegated domains in docs/autonomy.md."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-467-69e39d8c.toml"
 +++
 - Sources: docs/autonomy.md#applying-the-policy-to-a-question; docs/autonomy.md#audit-log; docs/autonomy.md#delegated-decisions; AGENTS.md#autowork-autonomous-local-progress; docs/project.md#planning-authority-and-shared-protocol-2026-11-01
 - Audit starting point (planner read; verify against docs/autonomy.md): TOOLSET-431-47a7152e, TOOLSET-450-e643cb7a and TOOLSET-451-ba324296 were the open Needs decision tasks at planning time. Each is owner-only (a repository rename and npm scope plus a live-profile proof; a Hermes approval security default; an authorized spend-and-target live delivery). Record the disposition from the policy, not from this note.
