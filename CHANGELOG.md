@@ -41,6 +41,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- fix(engine): recover a stale engine integration worktree after a coordinator restart by archiving and recreating it under integration.lock, clearing only its own registration instead of a repository-wide git worktree prune. (TOOLSET-459-d9214062)
 - docs(provenance): reverify six doc role pins at 9e2cc1ad and correct docs/project.md so it no longer claims the manifest keeps every original verified_at (TOOLSET-461-61800c0c)
 - Add a strict mypy allowlist and typecheck step for task selection and planning authority. (LANG-002-72648a0e)
 - Add coordinator and fleet /proc resource fields to autowork ls --json. (LANG-001-8d4fe384)
