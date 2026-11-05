@@ -41,6 +41,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- docs: rename current install/update/removal and namespace instructions to the kit plugin (kit, kit@autowork, kit@autowork-marketplace, /kit:, $kit:) (TOOLSET-452-3dcf8df2)
 - fix(check): make the declared full check provision CPython 3.12 and requirements-test.txt via uv, so `python3 scripts/check.py` runs the documented check on any host. (MAIN-005-5e68ffc0)
 - `autowork remove NAME` now removes the saved service directly instead of re-entering repository startup, so a service whose checkout was renamed or deleted can still be uninstalled. It also removes the matching pause marker; state, worktrees and unmerged sessions stay.
 - A running coordinator re-reads its repository identity before every cycle, merge and push. A
