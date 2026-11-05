@@ -453,7 +453,9 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
   const revision = query.data ? revisionParts(query.data.revision) : null;
   return <Stack gap={12}>
     {blockers ? <DecisionsCard runner={runner} onAnswer={select} /> : null}
-    {!blockers && (editing || fleet.permissions.commit) ? <PendingCard {...common} /> : null}
+    {/* An answer is an uncommitted record edit and the runner reads committed records, so the
+        commit step belongs where the answer is recorded, not only in Tasks. */}
+    {editing || fleet.permissions.commit ? <PendingCard {...common} /> : null}
     <Card>
       <Row between><Heading level={2}>{blockers ? 'Blocked tasks' : 'Task queue'}</Heading><Caption>{query.isFetching ? 'Refreshing…' : `${host.enabled && !query.isStale && !query.isError ? 'Live' : 'Cached'}${revision ? ` · ${revision.short}${revision.suffix ? ' · working tree' : ''}` : ''}`}</Caption></Row>
       {query.data ? <Caption>{plural(counts.open, 'open task')} · {counts.decisions} need decision · {counts.blocked} blocked{blockers ? '' : ` · ${counts.done} done`}{editing ? ' · working-tree records, uncommitted edits included' : ''}</Caption> : null}
@@ -545,7 +547,7 @@ function PendingCard({ repo, fleet, host, hostId, enabled, request }: RepoViewPr
       {fleet.permissions.commit ? <>
         <Input label="Commit message" value={message} onChange={setMessage} placeholder="tasks: answer T-12" />
         <Button label="Commit task edits" variant="primary" disabled={!enabled || !message.trim()} onPress={() => request({ kind: 'commit', repoId: repo.id, message: message.trim() })} />
-        <Caption>Commits only tasks/ paths; other dirty files stay. No push.</Caption>
+        <Caption>Commits only tasks/ paths; other dirty files stay. No push. The runner reads committed records, so a saved answer takes effect after this commit.</Caption>
       </> : <Caption>Task-store commits are not granted by operator policy.</Caption>}
     </> : null}
   </Card>;
