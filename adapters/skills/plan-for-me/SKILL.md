@@ -96,5 +96,7 @@ A saved plan is not dispatch, delivery or completed work.
 Standalone planning stops here despite earlier unrelated
 implementation permission. An Autowork-owned substep returns to that same
 coordinator; no competing worker or execution inside planning. A later explicit
-implementation instruction enters the execution workflow. The shared contract
-does not require Hermes-native tooling or promise a hard sandbox on this host.
+implementation instruction enters the execution workflow. Before reporting, use the shared [execution
+handoff](../../../skills/shared/PLAN-HANDOFF.md#execution-handoff) to name the first
+selection-ready task and its execution mode. Start no runner here. The shared
+contract does not require Hermes-native tooling or promise a hard sandbox on this host.

@@ -133,6 +133,24 @@ class PlanningCliContractTests(unittest.TestCase):
             with self.subTest(portable_prepare=required):
                 self.assertIn(required, portable)
 
+    def test_execution_handoff_names_a_session_or_runner_without_starting_either(self):
+        handoff = prose(HANDOFF)
+        for required in ('A saved plan is not execution', 'give the user agent the first selection-ready task ID',
+                         'Current session', 'Continuous runner', 'autowork start',
+                         'Do not imply that a bare `/autowork` ran the plan',
+                         'start a runner', 'same coordinator'):
+            with self.subTest(shared=required):
+                self.assertIn(required, handoff)
+        for path, link in ((PLANNER, '../shared/PLAN-HANDOFF.md#execution-handoff'),
+                           (INTERACTIVE[0], '../shared/PLAN-HANDOFF.md#execution-handoff'),
+                           (AUTONOMOUS[1], '../../../skills/shared/PLAN-HANDOFF.md#execution-handoff'),
+                           (INTERACTIVE[1], '../../../skills/shared/PLAN-HANDOFF.md#execution-handoff')):
+            with self.subTest(path=path):
+                text = prose(path)
+                self.assertIn(link, text)
+                self.assertIn('first selection-ready task', text)
+                self.assertIn('Start no runner here', text)
+
     def test_planning_handoffs_limit_selection_claims_and_disclose_delivery(self):
         # Entrypoints must not turn a branch's selection result into runtime readiness.
         for path in (*INTERACTIVE, *AUTONOMOUS):

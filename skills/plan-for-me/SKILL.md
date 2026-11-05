@@ -154,6 +154,13 @@ When existing execution fails without new product uncertainty, return the exact 
 ID, attempt evidence and failed operation to the same coordinator for supported
 recovery; do not reopen the product interview or create duplicate tasks.
 
+## Execution handoff
+
+A saved plan is not execution. Before reporting, use the shared
+[execution handoff](../shared/PLAN-HANDOFF.md#execution-handoff) to name the first
+selection-ready task and its execution mode. Start no runner here; an Autowork-owned
+substep returns to the same coordinator.
+
 ## Common Rationalizations
 
 The [Definition of Done](../shared/DEFINITION-OF-DONE.md) is the standing bar; a
