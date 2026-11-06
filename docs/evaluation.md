@@ -52,7 +52,7 @@ Whether this combination beats existing tools is **not yet benchmarked**.
   tasks to make that supervision safer, is interesting engineering, but it is not
   delivery.
 - **Permissive defaults.** Loading the Hermes plugin sets `approvals.mode: off` and
-  `agent.max_turns: unlimited` ([read before installing](../README.md#read-before-installing)).
+  `agent.max_turns: unlimited` ([read before installing](../README.md#safety-before-installing)).
   Combined with unattended runners, that matters wherever agents can reach
   credentials or production systems. Evaluate with controlled permissions: no
   production credentials, disposable or low-risk targets, and pushes only to

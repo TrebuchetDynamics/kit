@@ -1,5 +1,7 @@
 # Kit
 
+[![Offline CI](https://github.com/TrebuchetDynamics/kit/actions/workflows/test.yml/badge.svg)](https://github.com/TrebuchetDynamics/kit/actions/workflows/test.yml)
+
 ### A toolset of skills for coding agents.
 
 Kit gives an agent a set of practised workflows: plan a decision, document it, execute
@@ -93,6 +95,11 @@ states its own boundaries and what "done" means.
 
 ## Install
 
+> **Before you install:** Give unattended agents no production credentials.
+> Hermes changes approval settings, and full setup targets every live profile.
+> Review the [policy and opt-out](docs/installation.md#install) before enabling it,
+> plus the full [safety notes](#safety-before-installing).
+
 Start with Pi, Claude Code or Codex and configure that host's model. These are the
 primary portable targets. Hermes is optional and adds a native fleet with its own
 policy defaults; review its safety notes before enabling it. Paseo hosts any of the
@@ -125,10 +132,8 @@ codex plugin add kit@autowork-marketplace
 ### Paseo
 
 Paseo hosts agents; it does not install Kit itself. Install Kit in Pi, Claude Code or
-Codex as above, then run that agent inside a Paseo workspace. The native Paseo plugin
-in [`integrations/paseo/`](integrations/paseo/README.md) adds Autowork fleet, task,
-blocker and planning management to Paseo. Install that directory, not the repository
-root, and only after reading its [security notes](integrations/paseo/docs/security.md).
+Codex as above, then run that agent inside a Paseo workspace. For native fleet, task,
+blocker and planning management, see [Paseo interface](#paseo-interface).
 
 ### Hermes (optional)
 
@@ -336,6 +341,9 @@ instrument.
 ## Paseo interface
 
 The [Autowork Paseo plugin](integrations/paseo/README.md) lives in `integrations/paseo/`.
+Install that directory, not the repository root, and only after reading its
+[security notes](integrations/paseo/docs/security.md).
+
 It shows runners, tasks, goals, owner questions, logs and the scorecard inside Paseo.
 With a daemon-side operator policy file it performs every `autowork` command through
 exact confirmations: task and goal edits with a tasks-only commit, runner controls and
