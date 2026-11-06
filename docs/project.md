@@ -829,7 +829,49 @@ normal commit workflow. A Codex/Pi adapter ships with the explicit-only policy.
 | Task | Outcome |
 | --- | --- |
 | TOOLSET-060 | Vendor and adapt the skill with provenance, tests and docs |
-| TOOLSET-061 | Visual refresh of this README with a project-native hero and workflow diagram |
+| TOOLSET-061 | Visual refresh of this README with a project-native hero and workflow diagram; TOOLSET-471 removes the unused hero and keeps the diagram |
+
+## README polish (2026-11-05)
+
+Status: Accepted for planning
+
+Decision: On 2026-11-05 the owner asked to beautify and improve the README. The
+root `README.md` is the project entry for this batch; the component READMEs
+(`pi-autowork/README.md`, `integrations/paseo/README.md`, `tmux/README.md`) stay
+out of scope. The current audit passes with one local image
+(`assets/readme/workflow.svg`); `assets/readme/hero.svg` is an unreferenced old
+Autowork wordmark; the full safety section follows Install, First use, the runner
+and the work queue; the Paseo install and `## Paseo interface` sections repeat the
+same plugin/security text. `PASEO-PLUGIN` uses `README.md#paseo-interface` as its
+source, and `docs/troubleshooting.md` links `README.md#first-use-in-your-project`,
+so those anchors stay.
+
+Adapter rules (planner's calls): keep the plain Kit heading and the existing dark
+`workflow.svg`; remove the unused `hero.svg`; add one CI badge for
+`.github/workflows/test.yml`; add a short "Before you install" warning at the top
+of Install while keeping the full Safety section; preserve every heading anchor
+and incoming link; reduce the Paseo install/interface duplication; add a durable
+non-fenced relative-link and heading-anchor test. Do not change the project
+status, verification claims, host commands, policy statements or claims; do not
+add a logo, title banner, other badge, benchmark or live-reliability claim.
+
+Execution: the task runs in the Autowork runner's isolated worktree from the
+committed planning batch; the main checkout's dirty TOOLSET-470 duplicate stays
+out of scope. TOOLSET-061's hero row stays historical; the task removes the unused
+hero and keeps `workflow.svg` as the only embedded image. The pre-existing
+`docs/evaluation.md:55` link `#read-before-installing` is repaired to
+`#safety-before-installing`. The CI badge uses an `https://` URL and alt text.
+The new test contains the literal `README.md` and does not name `docs/project.md`,
+so the existing affected-test selection assertions stay true; it pins the README
+internal links and the anchors `docs.py` cannot resolve, especially the
+PASEO-PLUGIN goal source and the `docs/evaluation.md` incoming link. Checks are
+bounded: the README audit, `docs.py`, the new test plus the affected/vendor tests,
+and `git diff --check`; `affected_tests --run` would select the whole suite
+because the SVG is unmappable, so it is not used.
+
+| Task | Outcome |
+| --- | --- |
+| TOOLSET-471-506496e8 | Root README polish with safe install order, one CI badge, asset cleanup, Paseo deduplication and a link test |
 
 ## New skill review (2026-10-15)
 
