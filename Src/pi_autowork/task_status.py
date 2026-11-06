@@ -16,6 +16,28 @@ WAIT_LABELS = {'Implemented': 'implemented, waiting for review', 'Merge turn': '
 WAIT_CAUSES = ('overlap',)
 
 
+def blocked_reason(code):
+    """Humanize selection codes while preserving task IDs."""
+    import re
+    return code.replace('_', ' ').lower() if re.fullmatch(r'[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+', code) else code
+
+
+def closure_display(info):
+    """Closure words and evidence for output, not qualification authority."""
+    if not info:
+        return None
+    provenance = info['provenance']
+    if provenance == 'coordinator_verified':
+        detail = info['evidence'] or 'Verification evidence not recorded'
+    elif provenance == 'manual':
+        detail = (f'Manually closed by {info["actor"] or "unknown"} at {info["timestamp"] or "unknown"}; '
+                  f'not coordinator-verified. {info["reason"] or "Reason not recorded"}')
+    else:
+        detail = 'Closure provenance not recorded (legacy); no coordinator verification recorded.'
+    return dict(label=info['label'], detail=detail, provenance=provenance,
+                verified=info['evidence_valid'] if provenance == 'coordinator_verified' else False)
+
+
 def phase_status(phase):
     """Only integrated (checks/review passed on the session branch) is Mergeable."""
     if phase == 'integrated':

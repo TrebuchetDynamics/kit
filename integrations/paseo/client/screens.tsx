@@ -6,7 +6,7 @@ import { Pressable, RefreshControl, View } from 'react-native';
 import type { ScrollView as NativeScrollView } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
-import { blockedReason, canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, taskState, whyStopped, type TaskFilters } from './presentation';
+import { canAnswer, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
 import { operationsKey, readForHost, rememberOperation, useConfirmedAction, useHostState, useReadBackoff, useWatch, type HostState } from './state';
 import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme, useColors } from './ui';
 
@@ -170,7 +170,7 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
       <Row between>
         <View style={{ flexShrink: 1, gap: 2 }}><Heading level={2}>{repo.label}</Heading>{repo.revision ? <HashChip value={revisionParts(repo.revision).hash} name="revision" suffix={revisionParts(repo.revision).suffix} /> : <Caption>revision unavailable</Caption>}</View>
         <View style={{ alignItems: 'flex-end', gap: 6 }}>
-          {repo.runner ? <StatusPill state={repo.runner.state} /> : null}
+          {repo.runner ? <StatusPill state={repo.runner.display?.state ?? 'unknown'} /> : null}
           <Button label="Switch repository" compact onPress={() => { setRepoSearch(''); setPicker(true); }} />
         </View>
       </Row>
@@ -219,7 +219,7 @@ function FleetRow({ repo, hostBlocker, onOpen }: { repo: Repo; hostBlocker: stri
   return <Card compact tone={repo.error ? 'danger' : undefined}>
     <Row between>
       <View style={{ flexShrink: 1, gap: 1 }}><Label bold>{repo.label}</Label><Caption truncate>{countSummary(runner)}</Caption></View>
-      <StatusPill state={runner?.state ?? 'unknown'} />
+      <StatusPill state={runner?.display?.state ?? 'unknown'} />
     </Row>
     {ownBlocker ? <Caption>Blocked: {ownBlocker}</Caption> : null}
     {repo.error ? <><Caption>{repo.error}</Caption><Caption truncate>{repo.path} · restore or remove it in the daemon policy</Caption></> : null}
@@ -235,7 +235,7 @@ function RepositoryOption({ repo, selected, onPress }: { repo: Repo; selected: b
   return <Pressable accessibilityRole="button" accessibilityLabel={`Repository ${repo.label}`} accessibilityState={{ selected }} onPress={onPress}
     style={{ minHeight: 48, minWidth: 48, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 9, borderWidth: 1, borderColor: selected ? colors.accent : colors.border, backgroundColor: colors.surface2 }}>
     <View style={{ flex: 1, gap: 2 }}><Label bold>{repo.label}</Label><Caption truncate>{countSummary(repo.runner)}</Caption></View>
-    <StatusPill state={repo.runner?.state ?? 'unknown'} />
+    <StatusPill state={repo.runner?.display?.state ?? 'unknown'} />
   </Pressable>;
 }
 
@@ -344,6 +344,9 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
     <Card>
       <Heading level={2}>Health</Heading>
       <Row><StatusPill state={human(record(runner.main_check)?.result_class ?? record(runner.main_check)?.state ?? 'no evidence')} tone={mainCheckTone(runner.main_check)} /><Label>Main check: {mainCheckSummary(runner.main_check)}</Label></Row>
+      {runner.display?.needs ? <Label>{runner.display.needs}</Label> : null}
+      {runner.display?.question_summary ? <Caption>{runner.display.question_summary}</Caption> : null}
+      {runner.display?.blockers.map(([label, items]) => <Label key={label}>{label}: {items}</Label>)}
       {runner.job ? <Label>Current job: {jobSummary(runner.job)}</Label> : null}
       <Facts rows={observation} />
       <Row style={{ maxWidth: 260 }}>
@@ -433,7 +436,8 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
   const runner = repo.runner;
   const questions = runner?.questions ?? [];
   const editing = fleet.permissions.tasks;
-  const all = query.data?.tasks ?? [];
+  const all = (query.data?.tasks ?? []).map(task => ({ ...task, display:
+    runner?.display?.revision === query.data?.revision ? runner?.display?.tasks[task.id] ?? task.display : task.display }));
   const hasFilters = Object.values(filters).some(value => value.trim());
   const counts = { open: all.filter(task => isActionable(task)).length, decisions: all.filter(task => questions.some(question => question.id === task.id)).length, blocked: all.filter(task => !!task.blocked_by && isActionable(task)).length, done: all.filter(task => !isActionable(task)).length };
   // A filter is an explicit request and searches everything; otherwise closed work stays out of the way.
@@ -492,15 +496,16 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
 
 function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; question: boolean; selected: boolean; onOpen: () => void; onAnswer: () => void }) {
   const colors = useColors();
-  const closure = closureBadge(task.closure);
-  const blocked = isActionable(task) && !!task.blocked_by;
-  const meta = [task.position ? `Position ${task.position}` : null, blocked ? `Blocked by ${blockedReason(task.blocked_by!)}` : !question && task.section ? `Section: ${task.section}` : null].filter(Boolean).join(' · ');
+  const closure = task.display?.closure;
+  const blocked = !!task.display?.blocker;
+  const meta = [task.position ? `Position ${task.position}` : null, blocked ? `Blocked by ${task.display!.blocker}` : !question && task.section ? `Section: ${task.section}` : null].filter(Boolean).join(' · ');
   // A row inside the queue, not a card inside a card.
   return <View style={{ gap: 6, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
-    <Row><Label mono>{task.id}</Label><StatusPill state={taskState(task, question)} tone={blocked ? 'warning' : undefined} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}</Row>
+    <Row><Label mono>{task.id}</Label><StatusPill state={task.display?.state ?? 'unknown'} />{closure ? <Badge label={closure.label} tone={stateTone(closure.label)} /> : null}</Row>
     <Label>{task.title}</Label>
     {meta ? <Caption>{meta}</Caption> : null}
-    {!isActionable(task) ? <Caption>Provenance: {closureLabel(task.closure)}</Caption> : null}
+    {task.display?.why ? <Caption>{task.display.why}</Caption> : null}
+    {closure && closure.detail !== task.display?.why ? <Caption>{closure.detail}</Caption> : null}
     <Row>
       {question ? <Button label="Answer" compact variant="primary" accessibilityLabel={`Answer task ${task.id}`} onPress={onAnswer} /> : null}
       <Button label={selected ? 'Hide details' : 'Details'} compact accessibilityLabel={`Open task ${task.id}`} selected={selected} onPress={onOpen} />
@@ -513,6 +518,7 @@ function DecisionsCard({ runner, onAnswer }: { runner: Runner | null; onAnswer: 
   const questions = runner?.questions ?? [];
   return <Card tone={questions.length ? 'warning' : undefined}>
     <Row between><Heading level={2}>{questions.length ? `Decision needed · ${questions.length}` : 'No decision waiting'}</Heading></Row>
+    {runner?.display?.question_summary ? <Caption>{runner.display.question_summary}</Caption> : null}
     {questions.length ? questions.map(question => <View key={question.id} style={{ gap: 6, paddingVertical: 6 }}>
       <Label bold>{headline(question.needs)}</Label>
       <Row><Label mono>{question.id}</Label><Badge label={`${question.effort} effort`} tone="neutral" /><Caption>unblocks {plural(question.unblocks, 'task')}</Caption></Row>
@@ -686,10 +692,12 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
   const detail = query.data;
   const question = repo.runner?.questions.find(item => item.id === taskId);
   const answerable = !!(task && repo.runner && detail && canAnswer(task, repo.runner, detail));
-  const blocked = !!task && isActionable(task) && !!task.blocked_by;
-  const state = taskState({ status: detail?.status ?? task?.status ?? 'unknown', blocked_by: task?.blocked_by ?? null }, answerable);
+  const presentation = (detail && task?.display?.record_revision === detail.record_revision
+    ? task.display : detail?.display) ?? task?.display;
+  const blocked = !!presentation?.blocker;
+  const state = presentation?.state ?? 'unknown';
   const meta = detail ? [detail.section ? `Section: ${detail.section}` : null, detail.goal ? `Goal: ${detail.goal}` : null].filter(Boolean).join(' · ') : '';
-  const closure = detail ? closureBadge(detail.closure) : null;
+  const closure = presentation?.closure;
   const list = (items: string[]) => items.length ? items.map(item => `• ${item}`).join('\n') : null;
   const contract: Array<[string, string]> = detail ? ([
     ['Scope', detail.scope], ['Acceptance', list(detail.acceptance)], ['Checks', list(detail.checks)], ['Exclusions', list(detail.exclusions)],
@@ -705,7 +713,9 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
     <View style={{ gap: 2 }}><Heading level={2}>{taskId}</Heading><Caption>{detail?.title ?? task?.title ?? 'Task detail'}</Caption></View>
     {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
     {detail ? <>
-      <Row><StatusPill state={state} tone={blocked ? 'warning' : undefined} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}{meta ? <Caption>{meta}</Caption> : null}</Row>
+      <Row><StatusPill state={state} />{closure ? <Badge label={closure.label} tone={stateTone(closure.label)} /> : null}{meta ? <Caption>{meta}</Caption> : null}</Row>
+      {presentation?.why ? <Caption>{presentation.why}</Caption> : null}
+      {closure && closure.detail !== presentation?.why ? <Caption>{closure.detail}</Caption> : null}
       {answerable ? <>
         <Heading level={3}>Decision needed</Heading>
         <Markdown text={question?.needs ?? ''} />
@@ -714,7 +724,7 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
         <Button label="Send answer" variant="primary" disabled={!enabled || query.isStale || !answer.trim() || !fleet.permissions.decisions} onPress={() => request({ kind: 'decision', repoId: repo.id, task: taskId, revision: detail.record_revision, text: answer })} />
         {!fleet.permissions.decisions ? <Caption>Owner answers are not granted by operator policy.</Caption> : null}
       </> : blocked ? <Notice tone="warning">
-        <Label bold>Blocked by {blockedReason(task!.blocked_by!)}</Label>
+        <Label bold>Blocked by {presentation!.blocker}</Label>
         <Caption>No owner question is recorded for this task, so there is nothing to answer here. Refresh for a current blocker; a technical hold clears without an owner answer.</Caption>
       </Notice> : null}
       <Expand title="Contract and evidence">

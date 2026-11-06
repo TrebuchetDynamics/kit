@@ -787,6 +787,9 @@ class AutoworkCommandTests(unittest.TestCase):
                 # The TUI consumes these helpers, not the raw blocker field.
                 # A generic setup label or stopped-service action must not hide
                 # the persisted reason in its headline, Needs or Blocker detail.
+                display = runner.pop('display')
+                self.assertEqual(display['state'], runner['state'])
+                self.assertIn('--workers must be 1 to 16', display['needs'])
                 view = fleet_view.Runner(**runner)
                 for displayed in (fleet_view.verdict(view)[0], fleet_view.needs(view),
                                   fleet_view.blocker_parts(view)):

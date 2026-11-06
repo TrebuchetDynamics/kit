@@ -428,21 +428,25 @@ def _selection_source(store, rev='HEAD', worktree=False):
 
 def cmd_list(repo, rev='HEAD', worktree=False):
     store = _read(repo, rev, worktree)
+    from pi_autowork.task_snapshot import task_display
     ready = {t.id: n + 1 for n, t in enumerate(task_select.order(store))}
     rows = []
     for t in sorted(store.tasks.values(), key=lambda t: (t.status != 'open', t.section or '', t.rank or 0, t.id)):
         blocked = task_select.blocking(store, t)
         rows.append(dict(id=t.id, title=t.title, section=t.section, rank=t.rank, status=t.status, goal=t.goal,
                          position=ready.get(t.id), blocked_by=blocked.code if blocked else None,
-                         closure=t.closure_info, selection=_selection_source(store, rev, worktree)))
+                         closure=t.closure_info, display=task_display(t, store),
+                         selection=_selection_source(store, rev, worktree)))
     return rows
 
 
 def cmd_show(repo, tid, rev='HEAD', worktree=False):
     store = _read(repo, rev, worktree)
     t = _task(store, tid)
+    from pi_autowork.task_snapshot import task_display
     return dict(id=t.id, title=t.title, short=t.short, status=t.status, goal=t.goal, section=t.section,
-                rank=t.rank, depends_on=list(t.depends_on), verified_depends_on=list(t.verified_depends_on),
+                rank=t.rank, display=task_display(t, store), depends_on=list(t.depends_on),
+                verified_depends_on=list(t.verified_depends_on),
                 closure=t.closure_info, touches=list(t.touches), resources=list(t.resources),
                 kind=t.kind.value, ownership=t.ownership.value, live=t.live.value, scope=t.scope,
                 live_actor=t.live_actor, live_at=t.live_at, live_scope=list(t.live_scope),
@@ -909,6 +913,8 @@ def add_parser(sub):
     p.add_argument('repo', nargs='?', default='.')
     p.add_argument('--message', '-m', help='the commit message (default names the number of edits)')
     p.add_argument('--dry-run', action='store_true', help='show the paths and their diff; commit nothing')
+    for name in ('list', 'show'):
+        verbs.choices[name].add_argument('--json', action='store_true', help='emit JSON (the default)')
     for name in ('add', 'field', 'goal'):
         verbs.choices[name].add_argument('--json', dest='json_input', metavar='FILE',
                                         help='read literal values from one JSON object (use - for stdin)')

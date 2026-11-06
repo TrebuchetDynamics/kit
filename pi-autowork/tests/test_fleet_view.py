@@ -206,7 +206,11 @@ class FleetViewTests(unittest.TestCase):
         expected['runners'][0].update(running=None, waiting=None, stopped=None, observation=dict(
             runner_alive=True, health_written_at=2000000000, snapshot_at=None, snapshot_age_seconds=None,
             task_state='unknown', error=None))
-        self.assertEqual(json.loads(output.getvalue().replace(str(self.base), '$BASE')), expected)
+        actual = json.loads(output.getvalue().replace(str(self.base), '$BASE'))
+        display = actual['runners'][0].pop('display')
+        self.assertEqual(display['state'], actual['runners'][0]['state'])
+        self.assertEqual(set(display), {'state', 'needs', 'question_summary', 'blockers', 'question_ids', 'revision', 'tasks'})
+        self.assertEqual(actual, expected)
 
     def test_ls_json_reports_coordinator_and_fleet_resources(self):
         from pi_autowork import command

@@ -425,12 +425,14 @@ DISPLAY_ONLY_RUNNER_FIELDS = ('snapshot', 'preparation', 'question_provenance', 
 
 
 def runner_json(runner):
-    """The legacy `ls --json` runner record: recursive as before, without display-only state."""
+    """Raw runner data plus output-only labels; internal snapshot objects stay private."""
+    display = fleet_view.runner_display(runner)
     plain = dataclasses.replace(runner, snapshot=None, preparation=None,
                                 question_provenance={}, acquisition_errors=[])
     record = dataclasses.asdict(plain)
     for key in DISPLAY_ONLY_RUNNER_FIELDS:
         record.pop(key, None)
+    record['display'] = display
     return record
 
 
