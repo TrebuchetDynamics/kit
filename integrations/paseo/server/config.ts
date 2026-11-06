@@ -17,10 +17,16 @@ export const configSchema = z.strictObject({
 export type PolicySource = 'environment' | 'default' | 'none';
 export type Config = z.infer<typeof configSchema> & { path: string | null; source: PolicySource };
 
-/** `$XDG_CONFIG_HOME/paseo-autowork/policy.json`, else `~/.config/paseo-autowork/policy.json`. */
+function configHome(env: NodeJS.ProcessEnv): string {
+  return env.XDG_CONFIG_HOME && path.isAbsolute(env.XDG_CONFIG_HOME) ? env.XDG_CONFIG_HOME : path.join(env.HOME || homedir(), '.config');
+}
+/** `$XDG_CONFIG_HOME/autowork/policy.json`, else `~/.config/autowork/policy.json`. */
 export function defaultPolicyPath(env: NodeJS.ProcessEnv = process.env): string {
-  const configHome = env.XDG_CONFIG_HOME && path.isAbsolute(env.XDG_CONFIG_HOME) ? env.XDG_CONFIG_HOME : path.join(env.HOME || homedir(), '.config');
-  return path.join(configHome, 'paseo-autowork', 'policy.json');
+  return path.join(configHome(env), 'autowork', 'policy.json');
+}
+/** The pre-rename path, read only while the current one is absent, so existing grants survive. */
+export function legacyPolicyPath(env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(configHome(env), 'paseo-autowork', 'policy.json');
 }
 async function readPolicy(file: string): Promise<z.infer<typeof configSchema>> {
   const stat = await lstat(file);
@@ -37,8 +43,15 @@ export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<
   const fallback = defaultPolicyPath(env);
   try { await lstat(fallback); }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { ...configSchema.parse({}), path: fallback, source: 'none' };
-    throw error;
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    // The plugin was named paseo-autowork before the rename; an operator's grants live there.
+    const legacy = legacyPolicyPath(env);
+    try { await lstat(legacy); }
+    catch (legacyError) {
+      if ((legacyError as NodeJS.ErrnoException).code === 'ENOENT') return { ...configSchema.parse({}), path: fallback, source: 'none' };
+      throw legacyError;
+    }
+    return { ...await readPolicy(legacy), path: legacy, source: 'default' };
   }
   return { ...await readPolicy(fallback), path: fallback, source: 'default' };
 }
