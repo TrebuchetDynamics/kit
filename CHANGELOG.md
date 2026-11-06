@@ -41,6 +41,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- Stabilize the host check-slot subprocess fixture with bounded startup synchronization, isolated runner settings and descendant cleanup while preserving execution deadlines (MAIN-006-cce37de1).
 - Harden the one-shot execution-lock regression with real-contention synchronization, bounded phase checks and reliable subprocess cleanup. (TOOLSET-472-47c0f21d)
 - Polish the root README with an early install-safety warning, one offline CI badge, consolidated Paseo guidance, unused hero removal and durable link/anchor checks; repair the evaluation safety link. (TOOLSET-471-506496e8)
 - Share output-only task and runner presentation across CLI, TUI and Paseo while preserving raw fields and setup-stop diagnostics. (TOOLSET-470-aaca1816)
