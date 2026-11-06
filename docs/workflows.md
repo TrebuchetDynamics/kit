@@ -370,10 +370,15 @@ job; decisions are the owner's.
 settles: an ADR for a decision with alternatives and a reason, a glossary entry for a
 named concept or resolved ambiguity. It follows Docs Sync for the write rules.
 
-`/improve-codebase-architecture` scans for shallow modules and leaking seams, tests
-them with the deletion test, and writes one self-contained HTML report to the OS temp
-directory with a candidate card and one top recommendation. It proposes no interface
-until the owner picks a candidate, then interviews that candidate.
+`/improve-codebase-architecture` uses Graphify for scoped discovery and Ponytail to
+challenge shallow modules, leaking seams, duplicated rules, concrete bugs and measured
+performance costs. It verifies graph leads in source and ranks defects before structural
+waste. Default review writes an HTML candidate report to the OS temp directory; a
+no-write request gets an inline report. Missing Graphify falls back to native search.
+Explicit `fix`, `patch` or `optimize` requests continue through `/autowork` for one
+bounded finding, with regression evidence, affected checks and Ponytail review in the
+existing review lane. Unresolved design or ADR choices still need a decision; no new
+commit, push or deployment authority is implied.
 
 Examples (Hermes CLI; Pi uses the same hyphen names, Claude Code prefixes
 `/kit:`, Codex prefixes `$kit:`):
@@ -382,6 +387,7 @@ Examples (Hermes CLI; Pi uses the same hyphen names, Claude Code prefixes
 /grilling the retry design; recommend answers; read-only
 /grill-with-docs the cache plan; record ADRs; no commit
 /improve-codebase-architecture src/runner; report only
+/improve-codebase-architecture src/cache; fix the highest-severity verified finding; no commit
 ```
 
 Grill Me remains Plan With Me's challenge mode; it loads Grilling for the mechanic and
