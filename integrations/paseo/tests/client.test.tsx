@@ -70,7 +70,7 @@ beforeEach(() => {
     if (name === 'autowork.task') return detail;
     if (name === 'autowork.watch') return { digest: 'digest-1', changed: false, capturedAt: Date.now() };
     if (name === 'autowork.goals') return { revision: 'rev', goals: [{ id: 'goal', title: 'Goal', priority: 1, source: 'docs/plan.md', status: 'unmet', focus: false, depends_on: [], record_revision: 'goal-v1' }] };
-    if (name === 'autowork.store') return { value: input && (input as { view: string }).view === 'pending' ? { files: ['tasks/items/T-1.md'], diff: '+ Owner decision', commit: null, dry_run: true,
+    if (name === 'autowork.store') return { value: input && (input as { view: string }).view === 'pending' ? { files: ['tasks/items/T-1.md'], diff: '+ Owner decision', pending_revision: 'a'.repeat(64), commit: null, dry_run: true,
       lifecycle: { state: 'pending_commit', message: 'The runner reads committed records; commit the saved answer.' } } : { ok: true }, capturedAt: Date.now() };
     if (name === 'autowork.models') return { models: ['provider/model-a'], capturedAt: Date.now() };
     if (name === 'autowork.scorecard') return { value: { days: 7, runners: { runner: { closed: 2, verified_closed: 1, evaluation: { summary: { closed: { value: 2, unit: 'tasks', status: 'measured' } } } } }, errors: { gone: '/missing is not a directory' }, overall: { summary: {} } }, capturedAt: Date.now() };
@@ -687,13 +687,37 @@ describe('management surface', () => {
     expect(captured.action).toEqual({ kind: 'clear-held', repoId: 'repo', tasks: ['T-2', 'T-3'] });
     await press('Diagnostics'); expect(text()).toContain('Runner:     not running');
   });
+  it('keeps an unchanged protected snapshot committable after a long diff review', async () => {
+    capture(grantAll());
+    await mount({ params: { view: 'tasks' } });
+    const key = ['autowork', 'a', 'generation-1', 'repo', 'store', 'pending'];
+    const preview = query.getQueryData(key);
+    expect(preview).toBeTruthy();
+    await act(async () => { query.setQueryData(key, preview, { updatedAt: Date.now() - 11000 }); });
+    await input('Commit message', 'carefully reviewed');
+    expect(button('Commit task edits')!.props.disabled).toBe(false);
+  });
+  it('refuses unprotected commits when an older backend omits the pending snapshot', async () => {
+    capture(grantAll()); const base = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation(async (name, input) => {
+      if (name === 'autowork.store' && (input as { view: string }).view === 'pending') {
+        return { value: { files: ['tasks/items/T-1.md'], diff: '+ older backend', commit: null, dry_run: true }, capturedAt: Date.now() };
+      }
+      return base(name, input);
+    });
+    await mount({ params: { view: 'tasks' } });
+    await input('Commit message', 'answer T-1');
+    expect(button('Commit task edits')!.props.disabled).toBe(true);
+    expect(text()).toContain('Update Autowork for exact pending-snapshot protection');
+    expect(env.invoke.mock.calls.some(([name]) => name === 'autowork.prepare')).toBe(false);
+  });
   it('edits tasks against the working-tree revision, adds records and commits only task paths after showing the diff', async () => {
     const captured = capture(grantAll());
     await mount({ params: { view: 'tasks' } });
     expect(text()).toContain('working-tree records'); expect(text()).toContain('1 file uncommitted');
     await press('Pending diff'); expect(text()).toContain('+ Owner decision');
     await input('Commit message', 'answer T-1'); await press('Commit task edits');
-    expect(captured.action).toEqual({ kind: 'commit', repoId: 'repo', message: 'answer T-1' });
+    expect(captured.action).toEqual({ kind: 'commit', repoId: 'repo', message: 'answer T-1', pendingRevision: 'a'.repeat(64) });
     await press('Open task T-1');
     expect(env.invoke.mock.calls.some(([name, value]) => name === 'autowork.task' && (value as { working: boolean }).working === true)).toBe(true);
     const field = (label: string) => root.root.findAll(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === label).length;

@@ -10,7 +10,7 @@ its typed fields, and a declared check still needs the existing approval to run.
 `prepare` brings a repository to a valid store (task_prepare.py).
 """
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import date, datetime, timezone
 import fcntl
 from functools import wraps
@@ -25,7 +25,7 @@ import tempfile
 import threading
 import time
 
-from pi_autowork import task_status
+from pi_autowork import landing, task_status
 from pi_autowork.engine import task_select  # noqa: E402
 from pi_autowork.engine import task_store  # noqa: E402
 from pi_autowork.engine.task_store import StoreError, TaskStore, WriteError  # noqa: E402
@@ -481,40 +481,65 @@ def cmd_goals(repo, rev='HEAD', worktree=False):
             for g in sorted(store.goals.values(), key=lambda g: (g.priority if g.priority is not None else 10**9, g.id))]
 
 
-def _untracked_diff(repo, path):
-    """`git diff --no-index` exits 1 when the file differs from /dev/null, which is the point."""
-    clean = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
-    result = subprocess.run(['git', '-C', str(repo), 'diff', '--no-index', '--no-color', '--', os.devnull, path],
-                            capture_output=True, text=True, env=clean, timeout=60)
-    if result.returncode not in (0, 1):
-        raise CommandError(f'git diff failed: {result.stderr.strip()}')
-    return result.stdout
+@_serialized
+def cmd_commit(repo, message=None, dry_run=False, expected=None):
+    """Preview and commit the same immutable tasks/ snapshot, never unrelated staged edits.
 
-
-def cmd_commit(repo, message=None, dry_run=False):
-    """Commit the working tree's tasks/ edits and nothing else: an owner's answers, holds and
-    new records become one local commit. Returns the changed paths, their diff and the new
-    commit (None for a dry run or when nothing changed). Other dirty files stay as they are."""
+    The pending revision binds HEAD and the resulting tree. A protected commit refuses
+    drift under the task lock before touching the real index or HEAD. Normal Git hooks
+    still run; edits made after snapshotting remain uncommitted in the working tree.
+    """
     repo = Path(repo)
     if not (repo / 'tasks').is_dir():
         raise CommandError('no tasks/ store in the working tree')
-    status = _git(repo, 'status', '--porcelain', '--untracked-files=all', '--', 'tasks', raw=True)
-    entries = [(line[:2], line[3:].split(' -> ')[-1]) for line in status.split('\n') if len(line) > 3]
-    files = sorted({path for _, path in entries})
-    if not files:
-        return dict(files=[], diff='', commit=None, dry_run=dry_run,
-                    lifecycle=task_status.edit_lifecycle('clean'))
-    worktree_store(repo)  # a broken store is refused before it can be committed
-    diff = _git(repo, 'diff', '--no-color', 'HEAD', '--', 'tasks')
-    diff += ''.join(_untracked_diff(repo, path) for code, path in entries if code == '??')
-    if dry_run:
-        return dict(files=files, diff=diff, commit=None, dry_run=True,
-                    lifecycle=task_status.edit_lifecycle('pending_commit'))
-    _git(repo, 'add', '-A', '--', 'tasks')
-    text = ' '.join((message or '').split()) or f'tasks: {len(files)} record edit(s)'
-    _git(repo, 'commit', '-q', '-m', text, '--', 'tasks')
-    return dict(files=files, diff=diff, commit=_git(repo, 'rev-parse', 'HEAD'), dry_run=False,
-                lifecycle=task_status.edit_lifecycle('committed'))
+    reason = landing.checkout_operation(repo, read_git=_git)
+    if reason:
+        raise CommandError('cannot commit task edits while ' + reason)
+    objects = task_store.temporary_objects(repo) if dry_run else nullcontext({})
+    with tempfile.TemporaryDirectory() as tmp, objects as object_env:
+        env = {**object_env, 'GIT_INDEX_FILE': str(Path(tmp) / 'index')}
+        head = _git(repo, 'rev-parse', 'HEAD')
+        _git(repo, 'read-tree', head, env=env)
+        _git(repo, 'add', '-A', '--', 'tasks', env=env)
+        tree = _git(repo, 'write-tree', env=env)
+        branch = _git(repo, 'rev-parse', '--symbolic-full-name', 'HEAD')
+        pending = hashlib.sha256(f'{branch}\n{head}\n{tree}\n'.encode()).hexdigest()
+        if expected is not None and expected != pending:
+            raise CommandError('pending task edits changed; review the diff again; nothing committed')
+        files = _git(repo, 'diff', '--name-only', '-z', head, tree, '--', 'tasks',
+                     env=env, raw=True).rstrip('\0').split('\0')
+        files = [name for name in files if name]
+        diff = _git(repo, 'diff', '--no-ext-diff', '--no-textconv', '--no-color', head, tree,
+                    '--', 'tasks', env=env, raw=True)
+        result = dict(files=files, diff=diff, commit=None, dry_run=dry_run, pending_revision=pending,
+                      lifecycle=task_status.edit_lifecycle('pending_commit' if files else 'clean'))
+        if not files:
+            return result
+        # Validate exactly the staged snapshot, not a second read of mutable files.
+        ident = {'GIT_AUTHOR_NAME': 'autowork', 'GIT_AUTHOR_EMAIL': 'autowork@localhost',
+                 'GIT_COMMITTER_NAME': 'autowork', 'GIT_COMMITTER_EMAIL': 'autowork@localhost'}
+        with task_store.temporary_objects(repo) as validation_objects:
+            validation_env = {**env, **validation_objects, **ident}
+            # Preview blobs live in a private object store too; retain it as an alternate.
+            if object_env:
+                validation_env['GIT_ALTERNATE_OBJECT_DIRECTORIES'] += os.pathsep + object_env['GIT_OBJECT_DIRECTORY']
+            candidate = _git(repo, 'commit-tree', tree, '-p', head, '-m', 'validate pending tasks', env=validation_env)
+            TaskStore.at(repo, candidate, env=validation_env)
+        if dry_run:
+            return result
+        if (_git(repo, 'rev-parse', 'HEAD') != head
+                or _git(repo, 'rev-parse', '--symbolic-full-name', 'HEAD') != branch
+                or landing.checkout_operation(repo, read_git=_git)):
+            raise CommandError('repository state changed; review pending task edits again; nothing committed')
+        text = ' '.join((message or '').split()) or f'tasks: {len(files)} record edit(s)'
+        _git(repo, 'commit', '-q', '-m', text, env=env)
+        commit = _git(repo, 'rev-parse', 'HEAD')
+        if (_git(repo, 'rev-parse', commit + '^{tree}') != tree
+                or _git(repo, 'rev-list', '--parents', '-n', '1', commit).split() != [commit, head]):
+            raise CommandError('commit hooks or another writer changed the snapshot; inspect the retained commit')
+        _git(repo, 'reset', '-q', commit, '--', 'tasks')
+        result.update(commit=commit, lifecycle=task_status.edit_lifecycle('committed'))
+        return result
 
 
 def cmd_new_id(repo, prefix=None):
@@ -915,7 +940,8 @@ def add_parser(sub):
     p = verbs.add_parser('commit', help="commit the working tree's tasks/ edits and nothing else")
     p.add_argument('repo', nargs='?', default='.')
     p.add_argument('--message', '-m', help='the commit message (default names the number of edits)')
-    p.add_argument('--dry-run', action='store_true', help='show the paths and their diff; commit nothing')
+    p.add_argument('--dry-run', action='store_true', help='show paths, diff and pending_revision; commit nothing')
+    p.add_argument('--expect-pending', metavar='REVISION', help='require the exact pending_revision from --dry-run')
     for name in ('add', 'field', 'goal'):
         verbs.choices[name].add_argument('--json', dest='json_input', metavar='FILE',
                                         help='read literal values from one JSON object (use - for stdin)')
@@ -1042,7 +1068,7 @@ def _run(args, repo):
     elif verb == 'goals':
         out = cmd_goals(repo, args.rev, args.worktree)
     elif verb == 'commit':
-        out = cmd_commit(repo, args.message, args.dry_run)
+        out = cmd_commit(repo, args.message, args.dry_run, args.expect_pending)
     elif verb == 'add':
         out = 'added ' + cmd_add(repo, args.goal, args.title, args.short, args.section, args.scope,
                                  args.acceptance, args.checks, args.touches, args.depends_on, args.task_id,

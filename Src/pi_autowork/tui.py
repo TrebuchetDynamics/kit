@@ -16,6 +16,7 @@ import asyncio
 from dataclasses import replace
 import io
 import json
+import re
 import os
 from pathlib import Path
 import subprocess
@@ -641,24 +642,29 @@ class CommitEdits(ReadScreen, ModalScreen[dict]):
     BINDINGS = [Binding('escape', 'cancel', 'cancel')]
     DEFAULT_CSS = '''
     CommitEdits { align: center middle; }
-    CommitEdits > Vertical { width: 80; max-width: 100%; height: auto; border: thick $accent; background: $surface; padding: 1 2; }
+    CommitEdits > Vertical { width: 80; max-width: 100%; height: 90%; border: thick $accent; background: $surface; padding: 1 2; }
+    #commit-body { height: 1fr; }
+    #commit-diff { height: 8; }
     CommitEdits Input { margin: 1 0; }
     CommitEdits Horizontal { height: auto; align-horizontal: right; }
     CommitEdits Button { margin-left: 2; }
     '''
 
-    def __init__(self, count, example):
+    def __init__(self, count, example, revision, diff):
         super().__init__()
         self.count, self.example = count, example
+        self.revision, self.diff = revision, diff
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Label(Text('Commit saved answers', style='bold'))
-            yield Static(Text(
-                f'{self.count} saved edit(s) are not committed; the runner reads committed records, '
-                'so it cannot see these answers yet. Only tasks/ paths are committed. Other dirty '
-                'files stay. No push, no execution, no live authorization.'))
-            yield Input(value=self.example, id='commit-message', placeholder='Commit message')
+            with VerticalScroll(id='commit-body'):
+                yield Label(Text('Commit saved answers', style='bold'))
+                yield Static(Text(
+                    f'{self.count} saved edit(s). Review this exact tasks/ diff; changed edits refuse the commit. '
+                    'Other dirty files stay. No push or new live authorization. '
+                    'An existing runner can select committed tasks.'))
+                yield TextArea(self.diff, read_only=True, id='commit-diff')
+                yield Input(value=self.example, id='commit-message', placeholder='Commit message')
             with Horizontal():
                 yield Button('Commit', variant='primary', id='commit-save')
                 yield Button('Cancel', id='commit-cancel')
@@ -674,7 +680,7 @@ class CommitEdits(ReadScreen, ModalScreen[dict]):
         if not message:
             self.notify('A commit message is required.', severity='warning')
             return
-        self.dismiss({'message': message})
+        self.dismiss({'message': message, 'revision': self.revision})
 
     def action_cancel(self):
         self.dismiss(None)
@@ -759,6 +765,7 @@ class TasksScreen(ReadScreen, Screen):
         # None is unknown (the dry run did not answer), not "nothing waits".
         self.pending = None if files is None else list(files['files'])
         self.pending_feedback = files.get('lifecycle') if files else None
+        self.pending_snapshot = files
         self.show_pending()
 
     def show_pending(self):
@@ -791,15 +798,22 @@ class TasksScreen(ReadScreen, Screen):
         runner = self.runner()
         if runner is None or self.app.view_only or not self.pending:
             return
-        self.app.push_screen(CommitEdits(len(self.pending), 'tasks: record owner answers'), self.commit_edits)
+        snapshot = getattr(self, 'pending_snapshot', None) or {}
+        revision = snapshot.get('pending_revision', '')
+        if not re.fullmatch(r'[a-f0-9]{64}', revision):
+            self.notify('Refresh pending edits; update Autowork if snapshot protection is unavailable.', severity='warning')
+            return
+        self.app.push_screen(CommitEdits(len(self.pending), 'tasks: record owner answers',
+                                         revision, snapshot.get('diff', '')), self.commit_edits)
 
     def commit_edits(self, result):
         runner = self.runner()
-        if not result or runner is None:
+        if not result or runner is None or self.app.view_only:
             return
         self.app.execute(
             fleet_view.Action('C', 'Commit task edits',
-                              [self.app.command, 'tasks', 'commit', '-m', result['message'], runner.repo]),
+                              [self.app.command, 'tasks', 'commit', '--expect-pending', result['revision'],
+                               '-m', result['message'], runner.repo]),
             on_complete=lambda _ok, _message: self.read_pending())
 
     def action_snapshot_info(self):

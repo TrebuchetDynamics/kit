@@ -101,7 +101,7 @@ export const actionSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('goal'), repoId: idSchema, goal: idSchema, revision: z.string().min(1).max(128).optional(), fields: goalFieldsSchema }),
   z.strictObject({ kind: z.literal('store-prepare'), repoId: idSchema, mode: z.enum(['stage', 'commit']) }),
   z.strictObject({ kind: z.literal('store-migrate'), repoId: idSchema, commit: z.boolean().default(true) }),
-  z.strictObject({ kind: z.literal('commit'), repoId: idSchema, message: text(500) }),
+  z.strictObject({ kind: z.literal('commit'), repoId: idSchema, message: text(500), pendingRevision: z.string().regex(/^[a-f0-9]{64}$/) }),
   z.strictObject({ kind: z.literal('plan-start'), repoId: idSchema, objective: z.string().max(16000).default(''),
     mode: z.enum(['plan', 'discuss', 'investigate']).default('plan'), task: idSchema.optional(), model: modelSchema.optional() }),
   z.strictObject({ kind: z.literal('plan-send'), repoId: idSchema, sessionId: idSchema, message: text() }),

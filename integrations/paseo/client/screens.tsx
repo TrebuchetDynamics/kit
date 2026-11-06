@@ -536,6 +536,7 @@ function PendingCard({ repo, fleet, host, hostId, enabled, request }: RepoViewPr
   });
   const pending = record(query.data?.value);
   const lifecycle = record(pending?.lifecycle);
+  const pendingRevision = typeof pending?.pending_revision === 'string' && /^[a-f0-9]{64}$/.test(pending.pending_revision) ? pending.pending_revision : '';
   const files = Array.isArray(pending?.files) ? pending!.files.filter((item): item is string => typeof item === 'string') : [];
   if (!fleet.capabilities.tasks.includes('commit')) return <Notice tone="warning"><Label>The installed Autowork release lacks `tasks commit`; task edits stay uncommitted until the executable is updated.</Label></Notice>;
   if (!files.length && !query.error) return null;
@@ -548,8 +549,9 @@ function PendingCard({ repo, fleet, host, hostId, enabled, request }: RepoViewPr
       <Expand title="Pending diff"><Label mono>{display(pending?.diff)}</Label></Expand>
       {fleet.permissions.commit ? <>
         <Input label="Commit message" value={message} onChange={setMessage} placeholder="tasks: answer T-12" />
-        <Button label="Commit task edits" variant="primary" disabled={!enabled || !message.trim()} onPress={() => request({ kind: 'commit', repoId: repo.id, message: message.trim() })} />
-        <Caption>Commits only tasks/ paths; other dirty files stay. No push.</Caption>
+        <Button label="Commit task edits" variant="primary" disabled={!enabled || query.isFetching || !pendingRevision || !message.trim()} onPress={() => request({ kind: 'commit', repoId: repo.id, message: message.trim(), pendingRevision })} />
+        {!pendingRevision ? <Caption>Update Autowork for exact pending-snapshot protection before committing.</Caption> : null}
+        <Caption>Commits only the reviewed tasks/ snapshot; changed edits require a fresh review. Other dirty files stay. No push.</Caption>
       </> : <Caption>Task-store commits are not granted by operator policy.</Caption>}
     </> : null}
   </Card>;
