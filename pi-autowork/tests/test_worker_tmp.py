@@ -42,18 +42,24 @@ class WorkerTmpTests(unittest.TestCase):
 
     def test_full_suites_share_host_slots_without_spending_their_timeout_waiting(self):
         """A competing runner must wait, survive its outer timeout, and recover a killed holder."""
+        from pi_autowork.engine import task_execution as execution
+
         component = str(Path(__file__).resolve().parents[1])
         engine = str(Path(__file__).resolve().parents[2] / 'pi-autowork/engine')
+        execution.subreaper()
+        existing_children = set(execution.child_pids(os.getpid()))
         with patch.dict(os.environ, PI_AUTOWORK_CHECK_ROOT=self.temp.name):
             for slots, killed in [('1', False), ('1', True), ('0', False)]:
                 with self.subTest(slots=slots, killed=killed):
                     root = self.repo / f'case-{slots}-{killed}'
                     root.mkdir()
                     self.slot(state='integrating')
-                    env = dict(os.environ, PI_AUTOWORK_CHECK_SLOTS=slots)
-                    script = ('import sys,json; from pathlib import Path; '
+                    env = {k: v for k, v in os.environ.items()
+                           if not k.startswith(('PI_AUTOWORK_', 'AUTOWORK_'))}
+                    env.update(PI_AUTOWORK_CHECK_ROOT=self.temp.name, PI_AUTOWORK_CHECK_SLOTS=slots)
+                    script = ('import sys,json,time; from pathlib import Path; '
                               f'sys.path[:0] = {[component, engine]!r}; '
-                              'from pi_autowork import worker; import task_execution as execution; ')
+                              'from pi_autowork import worker; import task_execution as execution\n')
                     hold_command = ('echo $$ > holder.pid; exec sleep 30' if killed else
                                     'sleep 30 & echo $! > daemon.pid; echo $$ > holder.pid; wait')
                     holder = subprocess.Popen([sys.executable, '-c', script +
@@ -66,13 +72,25 @@ class WorkerTmpTests(unittest.TestCase):
                             self.assertIsNone(holder.poll())
                             self.assertLess(time.monotonic(), deadline)
                             time.sleep(.01)
+                        # Import/setup latency is not the slot contract: start the short budget
+                        # only once this fixture is ready, before it can request admission.
+                        ready = str(root / 'ready')
                         command = [sys.executable, '-c', script +
+                            f'Path({ready!r}).touch()\n'
+                            f'while Path({ready!r}).exists(): time.sleep(.01)\n'
                             f'r = worker.run_suite("sleep .1; touch ran", {str(root)!r}, .5, '
                             f'Path({str(root / "full-check/second.log")!r}), '
                             f'Path({str(root / "full-check/T-1.status.json")!r})); sys.exit(r["code"])']
                         contender = subprocess.Popen([sys.executable, '-c', script +
+                            'def start(child):\n'
+                            '    deadline = time.monotonic() + 10\n'
+                            f'    while not Path({ready!r}).exists():\n'
+                            '        assert child.poll() is None, "suite fixture exited during startup"\n'
+                            '        assert time.monotonic() < deadline, "suite fixture startup timed out"\n'
+                            '        time.sleep(.01)\n'
+                            f'    Path({ready!r}).unlink()\n'
                             f'r = execution.bounded_command({command!r}, Path({str(root)!r}), '
-                            f'Path({str(root)!r}), "T", .6, check_slot_wait=True); '
+                            f'Path({str(root)!r}), "T", .6, on_start=start, check_slot_wait=True); '
                             f'Path({str(root / "result.json")!r}).write_text(json.dumps(r))'], env=env)
                         progress = root / 'full-check/T-1.status.json'
                         deadline = time.monotonic() + 10
@@ -80,6 +98,8 @@ class WorkerTmpTests(unittest.TestCase):
                             self.assertIsNone(contender.poll())
                             self.assertLess(time.monotonic(), deadline)
                             time.sleep(.01)
+                        self.assertTrue(progress.exists(), (root / 'result.json').read_text()
+                                        if (root / 'result.json').exists() else 'no suite progress')
                         if slots == '1':
                             self.assertEqual(json.loads(progress.read_text())['ahead'], 1)
                             runner = fleet_view.Runner('fixture', repo=str(self.repo), state_dir=str(root))
@@ -94,6 +114,7 @@ class WorkerTmpTests(unittest.TestCase):
                         else:
                             self.assertEqual(contender.wait(timeout=10), 0)
                             self.assertTrue((root / 'ran').exists())  # no slot even while holder runs
+                            self.assertIsNone(holder.poll())
                         if killed:
                             os.kill(int((root / 'holder.pid').read_text()), signal.SIGKILL)
                         else:
@@ -101,19 +122,25 @@ class WorkerTmpTests(unittest.TestCase):
                         self.assertEqual(holder.wait(timeout=10), 0)
                         self.assertEqual(contender.wait(timeout=10), 0)
                         result = json.loads((root / 'result.json').read_text())
-                        self.assertEqual(result['outcome'], 'EXECUTED')
+                        self.assertEqual(result['outcome'], 'EXECUTED', result)
                         self.assertTrue((root / 'ran').exists())
+                        if slots == '1':
+                            self.assertGreater(result['command_receipt']['check_slot_wait_seconds'], .8)
                     finally:
-                        for name in ('holder.pid', 'daemon.pid'):
-                            if (root / name).exists():
-                                try:
-                                    os.kill(int((root / name).read_text()), signal.SIGKILL)
-                                except ProcessLookupError:
-                                    pass
                         for process in (holder, contender):
-                            if process is not None and process.poll() is None:
-                                process.kill()
-                                process.wait()
+                            if process is not None:
+                                if process.poll() is None:
+                                    process.kill()
+                                process.wait(timeout=10)
+                        execution.reap_children(exclude=existing_children)
+
+            # Readiness must not turn off either execution timeout.
+            with patch.dict(os.environ, PI_AUTOWORK_CHECK_SLOTS='0'):
+                timed = worker.run_suite('sleep 30', self.repo, .5, self.repo / 'timeout.log')
+                self.assertTrue(timed['timed_out'])
+                timed = execution.bounded_command(['sleep', '30'], self.repo, self.repo, 'T', .6,
+                                                  check_slot_wait=True)
+                self.assertEqual(timed['outcome'], 'TIMED_OUT')
 
     def test_the_gate_runs_once_per_merged_tree_and_the_reviewer_is_told_its_result(self):
         """TOOLSET-227-a8: one candidate's full suite ran four or five times."""
