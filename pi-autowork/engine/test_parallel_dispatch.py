@@ -410,8 +410,23 @@ class DispatchTests(unittest.TestCase):
         self.assertIn('Never ask a person for these', prompt.read_text())
 
     def test_independent_tasks_run_together_in_separate_worktrees(self):
-        self.set_spec({'A': {'files': {'a.txt': 'a'}, 'sleep': 1.0},
-                       'B': {'files': {'b.txt': 'b'}, 'sleep': 1.0}})
+        a_ready, b_ready, release = (self.root / name for name in ('a-ready', 'b-ready', 'release'))
+        self.set_spec({'A': {'files': {'a.txt': 'a'}, 'ready': str(a_ready), 'release': str(release)},
+                       'B': {'files': {'b.txt': 'b'}, 'ready': str(b_ready), 'release': str(release)}})
+        workers = []
+        popen = subprocess.Popen
+
+        def retain_worker(argv, *args, **kwargs):
+            process = popen(argv, *args, **kwargs)
+            if str(FAKE) in argv:
+                workers.append(process)
+                # Keep the real handles: release/stop and reap even if an assertion fails.
+                self.addCleanup(process.wait, timeout=10)
+                self.addCleanup(dispatch.stop, execution.identity(process.pid), str(kwargs['cwd']))
+                self.addCleanup(release.touch)
+            return process
+
+        self.enterContext(patch('subprocess.Popen', side_effect=retain_worker))
         code, result = self.apply()
         self.assertEqual((code, result['outcome']), (0, 'DISPATCHED'), result)
         self.assertEqual([s['task'] for s in result['dispatched']], ['A', 'B'])
@@ -421,6 +436,13 @@ class DispatchTests(unittest.TestCase):
         self.assertNotIn('C', [w['id'] for w in result['waiting']])  # C's dependency is unfinished
         _, again = self.apply()
         self.assertEqual((again['outcome'], again['dispatched']), ('WAITING', []))  # no duplicate start
+        # Startup under suite load can outlast the old one-second sleep window.
+        self.await_file(a_ready)
+        self.await_file(b_ready)
+        self.assertEqual(len(workers), 2)
+        for process in workers:
+            self.assertIsNone(process.poll(), f'worker {process.pid} exited before release')
+        release.touch()
         self.wait_until_idle()
         times = {(e['task'], e['event']): e for e in self.events()}
         self.assertLess(times['A', 'start']['time'], times['B', 'end']['time'])
