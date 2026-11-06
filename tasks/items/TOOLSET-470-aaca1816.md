@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-470-aaca1816"
 title = "Share one presentation contract between the TUI and the Paseo plugin"
 short = "Share the presentation contract"
-status = "open"
+status = "done"
 goal = "PASEO-PLUGIN"
 section = "Next"
 rank = 7000
@@ -16,5 +16,8 @@ scope = "One Python presentation contract owns the display words for a task and 
 acceptance = ["A task display carries state, bucket, why, question, pending, blocker and closure (label, detail, verified, provenance); a runner display carries state, needs, question summary, blockers, question IDs and the task map. The values come from task_status, task_snapshot and fleet_view; no second mapper.", "autowork tasks list --json, autowork tasks show --json and autowork ls --json include the display. The raw status, closure and blocked_by fields stay. The TUI renders the same row data without a behavior change.", "The Paseo task and runner schemas accept the display. The client renders the display; closureLabel, closureBadge, taskState and blockedReason are removed. stateTone, toneIcon, relativeTime and layout stay.", "The display is output-only. A structural test shows no admission, dispatch, integration or closure module imports the display functions.", "The Paseo design doc names the split: the CLI owns the domain labels; the client owns tone, icon, relative time and layout. Docs Sync passes.", "The focused Python tests and the Paseo npm run check pass; the task store validates."]
 checks = ["python3 scripts/affected_tests.py --run", "cd integrations/paseo && npm run check", "./pi-autowork/bin/autowork tasks validate --worktree .", "python3 skills/docs-sync/scripts/docs.py check ."]
 exclusions = ["No change to task authorization, admission, dispatch, integration or closure rules; the display is descriptive only.", "No runner service start, stop or restart, no publication, push, deployment or live qualification.", "No removal of raw CLI fields and no change to the TUI closed view beyond the shared display."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-470-aaca1816.toml"
 +++
 - Sources: integrations/paseo/docs/design.md#native-presentation; docs/project.md#task-status-vocabulary
+- Pending live: Physical Android and desktop qualification of the shared presentation remains unperformed. No plugin installation, daemon reload, live runner controls or publication was authorized or performed.
