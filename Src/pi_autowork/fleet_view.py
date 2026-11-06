@@ -1446,6 +1446,22 @@ def collect_for_tui(state_root, env_dir, *, generation, cached_preparation=None,
                          tuple(r.preparation for r in runners if r.preparation is not None))
 
 
+def runner_display(runner):
+    """Output-only labels, projected from the same captured rows as the TUI."""
+    snap = snapshot_for(runner)
+    records = snap.store.tasks if snap.store else {}
+    rows = (*inventory_rows(runner), *closed_task_rows(runner))
+    try:
+        next_action = needs(runner)
+    except ValueError as exc:
+        next_action = 'Needs unavailable: ' + str(exc)
+    return dict(state=runner.state, needs=next_action, question_summary=question_summary(runner),
+                blockers=blockers(runner), question_ids=[q.id for q in runner.questions],
+                revision=snap.revision,
+                tasks={row.task: task_snapshot.task_display(records[row.task], snap.store, row=row)
+                       for row in rows if row.task in records})
+
+
 def runner_rows(runners):
     """Pure fleet-table projection: one row per runner, ready for a Textual DataTable."""
     rows = []

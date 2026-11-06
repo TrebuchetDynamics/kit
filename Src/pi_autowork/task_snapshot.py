@@ -61,20 +61,70 @@ class TaskSnapshot:
     joined_lanes: tuple = ()
 
 
+def task_row(record, store, *, observation=None, phase=None, stopped='', question=None,
+             pending=False, deferred=False):
+    """Shared descriptive row; never admission, dispatch or closure authority."""
+    from pi_autowork import task_status as view
+    if record.status != 'open':
+        closure = view.closure_display(record.closure_info)
+        return TaskRow(record.id, record.short or record.title, 'Closed',
+                       closure['label'] if closure else record.status, 'closed',
+                       closure['detail'] if closure else '')
+    row = observation or {}
+    state, cause = row.get('state'), row.get('cause')
+    bucket, why = _canonical_reason(record, store)
+    kind, words = 'waiting', view.WAITING
+    if record.section == 'Needs decision':
+        bucket, words = 'Decision', 'Waiting · Needs decision'
+        why = 'recorded owner deferral' if deferred else 'in Needs decision'
+    elif state in view.IN_FLIGHT:
+        phase = phase or view.PHASES[state]
+        bucket, detail = view.phase_status(phase)
+        words, kind = f'{bucket} · {detail}', 'working'
+        why = view.WAIT_LABELS.get(detail, detail.lower()) if bucket == view.WAITING else row.get('reason') or detail
+    elif state == 'held':
+        bucket = view.WAITING if cause in view.WAIT_CAUSES else view.BLOCKER
+        words, kind = f'{bucket} · ' + view.blocker_detail(cause, bool(question)), 'held'
+        why = "waiting for another task's files" if bucket == view.WAITING else view.blocker_detail(cause, bool(question))
+    elif state in ('waiting', 'pending', 'interrupted', 'released'):
+        bucket = view.BLOCKER if stopped or bucket == view.BLOCKER else view.WAITING
+        why = ('behind ' + stopped) if stopped else (
+            row.get('reason') or ('paused by a restart' if state in ('interrupted', 'released') else why))
+        words = bucket
+    if bucket == view.BLOCKER:
+        words, kind = (words if words.startswith(view.BLOCKER) else view.BLOCKER), 'held'
+    if question:
+        # The question is separate context, not a replacement for bucket provenance.
+        why += '; you: ' + question.needs
+    if pending:
+        words += ' · Edit not committed'
+    short = ' '.join((record.short or record.title).split())
+    return TaskRow(record.id, short if len(short) <= 40 else short[:39].rstrip() + '…',
+                   record.section, words, kind, why, bool(question), pending, bucket)
+
+
+def task_display(record, store, *, row=None):
+    """Output-only projection of the TUI row, alongside the unchanged raw record."""
+    from pi_autowork import task_status as view
+    from pi_autowork.engine import task_select
+    if row is None:
+        row = task_row(record, store, deferred=(record.section == 'Needs decision'
+                                               and record.id in task_queue.deferred(store)))
+    try:
+        blocked = task_select.blocking(store, record) if record.status == 'open' else None
+        blocker = row.why if row.bucket == view.BLOCKER else (
+            view.blocked_reason(blocked.code) if blocked else '')
+    except ValueError as exc:
+        # Free-text hold dates can be invalid; presentation must not break fleet reads.
+        blocker = 'Selection unavailable: ' + str(exc)
+    return dict(state=row.state, bucket=row.bucket, why=row.why, question=row.question,
+                pending=row.pending, blocker=blocker, closure=view.closure_display(record.closure_info),
+                record_revision=record.record_revision)
+
+
 def _closed_rows(store):
-    rows = []
-    for record in sorted(store.tasks.values(), key=lambda t: t.id):
-        if record.status == 'done':
-            info = record.closure_info
-            if record.closure == 'coordinator_verified':
-                why = info['evidence'] or 'Verification evidence not recorded'
-            elif record.closure == 'manual':
-                why = (f'Manually closed by {info["actor"] or "unknown"} at {info["timestamp"] or "unknown"}; '
-                       f'not coordinator-verified. {info["reason"] or "Reason not recorded"}')
-            else:
-                why = 'Closure provenance not recorded (legacy); no coordinator verification recorded.'
-            rows.append(TaskRow(record.id, record.short or record.title, 'Closed', info['label'], 'closed', why))
-    return tuple(rows)
+    return tuple(task_row(record, store) for record in sorted(store.tasks.values(), key=lambda t: t.id)
+                 if record.status == 'done')
 
 
 def _canonical_reason(record, store):
@@ -233,13 +283,9 @@ def capture(repo, *, engine_observation, generation, last_good=None):
     rows, joined_lanes = [], []
     for record in records:
         row = compatible.get(record.id, {})
-        state, cause = row.get('state'), row.get('cause')
-        bucket, why = _canonical_reason(record, store)
-        kind, words = 'waiting', view.WAITING
-        if record.section == 'Needs decision':
-            bucket, words = 'Decision', 'Waiting · Needs decision'
-            why = 'recorded owner deferral' if record.id in deferred else 'in Needs decision'
-        elif state in view.IN_FLIGHT:
+        state = row.get('state')
+        phase = None
+        if record.section != 'Needs decision' and state in view.IN_FLIGHT:
             phase = view.PHASES[state]
             candidates = lane_groups.get(record.id, [])
             if len(candidates) == 1:
@@ -255,30 +301,10 @@ def capture(repo, *, engine_observation, generation, last_good=None):
                         and (state != 'reported' or view.status(lane)[0] == view.WAITING)):
                     phase = lane.phase
                     joined_lanes.append((lane.task, lane.attempt, lane.phase))
-            bucket, detail = view.phase_status(phase)
-            words, kind = f'{bucket} · {detail}', 'working'
-            why = view.WAIT_LABELS.get(detail, detail.lower()) if bucket == view.WAITING else row.get('reason') or detail
-        elif state == 'held':
-            bucket = view.WAITING if cause in view.WAIT_CAUSES else view.BLOCKER
-            words, kind = f'{bucket} · ' + view.blocker_detail(cause, record.id in asked), 'held'
-            why = "waiting for another task's files" if bucket == view.WAITING else view.blocker_detail(cause, record.id in asked)
-        elif state in ('waiting', 'pending', 'interrupted', 'released'):
-            bucket = view.BLOCKER if record.id in stopped or bucket == view.BLOCKER else view.WAITING
-            why = ('behind ' + stopped[record.id]) if record.id in stopped else (
-                row.get('reason') or ('paused by a restart' if state in ('interrupted', 'released') else why))
-            words = bucket
-        if bucket == view.BLOCKER:
-            words, kind = (words if words.startswith(view.BLOCKER) else view.BLOCKER), 'held'
-        question = asked.get(record.id)
-        if question:
-            # The question is separate context, not a replacement for bucket provenance.
-            why += '; you: ' + question.needs
-        edited = pending is not None and record.path in pending
-        if edited:
-            words += ' · Edit not committed'
-        short = ' '.join((record.short or record.title).split())
-        rows.append(TaskRow(record.id, short if len(short) <= 40 else short[:39].rstrip() + '…',
-                            record.section, words, kind, why, bool(question), edited, bucket))
+        rows.append(task_row(record, store, observation=row, phase=phase,
+                             stopped=stopped.get(record.id, ''), question=asked.get(record.id),
+                             pending=pending is not None and record.path in pending,
+                             deferred=record.id in deferred))
     counts = Counter(row.bucket for row in rows)
     vector = tuple(counts[b] for b in ('Active', 'Mergeable', 'Waiting', 'Blocker', 'Decision')) + (len(rows),)
     question_rows = tuple(TaskRow(q.id, 'Planning stopped' if q.kind == 'decision' else 'Execution question',

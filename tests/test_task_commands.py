@@ -325,10 +325,15 @@ class TaskCommandTests(unittest.TestCase):
                 self.assertNotIn('Evidence:', record['notes'])
                 listed = next(r for r in json.loads(self.tasks('list').stdout) if r['id'] == tid)
                 why = json.loads(self.tasks('why', tid).stdout)
+                self.assertEqual(listed['display'], record['display'])
+                self.assertEqual(listed['display']['closure']['provenance'], 'manual')
+                self.assertIs(listed['display']['closure']['verified'], False)
                 self.assertEqual(listed['closure'], closure)
                 self.assertEqual(why['closure'], closure)
                 rows = fleet_view.task_rows(fleet_view.Runner('fixture', repo=str(self.repo)), include_closed=True)
                 row = next(r for r in rows if r.task == tid)
+                self.assertEqual(row.state, listed['display']['state'])
+                self.assertEqual(row.why, listed['display']['closure']['detail'])
                 self.assertEqual(row.state, 'Manual')
                 self.assertEqual(row.why, f'Manually closed by owner at {closure["timestamp"]}; '
                                  'not coordinator-verified. Stopped after review')
@@ -523,7 +528,12 @@ class TaskCommandTests(unittest.TestCase):
         self.commit()
         reasons = json.loads(self.tasks('why', blocked).stdout)
         self.assertEqual(reasons['reasons'], [{'code': 'DEPENDENCY_UNFINISHED', 'detail': 'T-1'}])
-        rows = {row['id']: row for row in json.loads(self.tasks('list').stdout)}
+        rows = {row['id']: row for row in json.loads(self.tasks('list', '--json').stdout)}
+        shown = json.loads(self.tasks('show', blocked, '--json').stdout)
+        self.assertEqual(rows[blocked]['display'], shown['display'])
+        self.assertEqual(shown['display'], dict(state='Waiting', bucket='Waiting',
+                         why='dependency: T-1', question=False, pending=False,
+                         blocker='dependency unfinished', closure=None, record_revision=shown['record_revision']))
         self.assertEqual((rows['T-1']['position'], rows[blocked]['blocked_by']), (1, 'DEPENDENCY_UNFINISHED'))
 
     def test_validate_fails_on_a_broken_file(self):

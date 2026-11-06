@@ -22,7 +22,20 @@ export const laneSchema = z.object({ task: z.string(), phase: z.string(), detail
 // Autowork emits null for an unavailable count, not only an absent one.
 const countSchema = z.number().nullish().transform(value => value ?? 0);
 const textOrEmpty = z.string().nullish().transform(value => value ?? '');
+export const taskDisplaySchema = z.object({
+  state: z.string(), bucket: z.string(), why: z.string(), question: z.boolean(), pending: z.boolean(),
+  record_revision: z.string().optional(), blocker: z.string(),
+  closure: z.object({
+    label: z.string(), detail: z.string(), verified: z.boolean().nullable(), provenance: z.string().nullable(),
+  }).nullable(),
+});
+export const runnerDisplaySchema = z.object({
+  state: z.string(), needs: z.string(), question_summary: z.string(),
+  blockers: z.array(z.tuple([z.string(), z.string()])), question_ids: z.array(z.string()),
+  revision: z.string().nullable(), tasks: z.record(z.string(), taskDisplaySchema),
+});
 export const runnerSchema = z.object({
+  display: runnerDisplaySchema.nullable().default(null),
   name: z.string(), repo: z.string(), state: z.string(), service: z.string().default(''),
   mode: z.string().default(''), running: countSchema, waiting: countSchema,
   stopped: countSchema, decisions: countSchema, push: z.boolean().default(false),
@@ -49,7 +62,7 @@ export const fleetSchema = z.object({
 });
 // Autowork emits null for open tasks; an empty evidence map does not imply closure.
 export const closureSchema = recordSchema.nullable().transform(value => value ?? {});
-export const taskSchema = z.object({ id: idSchema, title: z.string(), section: z.string().nullable(),
+export const taskSchema = z.object({ display: taskDisplaySchema.nullable().default(null), id: idSchema, title: z.string(), section: z.string().nullable(),
   status: z.string(), goal: z.string().nullable(), rank: z.number().nullable(),
   position: z.number().nullable(), blocked_by: z.string().nullable(), closure: closureSchema });
 export const taskDetailSchema = taskSchema.omit({ position: true, blocked_by: true }).extend({

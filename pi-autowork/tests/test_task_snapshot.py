@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'engine'))
 import store_fixture
 import task_queue
 from task_store import TaskStore, StoreError, edit
-from pi_autowork import fleet_view, task_snapshot
+from pi_autowork import command, fleet_view, task_snapshot
 
 
 class TaskSnapshotTests(unittest.TestCase):
@@ -70,6 +70,14 @@ class TaskSnapshotTests(unittest.TestCase):
         self.assertEqual(good.counts, (1, 1, 0, 1, 1, 4))
         self.assertIn('session', ' '.join(good.annotations))
         self.assertIn('ORPHAN', ' '.join(good.annotations))
+        runner = fleet_view.Runner('fixture', repo=str(self.repo), state='working', snapshot=good)
+        display = command.runner_json(runner)['display']
+        for row in good.rows:
+            task = display['tasks'][row.task]
+            self.assertEqual((task['state'], task['bucket'], task['why'], task['question'], task['pending']),
+                             (row.state, row.bucket, row.why, row.question, row.pending))
+        self.assertEqual(display['needs'], fleet_view.needs(runner))
+        self.assertEqual(display['blockers'], fleet_view.blockers(runner))
         # A raw slot/log may be stale even when today's observed current hash matches.
         for change in ('admitted', 'source', 'legacy', 'age', 'duplicate', 'slot'):
             with self.subTest(change=change):
@@ -168,6 +176,40 @@ class TaskSnapshotTests(unittest.TestCase):
                 snap = task_snapshot.capture(self.repo, engine_observation=observation, generation=1)
                 self.assertEqual(snap.counts, (0, 0, 1, 2, 1, 4))
                 self.assertIn('D', snap.rows[0].why)
+
+    def test_runner_json_retains_raw_fields_when_selection_notes_are_invalid(self):
+        path = self.repo / 'tasks/items/A.md'
+        path.write_text(edit(path.read_text(), dict(scope='Fixture task', acceptance=['Fixture acceptance'],
+                                                   checks=['fixture check'], touches=['fixture.py']))
+                        + '\n- Held by: reviewer; until 2026-02-30\n')
+        subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=T', '-c', 'user.email=t@example.invalid',
+                        'commit', '-qam', 'invalid hold date'], check=True)
+        snapshot = task_snapshot.capture(self.repo, engine_observation=None, generation=1)
+        runner = fleet_view.Runner('fixture', repo=str(self.repo), state='idle', blocker='raw reason',
+                                   snapshot=snapshot)
+        record = command.runner_json(runner)
+        self.assertEqual((record['name'], record['state'], record['blocker']), ('fixture', 'idle', 'raw reason'))
+        self.assertEqual(record['display']['tasks']['A']['state'], snapshot.rows[0].state)
+        self.assertIn('Selection unavailable:', record['display']['tasks']['A']['blocker'])
+        self.assertIn('Needs unavailable:', record['display']['needs'])
+
+    def test_presentation_is_output_only_for_execution_modules(self):
+        import ast
+        package = Path(task_snapshot.__file__).parent
+        paths = [*package.joinpath('engine').rglob('*.py'),
+                 *(package / name for name in ('coordinator.py', 'worker.py', 'landing.py',
+                                               'optimistic.py', 'post_merge_barrier.py'))]
+        functions = {'task_display', 'runner_display', 'closure_display', 'task_row'}
+        modules = {'task_snapshot', 'task_status'}
+        for path in paths:
+            for node in ast.walk(ast.parse(path.read_text())):
+                if isinstance(node, ast.ImportFrom):
+                    self.assertFalse((functions | modules).intersection(a.name for a in node.names), path)
+                    self.assertNotIn((node.module or '').split('.')[-1], modules, path)
+                elif isinstance(node, ast.Import):
+                    self.assertFalse(any(a.name.split('.')[-1] in modules for a in node.names), path)
+                elif isinstance(node, ast.Call):
+                    self.assertNotIn(getattr(node.func, 'attr', None), functions, path)
 
     def test_unavailable_is_not_empty_and_pending_failure_is_not_clean(self):
         observation = self.observation()
