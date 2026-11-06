@@ -5,7 +5,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { ProcessRunner } from '../server/process';
 import { AutoworkService } from '../server/autowork-client';
-import { defaultPolicyPath, effectivePolicy, legacyPolicyPath, loadConfig } from '../server/config';
+import { defaultPolicyPath, effectivePolicy, loadConfig, policyPaths } from '../server/config';
 import { repositoryIdentity } from '../server/discovery';
 
 import { fixture, cleanupFixtures, policy } from './fixture';
@@ -147,7 +147,7 @@ describe('policy file and extended reads', () => {
     try {
       const env = { HOME: home, PATH: '' } as NodeJS.ProcessEnv;
       const file = defaultPolicyPath(env);
-      expect(file).toBe(path.join(home, '.config/autowork/policy.json'));
+      expect(file).toBe(path.join(home, '.config/kit-autowork/policy.json'));
       const missing = await loadConfig(env);
       expect([missing.source, missing.path, effectivePolicy(missing).tasks]).toEqual(['none', file, false]);
       await import('node:fs/promises').then(fs => fs.mkdir(path.dirname(file), { recursive: true }));
@@ -160,21 +160,25 @@ describe('policy file and extended reads', () => {
       await expect(loadConfig(env)).rejects.toThrow(/private/);
       await writeFile(file, JSON.stringify({ tasks: true, controls: ['pause', 'pause'] })); await chmod(file, 0o600);
       expect(effectivePolicy(await loadConfig(env))).toMatchObject({ tasks: true, commit: false, controls: ['pause'] });
-      expect(defaultPolicyPath({ XDG_CONFIG_HOME: '/etc/xdg' })).toBe('/etc/xdg/autowork/policy.json');
+      expect(defaultPolicyPath({ XDG_CONFIG_HOME: '/etc/xdg' })).toBe('/etc/xdg/kit-autowork/policy.json');
     } finally { await rm(home, { recursive: true, force: true }); }
   });
-  it('keeps grants from the pre-rename policy path until the new one exists', async () => {
+  it('keeps grants from each earlier policy path until a newer one exists', async () => {
     const home = await mkdtemp(path.join(tmpdir(), 'paseo-aw-home-'));
     try {
       const env = { HOME: home, PATH: '' } as NodeJS.ProcessEnv;
-      const legacy = legacyPolicyPath(env);
-      expect(legacy).toBe(path.join(home, '.config/paseo-autowork/policy.json'));
-      await mkdir(path.dirname(legacy), { recursive: true });
-      await writeFile(legacy, JSON.stringify({ tasks: true }), { mode: 0o600 });
-      const loaded = await loadConfig(env);
-      expect([loaded.source, loaded.path, effectivePolicy(loaded).tasks]).toEqual(['default', legacy, true]);
-      // Writing the current path takes over, so an operator migrates by copying the file.
-      const current = defaultPolicyPath(env);
+      const [current, middle, oldest] = policyPaths(env);
+      expect([current, middle, oldest]).toEqual(['kit-autowork', 'autowork', 'paseo-autowork']
+        .map(name => path.join(home, '.config', name, 'policy.json')));
+      // Oldest name first: the plugin was paseo-autowork, then autowork, now kit-autowork.
+      await mkdir(path.dirname(oldest), { recursive: true });
+      await writeFile(oldest, JSON.stringify({ tasks: true }), { mode: 0o600 });
+      const fromOldest = await loadConfig(env);
+      expect([fromOldest.source, fromOldest.path, effectivePolicy(fromOldest).tasks]).toEqual(['default', oldest, true]);
+      await mkdir(path.dirname(middle), { recursive: true });
+      await writeFile(middle, JSON.stringify({ planning: true }), { mode: 0o600 });
+      const fromMiddle = await loadConfig(env);
+      expect([fromMiddle.path, effectivePolicy(fromMiddle).planning]).toEqual([middle, true]);
       await mkdir(path.dirname(current), { recursive: true });
       await writeFile(current, JSON.stringify({ all: true }), { mode: 0o600 });
       const migrated = await loadConfig(env);
