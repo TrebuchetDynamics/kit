@@ -178,6 +178,21 @@ local Git safety; they do not establish live provider availability, model adhere
 to the proposal format, token cost, or deployed TUI/browser behavior. No live model
 session or running service is exercised by those tests.
 
+## Shared display and answer feedback
+
+`task_status.py` owns the task presentation projection returned by `tasks list`
+and `tasks show`: semantic `tone` and `closure_tone` describe committed record
+meaning, not worker health or execution authority. Paseo maps those values to its
+native theme. Old releases without presentation fields render neutral, rather
+than inferring severity from English labels. A currently observed owner question
+still carries a warning in its own view.
+
+The `tasks commit` dry-run/result adds `lifecycle` with a state and message:
+`pending_commit`, `committed`, or `clean`. TUI and Paseo use that same feedback for
+the pending-edit step. Missing/failed reads remain unknown; an older installed
+release can still use the explicit local fallback. Neither the projection nor its
+wording grants admission, verifies acceptance, pushes, or starts a runner.
+
 ## Owned turn shutdown outcomes
 
 The Python planning transport's `RPC.close()` now returns an immutable, cached

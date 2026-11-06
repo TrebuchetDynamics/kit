@@ -34,6 +34,7 @@ vi.mock('@getpaseo/plugin/client', () => ({
 }));
 import { AutoworkScreen, WorkspacePanel } from '../client/screens';
 import { SettingsScreen } from '../client/settings';
+import { taskTone, closureBadge } from '../client/presentation';
 import { Theme } from '../client/ui';
 import { blockedReason, closureLabel, canAnswer, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, selectionFacts, stateTone, taskMatches, taskState } from '../client/presentation';
 
@@ -69,7 +70,8 @@ beforeEach(() => {
     if (name === 'autowork.task') return detail;
     if (name === 'autowork.watch') return { digest: 'digest-1', changed: false, capturedAt: Date.now() };
     if (name === 'autowork.goals') return { revision: 'rev', goals: [{ id: 'goal', title: 'Goal', priority: 1, source: 'docs/plan.md', status: 'unmet', focus: false, depends_on: [], record_revision: 'goal-v1' }] };
-    if (name === 'autowork.store') return { value: input && (input as { view: string }).view === 'pending' ? { files: ['tasks/items/T-1.md'], diff: '+ Owner decision', commit: null, dry_run: true } : { ok: true }, capturedAt: Date.now() };
+    if (name === 'autowork.store') return { value: input && (input as { view: string }).view === 'pending' ? { files: ['tasks/items/T-1.md'], diff: '+ Owner decision', commit: null, dry_run: true,
+      lifecycle: { state: 'pending_commit', message: 'The runner reads committed records; commit the saved answer.' } } : { ok: true }, capturedAt: Date.now() };
     if (name === 'autowork.models') return { models: ['provider/model-a'], capturedAt: Date.now() };
     if (name === 'autowork.scorecard') return { value: { days: 7, runners: { runner: { closed: 2, verified_closed: 1, evaluation: { summary: { closed: { value: 2, unit: 'tasks', status: 'measured' } } } } }, errors: { gone: '/missing is not a directory' }, overall: { summary: {} } }, capturedAt: Date.now() };
     if (name === 'autowork.status') return { text: 'Runner:     not running', capturedAt: Date.now() };
@@ -130,6 +132,14 @@ describe('native host-scoped surfaces', () => {
   });
   // The owner answers on this view; the runner reads committed records, so the commit step
   // has to be visible here too instead of only in Tasks.
+  it('uses semantic presentation even when the words suggest another tone', () => {
+    const projected = { ...task, status: 'running', presentation: { tone: 'danger' as const, closure_tone: 'warning' as const } };
+    expect(taskTone(projected)).toBe('danger');
+    expect(taskTone({ presentation: undefined })).toBe('neutral');
+    expect(taskTone(projected, true)).toBe('warning');
+    expect(closureBadge({ verified: true }, 'warning')?.tone).toBe('warning');
+    expect(closureBadge({ verified: true })?.tone).toBe('neutral');
+  });
   it('shows the commit step where the answer is recorded', async () => {
     await mount({ params: { view: 'blockers' } }); await flush();
     expect(text()).toContain('Pending task edits');

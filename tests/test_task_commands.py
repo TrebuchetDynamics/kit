@@ -392,6 +392,14 @@ class TaskCommandTests(unittest.TestCase):
         priorities = [g['priority'] for g in goals if g['priority'] is not None]
         self.assertEqual(priorities, sorted(priorities))
 
+    def test_list_and_detail_share_python_presentation_meaning(self):
+        rows = json.loads(self.tasks('list').stdout)
+        row = next(row for row in rows if row['id'] == 'T-1')
+        detail = json.loads(self.tasks('show', 'T-1').stdout)
+        self.assertEqual(row['presentation'], detail['presentation'])
+        self.assertEqual(set(detail['presentation']), {'tone', 'closure_tone'})
+        self.assertNotIn('authorized', detail['presentation'])
+
     def test_commit_commits_only_task_edits_and_previews_first(self):
         (self.repo / 'unrelated.txt').write_text('stays uncommitted\n')
         self.tasks('decide', 'T-1', 'Use the smaller design')
@@ -399,15 +407,20 @@ class TaskCommandTests(unittest.TestCase):
         preview = json.loads(self.tasks('commit', '--dry-run').stdout)
         self.assertEqual((preview['files'], preview['commit'], preview['dry_run']), (['tasks/items/T-1.md'], None, True))
         self.assertIn('Owner decision', preview['diff'])
+        self.assertEqual(preview['lifecycle']['state'], 'pending_commit')
+        self.assertIn('committed records', preview['lifecycle']['message'])
         self.assertEqual(self.git('rev-parse', 'HEAD').strip(), head)
         result = json.loads(self.tasks('commit', '--message', 'answer T-1').stdout)
         self.assertEqual(result['commit'], self.git('rev-parse', 'HEAD').strip())
+        self.assertEqual(result['lifecycle']['state'], 'committed')
         self.assertNotEqual(result['commit'], head)
         self.assertEqual(self.git('log', '-1', '--format=%s').strip(), 'answer T-1')
         self.assertEqual(self.git('show', '--name-only', '--format=', 'HEAD').split(), ['tasks/items/T-1.md'])
         self.assertIn('unrelated.txt', self.git('status', '--porcelain'))
         self.assertNotIn('tasks/', self.git('status', '--porcelain'))
-        self.assertEqual(json.loads(self.tasks('commit', '--dry-run').stdout)['files'], [])
+        clean = json.loads(self.tasks('commit', '--dry-run').stdout)
+        self.assertEqual(clean['files'], [])
+        self.assertEqual(clean['lifecycle']['state'], 'clean')
 
     def test_decide_refuses_closed_task_without_rewriting_history(self):
         self.tasks('done', 'T-1', '--by', 'owner', '--reason', 'manual closure')

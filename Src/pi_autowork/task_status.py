@@ -36,3 +36,26 @@ def resolver(asked):
 def blocker_detail(cause, asked=False):
     text = CAUSES.get(cause, cause or 'held')
     return f'{text[:1].upper()}{text[1:]} · {resolver(asked)}'
+
+
+def task(record, blocked=None):
+    """Presentation for a stored task; it does not claim to describe a live worker."""
+    if record.status != 'open':
+        info = record.closure_info or {}
+        verified = info.get('evidence_valid') if info.get('provenance') == 'coordinator_verified' else info.get('verified')
+        tone = 'success' if verified is True else 'warning' if verified is False or info.get('provenance') == 'manual' else 'neutral'
+        return dict(tone='neutral', closure_tone=tone)
+    return dict(tone='warning' if record.section == 'Needs decision' or blocked else 'neutral',
+                closure_tone='neutral')
+
+
+def edit_lifecycle(state):
+    """The meaning of a task-store result, independent of host controls or grants."""
+    messages = {
+        'clean': 'No saved task edits await a commit.',
+        'pending_commit': 'Saved locally — pending commit. The runner reads committed records; commit these task edits before it can see the answer. No live authorization is granted.',
+        'committed': 'Task edits committed locally. No push, runner start or live authorization.',
+    }
+    if state not in messages:
+        raise ValueError('unknown task edit lifecycle')
+    return dict(state=state, message=messages[state])

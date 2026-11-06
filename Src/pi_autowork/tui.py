@@ -24,7 +24,7 @@ import tempfile
 import time
 import uuid
 
-from pi_autowork import fleet_view, portal, tui_reads, blockers_report  # noqa: E402
+from pi_autowork import fleet_view, portal, tui_reads, blockers_report, task_status  # noqa: E402
 from pi_autowork.planning_ui import PlanScreen, DecisionPrompt, QuestionPicker  # noqa: E402
 from pi_autowork.tui_dialogs import Confirm  # noqa: E402
 
@@ -623,17 +623,16 @@ class WorkerScreen(ReadScreen, Screen):
 
 
 def pending_edits(runner_cmd, command, repo):
-    """Saved-but-uncommitted task edits through the CLI's own dry run: a list, or None when the
-    read failed. None is unknown, never clean."""
+    """Saved-edit snapshot through the CLI dry run: files and lifecycle, or unknown (None)."""
     try:
         result = runner_cmd([command, 'tasks', 'commit', '--dry-run', repo],
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, timeout=30)
         if result.returncode:
             return None
         data = json.loads(result.stdout)
         files = data.get('files') if isinstance(data, dict) else None
-        return [str(item) for item in files] if isinstance(files, list) else None
-    except (OSError, ValueError):
+        return data if isinstance(files, list) else None
+    except (OSError, ValueError, subprocess.SubprocessError):
         return None
 
 
@@ -758,7 +757,8 @@ class TasksScreen(ReadScreen, Screen):
 
     def loaded_pending(self, files):
         # None is unknown (the dry run did not answer), not "nothing waits".
-        self.pending = None if files is None else list(files)
+        self.pending = None if files is None else list(files['files'])
+        self.pending_feedback = files.get('lifecycle') if files else None
         self.show_pending()
 
     def show_pending(self):
@@ -778,8 +778,8 @@ class TasksScreen(ReadScreen, Screen):
             line.display = False
             return
         line.display = True
-        message = (f'{len(files)} saved edit(s) not committed — the runner reads committed records, '
-                   'so it cannot see these answers yet.  ')
+        feedback = getattr(self, 'pending_feedback', None) or task_status.edit_lifecycle('pending_commit')
+        message = f"{len(files)} saved edit(s) not committed — {feedback['message']}  "
         body = Text(message, style='yellow')
         if self.app.view_only:
             body.append('View only: commit in a writable session.', style='yellow')
@@ -2291,7 +2291,7 @@ class FleetApp(App):
             ok, message = False, str(error)
         decision = action.argv[1:3] == ['tasks', 'decide']
         if ok and decision:
-            message = 'Saved locally — pending commit. This action did not commit or grant live authorization; inventory updates after commit.'
+            message = task_status.edit_lifecycle('pending_commit')['message']
         self.call_from_thread(self.notify, message[:300], severity='information' if ok else 'error',
                               title=f'{action.label}: {"done" if ok else "failed"}', timeout=10 if decision else 3)
         if on_complete is not None:
