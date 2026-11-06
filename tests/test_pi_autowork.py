@@ -2129,37 +2129,136 @@ sys.exit(result.returncode)
         lock = common / 'autowork-execution' / 'dispatch.lock'
         lock.parent.mkdir(parents=True, exist_ok=True)
 
-        def hold(seconds):
-            holder = subprocess.Popen([sys.executable, '-c', (
-                'import fcntl, os, sys, time\n'
-                f'fd = os.open({str(lock)!r}, os.O_RDWR | os.O_CREAT, 0o600)\n'
-                'fcntl.flock(fd, fcntl.LOCK_EX)\n'
-                'print("held", flush=True)\n'
-                f'time.sleep({seconds})\n')], stdout=subprocess.PIPE, text=True)
-            self.addCleanup(holder.stdout.close)
-            self.addCleanup(holder.wait)
-            self.addCleanup(holder.kill)
-            self.assertEqual(holder.stdout.readline().strip(), 'held')
-            return holder
+        # Observe, never replace, real flock contention in this test's subprocesses.
+        # A fixed hold could expire during startup, before the engine even entered.
+        shim = self.root / 'idle-host/sitecustomize.py'
+        shim.write_text(shim.read_text() + f'''
+import fcntl
+from pathlib import Path
+_flock = fcntl.flock
+def observed_flock(fd, operation):
+    events = os.environ.get('LOCK_TEST_EVENTS')
+    watching = (events and operation == (fcntl.LOCK_EX | fcntl.LOCK_NB)
+                and os.path.samestat(os.fstat(fd if isinstance(fd, int) else fd.fileno()),
+                                     os.stat({str(lock)!r})))
+    try:
+        result = _flock(fd, operation)
+    except BlockingIOError:
+        if watching:
+            Path(events, 'contended').touch()
+        raise
+    if watching:
+        Path(events, 'acquired').touch()
+    return result
+fcntl.flock = observed_flock
+''')
 
-        # The runner's own bound is what this checks: the engine's short-lock wait is off.
+        def exercise(name, env, release_on, complete_queue=False):
+            events = self.root / name
+            events.mkdir()
+            output_path, identity = events / 'output', events / 'cleanup.json'
+            began, stages = time.monotonic(), {}
+            runner = None
+
+            def mark(stage):
+                stages[stage] = round(time.monotonic() - began, 3)
+
+            def wait(stage, predicate, timeout=30):
+                deadline = time.monotonic() + timeout
+                while not predicate():
+                    details = (f'{name}: {stage}; stages={stages}; load={os.getloadavg()}\n'
+                               + output_path.read_text())
+                    if runner is not None and stage != 'runner exit':
+                        self.assertIsNone(runner.poll(), details)
+                    self.assertLess(time.monotonic(), deadline, details)
+                    time.sleep(0.05)
+                mark(stage)
+
+            # Files cannot fill an undrained output pipe. The existing guard subreaps
+            # fake workers/reviewers even if an assertion or runner deadline fails.
+            with output_path.open('w') as output:
+                holder = subprocess.Popen([sys.executable, '-c', (
+                    'import fcntl, os, sys\nfrom pathlib import Path\n'
+                    f'fd = os.open({str(lock)!r}, os.O_RDWR | os.O_CREAT, 0o600)\n'
+                    'fcntl.flock(fd, fcntl.LOCK_EX)\n'
+                    f'Path({str(events / "held")!r}).touch()\n'
+                    'sys.stdin.buffer.read(1)\n')], stdin=subprocess.PIPE,
+                    stdout=output, stderr=subprocess.STDOUT)
+                try:
+                    wait('holder ready', lambda: (events / 'held').exists())
+                    runner = subprocess.Popen(
+                        [sys.executable, str(ROOT / 'pi-autowork/pi_autowork/pi_process.py'),
+                         '--identity', str(identity),
+                         '--deadline', str(30 + 30 + 3 * 120 + 30 if complete_queue else 120), '--',
+                         'bash', str(RUNNER), '--until-empty', '--workers', '2', '--interval', '0'],
+                        cwd=self.repo, env={**env, 'LOCK_TEST_EVENTS': str(events)},
+                        stdout=output, stderr=subprocess.STDOUT)
+                    mark('runner entry')
+                    wait('lock contention', lambda: (events / 'contended').exists())
+                    if release_on:
+                        if release_on == 'busy':
+                            wait('runner waiting', lambda: 'waiting for it to finish' in output_path.read_text())
+                        holder.stdin.close()
+                        holder.wait(timeout=10)
+                        self.assertEqual(holder.returncode, 0)
+                        mark('holder released')
+                        wait('lock acquired after retry', lambda: (events / 'acquired').exists())
+                    if complete_queue:
+                        # Startup/lock wait must not spend the completion budget. Each
+                        # real task close has the old 120 s bound; a stalled task fails.
+                        for task in 'ABC':
+                            wait(f'{task} done', lambda: f'{task}: done' in output_path.read_text(), timeout=120)
+                    wait('runner exit', lambda: runner.poll() is not None)
+                    if not release_on:
+                        self.assertIsNone(holder.poll())  # held past the runner's own busy bound
+                        self.assertFalse((events / 'acquired').exists())
+                    return runner.returncode, output_path.read_text()
+                finally:
+                    try:
+                        if runner is not None:
+                            if runner.poll() is None:
+                                runner.terminate()
+                            try:
+                                runner.wait(timeout=10)
+                            finally:
+                                if runner.poll() is None:
+                                    runner.kill()
+                                    runner.wait()
+                    finally:
+                        try:
+                            if holder.poll() is None:
+                                holder.kill()
+                            holder.wait(timeout=10)
+                        finally:
+                            holder.stdin.close()
+                        print(f'LOCK_WAIT_STAGES {name}: {stages}; load={os.getloadavg()}', flush=True)
+                        if runner is not None:
+                            self.assertTrue(identity.is_file(), output_path.read_text())
+                            self.assertTrue(json.loads(identity.read_text())['cleanup_complete'], output_path.read_text())
+
+        # Isolate the runner's busy bound/retry from worker, review and integration
+        # costs: the saved suite timeout was after B integrated and C implemented.
+        scenario = self.scenario
+        self.write_todo(todo([]))
+        self.git(self.repo, 'commit', '-qam', 'empty queue for lock-only cases')
         env = {**self.env, 'AUTOWORK_LOCK_WAIT': '0'}
-        first = hold(60)
-        result = self.run_runner('--until-empty', env={**env, 'PI_AUTOWORK_BUSY_WAIT': '2'})
-        self.assertEqual(result.returncode, 4, result.stdout + result.stderr)  # past the bound: busy, as before
-        self.assertIn('Repository busy', result.stdout + result.stderr)
-        first.kill()
-        first.wait()
-        hold(4)
-        result = self.run_runner('--until-empty', env={**env, 'PI_AUTOWORK_BUSY_WAIT': '60'})
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('waiting for it to finish', result.stdout)
-        # With the default short-lock wait, the same brief hold is absorbed: no busy at all.
-        hold(4)
-        result = self.run_runner('--until-empty')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn('Repository busy', result.stdout + result.stderr)
-        self.assertTrue(self.done('A', 'B', 'C'))
+        code, output = exercise('bounded', {**env, 'PI_AUTOWORK_BUSY_WAIT': '2'}, release_on=None)
+        self.assertEqual(code, 4, output)
+        self.assertIn('Repository busy', output)
+        code, output = exercise('retry', {**env, 'PI_AUTOWORK_BUSY_WAIT': '60'}, release_on='busy')
+        self.assertEqual(code, 0, output)
+        self.assertIn('waiting for it to finish', output)
+        self.assertEqual(self.runs('worker'), [])
+
+        # The default short-lock wait absorbs a proven collision, then really runs
+        # A/B/C, with bounded progress checks instead of one load-sensitive wall clock.
+        self.write_todo(scenario)
+        self.git(self.repo, 'commit', '-qam', 'restore A/B/C queue')
+        code, output = exercise('short-lock', self.env, release_on='contention', complete_queue=True)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn('Repository busy', output)
+        self.assertTrue(self.done('A', 'B', 'C'), output)
+        self.assertEqual(self.closed(), {'A', 'B', 'C'})
 
     def test_a_reload_keeps_the_runner_and_its_worker_and_applies_new_settings(self):
         """TOOLSET-174-1d: `autowork restart` paused every worker; one cost a 10-minute run."""
