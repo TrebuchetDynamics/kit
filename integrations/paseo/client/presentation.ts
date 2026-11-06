@@ -57,12 +57,12 @@ export function closureLabel(closure: Record<string, unknown>): string {
   return `${provenance} · ${verification}`;
 }
 /** One badge for a closed task: how it was closed and whether evidence backs it. */
-export function closureBadge(closure: Record<string, unknown>): { label: string; tone: Tone } | null {
+export function closureBadge(closure: Record<string, unknown>, tone: Tone = 'neutral'): { label: string; tone: Tone } | null {
   if (!Object.keys(closure).length) return null;
   const verified = closure.provenance === 'coordinator_verified' ? closure.evidence_valid : closure.verified;
-  if (verified === true) return { label: 'verified', tone: 'success' };
-  if (closure.provenance === 'manual') return { label: 'manual close', tone: 'warning' };
-  if (verified === false) return { label: 'not verified', tone: 'warning' };
+  if (verified === true) return { label: 'verified', tone };
+  if (closure.provenance === 'manual') return { label: 'manual close', tone };
+  if (verified === false) return { label: 'not verified', tone };
   return { label: display(closure.label), tone: 'neutral' };
 }
 export function canAnswer(task: Task, runner: Runner, detail: TaskDetail): boolean {
@@ -85,6 +85,10 @@ export function isActionable(task: Pick<Task, 'status'>): boolean {
   return !/^(done|superseded|closed|cancelled)$/i.test(task.status);
 }
 /** One state for the queue row and the detail sheet: an owner question wins, then a blocker, then the record status. */
+/** A live question is a warning; otherwise use Python's projection, never English regexes. */
+export function taskTone(task: Pick<Task, 'presentation'> | undefined, question = false): Tone {
+  return question ? 'warning' : task?.presentation?.tone ?? 'neutral';
+}
 export function taskState(task: Pick<Task, 'status' | 'blocked_by'>, question: boolean): string {
   if (question) return 'needs decision';
   if (isActionable(task) && task.blocked_by) return 'blocked';

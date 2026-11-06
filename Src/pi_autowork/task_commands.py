@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 
+from pi_autowork import task_status
 from pi_autowork.engine import task_select  # noqa: E402
 from pi_autowork.engine import task_store  # noqa: E402
 from pi_autowork.engine.task_store import StoreError, TaskStore, WriteError  # noqa: E402
@@ -434,16 +435,19 @@ def cmd_list(repo, rev='HEAD', worktree=False):
         blocked = task_select.blocking(store, t)
         rows.append(dict(id=t.id, title=t.title, section=t.section, rank=t.rank, status=t.status, goal=t.goal,
                          position=ready.get(t.id), blocked_by=blocked.code if blocked else None,
-                         closure=t.closure_info, selection=_selection_source(store, rev, worktree)))
+                         closure=t.closure_info, presentation=task_status.task(t, blocked.code if blocked else None),
+                         selection=_selection_source(store, rev, worktree)))
     return rows
 
 
 def cmd_show(repo, tid, rev='HEAD', worktree=False):
     store = _read(repo, rev, worktree)
     t = _task(store, tid)
+    blocked = task_select.blocking(store, t)
     return dict(id=t.id, title=t.title, short=t.short, status=t.status, goal=t.goal, section=t.section,
                 rank=t.rank, depends_on=list(t.depends_on), verified_depends_on=list(t.verified_depends_on),
-                closure=t.closure_info, touches=list(t.touches), resources=list(t.resources),
+                closure=t.closure_info, presentation=task_status.task(t, blocked.code if blocked else None),
+                touches=list(t.touches), resources=list(t.resources),
                 kind=t.kind.value, ownership=t.ownership.value, live=t.live.value, scope=t.scope,
                 live_actor=t.live_actor, live_at=t.live_at, live_scope=list(t.live_scope),
                 waiver_actor=t.waiver_actor, waiver_at=t.waiver_at, waiver_for=t.waiver_for,
@@ -498,16 +502,19 @@ def cmd_commit(repo, message=None, dry_run=False):
     entries = [(line[:2], line[3:].split(' -> ')[-1]) for line in status.split('\n') if len(line) > 3]
     files = sorted({path for _, path in entries})
     if not files:
-        return dict(files=[], diff='', commit=None, dry_run=dry_run)
+        return dict(files=[], diff='', commit=None, dry_run=dry_run,
+                    lifecycle=task_status.edit_lifecycle('clean'))
     worktree_store(repo)  # a broken store is refused before it can be committed
     diff = _git(repo, 'diff', '--no-color', 'HEAD', '--', 'tasks')
     diff += ''.join(_untracked_diff(repo, path) for code, path in entries if code == '??')
     if dry_run:
-        return dict(files=files, diff=diff, commit=None, dry_run=True)
+        return dict(files=files, diff=diff, commit=None, dry_run=True,
+                    lifecycle=task_status.edit_lifecycle('pending_commit'))
     _git(repo, 'add', '-A', '--', 'tasks')
     text = ' '.join((message or '').split()) or f'tasks: {len(files)} record edit(s)'
     _git(repo, 'commit', '-q', '-m', text, '--', 'tasks')
-    return dict(files=files, diff=diff, commit=_git(repo, 'rev-parse', 'HEAD'), dry_run=False)
+    return dict(files=files, diff=diff, commit=_git(repo, 'rev-parse', 'HEAD'), dry_run=False,
+                lifecycle=task_status.edit_lifecycle('committed'))
 
 
 def cmd_new_id(repo, prefix=None):

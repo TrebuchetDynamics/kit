@@ -198,7 +198,7 @@ states its own boundaries and what "done" means.
 - `/bug-harvest` — hunt evidence-backed defects, one candidate at a time.
 - `/test-optimizer` — delete redundant tests and shrink the suite that remains.
 - `/unused-code` — remove code whose unreachability is proven.
-- `/improve-codebase-architecture` — find shallow modules and report the candidates.
+- `/improve-codebase-architecture` — expose waste and bugs; verify explicitly requested fixes.
 - `/autonomous-codebase-improver` — work several improvement lanes in one campaign.
 - `/autoresearch` — bounded research or a measured experiment loop.
 

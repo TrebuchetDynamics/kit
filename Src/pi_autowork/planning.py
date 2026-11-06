@@ -7,6 +7,7 @@ files. Existing global provider configuration (including executable credential
 resolvers) remains trusted and untouched; use an appropriately restricted account.
 """
 from contextlib import contextmanager
+from dataclasses import asdict
 import hashlib
 import json
 import os
@@ -20,7 +21,7 @@ import uuid
 
 from . import planning_authority, planning_proposals as proposals
 from .planning_proposals import PlanningError
-from .planning_rpc import RPC, RPCError, Cancelled, private_dir, private_open
+from .planning_rpc import RPC, RPCError, Cancelled, ShutdownOutcome, private_dir, private_open
 from . import task_commands
 
 BUNDLE = Path(__file__).resolve().parents[2]
@@ -220,6 +221,24 @@ class Planner:
                 raise PlanningError('applied session is read-only; create a new session')
             client = None
             failed = True
+            shutdown_attempted = False
+
+            def close_client():
+                nonlocal shutdown_attempted
+                shutdown_attempted = True
+                with self._active_lock:
+                    self._active.pop(ident, None)
+                # Missing/raised outcomes are uncertainty, never implicit success.
+                meta['shutdown'] = {'error': 'Pi RPC shutdown outcome unavailable'}
+                try:
+                    outcome = client.close(abort=failed)
+                except Exception as exc:
+                    raise RPCError('Pi RPC shutdown failed') from exc
+                if not isinstance(outcome, ShutdownOutcome):
+                    raise RPCError('Pi RPC shutdown outcome unavailable')
+                meta['shutdown'] = asdict(outcome)
+                return outcome
+
             user_text = message or (meta['objective'] if not meta['turns'] else '')
             if not user_text and not meta['turns']:
                 user_text = ('Investigate and refine the selected task and its unresolved decisions.' if meta['task'] else
@@ -229,6 +248,7 @@ class Planner:
             self._history(ident, 'user', user_text)
             meta['status'] = 'running'
             meta.pop('last_error', None)
+            meta.pop('shutdown', None)
             self._save(meta)
             def event(record):
                 # Never forward raw tool outputs/provider diagnostic messages. The
@@ -265,6 +285,11 @@ class Planner:
                 if not meta['turns']:
                     prompt = '/skill:' + skill + ' ' + prompt
                 result = client.turn(prompt)
+                # Settlement alone cannot publish a successful turn. Close the owned
+                # transport before staging, recording an assistant reply or returning.
+                failed = False
+                if not close_client().clean:
+                    raise RPCError('Pi RPC shutdown was not clean')
                 if cancel is not None and cancel.is_set():
                     raise Cancelled('planning turn cancelled')
                 text = result['text']
@@ -292,7 +317,6 @@ class Planner:
                 meta['status'] = result['status']
                 meta['turns'] += 1
                 self._history(ident, 'assistant', result['text'])
-                failed = False
                 return dict(result, id=ident)
             except Cancelled:
                 meta['status'] = 'cancelled'
@@ -305,9 +329,17 @@ class Planner:
             finally:
                 with self._active_lock:
                     self._active.pop(ident, None)
-                if client:
-                    client.close(abort=failed)
-                self._save(meta)
+                try:
+                    if client and not shutdown_attempted:
+                        if not close_client().clean:
+                            meta['last_error'] = (meta.get('last_error', '') +
+                                                  '; Pi RPC shutdown was not clean').lstrip('; ')
+                except RPCError as exc:
+                    meta['status'] = 'error'
+                    meta['last_error'] = (meta.get('last_error', '') + '; ' + str(exc)).lstrip('; ')
+                    raise PlanningError(meta['last_error']) from exc
+                finally:
+                    self._save(meta)
 
     def steer(self, ident, message):
         if not isinstance(message, str) or not message:

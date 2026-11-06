@@ -6,7 +6,7 @@ import { Pressable, RefreshControl, View } from 'react-native';
 import type { ScrollView as NativeScrollView } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
-import { blockedReason, canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, taskState, whyStopped, type TaskFilters } from './presentation';
+import { blockedReason, canAnswer, closureBadge, closureLabel, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, taskState, taskTone, whyStopped, type TaskFilters } from './presentation';
 import { operationsKey, readForHost, rememberOperation, useConfirmedAction, useHostState, useReadBackoff, useWatch, type HostState } from './state';
 import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme, useColors } from './ui';
 
@@ -492,12 +492,12 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
 
 function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; question: boolean; selected: boolean; onOpen: () => void; onAnswer: () => void }) {
   const colors = useColors();
-  const closure = closureBadge(task.closure);
+  const closure = closureBadge(task.closure, task.presentation?.closure_tone);
   const blocked = isActionable(task) && !!task.blocked_by;
   const meta = [task.position ? `Position ${task.position}` : null, blocked ? `Blocked by ${blockedReason(task.blocked_by!)}` : !question && task.section ? `Section: ${task.section}` : null].filter(Boolean).join(' · ');
   // A row inside the queue, not a card inside a card.
   return <View style={{ gap: 6, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
-    <Row><Label mono>{task.id}</Label><StatusPill state={taskState(task, question)} tone={blocked ? 'warning' : undefined} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}</Row>
+    <Row><Label mono>{task.id}</Label><StatusPill state={taskState(task, question)} tone={taskTone(task, question)} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}</Row>
     <Label>{task.title}</Label>
     {meta ? <Caption>{meta}</Caption> : null}
     {!isActionable(task) ? <Caption>Provenance: {closureLabel(task.closure)}</Caption> : null}
@@ -535,6 +535,7 @@ function PendingCard({ repo, fleet, host, hostId, enabled, request }: RepoViewPr
     queryFn: () => readForHost(host, () => load({ instance: fleet.instance, repoId: repo.id, view: 'pending' })), staleTime: 10000, retry: false, refetchOnWindowFocus: false,
   });
   const pending = record(query.data?.value);
+  const lifecycle = record(pending?.lifecycle);
   const files = Array.isArray(pending?.files) ? pending!.files.filter((item): item is string => typeof item === 'string') : [];
   if (!fleet.capabilities.tasks.includes('commit')) return <Notice tone="warning"><Label>The installed Autowork release lacks `tasks commit`; task edits stay uncommitted until the executable is updated.</Label></Notice>;
   if (!files.length && !query.error) return null;
@@ -542,12 +543,13 @@ function PendingCard({ repo, fleet, host, hostId, enabled, request }: RepoViewPr
     <Row between><Heading level={2}>Pending task edits</Heading><Caption>{query.isFetching ? 'Reading…' : `${plural(files.length, 'file')} uncommitted`}</Caption></Row>
     {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
     {files.length ? <>
+      {typeof lifecycle?.message === 'string' ? <Label>{lifecycle.message}</Label> : <Label>Saved task edits await a commit.</Label>}
       <Label mono>{files.join('\n')}</Label>
       <Expand title="Pending diff"><Label mono>{display(pending?.diff)}</Label></Expand>
       {fleet.permissions.commit ? <>
         <Input label="Commit message" value={message} onChange={setMessage} placeholder="tasks: answer T-12" />
         <Button label="Commit task edits" variant="primary" disabled={!enabled || !message.trim()} onPress={() => request({ kind: 'commit', repoId: repo.id, message: message.trim() })} />
-        <Caption>Commits only tasks/ paths; other dirty files stay. No push. The runner reads committed records, so a saved answer takes effect after this commit.</Caption>
+        <Caption>Commits only tasks/ paths; other dirty files stay. No push.</Caption>
       </> : <Caption>Task-store commits are not granted by operator policy.</Caption>}
     </> : null}
   </Card>;
@@ -689,7 +691,7 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
   const blocked = !!task && isActionable(task) && !!task.blocked_by;
   const state = taskState({ status: detail?.status ?? task?.status ?? 'unknown', blocked_by: task?.blocked_by ?? null }, answerable);
   const meta = detail ? [detail.section ? `Section: ${detail.section}` : null, detail.goal ? `Goal: ${detail.goal}` : null].filter(Boolean).join(' · ') : '';
-  const closure = detail ? closureBadge(detail.closure) : null;
+  const closure = detail ? closureBadge(detail.closure, detail.presentation?.closure_tone) : null;
   const list = (items: string[]) => items.length ? items.map(item => `• ${item}`).join('\n') : null;
   const contract: Array<[string, string]> = detail ? ([
     ['Scope', detail.scope], ['Acceptance', list(detail.acceptance)], ['Checks', list(detail.checks)], ['Exclusions', list(detail.exclusions)],
@@ -705,7 +707,7 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
     <View style={{ gap: 2 }}><Heading level={2}>{taskId}</Heading><Caption>{detail?.title ?? task?.title ?? 'Task detail'}</Caption></View>
     {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
     {detail ? <>
-      <Row><StatusPill state={state} tone={blocked ? 'warning' : undefined} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}{meta ? <Caption>{meta}</Caption> : null}</Row>
+      <Row><StatusPill state={state} tone={taskTone(detail ?? task, answerable)} />{closure ? <Badge label={closure.label} tone={closure.tone} /> : null}{meta ? <Caption>{meta}</Caption> : null}</Row>
       {answerable ? <>
         <Heading level={3}>Decision needed</Heading>
         <Markdown text={question?.needs ?? ''} />
