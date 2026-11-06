@@ -58,6 +58,20 @@ paseo plugin install /absolute/path/to/kit/integrations/paseo
 paseo plugin ls
 ```
 
+The repository root is also an installable source, so a checkout is not needed:
+
+```sh
+paseo plugin add git:TrebuchetDynamics/kit
+```
+
+That resolves `paseo-plugin.json` at the repository root, whose `build` commands copy
+this directory's `client/`, `server/`, `shared/` and entry files into the staged
+checkout: Paseo compiles only those three directories, and it checks for the entry
+files before it runs `build`, so the root keeps copies of them. `tests/test_paseo_plugin_root.py`
+pins both the build commands and the entry copies. A GitHub *folder* URL
+(`.../tree/main/integrations/paseo`) is not a Git URL and `plugin add` rejects it;
+use the `git:owner/repo` form, or `git:TrebuchetDynamics/kit:integrations/paseo`.
+
 For a first read-only check:
 
 1. Confirm that `paseo plugin ls` reports `paseo-autowork` as `running`.
