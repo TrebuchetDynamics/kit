@@ -20,13 +20,14 @@ export type Config = z.infer<typeof configSchema> & { path: string | null; sourc
 function configHome(env: NodeJS.ProcessEnv): string {
   return env.XDG_CONFIG_HOME && path.isAbsolute(env.XDG_CONFIG_HOME) ? env.XDG_CONFIG_HOME : path.join(env.HOME || homedir(), '.config');
 }
-/** `$XDG_CONFIG_HOME/autowork/policy.json`, else `~/.config/autowork/policy.json`. */
-export function defaultPolicyPath(env: NodeJS.ProcessEnv = process.env): string {
-  return path.join(configHome(env), 'autowork', 'policy.json');
+/** Policy paths in preference order. The plugin was named paseo-autowork, then autowork. */
+export function policyPaths(env: NodeJS.ProcessEnv = process.env): string[] {
+  const home = configHome(env);
+  return ['kit-autowork', 'autowork', 'paseo-autowork'].map(name => path.join(home, name, 'policy.json'));
 }
-/** The pre-rename path, read only while the current one is absent, so existing grants survive. */
-export function legacyPolicyPath(env: NodeJS.ProcessEnv = process.env): string {
-  return path.join(configHome(env), 'paseo-autowork', 'policy.json');
+/** `$XDG_CONFIG_HOME/kit-autowork/policy.json`, else `~/.config/kit-autowork/policy.json`. */
+export function defaultPolicyPath(env: NodeJS.ProcessEnv = process.env): string {
+  return policyPaths(env)[0];
 }
 async function readPolicy(file: string): Promise<z.infer<typeof configSchema>> {
   const stat = await lstat(file);
@@ -40,20 +41,17 @@ export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<
     if (!path.isAbsolute(file)) throw new Error('PASEO_AUTOWORK_CONFIG must be absolute');
     return { ...await readPolicy(file), path: file, source: 'environment' };
   }
-  const fallback = defaultPolicyPath(env);
-  try { await lstat(fallback); }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    // The plugin was named paseo-autowork before the rename; an operator's grants live there.
-    const legacy = legacyPolicyPath(env);
-    try { await lstat(legacy); }
-    catch (legacyError) {
-      if ((legacyError as NodeJS.ErrnoException).code === 'ENOENT') return { ...configSchema.parse({}), path: fallback, source: 'none' };
-      throw legacyError;
+  const candidates = policyPaths(env);
+  for (const file of candidates) {
+    try { await lstat(file); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw error;
     }
-    return { ...await readPolicy(legacy), path: legacy, source: 'default' };
+    // An earlier name's file is reported as the loaded path, so Settings shows the truth.
+    return { ...await readPolicy(file), path: file, source: 'default' };
   }
-  return { ...await readPolicy(fallback), path: fallback, source: 'default' };
+  return { ...configSchema.parse({}), path: candidates[0], source: 'none' };
 }
 /** The grants the UI sees and the server enforces; `all` expands to every grant. */
 export function effectivePolicy(config: Config): Policy {
