@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, writeFile, chmod, rm, symlink, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, chmod, rm, symlink, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { ProcessRunner } from '../server/process';
 import { AutoworkService } from '../server/autowork-client';
-import { defaultPolicyPath, effectivePolicy, loadConfig } from '../server/config';
+import { defaultPolicyPath, effectivePolicy, legacyPolicyPath, loadConfig } from '../server/config';
 import { repositoryIdentity } from '../server/discovery';
 
 import { fixture, cleanupFixtures, policy } from './fixture';
@@ -147,7 +147,7 @@ describe('policy file and extended reads', () => {
     try {
       const env = { HOME: home, PATH: '' } as NodeJS.ProcessEnv;
       const file = defaultPolicyPath(env);
-      expect(file).toBe(path.join(home, '.config/paseo-autowork/policy.json'));
+      expect(file).toBe(path.join(home, '.config/autowork/policy.json'));
       const missing = await loadConfig(env);
       expect([missing.source, missing.path, effectivePolicy(missing).tasks]).toEqual(['none', file, false]);
       await import('node:fs/promises').then(fs => fs.mkdir(path.dirname(file), { recursive: true }));
@@ -160,7 +160,25 @@ describe('policy file and extended reads', () => {
       await expect(loadConfig(env)).rejects.toThrow(/private/);
       await writeFile(file, JSON.stringify({ tasks: true, controls: ['pause', 'pause'] })); await chmod(file, 0o600);
       expect(effectivePolicy(await loadConfig(env))).toMatchObject({ tasks: true, commit: false, controls: ['pause'] });
-      expect(defaultPolicyPath({ XDG_CONFIG_HOME: '/etc/xdg' })).toBe('/etc/xdg/paseo-autowork/policy.json');
+      expect(defaultPolicyPath({ XDG_CONFIG_HOME: '/etc/xdg' })).toBe('/etc/xdg/autowork/policy.json');
+    } finally { await rm(home, { recursive: true, force: true }); }
+  });
+  it('keeps grants from the pre-rename policy path until the new one exists', async () => {
+    const home = await mkdtemp(path.join(tmpdir(), 'paseo-aw-home-'));
+    try {
+      const env = { HOME: home, PATH: '' } as NodeJS.ProcessEnv;
+      const legacy = legacyPolicyPath(env);
+      expect(legacy).toBe(path.join(home, '.config/paseo-autowork/policy.json'));
+      await mkdir(path.dirname(legacy), { recursive: true });
+      await writeFile(legacy, JSON.stringify({ tasks: true }), { mode: 0o600 });
+      const loaded = await loadConfig(env);
+      expect([loaded.source, loaded.path, effectivePolicy(loaded).tasks]).toEqual(['default', legacy, true]);
+      // Writing the current path takes over, so an operator migrates by copying the file.
+      const current = defaultPolicyPath(env);
+      await mkdir(path.dirname(current), { recursive: true });
+      await writeFile(current, JSON.stringify({ all: true }), { mode: 0o600 });
+      const migrated = await loadConfig(env);
+      expect([migrated.path, effectivePolicy(migrated).commit]).toEqual([current, true]);
     } finally { await rm(home, { recursive: true, force: true }); }
   });
   it('serves goals, status, scorecard, models and store reads through literal argv', async () => {

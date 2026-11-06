@@ -74,7 +74,7 @@ use the `git:owner/repo` form, or `git:TrebuchetDynamics/kit:integrations/paseo`
 
 For a first read-only check:
 
-1. Confirm that `paseo plugin ls` reports `paseo-autowork` as `running`.
+1. Confirm that `paseo plugin ls` reports `autowork` as `running`.
 2. Select **Autowork** in Paseo's sidebar on that host.
 3. Select **Refresh**. Inspect the repositories already known to Autowork.
 4. Open **Settings → Plugins → Autowork grants** to see which grants the policy file gives.
@@ -101,7 +101,7 @@ Missing transport, runtime-version or delivery evidence is **unknown**. The plug
 
 ## Host policy
 
-There is **no client toggle that grants execution**. The daemon operator writes one private JSON policy file. The plugin reads it from `$XDG_CONFIG_HOME/paseo-autowork/policy.json` (default `~/.config/paseo-autowork/policy.json`) in the daemon user's home, or from the path named by `PASEO_AUTOWORK_CONFIG` in the daemon's environment when that variable is set. The Settings screen shows which file was loaded. Omit grants you do not need.
+There is **no client toggle that grants execution**. The daemon operator writes one private JSON policy file. The plugin reads it from `$XDG_CONFIG_HOME/autowork/policy.json` (default `~/.config/autowork/policy.json`) in the daemon user's home, or from the path named by `PASEO_AUTOWORK_CONFIG` in the daemon's environment when that variable is set. While the current path is absent it falls back to the pre-rename `paseo-autowork/policy.json`, so existing grants keep working; write the current path to migrate. The Settings screen shows which file was loaded. Omit grants you do not need.
 
 > Paseo 0.13, 0.14 and 0.15 require `daemon.manage` for plugin RPC, but their public handler has no end-user principal. These grants are **shared by authenticated daemon managers**, not a per-user ACL. Do not use this policy model with mutually untrusted managers.
 
@@ -125,7 +125,7 @@ There is **no client toggle that grants execution**. The daemon operator writes 
 
 Use an absolute, daemon-user-owned regular file, not a symlink. Set its mode to `0600`; a group- or world-writable file is refused. Executable resolution is server-side and must be absolute when configured; name the kit checkout's `pi-autowork/bin/autowork` to run the same release the plugin was built with. Unknown repository paths cannot be submitted through RPC.
 
-A running daemon reads the policy when the plugin starts. After editing the file, explicitly reload this plugin (`paseo plugin reload paseo-autowork` or **Settings → Plugins → Autowork → Reload**). The plugin never changes daemon configuration, enables itself, installs services automatically on load or refreshes credentials. Inspect granted operations before use.
+A running daemon reads the policy when the plugin starts. After editing the file, explicitly reload this plugin (`paseo plugin reload autowork` or **Settings → Plugins → Autowork → Reload**). The plugin never changes daemon configuration, enables itself, installs services automatically on load or refreshes credentials. Inspect granted operations before use.
 
 </details>
 
@@ -154,7 +154,7 @@ Only current canonical owner questions for open tasks expose **Answer**. Answers
 
 The plugin never takes over Autowork workers or Paseo-created agent sessions.
 
-Planning state lives under the daemon user's `XDG_STATE_HOME/paseo-autowork/planning/<generation>/`, or `~/.local/state/...`. It contains upstream-owned planning records, not a new event database. Pinning a model needs an Autowork release whose planner accepts a per-session model (kit `main` from 2026-11-02 on); an older release refuses the start and says so.
+Planning state lives under the daemon user's `XDG_STATE_HOME/autowork/planning/<generation>/`, or `~/.local/state/...`. It contains upstream-owned planning records, not a new event database. Pinning a model needs an Autowork release whose planner accepts a per-session model (kit `main` from 2026-11-02 on); an older release refuses the start and says so.
 
 Disable/reload cancels owned turns with bounded cleanup. Retained worktrees and history are not deleted. After reload, the plugin refuses to adopt old sessions whose active ownership it cannot prove. Use existing Autowork tools to reconcile them.
 
@@ -185,11 +185,11 @@ From the kit root, `python3 scripts/check.py` runs the same `npm run check` when
 <details>
 <summary><strong>Upgrade and remove</strong></summary>
 
-For upgrades, review code and compatibility, then run checks. Explicitly run `paseo plugin reload paseo-autowork` on the chosen daemon. Reload is a trusted-code operation.
+For upgrades, review code and compatibility, then run checks. Explicitly run `paseo plugin reload autowork` on the chosen daemon. Reload is a trusted-code operation.
 
 If the installed Autowork release changes after the plugin loads, the first refresh fails closed with `Autowork source release changed; reload and requalify before another operation`. Reload the plugin (or use **Settings → Plugins → Autowork → Reload**) and refresh. This prevents operating a new engine release under an old qualification.
 
-Remove with `paseo plugin remove paseo-autowork`. Source repositories, Autowork services, tasks and retained planning work remain. No automatic restore, cleanup or worker interruption is performed.
+Remove with `paseo plugin remove autowork`. Source repositories, Autowork services, tasks and retained planning work remain. No automatic restore, cleanup or worker interruption is performed.
 
 </details>
 

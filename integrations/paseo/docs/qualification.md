@@ -103,3 +103,7 @@ The client implementation child timed out before committing its last two regress
 Performed on the local 0.14.0 daemon: installation, enable, load, reload, live fleet/tasks read and a refused read-only mutation. Not performed: real authenticated user/permission denial, Android or Linux Desktop visual interaction, remote host pairing, real provider/model planning, an authorized runner control, fleet runtime activation, battery measurements or remote publication.
 
 These require the bounded permissions/targets in [follow-ups](follow-ups.md). The implementation must not be described as Android-qualified or production/fleet-qualified from the live read-only result. Missing actual transport/runtime release/last-delivery or full historical-attempt/receipt-chain data remains unknown until an authoritative upstream read contract supplies it.
+
+> The plugin id and display name are now `autowork`; earlier text in this record says
+> `paseo-autowork` because that was the id at the time. The policy path follows the
+> rename and still reads the old file while the new one is absent.

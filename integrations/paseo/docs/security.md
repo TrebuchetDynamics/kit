@@ -17,7 +17,7 @@ In the verified Paseo 0.13, 0.14 and 0.15 sources, `plugin.rpc.invoke.request` r
 
 ## Mutation boundaries
 
-- Default policy grants no planning, owner answers, task edits, commits, controls or maintenance. A server-only operator policy file supplies explicit grants: the default path `$XDG_CONFIG_HOME/paseo-autowork/policy.json` (or `~/.config/...`) in the daemon user's home, or `PASEO_AUTOWORK_CONFIG`. The file must be a daemon-user-owned regular file that is not group- or world-writable. No UI settings RPC can write it; the Settings screen only displays it.
+- Default policy grants no planning, owner answers, task edits, commits, controls or maintenance. A server-only operator policy file supplies explicit grants: the default path `$XDG_CONFIG_HOME/autowork/policy.json` (or `~/.config/...`) in the daemon user's home, or `PASEO_AUTOWORK_CONFIG`. The file must be a daemon-user-owned regular file that is not group- or world-writable. No UI settings RPC can write it; the Settings screen only displays it.
 - The executable is resolved to an absolute regular executable. Changes to its identity or reported Autowork release refuse further dispatch until reload/requalification.
 - `prepare` refreshes canonical state and produces a 60-second ticket bound to generation, identity/revision, payload, service state and effective publication policy. `commit` consumes it before any asynchronous dispatch.
 - A repository has one reserved writer. Duplicate confirmations retrieve the original operation, not another command; unknown generations cannot reuse old tickets. Buffers, subprocesses, outstanding requests, sessions and retained operations are bounded.

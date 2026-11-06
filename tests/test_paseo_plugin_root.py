@@ -16,7 +16,7 @@ class PaseoRootSourceTests(unittest.TestCase):
     def test_the_root_manifest_builds_the_layout_paseo_compiles(self):
         manifest = json.loads((ROOT / 'paseo-plugin.json').read_text())
         plugin = json.loads((PLUGIN / 'paseo-plugin.json').read_text())
-        self.assertEqual(manifest['id'], 'paseo-autowork')
+        self.assertEqual(manifest['id'], 'autowork')
         for key in ('name', 'description', 'requirements'):
             self.assertEqual(manifest[key], plugin[key], key)
         build = manifest.get('build')

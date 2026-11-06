@@ -18,6 +18,8 @@ export default function contribute(server: PluginServerContext) {
       const service = new AutoworkService(config);
       const operations = new Operations(service, async () => new PlanningManager({
         source: await service.source(), python: await resolveProgram('python3'),
+        // Stable state location, deliberately not the plugin id: renaming it would orphan the
+        // retained planning sessions this plugin refuses to adopt without proof of ownership.
         stateRoot: path.join(process.env.XDG_STATE_HOME ?? path.join(homedir(), '.local/state'),
           'paseo-autowork', 'planning', service.instance),
       }));
