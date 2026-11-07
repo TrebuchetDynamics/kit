@@ -47,6 +47,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- Added official stable Octet native-binary bootstrap to install.sh default/all/update and --only octet, preserving upstream verification and reporting destination version and partial-install failures. (TOOLSET-474-9404c8c9)
 - Repair the offline stalled-service regression by separating genuine engineering stalls from visible owner-only device waits, with bounded observation and supervised cleanup. (MAIN-008)
 - Harden the parallel-dispatch overlap test with ready/release synchronization and bounded worker cleanup instead of fixed one-second sleeps. (MAIN-007)
 - Stabilize the host check-slot subprocess fixture with bounded startup synchronization, isolated runner settings and descendant cleanup while preserving execution deadlines (MAIN-006-cce37de1).
