@@ -3,14 +3,17 @@ import json
 import os
 from pathlib import Path
 import select
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pi_autowork import release  # noqa: E402
+from pi_autowork.supervision import maintenance  # noqa: E402
 from pi_autowork.processes import start_time  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tests'))
 from src_fixture import copy_sources  # noqa: E402
@@ -240,19 +243,46 @@ class PackageUpdateTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.package = self.root / 'checkout with spaces'
         self.package.mkdir()
-        subprocess.run(['git', 'init', '-q', str(self.package)], check=True)
-        subprocess.run(['git', '-C', str(self.package), 'remote', 'add', 'origin',
-                        'https://github.com/TrebuchetDynamics/kit'], check=True)
+        self.git(self.package, 'init', '-q', '-b', 'main')
+        schema = self.package / STATE
+        schema.parent.mkdir(parents=True)
+        schema.write_text('STATE_SCHEMA = 1\nSTATE_SCHEMA_READS = (1,)\n')
+        self.git(self.package, 'add', '.')
+        self.git(self.package, 'commit', '-qm', 'installed release')
+        self.before = self.git(self.package, 'rev-parse', 'HEAD')
+        upstream = self.root / 'upstream'
+        self.git(self.root, 'clone', '-q', str(self.package), str(upstream))
+        self.git(upstream, 'commit', '-qm', 'compatible update', '--allow-empty')
+        self.expected = self.git(upstream, 'rev-parse', 'HEAD')
+        self.git(self.package, 'remote', 'add', 'origin', str(upstream))
         self.listing = self.root / 'listing'
         self.calls = self.root / 'updates.jsonl'
+        self.fetch_log = self.root / 'fetches.jsonl'
+        self.bin = self.root / 'bin'
+        self.bin.mkdir()
+        # Observe real child fetches, including the requested ref, without network access.
+        git = self.bin / 'git'
+        git.write_text(f'#!{sys.executable}\nimport json, os, sys\n'
+                       f'if sys.argv[3:4] == ["fetch"]:\n'
+                       f'    with open({str(self.fetch_log)!r}, "a") as out:\n'
+                       f'        out.write(json.dumps(sys.argv[4:]) + "\\n")\n'
+                       f'os.execv({shutil.which("git")!r}, sys.argv)\n')
+        git.chmod(0o755)
         self.pi = self.root / 'pi'
-        self.pi.write_text(f'#!{sys.executable}\nimport json, sys\nfrom pathlib import Path\n'
+        self.pi.write_text(f'#!{sys.executable}\nimport json, subprocess, sys\nfrom pathlib import Path\n'
                            f'if sys.argv[1:] == ["list"]:\n'
                            f'    print(Path({str(self.listing)!r}).read_text())\n'
                            f'else:\n'
+                           f'    checkpoint = json.loads(Path({str(self.root / "toolset-update-attempts.json")!r}).read_text())\n'
+                           f'    assert checkpoint["revision"] == {self.expected!r}\n'
                            f'    with open({str(self.calls)!r}, "a") as out:\n'
-                           f'        out.write(json.dumps(sys.argv[1:]) + "\\n")\n')
+                           f'        out.write(json.dumps(sys.argv[1:]) + "\\n")\n'
+                           f'    subprocess.run(["git", "-C", {str(self.package)!r}, "reset", "--hard", "FETCH_HEAD"], check=True)\n')
         self.pi.chmod(0o755)
+
+    def git(self, cwd, *args):
+        return subprocess.run(['git', '-C', str(cwd), '-c', 'user.email=f@example.invalid', '-c', 'user.name=F', *args],
+                              check=True, capture_output=True, text=True, timeout=10).stdout.strip()
 
     def declare(self, source):
         self.listing.write_text(f'User packages:\n  git:github.com/example/other\n'
@@ -263,19 +293,38 @@ class PackageUpdateTests(unittest.TestCase):
         from pi_autowork import coordinator
         runner = coordinator.Coordinator.__new__(coordinator.Coordinator)
         runner.mode, runner.update_interval, runner.last_update = 'continuous', 1, 0
-        runner.package = runner.toolset = self.package
+        # Match the string paths supplied by CLI config / PI_AUTOWORK_PACKAGE.
+        runner.package = runner.toolset = str(self.package)
         runner.state = self.root / 'state'
         runner.state.mkdir(exist_ok=True)
-        runner.cfg = {'pi': str(self.pi), 'state_root': str(self.root)}
+        runner.cfg = {'pi': str(self.pi), 'state_root': str(self.root), 'git_common': str(self.package / '.git')}
         runner.update_wait = 600
-        runner.toolset_rev = 'old'
+        runner.last_update_note = ''
+        self.git(self.package, 'reset', '--hard', self.before)
+        for path in (self.calls, self.fetch_log, self.package / '.git/FETCH_HEAD'):
+            path.unlink(missing_ok=True)
         # Old processes can inherit this incorrect flag for a local package.
-        with patch.dict(os.environ, PI_AUTOWORK_PACKAGE_INSTALLED='1'), \
-                patch.object(release, 'check', return_value={'ok': True}) as checkpoint:
-            runner.update_toolset()
-        self.checked_source = checkpoint.call_args.kwargs.get('source') if checkpoint.called else None
+        with patch.dict(os.environ, PI_AUTOWORK_PACKAGE_INSTALLED='1',
+                        PATH=str(self.bin) + os.pathsep + os.environ['PATH']):
+            try:
+                runner.update_toolset()
+                self.assertIn('job', maintenance.read(runner, 'update'))
+                self.collect_update(runner)
+                self.outcome = maintenance.read(runner, 'update')['outcome']
+                self.assertEqual((runner.state / 'maintenance-update.exit').read_text().strip(), '0')
+            finally:
+                maintenance.stop(runner)
+                self.collect_update(runner)
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
-        return calls, checkpoint.call_count
+        self.fetches = [json.loads(line) for line in self.fetch_log.read_text().splitlines()] if self.fetch_log.exists() else []
+        return calls, len(self.fetches)
+
+    def collect_update(self, runner):
+        deadline = time.monotonic() + 10
+        while maintenance.read(runner, 'update').get('job'):
+            self.assertLess(time.monotonic(), deadline, 'fixture update did not settle')
+            maintenance.poll(runner)
+            time.sleep(.01)
 
     def test_local_packages_never_fetch_or_update_even_with_an_old_installed_flag(self):
         for source in ('../../git/autowork', str(self.package)):
@@ -284,18 +333,21 @@ class PackageUpdateTests(unittest.TestCase):
                 calls, checks = self.update()
                 self.assertEqual(calls, [])
                 self.assertEqual(checks, 0)
+                self.assertFalse((self.package / '.git/FETCH_HEAD').exists())
+                self.assertTrue(self.outcome['current'], self.outcome)
 
     def test_managed_packages_use_the_exact_registered_source_including_ref(self):
         for source in ('git:github.com/TrebuchetDynamics/kit',
                        'git:github.com/TrebuchetDynamics/kit@main',
                        'https://github.com/TrebuchetDynamics/kit'):
             with self.subTest(source=source):
-                self.calls.unlink(missing_ok=True)
                 self.declare(source + ' (filtered)')
                 calls, checks = self.update()
                 self.assertEqual(calls, [['update', source]])
                 self.assertEqual(checks, 1)
-                self.assertEqual(self.checked_source, source)
+                self.assertEqual(self.fetches, [['-q', '--', 'origin', release.package_ref(source)]])
+                self.assertTrue(self.outcome['ok'], self.outcome)
+                self.assertEqual(self.outcome['revision'], self.expected)
 
     def test_registered_refs_do_not_confuse_ssh_usernames_with_refs(self):
         for source, expected in (
@@ -332,7 +384,11 @@ class PackageUpdateTests(unittest.TestCase):
         self.listing.write_text('User packages:\n  git:github.com/example/other\n'
                                 f'    {self.root / "other"}\n')
         self.assertEqual(self.update(), ([], 0))
+        self.assertFalse((self.package / '.git/FETCH_HEAD').exists())
         self.listing.unlink()
+        self.assertEqual(self.update(), ([], 0))
+        self.assertFalse((self.package / '.git/FETCH_HEAD').exists())
+        self.pi.unlink()  # missing executable is also an unreadable declaration
         self.assertEqual(self.update(), ([], 0))
 
 
