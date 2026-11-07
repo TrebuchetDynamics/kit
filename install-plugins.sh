@@ -17,7 +17,7 @@ Existing installs are skipped, never force-replaced. No gateways are restarted.
 --dry-run          Print commands without invoking Hermes or changing profiles.
 --enable           Enable newly installed and already present plugins.
 --yes-deps         Consent to declared Python dependencies on native installs.
---setup            Configure OMH using bundle defaults.
+--setup            Apply bundle defaults.
 --bundle-only      Link and enable this bundle in every live profile and apply
                    its defaults, without installing external sources.
 --hermes-home ROOT Select the default Hermes home containing profiles/.
@@ -289,7 +289,6 @@ PY
         temp_dir=''
         continue
     fi
-    source_failed=false
     for profile in "${targets[@]}"; do
         profile_dir=$hermes_root
         [[ $profile == default ]] || profile_dir=$hermes_root/profiles/$profile
@@ -323,7 +322,6 @@ PY
             ); then
                 printf 'Failed: %s (%s): could not resolve installed source\n' "$plugin" "$profile" >&2
                 failed=$((failed + 1))
-                source_failed=true
                 continue
             fi
         fi
@@ -336,13 +334,11 @@ PY
                         printf 'Plan: enable %s (%s)\n' "${target##*/}" "$profile"
                     elif ! HERMES_HOME=$hermes_root hermes -p "$profile" plugins enable "${target##*/}"; then
                         failed=$((failed + 1))
-                        source_failed=true
                     fi
                 fi
             else
                 printf 'Failed: %s (%s): existing path is not a plugin: %s\n' "$plugin" "$profile" "$target" >&2
                 failed=$((failed + 1))
-                source_failed=true
             fi
             continue
         fi
@@ -361,18 +357,10 @@ PY
             else
                 printf 'Failed: %s (%s)\n' "$plugin" "$profile" >&2
                 failed=$((failed + 1))
-                source_failed=true
             fi
         fi
     done
-    if $setup && ! $source_failed && [[ $plugin == omh ]]; then
-        helper_args=(python3 "$script_dir/install-omh.py" --hermes-home "$hermes_root")
-        for profile in "${targets[@]}"; do helper_args+=(--profile "$profile"); done
-        $dry_run && helper_args+=(--dry-run)
-        if ! "${helper_args[@]}"; then
-            failed=$((failed + 1))
-        fi
-    fi
+
 done
 if $setup && ! $bundle_only; then
     for profile in "${profiles[@]}"; do

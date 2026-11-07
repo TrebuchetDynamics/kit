@@ -40,7 +40,7 @@ in three different ways:
   `skill_view`, `/autowork:...` and `$autowork:...` strings.
 - The settings key is per-profile live state. Renaming the key without a compatible
   read makes every existing profile silently lose approvals mode, menu priority and
-  its OMH/OMU policy, which is exactly the wound the 0.3.0
+  its external-plugin policy, which is exactly the wound the 0.3.0
   `hermes-toolset → autowork` rename left open.
 
 So the order is: compatibility first, identity second, prose last.

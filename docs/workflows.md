@@ -46,7 +46,7 @@ the chat, ready workflow commands, the last update, plugin load status and setup
 that every tool is enabled in the current chat. Hermes's `/toolsets` lists tool
 groups; plugins that provide skills, commands, or hooks need not appear there.
 Use `/autowork list` in CLI chat or Telegram for the installed command inventory,
-or `/autowork list omh` to filter it. `hermes autowork doctor --core` checks the bundled command layer and lists external
+or `/autowork list graphify` to filter it. `hermes autowork doctor --core` checks the bundled command layer and lists external
 gaps separately. Plain `doctor` requires the full stack; add `--json` for automation. Imported native commands keep their own handlers;
 imported plugin skills without commands receive aliases. Telegram's menu has a
 capacity limit, so some commands must be typed rather than selected in the menu.

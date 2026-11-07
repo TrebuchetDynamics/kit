@@ -1,6 +1,5 @@
 {
   "imported_plugins": [
-    "omh",
     "hermes-speech"
   ],
   "hermes": {
@@ -12,57 +11,6 @@
     "skills_platform_disabled": {}
   },
   "required_skills": [
-    "graphify",
-    "omh-plan"
-  ],
-  "omh": {
-    "source": "git+https://github.com/rlaope/oh-my-hermes.git@117f67a2347b82ea527ca1d7f8c0e8d609ec8c4c",
-    "full": true,
-    "memory_mode": "auto-safe",
-    "tui": false,
-    "menubar": false
-  },
-  "omh_keep_skills": [
-    "agent-board",
-    "agent-debug",
-    "agent-instructions",
-    "agent-ops-review",
-    "application-threat-model",
-    "automation-blueprint",
-    "browser-operator",
-    "build-failure-triage",
-    "cancel",
-    "code-review",
-    "command-operator",
-    "decision-recall",
-    "deploy-and-monitor",
-    "design-quality-gate",
-    "doctor",
-    "failure-signal-audit",
-    "frontend",
-    "gateway-intent-card",
-    "git-workflow",
-    "harness-session-inventory",
-    "memory-new",
-    "memory-sync",
-    "mobile-release",
-    "model-setup",
-    "oh-my-hermes",
-    "product-brief",
-    "product-docs",
-    "provider-profile-posture",
-    "release-cut",
-    "research",
-    "run-efficiency",
-    "skill",
-    "todo-checklist",
-    "ultrawork",
-    "verification-gate",
-    "visual-qa",
-    "voice-operator",
-    "web-research",
-    "wiki",
-    "workflow-learning",
-    "workspace-audit"
+    "graphify"
   ]
 }

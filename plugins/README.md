@@ -8,7 +8,7 @@ From the repository root:
 ```
 
 The public command performs full setup by default: bundled skills, plugin
-installation and enablement, profile configuration, memory setup, verification,
+installation and enablement, profile configuration, verification,
 and live gateway command refresh. `install-plugins.sh` and `hermes autowork setup` use the
 same orchestrator. `--bundle-only` limits setup to this bundle; `--no-reload`
 explicitly defers live command wiring. No separate per-profile wiring is needed.
@@ -18,7 +18,7 @@ also works when called from another directory. Add one catalog URL and scope
 per line; blank lines and lines beginning with `#` are ignored:
 
 ```text
-https://hermes-agent.nousresearch.com/docs/plugins/omh all profiles
+https://hermes-agent.nousresearch.com/docs/plugins/hermes-speech all profiles
 
 skills https://github.com/example/optional-skills all profiles
 ```
@@ -53,10 +53,8 @@ Installation uses the native catalog
 command, preserving Hermes' dependency, security, and activation prompts;
 run interactively to answer them. Plugins are enabled by default; `--yes-deps`
 consents to native plugin dependencies. Skill installation skips the normal
-confirmation prompt but still enforces security scans. Full setup runs OMH's
-setup and doctor using `plugins/defaults.json`. The
-memory provider is selected as OMH with `auto-safe` policy and an independent
-store per profile; the current TUI is kept. Before enabling the bundle, it configures gateway injection,
+confirmation prompt but still enforces security scans. Existing memory providers
+and stores are preserved. Before enabling the bundle, setup configures gateway injection,
 turns off command and slash-confirmation prompts, and clears global/per-channel
 skill disable lists in each profile. All declared plugin sources target all profiles. Existing installs and local edits
 are preserved; readiness is checked per profile after setup. Running gateways are

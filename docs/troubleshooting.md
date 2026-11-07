@@ -63,7 +63,7 @@ conversation.
 
 ### `doctor --core` passes but plain `doctor` fails
 
-Plain `doctor` also requires the external integrations (OMH, speech,
+Plain `doctor` also requires the external integrations (speech,
 imported skills). The `integration_gaps` field names them. Run full setup to add
 them, or keep using the core workflows; see [installation](installation.md#install).
 
@@ -103,16 +103,6 @@ policy keys that differ. Opt out first, then change them.
 CLI startup can apply runtime defaults before setup's preflight runs. From a
 source checkout, `bash install-plugins.sh --yes-deps --dry-run` previews without booting
 Hermes; see the [README](../README.md#first-use-in-your-project).
-
-### Setup is BLOCKED by a memory provider, or printed `memory off`
-
-OMH never replaces another selected memory provider. Full setup's preflight
-reports `BLOCKED: ... existing memory provider conflicts with OMH setup`; running
-`install-omh.py` directly instead prints `memory off` with the provider's name and
-the command that clears it (`hermes memory off`, with `-p PROFILE` for a named
-profile). Run it, then rerun setup to use OMH memory. `memory.provider is not set` means OMH did not
-take the empty slot; check `hermes -p PROFILE memory status`. See
-[memory](memory.md#omh-memory-per-profile).
 
 ## Updates
 

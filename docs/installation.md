@@ -4,9 +4,9 @@ Source: [setup orchestrator](../setup_bundle.py), [source installer](../install-
 [profile defaults](../runtime_defaults.py), [native skill provisioning](../install_skills.py).
 
 The native setup bodies live in [`Src/autowork_runtime/`](../Src/autowork_runtime/):
-`setup_bundle.py`, `setup_preflight.py`, `setup_runtime.py`, `install_skills.py`,
-`install_omh.py` and `install_graphify.py`. The root Python files remain the public
-entrypoints, including `install-omh.py` and `install-graphify.py`. Keep their
+`setup_bundle.py`, `setup_preflight.py`, `setup_runtime.py`, `install_skills.py`
+and `install_graphify.py`. The root Python files remain the public
+entrypoints, including `install-graphify.py`. Keep their
 same-release `autowork_bootstrap.py` and `Src/` payload together; a single copied
 installer is not standalone. Preflight rejects missing declared source payloads
 before installation stages. This layout does not change setup targets or policy.
@@ -72,17 +72,14 @@ apply; full mode does not supply consent flags.
 ## Install
 
 Prerequisites: configured Hermes, Bash and Python 3.12+. Full setup also needs Git
-and `uv` when `omh` or `graphify` is not already installed. Setup now checks these
+and `uv` when `graphify` is not already installed. Setup now checks these
 prerequisites before starting installation stages; later runtime failures can
 still leave partial setup.
 See [compatibility](testing.md#compatibility) for the verified environment.
 
 Setup is broader than installing this plugin: the current source inventory targets
-all profiles for OMH, Graphify, speech support and OMH memory. With the
-checked-in defaults, setup requests bounded `auto-safe` capture while preserving
-existing store bindings. An explicitly stored mode is retained only when the
-configured `memory_mode` is `preserve`; binding preservation alone does not preserve
-that policy. No external memory server or connection JSON is required.
+all profiles for Graphify and speech support. Existing memory providers, store
+bindings and capture policies are preserved. Kit does not provision external memory.
 
 ```sh
 hermes plugins install TrebuchetDynamics/kit
@@ -100,7 +97,7 @@ bash install-plugins.sh --yes-deps
 
 The Hermes item in `install.sh`, `install-plugins.sh`, and `hermes autowork setup`
 share the same complete setup path: bundled skills, plugin installation/enablement, profile
-configuration, OMH setup, per-profile readiness checks, and running-gateway command
+configuration, per-profile readiness checks, and running-gateway command
 refresh. No manual symlinks or per-profile enable commands are needed. Use
 `--dry-run` to preview, `--bundle-only` to install only this bundle and its native
 skills, or `--no-reload` to explicitly defer gateway wiring. Dependency consent
@@ -111,13 +108,12 @@ Plugins are enabled per profile. For a named profile, use that profile's home fo
 the link and `hermes -p PROFILE plugins enable kit` to enable it.
 `hermes autowork setup` installs and enables the sources in
 [plugins/PLUGINS.md](../plugins/PLUGINS.md), including any external skill repositories
-it lists (currently none), Graphify's Hermes integration, and OMH's full memory setup. It also links and enables
+it lists (currently none), Graphify's Hermes integration and speech support. It also links and enables
 autowork itself in every existing live profile, preserving existing plugin
 installations. After creating another profile, rerun setup or, from this checkout,
 run `bash install-plugins.sh --bundle-only` to add just this bundle and its defaults
 across profiles. The links depend on keeping this checkout installed. It applies
-[our defaults](../plugins/defaults.json): select OMH with `auto-safe` memory in independent stores, keep the
-current TUI, disable the optional menubar, allow toolset gateway injection, and
+[our defaults](../plugins/defaults.json): allow toolset gateway injection and
 set `approvals.mode` to `off` for profiles with autowork installed. This
 disables terminal command approval prompts throughout those profiles, including
 CLI and messaging sessions. The plugin itself applies these approval and gateway
@@ -128,14 +124,9 @@ injection defaults whenever it loads, including disabling `/new`, `/clear`,
 command-menu priority and installs the bundle's managed cron helper script. No setup command is needed for
 this policy after the plugin is enabled. It writes only when values differ and
 preserves other settings, including explicit deny rules. Hermes hard blocks still
-apply. In profiles with OMH, each load also adds the OMH skills outside the bundle's
-measured keep list (`omh_keep_skills` in `plugins/defaults.json`, 41 skills including
-code review, verification, the core and memory skills) to `skills.disabled`, so Hermes
-leaves them out of every prompt's skill index. Your own `skills.disabled` entries stay;
-the bundle removes only names it added (recorded in
-`plugins.entries.kit.omh_trim`) and never leaves its own skills disabled. OMH
-itself, its files and its memory provider are untouched. Setup also clears per-platform
-skill disable lists.
+apply. Your own `skills.disabled` entries stay, except that the bundle enables its
+own skills. External skill catalogs and memory providers are not managed.
+Setup also clears per-platform skill disable lists.
 To opt out of automatic policy application, first run
 `hermes -p PROFILE config set plugins.entries.kit.settings.apply_runtime_defaults false`,
 **Renamed from Autowork to Kit.** The plugin and its command namespace are now `kit`;
@@ -149,10 +140,10 @@ then restore the desired settings, for example
 Setup, including `--bundle-only`, honors the same opt-out: it skips the approval,
 gateway-injection and skill-disable-list settings for that profile and says so in
 its preview.
-Full setup runs OMH doctor, checks every profile, and refreshes live commands.
+Full setup checks every profile and refreshes live commands.
 Native plugin loading provisions missing bundled skills, so full setup is not
-required for the core questions-only interview. Use setup for external integrations,
-OMH configuration and fleet-wide provisioning; native installation does not perform
+required for the core questions-only interview. Use setup for external integrations
+and fleet-wide provisioning; native installation does not perform
 those steps. Saving interview decisions through docs-sync additionally requires
 the relevant file/terminal tools. Direct source evidence is sufficient for routine
 task and document repairs; Graphify is useful for uncertain cross-component
@@ -171,9 +162,8 @@ need no dependency network access.
 
 Checks include executable availability, the required Hermes skill/injection APIs,
 strict YAML parsing (including duplicate keys), writable installation paths,
-existing skill/plugin conflicts, OMH store isolation and source accessibility. Full
-(not `--bundle-only`) preflight also refuses a profile whose `memory.provider` is
-another product; clear it first (`hermes -p PROFILE memory off`).
+existing skill/plugin conflicts and source accessibility. Existing memory provider
+selection does not block setup and is left unchanged.
 Compatibility is inspected from local Hermes source without loading its plugins;
 the configuration parser uses Hermes's managed Python and does not print config
 values or parser excerpts that could contain credentials. Unrecognized runtime
@@ -233,8 +223,8 @@ configuration; individual skills may require their own tools.
 ## Limits of the opt-out
 
 The runtime-defaults opt-out covers plugin loading and setup's bundle policy
-settings only. Full setup still applies the OMH memory defaults and installs
-external integrations, so do not use it as a policy-preserving reinstall.
+settings only. Full setup still installs external integrations, so do not use it
+as a policy-preserving reinstall.
 Back up configurations first and review [removal and recovery](uninstall.md).
 
 Updating this page: reconcile changes to setup flags, profile discovery, runtime
@@ -540,7 +530,7 @@ and doctor require the corresponding `kit:ponytail-*` skill registration and
 report it under `bundled_skill_fallbacks`; they do not treat the external command
 as an Autowork handler or remove it. Other foreign command collisions remain errors.
 `hermes autowork doctor --core` checks registration; full setup and full diagnostics
-still apply to external integrations such as Graphify and OMH. This does not install
+still apply to external integrations such as Graphify. This does not install
 the entire public skill catalog or guarantee optional browser/service readiness.
 Impeccable’s upstream launcher may download its versioned engine on first use
 (or use an existing configured engine). The bundled snapshot does not contain

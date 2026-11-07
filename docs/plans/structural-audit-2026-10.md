@@ -99,7 +99,7 @@ Src/
     bundle.py, autoresearch_commands.py, workflow_commands.py
     runtime_defaults.py, telegram_menu_policy.py
     install_skills.py, setup_bundle.py, setup_preflight.py, setup_runtime.py
-    install_omh.py, install_graphify.py
+    install_graphify.py
     update_bundle.py, update_bundle_native.py
   pi_autowork/
     __init__.py, layout.py              # canonical package; explicit path ownership
@@ -187,11 +187,11 @@ Planned checks: `python3 scripts/check.py tests/test_src_native.py tests/test_pl
 
 Status: Accepted
 
-After the foundation, move exactly install_skills.py, setup_bundle.py, setup_preflight.py, setup_runtime.py, install-omh.py and install-graphify.py implementations to their Src/autowork_runtime counterparts (hyphenated public files keep their names; source owners use install_omh.py/install_graphify.py). Keep entry arguments, native paths, installer exception/exit behavior, privacy and full source closure; no actual profile installation.
+After the foundation, move exactly install_skills.py, setup_bundle.py, setup_preflight.py, setup_runtime.py, install-graphify.py implementations to their Src/autowork_runtime counterparts (hyphenated public files keep their names; source owners use install_graphify.py). Keep entry arguments, native paths, installer exception/exit behavior, privacy and full source closure; no actual profile installation.
 
-Update required-file contracts for the migrated bootstrap/source payload and copied-setup/provisioner fixtures. Negative tests show missing source refuses before writes; it must not borrow another checkout. Tests that formerly copied only install_skills.py now copy its actual same-release closure. Own tests/test_complete_setup.py, test_install_skills.py, test_native_provisioning.py, test_setup_runtime.py, test_install_omh.py, test_install_graphify.py and the existing engine integration single-installer-copy fixture. Do not redesign setup stages or broaden installed targets.
+Update required-file contracts for the migrated bootstrap/source payload and copied-setup/provisioner fixtures. Negative tests show missing source refuses before writes; it must not borrow another checkout. Tests that formerly copied only install_skills.py now copy its actual same-release closure. Own tests/test_complete_setup.py, test_install_skills.py, test_native_provisioning.py, test_setup_runtime.py, test_install_graphify.py and the existing engine integration single-installer-copy fixture. Do not redesign setup stages or broaden installed targets.
 
-Planned checks: `python3 scripts/check.py tests/test_complete_setup.py tests/test_install_skills.py tests/test_native_provisioning.py tests/test_setup_runtime.py tests/test_install_omh.py tests/test_install_graphify.py pi-autowork/engine/test_parallel_integrate.py`.
+Planned checks: `python3 scripts/check.py tests/test_complete_setup.py tests/test_install_skills.py tests/test_native_provisioning.py tests/test_setup_runtime.py tests/test_install_graphify.py pi-autowork/engine/test_parallel_integrate.py`.
 
 ### Native updater relocation
 

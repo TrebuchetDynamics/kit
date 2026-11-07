@@ -69,8 +69,8 @@ class BundleTests(unittest.TestCase):
             status.assert_called_once_with(None)
             self.assertEqual(self.bundle.maintenance_reply('plugin status'), 'listed')
             listing.assert_called_with('')
-            self.assertEqual(self.bundle.maintenance_reply('list omh'), 'listed')
-            listing.assert_called_with('list omh')
+            self.assertEqual(self.bundle.maintenance_reply('list sample-addon'), 'listed')
+            listing.assert_called_with('list sample-addon')
             for args in ('', 'update the README', 'status of task 4', 'list the open tasks', 'next task'):
                 self.assertIsNone(self.bundle.maintenance_reply(args), args)
             self.assertEqual(chat.call_count, 4)
@@ -456,21 +456,21 @@ class BundleTests(unittest.TestCase):
         source=self.external_source_fixture()
         self.bundle.record_skill_repository(home, 'https://github.com/example/optional-skills', ['alpha', 'beta'])
         with patch.object(self.bundle,'ROOT',source):
-            missing, unchecked = self.bundle.missing_skill_imports(home, {'alpha', 'graphify', 'omh-plan'})
+            missing, unchecked = self.bundle.missing_skill_imports(home, {'alpha', 'graphify', 'sample-plan'})
         self.assertEqual(missing, ['beta'])
         self.assertEqual(unchecked, [])
 
     def test_unattempted_skill_repository_is_not_reported_healthy(self):
         source=self.external_source_fixture()
         with patch.object(self.bundle,'ROOT',source):
-            missing, unchecked = self.bundle.missing_skill_imports(Path(self.tmp.name), {'graphify', 'omh-plan'})
+            missing, unchecked = self.bundle.missing_skill_imports(Path(self.tmp.name), {'graphify', 'sample-plan'})
         self.assertEqual(missing, [])
         self.assertEqual(unchecked, ['https://github.com/example/optional-skills'])
 
     def test_retired_external_addy_inventory_does_not_require_duplicate_imports(self):
         home=Path(self.tmp.name)
         self.bundle.record_skill_repository(home,'https://github.com/addyosmani/agent-skills',['old-import'])
-        missing,unchecked=self.bundle.missing_skill_imports(home,{'graphify','omh-plan'})
+        missing,unchecked=self.bundle.missing_skill_imports(home,{'graphify','sample-plan'})
         self.assertNotIn('old-import',missing)
         self.assertNotIn('https://github.com/addyosmani/agent-skills',unchecked)
 

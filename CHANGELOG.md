@@ -5,6 +5,12 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ## [Unreleased]
 
+### Removed
+
+- External memory provisioning and managed catalog trimming. Setup no longer selects
+  a memory provider or requires an external memory plugin. Existing profile settings,
+  disabled skills and stores remain untouched, except for enabling Kit's own skills.
+
 ### Added
 
 - Each worker launch records an immutable attempt provenance file
@@ -1333,11 +1339,6 @@ claim of a tagged release, completed installation or live workflow qualification
   edits and executable replacement. Uninspectable search paths and custom metadata
   providers use uncached discovery. Full serial performance qualification remains open.
 
-- Fresh OMH installs pin v3.0.2, whose plugin manifest no longer excludes
-  Hermes 0.22 (TOOLSET-082). Existing OMH executables and installed plugins are
-  not upgraded automatically; native registration and existing-store verification
-  remain separate. No memory provider or store is changed by the pin update.
-
 ### Added
 
 - Seeded, replayable model-based tests drive the parallel worker slot state machine and check every step against a reference model (`test_parallel_state_model.py`).
@@ -1562,11 +1563,6 @@ claim of a tagged release, completed installation or live workflow qualification
   same ID. `goals.py new-id <repo>` allocates one (next number for the ledger's most
   common prefix, checked against TODO.md and its archive), and `goals.py add-task`
   allocates one when the ID is omitted. Existing IDs are unchanged.
-- In profiles with OMH, plugin load (and so `/toolset update`) adds the OMH skills
-  outside a measured keep list (`omh_keep_skills`, 41 of 142, including code review,
-  verification, core and memory skills) to `skills.disabled`, so Hermes stops listing them
-  in every prompt (TOOLSET-080). User entries stay, OMH and its memory provider are
-  untouched, and setup no longer empties `skills.disabled`.
 - Telegram's command menu now lists `/ui_taste`, `/beautify_github_readme`,
   `/impeccable`, `/lgtm`, `/engineering` and `/git_commit_push` after the five workflow
   commands. Hermes' default 60-entry menu was already full of built-ins, so they were
@@ -1851,10 +1847,6 @@ claim of a tagged release, completed installation or live workflow qualification
 - `scripts/check.py` allowed 180 seconds per test directory while the Autowork
   suite takes about 150 seconds idle, so any machine load reported a false
   TIMEOUT failure with every test passing. The default is now 600 seconds.
-- OMH setup reports `memory off` for a profile where another memory provider
-  kept the slot (with the `hermes memory off` command to clear it) or the slot
-  stayed unset, instead of printing a plain success line while OMH memory stayed off.
-
 - Autowork accepted only `Checks:` as a task's verification field, while Docs Sync
   and `goals.py next` also accepted `Verification:`. Every task in one fleet
   repository used `Verification:`, so its scheduled job selected tasks and then refused them all.

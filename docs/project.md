@@ -694,7 +694,7 @@ not silently treated as historically covered.
 | [test-plan](testing.md) | `41aaad8fccfe` | 67 | Reconcile documented checks and their evidence limits with the covered inventory/tests, plus documented engine and Docs Sync tests outside `covers`. Listing tests is not running them. |
 | [workflows](workflows.md) | `8738cc636fdc` | 3 | Recheck aliases, routing and menu behavior against all three registrars; separately reconcile task-store instructions with their skill/CLI sources. |
 | [cross-host](cross-host.md) | `41aaad8fccfe` | 36 | Recheck adapter/package contents and runner claims. Retain historical install/discovery records separately from current host/model qualification. |
-| [memory](memory.md) | `6c2f4e51d8d2` | 2 | Reverified at `9e2cc1ad` against the covered installer/defaults. Externally owned capture-policy claims against the named OMH version still need live qualification; no store access or live replay was performed. |
+| [memory](memory.md) | `6c2f4e51d8d2` | 2 | Reverified at `9e2cc1ad` against the covered installer/defaults. Externally owned capture-policy claims still need live qualification; no store access or live replay was performed. |
 | [dependencies](dependencies.md) | `8738cc636fdc` | 9 | Reverified at `9e2cc1ad` against the covered inputs; corrected the Grill Me 2.1.1 version. The page also cites Impeccable/Beautify inventories and `pi-autowork/pi_autowork/command.py` dependency pins outside `covers`. |
 
 Checker boundaries are source-backed in
@@ -1296,64 +1296,11 @@ counts as busy.
 | TOOLSET-078 | Report a concurrent update clearly instead of returning its record |
 | TOOLSET-079 | Report linked profiles and offer pinned clones so restarts deploy only released code |
 
-## OMH catalog trim (2026-10-15)
+## Retired external-memory catalog policy (2026-10-15)
 
-Status: Accepted
-
-Request (user, 2026-10-15): after a fleet audit found OMH's review and verification
-guidance in real use but no demonstrated value from the rest of its catalog, keep OMH
-selectively and plan trimming its footprint.
-
-Findings:
-- Autowork installs OMH 3.0.0 with `omh setup --full` (`plugins/defaults.json`
-  `omh.full: true`), so 9 profiles register all 142 OMH skills. Hermes lists every
-  registered skill in each request's skill index; the audit sampled 11,832 characters of
-  OMH/ULW index entries per prompt.
-- Recorded `skill_view` loads across all profiles' session databases: 295 loads of 29
-  distinct OMH skills; 113 were never loaded. Top: `code-review` 126, `verification-gate`
-  58, `automation-blueprint` 22, `visual-qa` 12, `mobile-release` 12, `web-research` 7,
-  `release-cut` 6, `agent-instructions` 5, then 21 skills with 1–4 loads each.
-  Corrected during TOOLSET-080: OMH skills register under their SKILL.md names, which
-  differ from catalog names for some (`context` is `ulw-context`, `browser-operator` is
-  `omh-browser`). Counted by registered name, 364 loads hit 35 distinct skills, adding
-  `browser-operator`, `command-operator`, `product-docs`, `research`, `ultrawork` and
-  `voice-operator`.
-- `omh setup --core` keeps only five core skills (`agent-ops-review`, `cancel`, `doctor`,
-  `oh-my-hermes`, `skill`) and drops `code-review` and `verification-gate`.
-  `omh capability-policy disable <family>` only stops OMH recommending a family; it
-  writes `files_removed=False`, so the skills stay in Hermes' index and the context
-  cost is unchanged. Both used skills sit in `delegate_coding_and_ship` (37 skills).
-- Hermes' prompt builder omits skills named in `skills.disabled`
-  (`agent/prompt_builder.py`, `get_disabled_skill_names`). Autowork's setup
-  currently resets `skills.disabled` and `skills.platform_disabled` to empty in every
-  profile, so a trim made there would be undone by the next setup; plugin load and
-  `/autowork update` do not touch them.
-- Nine profiles use OMH as their memory provider; the provider is the OMH plugin, not
-  these skills.
-
-Planner's calls (reversible; reject any of them):
-- Trim through Hermes' `skills.disabled`, not by deleting OMH files or switching to
-  `--core`: it is per profile, reversible, leaves OMH's install, memory provider and
-  doctor checks intact, and keeps `--full` so OMH updates stay simple.
-- Keep list: every OMH skill loaded at least once (35 by registered name), the five core
-  skills and the `retain_knowledge` family (`memory-new`, `memory-sync`, `decision-recall`,
-  `wiki`), 41 in all. Record it in `plugins/defaults.json` as top-level `omh_keep_skills`
-  (the `omh` block must keep exactly the keys `install-omh.py` validates); every other
-  OMH-managed skill (101 of 142) is disabled. Re-measure usage before widening or shrinking it.
-- Autowork owns only the OMH entries it adds: setup and runtime defaults merge them
-  with the user's own `skills.disabled` entries instead of resetting the list, and drop
-  only managed entries that are no longer OMH skills or are now kept. The existing
-  runtime-defaults opt-out disables the trim.
-- Qualify on one profile with a paused cron first, then roll out with `/autowork update`.
-
-Anti-goals: uninstalling OMH, touching the memory provider or its stores, deleting OMH
-files, removing a user's own disabled-skill entries, or judging the trim by catalog
-size instead of the measured index and unchanged review/verification use.
-
-| Task | Outcome |
-| --- | --- |
-| TOOLSET-080 | Managed OMH trim through `skills.disabled`, applied by setup, plugin load and update |
-| TOOLSET-081 | Live qualification on one profile, then fleet rollout with before/after index size |
+External-memory provisioning and catalog trimming are no longer part of Kit.
+Existing providers, disabled-skill settings and stores are preserved. Historical
+task evidence remains in the task store and frozen archive.
 
 ## Parallel Autowork (2026-10-15)
 
@@ -1625,12 +1572,12 @@ from the repository, candidate branches and the installed hosts:
 
 - Two tasks already have reviewed candidates that only need integration:
   TOOLSET-064 (`autowork/TOOLSET-064`, eight trigger-first descriptions) and
-  TOOLSET-082 (`autowork/TOOLSET-082`, the Hermes 0.22-compatible OMH pin). Both
+  TOOLSET-082 (`autowork/TOOLSET-082`, the Hermes 0.22-compatible external-plugin pin). Both
   moved to the top of Next.
 - TOOLSET-082 mixed an offline pin with a live refresh of installed profiles. The
   refresh is split into TOOLSET-098-5d, which needs owner approval to change
   installed plugins. A newly created profile shows the cost of waiting: its
-  old OMH plugin makes Hermes refuse to enable the Toolset there.
+  old external plugin makes Hermes refuse to enable the Toolset there.
 - TOOLSET-097-41 records a Pi runner defect the toolset cron found: one Pi test
   fails when the checkout path contains `/profiles/`. Another session's `pi-par`
   worktree has uncommitted edits to the same files, so the task tells the next

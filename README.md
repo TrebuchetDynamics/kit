@@ -102,7 +102,7 @@ See [Paseo interface](#paseo-interface) for controls and planning.
 
 ### Hermes (optional)
 
-Hermes adds a native fleet, profile setup, scheduling and memory integrations. Its
+Hermes adds a native fleet, profile setup and scheduling. Its
 defaults change approvals and target every live profile on full setup. Read
 [Hermes installation and policy](docs/installation.md#install) before enabling it.
 
@@ -117,8 +117,8 @@ hermes plugins enable kit
 hermes autowork doctor --core
 ```
 
-The opt-out does not undo prior changes or stop full setup from configuring memory and
-external integrations.
+The opt-out does not undo prior changes or stop full setup from configuring
+external integrations. Existing memory providers and stores are preserved.
 
 Restart your host session to discover the installed skills. See the
 [cross-host guide](docs/cross-host.md) for reload commands, updates and removal.

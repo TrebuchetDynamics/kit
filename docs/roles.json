@@ -25,7 +25,6 @@
         "install_skills.py",
         "install-plugins.sh",
         "install-graphify.py",
-        "install-omh.py",
         "runtime_defaults.py",
         "plugins/defaults.json",
         "telegram_menu_policy.py",
@@ -130,10 +129,10 @@
       "status": "maintained",
       "path": "docs/memory.md",
       "covers": [
-        "install-omh.py",
+        "setup_preflight.py",
+        "runtime_defaults.py",
         "plugins/defaults.json"
-      ],
-      "verified_at": "9e2cc1ad"
+      ]
     },
     "dependencies": {
       "status": "maintained",
