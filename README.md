@@ -127,10 +127,10 @@ Restart your host session to discover the installed skills. See the
 <summary><strong>Install every available host and CLI component at once</strong></summary>
 
 From a checkout, `install.sh` installs every available component with verbose output:
-the Pi package, the `autowork` command and TUI, the `tx` tmux launcher, and the Hermes,
-Claude Code and Codex plugins with their complete skill sets. A host whose CLI is
-missing is skipped and explained; each item runs that host's own install command. `tx`
-keeps an existing `~/.tmux.conf`.
+the Pi package, the `autowork` command and TUI, the `tx` tmux launcher, official stable
+Octet native binaries, and the Hermes, Claude Code and Codex plugins with their complete
+skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
+item runs that host's own install command. `tx` keeps an existing `~/.tmux.conf`.
 
 ```sh
 git clone https://github.com/TrebuchetDynamics/kit && cd kit
@@ -144,6 +144,14 @@ git clone https://github.com/TrebuchetDynamics/kit && cd kit
 while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
 installs nothing. Hermes still runs its complete fleet setup and its own dependency and
 security prompts; use `--yes-deps` only when you intend to consent to them.
+
+Octet bootstraps even when its CLI is absent. Default/`--all` and `update` use the
+[official stable installer](https://octet.skaft.org/install); `--only octet` selects
+it alone and `--skip octet` excludes it. It supports GNU/Linux x86-64 and macOS
+x86-64/arm64, needs `curl`, `sh`, Python 3 and native verification utilities, and
+reports the destination version. This installs upstream binaries and packaged docs,
+not Kit skill/prompt pointers or optional extensions. Credentials and shell profiles
+are unchanged. See [installation limits and failure recovery](docs/installation.md#octet-native-binaries).
 
 </details>
 

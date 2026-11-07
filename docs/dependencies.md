@@ -13,6 +13,17 @@ Sources: [plugin manifest](../plugin.yaml), [installation inventory](../plugins/
 
 ## Current source policy
 
+The suite's `octet` item bootstraps upstream binaries and packaged docs, not Kit
+skill/prompt resources. Default/`--all` and `update` follow the same stable channel;
+`--only octet` selects it and `--skip octet` excludes it. GNU/Linux x86-64 and
+macOS x86-64/arm64 are supported; musl and other targets are skipped by default
+and fail on explicit selection. It requires `curl`, `sh`, Python 3, `uname`, a
+SHA-256 utility, ordinary POSIX tools and upstream release-network access, with
+no source build or package-manager fallback. Credentials, optional extensions,
+trust and services are unchanged. See [Octet installation](installation.md#octet-native-binaries)
+for destination, verification, prerequisite and partial-install recovery limits.
+Offline fixtures are not real native-install or model qualification.
+
 | Component | Selection | Reproducibility limit |
 | --- | --- | --- |
 | Bundled workflows | This repository revision | Pin the checkout revision to reproduce these files. |
@@ -27,6 +38,7 @@ Sources: [plugin manifest](../plugin.yaml), [installation inventory](../plugins/
 | Toolset engineering protocols (`skills/engineering/local/`) | Written and versioned in this repository; no upstream pin | `test-suite-optimization` adapts two criteria from Matt Pocock's MIT `tdd` skill in its own words; no text is copied. |
 | Addy agent-skills (25 protocols) | Vendored commit and hashes in [UPSTREAM.json](../skills/engineering/UPSTREAM.json) | Updated only through a reviewed Toolset change; shared references included. Two defensive examples are paraphrased, with original and adapted hashes recorded; a refresh restores upstream bytes, so re-apply them by hand. |
 | Graphify | Dedicated setup helper | Not covered by a unified bundle lockfile. |
+| Octet native binaries | Official stable [installer](https://octet.skaft.org/install) from [skaft-software/octet](https://github.com/skaft-software/octet), run unmodified in binary mode | Mutable stable channel, not a Kit version pin; upstream verifies release identity, Sigstore provenance, checksums, archive safety and exact version. Kit reports the installed destination version. |
 | textual-serve 1.1.3 (MIT), `autowork web` only | Pinned in [`command.py`](../pi-autowork/pi_autowork/command.py) (`AUTOWORK_TEXTUAL_SERVE`), fetched by `uv run --with` like Textual | Not a runner dependency; only the browser view uses it. |
 | Textual 8.2.8 (MIT), the `autowork` TUI only | Pinned in [`command.py`](../pi-autowork/pi_autowork/command.py) (`AUTOWORK_TEXTUAL`); fetched by `uv run --with` into uv's cache on first use | Not a runner dependency: pi-autowork itself stays standard-library Python, and every other `autowork` command works without it. |
 | mypy 1.19.1 (test-only) | Pinned in [`requirements-test.txt`](../requirements-test.txt) and the `uv run --with` fallback in [`scripts/typecheck.py`](../scripts/typecheck.py) | Not a runtime dependency; it checks only the two allowlisted selection and authority modules. |

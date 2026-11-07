@@ -24,12 +24,12 @@ Use `--menu` when you want to select components interactively:
 ```
 
 The suite includes the Pi package, `autowork` command/TUI, `tx` launcher, Hermes
-fleet setup, and Claude Code and Codex plugins with their complete portable skill
-suites, including [bundled Ponytail](cross-host.md#bundled-ponytail-on-every-host).
+fleet setup, official stable Octet native binaries, and Claude Code and Codex plugins
+with their complete portable skill suites, including [bundled Ponytail](cross-host.md#bundled-ponytail-on-every-host).
 All Autowork skills apply its shared method within their existing authority; no
 separate Ponytail plugin, hooks or persistent modes are installed. Existing external
 Ponytail installs are not changed or removed. `--full` (`--all`) is the default; `--skip` excludes components. Host CLIs
-must already be installed: full mode reports missing hosts as skipped, while
+for plugin items must already be installed: full mode reports missing hosts as skipped, while
 `--only` reports a requested missing host as failed. Hermes is optional. A simple
 shell launcher whose target is missing or not executable also counts as unavailable;
 full mode skips it without running Hermes setup. When your own host settings already
@@ -68,6 +68,50 @@ profile already has its own plugin clone, Hermes is updated with `update_bundle.
 which supports none of those three and can restart gateways on ordinary updates, so passing one fails the
 Hermes item instead of being ignored. Host security and dependency prompts still
 apply; full mode does not supply consent flags.
+
+### Octet native binaries
+
+Default, `--all`/`--full` and `update` include `octet`, even without an existing
+Octet CLI. Use `./install.sh --only octet` to install just Octet,
+`./install.sh update --only octet` to rerun the same stable channel, or
+`--skip octet` to leave it out. `--list` and `--dry-run` do not download or execute
+Octet tooling, and skipping Octet leaves its files untouched.
+
+Kit downloads the [official stable installer](https://octet.skaft.org/install)
+from [skaft-software/octet](https://github.com/skaft-software/octet) into a private
+temporary file with HTTPS-only redirects, a 15-second connection timeout, a
+300-second transfer limit and a 1 MiB size limit. It runs the published file
+unmodified with `sh`, in default native binary mode (never `--from-source`).
+`OCTET_INSTALL_DIR` is the absolute Kit binary directory (`~/.local/bin`, or
+`AUTOWORK_BIN_DIR`); `OCTET_NO_MODIFY_PATH=1` leaves shell profiles unchanged.
+The summary reads `--version` from that destination executable, not from PATH.
+There is no Rust, npm or Homebrew fallback and no Kit-pinned Octet version:
+reruns follow the current official stable release.
+
+Supported targets are GNU/Linux x86-64 (not musl) and macOS x86-64/arm64.
+Unsupported platforms are skipped by default and fail when explicitly requested
+with `--only octet`. Prerequisites include `curl`, `sh`, `python3`, `uname`,
+a SHA-256 utility (`sha256sum` or `shasum`) and ordinary POSIX utilities; Linux
+also needs GNU libc detection through `getconf` or `ldd`. Upstream downloads its
+pinned signature verifier and requires release-network access. Missing tools,
+download, provenance, checksum, archive or version failures fail only this
+component; independent components continue.
+
+Upstream owns source identity, Sigstore, checksum, archive and exact-version
+checks, plus collision refusals. Kit does not bypass them or unlink files to force
+success. Pre-placement integrity/version refusals preserve an existing binary.
+Upstream places executables and packaged data in separate steps, so execution
+or final version failure can leave a **partial installation**: no rollback is
+claimed or performed. Inspect the native diagnostics, resolve the cause, then
+retry `./install.sh --only octet`.
+
+This component installs upstream executables and packaged documentation (by
+default in the sibling `share/octet`), not native Kit skill/prompt resource
+pointers. It does not migrate credentials, enable optional extensions, change
+trust or permission policy, or manage active services or unrelated user configuration.
+Offline fake-installer tests verify orchestration only. Real signed native
+installation and destination `octet --version` remain **NOT_CHECKED** until
+separately observed; they do not imply model or extension qualification.
 
 ## Install
 

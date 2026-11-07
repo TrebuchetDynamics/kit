@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL = ROOT / 'install.sh'
@@ -43,6 +44,45 @@ class InstallMenuTests(unittest.TestCase):
         self.log = self.home / 'calls.log'
         self.log.touch()
         self.fake('pi', PI)
+        # Every full-suite fixture stays offline, even when Octet is absent.
+        self.upstream = self.home / 'upstream-install.sh'
+        self.upstream.write_text('''#!/bin/sh
+set -eu
+printf 'octet-installer %s|%s|%s\\n' "$OCTET_INSTALL_DIR" "$OCTET_NO_MODIFY_PATH" "$*" >> "$FAKE_LOG"
+python3 -c 'import hashlib, sys; print("installer-sha256 " + hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$0" >> "$FAKE_LOG"
+case "${OCTET_FIXTURE_STAGE:-}" in
+  installer|signature|checksum|pre-version) echo "$OCTET_FIXTURE_STAGE refusal" >&2; exit 9 ;;
+esac
+mkdir -p "$OCTET_INSTALL_DIR"
+case "${OCTET_FIXTURE_STAGE:-}" in
+  version-exit) printf '#!/bin/sh\\nexit 8\\n' > "$OCTET_INSTALL_DIR/octet" ;;
+  version-empty) printf '#!/bin/sh\\nexit 0\\n' > "$OCTET_INSTALL_DIR/octet" ;;
+  version-invalid) printf '#!/bin/sh\\necho not-octet\\n' > "$OCTET_INSTALL_DIR/octet" ;;
+  *) printf '#!/bin/sh\\necho octet 1.2.3\\n' > "$OCTET_INSTALL_DIR/octet" ;;
+esac
+chmod 755 "$OCTET_INSTALL_DIR/octet"
+if [ "${OCTET_FIXTURE_STAGE:-}" = post-placement ]; then
+  echo 'installed octet binary version mismatch' >&2; exit 9
+fi
+''')
+        self.fake('curl', '''#!/usr/bin/env python3
+import os, pathlib, shutil, stat, sys
+args = sys.argv[1:]
+with open(os.environ['FAKE_LOG'], 'a') as log:
+    log.write('curl ' + ' '.join(args) + '\\n')
+if args[-1] != 'https://octet.skaft.org/install':
+    raise SystemExit('unexpected network request')
+if os.environ.get('OCTET_FIXTURE_STAGE') == 'download':
+    raise SystemExit('fixture download failure')
+dest = pathlib.Path(args[args.index('--output') + 1])
+assert stat.S_IMODE(dest.parent.stat().st_mode) == 0o700
+assert stat.S_IMODE(dest.stat().st_mode) == 0o600
+shutil.copyfile(pathlib.Path(os.environ['FAKE_HOME']) / 'upstream-install.sh', dest)
+if os.environ.get('OCTET_FIXTURE_STAGE') == 'download-empty':
+    dest.write_bytes(b'')
+elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
+    dest.write_bytes(b'x' * 1048577)
+''')
         # A ready private SDK environment keeps these installer-orchestration
         # fixtures offline. The RPC installer has separate real wheel qualification.
         sdk = self.home / '.local/state/pi-autowork/runtimes/pi-rpc-0.2.6/bin/python'
@@ -54,7 +94,7 @@ class InstallMenuTests(unittest.TestCase):
         self.env = {'PATH': f'{self.bin}:/usr/bin:/bin', 'HOME': str(self.home), 'FAKE_LOG': str(self.log),
                     'FAKE_HOME': str(self.home), 'XDG_CONFIG_HOME': str(self.home / '.config'),
                     'PI_AUTOWORK_SYSTEMCTL': str(self.bin / 'systemctl'), 'LANG': 'C.UTF-8',
-                    'AUTOWORK_INSTALL_NO_PULL': '1'}  # never pull the checkout under test
+                    'TMPDIR': str(self.home), 'AUTOWORK_INSTALL_NO_PULL': '1'}  # never pull the checkout under test
 
     def fake(self, name, body):
         path = self.bin / name
@@ -81,7 +121,7 @@ class InstallMenuTests(unittest.TestCase):
 
     def test_list_marks_missing_hosts(self):
         out = self.install('--list').stdout
-        for key in ('pi', 'autowork', 'tx', 'claude', 'codex'):
+        for key in ('pi', 'autowork', 'tx', 'claude', 'codex', 'octet'):
             self.assertRegex(out, rf'{key}\s+available')
         self.assertRegex(out, r'hermes\s+unavailable.*hermes not found')
 
@@ -143,14 +183,111 @@ class InstallMenuTests(unittest.TestCase):
         self.assertTrue((self.home / '.tmux.conf').is_file())  # none existed
         self.assertRegex(result.stdout, r'hermes\s+skipped\s+hermes not found')
         self.assertRegex(result.stdout, r'tx\s+installed')
+        self.assertRegex(result.stdout, r'octet\s+installed.*octet 1.2.3')
+        self.assertEqual(len(self.calls('octet-installer')), 1)
+        self.assertLess(self.calls().index('codex plugin add kit@autowork-marketplace'),
+                        next(i for i, call in enumerate(self.calls()) if call.startswith('octet-installer')))
 
     def test_update_runs_the_same_items_as_a_full_install(self):
         result = self.install('update')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('Autowork suite update', result.stdout)
+        self.assertRegex(result.stdout, r'octet\s+installed.*octet 1.2.3')
         self.assertIn(f'pi install {NEW}', self.calls('pi'))
         self.assertIn('claude plugin install kit@autowork', self.calls('claude'))
         self.assertIn('codex plugin add kit@autowork-marketplace', self.calls('codex'))
+
+    def test_octet_bootstrap_uses_official_stable_installer(self):
+        import hashlib
+        dest = self.home / 'custom bin'
+        self.fake('octet', '#!/bin/sh\necho wrong-PATH-version; exit 4\n')
+        self.assertFalse((dest / 'octet').exists())
+        for args in (('--only', 'octet'), ('update', '--only', 'octet')):
+            result = self.install(*args, env={'AUTOWORK_BIN_DIR': str(dest)})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(f'{dest / "octet"}: octet 1.2.3', result.stdout)
+        self.assertEqual(self.calls('octet-installer'), [f'octet-installer {dest}|1|'] * 2)
+        self.assertEqual(self.calls('installer-sha256'),
+                         ['installer-sha256 ' + hashlib.sha256(self.upstream.read_bytes()).hexdigest()] * 2)
+        for call in self.calls('curl'):
+            for flags in ('--proto =https', '--proto-redir =https', '--tlsv1.2',
+                          '--connect-timeout 15', '--max-time 300', '--max-redirs 5'):
+                self.assertIn(flags, call)
+            self.assertTrue(call.endswith('https://octet.skaft.org/install'))
+        self.assertFalse(list(self.home.glob('kit-octet-*')))
+        self.assertFalse((self.home / '.octet').exists())
+        self.assertFalse((self.home / '.profile').exists())
+        self.assertFalse(self.calls('pi install'))
+
+    def test_octet_bootstrap_failure_stages(self):
+        import contextlib
+        import io
+        destination = self.home / '.local/bin/octet'
+        destination.parent.mkdir(parents=True)
+        old = b'#!/bin/sh\necho old-octet\n'
+        for stage in ('download', 'download-empty', 'download-oversize',
+                      'installer', 'signature', 'checksum', 'pre-version',
+                      'post-placement', 'version-exit', 'version-empty', 'version-invalid'):
+            with self.subTest(stage=stage):
+                destination.write_bytes(old)
+                destination.chmod(0o755)
+                result = self.install('--only', 'octet,tx', '-q',
+                                      env={'OCTET_FIXTURE_STAGE': stage})
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertRegex(result.stdout, r'octet\s+failed')
+                self.assertRegex(result.stdout, r'tx\s+installed')
+                if stage.startswith('download') or stage in ('installer', 'signature', 'checksum', 'pre-version'):
+                    self.assertEqual(destination.read_bytes(), old)
+                else:
+                    self.assertNotEqual(destination.read_bytes(), old)
+                    self.assertIn('partial installation', result.stdout)
+                    self.assertIn('no rollback', result.stdout)
+                self.assertFalse(list(self.home.glob('kit-octet-*')))
+        for prerequisite in ('curl', 'sh', 'python3', 'uname'):
+            with self.subTest(prerequisite=prerequisite), \
+                 patch.object(install_menu.shutil, 'which',
+                              side_effect=lambda name: None if name == prerequisite else '/fixture/' + name):
+                output = io.StringIO()
+                continued = []
+                item = install_menu.octet_item(install_menu.Output('never', 0))
+                independent = install_menu.Item('other', 'Independent', steps=[
+                    install_menu.Step('continue', run=lambda: continued.append(True) or 'ok')])
+                with contextlib.redirect_stdout(output):
+                    code = install_menu.install([item, independent], {'octet', 'other'},
+                                                output=install_menu.Output('never', 0))
+                self.assertEqual(code, 1)
+                self.assertRegex(output.getvalue(), rf'octet\s+failed.*requires {prerequisite}')
+                self.assertEqual(continued, [True])
+
+    def test_octet_platform_selection_and_read_only_modes(self):
+        import contextlib
+        import io
+        for system, machine, libc, supported in (
+                ('Linux', 'x86_64', 'glibc', True), ('Darwin', 'x86_64', '', True),
+                ('Darwin', 'arm64', '', True), ('Linux', 'aarch64', 'glibc', False),
+                ('Linux', 'x86_64', 'musl', False), ('Windows', 'AMD64', '', False)):
+            with self.subTest(system=system, machine=machine, libc=libc), \
+                 patch.object(install_menu.platform, 'system', return_value=system), \
+                 patch.object(install_menu.platform, 'machine', return_value=machine), \
+                 patch.object(install_menu.platform, 'libc_ver', return_value=(libc, '')):
+                item = install_menu.octet_item()
+                self.assertEqual(item.available, supported)
+                if not supported:
+                    for explicit in (False, True):
+                        output = io.StringIO()
+                        with contextlib.redirect_stdout(output):
+                            code = install_menu.install([item], {'octet'} if explicit else set())
+                        self.assertEqual(code, int(explicit))
+                        self.assertIn('failed' if explicit else 'skipped', output.getvalue())
+                        self.assertIn('unsupported', output.getvalue())
+        for args in (('--list',), ('--only', 'octet', '--dry-run'), ('--all', '--skip', 'octet')):
+            self.log.write_text('')
+            result = self.install(*args)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse(self.calls('curl'))
+            self.assertFalse(self.calls('octet-installer'))
+            self.assertFalse((self.home / '.local/bin/octet').exists())
+            self.assertFalse((self.home / '.octet').exists())
 
     def test_a_marketplace_from_a_configured_source_is_used_and_not_rewritten(self):
         # Claude Code refuses `marketplace add` when settings list that marketplace from
@@ -312,6 +449,7 @@ exit 0
         self.assertTrue((self.home / '.local/bin/autowork').is_symlink())
         self.assertTrue((self.home / '.local/bin/tx').is_file())
         self.assertIn('$ codex plugin add kit@autowork-marketplace', result.stdout)
+        self.assertRegex(result.stdout, r'octet\s+installed.*octet 1.2.3')
         self.assertRegex(result.stdout, r'hermes\s+skipped.*hermes not found')
 
     def test_default_install_enables_the_pi_package_without_extra_flags(self):
@@ -335,6 +473,9 @@ exit 0
         self.assertEqual(self.calls('pi install'), [])
         self.assertEqual(self.calls('codex'), [])
         self.assertEqual(self.calls('hermes'), [])
+        self.assertRegex(result.stdout, r'octet\s+planned')
+        self.assertFalse(self.calls('curl'))
+        self.assertFalse(self.calls('octet-installer'))
         self.assertFalse((self.home / '.local/bin').exists())
         self.assertIn('enable the package skills and commands in Pi settings', result.stdout)
 

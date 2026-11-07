@@ -14,8 +14,9 @@ Install and update first bring this checkout up to date (`git pull --ff-only` of
 upstream) and then run the pulled installer; a checkout with local changes, no upstream
 or a detached HEAD is installed as it is, and says so.
 
-Each item runs the host's own supported install command; a host whose CLI is not
-installed is skipped and says so, and fails when named with --only. Hermes options
+Each host item runs its own supported install command; a host whose CLI is not
+installed is skipped and says so, and fails when named with --only. Octet instead
+bootstraps official stable native binaries on supported platforms. Hermes options
 (--hermes-home, --bundle-only, --no-reload, --yes-deps) apply to the Hermes item.
 Standard library only.
 """
@@ -25,6 +26,8 @@ import json
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
+import platform
+import re
 import shutil
 import shlex
 import stat
@@ -76,13 +79,13 @@ class Output:
         print(message, end='', flush=True)
 
 
-def run_command(argv, output):
+def run_command(argv, output, extra_env=None):
     """Stream both child channels, including prompts without a trailing newline.
 
     Keep a bounded diagnostic tail for quiet failures; stdin remains inherited.
     Quiet mode still shows native prompts/output when input is a terminal.
     """
-    env = dict(os.environ, PYTHONUNBUFFERED='1')
+    env = dict(os.environ, PYTHONUNBUFFERED='1', **(extra_env or {}))
     if not output.color:
         env['NO_COLOR'] = '1'
     stream = output.verbosity > 0 or sys.stdin.isatty()
@@ -473,7 +476,64 @@ def drop_codex_plugin():
     return 'dropped the cached plugin' if done.returncode == 0 else 'no cached plugin to drop'
 
 
-def items(hermes_args):
+OCTET_INSTALLER = 'https://octet.skaft.org/install'
+
+
+def install_octet(output=None):
+    """Run release-bound upstream tooling unchanged; upstream owns integrity and placement."""
+    output = output or Output()
+    for command in ('curl', 'sh', 'python3', 'uname'):
+        if not shutil.which(command):
+            raise OSError(f'Octet requires {command}; install it and retry --only octet')
+    destination = BIN.absolute()
+
+    def run(argv, stage, env=None):
+        if output.verbosity > 1:
+            output.line('  $ ' + shlex.join(argv), 'command')
+        code, text = run_command(argv, output, env)
+        if code:
+            raise OSError(f'{stage}: {failure_summary(text)} (exit {code})')
+
+    with tempfile.TemporaryDirectory(prefix='kit-octet-') as directory:
+        installer = Path(directory) / 'install.sh'
+        installer.touch(mode=0o600)
+        run(['curl', '--disable', '--proto', '=https', '--proto-redir', '=https',
+             '--tlsv1.2', '--location', '--max-redirs', '5', '--connect-timeout', '15',
+             '--max-time', '300', '--max-filesize', '1048576', '--fail', '--silent',
+             '--show-error', '--output', str(installer), OCTET_INSTALLER], 'Octet installer download failed')
+        if not 0 < installer.stat().st_size <= 1048576:
+            raise OSError('Octet installer download is empty or exceeds its size limit')
+        env = {'OCTET_INSTALL_DIR': str(destination), 'OCTET_NO_MODIFY_PATH': '1'}
+        if output.verbosity > 1:
+            output.line('  Environment: ' + shlex.join(f'{key}={value}' for key, value in env.items()), 'command')
+        try:
+            run(['sh', str(installer)], 'Octet upstream installer failed', env)
+            # Upstream proves the exact release version before and after placement.
+            # Read back the destination, never a different Octet earlier on PATH.
+            version = subprocess.run([str(destination / 'octet'), '--version'],
+                                     stdin=subprocess.DEVNULL, capture_output=True, text=True, errors='replace', timeout=5)
+            if version.returncode or not re.fullmatch(r'octet [0-9]+\.[0-9]+\.[0-9]+\n?', version.stdout):
+                raise OSError('Octet destination version verification failed')
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise OSError(f'{exc}; upstream may have left a partial installation; no rollback performed') from exc
+    return f'{destination / "octet"}: {version.stdout.strip()}'
+
+
+def octet_item(output=None):
+    system, machine = platform.system(), platform.machine().lower()
+    supported = ((system == 'Darwin' and machine in ('x86_64', 'arm64', 'aarch64'))
+                 or (system == 'Linux' and machine in ('x86_64', 'amd64')
+                     and platform.libc_ver()[0] == 'glibc'))
+    destination = BIN.absolute()
+    return Item('octet', 'Octet official stable native binaries',
+                note='bootstraps the CLI; no Kit resources or optional extensions',
+                missing='' if supported else f'unsupported Octet binary platform: {system} {machine} (needs GNU/Linux x86-64 or macOS x86-64/arm64)',
+                steps=[Step(f'download {OCTET_INSTALLER} privately; run unmodified sh installer in binary mode '
+                            f'with OCTET_INSTALL_DIR={destination} OCTET_NO_MODIFY_PATH=1; '
+                            f'verify {destination}/octet --version', run=lambda: install_octet(output))])
+
+
+def items(hermes_args, output=None):
     package = pi_package()
     pi = Item('pi', 'Pi package + bundled Ponytail', needs='pi', note='needs Node 22+')
     if package:
@@ -520,6 +580,7 @@ def items(hermes_args):
                     Step('drop the cached plugin', run=drop_codex_plugin),
                     Step(f'codex plugin add {CODEX_PLUGIN}@{CODEX_MARKETPLACE}',
                          ['codex', 'plugin', 'add', f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'])]),
+        octet_item(output),
     ]
 
 
@@ -713,7 +774,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--all', '--full', action='store_true', help='install the full suite for every available host (default)')
-    selection.add_argument('--only', help='comma-separated items to install (pi,autowork,tx,hermes,claude,codex)')
+    selection.add_argument('--only', help='comma-separated items to install (pi,autowork,tx,hermes,claude,codex,octet)')
     parser.add_argument('--skip', help='comma-separated items to leave out')
     parser.add_argument('--list', action='store_true', help='show the items and whether each is available')
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')
@@ -742,7 +803,7 @@ def main(argv=None):
                               ('--yes-deps', args.yes_deps), ('--dry-run', args.dry_run)) if on]
     if args.hermes_home:
         hermes += ['--hermes-home', args.hermes_home]
-    all_items = items(hermes)
+    all_items = items(hermes, output)
     keys = [i.key for i in all_items]
     for given in (args.only, args.skip):
         unknown = [k for k in (given or '').split(',') if k and k not in keys]
