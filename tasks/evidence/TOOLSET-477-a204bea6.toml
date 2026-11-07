@@ -1,0 +1,9 @@
+schema = 1
+task = "TOOLSET-477-a204bea6"
+candidate = "6cd7591daa963b461afb16b8c2158a488d8221f7"
+integration = "6cad00f7a01b213b83a50af9c7b3225bf3a4c9d6"
+tree = "b13496ac22e91536b39f76905ba22236516bd2ef"
+contract_hash = "2f45eb167a71bfcd83a4f941f0ebdf1bdc2ff858d057a17e16d8096ad6d7d30b"
+checks = ["<path>", "<path>", "--verify", "<path>", "TOOLSET-477-a204bea6"]
+result = "pass"
+review = "passed"
