@@ -90,6 +90,11 @@ if args[:1] == ['list']:
 if args[:1] == ['update']:  # a new toolset commit, as `pi update` brings in
     note({'update': args[1:]})
     package, kind = os.environ['FAKE_PI_TOOLSET'], os.environ.get('FAKE_PI_UPDATE', 'change')
+    if subprocess.run(['git', '-C', package, 'rev-parse', '--verify', 'FETCH_HEAD'],
+                      capture_output=True).returncode == 0:
+        # A real update installs the fetched candidate, not a new unrelated local commit.
+        subprocess.run(['git', '-C', package, 'merge', '--ff-only', 'FETCH_HEAD'], check=True)
+        sys.exit(0)
     if not os.path.exists(os.path.join(package, '.updated')):
         open(os.path.join(package, '.updated'), 'w').write(kind)
         script = os.path.join(package, 'scripts/pi-autowork.sh')
@@ -4115,7 +4120,8 @@ class SetupTests(Fixture):
 
     def test_a_broken_toolset_update_keeps_the_running_code(self):
         package = self.installed_package()
-        self.env['FAKE_PI_UPDATE'] = 'broken'
+        self.publish(lambda tree: (tree / 'scripts/pi-autowork.sh').write_text(
+            (tree / 'scripts/pi-autowork.sh').read_text() + '\nif then fi\n'), 'broken release')
         runner = self.run_until(package / 'scripts/pi-autowork.sh', 'does not parse')
         time.sleep(3)  # later idle cycles neither restart nor repeat the warning
         runner.send_signal(signal.SIGINT)

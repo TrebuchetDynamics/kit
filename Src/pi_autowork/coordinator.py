@@ -28,7 +28,7 @@ from . import (fleet_view, health, janitor, landing, main_check, maintainer, opt
                post_merge_barrier, service, task_commands, telemetry, worker, workspaces)
 from .common import GIT, LOG, atomic_write, dirty, git, git_ok, lifecycle, open_for_writing, safe_name, summary_list
 from .processes import own_process, process_name, start_time
-from .supervision import main_checks
+from .supervision import main_checks, maintenance
 from pi_autowork.engine.task_queue import commit as task_revision
 from pi_autowork.engine.task_store import StoreError
 
@@ -364,6 +364,7 @@ class Coordinator:
         self.settled = False
         self.toolset_rev = cfg['toolset_rev']
         self.runtime = pi_runtime.Settings(self.state)
+        self.async_maintenance = True  # direct/partial push callers retain the synchronous API
 
     # --- Engine -----------------------------------------------------------------
     def start_integration(self, task):
@@ -1157,6 +1158,8 @@ class Coordinator:
             operations.append('a Pi job')
         if not operations and self.integ and (landing := self.batch_landing()):
             operations.append(f'the batch landing of {", ".join(landing)}')
+        if maintenance.busy(self):
+            operations.append('background publication/toolset maintenance')
         return '; '.join(operations)
 
     def restart_status(self, requests=(), ready=False, operation=None):
@@ -1249,6 +1252,12 @@ class Coordinator:
             if time.monotonic() - checked < 1:
                 continue
             checked = time.monotonic()
+            if getattr(self, 'async_maintenance', False) and maintenance.busy(self):
+                # The next cycle collects results before dispatch/review/reload decisions.
+                for name in ('publication', 'update'):
+                    job = maintenance.read(self, name).get('job')
+                    if job and not maintenance.running(job):
+                        return
             if service.restart_requests(self.state):
                 return
             now = self.plan_signature()
@@ -1567,12 +1576,15 @@ class Coordinator:
         """Pull, then push: merge commits the upstream gained into the session and the main
         branch, then publish the main branch if it is ahead. Called after every landing and once
         at start, so a backlog is published and the session never drifts behind the upstream."""
-        if effective_push() != '1':
+        if self.authority_problem() or effective_push() != '1':
             return self.push()  # says once that main stays local
         upstream = git(self.repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', f'{self.base}@{{u}}')
         if not upstream or '/' not in upstream:
             return self.push()  # says once that there is no upstream
         remote, branch = upstream.split('/', 1)
+        if getattr(self, 'async_maintenance', False):
+            self.ensure_repository()
+            return maintenance.sync(self, remote, branch)
         on_base = git(self.repo, 'symbolic-ref', '--short', '-q', 'HEAD') == self.base
         if on_base and git_ok(self.repo, 'fetch', '--quiet', remote, branch):
             behind = int(git(self.repo, 'rev-list', '--count', f'{self.base}..{upstream}') or 0)
@@ -1639,6 +1651,8 @@ class Coordinator:
                     return 'head-changed'
             else:
                 source = self.base
+        if getattr(self, 'async_maintenance', False):
+            return maintenance.publish(self, remote, branch, source)
         env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_CONFIG_')}
         argv = ['git', '-C', str(self.repo), 'push', '--quiet', remote, f'{source}:refs/heads/{branch}']
         try:
@@ -1651,7 +1665,9 @@ class Coordinator:
             telemetry.observe(self.repo, self.base)
             return 'published'
         text = (result.stdout + result.stderr).strip()
-        if retry and re.search(r'rejected|non-fast-forward|fetch first', text):
+        if (retry and not getattr(self, 'integration', None) and not self.resolvers
+                and not getattr(self, 'train', None) and not getattr(self, 'child', None)
+                and re.search(r'rejected|non-fast-forward|fetch first', text)):
             if git_ok(self.repo, 'fetch', '--quiet', remote, branch) and self.integ \
                     and self.merge_planning(upstream):
                 if not self.fast_forward_main():
@@ -1981,6 +1997,7 @@ class Coordinator:
                     self.end_session()
         if self.merge_pending and code == 0:
             code = 4
+        maintenance.stop(self)
         raise Finish(code, text)
 
     # --- Coordinator -------------------------------------------------------------------
@@ -3408,58 +3425,35 @@ class Coordinator:
             and self.seen.get('unresolved-' + r['task']) != r.get('commit')}
 
     def update_toolset(self):
-        """While nothing is in flight, update the toolset package Pi loads, at most once per
-        interval and one runner at a time, and only to a release that reads this state."""
+        """Probe/update off-loop under the existing package/fleet/schema lock policy."""
         if self.mode != 'continuous' or self.update_interval == 0:
             return
         if time.monotonic() - self.last_update < self.update_interval:
             return
-        self.last_update = time.monotonic()
         if os.environ.get('PI_AUTOWORK_PACKAGE_INSTALLED') != '1':
-            return  # a checkout is updated by its owner, not by the runner
-        source = release.package_source(self.cfg['pi'], self.package)
-        if not source:
-            return  # local or unregistered checkouts are updated by their owner
-        import fcntl
-        with open(Path(self.cfg['state_root']) / 'toolset-update.lock', 'a') as lock:
-            deadline = time.monotonic() + 600
-            while True:
-                try:
-                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except BlockingIOError:
-                    if time.monotonic() > deadline:
-                        return
-                    time.sleep(1)
-            check = release.check(self.cfg['state_root'], self.state, self.package, wait=self.update_wait,
-                                  current_toolset=self.toolset, source=source)
-            if not check['ok']:
-                # Another runner's work in flight, or a release that cannot read this state.
-                note = check['reason'].split(';')[0]
-                if not check.get('current') and note != self.last_update_note:
-                    LOG.say(f'Toolset update deferred: {check["reason"]}')
-                self.last_update_note = note
-                if not check.get('current'):  # a release is waiting: look again within minutes
-                    self.last_update -= max(0, self.update_interval - min(300, self.update_interval))
-                return
-            self.last_update_note = ''
-            if check.get('note'):
-                LOG.say(f'Toolset update: {check["note"]}')
-            with open(self.state / 'engine.err', 'a') as err:
-                rc = subprocess.run(['timeout', '300', self.cfg['pi'], 'update', source], stdout=err,
-                                    stderr=err).returncode
-            if rc:
-                LOG.say(f'Toolset update failed (see {self.state / "engine.err"}); keeping {self.toolset_rev}')
+            return  # local checkouts are still updated only by their owner
+        self.last_update = time.monotonic()
+        maintenance.update(self)
+
+    def update_revision(self):
+        """Automatic activation uses the consumed qualification, not a later package HEAD."""
+        outcome = maintenance.read(self, 'update').get('outcome', {})
+        return outcome['revision'] if outcome.get('ok') else 'HEAD'
 
     def reexec_due(self):
         """'reload' or 'update' when the runner should re-execute at its next safe point: an
         asked-for reload, or a package that moved past the release this process runs."""
+        if maintenance.busy(self):
+            return ''
         if self.restart_pending:
             return 'restart'
+        blocked = maintenance.read(self, 'update').get('outcome', {}).get('blocked')
+        if blocked and blocked == git(self.package, 'rev-parse', 'HEAD'):
+            return ''
         if self.reload:
             return 'reload'
         if self.mode == 'continuous' and self.toolset_rev != 'unknown' and self.package:
-            rev = git(self.package, 'rev-parse', '--short', 'HEAD')
+            rev = git(self.package, 'rev-parse', '--short', self.update_revision())
             if rev and rev != self.package_rev:
                 return 'update'
         return ''
@@ -3469,18 +3463,22 @@ class Coordinator:
 
         Existing engine/review/worker processes keep their inherited release.
         """
-        if self.restart_pending:
+        if self.restart_pending or maintenance.busy(self):
             return
+        blocked = maintenance.read(self, 'update').get('outcome', {}).get('blocked')
+        if blocked and blocked == git(self.package, 'rev-parse', 'HEAD'):
+            return  # never activate a failed update or an unchecked moving candidate
         if self.reload:
             return self.reexec('Reloading: settings and release re-read; running workers keep running',
                                reload=True)
         if self.mode != 'continuous' or self.toolset_rev == 'unknown':
             return
-        rev = git(self.package, 'rev-parse', '--short', 'HEAD')
+        revision = self.update_revision()
+        rev = git(self.package, 'rev-parse', '--short', revision)
         if not rev or rev == self.package_rev:
             return
         try:
-            candidate = release.prepare(self.cfg['state_root'], self.package)
+            candidate = release.prepare(self.cfg['state_root'], self.package, revision=revision)
             rev = git(candidate, 'rev-parse', '--short', 'HEAD')
             shell = subprocess.run(['bash', '-n', str(candidate / 'scripts/pi-autowork.sh')], capture_output=True)
             for path in Layout.python_sources(candidate):
@@ -3499,14 +3497,16 @@ class Coordinator:
         are adopted. Not while a review or a Pi job runs, nor once a review has ended but its
         answer is not read yet (TOOLSET-187-1d: a reload deferred behind a review re-executed the
         moment it ended and lost it): the cycle reads it, and a later cycle re-executes."""
-        busy = self.integration or self.prefix_landing or self.child or self.resolvers or self.maintainer_job or self.train
+        busy = (self.integration or self.prefix_landing or self.child or self.resolvers
+                or self.maintainer_job or self.train or maintenance.busy(self))
         landing = [] if busy else self.batch_landing()
         if busy or landing:
             what = (f"the review of {self.integration['task']}" if self.integration else
                     f"the merge resolution of {', '.join(sorted(self.resolvers))}" if self.resolvers else
                     f'the {maintainer.ROLE} re-cut' if self.maintainer_job else
                     f"the merge train's check of {', '.join(self.train['members'])}" if self.train else
-                    'a Pi job' if self.child else '')
+                    'a Pi job' if self.child else
+                    'background publication/toolset maintenance' if maintenance.busy(self) else '')
             what = f'{what} to end' if what else f"{', '.join(landing)} to land (passed in a batch)"
             if self.seen.get('reexec-pending') != what:
                 self.seen['reexec-pending'] = what
@@ -3686,6 +3686,7 @@ class Coordinator:
     def stop_for_repository(self, problem):
         """Stop without merging or publishing when the repository changed under us."""
         self.stop = True
+        maintenance.stop(self)
         self.stop_maintainer()
         self.stop_integration()
         try:
@@ -3754,6 +3755,8 @@ class Coordinator:
         self.plan_seen = self.plan_signature()
         if self.stop:
             self.stop_now()
+        if getattr(self, 'async_maintenance', False):
+            maintenance.poll(self)
         if self.restart_checkpoint():
             return
         if not self.begin_cycle():
@@ -4027,6 +4030,15 @@ class Coordinator:
         # proposal batches (including discarded ones) without dispatching new work.
         if self.draining and self.maintain(ledger_edits_only=True):
             return
+        # Finite runs drain publication by cycling, not by blocking in finish().
+        if ((self.draining or self.mode != 'continuous') and getattr(self, 'async_maintenance', False)
+                and not self.stop):
+            if maintenance.invalid(self):
+                self.finish(4, 'Maintenance receipt is invalid; publication/update remain unqualified')
+            self.merge_main()
+            if not self.merge_pending and maintenance.pending(self):
+                self.pause(min(self.interval, 1))
+                return
         # Nothing running, nothing to integrate and nothing waiting: finite runs end here.
         if self.draining or self.mode != 'continuous':
             if self.mode == 'once' and not self.once_task and outcome == 'IDLE':
