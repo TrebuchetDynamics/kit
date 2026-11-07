@@ -8,13 +8,13 @@ no extra approval step or execution authority.
 
 <!-- pi-autowork:questions:start -->
 
-### Q-TOOLSET-463-8af43073 — USER_DECISION — effort decision — unblocks 1
+### Q-TOOLSET-463-8af43073 — USER_INPUT — effort input — unblocks 1
 
 - Task: TOOLSET-463-8af43073 — Verify a deliberate stop is terminal and a restart re-asserts configuration
-- Needs: TOOLSET-463-8af43073 requires owner action or recorded live authorization; an unattended runner cannot run it.
+- Needs: TOOLSET-463-8af43073 requires owner-performed action, not unattended execution. Saved owner answer: 2026-11-07: approved. Another approval is not requested.
 - Since: 2026-11-05T02:13:30Z
-- Answer: Run it yourself, set `live = "authorized"` in tasks/items/TOOLSET-463-8af43073.md with an `Owner decision:` note (who authorized which live scope and when), or move it to Needs decision. Only the owner grants it; a worker's edit to the record never does.
-- Kind: outside
+- Answer: Perform the task outside this runner and record the actual completion evidence, or explicitly defer or cancel it. Saved direction is not completion evidence; another approval or live grant does not transfer an owner-owned task to the runner.
+- Kind: owner_action
 
 <!-- pi-autowork:questions:end -->
 
