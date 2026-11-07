@@ -191,6 +191,18 @@ def build(snapshot, repo, repairs=(), resolving=(), *, now=None):
                 task = qid.removeprefix('Live authorization: ')
                 if task not in found:
                     title = title_of(task)
+                    record = store.tasks.get(task) if store else None
+                    if record is not None and record.ownership.value == 'owner':
+                        saved = task_queue.notes(record).get('Owner decision', '')
+                        needs = f'{task} requires owner-performed action, not unattended execution.'
+                        if saved:
+                            needs += f' Saved owner answer: {saved}. Another approval is not requested.'
+                        add(task, 'owner_action', 'input', needs, (
+                            'Perform the task outside this runner and record the actual completion evidence, '
+                            'or explicitly defer or cancel it. Saved direction is not completion evidence; '
+                            'another approval or live grant does not transfer an owner-owned task to the runner.'),
+                            f'{task} — {title}' if title else task, blocks, source=root)
+                        continue
                     add(task, kind, 'decision', f'{task} requires owner action or recorded live authorization; '
                         'an unattended runner cannot run it.', (
                             f'Run it yourself, set `live = "authorized"` in tasks/items/{task}.md with an '

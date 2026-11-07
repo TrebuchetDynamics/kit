@@ -94,7 +94,11 @@ question, the runner's suggested answer, dependent task IDs from the committed
 snapshot, and the current working record's scope, section, ownership and live
 permission. A suggestion is context only: it is never filled in as your answer.
 The context pane scrolls independently and identifies its snapshot/working-record
-sources.
+sources. Reopening restores the actual saved owner answer in the editor, not the
+runner's suggested answer, without replacing a draft already being typed. It appears at the top of the context pane even when the
+scope is long. An owner-only execution blocker is shown as **Owner action** with
+the saved direction and the remaining action: another approval is not requested,
+and approval is not completion evidence. New planning/input questions remain questions.
 
 Type an answer, choose **Save answer — keep section**, **Move to Next**, **Defer —
 Needs decision**, or **Move to Now**, then press **Ctrl+Enter** or **Save answer**.

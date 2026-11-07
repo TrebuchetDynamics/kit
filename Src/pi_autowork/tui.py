@@ -210,6 +210,11 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
             ', '.join(dependents) if dependents else ('None' if store else 'unavailable'))
         super().__init__(task, context, loading=True)
         self.runner_name, self.repo = runner.name, runner.repo
+        self.owner_action_question = bool(question and (
+            question.kind == 'owner_action' or (
+                question.kind == 'outside' and question.needs == (
+                    f'{task} requires owner action or recorded live authorization; '
+                    'an unattended runner cannot run it.'))))
         self.record = None
 
     def on_mount(self):
@@ -244,12 +249,25 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
         self.record, self.ready = record, True
         previous = '\n'.join(line for line in record.get('notes', '').splitlines()
                              if line.startswith('- Owner decision:'))
+        saved = previous.splitlines()[-1].partition(':')[2].strip() if previous else ''
+        owner_action = record.get('ownership') == 'owner' and self.owner_action_question
+        remaining = ('Owner-performed action remains; this runner must not execute it. '
+                     'Another approval is not required. Record actual completion evidence or defer/cancel.'
+                     if owner_action else '')
         self.query_one('#decision-context', TextArea).load_text(
-            f'{self.task_id}: {record.get("title", "")}\n'
+            (f'Saved answer (working record): {saved}\n' if saved else '')
+            + (remaining + '\n' if remaining else '')
+            + f'{self.task_id}: {record.get("title", "")}\n'
             f'Current working record: {record.get("section", "unknown")} · '
             f'ownership {record.get("ownership", "unknown")} · live {record.get("live", "denied")}\n'
-            + record.get('scope', '') + '\n\n' + self.context
-            + ('\n' + previous if previous else ''))
+            + record.get('scope', '') + '\n\n' + self.context)
+        if saved:
+            # Restore the owner's actual saved direction, never the runner's suggestion.
+            editor = self.query_one('#decision-text', TextArea)
+            if not editor.text:
+                editor.load_text(saved)
+            self.query_one('#decision-title', Label).update(
+                f'{"Owner action" if owner_action else "Update answer"} {self.task_id} · Saved answer in record')
         # A task in Needs decision is waiting for this answer. Default the save to move it
         # back to Now so the decision count falls and the runner can select it; the owner
         # can still choose keep-current or defer explicitly.
@@ -258,6 +276,8 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
         self.query_one('#decision-save', Button).disabled = False
         self.query_one('#decision-text', TextArea).focus()
         self.query_one('#decision-status', Static).update(
+            'Answer already saved; owner-performed action still outstanding. '
+            'Save updates direction, not execution or completion.' if saved and owner_action else
             'Save commits this answer and the selected section locally, not unrelated edits. '
             'No push, live permission, hold release or verification.')
 
