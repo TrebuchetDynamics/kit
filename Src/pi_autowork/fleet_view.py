@@ -1794,11 +1794,12 @@ def answers(runner, question, *, command, today=None):
     fingerprint = re.search(r'Blocker resolution: (\S+?);', question.answer or '')
     if question.kind == 'quick_hold' and fingerprint:
         out.append(Answer('r', 'Resolve', 'name the producer task or the decision that unblocks it',
-                          [command, 'tasks', 'field', task, 'Blocker resolution', f'{fingerprint[1]}; {{text}}', name], True))
-    out.append(Answer('w', 'Write', 'your decision, as a dated Owner decision note in its record',
-                      [command, 'tasks', 'field', task, 'Owner decision', f'{day}: {{text}}', name], True))
-    out.append(Answer('d', 'Defer', 'move it to Needs decision, with your reason as its Owner decision',
-                      [command, 'tasks', 'place', task, 'Needs decision', name, '--decision', f'{day}: deferred: {{text}}'], True))
+                          [command, 'tasks', 'field', task, 'Blocker resolution', f'{fingerprint[1]}; {{text}}', name, '--commit'], True))
+    out.append(Answer('w', 'Write', 'commit your decision as a dated Owner decision note, without other edits',
+                      [command, 'tasks', 'decide', task, f'{day}: {{text}}', name, '--commit'], True))
+    out.append(Answer('d', 'Defer', 'commit a move to Needs decision with your reason; no live permission',
+                      [command, 'tasks', 'decide', task, f'{day}: deferred: {{text}}', name,
+                       '--section', 'Needs decision', '--commit'], True))
     return out
 
 

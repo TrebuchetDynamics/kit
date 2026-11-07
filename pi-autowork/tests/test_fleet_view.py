@@ -681,10 +681,10 @@ class FleetViewTests(unittest.TestCase):
             return {a.key: a for a in fleet_view.answers(india, question, command='aw', today=day)}
         held = keys(fleet_view.Question('T-2', 'input', 1, 'quick hold', kind='quick_hold',
                                         answer='To rerun, add `Blocker resolution: ab12cd; <producer>` to it.'))
-        self.assertEqual(held['r'].argv, ['aw', 'tasks', 'field', 'T-2', 'Blocker resolution', 'ab12cd; {text}', 'india'])
-        self.assertEqual(held['w'].argv, ['aw', 'tasks', 'field', 'T-2', 'Owner decision', '2026-10-20: {text}', 'india'])
-        self.assertEqual(held['d'].argv, ['aw', 'tasks', 'place', 'T-2', 'Needs decision', 'india',
-                                          '--decision', '2026-10-20: deferred: {text}'])
+        self.assertEqual(held['r'].argv, ['aw', 'tasks', 'field', 'T-2', 'Blocker resolution', 'ab12cd; {text}', 'india', '--commit'])
+        self.assertEqual(held['w'].argv, ['aw', 'tasks', 'decide', 'T-2', '2026-10-20: {text}', 'india', '--commit'])
+        self.assertEqual(held['d'].argv, ['aw', 'tasks', 'decide', 'T-2', '2026-10-20: deferred: {text}', 'india',
+                                          '--section', 'Needs decision', '--commit'])
         self.assertNotIn('o', held)
         for answer in held.values():
             self.assertEqual(answer.label.lower()[0], answer.key)

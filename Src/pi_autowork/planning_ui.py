@@ -47,7 +47,7 @@ class DecisionPrompt(ModalScreen[dict]):
                               ('After save: move to Now', 'Now')],
                              value='', allow_blank=False, id='decision-section')
             yield Static('Loading current task…' if not self.ready else
-                         'Local save, pending commit. No live permission, holds or verification.',
+                         'Save commits this answer locally. No push, live permission, hold release or verification.',
                          markup=False, id='decision-status')
             with Horizontal():
                 yield Button('Save answer', id='decision-save', variant='primary', disabled=not self.ready)

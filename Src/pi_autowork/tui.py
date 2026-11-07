@@ -258,8 +258,8 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
         self.query_one('#decision-save', Button).disabled = False
         self.query_one('#decision-text', TextArea).focus()
         self.query_one('#decision-status', Static).update(
-            'Local save, not committed. The runner reads committed records: commit the edit '
-            '(C on Tasks) before it can see this answer. No live permission, hold or verification.')
+            'Save commits this answer and the selected section locally, not unrelated edits. '
+            'No push, live permission, hold release or verification.')
 
     def submit(self, value):
         runner = next((r for r in self.app.runners if (r.name, r.repo) == (self.runner_name, self.repo)), None)
@@ -267,7 +267,7 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
             self.load_failed('task actions are no longer available')
             return
         argv = [self.app.command, 'tasks', 'decide', self.task_id, value['text'], self.repo,
-                '--expect', self.record['record_revision']]
+                '--expect', self.record['record_revision'], '--commit']
         if value['section']:
             argv += ['--section', value['section']]
         self.saving = True
@@ -275,7 +275,7 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
         self.query_one('#decision-section', Select).disabled = True
         self.query_one('#decision-save', Button).disabled = True
         self.query_one('#decision-cancel', Button).disabled = True
-        self.query_one('#decision-status', Static).update('Saving locally… wait for the result; no commit or runner action.')
+        self.query_one('#decision-status', Static).update('Saving and committing this answer… wait for the result.')
         self.app.execute(fleet_view.Action('e', f'Answer {self.task_id}', argv), on_complete=self.saved)
 
     def saved(self, ok, message):
@@ -2303,9 +2303,19 @@ class FleetApp(App):
             ok, message = result.returncode == 0, (output[-1] if output else action.label)
         except Exception as error:
             ok, message = False, str(error)
-        decision = action.argv[1:3] == ['tasks', 'decide']
+        decision = action.argv[1:3] == ['tasks', 'decide'] or (
+            action.argv[1:3] == ['tasks', 'field'] and '--commit' in action.argv)
         if ok and decision:
-            message = task_status.edit_lifecycle('pending_commit')['message']
+            if '--commit' in action.argv:
+                try:
+                    receipt = json.loads(result.stdout)
+                    if receipt['lifecycle']['state'] != 'committed':
+                        raise ValueError('answer commit not confirmed')
+                    message = receipt['lifecycle']['message']
+                except (ValueError, KeyError, TypeError):
+                    ok, message = False, 'Answer commit not confirmed; inspect tasks handoff before retrying. Draft kept.'
+            else:
+                message = task_status.edit_lifecycle('pending_commit')['message']
         self.call_from_thread(self.notify, message[:300], severity='information' if ok else 'error',
                               title=f'{action.label}: {"done" if ok else "failed"}', timeout=10 if decision else 3)
         if on_complete is not None:

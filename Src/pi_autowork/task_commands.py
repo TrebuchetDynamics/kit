@@ -2,7 +2,8 @@
 
 Reads (list, show, why, validate) use a pinned commit, HEAD by default; --worktree reads
 uncommitted edits. Writes (add, field, place, move, hold, release, done, supersede, goal)
-change task files in the working tree and never commit; each takes the repository's task
+change task files in the working tree; only explicit --commit on decide or answer-note
+field writes commits the answer alone. Each takes the repository's task
 lock, refuses a file that changed since it was read (or since the revision `--expect`
 names), refuses a contract change to a task a worker or lease holds, and validates the
 whole would-be store before the write is kept. A written file grants no authority beyond
@@ -19,6 +20,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -496,7 +498,8 @@ def cmd_commit(repo, message=None, dry_run=False, expected=None):
         return _commit_snapshot(repo, message, dry_run, expected)
 
 
-def _commit_snapshot(repo, message=None, dry_run=False, expected=None):
+def _commit_snapshot(repo, message=None, dry_run=False, expected=None, *, records=None,
+                     expected_head=None, expected_branch=None):
     """Preview and commit the same immutable tasks/ snapshot, never unrelated staged edits.
 
     The pending revision binds HEAD and the resulting tree. A protected commit refuses
@@ -513,10 +516,22 @@ def _commit_snapshot(repo, message=None, dry_run=False, expected=None):
     with tempfile.TemporaryDirectory() as tmp, objects as object_env:
         env = {**object_env, 'GIT_INDEX_FILE': str(Path(tmp) / 'index')}
         head = _git(repo, 'rev-parse', 'HEAD')
+        if expected_head is not None and head != expected_head:
+            raise CommandError('repository HEAD changed; answer remains pending; nothing committed')
         _git(repo, 'read-tree', head, env=env)
-        _git(repo, 'add', '-A', '--', 'tasks', env=env)
+        if records is None:
+            _git(repo, 'add', '-A', '--', 'tasks', env=env)
+        else:
+            # Answer-only snapshots are derived from HEAD, not from mutable task files.
+            for name, content in records.items():
+                blob_file = Path(tmp) / 'answer'
+                blob_file.write_text(content)
+                blob = _git(repo, 'hash-object', '-w', str(blob_file), env=env)
+                _git(repo, 'update-index', '--cacheinfo', f'100644,{blob},{name}', env=env)
         tree = _git(repo, 'write-tree', env=env)
         branch = _git(repo, 'rev-parse', '--symbolic-full-name', 'HEAD')
+        if expected_branch is not None and branch != expected_branch:
+            raise CommandError('repository branch changed; answer remains pending; nothing committed')
         pending = hashlib.sha256(f'{branch}\n{head}\n{tree}\n'.encode()).hexdigest()
         if expected is not None and expected != pending:
             raise CommandError('pending task edits changed; review the diff again; nothing committed')
@@ -560,16 +575,121 @@ def _commit_snapshot(repo, message=None, dry_run=False, expected=None):
                 or _git(repo, 'rev-parse', '--symbolic-full-name', 'HEAD') != branch
                 or landing.checkout_operation(repo, read_git=_git)):
             raise CommandError('repository state changed; review pending task edits again; nothing committed')
+        if records is not None and _git(repo, 'diff', '--cached', '--name-only', head, '--', *records):
+            raise CommandError('answer record acquired staged edits; review them separately; nothing committed')
         text = ' '.join((message or '').split()) or f'tasks: {len(files)} record edit(s)'
-        _git(repo, 'commit', '-q', '-m', text, env=env)
-        commit = _git(repo, 'rev-parse', 'HEAD')
-        if (_git(repo, 'rev-parse', commit + '^{tree}') != tree
-                or _git(repo, 'rev-list', '--parents', '-n', '1', commit).split() != [commit, head]):
-            raise CommandError('commit hooks or another writer changed the snapshot; inspect the retained commit')
-        _git(repo, 'reset', '-q', commit, '--', 'tasks')
+        if records is not None:
+            commit = _commit_answer_snapshot(repo, head, branch, tree, env, text, files)
+        else:
+            _git(repo, 'commit', '-q', '-m', text, env=env)
+            commit = _git(repo, 'rev-parse', 'HEAD')
+            if (_git(repo, 'rev-parse', commit + '^{tree}') != tree
+                    or _git(repo, 'rev-list', '--parents', '-n', '1', commit).split() != [commit, head]):
+                raise CommandError('commit hooks or another writer changed the snapshot; inspect the retained commit')
+            _git(repo, 'reset', '-q', commit, '--', *files)
         result.update(commit=commit, lifecycle=task_status.edit_lifecycle('committed'),
                       handoff=task_handoff.describe(saved, saved, (), commit, str(repo.resolve())))
         return result
+
+
+def _commit_answer_snapshot(repo, head, branch, tree, env, message, files):
+    """Run commit hooks on a private, branch-preserving snapshot, then CAS-publish.
+
+    Reserve the real HEAD and index before hooks: branch switches and git add must
+    not race publication. Never commit an old private tree on a newer real parent.
+    Other worktrees can still move the branch; update-ref's expected-old guard wins.
+    """
+    git_dir = Path(_git(repo, 'rev-parse', '--absolute-git-dir'))
+    common = _git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    index = git_dir / 'index'
+    index_lock, head_lock = git_dir / 'index.lock', git_dir / 'HEAD.lock'
+    acquired_index = acquired_head = publication_attempted = installed = False
+    try:
+        with index_lock.open('xb') as reserved:
+            acquired_index = True
+            with head_lock.open('x'):
+                acquired_head = True
+                if (_git(repo, 'rev-parse', 'HEAD') != head
+                        or _git(repo, 'rev-parse', '--symbolic-full-name', 'HEAD') != branch
+                        or landing.checkout_operation(repo, read_git=_git)):
+                    raise CommandError('repository state changed before answer commit; nothing committed')
+                if _git(repo, 'diff', '--cached', '--name-only', head, '--', *files):
+                    raise CommandError('answer record acquired staged edits; nothing committed')
+                with tempfile.TemporaryDirectory() as tmp:
+                    private = Path(tmp) / 'git'
+                    private.mkdir()
+                    (private / 'objects').mkdir()
+                    (private / 'refs').mkdir()
+                    # Hook wrappers may locate sibling helpers through --git-common-dir.
+                    (private / 'hooks').symlink_to(Path(common) / 'hooks', target_is_directory=True)
+                    (private / 'HEAD').write_text(f'ref: {branch}\n')
+                    # Flatten the effective checkout configuration, not just config.worktree:
+                    # includeIf.onbranch and gitdir conditions must not silently skip hooks.
+                    config = _git(repo, 'config', '--null', '--list', '--includes', raw=True)
+                    for item in config.rstrip('\0').split('\0'):
+                        if not item:
+                            continue
+                        key, separator, value = item.partition('\n')
+                        if key == 'include.path' or (key.startswith('includeif.') and key.endswith('.path')):
+                            continue
+                        if key == 'extensions.refstorage' and value != 'files':
+                            raise CommandError('answer commits currently require files-based Git ref storage')
+                        token = value if separator else f'autowork-valueless-{os.urandom(12).hex()}'
+                        _git(repo, 'config', '--file', str(private / 'config'), '--add', key, token)
+                        if not separator:
+                            config_file = private / 'config'
+                            config_file.write_text(config_file.read_text().replace(f' = {token}\n', '\n', 1))
+                    hooks = _git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'hooks')
+                    _git(repo, 'config', '--file', str(private / 'config'), '--replace-all', 'core.hooksPath', hooks)
+                    refs = _git(repo, 'for-each-ref', '--format=%(objectname) %(refname)').splitlines()
+                    refs = [line for line in refs if line.partition(' ')[2] != branch]
+                    refs.append(f'{head} {branch}')
+                    (private / 'packed-refs').write_text('\n'.join(sorted(refs)) + '\n')
+                    objects = _git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'objects')
+                    commit_env = {**env, 'GIT_DIR': str(private), 'GIT_WORK_TREE': str(repo.resolve()),
+                                  'GIT_OBJECT_DIRECTORY': objects, 'GIT_CONFIG_NOSYSTEM': '1',
+                                  'GIT_CONFIG_GLOBAL': os.devnull}
+                    _git(repo, 'commit', '-q', '-m', message, env=commit_env)
+                    commit = _git(repo, 'rev-parse', 'HEAD', env=commit_env)
+                    if (_git(repo, 'rev-parse', commit + '^{tree}') != tree
+                            or _git(repo, 'rev-list', '--parents', '-n', '1', commit).split() != [commit, head]):
+                        raise CommandError(f'commit hooks changed the answer snapshot {commit}; nothing published')
+                    prepared = Path(tmp) / 'index'
+                    shutil.copyfile(index, prepared)
+                    _git(repo, 'reset', '-q', commit, '--', *files, env={'GIT_INDEX_FILE': str(prepared)})
+                    reserved.write(prepared.read_bytes())
+                    reserved.flush()
+                    os.fsync(reserved.fileno())
+                    if (_git(repo, 'rev-parse', 'HEAD') != head
+                            or _git(repo, 'rev-parse', '--symbolic-full-name', 'HEAD') != branch
+                            or landing.checkout_operation(repo, read_git=_git)):
+                        raise CommandError('repository state changed during answer commit; nothing published')
+                    # A separate detached publisher shares refs but does not try to lock
+                    # the real HEAD we reserved. Its explicit branch update is a CAS.
+                    publisher = Path(tmp) / 'publisher'
+                    publisher.mkdir()
+                    (publisher / 'HEAD').write_text(head + '\n')
+                    (publisher / 'commondir').write_text(common + '\n')
+                    publish_env = {'GIT_DIR': str(publisher), 'GIT_WORK_TREE': str(repo.resolve())}
+                    publication_attempted = True
+                    _git(repo, '-c', f'core.hooksPath={hooks}', 'update-ref', '-m', message,
+                         branch, commit, head, env=publish_env)
+                    os.replace(index_lock, index)
+                    installed = True
+                    _sync_dir(git_dir)
+                    return commit
+    except (CommandError, OSError, subprocess.SubprocessError) as exc:
+        if publication_attempted and not installed:
+            raise CommandError(f'answer publication needs reconciliation; prepared index retained at '
+                               f'{index_lock}; inspect the branch before recovery: {exc}') from exc
+        raise
+    finally:
+        if acquired_head:
+            head_lock.unlink(missing_ok=True)
+        # Once CAS starts, a lost response cannot prove that no publication happened.
+        # After installation, this path may belong to a new writer: never unlink it.
+        if acquired_index and not publication_attempted:
+            index_lock.unlink(missing_ok=True)
 
 
 def cmd_new_id(repo, prefix=None):
@@ -691,10 +811,14 @@ TYPED = {'rank': int, 'depends_on': list, 'touches': list, 'resources': list, 'a
 
 
 @_serialized
-def cmd_field(repo, tid, key, value, *, raw_notes=False):
+def cmd_field(repo, tid, key, value, *, raw_notes=False, commit=False):
     """A typed header field (rank, touches, ...) or, for any other label, a note line such as
     `Held by` or `Owner decision` in the task's body."""
     _task(worktree_store(repo), tid)
+    if commit:
+        if key not in ('Owner decision', 'Blocker resolution') or raw_notes:
+            raise CommandError('--commit on field is only for Owner decision or Blocker resolution notes')
+        return _commit_answer(repo, tid, (key, ' '.join(value.split())))
     if key.startswith('closure'):
         raise CommandError('closure metadata is written only by done or the coordinator')
     if key in ('status', 'section', 'id', 'schema'):
@@ -745,8 +869,54 @@ def cmd_place(repo, tid, section, decision=None):
     _set(repo, tid, {'section': section, 'rank': bottom_rank(store, section, without=tid)}, note)
 
 
+def _commit_answer(repo, tid, note, section=None):
+    """Save an answer and commit only its delta against HEAD; retain all other edits.
+
+    A staged target or a draft contract needs separate review. Other tasks and even
+    unrelated notes in this record are neither staged nor silently committed.
+    """
+    head = _git(repo, 'rev-parse', 'HEAD')
+    branch = _git(repo, 'symbolic-ref', '--quiet', '--short', 'HEAD')
+    if branch not in ('main', 'master'):
+        raise CommandError('answer --commit requires main or master checked out; nothing written')
+    reason = landing.checkout_operation(repo, read_git=_git)
+    if reason:
+        raise CommandError('cannot commit an answer while ' + reason)
+    store = TaskStore.at(repo, head)
+    committed = _task(store, tid)
+    current = _task(worktree_store(repo), tid)
+    if committed.status != 'open' or current.status != 'open':
+        raise CommandError('answer --commit requires an open committed task')
+    if any(getattr(committed, key) != getattr(current, key) for key in CONTRACT):
+        raise CommandError('task has an uncommitted contract change; review it separately; nothing written')
+    name = committed.path
+    if _git(repo, 'diff', '--cached', '--name-only', head, '--', name):
+        raise CommandError('task has staged edits; review them separately before committing an answer; nothing written')
+    changes = {}
+    if section is not None:
+        if section not in ('Now', 'Next', 'Needs decision'):
+            raise CommandError('section is Now, Next or Needs decision')
+        if section != committed.section or section != current.section:
+            _unheld(repo, tid)
+        changes = dict(section=section, rank=bottom_rank(store, section, without=tid))
+    text = _git(repo, 'show', f'{head}:{name}', raw=True)
+    if changes:
+        text = task_store.edit(text, changes)
+    text = task_store.set_note(text, *note)
+    _set(repo, tid, changes, note)
+    try:
+        result = _commit_snapshot(repo, f'tasks: answer {tid}', records={name: text},
+                                  expected_head=head, expected_branch=f'refs/heads/{branch}')
+    except (CommandError, StoreError, WriteError, OSError, subprocess.SubprocessError) as exc:
+        raise CommandError(f'Answer saved locally — pending commit or commit outcome unconfirmed: {exc}. '
+                           'Inspect tasks handoff before retrying; no runner acceptance is claimed.') from exc
+    if not result['files']:
+        result['lifecycle'] = task_status.edit_lifecycle('committed')
+    return result
+
+
 @_serialized
-def cmd_decide(repo, tid, decision, section=None):
+def cmd_decide(repo, tid, decision, section=None, *, commit=False):
     """Record owner direction, optionally moving an open task; no completion/authority inference."""
     decision = ' '.join(decision.split())
     if not decision:
@@ -755,6 +925,8 @@ def cmd_decide(repo, tid, decision, section=None):
         raise CommandError('decide requires an open task')
     if not re.match(r'^\d{4}-\d{2}-\d{2}\b', decision):
         decision = f'{date.today().isoformat()}: {decision}'
+    if commit:
+        return _commit_answer(repo, tid, ('Owner decision', decision), section)
     if section is not None:
         cmd_place(repo, tid, section, decision=decision)
     else:
@@ -926,6 +1098,7 @@ def add_parser(sub):
     p.add_argument('label', nargs='?', default=argparse.SUPPRESS)
     p.add_argument('value', nargs='?', default=argparse.SUPPRESS)
     p.add_argument('repo', nargs='?', default='.')
+    p.add_argument('--commit', action='store_true', help='save and commit only this answer note (Owner decision or Blocker resolution)')
     p = verbs.add_parser('place')
     p.add_argument('task'); p.add_argument('section', choices=('Now', 'Next', 'Needs decision'))
     p.add_argument('repo', nargs='?', default='.')
@@ -933,6 +1106,7 @@ def add_parser(sub):
     p = verbs.add_parser('decide', help='record dated owner direction without implying completion or live authorization')
     p.add_argument('task'); p.add_argument('decision'); p.add_argument('repo', nargs='?', default='.')
     p.add_argument('--section', choices=('Now', 'Next', 'Needs decision'), help='optionally move the open task')
+    p.add_argument('--commit', action='store_true', help='save and commit only this answer and requested section, not other edits')
     p = verbs.add_parser('move')
     p.add_argument('task'); p.add_argument('direction', choices=('up', 'down'))
     p.add_argument('repo', nargs='?', default='.')
@@ -1112,14 +1286,15 @@ def _run(args, repo):
                                  ownership=args.ownership, sources=args.sources,
                                  verified_depends_on=args.verified_depends_on, notes=args.notes)
     elif verb == 'field':
-        cmd_field(repo, args.task, args.label, args.value, raw_notes=args.json_input is not None)
-        out = f'ok {args.task} {args.label}'
+        result = cmd_field(repo, args.task, args.label, args.value,
+                           raw_notes=args.json_input is not None, commit=args.commit)
+        out = result if args.commit else f'ok {args.task} {args.label}'
     elif verb == 'place':
         cmd_place(repo, args.task, args.section, args.decision)
         out = f'ok {args.task} -> {args.section}'
     elif verb == 'decide':
-        cmd_decide(repo, args.task, args.decision, args.section)
-        out = f'ok {args.task} decision recorded (not committed)'
+        result = cmd_decide(repo, args.task, args.decision, args.section, commit=args.commit)
+        out = result if args.commit else f'ok {args.task} decision recorded (not committed)'
     elif verb == 'move':
         changes = cmd_move(repo, args.task, args.direction)
         out = 'ok ' + ', '.join(f'{tid} rank {rank}' for tid, rank in changes.items())
