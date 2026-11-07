@@ -1,9 +1,0 @@
-schema = 1
-task = "FLEET-OBSERVER-01"
-candidate = "d80390a70824c3ced6dde87c5e9b983529b694bd"
-integration = "d8952a1a430b0283f212f1d6fbc9b60b897a7f88"
-tree = "76346f9acf7068fa9665912f4401b1bd53ea1e37"
-contract_hash = "1ecd52a2a26148674191b34669cd95ed7f277b682dc56a2b0c382289119f6dfe"
-checks = ["<path>", "<path>", "--verify", "<path>", "FLEET-OBSERVER-01"]
-result = "pass"
-review = "passed"

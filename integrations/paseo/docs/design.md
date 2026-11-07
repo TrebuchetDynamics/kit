@@ -38,7 +38,7 @@ The surface is judged by one test: a new user finds the most urgent repository, 
 
 ### Planned mobile shell (2026-11-05)
 
-Status: implemented by task `TOOLSET-464-5e27d6b1`. The six-view row wraps, repository views expose a **Switch repository** picker sheet, and Fleet rows keep **Open** and **Answer** without the former **More** overflow. Each confirmation names the action's consequence in one sentence and keeps the frozen summary, expiry, single-use and effective push facts. No physical Android or desktop qualification is claimed by this change.
+The six-view row wraps, repository views expose a **Switch repository** picker sheet, and Fleet rows keep **Open** and **Answer** without the former **More** overflow. Each confirmation names the action's consequence in one sentence and keeps the frozen summary, expiry, single-use and effective push facts. No physical Android or desktop qualification is claimed by this change.
 
 ## Validation and delivery boundaries
 

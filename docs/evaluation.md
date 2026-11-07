@@ -82,14 +82,13 @@ more verified software per dollar and per hour of owner attention than manually
 supervising coding agents. Success is enough trustworthy data to decide whether
 Autowork is worth operating and improving, not a better dashboard. The targets below
 are proposals to judge the result by, not acceptance criteria for the instrumentation.
-The work is goal `EVALUATION` in [`tasks/`](../tasks/), in four bounded tasks plus the run:
+Goal `EVALUATION` in [`tasks/`](../tasks/) retains the current outcome:
 
-1. Lifecycle telemetry in the existing engine journal and receipts (TOOLSET-307-5a).
-2. Per-task cost and owner attention (TOOLSET-309-05).
-3. Regression attribution through explicit links only (TOOLSET-308-f9).
-4. The evaluation scorecard, with a 30-day window, JSON and CSV export and an
-   optional baseline (TOOLSET-310-50).
-5. The owner's 30-day run on at least two other repositories (TOOLSET-311-d7).
+1. Lifecycle telemetry uses the existing private journal and receipts.
+2. Cost and owner attention are attributed per task.
+3. Regression attribution uses explicit links only.
+4. The scorecard supports a 30-day window, JSON/CSV and an optional baseline.
+5. Qualification requires an owner-authorized 30-day run on at least two other repositories.
 
 Rules for every measurement:
 
@@ -102,9 +101,8 @@ Rules for every measurement:
   double-count completions or cost. Telemetry observes; it never changes execution or
   authority decisions.
 
-Scheduling: the remaining TOOLSET-304-2c atomic-write fixes come before any broadening
-of concurrent task-store writes, and this instrumentation must not dominate the next
-cycle, whose main purpose is to use Autowork on other products. Measure at least two
+Do not broaden concurrent task-store writes without qualified atomic-write safety.
+Instrumentation must not displace useful work on other products. Measure at least two
 other repositories, preferably on different stacks, before any major new architectural
 change.
 
@@ -118,7 +116,7 @@ permissions. Measure:
 | Owner attention per completed task | Falling week over week | Recorded minutes per verified completion, including repository overhead; missing task attention is unknown, never zero. Logging is not proof of full time coverage. |
 | Cost per verified task | Lower than supervising an agent directly | Private provider-reported spend across all attempts and roles per verified completion; unknown billing/subscription prices remain missing. Optional owner-supplied baseline values and differences are estimates. |
 | Time from task creation to merge | Clearly faster than a baseline | Median/p95 first acceptance-to-delivery and first dispatch-to-integration for verified completions; missing endpoints remain unknown. Acceptance is the first committed task record, not a draft's creation time. The supported baseline compares cost and owner minutes, not duration. |
-| Crash and restart recovery | No lost work, no duplicate closure | Observed restart/interruption episodes recovered through worker adoption/resume, plus existing offline recovery fixtures. A resumed attempt is not proof of eventual delivery or no lost work. One live disposable-repository run is recorded (2026-10-15, TOOLSET-091-00 in `TODO.archive.md`: SIGKILL/restart adopted its worker without a second dispatch); real-repository qualification remains pending. |
+| Crash and restart recovery | No lost work, no duplicate closure | Observed restart/interruption episodes recovered through worker adoption/resume, plus existing offline recovery fixtures. A resumed attempt is not proof of eventual delivery or no lost work. A disposable fixture or worker adoption alone does not qualify the real repository; real-repository qualification remains pending. |
 
 ### Run and interpret the scorecard
 
@@ -149,7 +147,7 @@ defines JSON/CSV fields, denominator and percentile rules, attribution, telemetr
 coverage and partial-week limits. The 30-day fixture and format-parity checks live in
 `pi-autowork/tests/test_scorecard.py`; these are offline evidence for the report, not
 results from operating Autowork on other products. The owner's real-repository run
-(TOOLSET-311-d7) remains separate and unqualified by this instrumentation.
+remains separate and unqualified by this instrumentation.
 
 The goal is not the number of agents Autowork can run. It is how much good software
 gets built while the owner is doing something else.
@@ -164,14 +162,14 @@ The owner's 2026-10-24 planning request accepts discovery and a small executable
 frontier to improve **verified deliveries per runner-hour**, with regressions and
 human intervention as counter-metrics. This is an engineering refinement of
 `EVALUATION`, not a new product strategy or permission to run experiments now.
-The [source audit and baseline](research/delivery-pipeline-2026-10-24.md) record
-observed source, coverage, unknowns and the existing tasks being reused.
+The [measurement requirements](research/delivery-pipeline-2026-10-24.md) preserve
+coverage, unknowns and integration boundaries without retaining completed audit reports.
 
 Planning chooses reversible details below. Future implementation remains subject
 to ordinary task admission and independent review. No fleet/model/configuration
 change, worker launch, restart, live operation, remote publication or spend is
 part of this planning occurrence. Preserve all owner pauses, including the
-manually closed, unqualified 30-day run (TOOLSET-311-d7).
+unqualified 30-day run; cleanup grants no permission to resume it.
 
 ### Outcomes and measurement contract
 

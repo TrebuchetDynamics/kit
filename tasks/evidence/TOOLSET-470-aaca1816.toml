@@ -1,9 +1,0 @@
-schema = 1
-task = "TOOLSET-470-aaca1816"
-candidate = "68ae9b10d4f1950693b79b6d31b18ccda9e7e765"
-integration = "e4619c9ea7db59db71a71c45b6b64e64807569e7"
-tree = "e1732baa893011ad61a464029d329e66d5cb423f"
-contract_hash = "72d28b0b7dd8678a84c73ba748a80b0f0b5806030a4b0b4f8a5a173d3c2238e6"
-checks = ["<path>", "<path>", "--verify", "<path>", "TOOLSET-470-aaca1816"]
-result = "pass"
-review = "passed"

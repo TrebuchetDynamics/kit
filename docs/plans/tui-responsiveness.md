@@ -1,27 +1,16 @@
 # Fleet TUI responsiveness and task freshness
 
-## Scope and diagnosis
+## Scope and boundaries
 
-Status: Accepted
+The accepted objective is responsive local input and accurate revision-bound task
+counts. A blocked local reader, stale/mismatched store observation and missing
+canonical delivery are separate conditions, not one SSH-latency diagnosis. Read
+current source/ownership before implementation; do not restore old baselines or
+change active contracts. Completed diagnosis and task timelines live in Git history.
 
-Owner request: improve slow input through SSH and unreliable task-count updates, including the last saved task not being picked up. This standalone planning pass saves an implementation batch; it does not implement it, run UI/model/SSH experiments, change services or schedules, or operate the other host shown earlier.
-
-Three distinct observations must not be conflated:
-
-1. Source at `911d1b2855c94eaedfa07102434d95d139f0ab13` performs blocking service/Git/filesystem/journal/model reads on Textual callbacks. That is an input-blocking mechanism, not an executed reproduction of SSH transport lag.
-2. Fleet counts mix health/slot observations with separately refreshed Needs-decision totals; they are not a census of one current committed TaskStore. Tasks and health can refer to different worktrees/revisions, and several read errors look empty.
-3. `TOOLSET-377-199b6bb6` was genuinely absent from canonical HEAD: commit `614bdf8e` existed only on its planning branch. The runner had no open tasks. After fresh clean-checkout/no-interactive-writer/no-in-flight checks, that exact two-file planning commit was fast-forwarded into canonical main. Consumer show/why succeeded and a subsequent native prepare reported the task in_flight on the existing runner. No start/restart or explicit dispatch occurred. This repairs planning delivery, not UI latency or product completion.
-
-Reuse the existing RELIABILITY-2026-10 goal, priorities/focus and prior task IDs. Keep the active hotkey task's admitted contract unchanged. Existing task-count classification/drilldown work is not recreated, and an unintegrated Src migration is not a prerequisite. At execution retain any newly landed hotkey/other fixes and adapt to actual source owners rather than restore this baseline.
-
-## Source evidence and boundaries
-
-- `FleetApp.on_mount/action_refresh/on_resize` synchronously calls fleet_view.collect on a three-second refresh and resize. Collection includes per-repository `task_prepare.prepare(mode='check')`: it is read-only but scans source/history. The per-service is-enabled call lacks a timeout; discovery/journal/model listing have existing finite bounds.
-- Full-screen/fleet logs, task rows/detail/goals, directory readiness/render-label cache misses and default model discovery also perform synchronous reads. Model listing can wait up to its sixty-second timeout. Existing off-thread mutation execution still recollects synchronously on completion.
-- `task_counts` combines lanes, held/stopped/waiting health and separately prepared Decision counts. `task_rows` separately rereads HEAD/status/pending paths; stale slots are joined by ID, and stopped waits differ between list/fleet classification.
-- Health loses explicit source/age at the fleet adapter. Coordinator directory-only status caching and health write-time stamping can make reused observations appear newer. Engine status identifies workspace but not the store revision/contract identity needed for safe joins.
-- TaskStore itself sanitizes inherited GIT_* and replacement refs, but task_queue.commit's SHA discovery does not. Missing/invalid/unreadable stores and pending-read errors must not become verified empty/clean inventory.
-- Existing headless pilot checks slow mutation actions, not slow readers. Existing health tests retain failed-read timestamps; retain those assertions and extend actual producer-to-view coverage. No product test, benchmark or remote SSH reproduction ran during this planning pass.
+Preserve bounded service/Git/filesystem/journal/model readers, source provenance,
+failed-read timestamps, sanitized Git environments and explicit unknown/error states.
+Local deterministic fixtures do not qualify SSH transport or an installed fleet.
 
 ## Chosen contracts
 
@@ -69,20 +58,19 @@ Unmount cancels queued work/subscriptions. Cancelling an async wrapper does not 
 
 Proposed `test_tui_reads.py` and existing tui_pilot use threading.Event entered/released/completed handshakes: while each provider is blocked, acknowledge navigation/filter/key/close before release; prove coalescing, no overlapping cancelled-thread replacement, stale-generation rejection, close/reopen and action invalidation, error recovery and selection stability. Use a watchdog only to terminate deadlocks, not invented millisecond SSH performance claims. Planned checks: `python3 scripts/check.py pi-autowork/tests/test_tui_reads.py pi-autowork/tests/test_fleet_view.py pi-autowork/tests/test_tui_mouse.py`.
 
-## Batch and completion
+## Verification and qualification
 
-Independent builder review: “nothing important left.” The reader confirmed the source/identity/error contracts, non-starving read coordination, test ownership and real producer-to-consumer dependencies. This was read-only review, not executed product tests or SSH qualification.
+Producer metadata, committed snapshots and nonblocking readers have real interface
+dependencies. Shared paths alone create no product prerequisite. Use actual owners
+and current source; preserve independent review, affected checks and main's gate.
+The pinned Textual pilot must actually run for rendered evidence: a skipped dependency
+is NOT_CHECKED, not a visual pass.
 
-Saved tasks: `TOOLSET-378-faaf7ed8` (producer provenance) →
-`TOOLSET-379-cf40090d` (committed task snapshots) →
-`TOOLSET-380-f265bb27` (nonblocking UI reads). The earlier hotkey task
-`TOOLSET-377-199b6bb6` is retained unchanged and has a separate consumer receipt.
-
-Each slice consumes the preceding concrete API, with producer/consumer notes on the task records. These are real data/interface dependencies, not sequencing invented for shared paths. Each owns code, its focused tests and compatibility; no separate giant qualification task or rolling successor is needed for known scope. Existing active hotkey work can proceed; respect current source/ownership at implementation and retain its eventual outcome.
-
-Every slice runs its focused checks plus `python3 scripts/affected_tests.py --run` on the actual implementation base (`--base` when needed). Keep required review and main's full gate. Task-provided tests are planned/unrun; this plan does not install dependencies or produce test/model results. The Textual pilot must actually run for rendered coverage; a skipped dependency is NOT_CHECKED, never a visual pass.
-
-Completion means responsive local event handling under deterministically stalled readers and accurate revision-bound counts/error states, not universal low SSH latency. Actual SSH terminal/transport qualification remains unrun; if later observations still lag after local blocking is removed, investigate that specific host/network separately. Keep canonical delivery, selection, admission, execution and acceptance distinct. Saving planning branch records does not make them visible to a runner; verify canonical inclusion and a real consumer receipt, preserving active contracts and all existing jobs/pauses/publication limits.
+Completion requires deterministic responsiveness under stalled readers and accurate
+revision-bound counts/errors. It does not establish universal low SSH latency.
+Actual SSH terminal/transport qualification remains separate and unrun here. Source
+integration, selection, admission and live acceptance remain different observations;
+no installation, service change or dispatch follows from this document.
 
 ## Immediate task deletion feedback
 
@@ -92,7 +80,7 @@ Owner request: “deleting task must refresh tui inmediately”, through standal
 
 ### Diagnosis and chosen approach
 
-Source baseline: `6ee8f67a528b1b370a355aa0d9df39754351e8c3`. In `tui.py`, `finish_action` posts `action_completed` without action/result context; `action_completed` schedules `action_refresh` and immediately redraws the still-current task snapshot. `publish_fleet` eventually redraws the current screen, but `task_commands.cmd_delete` only removes the working-tree record. `task_snapshot.capture` intentionally reads committed HEAD and records pending paths independently. A successful delete can therefore remain in inventory even after recollection, until another actor commits it. These are source observations, not an executed UI reproduction.
+Task deletion changes the working-tree record while canonical task snapshots remain committed-HEAD observations. Successful TUI mutation feedback must bridge that distinction without inventing a new committed revision or execution authority.
 
 **Planner's calls:** handle TUI-initiated deletions as explicit, app-owned pending display mutations. “Immediately” means the next UI-loop update after the successful command result is posted, without a timer tick, completed fleet read or runner commit. Preserve the immutable committed snapshot and admission/eligibility authority. Show the display adjustment as “deletion pending commit”, not as a new committed revision. This is not a working-tree replacement for TaskStore.
 
@@ -106,7 +94,7 @@ Rejected alternatives: another timer/manual refresh does not address uncommitted
 
 ### Single implementation slice and verification
 
-Task `TOOLSET-383-7a5b0363` owns this complete vertical correction. Use current `pi-autowork/pi_autowork/{tui,fleet_view}.py` and existing fleet/read/pilot test seams; if the accepted Src relocation lands first, use their real `Src/pi_autowork/` owners instead of adding behavior to compatibility shims. It is not dependent on the unrelated source migration. Shared production writes with that migration require reconciliation/serialized integration, not fake product prerequisites or changing active contracts.
+Use the current canonical TUI/fleet implementation and existing fleet/read/pilot seams, not compatibility-shim copies. Shared writes require actual ownership reconciliation and serialized integration, not fabricated prerequisites or changed active contracts.
 
 Planned checks: `python3 scripts/check.py pi-autowork/tests/test_fleet_view.py pi-autowork/tests/test_tui_reads.py pi-autowork/tests/test_task_history.py tests/test_task_commands.py`; the existing fleet test wrapper must actually execute its pinned Textual pilot, not count a skipped dependency as rendered coverage. Also run `python3 scripts/affected_tests.py --run` against the actual implementation base (`--base` when required). Proposed regressions are task-owned to add to existing seams, not written or run during this planning occurrence.
 
