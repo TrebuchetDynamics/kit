@@ -55,7 +55,9 @@ Reads call no model; explicit plan/blockers actions can. The TUI and web view ru
 """
 from pi_autowork.layout import LAYOUT
 import argparse
+from contextlib import ExitStack
 import dataclasses
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -176,9 +178,73 @@ def service_state(paths, name):
     return 'none'
 
 
+def _start_checkout_snapshot(repo, paths):
+    """Read switch inputs twice; no status refresh or other Git writes."""
+    git = task_migrate._git
+    branch = task_migrate._ok(repo, 'symbolic-ref', '--quiet', '--short', 'HEAD') or ''
+    head = git(repo, 'rev-parse', 'HEAD')
+    target = fleet_view.local_start_branch(repo)
+    if not target:
+        raise Fail('no existing local main or master branch; restore the intended local branch manually')
+    revision = git(repo, 'rev-parse', f'refs/heads/{target}')
+    if git(repo, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none'):
+        raise Fail('tracked, index, untracked or submodule changes; commit or move your work aside manually')
+    for operation in ('MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply',
+                      'sequencer', 'BISECT_LOG', 'index.lock', 'HEAD.lock'):
+        if Path(git(repo, 'rev-parse', '--path-format=absolute', '--git-path', operation)).exists():
+            raise Fail(f'Git operation or lock {operation} is present; finish or abort it manually first')
+    worktrees = git(repo, 'worktree', 'list', '--porcelain')
+    for record in worktrees.split('\n\n'):
+        if f'branch refs/heads/{target}' in record.splitlines():
+            raise Fail(f'{target} is held in another worktree ({record.splitlines()[0]}); '
+                       'finish work there and release it manually; this checkout will not be redirected')
+    if not branch and task_migrate._ok(repo, 'merge-base', '--is-ancestor', head, revision) is None:
+        raise Fail(f'detached-only commits are not reachable from {target}; preserve them on a named branch manually')
+    held, problems = task_commands.in_flight(repo)
+    if held:
+        problems.append('worker slots in flight: ' + ', '.join(sorted(held)))
+    record, _ = service.runner_record(paths['state_root'], repo)
+    from pi_autowork.processes import running
+    if (running(record) or task_prepare.runner(repo)['running'] or
+            systemctl(paths, 'is-active', '--quiet', f'pi-autowork@{fleet_view.instance(repo)}.service').returncode == 0):
+        problems.append('an active runner/service')
+    if problems:
+        raise Fail('; '.join(problems) + '; stop the active writer/runner and finish pending work before starting')
+    return branch, head, target, revision, worktrees
+
+
+def _select_start_checkout(repo, paths):
+    """Only explicit Start may switch, using existing ownership observations."""
+    try:
+        common = task_migrate._git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+        git_dir = task_migrate._git(repo, 'rev-parse', '--absolute-git-dir')
+        with ExitStack() as locks:
+            for lock in (Path(common) / 'autowork-execution/writer.lock', Path(git_dir) / 'autowork-tasks.lock'):
+                if not lock.exists():  # inspection must not create runtime state
+                    continue
+                handle = locks.enter_context(lock.open('rb'))
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise Fail(f'the repository writer lock {lock.name} is held; wait for its writer to finish') from None
+            captured = _start_checkout_snapshot(repo, paths)
+            if _start_checkout_snapshot(repo, paths) != captured:
+                raise Fail('checkout inputs changed before switching; inspect the checkout and run start again')
+            target = captured[2]
+            # Ordinary switch still overwrites ignored collisions unless explicitly forbidden.
+            task_migrate._git(repo, 'switch', '--no-overwrite-ignore', '--no-recurse-submodules', target)
+            print(f'Switched {repo} to local {target}; checking readiness again.', flush=True)
+    except (task_migrate.Refused, OSError, subprocess.SubprocessError, ValueError) as error:
+        raise Fail(f'could not safely switch {repo}: {error}; inspect Git state and switch manually before retrying') from None
+
+
 # -- commands ---------------------------------------------------------------------
 def cmd_start(args, paths):
     ready = fleet_view.readiness(args.target or '.')
+    if (ready.repo and Path(ready.path).resolve() == Path(ready.repo).resolve()
+            and ready.branch not in ('main', 'master')):
+        _select_start_checkout(ready.repo, paths)
+        ready = fleet_view.readiness(ready.repo)  # uncached, on the selected tree; never roll back blindly
     if not ready.ready:
         problems = [f'  - {hint}' for hint in fleet_view.how_to_fix(ready)] or [f'  - needs {ready.mark}']
         raise Fail(f'{ready.repo or ready.path} is not ready for Autowork ({ready.mark}):\n' + '\n'.join(problems))

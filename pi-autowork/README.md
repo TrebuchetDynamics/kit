@@ -251,7 +251,7 @@ and the explicit agent commands below do.
 | Command | What it does |
 |---|---|
 | `autowork` | The live TUI on a terminal (help otherwise) |
-| `autowork start [dir]` | Install (if needed) and start the repository's service; refuses a directory without a committed `tasks/` store and its main branch checked out, saying what is missing (`autowork tasks prepare` converts legacy planning or reports the next step). Services run from the Pi package installed from `git:github.com/TrebuchetDynamics/kit`; a service on another copy (a package under an older name) is moved onto it and restarted, and the others follow at their next restart |
+| `autowork start [dir]` | Safely select an existing local main branch when needed, then install (if needed) and start the repository's service. Requires a valid committed `tasks/` store on main/master, saying what is missing (`autowork tasks prepare` converts legacy planning or reports the next step). Services run from the Pi package installed from `git:github.com/TrebuchetDynamics/kit`; a service on another copy (a package under an older name) is moved onto it and restarted, and the others follow at their next restart |
 | `autowork stop [target]` | Stop the service; workers pause and resume on the same attempt. A deliberate stop is terminal: a restart will not revive the previous release or its push grant until `autowork start` |
 | `autowork restart [target] [--stop-workers [--now]]` | Reload in place; running workers keep running. `--stop-workers` waits for in-flight merges, then restarts the service and pauses workers; `--now` interrupts immediately instead |
 | `autowork pause` / `resume [target]` | Stop the service and keep it off, also after a reboot (disable), or start it again (enable); only a paused service is listed as `paused`, any other stopped one as `not running` |
@@ -272,6 +272,48 @@ and the explicit agent commands below do.
 | `autowork tasks commit [target] [--dry-run] [--expect-pending REVISION]` | Preview the exact task diff and its `pending_revision`, or commit only `tasks/`. `--expect-pending` binds HEAD and captured task content under the task lock; drift requires a fresh preview. TUI and plugin confirmations use it. Unrelated staged edits stay; no push. |
 | `autowork migrate [target] [--dry-run] [--no-commit]` | Convert a TODO.md + goals.json repository to `tasks/` once, in one local commit (`--no-commit`: staged); an interrupted run resumes; it refuses while work is in flight |
 | `autowork scorecard [--days N] [--json \| --csv] [--baseline FILE] [target...]` | Per runner and overall over 1–30 days (default 7): labelled evaluation metrics, weekly breakdown and first-to-last-week changes; JSON retains closure, held-share, questions and task/attempt accounting details; no model call |
+
+### Safe branch selection on explicit start
+
+`autowork start` keeps an already checked-out `main` or `master`. Otherwise it
+selects existing local `main`, or local `master` only when `main` is absent.
+A clean named feature branch keeps its ref and commits. A detached HEAD must be
+reachable from the selected branch, including when both name the same commit.
+This also supports a checkout that is a Git submodule. Start does not change the
+parent repository's submodule index.
+
+Start refuses to switch when it observes:
+
+- Tracked, staged, untracked or dirty submodule changes, or an ignored file that
+  switching would overwrite.
+- An unfinished Git operation or Git lock, detached-only commits, or no local target branch.
+- The target branch held or locked in another worktree.
+- An active runner/service, execution lease, unfinished worker slot, or held repository writer lock.
+- Changed branch, HEAD, target ref or worktree inventory during the final recheck,
+  newly dirty state, or a failed ordinary Git switch.
+
+The diagnostic gives the reason and a manual next step. Finish the Git operation,
+preserve local work, or stop the active writer before retrying. Start never forces
+a switch, stashes, resets, fetches, creates a branch/worktree, or redirects to another checkout.
+Refusal keeps pause/stop markers and starts no service.
+
+After switching, Start reruns uncached readiness on the selected tree, including
+task-store validation. If this fails, it reports the successful switch and the
+readiness problem without starting a service. It does not roll back the checkout.
+Resolve that problem before retrying. These checks do not atomically exclude
+arbitrary external Git or editor processes.
+
+Readiness, status, browse and refresh never switch branches. Browse Play confirms
+the intended local branch and possible switch, then calls the same Start command.
+Cancel, view-only mode and a stale repository selection do not start it.
+Fleet Play for a stopped service uses Start too. Paused resume and the raw runner's
+main/master requirement are unchanged.
+
+Disposable Git/submodule fixtures in `tests/test_autowork_command.py` cover selection,
+ref/content/index preservation, refusals and post-switch readiness failure.
+`test_play_routes_safe_branch_switch` in `pi-autowork/tests/test_tui_controls.py`
+composes Browse confirmation with Start using pinned offline Textual and stubbed
+service effects. This evidence does not qualify a live service or installed terminal UI.
 
 `autowork restart --stop-workers [target]` names the batch or merge-train check,
 integration review or merge resolution it is waiting for. The coordinator records
@@ -393,7 +435,9 @@ repositories are ready or what they need, and `p` there plays one; `q` **Q**uit.
 The fleet has no Fallback or Nous Portal controls. Fallback remains visible in
 runner details; configure it with `autowork model --fallback` and use
 `autowork setup-portal` for opt-in provider setup.
-On an unready repository, Play offers **Prepare**, **Prepare and start**, **Plan**,
+If only the branch prevents readiness, Browse Play confirms the intended branch
+and calls Start for safe selection as described above. Other unready repositories
+offer **Prepare**, **Prepare and start**, **Plan**,
 **Force** and **Cancel**. Prepare runs `autowork tasks prepare` without blocking the
 TUI and can commit a legacy conversion; it displays the outcome code, every refusal
 and the next step, then refreshes the repository's readiness and tree label.

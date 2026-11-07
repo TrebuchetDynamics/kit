@@ -1327,7 +1327,10 @@ class BrowseScreen(ReadScreen, Screen):
             info.append(f'not ready: needs {", ".join(self.chosen.problems)}\n', style='bold yellow')
             for hint in fleet_view.how_to_fix(self.chosen):
                 info.append(f'  {hint}\n')
-            info.append('Press p for Prepare, Prepare and start, Plan (an agent plans the tasks), or Force.\n')
+            if self.chosen.start_branch:
+                info.append(f'Press p to confirm start: safely select local {self.chosen.start_branch}, then recheck readiness.\n')
+            else:
+                info.append('Press p for Prepare, Prepare and start, Plan (an agent plans the tasks), or Force.\n')
         if self.preparing:
             info.append('\nPreparing repository…\n', style='yellow')
         if self.prepare_result and self.prepare_result[0] == str(path):
@@ -1361,7 +1364,7 @@ class BrowseScreen(ReadScreen, Screen):
         self.starting = False
         if not self.chosen_is_root:
             self.notify('Choose a Git repository root.', severity='warning')
-        elif self.chosen.ready:
+        elif self.chosen.ready or self.chosen.start_branch:
             self.start(self.chosen)
         else:
             ready = self.chosen
@@ -2276,7 +2279,9 @@ class FleetApp(App):
         self.starting_repositories.add(ready.repo)
         browser = self.screen
         action = fleet_view.Action('a', f'start {Path(ready.repo).name}', [self.command, 'start', ready.repo],
-                                   confirm=f'Start a pi-autowork service for {ready.repo}?')
+                                   confirm=f'Start a pi-autowork service for {ready.repo}?'
+                                   + (f' Start will safely switch this checkout to local {ready.start_branch} '
+                                      'and recheck readiness before starting.' if ready.start_branch else ''))
 
         def go(yes):
             if not yes:
@@ -2285,13 +2290,14 @@ class FleetApp(App):
             path = ready.path
             def checked(current):
                 self.starting_repositories.discard(ready.repo)
-                if not current.ready:
-                    self.notify('Repository is no longer ready: ' + ', '.join(current.problems), severity='warning')
+                if (self.view_only or current.repo != ready.repo or current.branch != ready.branch or
+                        current.start_branch != ready.start_branch or not (current.ready or current.start_branch)):
+                    self.notify('Repository changed or is no longer ready: ' + ', '.join(current.problems), severity='warning')
                     return
                 if browser.is_mounted and self.screen is browser:
                     self.pop_screen()
                     self.execute(action)
-            if browser.is_mounted and self.screen is browser:
+            if browser.is_mounted and self.screen is browser and browser.chosen_path == path:
                 token = browser.show_repository(path, checked)
                 if token is not None:
                     # Completion also releases reservations for discarded selection/
