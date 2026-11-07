@@ -45,6 +45,11 @@ review step. Keep Hermes Agent unchanged.
    Disable change-only fingerprint monitors. CONTINUE selection after closeout when
    caller limits permit. A completed slice is not itself a stop condition under continuation authority;
    default and explicit caller stops still apply.
+   When an owner says an answer had no effect, apply
+   [decision handoff recovery](references/iteration-and-decisions.md#decision-handoff-recovery)
+   before asking again or replaying a mutation: distinguish saved, committed and
+   actually observed work. Improve a broken shared handoff instead of bypassing a
+   particular repository's commit or permission gates.
 2. **Use runnable backlog first; otherwise run the docs-sync fallback.** Selection
    reads `tasks/` at the base commit: section (Now before Next), then rank, gated by
    goal focus, priority and dependencies. `autowork tasks list` shows the order and

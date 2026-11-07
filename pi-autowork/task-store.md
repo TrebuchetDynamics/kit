@@ -225,8 +225,11 @@ change GC configuration; a process killed without cleanup may leave temporary fi
 
 Before replacing any record, the writer flushes an undo journal at
 `<git dir>/autowork-tasks.transaction`. Removing that journal commits the set. If the
-process dies before then, the next locked command or working-tree read restores the
-old set before continuing; committed reads still use their pinned Git snapshot.
+process dies before then, the next recovery-capable locked command or working-tree
+read restores the old set before continuing; committed reads still use their pinned
+Git snapshot. Read-only `handoff` and `commit --dry-run` instead refuse a pending
+journal without restoring records or deleting the journal. Explicit recovery stays
+separate from inspection.
 Lock-aware readers therefore never consume a partial batch. This is not a filesystem
 snapshot for direct readers/editors that bypass the lock. Undo restores or deletes a
 path only when the inode it atomically claims still contains this batch's bytes;
@@ -266,6 +269,14 @@ refuses empty text and closed tasks, preserves worker guards for section changes
 and does not remove holds or grant live/completion authority. In the TUI, **e Decide**
 opens this form; [the planning console](../docs/planning-console.md) separately
 supports AI discussion and explicit proposal review/apply.
+
+`handoff [target]` is the [shared decision recovery report](decision-handoff.md).
+It reads the exact validated snapshot used by `commit --dry-run`, with pending
+revision/diff and per-task saved/committed/deferral states. Commit previews/results
+carry the same handoff object. A saved answer must not be asked again merely
+because committed inventory is unchanged; review its pending commit instead.
+This is read-only evidence, never execution, consent or permission inference.
+
 `field` sets a typed header field, or any other label
 as a body note (`Held by`, `Owner decision`); it does not date arbitrary notes.
 `done ID --by WHO --reason TEXT [--evidence REF]` manually closes **any task kind**.

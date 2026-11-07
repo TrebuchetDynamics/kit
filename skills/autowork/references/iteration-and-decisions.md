@@ -80,6 +80,37 @@ These operating priorities apply to every Autowork run.
    Read owner replies (chat / `session_search`) at each run and apply them; do not
    repeatedly return `[SILENT]` for an unanswered material question.
 
+## Decision handoff recovery
+
+Before repeating an owner question or treating an answer as consumed, inspect
+`autowork tasks handoff /absolute/repo` (capability `tasks: handoff`). This read-only
+report shares the exact snapshot, `pending_revision`, diff and validation used by
+`tasks commit --dry-run`; its per-task states distinguish an unanswered decision,
+a saved answer awaiting commit, another pending edit, a committed answer and a
+committed dated deferral. It does not acknowledge runner execution or grant authority.
+
+- `pending_commit`: the answer exists. Do not ask the same question again or replay
+  the save. Review the report's complete `tasks/` diff. Commit only with existing
+  commit authority and the reviewed `--expect-pending REVISION`; otherwise report
+  the exact review/commit step, not a missing owner answer. Never silently include
+  unrelated task edits. Changed input needs a fresh review, not an automatic retry.
+- `pending_edit`: inspect what changed; an edited title or section is not evidence
+  that the owner answered. Do not infer consent from a generic edit.
+- `committed`: inspect `tasks why ID` and the runner's source/health before further
+  repair. A commit is not runner acknowledgement, selection, task completion or
+  live permission. Do not reopen the question solely because no worker started.
+- `deferred`: retain the documented wait and work on independent authorized tasks.
+- `answer_required`: ask only for the genuinely missing material input, within the
+  task's scope. A bare `yes` cannot supply missing participants, credentials,
+  publication scope or structured live authorization.
+
+If the installed backend lacks `handoff`, use `tasks commit --dry-run`,
+`tasks show ID --worktree` and the committed record as separate, explicit evidence.
+A failed/unavailable read is unknown, never a clean store or an unanswered owner.
+Do not repair a specific repository by committing its owner's edits, changing its
+live fields, clearing holds or restarting its service without the corresponding
+authority. Improve the shared handoff/recovery path and verify it offline first.
+
 ## Mode precedence
 
 Caller scope and saved stop/batch limits control continuation.
