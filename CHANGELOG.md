@@ -47,6 +47,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- Repair package-update regression fixtures to verify real off-loop receipts, registered-source/ref policy and pre-install checkpoints with disposable local Git repositories. (MAIN-009)
 - Fix Autowork uninstall to verify service retirement and remove unregistered inactive/failed remnants from shared fleet discovery while preserving recovery data and live diagnostics. (TOOLSET-474-5b3e3ea3)
 - Added official stable Octet native-binary bootstrap to install.sh default/all/update and --only octet, preserving upstream verification and reporting destination version and partial-install failures. (TOOLSET-474-9404c8c9)
 - Repair the offline stalled-service regression by separating genuine engineering stalls from visible owner-only device waits, with bounded observation and supervised cleanup. (MAIN-008)

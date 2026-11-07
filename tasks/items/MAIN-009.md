@@ -3,7 +3,7 @@ schema = 1
 id = "MAIN-009"
 title = "Repair package-update regression coverage after off-loop maintenance landed"
 short = "Repair package-update offline failures"
-status = "open"
+status = "done"
 goal = "RELIABILITY-2026-10"
 section = "Now"
 rank = 0
@@ -16,6 +16,8 @@ scope = "Repair the three test_release.PackageUpdateTests failures recorded at 7
 acceptance = ["All three named PackageUpdateTests pass individually and in the offline check without skips, expected-failure markers, deleted assertions or broad serialization fallbacks that hide invalid maintenance records.", "Local-path packages remain owner-managed even with PI_AUTOWORK_PACKAGE_INSTALLED=1; local, missing, unregistered and unreadable declarations cause neither update fetch nor pi update. Managed packages use the exact registered source including its ref, and retain the release checkpoint before installation.", "Package-update coverage observes the actual off-loop lifecycle at the appropriate subprocess/receipt boundary, with deterministic bounded collection and cleanup of any fixture jobs. Path-valued fixture inputs are handled by an explicit valid boundary or corrected to the documented input type; production behavior is not made blocking merely to satisfy obsolete in-process mocks.", "Existing nonblocking maintenance, nonblocking lock contention, bounded retries and exact checked-revision activation coverage remains passing. The full offline check reaches its results; record any independent failures separately without claiming this repair qualifies live updates or publication."]
 checks = ["python3 scripts/check.py pi-autowork/tests/test_release.py tests/test_async_maintenance.py", "python3 scripts/check.py"]
 exclusions = ["No real package installation/update, service restart, remote publication, model spend or live qualification.", "No weakening package-source, fleet/schema, authority, retry, process cleanup or exact-revision activation safeguards; do not restore blocking maintenance to accommodate a fixture.", "No unrelated language, Octet, uninstall, scheduler, planning or owner-decision work; no reopening or altering closed MAIN repairs."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/MAIN-009.toml"
 +++
 
 - Sources: pi-autowork/README.md#pi-autowork-component (registered-source policy and off-loop maintenance contract); docs/testing.md#verify; pi-autowork/tests/test_release.py (PackageUpdateTests); tests/test_async_maintenance.py; explicit DOCS-MAINTAINER MAIN repair instruction.
