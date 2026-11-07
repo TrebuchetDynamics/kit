@@ -7,6 +7,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- Recorded task-aligned language-gate candidate evidence and its limits; retained the unmet goal and no-prototype decision. (LANG-004-244e109a)
 - Verified FIFO, exactly-once Paseo read admission and documented server-only opt-in bounds and deadline timing; mutations remain fail-fast with no automatic replay. (TOOLSET-477-a204bea6)
 - Strengthen disposable-Git coverage proving recovery checkpoints survive every automatic and explicitly targeted closeout mode, including prunable registrations. (TOOLSET-476-ec3a1024)
 - Expose Work across portable hosts for continuous in-session task execution without starting a runner (already implemented in baseline; this task reverified it). (TOOLSET-475-deac848e)
