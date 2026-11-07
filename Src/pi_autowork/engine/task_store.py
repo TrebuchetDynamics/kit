@@ -128,6 +128,7 @@ class TaskRecord(Record):
                           if self.closure == 'coordinator_verified' else
                           ('Manual' if self.closure == 'manual' else 'Unknown closure'),
                     evidence_valid=self.receipt_valid if self.closure == 'coordinator_verified' else None,
+                    verified=self.verified,
                     owner_waiver=self.owner_waiver, owner_qualification=self.owner_qualification)
 
     @property

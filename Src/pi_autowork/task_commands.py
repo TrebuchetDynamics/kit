@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 
+from pi_autowork import task_snapshot  # noqa: E402
 from pi_autowork.engine import task_select  # noqa: E402
 from pi_autowork.engine import task_store  # noqa: E402
 from pi_autowork.engine.task_store import StoreError, TaskStore, WriteError  # noqa: E402
@@ -434,6 +435,7 @@ def cmd_list(repo, rev='HEAD', worktree=False):
         blocked = task_select.blocking(store, t)
         rows.append(dict(id=t.id, title=t.title, section=t.section, rank=t.rank, status=t.status, goal=t.goal,
                          position=ready.get(t.id), blocked_by=blocked.code if blocked else None,
+                         display=task_snapshot.record_display(store, t, blocked.code if blocked else None),
                          closure=t.closure_info, selection=_selection_source(store, rev, worktree)))
     return rows
 
@@ -441,8 +443,10 @@ def cmd_list(repo, rev='HEAD', worktree=False):
 def cmd_show(repo, tid, rev='HEAD', worktree=False):
     store = _read(repo, rev, worktree)
     t = _task(store, tid)
+    blocked = task_select.blocking(store, t)
     return dict(id=t.id, title=t.title, short=t.short, status=t.status, goal=t.goal, section=t.section,
                 rank=t.rank, depends_on=list(t.depends_on), verified_depends_on=list(t.verified_depends_on),
+                display=task_snapshot.record_display(store, t, blocked.code if blocked else None),
                 closure=t.closure_info, touches=list(t.touches), resources=list(t.resources),
                 kind=t.kind.value, ownership=t.ownership.value, live=t.live.value, scope=t.scope,
                 live_actor=t.live_actor, live_at=t.live_at, live_scope=list(t.live_scope),

@@ -60,6 +60,16 @@ class TaskCommandTests(unittest.TestCase):
                          '--acceptance', 'done', '--checks', 'true', '--touches', 'src/', *extra).stdout
         return out.split()[-1]
 
+    def test_list_and_show_carry_the_store_only_display(self):
+        rows = commands.cmd_list(self.repo)
+        self.assertTrue(rows)
+        self.assertTrue(all('display' in row for row in rows))
+        for row in rows:
+            self.assertEqual(set(row['display']),
+                             {'state', 'bucket', 'why', 'question', 'pending', 'blocker', 'closure'})
+        show = commands.cmd_show(self.repo, rows[0]['id'])
+        self.assertEqual(show['display'], rows[0]['display'])
+
     def test_worktree_validation_and_writes_leave_no_git_objects(self):
         # Exercise common-dir lookup and C-quoted alternates in a linked checkout.
         origin = self.repo.with_name('repo:\x01with-"quotes"')

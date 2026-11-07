@@ -784,6 +784,7 @@ class AutoworkCommandTests(unittest.TestCase):
                 fleet = json.loads(self.aw('ls', '--json').stdout)['runners']
                 runner = next(row for row in fleet if row['repo'] == str(repo))
                 self.assertIn('--workers must be 1 to 16', runner['blocker'])
+                runner.pop('display', None)  # the additive CLI display, read by the UIs
                 # The TUI consumes these helpers, not the raw blocker field.
                 # A generic setup label or stopped-service action must not hide
                 # the persisted reason in its headline, Needs or Blocker detail.

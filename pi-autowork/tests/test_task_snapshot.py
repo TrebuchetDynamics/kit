@@ -53,6 +53,20 @@ class TaskSnapshotTests(unittest.TestCase):
         self.assertEqual(final.counts, (0, 0, 1, 0, 0, 1))
         self.assertEqual(first.generation, 1)
 
+    def test_display_is_words_only_and_store_rows_do_not_claim_runtime(self):
+        store = task_queue.store(self.repo)
+        row = task_snapshot.record_display(store, store.tasks['A'])
+        self.assertEqual(set(row), {'state', 'bucket', 'why', 'question', 'pending', 'blocker', 'closure'})
+        self.assertEqual((row['state'], row['bucket']), ('Waiting', 'Waiting'))
+        self.assertEqual(row['why'], 'ready; awaiting dispatch')
+        self.assertFalse(row['question'])
+        self.assertIsNone(row['closure'])
+        decision = task_snapshot.record_display(store, store.tasks['D'])
+        self.assertEqual((decision['state'], decision['bucket']), ('Waiting · Needs decision', 'Decision'))
+        self.assertEqual(decision['why'], 'in Needs decision')
+        task_row = task_snapshot.TaskRow('A', 'Alpha', 'Now', 'Waiting', 'waiting', 'ready', True)
+        self.assertEqual(task_snapshot.task_display(task_row)['question'], True)
+
     def test_only_compatible_current_observations_can_classify_inventory(self):
         path = self.repo / 'tasks/items/C.md'
         path.write_text(edit(path.read_text(), {'depends_on': ['D']}))

@@ -1,4 +1,5 @@
-"""Pure display vocabulary shared by committed snapshots and legacy CLI lanes."""
+"""Pure display vocabulary shared by committed snapshots and the CLI display."""
+import re
 ACTIVE, MERGEABLE, WAITING, BLOCKER = 'Active', 'Mergeable', 'Waiting', 'Blocker'
 IN_FLIGHT = ('dispatched', 'running', 'reported', 'integrating', 'integrated')
 PHASES = {'dispatched': 'starting', 'running': 'implementing', 'reported': 'implemented',
@@ -36,3 +37,23 @@ def resolver(asked):
 def blocker_detail(cause, asked=False):
     text = CAUSES.get(cause, cause or 'held')
     return f'{text[:1].upper()}{text[1:]} · {resolver(asked)}'
+
+
+def closure_display(info):
+    """A closed task's words: the stored label, its provenance detail and the effective proof."""
+    provenance = info.get('provenance') or 'unknown'
+    verified = info.get('verified')
+    proof = 'verified' if verified is True else 'not verified' if verified is False else 'verification unknown'
+    return {'label': info.get('label') or 'Unknown closure',
+            'detail': f'{str(provenance).replace("_", " ")} · {proof}',
+            'verified': verified, 'provenance': info.get('provenance')}
+
+
+def blocker_words(code):
+    """The human word for a blocker code: a known cause, a humanised code, or a task ID."""
+    text = str(code or '')
+    if text in CAUSES:
+        return CAUSES[text]
+    if re.match(r'^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$', text):
+        return text.replace('_', ' ').lower()
+    return text

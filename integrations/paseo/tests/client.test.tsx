@@ -35,12 +35,13 @@ vi.mock('@getpaseo/plugin/client', () => ({
 import { AutoworkScreen, WorkspacePanel } from '../client/screens';
 import { SettingsScreen } from '../client/settings';
 import { Theme } from '../client/ui';
-import { blockedReason, closureLabel, canAnswer, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, selectionFacts, stateTone, taskMatches, taskState } from '../client/presentation';
+import { canAnswer, closureTone, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, selectionFacts, stateTone, taskMatches } from '../client/presentation';
 
 const fleet = (instance = 'generation-1') => fleetSchema.parse({ instance, capturedAt: Date.now(), release: 'configured-release', executable: '/bin/autowork', prepareApi: 4,
   permissions: { controls: ['pause'], planning: true, decisions: true, tasks: true, commit: true, maintenance: ['model', 'clear-held', 'attention'] }, policy: { path: '/policy.json', source: 'default' }, capabilities: { commands: ['ls', 'tasks', 'plan', 'logs', 'status', 'scorecard', 'models'], tasks: ['list', 'show', 'decide', 'goals', 'commit', 'validate', 'prepare', 'why'] }, warnings: [], repos: [{ id: 'repo', label: 'Repository', path: '/repo', identity: 'identity', revision: 'rev',
     runner: { name: 'runner', repo: '/repo', state: 'waiting', questions: [{ id: 'T-1', effort: 'small', unblocks: 1, needs: 'Choose the scope' }], held: [['T-2', 'technical hold']] } }] });
-const task = taskSchema.parse({ id: 'T-1', title: 'Owner task', section: 'Needs decision', status: 'open', goal: 'goal', rank: 1, position: 1, blocked_by: null, closure: {} });
+const task = taskSchema.parse({ id: 'T-1', title: 'Owner task', section: 'Needs decision', status: 'open', goal: 'goal', rank: 1, position: 1, blocked_by: null, closure: {},
+  display: { state: 'Waiting · Needs decision', bucket: 'Decision', why: 'in Needs decision', question: true, pending: false, blocker: '', closure: null } });
 const detail = taskDetailSchema.parse({ ...task, short: null, depends_on: [], verified_depends_on: [], touches: [], resources: [], kind: 'task', ownership: 'owner', live: 'waiting', scope: null,
   acceptance: ['Must preserve contract'], checks: ['unit'], exclusions: [], contract_hash: 'hash', record_revision: 'working-rev', path: '/repo/T-1', rev: 'rev', notes: 'Evidence notes', draft: false, missing_fields: [] });
 const props: PluginScreenProps = { host: { id: 'a', label: 'A' }, params: {}, layout: { compact: true, platform: 'android' },
@@ -81,11 +82,10 @@ beforeEach(() => {
 afterEach(async () => { if (root) await act(async () => root.unmount()); query?.clear(); });
 
 describe('canonical presentation', () => {
-  it('distinguishes manual and verified closure, unknown evidence and technical holds', () => {
-    expect(closureLabel({ label: 'closed', provenance: 'manual', verified: false })).toContain('manual');
-    expect(closureLabel({ label: 'closed', verified: true })).toContain('verified');
-    expect(closureLabel({})).toContain('unknown');
-    expect(closureLabel({ label: 'Verified', provenance: 'coordinator_verified', evidence_valid: true })).toContain('· verified');
+  it('maps manual and verified closure to one tone and keeps the answer gate', () => {
+    expect(closureTone({ label: 'Manual', detail: 'manual · not verified', verified: false, provenance: 'manual' })).toBe('warning');
+    expect(closureTone({ label: 'Verified', detail: 'coordinator verified · verified', verified: true, provenance: 'coordinator_verified' })).toBe('success');
+    expect(closureTone(null)).toBe('neutral');
     expect(canAnswer(task, fleet().repos[0]!.runner!, detail)).toBe(true);
     expect(canAnswer({ ...task, id: 'T-2' }, fleet().repos[0]!.runner!, detail)).toBe(false);
     expect(canAnswer({ ...task, status: 'done' }, fleet().repos[0]!.runner!, detail)).toBe(false);
@@ -103,10 +103,7 @@ describe('canonical presentation', () => {
     expect(taskMatches(task, { task: 'T-1', goal: 'goal', runtime: 'waiting', section: 'Needs decision' }, 'waiting')).toBe(true);
     expect(taskMatches(task, { task: '', goal: 'other', runtime: '', section: '' }, 'waiting')).toBe(false);
   });
-  it('uses one task state for the queue row and detail, and reads a selection explanation as facts', () => {
-    expect(taskState({ status: 'open', blocked_by: null }, true)).toBe('needs decision');
-    expect(taskState({ status: 'open', blocked_by: 'NEEDS_DECISION' }, false)).toBe('blocked');
-    expect(taskState({ status: 'done', blocked_by: null }, false)).toBe('done');
+  it('reads a selection explanation as facts', () => {
     const rows = selectionFacts({ task: 'T-1', eligible: false, first: false, reasons: [{ code: 'DONE', detail: '' }],
       closure: { provenance: 'manual', actor: 'DOCS-MAINTAINER', timestamp: '2026-10-29T08:37:02.447894+00:00', reason: 'Final reconciliation' } }, Date.parse('2026-10-29T09:37:02Z'));
     expect(rows).toContainEqual(['Eligible now', 'no']);
@@ -336,7 +333,8 @@ describe('native host-scoped surfaces', () => {
   });
   it('renders technical holds without exposing an answer action for held tasks', async () => {
     const initial = env.invoke.getMockImplementation()!;
-    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [{ ...task, id: 'T-2', title: 'Technical task', blocked_by: 'technical' }] }) : name === 'autowork.task' ? Promise.resolve({ ...detail, id: 'T-2' }) : initial(name, data));
+    const technical = { ...task.display, state: 'Blocker', blocker: 'technical', why: 'technical hold' };
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [{ ...task, id: 'T-2', title: 'Technical task', blocked_by: 'technical', display: technical }] }) : name === 'autowork.task' ? Promise.resolve({ ...detail, id: 'T-2', display: technical }) : initial(name, data));
     await mount({ params: { view: 'blockers' } }); await press('Technical holds and blocker evidence');
     expect(text()).toContain('technical hold');
     await press('Open task T-2');
@@ -495,9 +493,11 @@ describe('native host-scoped surfaces', () => {
   });
   it('renders manual versus verified closure explicitly on task rows', async () => {
     const initial = env.invoke.getMockImplementation()!;
+    const manual = { label: 'Manual', detail: 'manual · not verified', verified: false, provenance: 'manual' };
+    const verified = { label: 'Verified', detail: 'evidence · verified', verified: true, provenance: 'evidence' };
     env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [
-      { ...task, status: 'done', closure: { label: 'closed', provenance: 'manual', verified: false } },
-      { ...task, id: 'T-2', status: 'done', closure: { label: 'closed', provenance: 'evidence', verified: true } },
+      { ...task, status: 'done', closure: { label: 'closed', provenance: 'manual', verified: false }, display: { ...task.display, state: 'Manual', closure: manual } },
+      { ...task, id: 'T-2', status: 'done', closure: { label: 'closed', provenance: 'evidence', verified: true }, display: { ...task.display, state: 'Verified', closure: verified } },
     ] }) : initial(name, data));
     await mount({ params: { view: 'tasks' } }); await press('Show completed');
     expect(text()).toContain('Provenance: manual · not verified');
@@ -506,8 +506,8 @@ describe('native host-scoped surfaces', () => {
   it('filters completed and canonically held tasks without requiring a live worker lane', async () => {
     const initial = env.invoke.getMockImplementation()!;
     env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [
-      task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done' },
-      { ...task, id: 'T-HELD', title: 'Held task', blocked_by: 'HELD' },
+      task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done', display: { ...task.display, state: 'done' } },
+      { ...task, id: 'T-HELD', title: 'Held task', blocked_by: 'HELD', display: { ...task.display, state: 'Blocker', blocker: 'held', why: 'held' } },
     ] }) : initial(name, data));
     await mount({ params: { view: 'tasks' } }); await press('Filters');
     await input('Filter runtime', 'done'); expect(text()).toContain('Finished task'); expect(text()).not.toContain('Owner task');
@@ -748,8 +748,6 @@ describe('management surface', () => {
     expect(markdownSegments('Keep **WEB-ALL** per [final reconciliation](docs/r.md).')).toEqual([{ text: 'Keep ' }, { text: 'WEB-ALL', bold: true }, { text: ' per ' }, { text: 'final reconciliation', link: 'docs/r.md' }, { text: '.' }]);
     expect(headline('Which scope applies? The rest is **detail** that goes on.')).toBe('Which scope applies?');
     expect(headline('Goal WEB-ALL remains unmet at Plan round 2 of 2. **Question:** Should WEB-ALL continue? No successor is saved.')).toBe('Should WEB-ALL continue?');
-    expect(blockedReason('NEEDS_DECISION')).toBe('needs decision');
-    expect(blockedReason('T-010-1f9b8e44')).toBe('T-010-1f9b8e44');
     expect(observationRows({ runner_alive: false, health_written_at: Date.now() / 1000 - 60, task_state: 'unknown' })).toEqual([['Runner alive', 'no'], ['Health written at', '1m ago']]);
   });
   it('leads the fleet with one banner, says a host-wide blocker once and sorts the urgent repository first', async () => {
@@ -806,23 +804,23 @@ describe('management surface', () => {
   });
   it('shows a blocked open task as blocked with a readable reason', async () => {
     const initial = env.invoke.getMockImplementation()!;
-    const blocked = { ...task, id: 'T-BLOCK', title: 'Blocked open task', blocked_by: 'NEEDS_DECISION' };
-    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [blocked] }) : initial(name, data));
+    const blocked = { ...task, id: 'T-BLOCK', title: 'Blocked open task', blocked_by: 'NEEDS_DECISION', display: { ...task.display, state: 'Blocker', blocker: 'needs decision', why: 'dependency: NEEDS_DECISION' } };
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [blocked] }) : name === 'autowork.task' ? Promise.resolve({ ...detail, id: 'T-BLOCK', title: 'Blocked open task', display: blocked.display }) : initial(name, data));
     await mount({ params: { view: 'blockers' } });
     expect(text()).toContain('Blocked open task');
     expect(text()).toContain('Blocked by needs decision');
-    expect(root.root.find(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'status blocked')).toBeTruthy();
+    expect(root.root.find(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'status Blocker')).toBeTruthy();
     expect(text()).not.toContain('NEEDS_DECISION');
     await press('Open task T-BLOCK');
     // Both the queue row and the open detail sheet report the same state.
-    expect(root.root.findAll(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'status blocked')).toHaveLength(2);
+    expect(root.root.findAll(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'status Blocker')).toHaveLength(2);
     expect(button('Send answer')).toBeUndefined();
     expect(text()).toContain('Blocked by needs decision');
     expect(text()).toContain('No owner question is recorded for this task');
   });
   it('keeps completed blocked work out of the blocked queue until completed is requested', async () => {
     const initial = env.invoke.getMockImplementation()!;
-    const done = { ...task, id: 'T-DONE', title: 'Finished blocked task', status: 'done', blocked_by: 'DONE', closure: { label: 'closed', provenance: 'manual', verified: false } };
+    const done = { ...task, id: 'T-DONE', title: 'Finished blocked task', status: 'done', blocked_by: 'DONE', closure: { label: 'closed', provenance: 'manual', verified: false }, display: { ...task.display, state: 'Manual', closure: { label: 'Manual', detail: 'manual · not verified', verified: false, provenance: 'manual' } } };
     env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [task, done] }) : initial(name, data));
     await mount({ params: { view: 'blockers' } });
     expect(text()).not.toContain('Finished blocked task');
@@ -855,13 +853,13 @@ describe('management surface', () => {
   });
   it('hides completed work by default, counts the queue and keeps filters behind one button', async () => {
     const initial = env.invoke.getMockImplementation()!;
-    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'abcdef0123456789+working', tasks: [task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done', closure: { label: 'closed', provenance: 'manual', verified: false } }] }) : initial(name, data));
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'abcdef0123456789+working', tasks: [task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done', closure: { label: 'closed', provenance: 'manual', verified: false }, display: { ...task.display, state: 'Manual', closure: { label: 'Manual', detail: 'manual · not verified', verified: false, provenance: 'manual' } } }] }) : initial(name, data));
     await mount({ params: { view: 'tasks' } });
     expect(text()).not.toContain('Finished task');
     expect(text()).toContain('1 open task · 1 need decision · 0 blocked · 1 done');
     expect(text()).toContain('abcdef01 · working tree'); expect(text()).not.toContain('abcdef0123456789');
     expect(root.root.findAll(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'Filter task')).toHaveLength(0);
-    await press('Show completed'); expect(text()).toContain('Finished task'); expect(text()).toContain('manual close');
+    await press('Show completed'); expect(text()).toContain('Finished task'); expect(text()).toContain('Manual');
   });
   it('groups runner health into facts with relative times and says why it stopped once', async () => {
     const value = fleet(); const runner = value.repos[0]!.runner!;

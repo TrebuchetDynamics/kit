@@ -18,7 +18,7 @@ from offline_textual import textual_unavailable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'engine'))
-from pi_autowork import fleet_view  # noqa: E402
+from pi_autowork import fleet_view, task_snapshot  # noqa: E402
 from pi_autowork.processes import start_time  # noqa: E402
 import store_fixture  # noqa: E402
 
@@ -206,7 +206,22 @@ class FleetViewTests(unittest.TestCase):
         expected['runners'][0].update(running=None, waiting=None, stopped=None, observation=dict(
             runner_alive=True, health_written_at=2000000000, snapshot_at=None, snapshot_age_seconds=None,
             task_state='unknown', error=None))
-        self.assertEqual(json.loads(output.getvalue().replace(str(self.base), '$BASE')), expected)
+        actual = json.loads(output.getvalue().replace(str(self.base), '$BASE'))
+        displays = [runner.pop('display') for runner in actual['runners']]
+        self.assertEqual(actual, expected)
+        self.assertTrue(displays and all('state' in display and 'tasks' in display for display in displays))
+
+    def test_runner_display_is_the_tui_words(self):
+        row = task_snapshot.TaskRow('A', 'Alpha', 'Now', 'Waiting', 'waiting', 'ready', True, False, 'Waiting')
+        snapshot = task_snapshot.TaskSnapshot('r', 'i', 'rev', 1, 0, rows=(row,))
+        runner = fleet_view.Runner(name='x', repo='r', state='waiting', snapshot=snapshot,
+                                   questions=[type('Q', (), {'id': 'A'})()])
+        display = fleet_view.runner_display(runner)
+        self.assertEqual(display['state'], 'waiting')
+        self.assertIn('question', display['needs'])
+        self.assertEqual(display['questions'], ['A'])
+        self.assertEqual(display['tasks']['A']['state'], 'Waiting')
+        self.assertEqual(set(display['tasks']['A']), {'state', 'bucket', 'why', 'question', 'pending', 'blocker', 'closure'})
 
     def test_ls_json_reports_coordinator_and_fleet_resources(self):
         from pi_autowork import command
@@ -225,6 +240,8 @@ class FleetViewTests(unittest.TestCase):
         with mock.patch.object(fleet_view.time, 'time', return_value=2000000000):
             runner = self.collect('pi-autowork@resources.service loaded active running x', proc=str(proc))['resources']
         record = command.runner_json(runner)
+        self.assertEqual(record['display']['state'], runner.state)
+        self.assertIn('tasks', record['display'])
         self.assertEqual(record['resources'], dict(
             coordinator_rss_mb=2.0, coordinator_cpu_seconds=2.0, process_count=2,
             fleet_rss_mb=4.0, sampled_at=2000000000, reason=''))

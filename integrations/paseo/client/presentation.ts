@@ -49,21 +49,12 @@ export function relativeTime(value: unknown, now = Date.now()): string {
   if (hours < 48) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
 }
-export function closureLabel(closure: Record<string, unknown>): string {
-  const provenance = typeof closure.provenance === 'string' ? closure.provenance.replace(/_/g, ' ') : 'unknown provenance';
-  const verified = closure.provenance === 'coordinator_verified' ? closure.evidence_valid : closure.verified;
-  const verification = verified === true ? 'verified' : verified === false ? 'not verified' : 'verification unknown';
-  // The badge already shows the closure label; this line adds only provenance and proof.
-  return `${provenance} · ${verification}`;
-}
-/** One badge for a closed task: how it was closed and whether evidence backs it. */
-export function closureBadge(closure: Record<string, unknown>): { label: string; tone: Tone } | null {
-  if (!Object.keys(closure).length) return null;
-  const verified = closure.provenance === 'coordinator_verified' ? closure.evidence_valid : closure.verified;
-  if (verified === true) return { label: 'verified', tone: 'success' };
-  if (closure.provenance === 'manual') return { label: 'manual close', tone: 'warning' };
-  if (verified === false) return { label: 'not verified', tone: 'warning' };
-  return { label: display(closure.label), tone: 'neutral' };
+/** The closure proof selects the tone; the CLI supplies the label and detail words. */
+export function closureTone(closure: Task['display']['closure']): Tone {
+  if (!closure) return 'neutral';
+  if (closure.verified === true) return 'success';
+  if (closure.verified === false || closure.provenance === 'manual') return 'warning';
+  return 'neutral';
 }
 export function canAnswer(task: Task, runner: Runner, detail: TaskDetail): boolean {
   return task.status === 'open' && detail.status === 'open' && detail.id === task.id && !!detail.record_revision && runner.questions.some(question => question.id === task.id);
@@ -83,12 +74,6 @@ export function taskMatches(task: Task, filters: TaskFilters, runtime: string): 
 /** Work someone can still act on; closed records are shown only on request. */
 export function isActionable(task: Pick<Task, 'status'>): boolean {
   return !/^(done|superseded|closed|cancelled)$/i.test(task.status);
-}
-/** One state for the queue row and the detail sheet: an owner question wins, then a blocker, then the record status. */
-export function taskState(task: Pick<Task, 'status' | 'blocked_by'>, question: boolean): string {
-  if (question) return 'needs decision';
-  if (isActionable(task) && task.blocked_by) return 'blocked';
-  return task.status;
 }
 export function knownDirectory(path: string, directory: string): boolean {
   const root = path.replace(/\/+$/, '');
@@ -193,10 +178,6 @@ export function sharedBlocker(repos: Repo[]): string | null {
   for (const repo of repos) { const blocker = repo.runner?.blocker.trim(); if (blocker) counts.set(blocker, (counts.get(blocker) ?? 0) + 1); }
   const [top] = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   return top && top[1] >= 2 ? top[0] : null;
-}
-/** A blocker code is not a task ID: NEEDS_DECISION reads as “needs decision”. */
-export function blockedReason(value: string): string {
-  return /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(value) ? value.replace(/_/g, ' ').toLowerCase() : value;
 }
 /** Counts worth a word; zeros are silence. */
 export function countSummary(runner: Runner | null): string {

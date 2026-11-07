@@ -10,6 +10,7 @@ import math
 import sys
 import time
 
+from pi_autowork import task_status
 from pi_autowork.engine import task_queue
 from pi_autowork.engine.task_store import TaskStore, StoreError, _git
 
@@ -25,6 +26,7 @@ class TaskRow:
     question: bool = False
     pending: bool = False
     bucket: str = ''
+    closure: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -61,19 +63,24 @@ class TaskSnapshot:
     joined_lanes: tuple = ()
 
 
+def _closure_why(record):
+    """The reason a closed row shows; the closure label stays in the display."""
+    info = record.closure_info
+    if record.closure == 'coordinator_verified':
+        return info['evidence'] or 'Verification evidence not recorded'
+    if record.closure == 'manual':
+        return (f'Manually closed by {info["actor"] or "unknown"} at {info["timestamp"] or "unknown"}; '
+                f'not coordinator-verified. {info["reason"] or "Reason not recorded"}')
+    return 'Closure provenance not recorded (legacy); no coordinator verification recorded.'
+
+
 def _closed_rows(store):
     rows = []
     for record in sorted(store.tasks.values(), key=lambda t: t.id):
         if record.status == 'done':
             info = record.closure_info
-            if record.closure == 'coordinator_verified':
-                why = info['evidence'] or 'Verification evidence not recorded'
-            elif record.closure == 'manual':
-                why = (f'Manually closed by {info["actor"] or "unknown"} at {info["timestamp"] or "unknown"}; '
-                       f'not coordinator-verified. {info["reason"] or "Reason not recorded"}')
-            else:
-                why = 'Closure provenance not recorded (legacy); no coordinator verification recorded.'
-            rows.append(TaskRow(record.id, record.short or record.title, 'Closed', info['label'], 'closed', why))
+            rows.append(TaskRow(record.id, record.short or record.title, 'Closed', info['label'], 'closed',
+                                _closure_why(record), closure=task_status.closure_display(info)))
     return tuple(rows)
 
 
@@ -102,6 +109,35 @@ def _canonical_reason(record, store):
             return 'Blocker', reason + '; stopped by ' + ', '.join(roots)
         return 'Waiting', reason
     return 'Waiting', 'ready; awaiting dispatch'
+
+
+def task_display(row):
+    """The one display object for a committed row: words only, never authority or a lease."""
+    return {'state': row.state, 'bucket': row.bucket, 'why': row.why, 'question': row.question,
+            'pending': row.pending, 'blocker': '', 'closure': row.closure}
+
+
+def record_display(store, record, blocked_code=None):
+    """The store-only display for `tasks list` and `tasks show`; runtime words stay in the runner."""
+    if record.status == 'done':
+        info = record.closure_info
+        return {'state': info['label'], 'bucket': '', 'why': _closure_why(record), 'question': False,
+                'pending': False, 'blocker': '', 'closure': task_status.closure_display(info)}
+    bucket, why = _canonical_reason(record, store)
+    state, blocker = bucket, ''
+    if record.section == 'Needs decision':
+        bucket = 'Decision'
+        state = f'{task_status.WAITING} · Needs decision'
+        why = ('recorded owner deferral' if record.id in task_queue.deferred(store)
+               else 'in Needs decision')
+    elif blocked_code:
+        bucket = state = task_status.BLOCKER
+        why = task_status.blocker_detail(blocked_code)
+        blocker = task_status.blocker_words(blocked_code)
+    if bucket == task_status.BLOCKER:
+        state = task_status.BLOCKER
+    return {'state': state, 'bucket': bucket, 'why': why, 'question': False,
+            'pending': False, 'blocker': blocker, 'closure': None}
 
 
 def capture(repo, *, engine_observation, generation, last_good=None):

@@ -22,6 +22,22 @@ export const laneSchema = z.object({ task: z.string(), phase: z.string(), detail
 // Autowork emits null for an unavailable count, not only an absent one.
 const countSchema = z.number().nullish().transform(value => value ?? 0);
 const textOrEmpty = z.string().nullish().transform(value => value ?? '');
+/** The CLI owns the domain words; the client maps them to tone, icon, time and layout. */
+export const closureDisplaySchema = z.object({
+  label: z.string().default(''), detail: z.string().default(''),
+  verified: z.boolean().nullable().default(null), provenance: z.string().nullable().default(null),
+});
+export const taskDisplaySchema = z.object({
+  state: z.string().default(''), bucket: z.string().default(''), why: z.string().default(''),
+  question: z.boolean().default(false), pending: z.boolean().default(false), blocker: z.string().default(''),
+  closure: closureDisplaySchema.nullable().default(null),
+});
+export const runnerDisplaySchema = z.object({
+  state: z.string().default(''), needs: z.string().default(''), question_summary: z.string().default(''),
+  blockers: z.array(z.tuple([z.string(), z.string()])).default([]),
+  questions: z.array(z.string()).default([]),
+  tasks: z.record(z.string(), taskDisplaySchema).default({}),
+});
 export const runnerSchema = z.object({
   name: z.string(), repo: z.string(), state: z.string(), service: z.string().default(''),
   mode: z.string().default(''), running: countSchema, waiting: countSchema,
@@ -35,6 +51,7 @@ export const runnerSchema = z.object({
   held: z.array(z.array(z.string())).default([]), roots: z.array(recordSchema).default([]),
   waiting_groups: z.array(recordSchema).default([]), stopped_groups: z.array(recordSchema).default([]),
   main_check: recordSchema.default({}), job: recordSchema.nullable().default(null),
+  display: runnerDisplaySchema.default(() => runnerDisplaySchema.parse({})),
 });
 export const repoSchema = z.object({ id: idSchema, label: z.string(), path: z.string(), identity: z.string(),
   revision: z.string(), runner: runnerSchema.nullable(), error: z.string().nullable().default(null) });
@@ -51,7 +68,8 @@ export const fleetSchema = z.object({
 export const closureSchema = recordSchema.nullable().transform(value => value ?? {});
 export const taskSchema = z.object({ id: idSchema, title: z.string(), section: z.string().nullable(),
   status: z.string(), goal: z.string().nullable(), rank: z.number().nullable(),
-  position: z.number().nullable(), blocked_by: z.string().nullable(), closure: closureSchema });
+  position: z.number().nullable(), blocked_by: z.string().nullable(), closure: closureSchema,
+  display: taskDisplaySchema.default(() => taskDisplaySchema.parse({})) });
 export const taskDetailSchema = taskSchema.omit({ position: true, blocked_by: true }).extend({
   short: z.string().nullable(), depends_on: z.array(z.string()), verified_depends_on: z.array(z.string()),
   touches: z.array(z.string()), resources: z.array(z.string()), kind: z.string(), ownership: z.string(),

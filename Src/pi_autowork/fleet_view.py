@@ -1091,6 +1091,17 @@ def blockers(runner, limit=6):
     return [(KINDS[k], joined(groups[k])) for k in ORDER if k in groups]
 
 
+def runner_display(runner):
+    """The one runner display object: the words the TUI shows, carried by `ls --json`."""
+    rows = runner.snapshot.rows if runner.snapshot is not None else ()
+    return {'state': runner.state,
+            'needs': needs(runner),
+            'question_summary': question_summary(runner),
+            'blockers': [list(group) for group in blockers(runner)],
+            'questions': [q.id for q in runner.questions],
+            'tasks': {row.task: task_snapshot.task_display(row) for row in rows}}
+
+
 class DiscoveryUnavailable(RuntimeError):
     """Service discovery failed; an empty list would be misleading."""
 
