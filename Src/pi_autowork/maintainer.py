@@ -15,7 +15,7 @@ commits. Standard library only.
 from dataclasses import asdict
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import time
 
@@ -31,6 +31,8 @@ PLANNING_DIRS = ('tasks/items/', 'tasks/goals/', 'docs/tasks/')
 LIMIT = 12
 PLAN_TASK_LIMIT = 8
 PLAN_ROUNDS = 10
+PLAN_POLICY = 'declared-plan-documents-v1'
+PLAN_PATH_REFUSAL = 'refused: it changed more than planning files'
 
 
 def review_repair(row, finding='', common=None):
@@ -127,9 +129,30 @@ def key(found):
     return hashlib.sha256(json.dumps(same).encode()).hexdigest()[:16]
 
 
-def planning_only(paths):
-    """Whether every changed path is a planning file the maintainer may write."""
-    return bool(paths) and all(p in PLANNING_FILES or p.startswith(PLANNING_DIRS) for p in paths)
+def plan_outputs(found, entries):
+    """Only exact Markdown outputs declared by the admitted plan, never directory/glob grants."""
+    return tuple(sorted({path for task, kind, _ in found if kind == 'plan'
+                         for path in entries.get(task, {}).get('planning_paths', ())
+                         if isinstance(path, str) and path.startswith('docs/plans/') and path.endswith('.md')
+                         and PurePosixPath(path).as_posix() == path
+                         and '..' not in PurePosixPath(path).parts
+                         and not any(ord(char) < 32 or ord(char) == 127 for char in path)
+                         and not any(char in path for char in '*?[\\\\')}))
+
+
+def plan_output_error(outputs, repo):
+    """Check before provider execution too: symlink writes need not leave a Git diff."""
+    for path in outputs:
+        parts = PurePosixPath(path).parts
+        if any(Path(repo).joinpath(*parts[:end]).is_symlink() for end in range(1, len(parts) + 1)):
+            return 'declared plan output uses a symlink: ' + path
+    return ''
+
+
+def planning_only(paths, *, outputs=(), repo=None):
+    """The normal planning surface plus the admitted task's exact document outputs."""
+    return (bool(paths) and all(p in PLANNING_FILES or p.startswith(PLANNING_DIRS) or p in outputs for p in paths)
+            and not (repo is not None and plan_output_error(outputs, repo)))
 
 
 PROMPT = (
@@ -175,7 +198,9 @@ PROMPT = (
     'preserve every Acceptance item and priority (never above the owner\'s first tasks in Now). '
     'Supersede a duplicate with {tasks} supersede only when evidence shows the other task delivers it. '
     'Never edit the entry of a task that is running, has a live worker (even if held), or whose commit waits to land; '
-    'never widen product scope. '
+    'never widen product scope. Read the repository\'s standing decision policy when present. '
+    'Choose routine reversible engineering details within the accepted task instead of asking the owner again; '
+    'keep product, live, publication, security and acceptance changes behind their existing gates. '
     'For engineering repair: this retained candidate exhausted review rework. Read both findings and the retained '
     'review record; investigate a materially different repair approach from repository evidence. If one is supported, '
     'save its concrete steps and verification in docs/tasks/<task>-repair.md and add only the note '
@@ -209,16 +234,22 @@ PROMPT = (
     'Acceptance item, and leave it as it is if a finding needs a product decision. Never change product scope or Acceptance, grant '
     'authority, credentials or spending, or decide a product question: leave such a task as it is. Use '
     '{tasks} (add, field, place, move, done, supersede) for task files, run {tasks} validate --worktree . '
-    'and fix what it reports, edit only tasks/items/, tasks/goals/, BLOCKERS.md, CHANGELOG.md and docs/tasks/, '
+    'and fix what it reports, edit only tasks/items/, tasks/goals/, BLOCKERS.md, CHANGELOG.md and docs/tasks/ '
+    'plus the exact declared plan outputs listed below, when present, '
     'and commit once on this checkout with a message that gives each change\'s reason. Do not push or '
     'switch branches. End with one line: PI_AUTOWORK_RESULT: completed or PI_AUTOWORK_RESULT: blocked, '
     'then the tasks you changed.')
 
 
-def prompt(found, repo, tasks):
+def prompt(found, repo, tasks, *, entries=None, workspace=None):
     """``tasks`` is the command line of the store's CLI (`autowork tasks`)."""
     items = '\n'.join(f'- {task} ({kind}): {why}' for task, kind, why in found)
     message = PROMPT.format(repo=repo, items=items, tasks=tasks)
+    outputs = plan_outputs(found, entries or {})
+    if error := plan_output_error(outputs, workspace or repo):
+        raise ValueError(error)
+    if outputs:
+        message += '\nExact declared plan outputs for this round: ' + ', '.join(outputs) + '. No other docs/plans path is authorized.'
     if any(kind == 'plan' for _, kind, _ in found):
         message += (
             '\nFor the single plan trigger, run /skill:plan-for-me on that entry\'s Scope, not a backlog sweep. '
@@ -374,7 +405,8 @@ def entries(snapshot, task_queue):
         typed = {k: v for k, v in asdict(record).items()
                  if k not in ('body', 'path', 'record_revision', 'contract_hash')}
         contract = hashlib.sha256(json.dumps(typed, sort_keys=True).encode()).hexdigest()
-        result[task] = dict(digest=record.record_revision, contract=contract, fields=fields, count=1)
+        result[task] = dict(digest=record.record_revision, contract=contract, fields=fields, count=1,
+                            planning_paths=list(record.touches) if record.kind.value == 'plan' else [])
     return result
 
 
@@ -394,14 +426,24 @@ def item_key(item):
     return key([item]) if item[0] in ('MAIN', 'LEDGER') or item[1] == 'ledger edit' else 'task:' + item[0]
 
 
-def recovery_key(item, entry, reasons, task_ids):
+def recovery_key(item, entry, reasons, task_ids, *, receipt=None, recovery=None):
     """Technical incident identity follows the same unchanged-input fences as receipts."""
     identity = item_key(item)
     if item[0] == 'MAIN':
         return key([(identity, '', main_evidence(item))])
     if item[0] == 'LEDGER' or item[1] in ('repeated quick hold', 'ledger edit', 'engineering repair'):
         return identity
-    return key([(identity, entry.get('digest', ''), reason_class(reasons.get(item[0], item[2]), task_ids))])
+    incident = [(identity, entry.get('digest', ''), reason_class(reasons.get(item[0], item[2]), task_ids))]
+    if item[1] == 'plan' and ((receipt or {}).get('plan_policy') == PLAN_POLICY
+                             or plan_policy_retry(receipt, item, entry)):
+        corrected = key(incident + [('plan-policy', PLAN_POLICY, '')])
+        completed = not isinstance(recovery, dict) or (recovery.get('phase') == 'completed'
+                                                      and not recovery.get('replay_blocked'))
+        # A reservation under the corrected policy keeps that identity after a crash.
+        if (completed or (receipt or {}).get('plan_policy') == PLAN_POLICY
+                or recovery.get('key') == corrected):
+            return corrected
+    return key(incident)
 
 
 def safe_failure(result):
@@ -451,6 +493,25 @@ def own_main_refresh(repo, item, receipt, revision, edits):
     return git(repo, 'diff', '--binary', '--no-ext-diff', cursor, revision) == ''
 
 
+def plan_policy_retry(receipt, item, entry):
+    """A completed path refusal may retry after this material admission fix, not after uncertainty."""
+    return bool(receipt and item[1] == 'plan' and receipt.get('outcome') == PLAN_PATH_REFUSAL
+                and receipt.get('plan_policy') != PLAN_POLICY
+                and plan_outputs([item], {item[0]: entry}))
+
+
+def planning_detail(run, task, record_revision):
+    """Saved technical refusal for this exact task revision; never a new owner question."""
+    records = run.get('items')
+    receipt = records.get('task:' + task) if isinstance(records, dict) else None
+    if not isinstance(receipt, dict) or not isinstance(receipt.get('outcome'), str):
+        return ''
+    outcome = receipt['outcome']
+    if record_revision and receipt.get('digest') == record_revision and outcome.startswith(('refused:', 'planning failed:', 'failed')):
+        return 'Agent repair: ' + outcome
+    return ''
+
+
 def matches(receipt, item, entry, reasons, task_ids):
     if not receipt:
         return False
@@ -460,7 +521,8 @@ def matches(receipt, item, entry, reasons, task_ids):
         return True  # the key identifies the test/error, blocker or exact patch, even after archival
     why = (reasons or {}).get(item[0], item[2])
     return (receipt.get('digest') == entry.get('digest', '')
-            and reason_class(receipt['reason'], task_ids) == reason_class(why, task_ids))
+            and reason_class(receipt['reason'], task_ids) == reason_class(why, task_ids)
+            and not plan_policy_retry(receipt, item, entry))
 
 
 def pending(state, found, *, entries=None, reasons=None, eligible=None):
@@ -563,6 +625,8 @@ def remember(state, *, trigger_key, found, outcome, changed=(), entries=None, be
         records[identity] = dict(task=task, reason=why, reason_class=reason_class(why, ids),
                                  digest=entry.get('digest', ''), outcome=outcome, tries=attempts + 1,
                                  fields=(fields or ['entry text']) if outcome == 'merged' and task in changed else [])
+        if item[1] == 'plan' and plan_outputs([item], {task: entry}):
+            records[identity]['plan_policy'] = PLAN_POLICY
         if task == 'MAIN':
             records[identity]['evidence'] = main_evidence(item)
         elif item[1] == 'engineering repair':

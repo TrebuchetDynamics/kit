@@ -10,6 +10,7 @@ import math
 import sys
 import time
 
+from pi_autowork import maintainer
 from pi_autowork.engine import task_queue
 from pi_autowork.engine.task_store import TaskStore, StoreError, _git
 
@@ -86,6 +87,9 @@ def task_row(record, store, *, observation=None, phase=None, stopped='', questio
         bucket = view.WAITING if cause in view.WAIT_CAUSES else view.BLOCKER
         words, kind = f'{bucket} · ' + view.blocker_detail(cause, bool(question)), 'held'
         why = "waiting for another task's files" if bucket == view.WAITING else view.blocker_detail(cause, bool(question))
+    elif row.get('planning_error'):
+        bucket, words, kind = view.BLOCKER, 'Blocker · Planning repair', 'held'
+        why = row['planning_error']
     elif state in ('waiting', 'pending', 'interrupted', 'released'):
         bucket = view.BLOCKER if stopped or bucket == view.BLOCKER else view.WAITING
         why = ('behind ' + stopped) if stopped else (
@@ -284,6 +288,10 @@ def capture(repo, *, engine_observation, generation, last_good=None):
     for record in records:
         row = compatible.get(record.id, {})
         state = row.get('state')
+        if record.kind.value == 'plan' and state == 'waiting' and row.get('reason') == 'ready for planning':
+            detail = maintainer.planning_detail(obs.get('maintainer') or {}, record.id, record.record_revision)
+            if detail:
+                row = dict(row, planning_error=detail)
         phase = None
         if record.section != 'Needs decision' and state in view.IN_FLIGHT:
             phase = view.PHASES[state]

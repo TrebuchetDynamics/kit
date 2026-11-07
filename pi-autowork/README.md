@@ -570,6 +570,28 @@ reconciles the store; `autowork migrate` remains available as direct CLI convers
 
 The TUI and web view run Textual 8.2.8 (and textual-serve 1.1.3) through `uv`.
 
+## Autonomous planning and waiting
+
+An accepted `kind = "plan"` task runs through DOCS-MAINTAINER, not a code worker.
+The maintainer can write its existing planning surface and the task's exact declared
+Markdown files under `docs/plans/`. Directory, glob, traversal and symlink paths do
+not grant extra access. The prompt and the landing check use the same original
+path list. Product code, task evidence receipts and live authority remain excluded.
+Routine reversible engineering choices follow the [standing decision policy](../docs/autonomy.md);
+they do not require a repeated owner answer.
+
+A completed planning-path refusal can receive one fresh bounded attempt after the
+material path-policy correction. The new attempt records the policy and retains
+normal retry limits. An uncertain submission or unproven cleanup does not gain a
+retry from this migration. Runtime receipts are not deleted to force progress.
+
+The task view shows a matching saved planning failure as `Blocker · Planning repair`,
+with its refusal reason, rather than calling it ready or asking the owner to fix it.
+The receipt must match the current task's exact record revision. Owner-only waits
+remain local to their dependent tasks and do not age into engineering stalls.
+Independent ready work can still run. Offline tests cover these contracts; installed
+runner execution needs separate qualification.
+
 ## Questions
 
 The fleet reads owner questions from `BLOCKERS.md`, preferring the runner's session
