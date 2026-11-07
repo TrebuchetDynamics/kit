@@ -308,6 +308,25 @@ naming both values, when HEAD, the running release or the effective grant differ
 from that record, and an unknown outcome reconciles from the recorded revision,
 never a force-push.
 
+Publication fetches, pushes (including repository pre-push hooks) and remote
+readback run as tracked background jobs. Dispatch and main-check recovery keep
+cycling. A push names the exact verified commit, never a moving branch; each
+candidate gets at most three attempts with 30/60-second retry delays. Every push
+outcome is read back from the remote. Three failed readback probes leave publication
+unknown and prevent another push, rather than claiming delivery. Read-only probes
+resume after a 300-second cooldown without resetting the push attempt count. Upstream session
+merges wait for reviews, resolvers and other session writers to release it.
+
+Toolset discovery, fetch/schema checks and `pi update` also run off-loop. Lock
+contention defers immediately; the complete job is bounded to 600 seconds (pushes
+to 300, upstream fetches to 120, remote probes to 60). Installation retries are
+limited to three per checked release. An installed revision that differs from the
+checked candidate, or an interrupted update that moved the package, cannot activate
+through the runner's automatic re-exec. Reload/restart checkpoints wait for tracked
+job receipts; finite runs drain publication through ordinary cycles. Receipts,
+process start ticks and job logs live in the existing per-repository state
+folder, not in Git. These mechanics do not grant publication or skip hooks.
+
 Before reusing an installed or running service, `autowork start` refuses if an
 explicitly supplied supported service setting differs from its saved env file
 (including a setting absent there).
