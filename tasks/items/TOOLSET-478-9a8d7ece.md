@@ -7,7 +7,7 @@ status = "open"
 goal = "RUST-OCTET"
 section = "Next"
 rank = 14000
-depends_on = ["TOOLSET-472-48c78e95", "TOOLSET-473-afef55de", "TOOLSET-474-6b517117", "TOOLSET-475-66aacc5f", "TOOLSET-476-fb27960d", "TOOLSET-477-e5de6356"]
+depends_on = ["TOOLSET-472-48c78e95", "TOOLSET-473-afef55de", "TOOLSET-474-6b517117", "TOOLSET-475-66aacc5f", "TOOLSET-476-fb27960d", "TOOLSET-477-e5de6356", "TOOLSET-481-33040cb9"]
 touches = ["docs/plans/rust-octet-autowork.md", "docs/project.md"]
 resources = []
 kind = "plan"
@@ -20,4 +20,4 @@ exclusions = ["No production code, tests, fixtures, manifests, source pin edits,
 - Sources: docs/plans/rust-octet-autowork.md#remaining-goal-outcomes-and-next-rounds; skills/shared/TODO-WORKCENTER.md#rolling-planning
 - Plan round: 1 of 10
 - Planner calls: New system replans routine decisions automatically. This record follows the existing runner's bounded rolling-plan contract while that runner remains canonical.
-- Queue disposition: Open in Next, no planning-only hold; waits on all six building tasks. An already-authorized runner may continue the chain after integration; this saved plan starts none.
+- Queue disposition: Open in Next, no planning-only hold; waits on all six original building tasks and TOOLSET-481-33040cb9, the accepted mechanical crate relocation. Round two uses pi-autowork/rust/autowork after that prerequisite; first-batch contracts, seven IDs, native acceptance and live-denied gates are preserved. An already-authorized runner may continue after integration; this saved plan starts none.

@@ -80,6 +80,11 @@ Status: Accepted
 
 Current layout amendment: the owner renamed the source root to lowercase `src/`.
 The `Src/` spelling below records the original plan; current paths use `src/`.
+The accepted [one-product-root contract](pi-autowork-component-layout.md#one-product-root-contract)
+now supersedes placement: all Autowork implementation and product tests move under
+`pi-autowork/`, including native code and the generic engine. It preserves this
+plan's behavior, loading invariants, task IDs and completed history. Its separate
+batch has not yet performed the relocation.
 
 ### Requested scope and authority
 
