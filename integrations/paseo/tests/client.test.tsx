@@ -87,7 +87,10 @@ beforeEach(() => {
 afterEach(async () => { if (root) await act(async () => root.unmount()); query?.clear(); });
 
 describe('canonical presentation', () => {
-  it('allows answers only for the matching open canonical question', () => {
+  it('keeps closure tones canonical and preserves the answer gate', () => {
+    expect(closureTone({ presentation: { tone: 'neutral', closure_tone: 'warning' } })).toBe('warning');
+    expect(closureTone({ presentation: { tone: 'neutral', closure_tone: 'success' } })).toBe('success');
+    expect(closureTone(undefined)).toBe('neutral');
     expect(canAnswer(task, fleet().repos[0]!.runner!, detail)).toBe(true);
     expect(canAnswer({ ...task, id: 'T-2' }, fleet().repos[0]!.runner!, detail)).toBe(false);
     expect(canAnswer({ ...task, status: 'done' }, fleet().repos[0]!.runner!, detail)).toBe(false);
@@ -514,8 +517,8 @@ describe('native host-scoped surfaces', () => {
   it('filters completed and canonically held tasks without requiring a live worker lane', async () => {
     const initial = env.invoke.getMockImplementation()!;
     env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [
-      task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done' },
-      { ...task, id: 'T-HELD', title: 'Held task', blocked_by: 'HELD' },
+      task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done', display: { ...task.display, state: 'done' } },
+      { ...task, id: 'T-HELD', title: 'Held task', blocked_by: 'HELD', display: { ...task.display, state: 'Blocker', blocker: 'held', why: 'held' } },
     ] }) : initial(name, data));
     await mount({ params: { view: 'tasks' } }); await press('Filters');
     await input('Filter runtime', 'done'); expect(text()).toContain('Finished task'); expect(text()).not.toContain('Owner task');

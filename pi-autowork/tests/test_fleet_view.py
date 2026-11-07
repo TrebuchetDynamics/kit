@@ -229,6 +229,8 @@ class FleetViewTests(unittest.TestCase):
         with mock.patch.object(fleet_view.time, 'time', return_value=2000000000):
             runner = self.collect('pi-autowork@resources.service loaded active running x', proc=str(proc))['resources']
         record = command.runner_json(runner)
+        self.assertEqual(record['display']['state'], runner.state)
+        self.assertIn('tasks', record['display'])
         self.assertEqual(record['resources'], dict(
             coordinator_rss_mb=2.0, coordinator_cpu_seconds=2.0, process_count=2,
             fleet_rss_mb=4.0, sampled_at=2000000000, reason=''))
