@@ -198,8 +198,8 @@ verified closure and same-attempt provider fallback through the real SDK against
 fake Pi peer. The native fixture separately checks installed Pi settlement,
 streaming, session resume, reviewer separation and JSON/RPC cold-start timing.
 Neither fixture proves a real model's engineering judgment or fleet delivery.
-See [qualification evidence](research/pi-rpc-qualification-2026-10-24.md) for the
-bounded real-model smokes and current limitations.
+See [qualification boundaries](research/pi-rpc-qualification-2026-10-24.md) for
+required evidence and unresolved installed-runner/control limitations.
 
 For rollback, first settle/stop the owned attempt and verify cleanup through the
 existing engine controls. Then select `PI_AUTOWORK_TRANSPORT=json` for the **next**

@@ -34,10 +34,10 @@ any old task, and grants no authority over another repository or live device.
 
 ## Implementation and checks
 
-Use the incoming committed-snapshot implementation from
-`TOOLSET-379-cf40090d`; it owns membership and closed rows. Keep the active worker's
-workspace, candidate, contract and integration untouched. Implement this follow-up
-in its own isolated checkout and compose only after that ownership releases.
+Use the shared committed-snapshot implementation for membership and retained closed
+rows. Preserve active workers' workspaces, candidates, contracts and integration.
+This generic product view supports repositories that retain history; it does not
+require this repository to keep completed task records.
 
 Regression coverage uses a real disposable committed TaskStore with open, explicit
 manual and legacy closures; verifies read-only byte preservation, annotation

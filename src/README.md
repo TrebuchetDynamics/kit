@@ -1,6 +1,6 @@
 # Source layout and compatibility
 
-The accepted [source-layout plan](../docs/plans/structural-audit-2026-10.md#compatibility-foundation--existing-toolset-368-24bdb225)
+The accepted [source-layout plan](../docs/plans/structural-audit-2026-10.md#layout-and-source-loading-contract)
 separates source ownership from stable entry paths. Runner, legacy-reader and engine
 implementations now live in `src/pi_autowork/`; the public `pi-autowork/` Python
 files are import/command adapters. Standalone checkout/worktree hooks and fixture

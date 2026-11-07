@@ -1,128 +1,83 @@
-# Rename the toolset to Kit
+# Kit identity and settings compatibility
 
 ## Decision
 
-The owner chose **kit** as the toolset name. Spanish treats *kit* as native
-("kit de herramientas"), it is one syllable on a command line, and it stops the
-repository from being named after one of its own tools.
-
-`autowork` keeps its name. It is the runner and its skill, not the suite: **Kit** is
-the toolset, and **autowork** is the tool inside it.
+Kit is the toolset; Autowork is its runner and skill. Current identity is distinct
+from compatibility with existing installed profiles. This document keeps that
+contract and outstanding live proof, not completed rename-stage reports.
 
 ## Target identity
 
-| Surface | Before | After |
-| --- | --- | --- |
-| Repository | `TrebuchetDynamics/autowork` | `TrebuchetDynamics/kit` |
-| Hermes plugin name (`plugin.yaml`) | `autowork` | `kit` |
-| Plugin namespace, all hosts | `autowork:plan-with-me` | `kit:plan-with-me` |
-| Claude Code commands | `/autowork:plan-with-me` | `/kit:plan-with-me` |
-| Codex commands | `$autowork:plan-with-me` | `$kit:plan-with-me` |
-| npm package | `autowork` | `@trebuchet/kit` (plain `kit` is taken) |
-| Hermes settings key | `plugins.entries.autowork` | `plugins.entries.kit` |
-| Runner CLI | `autowork start` | unchanged |
-| Runner skill | `/autowork` | unchanged |
-| Internal paths | `pi-autowork/`, `~/.local/state/pi-autowork/` | unchanged |
-| Pi commands | `/plan-with-me` (unprefixed) | unchanged |
+| Surface | Current contract |
+| --- | --- |
+| Repository | `TrebuchetDynamics/kit` |
+| Hermes plugin | `kit` |
+| Namespaced skills | `kit:<skill>`; Claude `/kit:<skill>` and Codex `$kit:<skill>` |
+| Pi commands | Unprefixed |
+| Local package metadata | `@trebuchet/kit` |
+| New settings writes | `plugins.entries.kit` |
+| Compatible settings input | Existing `plugins.entries.autowork` values remain readable |
+| Runner CLI and private state | `autowork`, `~/.local/state/pi-autowork/`; unchanged |
 
-Verified before choosing the name: npm `kit` is v2.0.31 (a TypeScript utility library)
-and PyPI `kit` is v0.2.15 (a Flask integration framework), so publishing needs a scope.
-GitHub is org-scoped and needs none.
+No npm publication is required. Install from the Git source and existing host
+marketplaces. Neither registry publication nor a scope/deprecation operation is
+part of the remaining qualification.
 
 ## Why the stages exist
 
-`plugin.yaml` name, the `autowork:` namespace and `plugins.entries.autowork` are read
-in three different ways:
-
-- `update_bundle.py` validates the manifest name with a regex and refuses an
-  unexpected one, so the manifest rename and the updater change must land together.
-- Every host adapter and most tests spell the namespace `autowork:<skill>` in
-  `skill_view`, `/autowork:...` and `$autowork:...` strings.
-- The settings key is per-profile live state. Renaming the key without a compatible
-  read makes every existing profile silently lose approvals mode, menu priority and
-  its external-plugin policy, which is exactly the wound the 0.3.0
-  `hermes-toolset → autowork` rename left open.
-
-So the order is: compatibility first, identity second, prose last.
+Manifest admission, public command namespace and per-profile settings are separate
+boundaries. Preserve all three consistently; a source rename cannot reset approvals,
+menu priority, gateway injection, installed profile identity or private runtime state.
 
 ## Stage 1: dual-read settings key
 
-- Add one constant pair (`PLUGIN`, `LEGACY_PLUGIN`) in the runtime module that already
-  owns defaults, and read the new key with a fallback to the old one everywhere
-  `plugins.entries.autowork` is consulted: `plugin.py` gateway-injection check,
-  `setup_preflight.py` policy comparison, `runtime_defaults.py` opt-out, and the
-  load-time policy application.
-- Writes go to the new key only; reads accept either; a profile that has both keeps
-  its existing value and reports the drift once.
-- Tests: a profile configured under `plugins.entries.autowork` keeps its approvals,
-  menu priority and opt-out after the rename; a profile with the new key wins when
-  both exist; a profile with neither gets today's defaults.
-- **Pass when:** the three fixtures pass and no code path reads only the old key.
-- **Landed:** `runtime_defaults.PLUGIN` is `kit` and `LEGACY_PLUGIN` keeps
-  `autowork`; the runtime, setup preflight, installer defaults and gateway-injection
-  report read either entry per key (canonical values win, legacy values fill keys the
-  canonical entry lacks). Settings are written under `plugins.entries.kit`; while the
-  plugin is still named `autowork`, `allow_gateway_injection` is mirrored to the legacy
-  entry Hermes actually reads, and the diagnostic names that entry.
+The runtime owns canonical/legacy key selection. Read both entries per key:
+canonical values win and legacy values supply keys absent from the canonical entry.
+Write new settings under `plugins.entries.kit`. Where the actually loaded legacy
+plugin still reads its old gateway-injection entry, preserve that supported bridge
+and report which entry is effective. No profile with neither key loses defaults.
+
+Fixtures cover legacy-only, both-key and neither-key profiles, including approvals,
+menu priority and opt-out. They prove read/write logic, not real-profile migration.
 
 ## Stage 2: plugin identity and namespace
 
-- `plugin.yaml` name, `package.json` name `@trebuchet/kit`,
-  `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
-  `.agents/plugins/marketplace.json`, and the `update_bundle.py` manifest regex.
-- Namespace spelling across `adapters/`, the plugin command registration and every
-  `skill_view(name="autowork:…")` string; Claude Code and Codex prefixes follow.
-- Keep `pi-autowork/`, `Src/pi_autowork/`, the runner CLI and the state directory as
-  they are.
-- **Pass when:** the plugin loads under `kit`, all four hosts expose the same skill
-  set, and `test_plugin`, `test_bundle`, `test_preflight`, `test_src_native`,
-  `test_portable_package` and `node --test tests/portable_pi.test.mjs` pass with the
-  new namespace.
+Manifest validation and host registration must agree on Kit identity. Preserve the
+same public skill set across supported hosts, portable explicit invocation and
+unprefixed Pi commands. Runner CLI, private state and execution behavior do not
+change with the toolset namespace. The separate one-product-root plan owns future
+source placement; it does not migrate installed state.
 
 ## Stage 3: documentation and installers
 
-- `README.md` first screen, `docs/installation.md`, `docs/cross-host.md`,
-  `docs/workflows.md`, `docs/onboarding.md`, `docs/reference.md`, `docs/uninstall.md`,
-  `docs/troubleshooting.md`, `plugins/PLUGINS.md`, `install.sh` item labels and
-  `install-plugins.sh` paths.
-- Add a migration note that names the old settings key and the release that drops it.
-- **Pass when:** a documented install command from a clean machine resolves, and the
-  repo has no prose that tells a reader to use `/autowork:` for a skill.
+Current README, runbooks, catalogs and installer labels use supported Kit install
+commands and explain the legacy settings bridge. Do not tell users to invoke the
+retired namespaced skill spelling. Keep current compatibility instructions, not a
+completed-stage checklist or dated migration report.
 
 ## Stage 4: rename and live proof
 
-- GitHub repository rename (owner action, redirects keep old clones working). **Done:**
-  the repository is `TrebuchetDynamics/kit` and the old URLs redirect.
-- **No npm publication is required.** Installs come from the Git source (`install.sh`,
-  `pi install git:github.com/TrebuchetDynamics/kit`, the Claude Code and Codex
-  marketplaces). `package.json` keeps the scoped name `@trebuchet/kit` as local
-  metadata only: no scope, deprecation notice or registry release is part of this
-  rename.
-- The one remaining evidence step is the pre-rename profile proof, and it is a live
-  check: install the renamed plugin into a profile configured under
-  `plugins.entries.autowork` and show approvals mode, menu priority and opt-out are
-  unchanged. The stage 1 fixtures prove the read logic; they do not qualify a live
-  profile.
+The remaining requirement is pre-rename profile preservation. Under its separately
+authorized live scope, run the renamed plugin against a profile configured under
+`plugins.entries.autowork` and prove approvals mode, menu priority and opt-out stay
+unchanged. Offline fixtures do not satisfy this requirement. A saved owner answer
+is not live execution or proof, and this cleanup does not mark the goal met.
 
 ## Verification that closes the rename
 
-Not "tests pass". A pre-rename profile must be shown to keep its state. The offline
-fixtures prove the read logic; only a live Hermes profile proves the migration:
-
-1. Snapshot `plugins.entries.autowork` (approvals mode, menu priority, opt-out) in a
-   fixture profile.
-2. Run the renamed plugin against it.
-3. Assert the effective settings are unchanged, the writes landed under
-   `plugins.entries.kit`, and the old key is reported as migrated rather than ignored.
+1. Capture the selected profile's relevant old-key settings without exposing secrets.
+2. Run the renamed plugin under the existing owner/qualification authority.
+3. Read back unchanged effective settings, canonical new-key writes and explicit
+   legacy-key handling. Preserve unrelated profile settings and pauses.
 
 ## Rollback
 
-Stages 1 and 2 are revertible by commit: the dual read makes the old key authoritative
-again if the new one is removed. Stage 3 is prose. Stage 4 is the only irreversible
-step, which is why it comes last and after the verification above.
+Use supported source/configuration rollback with preserved prior inputs. Removing
+the new key restores the compatible old-key read where applicable. Do not reset,
+rewrite or discard customized profiles, installed state or recovery evidence.
 
 ## What this plan does not cover
 
-- Renaming the runner, its CLI, its state directory or `pi-autowork/`.
-- Changing any skill's behaviour or the task store.
-- Any live profile write, publish or deploy before stage 4 has its own authorization.
+No runner/CLI/state rename, task-store behavior change, npm release, implicit profile
+write, publication, deployment, service restart or credential operation. Preserve
+the current live task's ownership, acceptance and authorization gates.
