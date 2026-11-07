@@ -53,6 +53,39 @@ Priority is the section (Now before Next), then rank, gated by goal focus, goal
 priority and dependencies. Moving a task is editing its rank; there is no other
 recorded order.
 
+### Task names
+
+Use this policy when creating or materially refining an in-scope task in both
+planning modes. Choose wording from the accepted scope; no extra interview is
+needed just for naming.
+
+- **`title`:** Name a concrete action or observable outcome and the affected
+  component or user-visible object. Include enough distinguishing context to
+  understand the change without opening the task. Add a condition or failure case only when
+  it distinguishes similar work. Prefer direct action-led titles; clear outcome-led
+  titles are also valid. This is guidance, not a mandatory grammar.
+- **`short`:** Write a meaningful standalone summary of at most 40 characters for
+  task lists. Preserve the distinguishing object and outcome. Do not merely truncate
+  `title` or repeat the ID.
+- Reject padding, unexplained acronyms, and generic Improve/Fix/Update titles that
+  do not identify the object and intended change or outcome.
+
+| Kind | Weak title | Strong title | Standalone short |
+| --- | --- | --- | --- |
+| Feature | Improve downloads | Add invoice downloads for offline review | Download invoices for offline review |
+| Defect | Fix retries | Stop invoice retries after payment succeeds | Stop retries after invoice payment |
+| Planning | Update plan | Plan offline invoice checks before rollout | Plan offline invoice checks |
+
+Before saving, read `title` and `short` as separate task-list entries: can a reader
+identify what changes, which object it affects, and what distinguishes it from
+nearby work? Check the short label's length and revise vague wording using only
+the task's existing scope.
+
+Naming never changes a task's meaning, acceptance, ID, authority or status. Keep
+historical records unchanged; do not bulk rename the backlog. No title length cap,
+rigid word-count rule or naming heuristic is added to CLI validation or selection.
+These are planning instructions, not evidence of future model output quality.
+
 ## Read orders before selecting
 
 Read `autowork tasks list`, the records you will act on, accepted plans and current

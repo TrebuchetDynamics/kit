@@ -102,6 +102,40 @@ class PlanningCliContractTests(unittest.TestCase):
         for required in ('operation-local', 'reread', 'reapply', 'blind retry', 'stale full snapshot'):
             self.assertIn(required, center)
 
+    def test_planners_share_descriptive_task_name_policy(self):
+        protocol = 'skills/shared/RESEARCH-PLAN.md'
+        craft = 'skills/shared/PLANNING-CRAFT.md'
+        for path in (*INTERACTIVE, *AUTONOMOUS):
+            relative = ('../../../skills/shared/' if path.startswith('adapters/') else '../shared/')
+            with self.subTest(entrypoint=path):
+                self.assertIn(relative + 'RESEARCH-PLAN.md', prose(path))
+        records = prose(protocol).split('### Task records', 1)[1].split('## Full requested batch', 1)[0]
+        naming = prose(craft).split('## Name things precisely', 1)[1].split('## Plan for an unattended worker', 1)[0]
+        for section in (records, naming):
+            self.assertIn('TODO-WORKCENTER.md#task-names', section)
+        policy = prose(WORKCENTER).split('### Task names', 1)[1].split('## Read orders before selecting', 1)[0]
+        for rule in ('concrete action or observable outcome', 'affected component or user-visible object',
+                     'without opening the task', 'condition or failure case only when',
+                     'action-led', 'outcome-led', 'padding', 'unexplained acronyms',
+                     'Improve', 'Fix', 'Update', 'standalone summary of at most 40 characters',
+                     'distinguishing object and outcome', 'Do not merely truncate',
+                     'repeat the ID', 'Before saving', 'creating or materially refining',
+                     'both planning modes', 'no extra interview',
+                     'meaning, acceptance, ID, authority or status',
+                     'No title length cap', 'CLI validation or selection'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, policy)
+        for kind, weak, title, short in (
+                ('Feature', 'Improve downloads', 'Add invoice downloads for offline review',
+                 'Download invoices for offline review'),
+                ('Defect', 'Fix retries', 'Stop invoice retries after payment succeeds',
+                 'Stop retries after invoice payment'),
+                ('Planning', 'Update plan', 'Plan offline invoice checks before rollout',
+                 'Plan offline invoice checks')):
+            with self.subTest(example=kind):
+                self.assertIn(f'| {kind} | {weak} | {title} | {short} |', policy)
+                self.assertLessEqual(len(short), 40)
+
     def test_identifier_guidance_matches_current_allocation_without_renaming_history(self):
         center = prose(WORKCENTER)
         self.assertIn('eight-hex-digit', center)

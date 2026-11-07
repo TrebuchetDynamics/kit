@@ -97,8 +97,9 @@ Each executable task names its observable acceptance, the exact checks that prov
 bounded `touches` and real dependencies. A task that still says “choose the storage
 model/API/migration behavior” is not ready when that choice changes the accepted
 outcome. Keep only the affected slice pending; independent accepted work stays ready.
-Load the [work center](TODO-WORKCENTER.md) for the record fields, write rules and
-selection boundary.
+Apply the shared [task-naming policy](TODO-WORKCENTER.md#task-names) before saving
+new or materially refined tasks in either mode. Load the [work center](TODO-WORKCENTER.md)
+for the record fields, write rules and selection boundary.
 
 
 ## Full requested batch
