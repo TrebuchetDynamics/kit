@@ -77,29 +77,30 @@ class WorktreeCloseoutTests(unittest.TestCase):
         self.assertEqual(self.git(self.repo, 'symbolic-ref', '--short', 'HEAD'), 'main')
 
     def test_recovery_namespace_is_preserved_in_every_closeout_mode(self):
-        for mode, options in (
-                ('report', {}), ('apply', {'apply': True}),
-                ('archive', {'apply': True, 'archive': True}),
-                ('named', {'apply': True, 'archive': True, 'target': True}),
-                ('prunable', {'apply': True, 'archive': True})):
-            with self.subTest(mode=mode):
-                path = self.worktree('checkpoint-' + mode)
-                branch = 'recovery/' + mode
-                self.git(path, 'branch', '-m', branch)
-                head = self.git(path, 'rev-parse', 'HEAD')
-                contents = (path / ('checkpoint-' + mode)).read_bytes()
-                if mode == 'prunable':
-                    shutil.rmtree(path)  # Only this disposable fixture's worktree.
-                options = dict(options)
-                if options.pop('target', False):
-                    options['worktrees'] = [path]
-                result = self.run_closeout(**options)
-                self.assertIn('recovery', self.kept(result, path))
-                self.assertNotIn(str(path), [row['path'] for row in result['removed']])
-                self.assertIn('worktree ' + str(path), self.git(self.repo, 'worktree', 'list', '--porcelain'))
-                self.assertEqual(self.git(self.repo, 'rev-parse', branch), head)
-                if mode != 'prunable':
-                    self.assertEqual((path / ('checkpoint-' + mode)).read_bytes(), contents)
+        path = self.worktree('checkpoint')
+        branch = 'recovery/checkpoint'
+        self.git(path, 'branch', '-m', branch)
+        head = self.git(path, 'rev-parse', 'HEAD')
+        contents = {name: (path / name).read_bytes() for name in ('.gitignore', 'file', 'checkpoint')}
+        for prunable in (False, True):
+            if prunable:
+                shutil.rmtree(path)  # Only this disposable fixture's worktree.
+            listing = self.git(self.repo, 'worktree', 'list', '--porcelain')
+            for apply in (False, True):
+                for archive in (False, True):
+                    for named in (False, True):
+                        with self.subTest(prunable=prunable, apply=apply, archive=archive, named=named):
+                            result = self.run_closeout(apply=apply, archive=archive,
+                                                       worktrees=[path] if named else None)
+                            self.assertIn('recovery', self.kept(result, path))
+                            self.assertEqual(result['removable'], [])
+                            self.assertEqual(result['removed'], [])
+                            self.assertEqual(self.git(self.repo, 'worktree', 'list', '--porcelain'), listing)
+                            self.assertEqual(self.git(self.repo, 'rev-parse', branch), head)
+                            if not prunable:
+                                self.assertEqual(self.git(path, 'rev-parse', 'HEAD'), head)
+                                self.assertEqual({name: (path / name).read_bytes() for name in contents}, contents)
+        self.assertEqual(self.git(self.repo, 'for-each-ref', 'refs/archive/worktrees/'), '')
         ordinary = self.worktree('recovery-task')  # Not in the reserved namespace.
         result = self.run_closeout(apply=True, worktrees=[ordinary])
         self.assertEqual([row['path'] for row in result['removed']], [str(ordinary)])
