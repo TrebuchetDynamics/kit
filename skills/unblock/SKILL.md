@@ -1,6 +1,6 @@
 ---
 name: unblock
-description: "Diagnose and repair stalled Autowork services."
+description: "Resolve Autowork blockers and resume authorized work."
 license: MIT
 ---
 
@@ -10,9 +10,9 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
 
-`/unblock [runner|repo|all]` diagnoses and repairs stalled Autowork services
-without an interview. A bare invocation targets the current repository's runner, not the
-directory that stores this skill. `all` targets registered runners with a fault or
+`/unblock [runner|repo|all]` resolves blockers and delegated decisions so Autowork
+can continue without an interview. A bare invocation targets the current repository's
+runner, not the skill directory. `all` targets registered runners with faults or
 blocked work; healthy runners are read-only. Named targets narrow this scope.
 Creating or editing this skill does not invoke recovery.
 
@@ -25,40 +25,54 @@ instead of offering a menu. Existing user restrictions and explicit pauses win.
 
 ## Recover, verify, continue
 
-1. **Inventory.** Read `autowork ls --json`, each target's fresh status, service
-   state and logs. Inspect runner and installed revisions, pending service jobs,
-   queue eligibility and actual worker/session activity. Read target instructions
-   and existing decisions. Treat failed reads as unavailable evidence, not zero
-   workers. Finish when every target has a cause or a precise diagnostic gap.
-2. **Find the cause.** Load the [Blockers discovery and filtering rules](../blockers/SKILL.md#1-gather-and-filter)
-   for held tasks, reports and owner questions. Reuse their evidence tests, not
-   their interview or no-service workflow. Rank causes by independent work blocked.
-   A dashboard timer, `waiting on you` label or live PID is a lead, not a diagnosis.
-   Distinguish an intentionally idle queue from a failed service, stale projection,
-   technical hold, live writer, dependency wait or genuine external gate.
-   Finish when each proposed repair names the failed operation and its evidence.
-3. **Decide and repair.** Apply existing answers and delegated choices immediately.
-   Record agent decisions as `Standing policy:` or planner calls through
-   `autowork tasks`, never as fabricated `Owner decision:`, waivers or qualification.
-   Preserve acceptance and functional dependencies. For implementation or test fixes,
-   use [Autowork](../autowork/SKILL.md) in the current session with the existing task
-   and candidate; its no-service boundary still governs that implementation lane.
-   For runner/process faults, use the [service recovery procedure](references/services.md).
-   Establish one writer per checkout and preserve live leases. Finish each repair
-   with checks and its supported continuation, not just a changed note.
-4. **Prove progress.** Read back the target's service state, running release, task
-   selection and latest attempt after repair. Observe the expected transition:
-   admission, resumed attempt, review, integration, or an evidenced idle queue.
-   An active service or disappearing question alone is not recovered execution.
-   Separate saved, committed, consumed and executing changes. If observation remains
-   pending, state exactly what has not been seen; do not claim success.
-5. **Continue independently.** Keep repairing other in-scope causes while one waits.
-   After a repeated failure, inspect the new failure evidence and change approach;
-   do not loop unchanged retries, erase attempt history or reset retry limits.
-   Preserve an unavailable authority/input as an exact external gate, without a
-   second approval round for choices already delegated. Stop only when targets
-   recover or every remaining cause has an evidenced wait, external gate or
-   ownership limit. Do not create backlog work merely to make an idle runner busy.
+1. **Bind and inventory.** Filter `autowork ls --json` to the targets. Read their
+   fresh status, recent logs, service state, running and installed revisions, and
+   pending service jobs. Reconcile `autowork tasks list REPO` with execution status
+   and questions in the runner's session. Include every open `Needs decision` task,
+   held task and ready task that did not start, even when absent from the dashboard's
+   roots or questions. Finish with task IDs and causes or exact missing reads;
+   a failed read is unavailable evidence, not zero workers.
+2. **Diagnose.** Apply the [Blockers discovery and filtering rules](../blockers/SKILL.md#1-gather-and-filter),
+   not their interview or no-service workflow. Read the target's instructions,
+   decisions and standing policy. Rank causes by independent work blocked. For each,
+   inspect its latest attempt or planner result and the failed operation's log.
+   A `ready for planning` label can hide a refused planner result; `waiting on you`
+   does not establish owner-only authority. Stop discovery when the evidence selects
+   a repair or a specific gate. Keep output bounded and task-scoped; use the host's
+   session controls for ownership checks, not a search through unrelated transcripts.
+3. **Resolve decisions.** Reuse an existing answer within its exact scope. For a
+   routine reversible choice covered by the target's policy, choose and record it
+   now as `Standing policy:` or a planner call, with the choice, reason and evidence.
+   Use `autowork tasks` and its installed verb help for record edits. Return a resolved
+   `Needs decision` task to `Now` or `Next` when its placement is authorized; preserve
+   explicit deferrals, acceptance, exclusions, ownership and functional dependencies.
+   A technical failure needs a repair, not another approval. For an owner-only choice,
+   retain the exact question and missing authority or input. Never invent an
+   `Owner decision:`, waiver or qualification; notes do not grant typed authority.
+   Finish with a disposition for every inventoried decision, not only the displayed
+   questions. In read-only mode, give the proposed dispositions without saving them.
+4. **Repair and deliver.** For implementation or test fixes, run
+   [/autowork](../autowork/SKILL.md) in this session on the existing task and candidate;
+   its no-service boundary governs that lane. For runner/process faults or activation
+   of a verified repair, use the [service recovery procedure](references/services.md).
+   Establish one writer per checkout. If another session owns the same repair, confirm
+   its scope and fresh activity, then send the finding and required continuation through
+   its available control channel. Retain a specific ownership wait if contact fails;
+   a dirty file or old claim alone does not prove an active repair. Continue independent
+   causes. Validate changed records and run affected checks and required review.
+   Commit only attributable changes through the repository's supported local path and
+   integrate when authorized. Finish with the repair delivered to the runner's input,
+   or the exact delivery restriction, not an unsaved answer or a Next action note.
+5. **Verify and continue.** Read back service state, running release, task selection
+   and latest attempt. Observe the expected transition: decision consumed, admission,
+   resumed planning, review or integration, or an evidenced idle queue. Selection from
+   `autowork tasks why ID REPO` alone does not prove runtime admission. Follow a consumed
+   answer through to execution or its next evidenced wait. Separate saved, committed,
+   consumed and executing changes; do not claim success from a reload or a vanished
+   question. On failure, inspect the new evidence and change approach; do not loop unchanged retries,
+   erase attempt history or reset retry limits. Reconcile all inventoried causes before
+   stopping, including independent work behind an owner-only gate. Do not create backlog work
+   merely to make an idle runner busy.
 
 Apply the [Definition of Done](../shared/DEFINITION-OF-DONE.md) to local repairs.
 Required checks and independent review remain required; local integration,
@@ -72,13 +86,16 @@ publication, installation and live acceptance are separate outcomes.
 | “Restarting fixes every stall.” | Repair the cause, then observe the expected task transition. |
 | “All decisions means every permission.” | Recovery authority preserves explicit stops, security and live boundaries. |
 | “One blocked task stops the fleet.” | Continue independent eligible repairs and preserve the exact gate. |
+| “Another session is fixing it.” | Confirm its activity and repair scope, then coordinate the continuation. |
+| “I saved the answer, so it is unblocked.” | Verify consumption and execution, or name the next evidenced wait. |
 
 ## Red Flags
 
 - Clearing leases, retry history or failed evidence to make a dashboard green.
 - Restarting again while a previous service job is still running.
 - Releasing an explicit pause or changing acceptance to remove a blocker.
-- Claiming recovery from a metadata edit, successful signal or old status snapshot.
+- Reporting only displayed questions while `Needs decision` tasks remain unexamined.
+- Repeating status reads after the failed operation and repair are known.
 
 ## Boundaries
 
@@ -93,9 +110,11 @@ publication, installation and live acceptance are separate outcomes.
 - Use `/push` only under separate publication authority. A recovery skill cannot
   promise perpetual operation or task completion after the current session ends.
 
-**Done when:** every target has observed recovery or an evidenced remaining wait,
-external gate or ownership limit, with actual actions and verification reported.
+**Done when:** every inventoried blocker and decision is resolved with observed
+continuation, or has an evidenced wait, external gate or ownership limit, and each
+target's remaining queue is accounted for.
 
-**Receipt:** targets and causes; autonomous decisions; repairs and checks; before
-and after service/release/task states; commits and installed changes; remaining
-gates, unobserved transitions and exact next action.
+**Receipt:** targets; decisions resolved and blockers repaired; checks and commits;
+before/after service, release and task states; installed changes; unresolved task IDs
+with exact gates, responsible actors and next actions. Label unobserved transitions
+as pending. Attribute progress by another session or the runner to that actor.
