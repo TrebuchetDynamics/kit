@@ -118,7 +118,7 @@ def preflight(repo, root, profiles, *, bundle_only=False):
             errors.append(f'Required executable missing: {binary}')
     required = ('install-skills.sh', 'install-plugins.sh', 'install_skills.py', 'runtime_defaults.py',
                 'setup_bundle.py', 'setup_preflight.py', 'setup_runtime.py',
-                'install-omh.py', 'install-graphify.py',
+                'install-graphify.py',
                 'autowork_bootstrap.py', 'Src/autowork_bootstrap.py',
                 'plugin.yaml', 'plugins/defaults.json', 'plugins/PLUGINS.md', 'scripts/preflight_config.py')
     layout = _AUTOWORK_COMPAT.Layout(repo)
@@ -191,7 +191,7 @@ def preflight(repo, root, profiles, *, bundle_only=False):
         plan.append('  Existing skill copies are preserved; auth and conversation history unchanged')
         if bundle_only:
             plan.append('  External integrations and memory unchanged')
-    # Existing dry-run adapters validate the source manifest and OMH isolation
+    # Existing dry-run adapters validate the source manifest
     # without starting Hermes, installing CLIs, or writing profile data.
     command = ['bash', str(repo / 'install-plugins.sh'), '--sources-only', '--setup', '--enable',
                '--dry-run', '--hermes-home', str(root)]
@@ -207,23 +207,9 @@ def preflight(repo, root, profiles, *, bundle_only=False):
     except (OSError, subprocess.TimeoutExpired):
         errors.append('Installer prerequisite preview could not complete')
     if not bundle_only:
-        if not shutil.which('uv') and any(not shutil.which(binary) for binary in ('omh', 'graphify')):
-            errors.append('uv is required when OMH or Graphify is not installed')
-        spec = importlib.util.spec_from_file_location('preflight_omh', repo / 'install-omh.py')
-        omh = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(omh)
-        try:
-            for name, _ in profiles:
-                store = omh.profile_plan(root, name, omh.read_defaults())['store'].resolve()
-                parent = store
-                while not parent.exists() and parent != parent.parent:
-                    parent = parent.parent
-                if not parent.is_dir() or not os.access(parent, os.W_OK | os.X_OK):
-                    errors.append(f'{name}: invalid or unwritable OMH store destination: {store}')
-        except (omh.SetupError, ValueError, OSError) as exc:
-            errors.append('OMH store validation failed: ' + str(exc))
-        # Catalog OMH uses this official upstream; other sources are explicit URLs.
-        sources = {'https://github.com/rlaope/oh-my-hermes'}
+        if not shutil.which('uv') and not shutil.which('graphify'):
+            errors.append('uv is required when Graphify is not installed')
+        sources = set()
         for line in (repo / 'plugins/PLUGINS.md').read_text().splitlines():
             sources.update(word for word in line.split() if word.startswith('https://github.com/'))
         if not errors:
@@ -232,7 +218,7 @@ def preflight(repo, root, profiles, *, bundle_only=False):
                     errors.append(f'Dependency source unreachable: {source}')
                 else:
                     plan.append(f'  Source reachable: {source}')
-        plan.append('  Full setup configures OMH memory; existing stores are preserved (see per-profile preview)')
+        plan.append('  Existing memory providers and stores are unchanged')
         plan.append('  Native dependency scans still run at install time; source reachability is not scan approval')
     return {'errors': errors, 'plan': plan}
 

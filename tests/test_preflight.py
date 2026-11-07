@@ -85,19 +85,22 @@ class PreflightTests(unittest.TestCase):
         with patch.object(pre.subprocess, 'run', side_effect=TimeoutError):
             self.assertFalse(pre.source_available('https://github.com/example/repo'))
 
-    def test_full_preflight_rejects_file_at_memory_store_before_network(self):
+    def test_full_preflight_preserves_existing_memory_and_checks_only_declared_sources(self):
         pre = module('setup_preflight')
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            (home / 'omh').write_text('existing owner data')
+            config = 'memory:\n  provider: existing\n'
+            (home / 'config.yaml').write_text(config)
             with patch.object(pre, 'runtime_check', return_value=[]), \
                  patch.object(pre.shutil, 'which', return_value='/bin/available'), \
-                 patch.object(pre, 'source_available') as network:
+                 patch.object(pre, 'source_available', return_value=True) as network:
                 report = pre.preflight(ROOT, home, [('default', home)])
-            self.assertTrue(any('OMH store destination' in e for e in report['errors']), report)
-            network.assert_not_called()
-            self.assertEqual((home / 'omh').read_text(), 'existing owner data')
-            self.assertEqual(list(home.iterdir()), [home / 'omh'])
+            self.assertEqual(report['errors'], [], report)
+            self.assertEqual((home / 'config.yaml').read_text(), config)
+            sources = {word for line in (ROOT / 'plugins/PLUGINS.md').read_text().splitlines()
+                       for word in line.split() if word.startswith('https://github.com/')}
+            self.assertEqual({call.args[0] for call in network.call_args_list}, sources)
+            self.assertEqual(list(home.iterdir()), [home / 'config.yaml'])
 
     def test_unknown_path_launcher_is_not_validated_against_other_checkout(self):
         pre = module('setup_preflight')
@@ -148,14 +151,39 @@ class PluginSettingsDualReadTests(unittest.TestCase):
             'plugins:\n  entries:\n'
             '    autowork:\n'
             '      settings:\n        apply_runtime_defaults: false\n'
-            '      omh_trim: [omh-browser]\n'
+            '      custom_setting: [sample-skill]\n'
             '    kit:\n      allow_gateway_injection: true\n')
         raw = yaml.safe_load(self.path.read_text())
         self.assertTrue(self.policy.setup_opted_out(self.path))
         entry = self.policy.plugin_entry(raw)
         self.assertIs(entry['allow_gateway_injection'], True)
         self.assertEqual(entry['settings'], {'apply_runtime_defaults': False})
-        self.assertEqual(entry['omh_trim'], ['omh-browser'])
+        self.assertEqual(entry['custom_setting'], ['sample-skill'])
+
+    def test_runtime_policy_preserves_external_memory_and_disabled_skills(self):
+        raw = {'memory': {'provider': 'custom', 'settings': {'mode': 'manual'}},
+               'skills': {'external_dirs': ['/unread/external/skills'],
+                          'disabled': ['custom-skill', 'custom-skill']},
+               'plugins': {'entries': {'custom': {'settings': {'store': '/unread/store'}}}}}
+        before = json.dumps(raw, sort_keys=True)
+        patch = self.policy.expected_settings(raw)
+        self.assertNotIn('memory', patch)
+        self.assertNotIn('custom', patch['plugins']['entries'])
+        self.assertEqual(patch.get('skills'), {'disabled': ['custom-skill']})
+        self.assertEqual(json.dumps(raw, sort_keys=True), before)
+        defaults = self.policy._AUTOWORK_COMPAT.peer(self.policy.__dict__, 'bundle').defaults()
+        self.assertEqual(set(defaults), {'hermes', 'imported_plugins', 'required_skills'})
+        self.assertEqual(defaults['required_skills'], ['graphify'])
+        self.assertEqual(defaults['imported_plugins'], ['hermes-speech'])
+
+    def test_runtime_policy_enables_only_bundled_skills(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            skills = Path(tmp)
+            (skills / 'owned').mkdir()
+            (skills / 'owned/SKILL.md').write_text('fixture')
+            with patch.object(self.policy, 'BUNDLE_SKILLS', skills):
+                self.assertEqual(self.policy.skills_patch(
+                    {'skills': {'disabled': ['owned', 'custom-skill']}}), ['custom-skill'])
 
     def test_profiles_without_either_entry_get_the_current_defaults(self):
         self.path.write_text('approvals:\n  mode: manual\n')
@@ -240,11 +268,10 @@ class ConfigProbeTests(unittest.TestCase):
         self.probe = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.probe)
 
-    def test_duplicate_keys_bad_shapes_and_foreign_memory_are_rejected_without_writes(self):
+    def test_duplicate_keys_and_bad_shapes_are_rejected_without_writes(self):
         for config in ('approvals:\n  mode: off\n  mode: manual\n',
                        'plugins: []\n', 'plugins:\n  entries: []\n', 'memory: []\n',
-                       'plugins:\n  entries:\n    omh: false\n',
-                       'memory:\n  provider: another\n', 'key: [\n'):
+                       'plugins:\n  entries:\n    sample: false\n', 'key: [\n'):
             with self.subTest(config=config), tempfile.TemporaryDirectory() as tmp:
                 path = Path(tmp) / 'config.yaml'
                 path.write_text(config)
@@ -254,7 +281,7 @@ class ConfigProbeTests(unittest.TestCase):
                 self.assertEqual(list(Path(tmp).iterdir()), [path])
 
     def test_empty_sections_hermes_treats_as_absent_are_accepted(self):
-        for config in ('memory:\n  # provider: omh\nplugins:\n  enabled: [autowork]\n',
+        for config in ('memory:\n  # provider: existing\nplugins:\n  enabled: [autowork]\n',
                        'plugins:\n  entries:\n    foo:\n',
                        'plugins:\n  entries:\n', 'plugins:\napprovals:\nskills:\n',
                        '\ufeffmemory: {}\n'):
@@ -266,11 +293,12 @@ class ConfigProbeTests(unittest.TestCase):
                     with contextlib.redirect_stdout(output):
                         self.assertEqual(self.probe.main([*core, str(path)]), 0, output.getvalue())
 
-    def test_core_preserves_foreign_memory_and_errors_do_not_disclose_secrets(self):
+    def test_all_modes_preserve_foreign_memory_and_errors_do_not_disclose_secrets(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'config.yaml'
             path.write_text('memory:\n  provider: another\n')
-            self.assertEqual(self.probe.main(['--core', str(path)]), 0)
+            for flags in ([], ['--core']):
+                self.assertEqual(self.probe.main([*flags, str(path)]), 0)
             path.write_text('secret: [DO_NOT_PRINT\n')
             output = io.StringIO()
             with contextlib.redirect_stdout(output):

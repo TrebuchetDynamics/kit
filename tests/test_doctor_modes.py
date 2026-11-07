@@ -23,7 +23,7 @@ class DoctorModes(unittest.TestCase):
             'plugin_skills': ['kit:' + name for name in names],
             'commands': [{'command': name.replace('_', '-'), 'source': 'kit', 'kind': 'plugin'}
                          for name in names],
-            'missing_plugins': ['omh'], 'missing_skills': ['graphify'],
+            'missing_plugins': ['sample-addon'], 'missing_skills': ['graphify'],
             'unchecked_skill_sources': ['https://example.invalid/skills'],
         }
 
@@ -66,7 +66,7 @@ class DoctorModes(unittest.TestCase):
         self.assertEqual(data['scope'], 'core')
         self.assertEqual(data['status'], 'ready')
         self.assertEqual(data['integrations_status'], 'unavailable')
-        self.assertEqual(data['missing_plugins'], ['omh'])
+        self.assertEqual(data['missing_plugins'], ['sample-addon'])
 
     def test_default_full_check_fails_on_external_gaps(self):
         code, output = self.run_doctor('--json')
@@ -111,7 +111,7 @@ class DoctorModes(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('Core: ready', output)
         self.assertIn('Integrations: unavailable', output)
-        self.assertIn('omh', output)
+        self.assertIn('sample-addon', output)
         self.assertIn('not tested', output)
 
     def test_complete_full_install_passes(self):

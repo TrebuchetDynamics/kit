@@ -74,7 +74,7 @@ sys.exit(5 if os.environ.get('VERIFY_FAIL')==sys.argv[2] else 0)
         payload = ['autowork_bootstrap.py', 'Src/autowork_bootstrap.py',
                    *['Src/autowork_runtime/install/' + name for name in (
                        'install_skills.py', 'setup_bundle.py', 'setup_preflight.py',
-                       'setup_runtime.py', 'install_omh.py', 'install_graphify.py')]]
+                       'setup_runtime.py', 'install_graphify.py')]]
         before = sorted(self.home.rglob('*'))
         for name in payload:
             with self.subTest(missing=name):

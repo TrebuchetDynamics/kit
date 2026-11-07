@@ -12,7 +12,7 @@ Source: [runtime configuration writes](../runtime_defaults.py),
 
 Keep a private backup of each target profile's `config.yaml` and an inventory of
 its plugin and skill directories and `scripts/`. Include memory-provider selection,
-existing store bindings (including `plugins.entries.omh.settings.omh_home`),
+existing store bindings,
 `approvals`, disabled-skill lists, the Telegram
 `platforms.telegram.extra.command_menu.priority` list and plugin enablement. Configs
 can contain credentials; do not commit or publish backups. Full setup discovers
@@ -67,7 +67,7 @@ PROFILE config unset KEY`) when that was the prior state; do not replace an enti
   same-name skills were preserved. There is no per-file ownership journal that can
   prove a current copy belongs exclusively to this installer. Compare against your
   inventory and inspect local edits before removing any skill or shared support files.
-- OMH, speech, Graphify and external skills are separate installations. A previously
+- Speech, Graphify and external skills are separate installations. A previously
   installed external Ponytail plugin also remains separate; the current pinned
   Ponytail skill suite is bundled with Autowork.
   Do not remove one merely because Toolset is gone; other workflows may use it.

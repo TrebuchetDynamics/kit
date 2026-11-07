@@ -2,7 +2,7 @@
 
 The command bridge and the full setup are different layers. The bridge registers
 bundled skills; individual workflows need execution tools and may use other skills.
-The Hermes manifest declares OMH and Hermes Speech as stack dependencies.
+The Hermes manifest declares Hermes Speech as a stack dependency.
 [Portable packages](cross-host.md) do not install those integrations. Ponytail is
 now pinned and bundled for every host, not an external plugin prerequisite.
 `--bundle-only` skips the external-source setup stage; it is not a separately
@@ -23,8 +23,7 @@ Sources: [plugin manifest](../plugin.yaml), [installation inventory](../plugins/
 | Impeccable 4.8.0 | Vendored official Hermes package, [pin and hashes](../skills/impeccable/UPSTREAM.json) | All references and scripts ship with the plugin; Apache-2.0 license and notices retained. |
 | Beautify GitHub README | Vendored revision and file hashes in [UPSTREAM.json](../skills/beautify-github-readme/UPSTREAM.json) | Upstream skill byte-exact under `upstream/`; the toolset adapter sets host rules and adds a README audit that reuses the upstream SVG checks; MIT license retained. |
 | Grill Me 2.1.1 | Bundled [SKILL.md](../skills/grill-me/SKILL.md) | Its checked-in bytes are fixed by this repository revision. |
-| OMH setup CLI | Git revision pinned in defaults.json | The Hermes plugin source is separately resolved through the source inventory/catalog. |
-| OMH plugin, Hermes Speech | Native Hermes installs from declared sources | No unified bundle lockfile pins their installed revisions. |
+| Hermes Speech | Native Hermes installs from declared sources | No unified bundle lockfile pins their installed revisions. |
 | Toolset engineering protocols (`skills/engineering/local/`) | Written and versioned in this repository; no upstream pin | `test-suite-optimization` adapts two criteria from Matt Pocock's MIT `tdd` skill in its own words; no text is copied. |
 | Addy agent-skills (25 protocols) | Vendored commit and hashes in [UPSTREAM.json](../skills/engineering/UPSTREAM.json) | Updated only through a reviewed Toolset change; shared references included. Two defensive examples are paraphrased, with original and adapted hashes recorded; a refresh restores upstream bytes, so re-apply them by hand. |
 | Graphify | Dedicated setup helper | Not covered by a unified bundle lockfile. |

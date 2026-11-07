@@ -7,5 +7,4 @@ homepage: https://github.com/TrebuchetDynamics/kit
 kind: standalone
 
 requires_plugins:
-  - omh
   - hermes-speech

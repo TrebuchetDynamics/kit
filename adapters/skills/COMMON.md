@@ -10,7 +10,7 @@ Every bundled workflow applies the [shared Ponytail method](../../skills/shared/
 within its own authority. The pinned suite is included on all hosts; no external
 Ponytail plugin or persistent activation is required.
 Do not require Hermes CLI, profiles, gateways, Kanban cards, native origin injection,
-worker manifests, cron jobs, OMH, speech or another agent runtime. Those integrations
+worker manifests, cron jobs, speech or another agent runtime. Those integrations
 belong to the Hermes distribution, not portable prerequisites.
 
 Installation exposes skill metadata, not all instructions in every request. Load

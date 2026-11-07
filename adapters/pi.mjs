@@ -35,6 +35,7 @@ const workflows = {
   lgtm: ['lgtm', 'Continue the last approved action'],
   goal: ['goal', 'Keep one objective alive until evidence proves it done'],
   blockers: ['blockers', 'Answer what blocks the queue, one picked option at a time'],
+  unblock: ['unblock', 'Diagnose and repair stalled Autowork services'],
   'git-commit-push': ['git-commit-push', 'Commit and push, or pull and merge, owned changes'],
   push: ['push', 'Commit all, merge worktrees, sync and push main'],
 };

@@ -14,7 +14,7 @@ BANNED_OPENERS = ('use when', 'use to', 'use for', 'use if', 'use after', 'use b
 # Hermes installs Graphify's own skill into profiles, so Autowork ships the adapter only.
 ADAPTER_ONLY = {'graphify'}
 PILOT = ('autowork', 'plan-for-me', 'ponytail-review',
-         'git-commit-push', 'push', 'docs-sync', 'plan-with-me')
+         'git-commit-push', 'push', 'unblock', 'docs-sync', 'plan-with-me')
 
 
 class SkillStandardTests(unittest.TestCase):
