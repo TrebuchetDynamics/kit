@@ -260,7 +260,7 @@ and the explicit agent commands below do.
 | `autowork setup-portal --provider NAME --model ID [--endpoint URL] [--apply] [--json]` | Preview a selected Pi provider for the local Hermes Nous proxy; only `--apply` consents to configuration, never a proxy/service start |
 | `autowork ls [--long]` | One colored line per runner; `--long` adds its workers in flight, blockers, open owner-question count and model |
 | `autowork status [target]` / `logs [-f] [target]` | The runner's full status; its journal |
-| `autowork remove [target]` | Stop and remove the service; state and worktrees stay |
+| `autowork remove [target]` | Stop/disable the selected service, clear its failed state and remove its registration from the fleet; history and worktrees stay |
 | `autowork run [dir]` | Run the runner in the foreground here, for debugging |
 | `autowork web [--port N] [--host H] [--view-only]` | The TUI in a browser at `http://127.0.0.1:8765` (this machine only); `--view-only` disables control keys |
 | `autowork blockers [dir]` | `/autowork blockers` in an agent (`AUTOWORK_AGENT`, else `claude`, else `pi`); records the session's elapsed owner minutes privately when the agent exits |
@@ -432,6 +432,24 @@ Answer it there, written to the task's record where the runner reads
 it: `w` **W**rite a dated `Owner decision:` note, `d` **D**efer it to Needs decision with your
 reason; a repeated quick hold takes `r` **R**esolve with the producer or decision. Stop,
 restart, pause, uninstall, clear, set-aside and model changes ask first.
+
+Confirmed **Uninstall** uses `autowork remove`. On success, the selected runner
+leaves the next successful CLI `ls`, TUI and Paseo fleet result. Removal verifies
+that the service stopped, clears any failed state, and removes only its saved
+settings and pause/stop markers, including its legacy path-named instance.
+Stop, state-query or cleanup failures report an error instead of full success.
+The shared service template, other instances, history, repositories, task data,
+worktrees and unmerged branches stay intact. Removal also works when the saved
+checkout is missing. A later explicit `autowork start PATH` installs the usual
+registration again.
+
+Saved settings keep installed stopped/paused runners visible. Retained history
+and unregistered inactive/failed units do not register a runner. Unregistered
+active, starting or stopping units remain visible for diagnosis. Unreadable or
+malformed saved settings remain visible with errors, not treated as removal.
+Offline fake-systemctl tests cover this lifecycle. Real systemd uninstall still
+needs a separately authorized check on a disposable service instance.
+
 Terminal text can be selected by dragging with the mouse, then copied with your
 terminal's copy shortcut (often Ctrl+Shift+C). Mouse capture is off by default;
 keyboard navigation and controls remain available. Use `autowork tui --mouse` to

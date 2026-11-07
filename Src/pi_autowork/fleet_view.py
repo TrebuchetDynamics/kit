@@ -1127,31 +1127,39 @@ def paused_marker(env_dir, name):
 
 
 def _service_states(env_dir, systemctl: str, strict: bool, errors=None) -> dict[str, str]:
-    services = {}
+    # Settings register installed runners, including stopped/paused ones. Keep even
+    # unreadable registrations so their errors cannot masquerade as an uninstall.
+    services = {path.stem: 'dead' for path in sorted(Path(env_dir).glob('*.env'))}
     for line in _lines([systemctl, '--user', 'list-units', 'pi-autowork@*', '--all', '--plain', '--no-legend'], strict=strict):
         parts = line.split()
         if len(parts) >= 4 and parts[0].startswith('pi-autowork@') and parts[0].endswith('.service'):
-            services[parts[0][len('pi-autowork@'):-len('.service')]] = parts[3]
-    # A stopped, disabled (paused) service may not be loaded, so systemd does not list it;
-    # every installed service has a settings file.
-    for env_file in sorted(Path(env_dir).glob('*.env')):
-        if read_env(env_file, errors=errors).get('PI_AUTOWORK_REPO'):
-            services.setdefault(env_file.stem, 'dead')
+            name = parts[0][len('pi-autowork@'):-len('.service')]
+            # Retained inactive/failed units and history are not registrations.
+            if name in services or parts[2] not in ('inactive', 'failed'):
+                services[name] = parts[3]
     return services
 
 
 def _service_runner(name: str, sub: str, env_dir, systemctl: str, errors=None) -> Runner:
-    settings = read_env(Path(env_dir) / f'{name}.env', errors=errors)
+    problems = []
+    env_file = Path(env_dir) / f'{name}.env'
+    settings = read_env(env_file, errors=problems)
+    if not settings.get('PI_AUTOWORK_REPO', '').strip():
+        problems.append(f'environment {env_file}: missing PI_AUTOWORK_REPO')
     try:
         result = subprocess.run([systemctl, '--user', 'is-enabled', '--quiet', f'pi-autowork@{name}.service'],
                                 capture_output=True, timeout=10)
         enabled = result.returncode == 0
-        if result.returncode not in (0, 1) and errors is not None:
-            errors.append(f'{name}: service enabled query exited {result.returncode}')
+        if result.returncode not in (0, 1):
+            problems.append(f'{name}: service enabled query exited {result.returncode}')
     except (OSError, subprocess.SubprocessError) as exc:
         enabled = False
-        if errors is not None:
-            errors.append(f'{name}: service enabled query: {exc}')
+        problems.append(f'{name}: service enabled query: {exc}')
+    if errors is not None:
+        errors.extend(problems)
+    else:
+        for problem in problems:
+            print(f'pi-autowork: {problem}', file=sys.stderr)
     toolset = settings.get('PI_AUTOWORK_TOOLSET', '').strip()
     fault = toolset_fault(toolset)
     return Runner(name=name, service=sub, mode='service',
@@ -1160,7 +1168,7 @@ def _service_runner(name: str, sub: str, env_dir, systemctl: str, errors=None) -
                   fallback=settings.get('PI_AUTOWORK_FALLBACK') or DEFAULT_FALLBACK,
                   push=settings.get('PI_AUTOWORK_PUSH', '0') == '1',
                   toolset=toolset, toolset_problem=f'PI_AUTOWORK_TOOLSET {fault}' if fault else '',
-                  enabled=enabled, observation=health.observation({}),
+                  enabled=enabled, observation=health.observation({}), acquisition_errors=problems,
                   resources=unknown_resources('no runner state'))
 
 
@@ -1214,7 +1222,7 @@ def _health_runner(found: dict[str, Runner], row: dict, now: float, proc='/proc'
             minutes = int((now - job['started']) // 60)
         # status.json deliberately omits the PID and may outlive a stopped runner.
         check = main_check.read(state_dir, repo, fallback=row.get('main_check'))
-        errors = list(row.get('errors') or [])
+        errors = [*runner.acquisition_errors, *(row.get('errors') or [])]
         triage_failures = _triage_failures(state_dir, row.get('held', []), errors)
         return replace(runner, repo=repo, state_dir=state_dir, state=row['state'], minutes=minutes,
                        running=row.get('workers', 0), waiting=row.get('waiting', 0),
