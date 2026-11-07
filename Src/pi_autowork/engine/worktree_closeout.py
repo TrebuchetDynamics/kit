@@ -2,7 +2,7 @@
 """Remove finished worktrees of a repository; keep anything that could still matter.
 
 A worktree is removable only when every check passes: it is not the canonical
-checkout, not locked, not managed by a running parallel slot or pi-autowork, its
+checkout, not locked, not a recovery/ checkpoint, not managed by a running parallel slot or pi-autowork, its
 HEAD is already on the canonical `main`/`master`, it has no tracked or untracked
 changes and no ignored files other than regenerable caches, no process has its
 working directory, an open file or an argument inside it, and its Git metadata has
@@ -168,6 +168,8 @@ def judge(canonical, default, entry, found, grace, now, archive=False):
     path = entry['path']
     if entry['locked']:
         return 'locked', False
+    if (entry.get('branch') or '').startswith('recovery/'):
+        return 'recovery checkpoint; preserve worktree and branch', False
     owner = runner_owner(canonical, path)
     if owner:
         return f'managed by {owner}', False

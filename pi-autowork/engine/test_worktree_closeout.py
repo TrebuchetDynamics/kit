@@ -1,6 +1,7 @@
 """Disposable Git fixtures for removing finished worktrees and keeping everything else."""
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -74,6 +75,34 @@ class WorktreeCloseoutTests(unittest.TestCase):
         self.assertNotIn(str(done), self.git(self.repo, 'worktree', 'list', '--porcelain'))
         self.assertEqual(self.git(self.repo, 'branch', '--list', 'autowork/done'), '')
         self.assertEqual(self.git(self.repo, 'symbolic-ref', '--short', 'HEAD'), 'main')
+
+    def test_recovery_namespace_is_preserved_in_every_closeout_mode(self):
+        for mode, options in (
+                ('report', {}), ('apply', {'apply': True}),
+                ('archive', {'apply': True, 'archive': True}),
+                ('named', {'apply': True, 'archive': True, 'target': True}),
+                ('prunable', {'apply': True, 'archive': True})):
+            with self.subTest(mode=mode):
+                path = self.worktree('checkpoint-' + mode)
+                branch = 'recovery/' + mode
+                self.git(path, 'branch', '-m', branch)
+                head = self.git(path, 'rev-parse', 'HEAD')
+                contents = (path / ('checkpoint-' + mode)).read_bytes()
+                if mode == 'prunable':
+                    shutil.rmtree(path)  # Only this disposable fixture's worktree.
+                options = dict(options)
+                if options.pop('target', False):
+                    options['worktrees'] = [path]
+                result = self.run_closeout(**options)
+                self.assertIn('recovery', self.kept(result, path))
+                self.assertNotIn(str(path), [row['path'] for row in result['removed']])
+                self.assertIn('worktree ' + str(path), self.git(self.repo, 'worktree', 'list', '--porcelain'))
+                self.assertEqual(self.git(self.repo, 'rev-parse', branch), head)
+                if mode != 'prunable':
+                    self.assertEqual((path / ('checkpoint-' + mode)).read_bytes(), contents)
+        ordinary = self.worktree('recovery-task')  # Not in the reserved namespace.
+        result = self.run_closeout(apply=True, worktrees=[ordinary])
+        self.assertEqual([row['path'] for row in result['removed']], [str(ordinary)])
 
     def test_keeps_unmerged_dirty_untracked_and_evidence_worktrees(self):
         unmerged = self.worktree('unmerged', merge=False)

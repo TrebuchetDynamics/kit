@@ -40,8 +40,13 @@ without `--apply` it only reports. A worktree is removed only when every check
 passes, so nothing it removes holds unique work:
 
 1. The canonical checkout is on `main` or `master`; it is never a candidate.
-2. The worktree is not locked, not a parallel slot that is not yet closed (the
-   coordinator cleans those) and not under the pi-autowork state directory.
+2. The worktree is not locked, not on a `recovery/` branch, not a parallel slot
+   that is not yet closed (the coordinator cleans those) and not under the
+   pi-autowork state directory. The `recovery/` namespace reserves owner recovery
+   checkpoints even when fully merged, clean, old or explicitly named. This also
+   preserves prunable registrations and their branches; `--archive` does not
+   override it. Removing such a checkpoint requires a separate explicit owner
+   decision and ordinary Git operations, not automatic task closeout.
 3. Its HEAD is an ancestor of the default branch; unmerged work is kept. A squash
    or cherry-pick is not an ancestor and is kept too: ancestry failure alone never
    authorizes deletion.
@@ -65,8 +70,9 @@ The whole working tree becomes a commit on HEAD, built with a temporary index so
 worktree is untouched, under `refs/archive/worktrees/<time>-<name>-<head>`; a clean
 unintegrated HEAD is referenced as is. Removal follows only when a fresh snapshot
 still matches, and uses `--force` only for changes that archive commit now holds.
-Restore with `git worktree add DIR REF`. Ignored non-cache files, locks, runner
-ownership, live processes and the grace period still keep a worktree. Run it
+Restore with `git worktree add DIR REF`. Ignored non-cache files, locks,
+`recovery/` checkpoints, runner ownership, live processes and the grace period
+still keep a worktree. Run it
 without `--apply` first; it lists each candidate with `"archive": true`. Every kept worktree is reported
 with its reason; report those as **cleanup pending**. An idle agent session whose
 working directory is a removed worktree must return to the canonical checkout.
