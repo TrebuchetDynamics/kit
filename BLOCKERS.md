@@ -45,10 +45,10 @@ None.
 
 - Goal: LANGUAGE-STRATEGY — Keep the Python core and adopt another language only from measured need.
 - Task: LANG-003-40f1f5a5 — Decide the Go supervisor prototype from measured coordinator resources.
-- Needs: Round 1 completed with median coordinator RSS 68.82 MiB and share 4.74%, below the accepted memory gate. The historical dispatch p95 lacks same-time idle-slot evidence, incident logs do not establish coordinator attribution, and no blocked Python target-host attempt was supplied. No prototype starts; the goal stays unmet.
-- Question: Is there task-aligned idle-slot history, a record of at least two coordinator-attributable incidents within seven days, or a blocked Python target-host provisioning attempt to evaluate? Provide the concrete evidence source; current data does not establish a complete gate.
+- Needs: [LANG-004 evidence inspection](docs/plans/2026-11-05-language-strategy.md#evidence-continuation-lang-004) reproduced the round-1 dispatch p95 and found 381 task-aligned journal observations, but their slot projection has no completeness proof or contemporaneous status corroboration. It is candidate evidence, not observed idle capacity. Memory remains below the gate; incident attribution and a blocked Python target-host attempt remain unmeasured. No prototype starts; LANGUAGE-STRATEGY stays unmet.
+- Question: Is there contemporaneous task-aligned status evidence, or independent validation of complete historical slot projection with status corroboration? Alternatively, supply two coordinator-attributable incidents within seven days or a blocked Python target-host attempt, with source and time window. Another approval alone is not the missing evidence.
 - Kind: input
-- Continuation: LANG-004-244e109a in Needs decision; evaluate supplied evidence under the unchanged gate, not a request for new policy approval.
+- Continuation: LANG-004-244e109a records the inspection under the unchanged gate. Its baseline placement is Now with an approved owner answer; neither is evidence of a met gate. The coordinator must reconcile the missing-evidence continuation to Needs decision before another planning round. This worker changes no task record and claims no coordinator verification. The separate accepted Rust/Octet direction does not qualify this historical gate.
 
 ### Q-TOOLSET-468-d0554d9d — Planning stopped
 
