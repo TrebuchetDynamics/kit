@@ -21,15 +21,16 @@ daemon-side operator policy.
 | [Autowork runner](#the-runner-autowork) | Optional Linux automation that works through accepted tasks after your session ends. |
 
 [Install](#install) · [First use](#first-use-in-your-project) ·
-[Skills](#the-skills) · [Paseo interface](#paseo-interface) ·
+[Autowork flow](#autowork-flow) · [Skills](#the-skills) · [Paseo interface](#paseo-interface) ·
 [Safety](#safety-before-installing) · [Evidence](#what-verification-proves) ·
 [Docs](#documentation)
 
 **Start with one skill.** Not sure which fits? Ask `/ask-kit` in Pi,
 `/kit:ask-kit` in Claude Code or `$kit:ask-kit` in Codex.
 
-**A skill invocation is not a background service.** The skills act in your session and
-stop when it ends. The Pi runner is the continuous option, and you start it yourself.
+**Planning does not start a background service.** Most skills act in your session.
+On portable hosts, `/autowork` defaults to starting the optional runner; use `/work`
+for repeated manual execution in this session. The Pi runner is the continuous option.
 Hermes adds native scheduling for its own profiles. Paseo can host agents, but
 installing the Kit plugin does not start an Autowork service.
 
@@ -171,6 +172,34 @@ Expected first success: one relevant question and no file changes. This is a liv
 smoke check **you perform**, not an outcome established by automated tests. Continue
 with the [core-only interview](docs/onboarding.md#core-only-requirements-interview) or
 the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-task).
+
+## Autowork flow
+
+**Plan → save the queue → execute → observe → unblock → continue.**
+Use this flow in your project, not in the Kit checkout. Commands below use Pi syntax;
+Claude Code uses `/kit:…` and Codex uses `$kit:…`.
+
+| Step | Skill or interface | What happens |
+| --- | --- | --- |
+| 1. Plan | [`/plan-with-me`](adapters/skills/plan-with-me/SKILL.md) **or** [`/plan-for-me`](adapters/skills/plan-for-me/SKILL.md) | Plan together through questions, or delegate research and planning without an interview. Save accepted decisions and executable tasks; planning alone starts no worker. |
+| 2. Reconcile | [`/docs-sync`](skills/docs-sync/SKILL.md) | Prepare a missing task store or reconcile changed docs and task records. Reuse a valid planner handoff; this is not a required extra pass before every task. |
+| 3. Execute | [`/autowork`](adapters/skills/autowork/SKILL.md) **or** [`/work`](skills/work/SKILL.md) | On portable hosts, `/autowork` starts the repository's runner and verifies its status. `/work` auto-selects and completes eligible tasks repeatedly in this session without starting a service. Both use the [execution workflow](skills/autowork/SKILL.md) for implementation, checks and closeout. |
+| 4. Observe | **Autowork TUI** or **[Paseo plugin](#paseo-interface)** | Inspect the same runners, tasks, blockers and owner questions. Open the TUI with `autowork tui`; the plugin is read-only by default and requires grants and confirmation for actions. |
+| 5. Recover | [`/unblock`](skills/unblock/SKILL.md) | Diagnose the target repository, repair authorized causes and verify that work consumed the repair and continued. Preserve explicit pauses and genuine owner/live gates. |
+
+```text
+/plan-with-me plan a bounded cache with me
+# Or: /plan-for-me plan a bounded cache from the existing requirements
+# Use /docs-sync if the store or documentation needs reconciliation.
+/autowork
+# Or: /work to execute repeatedly in this session without a runner.
+# If execution stalls: /unblock
+```
+
+In a terminal, `autowork tui` opens monitoring; `autowork start .` explicitly starts
+this repository's runner. Installing or opening the Paseo plugin does not start it.
+Planning, committed queue changes, runtime admission, verified completion and remote
+publication are separate outcomes; push and deployment need their own authority.
 
 ## The skills
 
