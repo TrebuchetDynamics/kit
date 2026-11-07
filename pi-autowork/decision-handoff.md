@@ -10,6 +10,26 @@ The result includes the complete pending `tasks/` diff, `pending_revision`, exis
 the same handoff object, so hosts do not need their own decision-state inference.
 Capabilities advertise `handoff` as a task verb. No new execution action is granted.
 
+The TUI's **Save answer** now uses `tasks decide --commit` (and scoped answer-note
+`field --commit` for a quick-hold resolution). It saves and commits only that answer
+and its requested section, not unrelated work. Normal CLI writes without `--commit`
+remain local-only. A failed commit retains the local answer and reports failure;
+use this report for old pending answers or uncertain commit outcomes. A successful
+commit still does not prove runner acceptance or grant live authority.
+
+Scoped answer commits reserve the real Git index and HEAD, run the repository's
+hooks with the original branch name and effective configuration in an isolated
+Git snapshot, then publish using an expected-old-ref update. They refuse branch,
+HEAD, target staging or unfinished-operation drift instead of committing an older
+tree over another writer's work. Git's files-based ref storage is required; other
+backends retain the answer pending with an explicit error. If publication is
+uncertain or index installation fails, the prepared `index.lock` is retained and
+its path is reported for explicit reconciliation. Do not delete it or retry a
+commit blindly: establish process quiescence, the actual branch revision and the
+prepared/original index contents before recovering. `tasks handoff` may report a
+clean task snapshot even while this index reconciliation is outstanding; it does
+not inspect or recover Git lockfiles and is not sufficient recovery evidence.
+
 ## Per-task states
 
 | State | Evidence | Next action |

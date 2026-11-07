@@ -206,8 +206,8 @@ header strings are escaped on one physical TOML line and read back unchanged.
 `show` and `validate` reads uncommitted edits through a throwaway commit that leaves the
 repository's objects, index and refs alone) and edits the working tree (`add`, `field`,
 `place`, `move`, `hold`, `release`, `decide`, `done`, `supersede`, `delete`, `goal`; `new-id` allocates an ID);
-it never commits. A write
-holds the repository's task lock (`<git dir>/autowork-tasks.lock`), so two writers never
+these writes stay local unless an answer explicitly uses `--commit` as described below.
+The separate `commit` verb reviews/commits pending task edits. A write holds the repository's task lock (`<git dir>/autowork-tasks.lock`), so two writers never
 interleave; refuses a file that changed since it was read, or since the `record_revision`
 given as `--expect REV`; and is undone when the resulting store does not validate.
 The Python command entry points and working-tree reads share that lock too. A `move`
@@ -266,8 +266,15 @@ without asking that question again in BLOCKERS.md. The note does not close the t
 or grant execution authority. `decide ID TEXT [--section SECTION]` records the same
 dated note without changing section unless requested. It normalizes whitespace,
 refuses empty text and closed tasks, preserves worker guards for section changes,
-and does not remove holds or grant live/completion authority. In the TUI, **e Decide**
-opens this form; [the planning console](../docs/planning-console.md) separately
+and does not remove holds or grant live/completion authority. `--commit` explicitly
+saves and commits only the answer and requested section against HEAD on main/master,
+using normal Git hooks. Other task edits, unrelated notes and unrelated staged edits
+are preserved; a staged target or an uncommitted contract requires separate review.
+A commit failure retains the saved answer and reports pending/unconfirmed handoff.
+`field ID 'Blocker resolution' TEXT --commit` provides the same scoped handoff for
+quick-hold answers (also available for the `Owner decision` note, not typed fields).
+Without `--commit`, CLI writes remain local-only. In the TUI, **e Decide**
+opens this form and Save uses `--commit`; [the planning console](../docs/planning-console.md) separately
 supports AI discussion and explicit proposal review/apply.
 
 `handoff [target]` is the [shared decision recovery report](decision-handoff.md).

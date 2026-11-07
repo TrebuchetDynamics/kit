@@ -120,9 +120,12 @@ async def main():
                         await app.workers.wait_for_complete()
                         await pilot.pause()
                     assert not isinstance(app.screen, tui.DecisionPrompt)
-                    assert any('pending commit' in n.lower() for n in notices), notices
+                    assert any('committed locally' in n.lower() for n in notices), notices
                     assert 'Owner decision:' in record.read_text() and 'Other owner:' in record.read_text()
-                    assert fixture.git('rev-parse', 'HEAD') == baseline, 'Save must not commit'
+                    assert fixture.git('rev-parse', 'HEAD') != baseline, 'Save must commit the answer'
+                    committed = fixture.git('show', 'HEAD:tasks/items/T-1.md')
+                    assert 'Use the smaller design' in committed and 'Other owner:' not in committed
+                    assert '--commit' in next(a for a in reversed(calls) if a[2] == 'decide')
                     assert 'live = "authorized"' not in record.read_text()
                     # Section intent is saved explicitly; no close, release or permission grant.
                     for section in ('Next', 'Needs decision'):
@@ -141,7 +144,8 @@ async def main():
                         data = tomllib.loads(record.read_text().split('+++', 2)[1])
                         assert data['section'] == section and data['status'] == 'open'
                         assert data.get('live', 'denied') == 'denied'
-                    assert fixture.git('rev-parse', 'HEAD') == baseline
+                    assert fixture.git('rev-parse', 'HEAD') != baseline
+                    assert 'section = "Needs decision"' in fixture.git('show', 'HEAD:tasks/items/T-1.md')
                     # Several questions use a keyboard picker; unrelated historic annotations stay read-only.
                     runner.questions = [fleet_view.Question('MAIN', 'decision', 0, 'No editable task'),
                                         *runner.questions, fleet_view.Question('T-1', 'input', 0, 'Duplicate')]
@@ -168,7 +172,7 @@ async def main():
                     await pilot.press('e')
                     await pilot.pause()
                     assert not isinstance(app.screen, (tui.DecisionPrompt, tui.QuestionPicker)) and len(calls) == before
-            print('PASS decisions', width, 'context, keyboard, stale edit, pending commit, picker, view-only')
+            print('PASS decisions', width, 'context, keyboard, stale edit, scoped answer commit, picker, view-only')
         finally:
             fixture.doCleanups()
 

@@ -398,6 +398,271 @@ class TaskCommandTests(unittest.TestCase):
         self.assertEqual(record['section'], 'Next')
         self.assertEqual(record['live'], 'denied')
 
+    def test_decide_commit_hands_only_the_answer_to_the_committed_store(self):
+        path = self.repo / 'tasks/items/T-1.md'
+        other = self.repo / 'tasks/goals/G-1.md'
+        other.write_text(other.read_text() + '\n- Other editor: unrelated task edit\n')
+        path.write_text(path.read_text() + '\n- Other editor: unrelated note\n')
+        (self.repo / 'staged.txt').write_text('keep staged\n')
+        self.git('add', 'staged.txt')
+        self.git('add', str(other.relative_to(self.repo)))
+        staged = self.git('diff', '--cached', '--binary')
+        original = TaskStore.at(self.repo, 'HEAD').tasks['T-1']
+        revision = commands.cmd_show(self.repo, 'T-1', worktree=True)['record_revision']
+        result = json.loads(self.tasks('decide', 'T-1', 'authorized', '--section', 'Next',
+                                       '--expect', revision, '--commit').stdout)
+        record = TaskStore.at(self.repo, 'HEAD').tasks['T-1']
+        self.assertEqual(result['lifecycle']['state'], 'committed')
+        self.assertEqual(result['commit'], self.git('rev-parse', 'HEAD').strip())
+        self.assertIn('authorized', record.body)
+        self.assertEqual((record.section, record.status, record.live), ('Next', 'open', 'denied'))
+        self.assertEqual(record.ownership, original.ownership)
+        self.assertEqual(record.contract_hash, original.contract_hash)
+        self.assertNotIn('Other editor', record.body)
+        self.assertIn('unrelated note', path.read_text())
+        self.assertEqual(self.git('diff', '--cached', '--binary'), staged)
+        self.assertEqual(self.git('show', '--name-only', '--format=', 'HEAD').split(),
+                         ['tasks/items/T-1.md'])
+
+    def test_decide_commit_recovers_a_previously_saved_answer(self):
+        self.tasks('decide', 'T-1', 'Old local answer')
+        self.tasks('decide', 'T-1', 'Use the offline option', '--commit')
+        self.assertIn('Use the offline option', TaskStore.at(self.repo, 'HEAD').tasks['T-1'].body)
+        self.assertNotIn('tasks/', self.git('status', '--porcelain'))
+
+    def test_decide_commit_keeps_answer_on_hook_failure_and_reports_pending(self):
+        head = self.git('rev-parse', 'HEAD')
+        hook = self.repo / '.git/hooks/pre-commit'
+        hook.write_text('#!/bin/sh\necho blocked-by-test >&2\nexit 1\n')
+        hook.chmod(0o755)
+        refused = self.tasks('decide', 'T-1', 'Keep my answer', '--commit', ok=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('pending commit', refused.stderr)
+        self.assertIn('blocked-by-test', refused.stderr)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        self.assertIn('Keep my answer', (self.repo / 'tasks/items/T-1.md').read_text())
+        self.assertNotIn('Keep my answer', TaskStore.at(self.repo, 'HEAD').tasks['T-1'].body)
+        hook.unlink()
+        self.tasks('decide', 'T-1', 'Keep my answer', '--commit')
+        self.assertIn('Keep my answer', TaskStore.at(self.repo, 'HEAD').tasks['T-1'].body)
+
+    def test_decide_commit_refuses_staged_target_or_uncommitted_contract(self):
+        path = self.repo / 'tasks/items/T-1.md'
+        original = path.read_bytes()
+        path.write_text(path.read_text() + '\n- Other editor: staged\n')
+        self.git('add', str(path.relative_to(self.repo)))
+        index = (self.repo / '.git/index').read_bytes()
+        refused = self.tasks('decide', 'T-1', 'Not recorded', '--commit', ok=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('staged', refused.stderr)
+        self.assertEqual((self.repo / '.git/index').read_bytes(), index)
+        self.assertNotIn('Not recorded', path.read_text())
+        self.git('reset', '-q', 'HEAD', '--', str(path.relative_to(self.repo)))
+        path.write_text(edit(original.decode(), {'scope': 'a different contract'}))
+        refused = self.tasks('decide', 'T-1', 'Not recorded', '--commit', ok=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('contract', refused.stderr)
+        self.assertNotIn('Not recorded', path.read_text())
+
+    def test_decide_commit_refuses_head_branch_and_index_drift_after_save(self):
+        path = self.repo / 'tasks/items/T-1.md'
+        original = path.read_bytes()
+        real_set = commands._set
+        for drift in ('head', 'branch', 'index'):
+            with self.subTest(drift=drift):
+                before = self.git('rev-parse', 'HEAD')
+                branch = self.git('branch', '--show-current').strip()
+                def race(*args, **kwargs):
+                    real_set(*args, **kwargs)
+                    if drift == 'head':
+                        self.git('commit', '--allow-empty', '-qm', 'external writer')
+                    elif drift == 'branch':
+                        self.git('checkout', '-qb', 'alternate')
+                    else:
+                        self.git('add', 'tasks/items/T-1.md')
+                with patch.object(commands, '_set', side_effect=race):
+                    with self.assertRaisesRegex(commands.CommandError, 'pending commit'):
+                        commands.cmd_decide(self.repo, 'T-1', 'Retain this answer', commit=True)
+                self.assertNotIn('Retain this answer', TaskStore.at(self.repo, 'HEAD').tasks['T-1'].body)
+                self.assertIn('Retain this answer', path.read_text())
+                if drift == 'branch':
+                    self.git('checkout', branch)
+                if drift != 'head':
+                    self.assertEqual(self.git('rev-parse', 'HEAD'), before)
+                self.git('reset', '-q', 'HEAD', '--', 'tasks/items/T-1.md')
+                path.write_bytes(original)
+
+    def test_decide_commit_pins_publication_and_preserves_concurrent_commit(self):
+        head = self.git('rev-parse', 'HEAD').strip()
+        branch = self.git('symbolic-ref', 'HEAD').strip()
+        real_git = commands._git
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {'GIT_INDEX_FILE': str(Path(tmp) / 'index')}
+            blob_file = Path(tmp) / 'content'
+            blob_file.write_text('concurrent committed content\n')
+            real_git(self.repo, 'read-tree', head, env=env)
+            blob = real_git(self.repo, 'hash-object', '-w', str(blob_file))
+            real_git(self.repo, 'update-index', '--add', '--cacheinfo',
+                     f'100644,{blob},concurrent.txt', env=env)
+            tree = real_git(self.repo, 'write-tree', env=env)
+            concurrent = self.git('commit-tree', tree, '-p', head, '-m', 'concurrent').strip()
+            def race(repo, *args, **kwargs):
+                if args[0] == 'commit':
+                    # Another worktree can update the shared ref despite this checkout's locks.
+                    external = Path(tmp) / 'external-git'
+                    external.mkdir()
+                    (external / 'HEAD').write_text(head + '\n')
+                    (external / 'commondir').write_text(str(self.repo / '.git') + '\n')
+                    real_git(repo, 'update-ref', branch, concurrent, head,
+                             env={'GIT_DIR': str(external), 'GIT_WORK_TREE': str(repo)})
+                return real_git(repo, *args, **kwargs)
+            with patch.object(commands, '_git', side_effect=race):
+                with self.assertRaisesRegex(commands.CommandError, 'pending commit'):
+                    commands.cmd_decide(self.repo, 'T-1', 'Do not lose either edit', commit=True)
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), concurrent)
+        self.assertEqual(self.git('show', 'HEAD:concurrent.txt'), 'concurrent committed content\n')
+        self.assertNotIn('Do not lose either edit', TaskStore.at(self.repo, 'HEAD').tasks['T-1'].body)
+        self.assertIn('Do not lose either edit', (self.repo / 'tasks/items/T-1.md').read_text())
+        self.assertFalse((self.repo / '.git/index.lock').exists())
+        self.assertFalse((self.repo / '.git/HEAD.lock').exists())
+
+    def test_decide_commit_reserves_real_index_and_branch_through_commit(self):
+        branch = self.git('branch', '--show-current').strip()
+        real_git = commands._git
+        attempted = []
+        def race(repo, *args, **kwargs):
+            if args[0] == 'commit':
+                for argv in (('add', 'tasks/items/T-1.md'), ('checkout', '-qb', 'wrong-branch')):
+                    attempted.append(subprocess.run(['git', '-C', str(repo), *argv],
+                                                     capture_output=True, text=True))
+            return real_git(repo, *args, **kwargs)
+        with patch.object(commands, '_git', side_effect=race):
+            receipt = commands.cmd_decide(self.repo, 'T-1', 'On the correct branch', commit=True)
+        self.assertEqual(len(attempted), 2)
+        self.assertTrue(all(r.returncode != 0 and 'index.lock' in r.stderr for r in attempted))
+        self.assertEqual(self.git('branch', '--show-current').strip(), branch)
+        self.assertEqual(receipt['commit'], self.git('rev-parse', 'HEAD').strip())
+        self.assertIn('On the correct branch', TaskStore.at(self.repo, 'HEAD').tasks['T-1'].body)
+
+    def test_decide_commit_preserves_common_hook_helper_lookup(self):
+        hooks = self.repo / '.git/hooks'
+        hook = hooks / 'pre-commit'
+        hook.write_text('#!/bin/sh\nexec "$(git rev-parse --git-common-dir)/hooks/policy-helper"\n')
+        helper = hooks / 'policy-helper'
+        helper.write_text('#!/bin/sh\necho shared-hook-helper-ran >&2\nexit 1\n')
+        hook.chmod(0o755)
+        helper.chmod(0o755)
+        refused = self.tasks('decide', 'T-1', 'Do not skip common helper', '--commit', ok=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('shared-hook-helper-ran', refused.stderr)
+
+    def test_decide_commit_preserves_worktree_configured_hooks(self):
+        self.git('config', 'extensions.worktreeConfig', 'true')
+        hooks = self.repo / 'local-hooks'
+        hooks.mkdir()
+        hook = hooks / 'pre-commit'
+        hook.write_text('#!/bin/sh\necho worktree-hook-must-run >&2\nexit 1\n')
+        hook.chmod(0o755)
+        self.git('config', '--worktree', 'core.hooksPath', str(hooks))
+        head = self.git('rev-parse', 'HEAD')
+        refused = self.tasks('decide', 'T-1', 'Retain answer', '--commit', ok=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('worktree-hook-must-run', refused.stderr)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        self.assertIn('Retain answer', (self.repo / 'tasks/items/T-1.md').read_text())
+
+    def test_decide_commit_preserves_branch_conditioned_config_and_hook_semantics(self):
+        self.git('branch', '-m', 'main')
+        hooks = self.repo / 'conditional-hooks'
+        hooks.mkdir()
+        hook = hooks / 'pre-commit'
+        hook.write_text('#!/bin/sh\n'
+                        'if [ "$(git symbolic-ref --quiet --short HEAD)" = main ]; then\n'
+                        ' echo branch-hook-must-refuse >&2; exit 1\nfi\n')
+        hook.chmod(0o755)
+        config = self.repo / 'branch-config'
+        self.git('config', '--file', str(config), 'core.hooksPath', str(hooks))
+        self.git('config', 'includeIf.onbranch:main.path', str(config))
+        head = self.git('rev-parse', 'HEAD')
+        refused = self.tasks('decide', 'T-1', 'Do not skip main policy', '--commit', ok=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('branch-hook-must-refuse', refused.stderr)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+
+    def test_decide_commit_retains_prepared_index_when_cas_response_is_lost(self):
+        real_git = commands._git
+        def lose_response(repo, *args, **kwargs):
+            result = real_git(repo, *args, **kwargs)
+            if 'update-ref' in args:
+                raise subprocess.TimeoutExpired('git update-ref', 60)
+            return result
+        with patch.object(commands, '_git', side_effect=lose_response):
+            with self.assertRaisesRegex(commands.CommandError, 'prepared index retained'):
+                commands.cmd_decide(self.repo, 'T-1', 'Published but response lost', commit=True)
+        self.assertIn('Published but response lost', TaskStore.at(self.repo, 'HEAD').tasks['T-1'].body)
+        recovery = self.repo / '.git/index.lock'
+        self.assertTrue(recovery.exists())
+        env = {**os.environ, 'GIT_INDEX_FILE': str(recovery)}
+        check = subprocess.run(['git', '-C', str(self.repo), 'diff', '--cached', '--name-only', 'HEAD'],
+                               env=env, capture_output=True, text=True, check=True)
+        self.assertEqual(check.stdout, '')
+        self.assertFalse((self.repo / '.git/HEAD.lock').exists())
+
+    def test_decide_commit_does_not_remove_a_new_writers_index_lock(self):
+        replace = commands.os.replace
+        lock = self.repo / '.git/index.lock'
+        def another_writer(source, target):
+            replace(source, target)
+            if Path(source) == lock:
+                lock.write_text('new writer owns this lock\n')
+        with patch.object(commands.os, 'replace', side_effect=another_writer):
+            result = commands.cmd_decide(self.repo, 'T-1', 'Answer committed', commit=True)
+        self.assertEqual(result['lifecycle']['state'], 'committed')
+        self.assertEqual(lock.read_text(), 'new writer owns this lock\n')
+
+    def test_decide_commit_retains_index_if_install_fails_after_publication(self):
+        replace = commands.os.replace
+        lock = self.repo / '.git/index.lock'
+        def fail_install(source, target):
+            if Path(source) == lock:
+                raise OSError('injected install failure')
+            return replace(source, target)
+        with patch.object(commands.os, 'replace', side_effect=fail_install):
+            with self.assertRaisesRegex(commands.CommandError, 'prepared index retained'):
+                commands.cmd_decide(self.repo, 'T-1', 'Published answer', commit=True)
+        self.assertIn('Published answer', TaskStore.at(self.repo, 'HEAD').tasks['T-1'].body)
+        self.assertTrue(lock.exists())
+
+    def test_decide_commit_busy_index_is_not_removed_and_no_answer_is_published(self):
+        lock = self.repo / '.git/index.lock'
+        lock.write_text('another Git writer\n')
+        head = self.git('rev-parse', 'HEAD')
+        refused = self.tasks('decide', 'T-1', 'Pending answer', '--commit', ok=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('pending commit', refused.stderr)
+        self.assertEqual(lock.read_text(), 'another Git writer\n')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        self.assertIn('Pending answer', (self.repo / 'tasks/items/T-1.md').read_text())
+
+    def test_decide_commit_section_still_refuses_active_worker(self):
+        path = self.repo / 'tasks/items/T-1.md'
+        original = path.read_bytes()
+        with patch.object(commands, 'in_flight', return_value=({'T-1'}, [])):
+            with self.assertRaisesRegex(commands.CommandError, 'held by a worker'):
+                commands.cmd_decide(self.repo, 'T-1', 'Proceed', section='Needs decision', commit=True)
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_blocker_resolution_commit_is_scoped_and_does_not_clear_the_hold(self):
+        self.tasks('field', 'T-1', 'Held by', 'owner')
+        self.commit()
+        self.tasks('field', 'T-1', 'Blocker resolution', 'ab12cd; producer T-2', '--commit')
+        record = TaskStore.at(self.repo, 'HEAD').tasks['T-1']
+        self.assertIn('Blocker resolution: ab12cd; producer T-2', record.body)
+        self.assertIn('Held by: owner', record.body)
+        refused = self.tasks('field', 'T-1', 'live', 'authorized', '--commit', ok=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertEqual(TaskStore.at(self.repo, 'HEAD').tasks['T-1'].live, 'denied')
+
     def test_goals_lists_every_goal_record_in_priority_order(self):
         goals = json.loads(self.tasks('goals').stdout)
         self.assertTrue(goals)

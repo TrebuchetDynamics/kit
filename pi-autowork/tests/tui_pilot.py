@@ -923,8 +923,8 @@ async def main():
             await pilot.press('enter')
             await pilot.pause()
             await app.workers.wait_for_complete()
-            assert calls[-1][:5] == ['aw', 'tasks', 'field', 'T-9', 'Owner decision'] and calls[-1][5].endswith(
-                ': use fallback for other models') and calls[-1][6] == 'india', calls
+            assert calls[-1][:4] == ['aw', 'tasks', 'decide', 'T-9'] and calls[-1][4].endswith(
+                ': use fallback for other models') and calls[-1][5:] == ['india', '--commit'], calls
             await pilot.press('s')                      # another section
             await pilot.pause()
             await pilot.press('down', 'enter')

@@ -88,10 +88,15 @@ async def controls_pilot(case):
                         assert 'Use the bounded offline option' in second.read_text()
                         assert 'section = "Now"' in second.read_text(), \
                             'Answering a Needs decision task must move it out of that section'
-                        assert fixture.git('rev-parse', 'HEAD') == baseline
+                        assert fixture.git('rev-parse', 'HEAD') != baseline
+                        committed = fixture.git('show', 'HEAD:tasks/items/T-2.md')
+                        assert 'Use the bounded offline option' in committed and 'section = "Now"' in committed
+                        assert '--commit' in next(c for c in reversed(calls) if c[2] == 'decide')
                         assert 'live = "authorized"' not in second.read_text()
-                        # An answer is an uncommitted record edit: the runner cannot read it yet,
-                        # so the pipeline has to name that step instead of dismissing silently.
+                        # CLI/local edits still have an explicit, revision-bound review path.
+                        subprocess.run([command, 'tasks', 'decide', 'T-2',
+                                        'Use the bounded offline option; follow-up', str(fixture.repo)],
+                                       check=True, capture_output=True, text=True)
                         await pilot.press('t')
                         await settle(app, pilot)
                         assert isinstance(app.screen, tui.TasksScreen), type(app.screen).__name__
