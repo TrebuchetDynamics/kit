@@ -37,14 +37,16 @@ def checkout_operation(repo):
     return ''
 
 
-def recent_owner_paths(repo, state, paths, quiet):
+def recent_owner_paths(repo, state, paths, quiet, *, scope='planning'):
     """The ``paths`` whose content changed less than ``quiet`` seconds ago.
 
     Quiet means unchanged bytes since our last observation, not an old mtime. Observations
-    persist in ``state``/owner-content.json so a service restart does not restart the quiet
-    interval. Clean paths disappear from the record; a later edit starts a fresh interval.
+    persist per scope so a service restart does not restart the quiet interval. Planning
+    sweeps must not clear observations for overlapping code edits, or vice versa.
+    Clean paths disappear from their scope's record; a later edit starts a fresh interval.
     """
-    record = Path(state) / 'owner-content.json'
+    records = {'planning': 'owner-content.json', 'landing': 'owner-landing-content.json'}
+    record = Path(state) / records[scope]
     try:
         previous = json.loads(record.read_text())
         if not isinstance(previous, dict):
