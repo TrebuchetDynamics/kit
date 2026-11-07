@@ -1,0 +1,19 @@
+[package]
+name = "autowork-next"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+publish = false
+
+[dependencies]
+octet-agent = { git = "https://github.com/skaft-software/octet", rev = "4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee" }
+octet-ai = { git = "https://github.com/skaft-software/octet", rev = "4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "process", "io-util", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+toml = "1.1"
+toml_edit = "0.25"
+fs2 = "0.4"
+rusqlite = { version = "=0.40.2", features = ["bundled"] }

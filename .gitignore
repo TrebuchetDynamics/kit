@@ -21,3 +21,6 @@ __pycache__/
 
 # The Paseo plugin installs its development dependencies in place.
 node_modules/
+
+# Local Rust candidate build artifacts.
+/rust/autowork/target/
