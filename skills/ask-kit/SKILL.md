@@ -50,6 +50,7 @@ not ask for.
 | Modules are shallow or seams leak | `/improve-codebase-architecture` |
 | One objective needs many turns and an evidence audit | `/goal` |
 | Queue work is held and the owner must decide | `/blockers` |
+| A runner is stalled or waiting and needs autonomous repair | `/unblock` |
 | Docs or task records drifted | `/docs-sync` |
 | A question needs measured evidence | `/autoresearch` |
 | One engineering method is missing (TDD, review, debugging) | Read [engineering](../engineering/REFERENCE.md) directly; no command |
