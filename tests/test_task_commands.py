@@ -422,6 +422,95 @@ class TaskCommandTests(unittest.TestCase):
         self.assertEqual(clean['files'], [])
         self.assertEqual(clean['lifecycle']['state'], 'clean')
 
+    def test_pending_revision_refuses_changed_added_or_deleted_task_content(self):
+        for change in ('edit', 'add', 'delete'):
+            with self.subTest(change=change):
+                self.tasks('decide', 'T-1', 'Reviewed answer')
+                preview = json.loads(self.tasks('commit', '--dry-run').stdout)
+                token = preview['pending_revision']
+                self.assertEqual(len(token), 64)
+                path = self.repo / 'tasks/items/T-1.md'
+                original = path.read_bytes()
+                extra = self.repo / 'tasks/extra note.txt'
+                if change == 'edit':
+                    path.write_bytes(original + b'\n- Later decision: preserve me\n')
+                elif change == 'add':
+                    extra.write_text('Not reviewed\n')
+                else:
+                    path.unlink()
+                head = self.git('rev-parse', 'HEAD')
+                index = (self.repo / '.git/index').read_bytes()
+                refused = self.tasks('commit', '--expect-pending', token, ok=False)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn('pending task edits changed', refused.stderr)
+                self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+                self.assertEqual((self.repo / '.git/index').read_bytes(), index)
+                if change == 'edit':
+                    self.assertIn(b'preserve me', path.read_bytes())
+                elif change == 'add':
+                    self.assertEqual(extra.read_text(), 'Not reviewed\n')
+                else:
+                    self.assertFalse(path.exists())
+                path.write_bytes(original)
+                extra.unlink(missing_ok=True)
+
+    def test_pending_revision_binds_head_and_preserves_unrelated_staged_edits(self):
+        self.tasks('decide', 'T-1', 'Reviewed answer')
+        token = json.loads(self.tasks('commit', '--dry-run').stdout)['pending_revision']
+        self.git('commit', '--allow-empty', '-qm', 'head moved')
+        refused = self.tasks('commit', '--expect-pending', token, ok=False)
+        self.assertNotEqual(refused.returncode, 0)
+        token = json.loads(self.tasks('commit', '--dry-run').stdout)['pending_revision']
+        other = self.repo / 'unrelated.txt'
+        other.write_text('staged outside tasks\n')
+        self.git('add', '--', 'unrelated.txt')
+        committed = json.loads(self.tasks('commit', '--expect-pending', token).stdout)
+        self.assertEqual(committed['pending_revision'], token)
+        self.assertNotIn('unrelated.txt', self.git('show', '--name-only', '--format=', 'HEAD'))
+        self.assertIn('A  unrelated.txt', self.git('status', '--porcelain'))
+
+    def test_pending_revision_refuses_branch_switch_and_unfinished_git_operation(self):
+        self.tasks('decide', 'T-1', 'Reviewed answer')
+        token = json.loads(self.tasks('commit', '--dry-run').stdout)['pending_revision']
+        self.git('checkout', '-qb', 'another-branch')
+        refused = self.tasks('commit', '--expect-pending', token, ok=False)
+        self.assertIn('pending task edits changed', refused.stderr)
+        token = json.loads(self.tasks('commit', '--dry-run').stdout)['pending_revision']
+        head = self.git('rev-parse', 'HEAD').strip()
+        marker = self.repo / '.git/MERGE_HEAD'
+        marker.write_text(head + '\n')
+        index = (self.repo / '.git/index').read_bytes()
+        refused = self.tasks('commit', '--expect-pending', token, ok=False)
+        self.assertIn('merge is in progress', refused.stderr)
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), head)
+        self.assertEqual((self.repo / '.git/index').read_bytes(), index)
+        self.assertTrue(marker.exists())
+        # The guard and commit must resolve the same checkout despite ambient routing.
+        with patch.dict(os.environ, {'GIT_DIR': str(self.repo / 'does-not-exist')}):
+            with self.assertRaisesRegex(commands.CommandError, 'merge is in progress'):
+                commands.cmd_commit(self.repo, dry_run=True)
+            with self.assertRaisesRegex(commands.CommandError, 'merge is in progress'):
+                commands.cmd_commit(self.repo, expected=token)
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), head)
+        self.assertEqual((self.repo / '.git/index').read_bytes(), index)
+        self.assertTrue(marker.exists())
+
+    def test_pending_revision_commits_frozen_bytes_if_editor_changes_after_staging(self):
+        self.tasks('decide', 'T-1', 'Reviewed answer')
+        token = json.loads(self.tasks('commit', '--dry-run').stdout)['pending_revision']
+        path = self.repo / 'tasks/items/T-1.md'
+        reviewed = path.read_text()
+        original_git = commands._git
+        def race(repo, *args, **kwargs):
+            if args and args[0] == 'commit':
+                path.write_text(reviewed + '\n- Later decision: preserve me\n')
+            return original_git(repo, *args, **kwargs)
+        with patch.object(commands, '_git', side_effect=race):
+            result = commands.cmd_commit(self.repo, expected=token)
+        self.assertEqual(self.git('show', 'HEAD:tasks/items/T-1.md'), reviewed)
+        self.assertIn('preserve me', path.read_text())
+        self.assertEqual(result['pending_revision'], token)
+
     def test_decide_refuses_closed_task_without_rewriting_history(self):
         self.tasks('done', 'T-1', '--by', 'owner', '--reason', 'manual closure')
         path = self.repo / 'tasks/items/T-1.md'

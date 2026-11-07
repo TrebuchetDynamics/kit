@@ -33,7 +33,7 @@ else if(args[0]==='ls') console.log(JSON.stringify({runners:[${JSON.stringify(ru
 else if(args[0]==='tasks'&&args[1]==='list') console.log(JSON.stringify([${JSON.stringify({ id: 'T-1', title: 'Choose scope', section: 'Needs decision', status: 'open', goal: 'G', rank: 1000, position: 1, blocked_by: 'NEEDS_DECISION', closure: null })}]));
 else if(args[0]==='tasks'&&args[1]==='show') console.log(JSON.stringify(${JSON.stringify(task)}));
 else if(args[0]==='tasks'&&args[1]==='goals') console.log(JSON.stringify([${JSON.stringify(goal)}]));
-else if(args[0]==='tasks'&&args[1]==='commit') console.log(JSON.stringify({files:['tasks/items/T-1.md'],diff:'+ Owner decision',commit:args.includes('--dry-run')?null:'commit-1',dry_run:args.includes('--dry-run')}));
+else if(args[0]==='tasks'&&args[1]==='commit') console.log(JSON.stringify({files:['tasks/items/T-1.md'],diff:'+ Owner decision',pending_revision:'${'a'.repeat(64)}',commit:args.includes('--dry-run')?null:'commit-1',dry_run:args.includes('--dry-run')}));
 else if(args[0]==='tasks'&&args[1]==='validate') console.log(JSON.stringify({ok:true,tasks:1,goals:1,drafts:[],pending:[]}));
 else if(args[0]==='tasks'&&args[1]==='prepare') { console.log(JSON.stringify({ok:false,mode:'check',state:'converted',diagnostics:[{code:'GOAL_WITHOUT_WORK'}]})); process.exitCode=1; }
 else if(args[0]==='tasks'&&args[1]==='why') console.log(JSON.stringify({task:args[2],eligible:true,first:true,reasons:[{code:'POSITION',detail:'1'}]}));

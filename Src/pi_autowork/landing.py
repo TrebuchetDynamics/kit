@@ -28,10 +28,11 @@ class LandingBroken(Exception):
     runner must stop and say so, since main and the working files now disagree."""
 
 
-def checkout_operation(repo):
+def checkout_operation(repo, *, read_git=None):
     """The reason never to land through an unfinished operation in the owner's checkout, or ''."""
+    read_git = read_git or git
     for marker in ('MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply'):
-        found = git(repo, 'rev-parse', '--path-format=absolute', '--git-path', marker)
+        found = read_git(repo, 'rev-parse', '--path-format=absolute', '--git-path', marker)
         if found and Path(found).exists():
             return f'a {marker.split("_")[0].split("-")[0].lower()} is in progress in the main checkout'
     return ''
