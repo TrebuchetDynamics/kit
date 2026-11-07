@@ -14,14 +14,18 @@ export type RunOptions = { timeoutMs?: number; onStderr?: (text: string) => void
   onSpawn?: (child: ChildProcess) => void; signal?: AbortSignal;
   /** Literal data for the child's stdin (`--json -` reads it); never shell text. */
   stdin?: string;
+  /** Read-only admission: bounded waiting before spawn, never a retry. Mutations stay fail-fast. */
+  waitForSlotMs?: number;
   /** Exit codes that still carry a complete answer on stdout, such as a failed check report. */
   acceptExit?: readonly number[] };
 export type CommandResult = { stdout: string; stderr: string };
+const admissionBusy = () => new CommandFailure('BUSY', 'Autowork request limit reached; refresh later');
 
 /** Finite subprocess pool. Only server-authored argument arrays reach this class. */
 export class ProcessRunner {
   private children = new Set<ChildProcess>();
   private active = 0;
+  private waiting: Array<{ grant: () => void; cancel: (error: CommandFailure) => void }> = [];
   private closed = false;
   private readonly maxBytes: number;
   private readonly timeoutMs: number;
@@ -32,18 +36,55 @@ export class ProcessRunner {
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.concurrency = options.concurrency ?? 2;
   }
-  run(args: readonly string[], options: RunOptions = {}): Promise<CommandResult> {
+  private acquire(options: RunOptions): Promise<number | undefined> {
     if (this.closed) return Promise.reject(new CommandFailure('CLOSED', 'Plugin adapter is closed'));
-    if (this.active >= this.concurrency) return Promise.reject(new CommandFailure('BUSY', 'Autowork request limit reached; refresh later'));
     if (options.signal?.aborted) return Promise.reject(new CommandFailure('CLOSED', 'Operation cancelled before dispatch'));
-    this.active++;
+    if (this.active < this.concurrency) { this.active++; return Promise.resolve(undefined); }
+    if (!options.waitForSlotMs || this.waiting.length >= 8) return Promise.reject(admissionBusy());
+    const wait = Math.min(options.waitForSlotMs, 5000);
+    const deadline = performance.now() + wait;
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timer);
+        options.signal?.removeEventListener('abort', abort);
+        this.waiting = this.waiting.filter(item => item !== entry);
+      };
+      const entry = {
+        grant: () => {
+          if (performance.now() >= deadline) { entry.cancel(admissionBusy()); return; }
+          cleanup(); this.active++; resolve(deadline);
+        },
+        cancel: (error: CommandFailure) => { cleanup(); reject(error); },
+      };
+      const abort = () => entry.cancel(new CommandFailure('CLOSED', 'Read cancelled before dispatch'));
+      const timer = setTimeout(() => entry.cancel(admissionBusy()), wait);
+      this.waiting.push(entry);
+      options.signal?.addEventListener('abort', abort, { once: true });
+    });
+  }
+  private drain(): void {
+    while (!this.closed && this.active < this.concurrency && this.waiting.length) this.waiting[0]!.grant();
+  }
+  async run(args: readonly string[], options: RunOptions = {}): Promise<CommandResult> {
+    const deadline = await this.acquire(options);
+    try {
+      // Admission can yield to shutdown or cancellation before spawn.
+      if (this.closed || options.signal?.aborted) throw new CommandFailure('CLOSED', 'Operation cancelled before dispatch');
+      if (deadline !== undefined && performance.now() >= deadline) throw admissionBusy();
+      return await this.execute(args, options);
+    } finally {
+      this.active--;
+      this.drain();
+    }
+  }
+  private execute(args: readonly string[], options: RunOptions): Promise<CommandResult> {
     return new Promise((resolve, reject) => {
       // Do not inherit caller-controlled Git routing or ambient runner authority overrides.
       const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
         !key.startsWith('GIT_') && !key.startsWith('PI_AUTOWORK_') && !['NODE_OPTIONS', 'PYTHONPATH', 'PYTHONHOME', 'AUTOWORK_WORKER'].includes(key)));
       let child: ChildProcess;
       try { child = spawn(this.executable, [...args], { shell: false, env, stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] }); }
-      catch { this.active--; reject(new CommandFailure('NOT_FOUND', 'Cannot execute configured Autowork')); return; }
+      catch { reject(new CommandFailure('NOT_FOUND', 'Cannot execute configured Autowork')); return; }
       this.children.add(child);
       let stdout = '', stderr = '', pendingStderr = '', bytes = 0, failure: CommandFailure | null = null;
       // Pipe chunks are arbitrary: redact complete lines, not partial credentials.
@@ -93,7 +134,7 @@ export class ProcessRunner {
       child.once('close', code => {
         clearTimeout(timer); if (escalation) clearTimeout(escalation);
         options.signal?.removeEventListener('abort', cancelled);
-        this.children.delete(child); this.active--;
+        this.children.delete(child);
         stdout += outputDecoder.end();
         const errorTail = errorDecoder.end(); stderr += errorTail;
         // On failure the final line may be truncated inside a credential; do not emit it.
@@ -111,6 +152,7 @@ export class ProcessRunner {
   }
   async close(): Promise<void> {
     this.closed = true;
+    for (const entry of [...this.waiting]) entry.cancel(new CommandFailure('CLOSED', 'Plugin adapter is closed'));
     await Promise.all([...this.children].map(child => new Promise<void>((resolve, reject) => {
       if (child.exitCode !== null || child.signalCode !== null) { resolve(); return; }
       const live = () => child.exitCode === null && child.signalCode === null;

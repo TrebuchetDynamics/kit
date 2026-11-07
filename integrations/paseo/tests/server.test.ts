@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, chmod, rm, symlink, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -95,7 +95,84 @@ setTimeout(() => { ${ending} }, 30);
   });
 });
 
+describe('read admission', () => {
+  it('enforces monotonic admission deadlines even when timer delivery is delayed', async () => {
+    for (const phase of ['queued', 'granted']) {
+      let clock = 0;
+      const time = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+      const p = new ProcessRunner('/unused-in-memory-executor', { concurrency: 1 });
+      const calls: string[] = [];
+      let release!: (value: { stdout: string; stderr: string }) => void;
+      const held = new Promise<{ stdout: string; stderr: string }>(resolve => { release = resolve; });
+      const boundary = p as unknown as { execute(args: readonly string[]): Promise<{ stdout: string; stderr: string }> };
+      vi.spyOn(boundary, 'execute').mockImplementation(args => {
+        calls.push(args[0]!);
+        return args[0] === 'held' ? held : Promise.resolve({ stdout: '', stderr: '' });
+      });
+      try {
+        const first = p.run(['held']);
+        await Promise.resolve(); // First request owns the slot; no child is spawned.
+        const overdue = p.run(['overdue'], { waitForSlotMs: 10 }).catch(error => error);
+        const next = phase === 'queued' ? p.run(['next'], { waitForSlotMs: 1000 }) : null;
+        if (phase === 'queued') clock = 40;
+        release({ stdout: '', stderr: '' });
+        if (phase === 'granted') queueMicrotask(() => { clock = 40; });
+        await first;
+        expect(await overdue).toMatchObject({ code: 'BUSY', started: false });
+        if (next) await next;
+        await p.run(['after']);
+        expect(calls).toEqual(phase === 'queued' ? ['held', 'next', 'after'] : ['held', 'after']);
+      } finally { await p.close(); time.mockRestore(); }
+    }
+  });
+  it('waits for a slot without retrying commands or increasing concurrency', async () => {
+    const f = await fixture(); const p = new ProcessRunner(f.exe, { concurrency: 1 });
+    await p.run(['literal', 'seed']);
+    const first = p.run(['hang'], { timeoutMs: 100 }).catch(error => error);
+    try {
+      const next = p.run(['literal', 'queued-read'], { waitForSlotMs: 1000 });
+      await expect(p.run(['literal', 'mutation'])).rejects.toMatchObject({ code: 'BUSY', started: false });
+      await next;
+      expect(await first).toMatchObject({ code: 'TIMEOUT' });
+      const calls = (await readFile(f.log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+      expect(calls.filter(args => args[1] === 'queued-read')).toHaveLength(1);
+      expect(calls.some(args => args[1] === 'mutation')).toBe(false);
+    } finally { await p.close(); }
+  });
+  it('bounds waiting reads and never dispatches expired, aborted or shutdown requests', async () => {
+    const f = await fixture(); const p = new ProcessRunner(f.exe, { concurrency: 1 });
+    await p.run(['literal', 'seed']);
+    const running = p.run(['hang']).catch(error => error);
+    try {
+      await expect(p.run(['literal', 'expired'], { waitForSlotMs: 10 })).rejects.toMatchObject({ code: 'BUSY', started: false });
+      const controller = new AbortController();
+      const aborted = p.run(['literal', 'aborted'], { waitForSlotMs: 1000, signal: controller.signal }).catch(error => error);
+      controller.abort();
+      expect(await aborted).toMatchObject({ code: 'CLOSED', started: false });
+      const queued = Array.from({ length: 8 }, () => p.run(['literal', 'shutdown'], { waitForSlotMs: 1000 }).catch(error => error));
+      await expect(p.run(['literal', 'overflow'], { waitForSlotMs: 1000 })).rejects.toMatchObject({ code: 'BUSY', started: false });
+      await p.close();
+      for (const result of await Promise.all(queued)) expect(result).toMatchObject({ code: 'CLOSED', started: false });
+      await running;
+      const calls = (await readFile(f.log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+      expect(calls.every(args => args[0] === 'hang' || args[1] === 'seed')).toBe(true);
+    } finally { await p.close(); }
+  });
+});
+
 describe('authoritative discovery', () => {
+  it('admits a detail-and-refresh burst through the same finite command pool', async () => {
+    const f = await fixture(); const service = new AutoworkService(policy({ executable: f.exe, tasks: true }));
+    try {
+      const fleet = await service.fleet(); const repo = fleet.repos[0]!.id;
+      const reads = await Promise.all([
+        service.tasks(service.instance, repo, true), service.task(service.instance, repo, 'T-1', true),
+        service.goals(service.instance, repo, true), service.models(service.instance),
+        service.store(service.instance, repo, 'pending'), service.fleet(true),
+      ]);
+      expect(reads).toHaveLength(6);
+    } finally { await service.close(); }
+  });
   it('shares concurrent Git identity probes instead of accumulating subprocesses', async () => {
     const f = await fixture();
     const first = repositoryIdentity(f.repo), second = repositoryIdentity(f.repo);

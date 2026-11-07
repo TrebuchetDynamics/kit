@@ -20,6 +20,7 @@ function parseCapabilities(value: unknown): Capabilities {
   return result.data;
 }
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+const READ_SLOT = { waitForSlotMs: 5000 };
 const WATCH_WINDOW = 20_000;
 const WATCH_STEP = 2_000;
 
@@ -48,7 +49,7 @@ export class AutoworkService {
       this.executableIdentity = await this.stamp(this.executable);
       if (this.closed) throw new Error('Autowork plugin closed during initialization');
       this.runner = new ProcessRunner(this.executable, { maxBytes: 4 * 1024 * 1024, concurrency: 3 });
-      const cap = parseCapabilities(await this.runner.json(['capabilities']));
+      const cap = parseCapabilities(await this.runner.json(['capabilities'], READ_SLOT));
       if (!['ls', 'tasks', 'plan', 'logs'].every(c => cap.commands.includes(c)) || !['list', 'show', 'decide'].every(c => cap.tasks.includes(c))) {
         throw new Error('Installed Autowork lacks the required fleet/task/planning command contract');
       }
@@ -70,7 +71,7 @@ export class AutoworkService {
   }
   async verifyRelease(): Promise<void> {
     const commands = await this.commands();
-    const current = parseCapabilities(await commands.json(['capabilities']));
+    const current = parseCapabilities(await commands.json(['capabilities'], READ_SLOT));
     if (current.release !== this.capabilities!.release || current.toolset !== this.capabilities!.toolset) {
       this.cache = null;
       throw new Error('Autowork source release changed; reload and requalify before another operation');
@@ -98,7 +99,7 @@ export class AutoworkService {
     try {
       const commands = await this.commands();
       await this.verifyRelease();
-      const { runners } = z.object({ runners: z.array(runnerSchema).max(128) }).parse(await commands.json(['ls', '--json']));
+      const { runners } = z.object({ runners: z.array(runnerSchema).max(128) }).parse(await commands.json(['ls', '--json'], READ_SLOT));
       const candidates = new Map<string, z.infer<typeof runnerSchema> | null>();
       for (const r of runners) if (r.repo) candidates.set(r.repo, r);
       for (const directory of this.config.repositories) if (!candidates.has(directory)) candidates.set(directory, null);
@@ -139,50 +140,50 @@ export class AutoworkService {
   async tasks(instance: string, repoId: string, working = false) {
     this.workingAllowed(working);
     const repo = await this.repo(instance, repoId); const commands = await this.commands();
-    const tasks = z.array(taskSchema).max(10000).parse(await commands.json(['tasks', 'list', repo.root, ...(working ? ['--worktree'] : ['--rev', repo.revision])]));
+    const tasks = z.array(taskSchema).max(10000).parse(await commands.json(['tasks', 'list', repo.root, ...(working ? ['--worktree'] : ['--rev', repo.revision])], READ_SLOT));
     return { revision: working ? `${repo.revision}+working` : repo.revision, tasks };
   }
   async task(instance: string, repoId: string, task: string, working = false): Promise<TaskDetail> {
     this.workingAllowed(working);
     const repo = await this.repo(instance, repoId); const commands = await this.commands();
-    return taskDetailSchema.parse(await commands.json(['tasks', 'show', task, repo.root, ...(working ? ['--worktree'] : ['--rev', repo.revision])]));
+    return taskDetailSchema.parse(await commands.json(['tasks', 'show', task, repo.root, ...(working ? ['--worktree'] : ['--rev', repo.revision])], READ_SLOT));
   }
   async goals(instance: string, repoId: string, working = false) {
     this.workingAllowed(working);
     const repo = await this.repo(instance, repoId); const commands = await this.require('tasks', 'goals');
-    const goals = z.array(goalSchema).max(1000).parse(await commands.json(['tasks', 'goals', repo.root, ...(working ? ['--worktree'] : ['--rev', repo.revision])]));
+    const goals = z.array(goalSchema).max(1000).parse(await commands.json(['tasks', 'goals', repo.root, ...(working ? ['--worktree'] : ['--rev', repo.revision])], READ_SLOT));
     return { revision: working ? `${repo.revision}+working` : repo.revision, goals };
   }
   async logs(instance: string, repoId: string, lines = 150) {
     const repo = await this.repo(instance, repoId); const commands = await this.commands();
-    const { stdout } = await commands.run(['logs', repo.root, '--lines', String(lines)]);
+    const { stdout } = await commands.run(['logs', repo.root, '--lines', String(lines)], READ_SLOT);
     return { text: redact(stdout).slice(-256000), capturedAt: Date.now() };
   }
   async status(instance: string, repoId: string) {
     const repo = await this.repo(instance, repoId); const commands = await this.require('status');
-    const { stdout } = await commands.run(['status', repo.root], { timeoutMs: 60_000, acceptExit: [1] });
+    const { stdout } = await commands.run(['status', repo.root], { ...READ_SLOT, timeoutMs: 60_000, acceptExit: [1] });
     return { text: redact(stdout).slice(-64000), capturedAt: Date.now() };
   }
   async scorecard(instance: string, days = 7) {
     this.checkInstance(instance); const commands = await this.require('scorecard');
-    const value = await commands.json(['scorecard', '--json', '--days', String(days)], { timeoutMs: 180_000 });
+    const value = await commands.json(['scorecard', '--json', '--days', String(days)], { ...READ_SLOT, timeoutMs: 180_000 });
     return { value, capturedAt: Date.now() };
   }
   async models(instance: string) {
     this.checkInstance(instance); const commands = await this.require('models');
-    const { stdout } = await commands.run(['models'], { timeoutMs: 60_000 });
+    const { stdout } = await commands.run(['models'], { ...READ_SLOT, timeoutMs: 60_000 });
     const models = redact(stdout).split('\n').map(line => line.trim()).filter(line => /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(line)).slice(0, 500);
     return { models, capturedAt: Date.now() };
   }
   async store(instance: string, repoId: string, view: StoreView, task?: string) {
     const repo = await this.repo(instance, repoId);
     let value: unknown;
-    if (view === 'validate') value = await (await this.require('tasks', 'validate')).json(['tasks', 'validate', '--worktree', repo.root], { acceptExit: [1] });
-    else if (view === 'prepare') value = await (await this.require('tasks', 'prepare')).json(['tasks', 'prepare', '--check', repo.root], { acceptExit: [1, 3], timeoutMs: 120_000 });
-    else if (view === 'pending') value = await (await this.require('tasks', 'commit')).json(['tasks', 'commit', '--dry-run', repo.root]);
+    if (view === 'validate') value = await (await this.require('tasks', 'validate')).json(['tasks', 'validate', '--worktree', repo.root], { ...READ_SLOT, acceptExit: [1] });
+    else if (view === 'prepare') value = await (await this.require('tasks', 'prepare')).json(['tasks', 'prepare', '--check', repo.root], { ...READ_SLOT, acceptExit: [1, 3], timeoutMs: 120_000 });
+    else if (view === 'pending') value = await (await this.require('tasks', 'commit')).json(['tasks', 'commit', '--dry-run', repo.root], READ_SLOT);
     else {
       if (!task) throw new Error('A task ID is required for the selection explanation');
-      value = await (await this.require('tasks', 'why')).json(['tasks', 'why', task, repo.root, '--rev', repo.revision]);
+      value = await (await this.require('tasks', 'why')).json(['tasks', 'why', task, repo.root, '--rev', repo.revision], READ_SLOT);
     }
     return { value, capturedAt: Date.now() };
   }
