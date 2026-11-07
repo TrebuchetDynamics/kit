@@ -116,13 +116,17 @@ Source: [`coordinator.py`](../pi-autowork/pi_autowork/coordinator.py)
 `commit_owner_changes`, `owner_planning_paths` and `fast_forward_main`.
 
 The runner never stages or commits non-planning changes from the main checkout,
-regardless of their age or quietness. If the session would change a dirty
-non-planning path that changed in the last `PI_AUTOWORK_PLANNING_QUIET` seconds
-(default `600`), landing waits as **Merge pending** and names the paths. Once
-they are quiet, it lands around them the way it does around planning edits: the
-owner's edits are merged onto the new main in the working tree and stay
-uncommitted, and nothing is staged. A conflict, a staged, added, deleted, binary
-or mode-changed edit, or a file open for writing still waits. If the paths do not
+regardless of their age or quietness. Overlapping edits need no idle interval.
+The runner attempts a guarded three-way merge, including for recent edits:
+the owner's edits are merged onto the new main in the working tree and stay
+uncommitted, and nothing is staged. It checks file snapshots and open writers
+before and after moving the branch. These checks detect races but cannot lock
+out arbitrary external editors. This is a content merge, not test qualification
+of the owner's uncommitted changes. Unchanged final landing refusals are logged
+once per runner process until the reason changes or landing succeeds.
+**Merge pending** remains visible in status, and later cycles retry.
+A conflict, a staged, added, deleted, binary or mode-changed edit, or a file open
+for writing still waits. If the paths do not
 overlap, the session merges and pushes normally, leaving the owner's working-tree
 and staged changes uncommitted.
 

@@ -169,10 +169,8 @@ class DirtyLandingTests(LandingFixture):
         self.assertIn('+owner: parked', diff)
         self.assertNotIn('+session:', diff)
 
-    def test_a_quiet_nonplanning_overlap_is_landed_around_and_stays_uncommitted(self):
-        """A runner retried a landing every minute for hours because the owner's uncommitted
-        documentation edits touched files it changed. A recent edit still waits; once quiet, the
-        landing goes around it: main moves, the edit stays uncommitted on top, nothing is staged."""
+    def test_recent_nonplanning_overlap_lands_immediately_and_stays_uncommitted(self):
+        """Recent edits need no idle interval when the guarded merge preserves both changes."""
         self.note.write_text(self.original)  # no owner-planning edit in this case
         note = self.repo / 'notes.txt'
         note.write_text(self.original)
@@ -182,21 +180,29 @@ class DirtyLandingTests(LandingFixture):
         (self.integ / 'notes.txt').write_text(self.original.replace('session: old', 'session: new'))
         self.git(self.integ, 'commit', '-qam', 'session edit')
         note.write_text(self.parked)
-        main = self.head('main')
         with mock.patch.dict(os.environ, {'PI_AUTOWORK_PLANNING_QUIET': '600'}):
-            self.assertFalse(self.runner.merge_main())  # just edited: it waits, naming the file
-        self.assertIn('notes.txt', self.runner.merge_pending)
-        self.assertIn('lands around them once they are unchanged for 10 min', self.runner.merge_pending)
-        self.assertEqual(self.head('main'), main)
-        self.assertEqual(note.read_text(), self.parked)
-        with mock.patch.dict(os.environ, {'PI_AUTOWORK_PLANNING_QUIET': '0'}):
-            self.runner.merge_main()  # quiet: landed around
+            self.assertTrue(self.runner.merge_main(), self.runner.merge_pending)
         self.assertEqual(self.head('main'), self.head('pi-autowork/s'))
         self.assertEqual(note.read_text(), self.parked.replace('session: old', 'session: new'))  # both edits
         self.assertIn('+owner: parked', self.git(self.repo, 'diff', '--', 'notes.txt'))  # still uncommitted
         self.assertEqual(self.git(self.repo, 'diff', '--cached', '--name-only'), '')
 
-    def test_planning_sweep_does_not_restart_the_landing_quiet_clock(self):
+    def test_unchanged_landing_warning_is_suppressed_until_reason_changes_or_success(self):
+        with mock.patch.object(self.runner, 'fast_forward_main',
+                               side_effect=['busy', 'busy', 'conflict', '', 'conflict']), \
+                mock.patch.object(self.runner, 'sync_upstream'), \
+                mock.patch('pi_autowork.coordinator.LOG.say') as say:
+            for expected in (False, False, False, True, False):
+                self.assertEqual(self.runner.merge_main(), expected)
+            warnings = [call.args[0] for call in say.call_args_list
+                        if call.args[0].startswith('Merge pending:')]
+        self.assertEqual(len(warnings), 3)
+        self.assertIn('busy', warnings[0])
+        self.assertIn('conflict', warnings[1])
+        self.assertEqual(warnings[1], warnings[2])
+        self.assertIn('conflict', self.runner.merge_pending)  # status remains visible
+
+    def test_planning_sweep_does_not_delay_nonplanning_landing(self):
         self.note.write_text(self.original)
         note = self.repo / 'notes.txt'
         note.write_text(self.original)
@@ -208,7 +214,7 @@ class DirtyLandingTests(LandingFixture):
         note.write_text(self.parked)
         with mock.patch.dict(os.environ, {'PI_AUTOWORK_PLANNING_QUIET': '600'}):
             with mock.patch('pi_autowork.landing.time.time', return_value=1000):
-                self.assertFalse(self.runner.merge_main())
+                self.assertTrue(self.runner.merge_main(), self.runner.merge_pending)
             with mock.patch('pi_autowork.landing.time.time', return_value=1300):
                 self.assertEqual(self.runner.commit_owner_changes(), '')
             with mock.patch('pi_autowork.landing.time.time', return_value=1601):

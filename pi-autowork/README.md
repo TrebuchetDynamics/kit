@@ -1212,12 +1212,14 @@ working contents so unrelated main fixes can merge. The edits stay in the sessio
 for a later commit; they are not landed uncommitted. A refused work commit still
 holds the landing. Repository hooks are never disabled for this recovery.
 
-Owner-planning sweeps and overlapping-code landings keep separate content-based
-quiet clocks. An empty planning sweep cannot reset the landing's ten-minute clock.
-A failed waiting merge retries on later cycles even when refs and status are
-unchanged: quiet time or a Git/process lock may have cleared. Actual content
-conflicts, staged overlaps and active writers still refuse landing without changing
-the owner's files, index or branch.
+Overlapping-code landings need no idle interval. The runner attempts a guarded
+content merge and preserves owner edits uncommitted. Owner-planning sweeps retain
+their separate content-based quiet clock. A failed waiting merge retries on later
+cycles even when refs and status are unchanged: a Git/process lock may have cleared.
+Actual content conflicts, staged overlaps and detected active writers still refuse
+landing without changing the owner's files, index or branch. See
+[main-checkout changes](../docs/reference.md#main-checkout-changes-pi-runner)
+for the external-editor race limit.
 
 A merge refusal without unmerged paths is reported as `Merge pending` with Git's
 message, not as an unknown-file conflict. Only actual unmerged paths trigger the
