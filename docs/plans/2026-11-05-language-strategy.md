@@ -179,11 +179,87 @@ This completes the bounded measurement decision, not the language-strategy goal.
 
 The next evidence is task-aligned idle-slot history for the dispatch cohort, a
 complete seven-day incident record with coordinator attribution, or an actual
-Python-provisioning failure on a target host. `LANG-004-244e109a` keeps that input
-question in `Needs decision`, with the planning stop in `BLOCKERS.md`; it is not a
-new executable planning round or a new policy approval. Reconsider the gate when
-that evidence exists. This round authorizes no new sampler, benchmark service,
-prototype, restart or worker dispatch. Existing accepted work continues independently.
+Python-provisioning failure on a target host. Round 1 saved `LANG-004-244e109a` as
+that input question in `Needs decision`, with the planning stop in `BLOCKERS.md`.
+The [evidence continuation](#evidence-continuation-lang-004) records its later
+inspection; it is not a new planning round or a new policy approval. Reconsider
+the gate when complete evidence exists. This round authorizes no new sampler,
+benchmark service, prototype, restart or worker dispatch. Existing accepted work
+continues independently.
+
+## Evidence continuation: LANG-004
+
+Inspected on 2026-11-07 at baseline
+`c12211339be725d0737e4a9d2ced0ede4e2df0aa`. The saved owner answer approves the
+inspection; it supplies no incident attribution or target-host failure report.
+The existing private journal supplies a concrete candidate for task-aligned
+capacity history. It does **not** establish a complete threshold.
+
+### Provenance and readback
+
+`REPO` means the canonical checkout identified in round 1. Runtime evidence stays
+outside Git; this record retains the source, interval, method and supported result.
+
+- Read `REPO/.git/autowork-execution/journal.jsonl` through the original cutoff,
+  2026-11-07T04:38:05Z. The round-1 window starts 2026-10-31T04:38:05Z and contains
+  8,014 `dispatch_observed` records. SHA-256 of the raw lines whose timestamps
+  fall in that inclusive window, in append order:
+  `4569eab3e4b9125d8b2567e8a72379c7aee8b9905abb0c2329754732a3a1c29e`.
+- Reused the worktree's scorecard collector with its fixed cutoff:
+  `PYTHONPATH=pi-autowork`, `scorecard._collect(Path.cwd(), 7, now)` and
+  `scorecard.observations(data, now)`, where `now` is that cutoff's Unix timestamp.
+  Filter receipt-valid verified completions to the same seven-day window. Use the
+  first accepted/dispatched endpoints and nearest-rank p95, as the CLI does.
+  This reproduces 23 observed pairs and p95 **279.5569578607877 minutes**.
+- The p95 task is `TOOLSET-460-c838ac54`: accepted 2026-11-05T01:01:07Z,
+  dispatched 2026-11-05T05:40:40.417472Z. Replay retained records through cutoff
+  in append order: `slot_changed` replaces that task's slot; `slot_set_aside`
+  removes it. Select `dispatch_observed` records during this wait that name the
+  task in `waiting`. There are 381, from 01:15:04.322704Z to 05:35:17.991855Z.
+  All report `max_workers = 8`. The projection contains zero dispatched/running
+  slots in 216 observations, one in 159, and two in six. These are historical,
+  task-aligned **projected states**, not present-day spare-capacity samples.
+- Re-read the service journal with
+  `journalctl --user -u pi-autowork@kit --since '2026-10-31 04:38:05 UTC' --until '2026-11-07 21:56:16 UTC' --no-pager -o short-iso`.
+  Retention still starts 2026-11-04T19:06:55Z. The same five main-process exits
+  described in round 1 remain; no additional exit or OOM message establishes a
+  coordinator-attributable incident. The 74 resource-gate lines concern host
+  resources, not 74 distinct coordinator-caused incidents.
+
+### Gate decision and next evidence
+
+The dispatch condition remains **not measured** as a complete gate. A complete
+slot projection with at most two dispatched/running records would establish spare
+capacity: the dispatcher additionally requires `worker_live` to count a worker as
+active. Missing historical PID samples alone therefore do not invalidate that
+upper bound. But projection completeness is unproved. [`write_slot`](../../src/pi_autowork/engine/parallel_state.py)
+persists a slot before best-effort journal emission, and
+[`execution_journal.append`](../../src/pi_autowork/engine/execution_journal.py)
+can fail without undoing the slot write. Parseable retained lines do not prove
+that all transitions were recorded. No contemporaneous archived `ls --json`
+response was supplied to corroborate the historical capacity. Do not promote this
+candidate projection into an observed idle-slot count.
+
+All 381 waits cite the shared hot file `pi-autowork/README.md`. The service
+journal also records host-load gates for other tasks during the interval. Neither
+fact proves coordinator-language overhead. The incident condition remains **not
+measured** for coordinator attribution; two attributable incidents in seven days
+would suffice even without full-window retention. The provisioning condition
+remains **not measured**: no blocked target-host Python attempt was supplied.
+The round-1 memory result remains **not met**; no new RSS benchmark was taken.
+
+**Decision:** No complete threshold is established as met. Save no Go prototype
+or round-2 implementation batch. Keep `LANGUAGE-STRATEGY` unmet and the planning stop open.
+The next input is contemporaneous task-aligned status evidence, or independent
+validation of complete historical slot projection with the required status
+corroboration; alternatively, two coordinator-attributable incidents within seven
+days or a concrete blocked Python target-host attempt. Another approval alone
+cannot fill these gaps. The coordinator owns reconciliation of the continuation's
+queue placement; this inspection does not edit task records or claim verified
+closure. The accepted Rust/Octet direction is separate, not proof of this gate.
+
+This pass reuses the scorecard, runtime journal and existing plan/blocker owners.
+It adds no sampler, service, prototype, restart, qualification or product change.
 
 ## Sources
 
