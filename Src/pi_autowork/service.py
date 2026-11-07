@@ -285,16 +285,29 @@ def run(action, *, repo, base, script, workers, state_root, hermes_jobs, argv0):
                               stdout=subprocess.DEVNULL if quiet else None,
                               stderr=subprocess.DEVNULL if quiet else None).returncode
 
+    def retire(name):
+        target = f'pi-autowork@{name}.service'
+        if ctl('disable', '--now', target):
+            die(1, f'Could not stop {target}')
+        result = subprocess.run([systemctl, '--user', 'show', '--property=ActiveState', '--value', target],
+                                capture_output=True, text=True)
+        active = result.stdout.strip()
+        if result.returncode or active not in ('inactive', 'failed'):
+            die(1, f'Could not confirm {target} stopped (ActiveState={active or "unknown"}); kept its registration.')
+        # Inactive/unloaded units have no failed state to reset.
+        if active == 'failed' and ctl('reset-failed', target):
+            die(1, f'Could not clear failed state for {target}; kept its registration.')
+        for path in (env_dir / f'{name}.env', env_dir / f'{name}.paused', stop_marker(env_dir / f'{name}.env')):
+            path.unlink(missing_ok=True)
+
     def retire_legacy():
-        if (env_dir / f'{legacy}.env').exists() or ctl('is-enabled', '--quiet', f'pi-autowork@{legacy}.service', quiet=True) == 0:
-            ctl('disable', '--now', f'pi-autowork@{legacy}.service', quiet=True)
-            (env_dir / f'{legacy}.env').unlink(missing_ok=True)
+        if legacy != instance and ((env_dir / f'{legacy}.env').exists()
+                or ctl('is-enabled', '--quiet', f'pi-autowork@{legacy}.service', quiet=True) == 0):
+            retire(legacy)
             print(f'Replaced the earlier unit pi-autowork@{legacy}.service.')
 
     if action == 'remove':
-        if ctl('disable', '--now', unit):
-            die(1, f'Could not stop {unit}')
-        env_file.unlink(missing_ok=True)
+        retire(instance)
         retire_legacy()
         print(f'Removed {unit}. Its state stays in {state_root}; kept worktrees and unmerged sessions remain at their recorded paths.')
         return 0

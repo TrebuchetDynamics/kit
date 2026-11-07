@@ -607,7 +607,15 @@ class FleetViewTests(unittest.TestCase):
 
     def test_state_without_a_service_is_history_not_a_runner(self):
         self.runner_state('/git/gone', state='working', since=time.time())
-        self.assertEqual(self.collect(), {})
+        for units in ('', 'pi-autowork@gone.service loaded inactive dead gone\n',
+                      'pi-autowork@gone.service loaded failed failed gone\n'):
+            with self.subTest(units=units):
+                self.assertEqual(self.collect(units), {})
+        for active, sub in (('active', 'running'), ('activating', 'start-pre'), ('deactivating', 'stop-sigterm')):
+            with self.subTest(active=active):
+                runner = self.collect(f'pi-autowork@gone.service loaded {active} {sub} gone\n')['gone']
+                self.assertEqual(runner.service, sub)
+                self.assertEqual(runner.repo, '/git/gone')
 
     def test_blockers_are_grouped_in_order_and_long_groups_are_cut(self):
         roots = ([{'id': f'D-{i}', 'kind': 'contract', 'blocks': 1} for i in range(8)]
@@ -829,6 +837,21 @@ class FleetViewTests(unittest.TestCase):
                          ('service', 'not running', 'openai-codex/gpt-6-luna', fleet_view.DEFAULT_FALLBACK))
         fleet_view.paused_marker(self.env, 'india').write_text('paused\n')  # `autowork pause` leaves this
         self.assertEqual(self.collect()['india'].state, 'paused')
+        failed = 'pi-autowork@india.service loaded failed failed india\n'
+        self.assertEqual(self.collect(failed)['india'].state, 'paused')
+        fleet_view.paused_marker(self.env, 'india').unlink()
+        self.assertEqual(self.collect(failed)['india'].state, 'not running')
+        for content in (b'not valid settings\n', b'PI_AUTOWORK_REPO=\n', b'\xff'):
+            with self.subTest(content=content):
+                (self.env / 'india.env').write_bytes(content)
+                result = fleet_view.collect_for_tui(self.state, self.env, generation=1, systemctl=self.systemctl)
+                self.assertEqual([r.name for r in result.runners], ['india'])
+                self.assertIn('environment', ' '.join(result.errors))
+        (self.env / 'india.env').unlink()
+        (self.env / 'india.env').mkdir()  # unreadable as a settings file, even when running as root
+        result = fleet_view.collect_for_tui(self.state, self.env, generation=2, systemctl=self.systemctl)
+        self.assertEqual([r.name for r in result.runners], ['india'])
+        self.assertIn('environment', ' '.join(result.errors))
 
     def test_a_saved_toolset_that_is_missing_or_invalid_is_marked_but_a_healthy_one_is_not(self):
         from pi_autowork import command

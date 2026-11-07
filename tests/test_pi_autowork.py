@@ -4210,7 +4210,7 @@ class SetupTests(Fixture):
         # Read the generated unit and the actual startup exit together: these
         # failures need intervention, not a restart every minute (issue 6).
         ctl = self.bin / 'systemctl'
-        ctl.write_text('#!/bin/sh\nexit 0\n')
+        ctl.write_text('#!/bin/sh\nif [ "$2" = show ]; then echo inactive; fi\nexit 0\n')
         ctl.chmod(0o755)
         self.env.update(PI_AUTOWORK_UNIT_DIR=str(self.root / 'units'),
                         PI_AUTOWORK_ENV_DIR=str(self.root / 'envs'))
@@ -4327,6 +4327,8 @@ class ServiceTests(Fixture):
         self.enabled = self.root / 'enabled'  # units the fake reports as enabled
         (self.bin / 'systemctl').write_text(
             '#!/bin/sh\necho "$@" >> ' + str(self.calls) + '\n'
+            'if [ "$2" = "${FAKE_FAIL:-}" ]; then exit 1; fi\n'
+            'if [ "$2" = show ]; then printf "%s\\n" "${FAKE_SERVICE_STATE:-inactive}"; exit 0; fi\n'
             'if [ "$2" = is-enabled ]; then grep -qxF "$4" ' + str(self.enabled) + ' 2>/dev/null; exit $?; fi\n')
         (self.bin / 'systemctl').chmod(0o755)
         self.units, self.envs = self.root / 'units', self.root / 'envs'
@@ -4451,10 +4453,36 @@ class ServiceTests(Fixture):
 
     def test_remove_and_refusals(self):
         self.assertEqual(self.run_runner('--install-service').returncode, 0)
+        registration = self.envs / 'project.env'
+        saved = registration.read_bytes()
+        for failure, state in (('disable', 'active'), ('show', 'inactive'), ('reset-failed', 'failed'),
+                               ('', 'active'), ('', 'activating'), ('', 'deactivating')):
+            with self.subTest(failure=failure, state=state):
+                self.env.update(FAKE_FAIL=failure, FAKE_SERVICE_STATE=state)
+                result = self.run_runner('--remove-service')
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertNotIn('Removed ', result.stdout)
+                self.assertEqual(registration.read_bytes(), saved)
+        self.env.update(FAKE_FAIL='', FAKE_SERVICE_STATE='failed')
+        legacy = self.legacy()
+        for name in ('project', legacy):
+            (self.envs / f'{name}.env').write_bytes(saved)
+            (self.envs / f'{name}.paused').write_text('paused\n')
+            (self.envs / f'{name}.env.stopped').write_text('stopped\n')
+        # These stand for another instance and retained recovery/repository data.
+        preserved = [self.units / 'pi-autowork@.service', next((self.repo / 'tasks/items').glob('*.md')),
+                     self.envs / 'other.env', self.envs / 'other.paused', self.root / 'history.json']
+        for path in preserved[2:]:
+            path.write_text('keep exactly\n')
+        before = {path: path.read_bytes() for path in preserved}
         result = self.run_runner('--remove-service')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse((self.envs / 'project.env').exists())
-        self.assertIn('--user disable --now pi-autowork@project.service', self.calls.read_text())
+        for name in ('project', legacy):
+            for suffix in ('.env', '.paused', '.env.stopped'):
+                self.assertFalse((self.envs / f'{name}{suffix}').exists())
+            for action in ('disable --now', 'reset-failed'):
+                self.assertIn(f'--user {action} pi-autowork@{name}.service', self.calls.read_text())
+        self.assertEqual({path: path.read_bytes() for path in preserved}, before)
         self.assertEqual(self.run_runner('--install-service', '--dry-run').returncode, 2)
 
 

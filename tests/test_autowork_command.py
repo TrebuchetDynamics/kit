@@ -45,12 +45,20 @@ case $cmd in
 r["reloads"] += 1; json.dump(r, open(p, "w"))' "$FAKE_RELOADS"; true ;;
   enable) touch "$state.enabled"; ((now)) && touch "$state.active"; true ;;
   disable) rm -f "$state.enabled"; ((now)) && rm -f "$state.active"; true ;;
+  show)
+    unit=${args[-1]}; state=$FAKE_UNITS/$unit
+    if [[ -f $state.active ]]; then echo active
+    elif [[ -f $state.failed ]]; then echo failed
+    else echo inactive; fi ;;
+  reset-failed) rm -f "$state.failed" ;;
   list-units)
     for f in "$FAKE_UNITS"/*.service.*; do
       [[ -e $f ]] || continue
-      u=$(basename "$f"); u=${u%.active}; u=${u%.enabled}
-      sub=dead; [[ -f $FAKE_UNITS/$u.active ]] && sub=running
-      echo "$u loaded active $sub pi-autowork"
+      u=$(basename "$f"); u=${u%.active}; u=${u%.enabled}; u=${u%.failed}; u=${u%.loaded}
+      active=inactive; sub=dead
+      [[ -f $FAKE_UNITS/$u.failed ]] && { active=failed; sub=failed; }
+      [[ -f $FAKE_UNITS/$u.active ]] && { active=active; sub=running; }
+      echo "$u loaded $active $sub pi-autowork"
     done | sort -u ;;
 esac
 '''
@@ -516,9 +524,26 @@ class AutoworkCommandTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn(f'systemctl --user {expected} pi-autowork@india.service', self.calls())
                 self.assertEqual((self.env_dir / 'india.paused').exists(), args[0] == 'pause')
-        self.aw('remove', 'india')
+        history = self.state / 'india'
+        history.mkdir()
+        (history / 'status.json').write_text(json.dumps(dict(repo=str(self.repo), state='working')))
+        (self.units / 'pi-autowork@india.service.loaded').touch()
+        (self.units / 'pi-autowork@india.service.failed').touch()
+        result = self.aw('remove', 'india')
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('systemctl --user disable --now pi-autowork@india.service', self.calls())
+        self.assertIn('systemctl --user reset-failed pi-autowork@india.service', self.calls())
         self.assertFalse((self.env_dir / 'india.env').exists())
+        self.assertFalse((self.env_dir / 'india.env.stopped').exists())
+        self.assertTrue((history / 'status.json').exists())
+        self.assertFalse((self.units / 'pi-autowork@india.service.failed').exists())
+        # Even an externally retained failed remnant cannot reattach that history.
+        (self.units / 'pi-autowork@india.service.failed').touch()
+        listed = self.aw('ls', '--json')
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertEqual(json.loads(listed.stdout)['runners'], [])
+        self.assertEqual(self.aw('start', str(self.repo)).returncode, 0)
+        self.assertEqual([r['name'] for r in json.loads(self.aw('ls', '--json').stdout)['runners']], ['india'])
         self.assertIn('no runner named nothing', self.aw('stop', 'nothing').stderr)
 
     def test_stop_is_terminal_and_start_clears_the_deliberate_stop(self):
@@ -535,6 +560,9 @@ class AutoworkCommandTests(unittest.TestCase):
         missing = self.base / 'autowork'
         (self.env_dir / 'autowork.env').write_text(f'PI_AUTOWORK_REPO={missing}\n')
         (self.env_dir / 'autowork.paused').write_text('paused\n')
+        (self.env_dir / 'autowork.env.stopped').write_text('stopped\n')
+        (self.units / 'pi-autowork@autowork.service.loaded').touch()
+        (self.units / 'pi-autowork@autowork.service.failed').touch()
         (self.units / 'pi-autowork@autowork.service.active').touch()
         (self.units / 'pi-autowork@autowork.service.enabled').touch()
         result = self.aw('remove', 'autowork')
@@ -542,7 +570,10 @@ class AutoworkCommandTests(unittest.TestCase):
         self.assertIn('Removed pi-autowork@autowork.service', result.stdout)
         self.assertFalse((self.env_dir / 'autowork.env').exists())
         self.assertFalse((self.env_dir / 'autowork.paused').exists())
+        self.assertFalse((self.env_dir / 'autowork.env.stopped').exists())
         self.assertIn('systemctl --user disable --now pi-autowork@autowork.service', self.calls())
+        self.assertIn('systemctl --user reset-failed pi-autowork@autowork.service', self.calls())
+        self.assertEqual(json.loads(self.aw('ls', '--json').stdout)['runners'], [])
 
     def test_status_diagnoses_a_saved_service_whose_checkout_and_toolset_are_gone(self):
         missing_repo = self.base / 'renamed-away'
