@@ -44,6 +44,7 @@ not ask for.
 | The suite is bloated, slow or full of low-value tests | `/test-optimizer` |
 | Code looks unused and you want it gone | `/unused-code` |
 | Merge every finished worktree into main | `/git-commit-push all` |
+| Commit all eligible changes, merge worktrees, sync and push main | `/push` |
 | Refactor code inside a file, rename a symbol, extract a module | `/autowork` |
 | One folder needs splitting without behavior change | `/split-folder` |
 | Modules are shallow or seams leak | `/improve-codebase-architecture` |

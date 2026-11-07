@@ -27,7 +27,7 @@ class PortablePackageTests(unittest.TestCase):
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}
         self.assertEqual(names, {'plan-with-me', 'blockers', 'plan-for-me', 'docs-sync', 'autowork',
             'autoresearch', 'impeccable', 'lgtm', 'goal',
-            'git-commit-push', 'ui-taste', 'beautify-github-readme', 'pending',
+            'git-commit-push', 'push', 'ui-taste', 'beautify-github-readme', 'pending',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
             'ponytail-gain', 'ponytail-help', 'bug-harvest',
             'autonomous-codebase-improver', 'split-folder', 'unused-code',
