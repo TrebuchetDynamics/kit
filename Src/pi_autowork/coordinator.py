@@ -4010,6 +4010,17 @@ class Coordinator:
                 observed.get('reason') or observed.get('outcome') or 'no answer from the engine').split())
         else:
             idle_diagnostic = 'Queue empty'
+            if outcome == 'IDLE':
+                # Engine slots omit Needs decision; an empty slot list is not an empty backlog.
+                try:
+                    source = observed.get('task_source') or {}
+                    store = task_commands.TaskStore.at(self.integ or self.repo, source.get('revision') or 'HEAD')
+                    decisions = sum(t.status == 'open' and t.section == 'Needs decision'
+                                    for t in store.tasks.values())
+                    if decisions:
+                        idle_diagnostic = f'No runnable tasks: {decisions} in Needs decision'
+                except (StoreError, OSError) as exc:
+                    idle_diagnostic = 'Task inventory unavailable: ' + ' '.join(str(exc).split())
         if self.settled:
             return  # closing work can make dependents runnable: dispatch again first
         if self.in_flight():
