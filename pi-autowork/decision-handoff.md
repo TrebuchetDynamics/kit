@@ -30,6 +30,14 @@ prepared/original index contents before recovering. `tasks handoff` may report a
 clean task snapshot even while this index reconciliation is outstanding; it does
 not inspect or recover Git lockfiles and is not sufficient recovery evidence.
 
+A committed answer can coexist with a real owner-action wait. In particular,
+`ownership = "owner"` forbids unattended execution even after an approval note.
+The questions producer labels that condition `owner_action`, repeats the saved
+answer as context, and asks for the actual outside action/evidence or an explicit
+deferral/cancellation—not another approval or a live grant that cannot transfer
+ownership. Reopening the form restores saved direction; it never preaccepts a
+runner suggestion or closes/qualifies the task.
+
 ## Per-task states
 
 | State | Evidence | Next action |

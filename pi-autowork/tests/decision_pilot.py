@@ -136,6 +136,11 @@ async def main():
                             if not screen.query_one('#decision-save', Button).disabled:
                                 break
                             await pilot.pause(.05)
+                        assert screen.query_one('#decision-text', TextArea).text.endswith(
+                            'Use the smaller design' if section == 'Next' else 'Keep the same scope'), \
+                            'Reopening must restore the actual saved answer, never an empty replacement'
+                        assert screen.query_one('#decision-context', TextArea).text.startswith(
+                            'Saved answer (working record):')
                         screen.query_one('#decision-text', TextArea).load_text('Keep the same scope')
                         screen.query_one('#decision-section', Select).value = section
                         await pilot.click('#decision-save')
@@ -146,6 +151,70 @@ async def main():
                         assert data.get('live', 'denied') == 'denied'
                     assert fixture.git('rev-parse', 'HEAD') != baseline
                     assert 'section = "Needs decision"' in fixture.git('show', 'HEAD:tasks/items/T-1.md')
+                    # A stale generic approval question must not hide the real saved answer
+                    # or imply that another approval can execute an owner-only task.
+                    record.write_text(record.read_text().replace('ownership = "worker"', 'ownership = "owner"'))
+                    runner.questions = [fleet_view.Question('T-1', 'decision', 2,
+                                                            'T-1 requires owner action or recorded live authorization; '
+                                                            'an unattended runner cannot run it.', kind='outside')]
+                    before_owner_read = record.read_bytes()
+                    before_owner_head = fixture.git('rev-parse', 'HEAD')
+                    await pilot.press('e')
+                    await pilot.pause(.3)
+                    screen = app.screen
+                    for _ in range(100):
+                        if not screen.query_one('#decision-save', Button).disabled:
+                            break
+                        await pilot.pause(.05)
+                    assert screen.query_one('#decision-text', TextArea).text.endswith('Keep the same scope')
+                    context = screen.query_one('#decision-context', TextArea).text
+                    assert context.startswith('Saved answer (working record):')
+                    assert 'Another approval is not required' in context
+                    assert 'owner-performed action still outstanding' in screen.query_one(
+                        '#decision-status', Static).render().plain
+                    await pilot.press('escape')
+                    assert record.read_bytes() == before_owner_read
+                    assert fixture.git('rev-parse', 'HEAD') == before_owner_head
+                    # A new planning/input question is not resolved by that historic answer.
+                    runner.questions = [fleet_view.Question('T-1', 'decision', 2,
+                                                            'Choose the changed planning scope', kind='decision')]
+                    show_started.clear()
+                    show_release.clear()
+                    try:
+                        await pilot.press('e')
+                        assert await asyncio.to_thread(show_started.wait, 3)
+                        await pilot.press(*'new draft')
+                    finally:
+                        show_release.set()
+                    await pilot.pause(.3)
+                    screen = app.screen
+                    for _ in range(100):
+                        if not screen.query_one('#decision-save', Button).disabled:
+                            break
+                        await pilot.pause(.05)
+                    context = screen.query_one('#decision-context', TextArea).text
+                    assert 'Choose the changed planning scope' in context
+                    assert 'Another approval is not required' not in context
+                    assert 'Keep the same scope' in context
+                    assert screen.query_one('#decision-text', TextArea).text == 'new draft', \
+                        'Loading a saved answer must not overwrite a draft typed during the read'
+                    await pilot.press('escape')
+                    assert record.read_bytes() == before_owner_read
+                    # An ordinary outside Needs-decision root also still needs its input.
+                    runner.questions = [fleet_view.Question('T-1', 'decision', 2,
+                                                            'Choose the missing API scope', kind='outside')]
+                    await pilot.press('e')
+                    await pilot.pause(.3)
+                    screen = app.screen
+                    for _ in range(100):
+                        if not screen.query_one('#decision-save', Button).disabled:
+                            break
+                        await pilot.pause(.05)
+                    context = screen.query_one('#decision-context', TextArea).text
+                    assert 'Choose the missing API scope' in context
+                    assert 'Another approval is not required' not in context
+                    await pilot.press('escape')
+                    assert record.read_bytes() == before_owner_read
                     # Several questions use a keyboard picker; unrelated historic annotations stay read-only.
                     runner.questions = [fleet_view.Question('MAIN', 'decision', 0, 'No editable task'),
                                         *runner.questions, fleet_view.Question('T-1', 'input', 0, 'Duplicate')]

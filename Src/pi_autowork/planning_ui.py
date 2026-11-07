@@ -38,7 +38,7 @@ class DecisionPrompt(ModalScreen[dict]):
 
     def compose(self):
         with Vertical(id='decision-form'):
-            yield Label(f'Answer {self.task_id} · Ctrl+S saves · Esc cancels', markup=False)
+            yield Label(f'Answer {self.task_id} · Ctrl+S saves · Esc cancels', markup=False, id='decision-title')
             with VerticalScroll(id='decision-fields'):
                 yield TextArea(self.context, read_only=True, show_cursor=False, id='decision-context')
                 yield TextArea(id='decision-text')

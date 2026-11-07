@@ -189,6 +189,40 @@ class QuestionTests(unittest.TestCase):
             self.assertIn(option, text)
         self.assertNotIn('### Q-', questions.update(text, questions.build({}, store()), now=NOW))
 
+    def test_owner_action_with_saved_approval_is_not_another_permission_question(self):
+        repo = store(TODO.replace('  Scope: x', '  Scope: x\n  Ownership: owner\n'
+                                  '  Owner decision: 2026-11-07: approved'))
+        condition = 'Live authorization: T-1'
+        status = {'roots': [{'id': condition, 'kind': 'outside', 'blocks': 1}]}
+        before = (repo / 'tasks/items/T-1.md').read_bytes()
+        found = questions.build(status, repo)
+        self.assertEqual(len(found), 1)
+        question = found[0]
+        self.assertEqual((question['id'], question['kind'], question['effort']),
+                         ('T-1', 'owner_action', 'input'))
+        self.assertIn('2026-11-07: approved', question['needs'])
+        self.assertIn('not requested', question['needs'])
+        self.assertIn('outside this runner', question['answer'])
+        self.assertIn('completion evidence', question['answer'])
+        self.assertNotIn('live = "authorized"', question['answer'])
+        self.assertEqual((repo / 'tasks/items/T-1.md').read_bytes(), before)
+
+    def test_unanswered_owner_task_also_requires_action_not_a_live_grant(self):
+        repo = store(TODO.replace('  Scope: x', '  Scope: x\n  Ownership: owner'))
+        question = questions.build({'roots': [{'id': 'Live authorization: T-1',
+                                               'kind': 'outside', 'blocks': 1}]}, repo)[0]
+        self.assertEqual(question['kind'], 'owner_action')
+        self.assertIn('owner-performed action', question['needs'])
+        self.assertNotIn('Saved owner answer:', question['needs'])
+        self.assertNotIn('live = "authorized"', question['answer'])
+
+    def test_owner_planning_outside_root_still_requires_its_missing_decision(self):
+        todo = TODO.replace('## Next', '## Needs decision').replace('  Scope: x', '  Scope: x\n  Ownership: owner')
+        question = questions.build({'roots': [{'id': 'T-1', 'kind': 'outside', 'blocks': 1}]}, store(todo))[0]
+        self.assertEqual(question['kind'], 'outside')
+        self.assertIn('not a Now/Next task', question['needs'])
+        self.assertNotIn('Another approval is not requested', question['needs'])
+
     def test_technical_producers_cannot_bypass_owner_admission(self):
         import parallel_state
         import failure_policy
