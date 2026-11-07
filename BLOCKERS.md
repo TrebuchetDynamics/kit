@@ -33,6 +33,15 @@ None.
 
 ## Planning stops
 
+### Q-LANG-003-40f1f5a5 — Planning stopped
+
+- Goal: LANGUAGE-STRATEGY — Keep the Python core and adopt another language only from measured need.
+- Task: LANG-003-40f1f5a5 — Decide the Go supervisor prototype from measured coordinator resources.
+- Needs: Round 1 completed with median coordinator RSS 68.82 MiB and share 4.74%, below the accepted memory gate. The historical dispatch p95 lacks same-time idle-slot evidence, incident logs do not establish coordinator attribution, and no blocked Python target-host attempt was supplied. No prototype starts; the goal stays unmet.
+- Question: Is there task-aligned idle-slot history, a record of at least two coordinator-attributable incidents within seven days, or a blocked Python target-host provisioning attempt to evaluate? Provide the concrete evidence source; current data does not establish a complete gate.
+- Kind: input
+- Continuation: LANG-004-244e109a in Needs decision; evaluate supplied evidence under the unchanged gate, not a request for new policy approval.
+
 ### Q-TOOLSET-468-d0554d9d — Planning stopped
 
 - Goal: PLANNING-AUTHORITY — One planning authority and shared protocol.
