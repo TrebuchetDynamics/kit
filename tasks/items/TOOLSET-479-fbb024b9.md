@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-479-fbb024b9"
 title = "Make both planning skills write task names that identify the change and outcome"
 short = "Write descriptive planning task names"
-status = "open"
+status = "done"
 goal = "PLANNING-AUTHORITY"
 section = "Next"
 rank = 15000
@@ -16,6 +16,8 @@ scope = "Improve task naming in Plan For Me and Plan With Me through their exist
 acceptance = ["Given either planning entrypoint, following its existing shared protocol reaches one task-naming policy covering title specificity, meaningful short labels within 40 characters, distinguishing context and a brief pre-save naming review; extend tests/test_planning_cli_contract.py with test_planners_share_descriptive_task_name_policy to guard the shared policy and reachable links for both host-neutral skills and portable adapters.", "Given vague feature, defect and planning titles, the shared policy provides weak-to-strong examples with a concrete object and intended change, permits clear action-led or outcome-led phrasing, and rejects padding, unexplained acronyms and generic Improve/Fix/Update titles without an object/outcome; the same focused instruction-contract guard checks this policy without asserting model adherence.", "Given existing tasks and the task-store schema, this instruction-only change preserves IDs, title/short field meanings, the existing short-label limit, historical records, task acceptance and authority; existing tests/test_planning_cli_contract.py cases and the scoped documentation check pass. No naming heuristic is added to CLI validation or selection."]
 checks = ["python3 scripts/check.py tests/test_planning_cli_contract.py", "python3 skills/docs-sync/scripts/docs.py check .", "git diff --check"]
 exclusions = ["No bulk rename of existing tasks, no edits to tasks/ by the implementation worker, and no changes to task IDs, schema, runtime display or task selection.", "No new product scope, title length cap, rigid word-count rule or CLI language-quality rejection. No edits to pinned upstream methods.", "No service changes, installation, worker dispatch, push or live qualification. Static instruction checks do not prove future model output quality."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-479-fbb024b9.toml"
 +++
 - Sources: User request: plan for me and plan with me improve task names, more descriptive, set better rules; docs/project.md#planning-authority-and-shared-protocol-2026-11-01; skills/shared/TODO-WORKCENTER.md#the-records; skills/shared/PLANNING-CRAFT.md#name-things-precisely; tests/test_planning_cli_contract.py.
 - Plan status: Accepted scope from the user's request; naming details below are planner calls, not additional owner decisions. This task record is the complete bounded plan.
