@@ -853,8 +853,10 @@ session worktree. The main-checkout sweep is narrower: only publishable planning
 changes untouched for `PI_AUTOWORK_PLANNING_QUIET` seconds (600) and open for writing
 nowhere are committed as `docs(tasks): owner planning (pi-autowork)`. It excludes
 `tasks/evidence/`. Other main-checkout work belongs to its writer regardless of age
-and is left untouched; an overlapping landing waits as `Merge pending`. Files that
-look like secrets remain excluded, and an unfinished merge, rebase or cherry-pick
+and is never committed by this sweep. An overlapping landing attempts a guarded
+content merge immediately, preserving those edits uncommitted. Conflicts and unsafe
+writes still wait as `Merge pending`. See [main-checkout changes](reference.md#main-checkout-changes-pi-runner)
+for the checks and limits. Files that look like secrets remain excluded, and an unfinished merge, rebase or cherry-pick
 is left alone. A planning change still being edited waits with its reason.
 
 Questions for the owner live in the repository's `BLOCKERS.md`, in a block the runner

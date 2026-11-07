@@ -1456,6 +1456,7 @@ class Coordinator:
             return False
         ahead = self.ahead()
         if ahead == 0 and git_ok(self.integ, 'merge-base', '--is-ancestor', self.base, 'HEAD'):
+            self.seen.pop('landing-pending', None)
             return True
         planning_note = self.commit_owner_changes()
         before = git(self.integ, 'rev-parse', 'HEAD')
@@ -1496,8 +1497,11 @@ class Coordinator:
         if self.merge_pending:
             if planning_note:
                 self.merge_pending += f' (uncommitted changes not committed yet: {planning_note})'
-            LOG.say(f'Merge pending: {self.merge_pending}. Branch {self.integ_branch} is kept; the next run retries.')
+            if self.seen.get('landing-pending') != self.merge_pending:
+                self.seen['landing-pending'] = self.merge_pending
+                LOG.say(f'Merge pending: {self.merge_pending}. Branch {self.integ_branch} is kept; the next run retries.')
             return False
+        self.seen.pop('landing-pending', None)
         LOG.say(f'Merged {self.integ_branch} into {self.base} ({ahead} commit(s))')
         self.sync_upstream()
         return True
@@ -1528,23 +1532,11 @@ class Coordinator:
                                                  main_check.command(repo=self.repo))
             if reason:
                 return reason
-        # Non-planning work belongs to its writer: even a cleanly mergeable edit waits
-        # when the session touches that path. Only planning edits use the off-tree fallback.
+        # Recent edits are not a veto: the guarded merge preserves them uncommitted.
         # Do not parse Git's localized "would be overwritten" message.
         changed = (git(self.repo, 'diff', '--no-renames', '--name-only', '-z', old, new) or '').split('\0')
         overlap = [p for p in changed if p and git(self.repo, 'status', '--porcelain', '--', p)]
         if overlap:
-            planning = self.owner_planning_paths()
-            owned = [p for p in overlap if not planning(p)]
-            # The owner's other edits are never committed, but once they are quiet the landing goes
-            # around them as it does around planning edits: they stay uncommitted on top of the new
-            # main. A conflict, a staged or binary edit, or a file open for writing still waits. A
-            # runner retried every minute for hours on quiet documentation edits.
-            quiet = float(os.environ.get('PI_AUTOWORK_PLANNING_QUIET', '600'))
-            recent = landing.recent_owner_paths(self.repo, self.state, owned, quiet) if owned else []
-            if recent:
-                return ('uncommitted changes overlap the landing: ' + ', '.join(owned)
-                        + f'; it lands around them once they are unchanged for {int(quiet // 60)} min')
             try:
                 reason = landing.land_around_edits(self.repo, self.base, old, new)
             except landing.LandingBroken as exc:
