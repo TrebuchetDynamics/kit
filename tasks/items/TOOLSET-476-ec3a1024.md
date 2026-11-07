@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-476-ec3a1024"
 title = "Preserve recovery checkpoints during automatic worktree closeout"
 short = "Keep recovery checkpoints intact"
-status = "open"
+status = "done"
 goal = "SKILL-ADHERENCE"
 section = "Now"
 rank = 2000
@@ -16,6 +16,8 @@ scope = "Make worktree_closeout preserve the explicit recovery/ branch namespace
 acceptance = ["Disposable real-Git fixtures show an unlocked clean merged recovery/checkpoint worktree and its exact branch/files survive report/apply/archive and explicitly targeted cleanup; the returned kept reason identifies recovery preservation.", "A missing-directory/prunable recovery registration and branch remain intact; ordinary autowork/recovery-task branches and existing merged-clean cleanup still work, with current locked/live/dirty/unmerged/evidence safeguards unchanged."]
 checks = ["python3 scripts/check.py pi-autowork/engine/test_worktree_closeout.py tests/test_worktree_closeout.py", "git diff --check"]
 exclusions = ["No real-repository cleanup tests, service controls, package install, model calls, publication or permission changes. Test removal/archive only in disposable test-owned repositories.", "No automatic deletion of recovery branches or worktrees, even if merged/clean/old; no branch-name substring heuristic beyond the explicit recovery/ namespace, no new deletion override or broad cleanup refactor."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-476-ec3a1024.toml"
 +++
 - Sources: skills/autowork/references/worktree-closeout.md; repository instruction to preserve recovery-bearing candidates; current in-session Work maintenance authority.
 - Work search: During supported owner_cycle task acquisition, automatic cleanup removed a clean integrated recovery/parked-display-edits checkpoint. Immediately restored its original branch/worktree at exact7e15be3b and locked it; no source content was lost. Existing judge checks merged/clean/quiet/process use but ignores recovery namespace. Rejected relying only on manual locks because future recovery checkpoints can be unmarked and cleanup claims run automatically.
