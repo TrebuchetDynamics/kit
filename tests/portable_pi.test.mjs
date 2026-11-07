@@ -7,7 +7,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 47);
+  assert.equal(commands.size, 48);
   assert.equal(commands.has('push'), true);
   assert.equal(commands.has('unblock'), true);
   assert.equal(commands.has('apk-get'), true);
@@ -70,7 +70,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   }
   for (const [name, skill] of Object.entries({
     'plan-with-me': 'plan-with-me', 'plan-for-me': 'plan-for-me', 'docs-sync': 'docs-sync',
-    autowork: 'autowork', autoresearch: 'autoresearch',
+    autowork: 'autowork', work: 'work', autoresearch: 'autoresearch',
     impeccable: 'impeccable', 'ui-taste': 'ui-taste',
     'beautify-github-readme': 'beautify-github-readme', 'grill-me': 'plan-with-me',
     lgtm: 'lgtm', goal: 'goal', blockers: 'blockers', unblock: 'unblock',
@@ -89,6 +89,23 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   })) {
     await commands.get(name).handler('questions only', {isIdle: () => true});
     await assertWorkflow(skill);
+  }
+});
+
+test('Work selects its own in-session skill and preserves bare and scoped requests', async () => {
+  const commands = new Map(), messages = [];
+  register({registerCommand: (name, handler) => commands.set(name, handler),
+    sendUserMessage: (...args) => messages.push(args)});
+  const {readFile} = await import('node:fs/promises');
+  const adapter = await readFile(new URL('../adapters/skills/work/SKILL.md', import.meta.url), 'utf8');
+  for (const [raw, idle] of [['', true], ['T-42 no commit; no push\n$(literal)', false]]) {
+    await commands.get('work').handler(raw, {isIdle: () => idle});
+    const [message, delivery] = messages.at(-1);
+    assert.equal(message.includes(adapter), true);
+    assert.equal(message.includes('/adapters/skills/work/SKILL.md'), true);
+    assert.equal(message.includes('Start the runner first'), false);
+    assert.equal(message.endsWith('User request (preserve scope and restrictions):\n' + raw), true);
+    assert.deepEqual(delivery, idle ? undefined : {deliverAs: 'followUp'});
   }
 });
 
@@ -134,7 +151,8 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     'skills/docs-sync/scripts/docs.py', 'skills/autoresearch/upstream/plan.md', 'skills/impeccable/LICENSE',
     'skills/test-optimizer/SKILL.md', 'skills/engineering/local/test-suite-optimization/PROTOCOL.md',
     'skills/apk-get/SKILL.md', 'skills/apk-get/BUILD.md', 'skills/apk-get/scripts/verify_apk.py',
-    'skills/shared/COMMUNICATION.md',
+    'skills/shared/COMMUNICATION.md', 'skills/work/SKILL.md',
+    'adapters/skills/work/SKILL.md', 'adapters/skills/work/agents/openai.yaml',
     'autowork_bootstrap.py', 'Src/autowork_bootstrap.py', 'Src/pi_autowork/__init__.py']) {
     assert.equal(paths.has(path), true, path);
   }
@@ -201,7 +219,7 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
-    assert.equal(skillCount, 34);
+    assert.equal(skillCount, 35);
     // Execute the packaged CommonJS helper under Autowork's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
@@ -218,7 +236,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 47);
+    assert.equal(commands.size, 48);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {
       assert.match(name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, name);

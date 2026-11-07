@@ -18,6 +18,9 @@ CLI), require Hermes profiles, or depend on a native Kanban card. Run in the cur
 the user's instructions. Use a separate worktree when real concurrent writes need
 isolation, and preserve all unrelated edits.
 
+For task autoselection in this session without starting a service, use
+[`/work`](../work/SKILL.md).
+
 ## Start the runner first
 
 The default action (`/autowork`, `/autowork start`) starts this repository's runner

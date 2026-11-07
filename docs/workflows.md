@@ -64,6 +64,7 @@ capacity limit, so some commands must be typed rather than selected in the menu.
 | Hermes CLI chat | Telegram | Purpose |
 | --- | --- | --- |
 | `/autowork` | `/autowork` | Inspect the repo, plan missing tasks, execute a useful slice, verify and commit owned changes |
+| `/work` | `/work` | Auto-select and complete tasks in this session; continue through useful offline work without starting a runner |
 | `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only clean unmerged ones, keep dirty and locked worktrees |
 | `/lgtm` | `/lgtm` | Accept the latest recommendation, including a question round, and continue |
@@ -181,6 +182,24 @@ DOCS-MAINTAINER. The Pi engine retains input-bound report evidence for that role
 the maintainer's conditional closeout pass is separate work (TOOLSET-266-7a), not
 an extra model call or closure authority added by report assessment. See the
 [report format and binding](../skills/autowork/references/parallel-workers.md#documentation-impact-evidence).
+
+## Work: select a task and execute here
+
+[Work](../skills/work/SKILL.md) is manual, in-session Autowork. It needs no task
+argument. It automatically selects eligible tasks from `tasks/`, implements them,
+and continues after closeout. It reuses Autowork's implementation, verification,
+maintenance and closure rules rather than a second executor.
+
+When the queue is empty or gated, it inspects source, tests, docs and user flows,
+records useful offline work and executes it within the repository scope. Live and
+owner-only tasks stay pending. A named-task-only or one-task request narrows the
+loop. Existing holds, live writers, pauses and authorization gates stay in force.
+Read-only, no-commit and no-push restrictions travel with the request.
+
+The loop stops on a caller stop or an evidenced scope-wide blocker or exhausted
+search. It does not ask the user to pick routine work or stop after one completed
+task. Use `/pending` to inspect without execution. On portable hosts, `/autowork`
+keeps its runner-first route; `/work` starts no service or background job.
 
 ## Autoresearch
 

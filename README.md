@@ -195,7 +195,8 @@ states its own boundaries and what "done" means.
 
 **Execute and deliver**
 
-- `/autowork` — implement and verify one ready task, then close it.
+- `/work` — auto-select and complete tasks in this session, including useful offline work when the queue is blocked.
+- `/autowork` — start the runner on portable hosts, or request in-session execution.
 - `/goal` — keep one objective alive until evidence proves it done.
 - `/lgtm` — say yes to the latest recommendation and continue.
 - `/split-folder` — reorganize one folder without changing behavior.

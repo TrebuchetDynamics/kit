@@ -2,7 +2,7 @@
 
 Autowork provides native packages for four hosts. Claude Code, Codex and Pi
 use the portable adapters, not the Hermes plugin loader. None requires Hermes installed.
-These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Autowork,
+These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Autowork, Work,
 Autoresearch, Impeccable, UI Taste, Beautify GitHub README,
 LGTM, Git Commit Push, Blockers, Pending, the six bundled Ponytail skills,
 and Bug Harvest, Autonomous Codebase Improver, Skill Folder Refactor, Unused Code
@@ -18,6 +18,17 @@ outcome keeps focused planning, and `read-only` saves nothing.
 Supporting protocols are bundled and loaded only when needed. Hermes profile
 creation, Telegram routing,
 Kanban workers, fleet setup, memory and speech integrations remain Hermes-only.
+
+## Work in the current session
+
+Use `/kit:work` in Claude Code, `$kit:work` in Codex, or `/work` in Pi.
+[Work](../skills/work/SKILL.md) automatically selects and completes tasks here,
+following Autowork's checks and closeout rules. No task ID is required. It continues
+after each task. When the queue is gated, it finds useful offline work within the
+repository scope. Named-task limits, pauses and live gates stay in force. It stops
+on an explicit limit or an evidenced blocker or exhausted search, not after one task.
+It does not start a service or schedule work after the session ends.
+The portable `/autowork` command keeps its service-first default.
 
 ## Bundled Ponytail on every host
 

@@ -118,8 +118,9 @@ review step. Keep Hermes Agent unchanged.
    unmerged or recovery-bearing worktrees; report integration/cleanup pending.
    Close a task only after verified acceptance: the engine's verified close writes
    `status = "done"` plus the receipt in `tasks/evidence/<ID>.toml` in one commit, and
-   replay is a no-op. A close without the engine uses `autowork tasks done ID
-   --evidence TEXT`. An existing `TODO.archive.md` is frozen history, never written.
+   replay is a no-op. A manual close uses `autowork tasks done ID --by WHO
+   --reason TEXT [--evidence REF]`. It records Manual, not Verified, and writes no
+   verified receipt. An existing `TODO.archive.md` is frozen history, never written.
    Read-only runs do not write.
 
 ## Ownership, limits and continuation
@@ -248,6 +249,7 @@ task's acceptance is narrower.
 
 ## Boundaries
 
+- For automatic task selection and continued work in this session, use `/work`.
 - Not planning; use `/plan-with-me` or `/plan-for-me`.
 - Not open-ended improvement; use `/autonomous-codebase-improver`.
 - Not an architecture review; use `/improve-codebase-architecture`.

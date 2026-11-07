@@ -138,8 +138,9 @@ shallow is `/improve-codebase-architecture`. Removal of unreachable code is
 
 Close a task only after verified acceptance. The engine's verified close writes
 `status = "done"` into `tasks/items/<ID>.md` and the receipt `tasks/evidence/<ID>.toml`
-in one commit; a replay writes nothing. A close without the engine uses
-`autowork tasks done ID --evidence TEXT`. Closed records stay in `tasks/items/`;
+in one commit; a replay writes nothing. A manual close uses
+`autowork tasks done ID --by WHO --reason TEXT [--evidence REF]`. It records Manual,
+not Verified, and writes no verified receipt. Closed records stay in `tasks/items/`;
 nothing is moved to an archive, and an existing `TODO.archive.md` is frozen history.
 Do not wait for a Docs Sync job. Read-only runs skip this write.
 

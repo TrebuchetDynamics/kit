@@ -25,7 +25,7 @@ class PortablePackageTests(unittest.TestCase):
     def test_portable_skills_and_references_are_self_contained(self):
         folder = ROOT / 'adapters/skills'
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}
-        self.assertEqual(names, {'plan-with-me', 'blockers', 'unblock', 'plan-for-me', 'docs-sync', 'autowork',
+        self.assertEqual(names, {'plan-with-me', 'blockers', 'unblock', 'plan-for-me', 'docs-sync', 'autowork', 'work',
             'autoresearch', 'impeccable', 'lgtm', 'goal',
             'git-commit-push', 'push', 'ui-taste', 'beautify-github-readme', 'pending',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
@@ -46,6 +46,38 @@ class PortablePackageTests(unittest.TestCase):
         worker = (folder / 'autowork/SKILL.md').read_text()
         self.assertNotIn('start_goal.py', worker)
         self.assertNotIn('finish_task.py', worker)
+
+    def test_work_selects_and_continues_here_without_the_runner_first_route(self):
+        adapter = (ROOT / 'adapters/skills/work/SKILL.md').read_text()
+        skill = ' '.join((ROOT / 'skills/work/SKILL.md').read_text().split())
+        self.assertIn('../../../skills/work/SKILL.md', adapter)
+        self.assertNotIn('../autowork/SKILL.md', adapter)
+        for required in ('No task argument is required', 'current session',
+                         'autowork tasks list', 'autowork tasks why ID',
+                         'canonical selection order', 'A supplied task ID or scope narrows selection',
+                         'as many eligible tasks as it can',
+                         'When the queue is empty or all open tasks are gated',
+                         'repository-maintenance.md', 'source, tests, docs and existing user flows',
+                         'then select the next task automatically',
+                         'One completed task is not a stop condition',
+                         'An explicit one-task or named-task limit wins',
+                         'Preserve live and owner-only tasks as pending',
+                         'Named-task-only requests stay on that task',
+                         'no useful eligible work', 'Do not invent busywork',
+                         'read-only requests read-only',
+                         'fresh context window', 'read-only permission',
+                         '../autowork/SKILL.md', '../shared/DEFINITION-OF-DONE.md'):
+            self.assertIn(required, skill)
+        self.assertNotIn('autowork start .', skill)
+        self.assertNotIn('Stop after one task by default', skill)
+        self.assertNotIn('Stop rather than inventing a task', skill)
+        execution = ' '.join((ROOT / 'skills/autowork/SKILL.md').read_text().split())
+        self.assertIn('autowork tasks done ID --by WHO --reason TEXT [--evidence REF]', execution)
+        self.assertIn('Manual, not Verified', execution)
+        closeout = ' '.join((ROOT / 'skills/autowork/references/iteration-and-decisions.md').read_text().split())
+        self.assertIn('autowork tasks done ID --by WHO --reason TEXT [--evidence REF]', closeout)
+        self.assertIn('Manual, not Verified', closeout)
+        self.assertIn('/work', (ROOT / 'adapters/skills/autowork/SKILL.md').read_text())
 
     def test_claude_code_marketplace_loads_only_the_portable_adapters(self):
         plugin = json.loads((ROOT / '.claude-plugin/plugin.json').read_text())

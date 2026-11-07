@@ -29,7 +29,9 @@ not ask for.
    `/grill-me`, the plan-specific branch.
 2. **Make the plan executable.** `/plan-for-me` investigates and saves goals and tasks
    without an interview; `/plan-with-me` asks only what it cannot find.
-3. **Do the work.** `/autowork` implements one ready task, verifies it, and closes it.
+3. **Do the work here.** `/work` selects and completes tasks in this session.
+   It continues automatically and finds useful offline work when the queue is gated.
+   On portable hosts, `/autowork` starts the runner by default.
    For one objective that must stay in view across many turns, use `/goal`. For many
    lanes at once, `/autonomous-codebase-improver`.
 4. **Deliver.** `/git-commit-push` commits, syncs and pushes when the request allows.
@@ -45,7 +47,7 @@ not ask for.
 | Code looks unused and you want it gone | `/unused-code` |
 | Merge every finished worktree into main | `/git-commit-push all` |
 | Commit all eligible changes, merge worktrees, sync and push main | `/push` |
-| Refactor code inside a file, rename a symbol, extract a module | `/autowork` |
+| Execute an accepted refactoring task in this session | `/work` |
 | One folder needs splitting without behavior change | `/split-folder` |
 | Modules are shallow or seams leak | `/improve-codebase-architecture` |
 | One objective needs many turns and an evidence audit | `/goal` |
