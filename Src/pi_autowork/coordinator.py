@@ -1710,14 +1710,16 @@ class Coordinator:
         and nothing is in flight, the session reaches the main branch now: the owner's
         questions and finished tasks would otherwise stay on the session branch until the
         queue empties, which a runner waiting on the owner never sees. A merge that could
-        not happen is tried again once the session, the main branch or its checkout moves."""
+        not happen is tried again on later cycles: changed inputs, elapsed quiet time or a
+        released Git/process lock can make it safe. Successful unchanged inputs deduplicate."""
         if not self.integ or self.in_flight() or not self.ahead():
             return
         seen = (git(self.integ, 'rev-parse', 'HEAD'), git(self.repo, 'rev-parse', self.base),
                 git(self.repo, 'status', '--porcelain', '--untracked-files=all'),
                 main_check.read(self.state) if post_merge_barrier.enabled() else None)
-        if seen == self.waiting_merge:
+        if seen == self.waiting_merge and not self.merge_pending:
             return
+        # Quiet time and index/process locks can clear without changing refs or status.
         self.waiting_merge = seen
         self.merge_main()
 

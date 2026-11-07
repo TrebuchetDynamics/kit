@@ -202,6 +202,59 @@ class DirtyLandingTests(LandingFixture):
         self.assertEqual(warnings[1], warnings[2])
         self.assertIn('conflict', self.runner.merge_pending)  # status remains visible
 
+    def test_planning_sweep_does_not_delay_nonplanning_landing(self):
+        self.note.write_text(self.original)
+        note = self.repo / 'notes.txt'
+        note.write_text(self.original)
+        self.git(self.repo, 'add', 'notes.txt')
+        self.git(self.repo, 'commit', '-qm', 'owner file')
+        self.git(self.integ, 'merge', '--no-edit', 'main')
+        (self.integ / 'notes.txt').write_text(self.original.replace('session: old', 'session: new'))
+        self.git(self.integ, 'commit', '-qam', 'session edit')
+        note.write_text(self.parked)
+        with mock.patch.dict(os.environ, {'PI_AUTOWORK_PLANNING_QUIET': '600'}):
+            with mock.patch('pi_autowork.landing.time.time', return_value=1000):
+                self.assertTrue(self.runner.merge_main(), self.runner.merge_pending)
+            with mock.patch('pi_autowork.landing.time.time', return_value=1300):
+                self.assertEqual(self.runner.commit_owner_changes(), '')
+            with mock.patch('pi_autowork.landing.time.time', return_value=1601):
+                self.assertTrue(self.runner.merge_main(), self.runner.merge_pending)
+        self.assertEqual(self.head('main'), self.head('pi-autowork/s'))
+        self.assertEqual(note.read_text(), self.parked.replace('session: old', 'session: new'))
+        self.assertEqual(self.git(self.repo, 'diff', '--cached', '--name-only'), '')
+
+    def test_quiet_observation_scopes_are_persistent_and_content_sensitive(self):
+        from pi_autowork import landing
+        name = 'local.txt'
+        (self.repo / name).write_text('first\n')
+        with mock.patch('pi_autowork.landing.time.time', return_value=1000):
+            self.assertEqual(landing.recent_owner_paths(self.repo, self.runner.state, [name], 600,
+                                                      scope='landing'), [name])
+        with mock.patch('pi_autowork.landing.time.time', return_value=1300):
+            landing.recent_owner_paths(self.repo, self.runner.state, [], 600)
+        with mock.patch('pi_autowork.landing.time.time', return_value=1601):
+            self.assertEqual(landing.recent_owner_paths(self.repo, self.runner.state, [name], 600,
+                                                      scope='landing'), [])
+            (self.repo / name).write_text('changed\n')
+            self.assertEqual(landing.recent_owner_paths(self.repo, self.runner.state, [name], 600,
+                                                      scope='landing'), [name])
+
+    def test_a_failed_waiting_merge_retries_when_only_quiet_time_can_change(self):
+        self.runner.in_flight = lambda: False
+        self.runner.ahead = lambda: 1
+        self.runner.waiting_merge = None
+        self.runner.merge_pending = ''
+        def attempt():
+            self.runner.merge_pending = 'owner edits are still recent'
+            return False
+        with mock.patch.object(self.runner, 'merge_main', side_effect=attempt) as merge:
+            self.runner.merge_waiting()
+            self.runner.merge_waiting()  # same refs/status; elapsed time or a released lock can help
+            self.assertEqual(merge.call_count, 2)
+            self.runner.merge_pending = ''  # unchanged successful work still deduplicates
+            self.runner.merge_waiting()
+            self.assertEqual(merge.call_count, 2)
+
     def test_unsafe_edits_leave_the_ref_index_and_edit_untouched(self):
         real_run, real_fsync, real_read = subprocess.run, os.fsync, Path.read_bytes
         main = self.head('main')
