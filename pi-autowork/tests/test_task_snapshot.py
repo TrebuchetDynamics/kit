@@ -31,6 +31,27 @@ class TaskSnapshotTests(unittest.TestCase):
                     tasks=[dict(task=t.id, state='waiting', contract_hash=t.contract_hash,
                                 admitted_contract_hash=None) for t in store.tasks.values()], **updates)
 
+    def test_a_saved_plan_refusal_is_agent_repair_not_ready_or_owner_authority(self):
+        path = self.repo / 'tasks/items/A.md'
+        path.write_text(edit(path.read_text(), {'kind': 'plan'}))
+        subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=T', '-c', 'user.email=t@example.invalid',
+                        'commit', '-qam', 'accepted plan'], check=True)
+        original = task_queue.store(self.repo).tasks['A']
+        obs = self.observation(maintainer={'items': {'task:A': dict(
+            digest=original.record_revision, outcome='refused: it changed more than planning files')}})
+        obs['tasks'][0]['reason'] = 'ready for planning'
+        result = task_snapshot.capture(self.repo, engine_observation=obs, generation=1)
+        row = next(row for row in result.rows if row.task == 'A')
+        self.assertEqual(row.bucket, 'Blocker')
+        self.assertEqual(row.state, 'Blocker · Planning repair')
+        self.assertIn('changed more than planning files', row.why)
+        self.assertFalse(row.question)
+        self.assertEqual(result.counts, (0, 0, 2, 1, 1, 4))
+        self.assertEqual(task_queue.store(self.repo).tasks['A'], original, 'display grants no authority')
+        obs['maintainer']['items']['task:A']['digest'] = 'old task revision'
+        fresh = task_snapshot.capture(self.repo, engine_observation=obs, generation=2)
+        self.assertEqual(next(row for row in fresh.rows if row.task == 'A').why, 'ready for planning')
+
     def test_membership_is_one_pinned_commit_not_pending_or_session_union(self):
         first = task_snapshot.capture(self.repo, engine_observation=None, generation=1)
         self.assertEqual(first.counts, (0, 0, 3, 0, 1, 4))

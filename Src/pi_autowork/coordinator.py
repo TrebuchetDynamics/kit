@@ -2717,7 +2717,9 @@ class Coordinator:
             recovery = {}
         ids = set(history.get('task_ids', [])) | set(before)
         incidents = {maintainer.item_key(item): maintainer.recovery_key(
-            item, before.get(item[0], {}), reasons, ids) for item in found}
+            item, before.get(item[0], {}), reasons, ids,
+            receipt=history.get('items', {}).get(maintainer.item_key(item)),
+            recovery=recovery.get(maintainer.item_key(item))) for item in found}
         found = maintainer.pending(self.state, found, entries=before, reasons=reasons, eligible=lambda item:
             _auxiliary_ready(recovery.get(maintainer.item_key(item)), incidents[maintainer.item_key(item)]))
         if not found:
@@ -2731,9 +2733,16 @@ class Coordinator:
         LOG.say(f'{maintainer.ROLE}: repairing the task docs of {", ".join(names)}')
         try:
             base = git(scratch, 'rev-parse', 'HEAD')
-            message = maintainer.prompt(found, self.repo, self.tasks_cli)
+            message = maintainer.prompt(found, self.repo, self.tasks_cli, entries=before, workspace=scratch)
             if rolling:
                 message += f'\nFinished batch reports: {Path(self.cfg["git_common"]) / "autowork-execution/slot-data"}.'
+        except ValueError as exc:
+            outcome = 'refused: ' + str(exc)
+            maintainer.remember(self.state, trigger_key=trigger_key, found=found, outcome=outcome,
+                                entries=before, reasons=reasons)
+            self.drop_scratch(scratch)
+            LOG.say(f'{maintainer.ROLE}: {outcome}')
+            return False
         except BaseException:
             self.drop_scratch(scratch)
             raise
@@ -2866,7 +2875,8 @@ class Coordinator:
         outcome, changed = 'no change', []
         try:
             head = git(scratch, 'rev-parse', 'HEAD')
-            paths = (git(scratch, 'diff', '--name-only', base, head) or '').split() if head and head != base else []
+            paths = [p for p in (git(scratch, 'diff', '--name-only', '-z', base, head) or '').split('\0') if p] \
+                if head and head != base else []
             diff = git(scratch, 'diff', base, head) or '' if paths else ''
             changed = [task for task in names if task in diff]
             # The proposal's whole store must read: one invalid file refuses it.
@@ -2892,8 +2902,10 @@ class Coordinator:
                 outcome = 'planning failed: ' + plan_error
             elif not paths:
                 outcome = 'no change' if ok else 'failed'
-            elif not maintainer.planning_only(paths) or dirty(scratch):
-                outcome = 'refused: it changed more than planning files'
+            elif not maintainer.planning_only(paths, outputs=maintainer.plan_outputs(found, before), repo=scratch):
+                outcome = maintainer.PLAN_PATH_REFUSAL
+            elif dirty(scratch):
+                outcome = 'refused: planning checkout has uncommitted changes'
             elif invalid:
                 outcome = 'refused: invalid task store: ' + invalid
             elif (repair_error := maintainer.repair_error(found, before, entries(proposed))):
