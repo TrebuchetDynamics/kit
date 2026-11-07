@@ -5,8 +5,8 @@ title = "Make Hermes approvals conservative unless autonomous policy is explicit
 short = "Require explicit autonomous policy"
 status = "open"
 goal = "RELIABILITY-2026-10"
-section = "Needs decision"
-rank = 2000
+section = "Now"
+rank = 5000
 depends_on = []
 touches = ["plugins/defaults.json", "Src/autowork_runtime/runtime_defaults.py", "Src/autowork_runtime/plugin.py", "Src/autowork_runtime/install/setup_preflight.py", "Src/autowork_runtime/install/setup_runtime.py", "tests/test_preflight.py", "tests/test_install_plugins.py", "tests/test_plugin.py", "tests/integration_plugin.py", "docs/installation.md", "docs/reference.md", "README.md", "CHANGELOG.md"]
 resources = []
@@ -19,3 +19,4 @@ exclusions = ["No live Hermes profile, gateway, plugin install or approval setti
 +++
 - Sources: docs/evaluation.md#risks; docs/installation.md#install; docs/reference.md#plugin-settings
 - Question: The owner must decide whether the default Hermes approvals stance changes from implicit widening to an explicit interactive/autonomous policy. Resume condition: the owner records the security-default decision.
+- Owner decision: 2026-11-07: approved
