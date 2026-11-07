@@ -103,9 +103,23 @@ async def controls_pilot(case):
                         assert isinstance(editor, tui.CommitEdits), type(editor).__name__
                         visible(editor.query_one('#commit-message'), editor)
                         assert editor.query_one('#commit-message').value == 'tasks: record owner answers'
-                        await pilot.press('escape')
-                        await settle(app, pilot)
+                        assert 'Use the bounded offline option' in editor.query_one('#commit-diff', TextArea).text
+                        shown_revision = editor.revision
+                        assert len(shown_revision) == 64
+                        # A refresh behind the modal must not silently accept a newer snapshot.
+                        task_screen = app.screen_stack[-2]
+                        task_screen.pending_snapshot = {'pending_revision': 'b' * 64, 'diff': 'newer edits'}
+                        with patch.object(app, 'execute') as execute:
+                            await pilot.click('#commit-save')
+                            await pilot.pause()
+                            argv = execute.call_args.args[0].argv
+                            assert argv[argv.index('--expect-pending') + 1] == shown_revision
                         assert isinstance(app.screen, tui.TasksScreen)
+                        task_screen.pending_snapshot = {}
+                        with patch.object(app, 'notify') as notify:
+                            task_screen.action_commit_tasks()
+                            assert isinstance(app.screen, tui.TasksScreen)
+                            assert notify.called, 'A legacy backend must not allow an unprotected commit'
                         await pilot.press('escape')
                         await settle(app, pilot)
                         assert len(app.screen_stack) == 1, 'back on the fleet before the picker check'

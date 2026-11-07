@@ -3,6 +3,7 @@
 Raw protocol/diagnostics stay in private files. Callbacks are for a trusted local UI,
 not public telemetry. The caller owns the subprocess for exactly one turn.
 """
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,21 @@ class RPCError(Exception):
 
 class Cancelled(RPCError):
     pass
+
+
+@dataclass(frozen=True)
+class ShutdownOutcome:
+    """Local transport observations, not proof that all descendants are gone."""
+    returncode: int | None
+    forced: bool
+    readers_stopped: bool
+    resources_closed: bool
+    errors: tuple[str, ...] = ()
+
+    @property
+    def clean(self):
+        return (self.returncode == 0 and not self.forced and self.readers_stopped
+                and self.resources_closed and not self.errors)
 
 
 def private_dir(path):
@@ -53,6 +69,8 @@ class RPC:
         self.pending = {}
         self.mutex = threading.Lock()
         self.write_lock = threading.Lock()
+        self.close_lock = threading.Lock()
+        self.shutdown_outcome = None
         self.events = queue.Queue(maxsize=4096)
         self.failure = None
         self.closed = False
@@ -125,7 +143,9 @@ class RPC:
         except OSError:
             self._fail('cannot drain Pi diagnostics')
 
-    def _check(self, deadline, *, cancellation=True):
+    def _check(self, deadline, *, cancellation=True, shutdown=False):
+        if self.closed and not shutdown:
+            raise RPCError('Pi RPC is closed')
         if cancellation and self.cancel is not None and self.cancel.is_set():
             raise Cancelled('planning turn cancelled')
         if self.failure:
@@ -133,19 +153,20 @@ class RPC:
         if time.monotonic() >= deadline:
             raise RPCError('Pi RPC deadline exceeded')
 
-    def _write(self, payload, deadline):
+    def _write(self, payload, deadline, *, shutdown=False):
         data = json.dumps(payload, ensure_ascii=False).encode('utf-8') + b'\n'
         if len(data) > self.MAX_RECORD:
             raise RPCError('Pi RPC input exceeded size budget')
         with self.write_lock:
             while data:
-                self._check(deadline, cancellation=payload['type'] not in ('abort', 'clear_queue'))
-                _, writable, _ = select.select([], [self.process.stdin], [], .05)
-                if writable:
-                    try:
+                self._check(deadline, cancellation=payload['type'] not in ('abort', 'clear_queue'),
+                            shutdown=shutdown)
+                try:
+                    _, writable, _ = select.select([], [self.process.stdin], [], .05)
+                    if writable:
                         data = data[os.write(self.process.stdin.fileno(), data):]
-                    except (OSError, ValueError) as exc:
-                        raise RPCError('Pi RPC input closed') from exc
+                except (OSError, ValueError) as exc:
+                    raise RPCError('Pi RPC input closed') from exc
 
     def request(self, command, **values):
         ident = uuid.uuid4().hex
@@ -210,44 +231,74 @@ class RPC:
                 return {'text': text, 'status': 'ready'}
 
     def close(self, abort=False):
-        with self.mutex:
-            if self.closed:
-                return
-            self.closed = True
-        if abort and self.process.poll() is None:
-            # Do not await abort: even a wedged provider must have a bounded shutdown.
-            for command in ('clear_queue', 'abort'):
-                ident = uuid.uuid4().hex
-                with self.mutex:
-                    self.pending[ident] = queue.Queue(maxsize=1)
+        """Bounded, serialized shutdown; repeated callers receive the same outcome.
+
+        A clean outcome describes only this child, readers and local resources.
+        Process-group signalling below is best effort, not descendant cleanup proof.
+        """
+        with self.close_lock:
+            if self.shutdown_outcome is not None:
+                return self.shutdown_outcome
+            with self.mutex:
+                # Requests (including ones already waiting) must stop before teardown.
+                self.closed = True
+            errors = []
+            forced = False
+            if abort and self.process.poll() is None:
+                # Do not await abort: even a wedged provider needs bounded shutdown.
+                for command in ('clear_queue', 'abort'):
+                    ident = uuid.uuid4().hex
+                    with self.mutex:
+                        self.pending[ident] = queue.Queue(maxsize=1)
+                    try:
+                        self._write({'id': ident, 'type': command},
+                                    time.monotonic() + self.shutdown_timeout, shutdown=True)
+                    except RPCError:
+                        break
+
+            def close_resource(resource):
                 try:
-                    self._write({'id': ident, 'type': command},
-                                time.monotonic() + self.shutdown_timeout)
-                except RPCError:
-                    break
-        try:
-            self.process.stdin.close()
-        except OSError:
-            pass
-        for sig in (None, signal.SIGTERM, signal.SIGKILL):
-            if sig is not None:
+                    resource.close()
+                except (OSError, ValueError):
+                    errors.append('cannot close Pi RPC resource')
+
+            def signal_group(sig):
                 try:
                     os.killpg(self.process.pid, sig)
                 except ProcessLookupError:
                     pass
-            try:
-                self.process.wait(timeout=self.shutdown_timeout)
-                break
-            except subprocess.TimeoutExpired:
-                continue
-        # Kill remaining tool descendants, even if Pi already exited.
-        try:
-            os.killpg(self.process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        self.reader.join(self.shutdown_timeout)
-        self.stderr_reader.join(self.shutdown_timeout)
-        self.process.stdout.close()
-        self.process.stderr.close()
-        self.raw.close()
-        self.errors.close()
+                except OSError:
+                    errors.append('cannot signal Pi RPC process group')
+
+            close_resource(self.process.stdin)
+            for sig in (None, signal.SIGTERM, signal.SIGKILL):
+                if sig is not None:
+                    forced = True
+                    signal_group(sig)
+                try:
+                    self.process.wait(timeout=self.shutdown_timeout)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+                except OSError:
+                    errors.append('cannot wait for Pi RPC child')
+            # Retain best-effort group cleanup even when the direct child exited.
+            signal_group(signal.SIGKILL)
+            self.reader.join(self.shutdown_timeout)
+            self.stderr_reader.join(self.shutdown_timeout)
+            readers_stopped = not (self.reader.is_alive() or self.stderr_reader.is_alive())
+            # Closing a buffered pipe under a live reader can block indefinitely.
+            # Leave those reader-owned resources alone and report incomplete cleanup.
+            if not self.reader.is_alive():
+                close_resource(self.process.stdout)
+                close_resource(self.raw)
+            if not self.stderr_reader.is_alive():
+                close_resource(self.process.stderr)
+                close_resource(self.errors)
+            resources_closed = all(resource.closed for resource in (
+                self.process.stdin, self.process.stdout, self.process.stderr, self.raw, self.errors))
+            with self.mutex:
+                self.pending.clear()
+            self.shutdown_outcome = ShutdownOutcome(
+                self.process.returncode, forced, readers_stopped, resources_closed, tuple(errors))
+            return self.shutdown_outcome

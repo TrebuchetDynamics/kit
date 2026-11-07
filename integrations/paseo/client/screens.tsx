@@ -6,7 +6,7 @@ import { Pressable, RefreshControl, View } from 'react-native';
 import type { ScrollView as NativeScrollView } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
-import { canAnswer, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
+import { canAnswer, closureTone, taskTone, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
 import { operationsKey, readForHost, rememberOperation, useConfirmedAction, useHostState, useReadBackoff, useWatch, type HostState } from './state';
 import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme, useColors } from './ui';
 
@@ -501,7 +501,7 @@ function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; q
   const meta = [task.position ? `Position ${task.position}` : null, blocked ? `Blocked by ${task.display!.blocker}` : !question && task.section ? `Section: ${task.section}` : null].filter(Boolean).join(' · ');
   // A row inside the queue, not a card inside a card.
   return <View style={{ gap: 6, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
-    <Row><Label mono>{task.id}</Label><StatusPill state={task.display?.state ?? 'unknown'} />{closure ? <Badge label={closure.label} tone={stateTone(closure.label)} /> : null}</Row>
+    <Row><Label mono>{task.id}</Label><StatusPill state={task.display?.state ?? 'unknown'} tone={taskTone(task, question)} />{closure ? <Badge label={closure.label} tone={closureTone(task)} /> : null}</Row>
     <Label>{task.title}</Label>
     {meta ? <Caption>{meta}</Caption> : null}
     {task.display?.why ? <Caption>{task.display.why}</Caption> : null}
@@ -541,6 +541,8 @@ function PendingCard({ repo, fleet, host, hostId, enabled, request }: RepoViewPr
     queryFn: () => readForHost(host, () => load({ instance: fleet.instance, repoId: repo.id, view: 'pending' })), staleTime: 10000, retry: false, refetchOnWindowFocus: false,
   });
   const pending = record(query.data?.value);
+  const lifecycle = record(pending?.lifecycle);
+  const pendingRevision = typeof pending?.pending_revision === 'string' && /^[a-f0-9]{64}$/.test(pending.pending_revision) ? pending.pending_revision : '';
   const files = Array.isArray(pending?.files) ? pending!.files.filter((item): item is string => typeof item === 'string') : [];
   if (!fleet.capabilities.tasks.includes('commit')) return <Notice tone="warning"><Label>The installed Autowork release lacks `tasks commit`; task edits stay uncommitted until the executable is updated.</Label></Notice>;
   if (!files.length && !query.error) return null;
@@ -548,12 +550,14 @@ function PendingCard({ repo, fleet, host, hostId, enabled, request }: RepoViewPr
     <Row between><Heading level={2}>Pending task edits</Heading><Caption>{query.isFetching ? 'Reading…' : `${plural(files.length, 'file')} uncommitted`}</Caption></Row>
     {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
     {files.length ? <>
+      {typeof lifecycle?.message === 'string' ? <Label>{lifecycle.message}</Label> : <Label>Saved task edits await a commit.</Label>}
       <Label mono>{files.join('\n')}</Label>
       <Expand title="Pending diff"><Label mono>{display(pending?.diff)}</Label></Expand>
       {fleet.permissions.commit ? <>
         <Input label="Commit message" value={message} onChange={setMessage} placeholder="tasks: answer T-12" />
-        <Button label="Commit task edits" variant="primary" disabled={!enabled || !message.trim()} onPress={() => request({ kind: 'commit', repoId: repo.id, message: message.trim() })} />
-        <Caption>Commits only tasks/ paths; other dirty files stay. No push. The runner reads committed records, so a saved answer takes effect after this commit.</Caption>
+        <Button label="Commit task edits" variant="primary" disabled={!enabled || query.isFetching || !pendingRevision || !message.trim()} onPress={() => request({ kind: 'commit', repoId: repo.id, message: message.trim(), pendingRevision })} />
+        {!pendingRevision ? <Caption>Update Autowork for exact pending-snapshot protection before committing.</Caption> : null}
+        <Caption>Commits only the reviewed tasks/ snapshot; changed edits require a fresh review. Other dirty files stay. No push.</Caption>
       </> : <Caption>Task-store commits are not granted by operator policy.</Caption>}
     </> : null}
   </Card>;
@@ -713,7 +717,7 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
     <View style={{ gap: 2 }}><Heading level={2}>{taskId}</Heading><Caption>{detail?.title ?? task?.title ?? 'Task detail'}</Caption></View>
     {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
     {detail ? <>
-      <Row><StatusPill state={state} />{closure ? <Badge label={closure.label} tone={stateTone(closure.label)} /> : null}{meta ? <Caption>{meta}</Caption> : null}</Row>
+      <Row><StatusPill state={state} tone={taskTone(detail ?? task, answerable)} />{closure ? <Badge label={closure.label} tone={closureTone(detail ?? task)} /> : null}{meta ? <Caption>{meta}</Caption> : null}</Row>
       {presentation?.why ? <Caption>{presentation.why}</Caption> : null}
       {closure && closure.detail !== presentation?.why ? <Caption>{closure.detail}</Caption> : null}
       {answerable ? <>
