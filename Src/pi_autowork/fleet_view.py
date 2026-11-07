@@ -992,6 +992,19 @@ def needs(runner):
     if runner.state in ('paused', 'not running'):
         return 'start it' if runner.state == 'not running' else 'resume it'
     if runner.questions:
+        snap = runner.snapshot
+        # Pending bytes are not an answer or admission. Point at their review before
+        # asking again, but never suppress a question from stale/unknown observations.
+        pending = {Path(path).stem for path in snap.pending_paths
+                   if path.startswith('tasks/items/') and path.endswith('.md')} if (
+                       snap and snap.freshness == 'fresh' and snap.pending_paths is not None
+                       and snap.pending_at is not None
+                       and 0 <= time.time() - snap.pending_at <= health.STALE_AFTER) else set()
+        waiting = [q.id for q in runner.questions if q.id in pending]
+        if waiting:
+            other = len(runner.questions) - len(waiting)
+            return ('review/commit saved task edits: ' + ', '.join(waiting)
+                    + (f'; {other} other question(s)' if other else ''))
         first = runner.questions[0]
         count = len(runner.questions)
         return f"{count} question{'s' if count > 1 else ''}, easiest {first.id}"

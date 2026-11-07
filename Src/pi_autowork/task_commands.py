@@ -25,7 +25,7 @@ import tempfile
 import threading
 import time
 
-from pi_autowork import landing, task_status
+from pi_autowork import landing, task_handoff, task_status
 from pi_autowork.engine import task_select  # noqa: E402
 from pi_autowork.engine import task_store  # noqa: E402
 from pi_autowork.engine.task_store import StoreError, TaskStore, WriteError  # noqa: E402
@@ -59,25 +59,28 @@ _task_locks = threading.local()
 
 
 @contextmanager
-def locked(repo):
-    """One writer per checkout; nested helpers share this thread/process's lock.
-
-    Recover an interrupted batch before any locked reader or writer can use it.
-    """
+def locked(repo, *, recover=True):
+    """Serialize task access; mutation helpers recover, read-only previews refuse recovery."""
     git_dir = Path(_git(repo, 'rev-parse', '--absolute-git-dir'))
     key = (os.getpid(), git_dir)
     if not hasattr(_task_locks, 'held'):
         _task_locks.held = set()
+    journal = git_dir / 'autowork-tasks.transaction'
     if key in _task_locks.held:
+        if not recover and journal.exists():
+            raise CommandError('interrupted task transaction needs explicit recovery; read changed nothing')
         yield
         return
     with open(git_dir / 'autowork-tasks.lock', 'a') as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
         _task_locks.held.add(key)
         try:
-            conflicts = _undo(repo, git_dir / 'autowork-tasks.transaction')
-            if conflicts:
-                raise CommandError('interrupted task edit undone; external edits preserved: ' + ', '.join(conflicts))
+            if not recover and journal.exists():
+                raise CommandError('interrupted task transaction needs explicit recovery; read changed nothing')
+            if recover:
+                conflicts = _undo(repo, journal)
+                if conflicts:
+                    raise CommandError('interrupted task edit undone; external edits preserved: ' + ', '.join(conflicts))
             yield
         finally:
             _task_locks.held.remove(key)
@@ -483,8 +486,17 @@ def cmd_goals(repo, rev='HEAD', worktree=False):
             for g in sorted(store.goals.values(), key=lambda g: (g.priority if g.priority is not None else 10**9, g.id))]
 
 
-@_serialized
+def cmd_handoff(repo):
+    """One read-only, exact-snapshot recovery report; never save, commit or start work."""
+    return cmd_commit(repo, dry_run=True)
+
+
 def cmd_commit(repo, message=None, dry_run=False, expected=None):
+    with locked(repo, recover=not dry_run):
+        return _commit_snapshot(repo, message, dry_run, expected)
+
+
+def _commit_snapshot(repo, message=None, dry_run=False, expected=None):
     """Preview and commit the same immutable tasks/ snapshot, never unrelated staged edits.
 
     The pending revision binds HEAD and the resulting tree. A protected commit refuses
@@ -515,7 +527,17 @@ def cmd_commit(repo, message=None, dry_run=False, expected=None):
                     '--', 'tasks', env=env, raw=True)
         result = dict(files=files, diff=diff, commit=None, dry_run=dry_run, pending_revision=pending,
                       lifecycle=task_status.edit_lifecycle('pending_commit' if files else 'clean'))
+        baseline, baseline_error = None, None
+        try:
+            baseline = TaskStore.at(repo, head)
+        except StoreError as exc:
+            # A valid pending store can repair invalid or absent committed records.
+            # Baseline evidence is unknown, not a veto on the validated candidate.
+            baseline_error = str(exc)
         if not files:
+            result['handoff'] = task_handoff.describe(baseline, baseline, (), head, str(repo.resolve()), baseline_error)
+            if baseline is None:
+                result['lifecycle'] = dict(state='unknown', message='Committed task store unavailable: ' + baseline_error)
             return result
         # Validate exactly the staged snapshot, not a second read of mutable files.
         ident = {'GIT_AUTHOR_NAME': 'autowork', 'GIT_AUTHOR_EMAIL': 'autowork@localhost',
@@ -526,7 +548,12 @@ def cmd_commit(repo, message=None, dry_run=False, expected=None):
             if object_env:
                 validation_env['GIT_ALTERNATE_OBJECT_DIRECTORIES'] += os.pathsep + object_env['GIT_OBJECT_DIRECTORY']
             candidate = _git(repo, 'commit-tree', tree, '-p', head, '-m', 'validate pending tasks', env=validation_env)
-            TaskStore.at(repo, candidate, env=validation_env)
+            saved = TaskStore.at(repo, candidate, env=validation_env)
+            result['handoff'] = task_handoff.describe(baseline, saved, files, head, str(repo.resolve()), baseline_error)
+        answered = [row['task'] for row in result['handoff']['decisions'] if row['state'] == 'pending_commit']
+        if answered:
+            result['lifecycle']['message'] += (' Saved answers: ' + ', '.join(answered)
+                                               + '; do not ask again while their reviewed commit is pending.')
         if dry_run:
             return result
         if (_git(repo, 'rev-parse', 'HEAD') != head
@@ -540,7 +567,8 @@ def cmd_commit(repo, message=None, dry_run=False, expected=None):
                 or _git(repo, 'rev-list', '--parents', '-n', '1', commit).split() != [commit, head]):
             raise CommandError('commit hooks or another writer changed the snapshot; inspect the retained commit')
         _git(repo, 'reset', '-q', commit, '--', 'tasks')
-        result.update(commit=commit, lifecycle=task_status.edit_lifecycle('committed'))
+        result.update(commit=commit, lifecycle=task_status.edit_lifecycle('committed'),
+                      handoff=task_handoff.describe(saved, saved, (), commit, str(repo.resolve())))
         return result
 
 
@@ -939,6 +967,8 @@ def add_parser(sub):
     p.add_argument('repo', nargs='?', default='.')
     p.add_argument('--worktree', action='store_true', help='read uncommitted edits too')
     p.add_argument('--rev', default='HEAD')
+    p = verbs.add_parser('handoff', help='read the exact pending diff and decision handoff; no writes or runner actions')
+    p.add_argument('repo', nargs='?', default='.')
     p = verbs.add_parser('commit', help="commit the working tree's tasks/ edits and nothing else")
     p.add_argument('repo', nargs='?', default='.')
     p.add_argument('--message', '-m', help='the commit message (default names the number of edits)')
@@ -1043,7 +1073,7 @@ def run(args, repo):
     try:
         _input_values(args)
         if args.verb in WRITES:
-            with locked(repo):
+            with locked(repo, recover=not (args.verb == 'commit' and args.dry_run)):
                 if getattr(args, 'expect', None):
                     goal = args.verb == 'goal'
                     expect(repo, args.goal if goal else args.task, args.expect, goal)
@@ -1071,6 +1101,8 @@ def _run(args, repo):
         out = cmd_new_id(repo, args.prefix)
     elif verb == 'goals':
         out = cmd_goals(repo, args.rev, args.worktree)
+    elif verb == 'handoff':
+        out = cmd_handoff(repo)
     elif verb == 'commit':
         out = cmd_commit(repo, args.message, args.dry_run, args.expect_pending)
     elif verb == 'add':
