@@ -25,6 +25,16 @@ and a saved answer is not proof that a held task advanced. Static skill tests an
 offline command-routing fixtures verify these instructions and routing, not live
 model adherence, successful recovery or service delivery.
 
+## Unblock repairs stalled services autonomously
+
+`/unblock [runner|repo|all]` diagnoses and repairs the current repository's runner,
+named targets, or the affected fleet with `all`. It makes reversible recovery
+choices within accepted scope without an interview. The
+[Unblock workflow](../skills/unblock/SKILL.md) owns its service authority, verification
+steps and limits. Paused and deliberately stopped services stay stopped.
+Creating the skill or reading status does not invoke recovery. Offline routing and
+instruction checks do not prove live service recovery.
+
 ## Bundled Ponytail
 
 All workflows apply the [shared Ponytail method](../skills/shared/PONYTAIL.md)

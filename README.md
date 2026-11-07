@@ -183,6 +183,7 @@ states its own boundaries and what "done" means.
 - `/docs-sync` — maintain the docs and the `tasks/` store from current source.
 - `/pending` — read what is open, done and next without changing anything.
 - `/blockers` — resolve held work and the questions only the owner can answer.
+- `/unblock` — diagnose stalled runners and repair authorized causes autonomously.
 
 **Execute and deliver**
 
