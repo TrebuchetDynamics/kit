@@ -3339,15 +3339,46 @@ fcntl.flock = observed_flock
         with (self.repo / 'tasks/goals/FIXTURE.md').open('a') as out:
             out.write('\nOwner planning note.\n')
         self.env['PI_AUTOWORK_PLANNING_QUIET'] = '0'
-        result = self.run_runner('--until-empty')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('Committed uncommitted changes in', result.stdout)
-        planning = self.git(self.repo, 'log', '--format=%H', '--grep', '^docs(tasks): owner planning (pi-autowork)')
-        self.assertTrue(planning)
-        self.assertIn('Owner planning note.', self.git(self.repo, 'show', f'{planning.split()[-1]}:tasks/goals/FIXTURE.md'))
-        self.assertIn('add the export task', (self.repo / 'BLOCKERS.md').read_text())
-        self.assertTrue(self.done('A', 'B', 'C'))
-        self.assertEqual(self.git(self.repo, 'status', '--porcelain'), '')
+        # Suite failures showed only incomplete A/B/C, not which phase lost progress.
+        # Hold the instant fake workers until the real planning commit is observable.
+        self.plan({f'worker:{task}': ['released'] for task in 'AB'})
+        started, stages = time.monotonic(), {}
+        runner = self.start_runner('--until-empty', '--workers', '2')
+        out = err = ''
+        try:
+            for task in 'AB':
+                self.wait_for(self.root / f'ready-{task}')
+            stages['workers ready'] = round(time.monotonic() - started, 3)
+            planning = self.git(self.repo, 'log', '--format=%H', '--grep', '^docs(tasks): owner planning (pi-autowork)')
+            self.assertTrue(planning, 'owner planning must be committed before workers are released')
+            self.assertEqual(self.git(self.repo, 'status', '--porcelain'), '')
+            self.assertEqual([(self.repo / f'{task}.txt').read_text() for task in 'ABC'], ['', '', ''])
+            for task in 'AB':
+                (self.root / f'release-{task}').touch()
+            stages['planning committed; workers released'] = round(time.monotonic() - started, 3)
+            out, err = runner.communicate(timeout=max(0, 120 - (time.monotonic() - started)))
+            stages['runner exit'] = round(time.monotonic() - started, 3)
+            self.assertEqual(runner.returncode, 0, out + err)
+            self.assertIn('Committed uncommitted changes in', out)
+            self.assertIn('Owner planning note.', self.git(self.repo, 'show', f'{planning.split()[-1]}:tasks/goals/FIXTURE.md'))
+            self.assertIn('add the export task', (self.repo / 'BLOCKERS.md').read_text())
+            self.assertTrue(self.done('A', 'B', 'C'), out + err)
+            self.assertEqual(self.git(self.repo, 'status', '--porcelain'), '')
+        except (AssertionError, subprocess.TimeoutExpired):
+            self.retain_evidence()
+            raise
+        finally:
+            if runner.poll() is None:
+                runner.send_signal(signal.SIGINT)
+            try:
+                out, err = runner.communicate(timeout=60)
+            except subprocess.TimeoutExpired:
+                runner.kill()
+                out, err = runner.communicate()
+            print(f'OWNER_PLANNING_STAGES {stages}; load={os.getloadavg()}; '
+                  f'elapsed={time.monotonic() - started:.3f}', flush=True)
+            if runner.returncode != 0 or not self.done('A', 'B', 'C'):
+                print(out + err, flush=True)
 
     def test_other_quiet_uncommitted_work_stays_uncommitted_while_the_session_merges_and_pushes(self):
         """GitHub #3: quietness does not transfer ownership of main-checkout work."""
