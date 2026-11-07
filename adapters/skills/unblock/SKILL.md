@@ -1,6 +1,6 @@
 ---
 name: unblock
-description: "Diagnose and repair stalled Autowork services."
+description: "Resolve Autowork blockers and resume authorized work."
 disable-model-invocation: true
 ---
 
