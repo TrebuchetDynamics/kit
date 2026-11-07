@@ -1,6 +1,7 @@
 """DOCS-MAINTAINER triggers, trigger-set key and run record (TOOLSET-164-f1)."""
 import json
 import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -501,6 +502,121 @@ class MaintainerTests(unittest.TestCase):
         self.assertFalse(maintainer.planning_only(['tasks/evidence/A.toml']))  # only a verified close writes receipts
         self.assertFalse(maintainer.planning_only(['TODO.md']))
         self.assertFalse(maintainer.planning_only([]))
+
+    def test_declared_plan_outputs_are_exact_document_paths_not_new_write_authority(self):
+        found = [('P', 'plan', 'ready for planning')]
+        before = {'P': dict(planning_paths=['docs/plans/accepted.md'])}
+        outputs = maintainer.plan_outputs(found, before)
+        self.assertEqual(outputs, ('docs/plans/accepted.md',))
+        self.assertTrue(maintainer.planning_only(['docs/plans/accepted.md'], outputs=outputs))
+        self.assertFalse(maintainer.planning_only(['docs/plans/other.md'], outputs=outputs))
+        self.assertEqual(maintainer.plan_outputs([('P', 'not runnable', 'x')], before), ())
+        with tempfile.TemporaryDirectory() as repo:
+            store_fixture.write_todo(repo, '- [ ] P — Plan\n  Kind: plan\n  Touches: docs/plans/accepted.md\n')
+            self.assertEqual(maintainer.plan_outputs(found, entries(repo)), outputs)
+        for path in ('docs/plans/', 'docs/plans/*.md', 'docs/plans/../outside.md',
+                     'docs/plans/note.py', '/docs/plans/a.md', 'docs//plans/a.md', 'docs/plans/a\n.md'):
+            with self.subTest(path=path):
+                self.assertEqual(maintainer.plan_outputs(found, {'P': dict(planning_paths=[path])}), ())
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'docs').mkdir()
+            (root / 'docs/plans').symlink_to(root / 'elsewhere', target_is_directory=True)
+            self.assertFalse(maintainer.planning_only(list(outputs), outputs=outputs, repo=root))
+            self.assertFalse(maintainer.planning_only(['tasks/items/P.md'], outputs=outputs, repo=root),
+                             'closure-only diff cannot hide an external symlink write')
+            with self.assertRaisesRegex(ValueError, 'symlink'):
+                maintainer.prompt(found, root, 'autowork tasks', entries=before)
+        message = maintainer.prompt(found, '/repo', 'autowork tasks', entries=before)
+        self.assertIn('docs/plans/accepted.md', message)
+        self.assertIn('exact declared plan outputs', message)
+        self.assertNotIn('docs/plans/accepted.md', maintainer.prompt([], '/repo', 'autowork tasks', entries=before))
+
+    def test_session_only_symlink_is_refused_in_the_actual_provider_workspace(self):
+        from pi_autowork.coordinator import Coordinator
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, state = root / 'repo', root / 'state'
+            repo.mkdir()
+            state.mkdir()
+            store_fixture.write_todo(repo, '- [ ] P — Plan\n  Kind: plan\n  Touches: docs/plans/accepted.md\n')
+            session, scratch = repo / '.worktrees/session', repo / '.worktrees/scratch'
+            def git(*args):
+                return subprocess.run(['git', '-C', str(repo), *map(str, args)], check=True,
+                                      capture_output=True, text=True).stdout.strip()
+            git('worktree', 'add', '--detach', session, 'HEAD')
+            external = root / 'external.md'
+            external.write_text('untouched\n')
+            (session / 'docs/plans').mkdir(parents=True)
+            (session / 'docs/plans/accepted.md').symlink_to(external)
+            git('-C', session, 'add', 'docs/plans/accepted.md')
+            git('-C', session, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                'commit', '-qm', 'session-only output symlink')
+            git('worktree', 'add', '--detach', scratch, git('-C', session, 'rev-parse', 'HEAD'))
+            runner = Coordinator.__new__(Coordinator)
+            runner.repo, runner.integ, runner.state, runner.stop = repo, session, state, False
+            runner.toolset = Path(__file__).resolve().parents[2]
+            runner.tasks_cli, runner.verify_timeout = 'autowork tasks', 1
+            runner.in_flight = runner.session_busy = lambda: False
+            runner.tasks = lambda: [dict(task='P', state='waiting', reason='ready for planning')]
+            runner.validate_ledger = lambda: []
+            runner.scratch_checkout, runner.drop_scratch = lambda _: scratch, lambda _: None
+            with patch.object(runner, 'pi_job') as provider:
+                self.assertFalse(runner.maintain())
+                provider.assert_not_called()
+            self.assertFalse((repo / 'docs/plans/accepted.md').exists())
+            self.assertEqual(external.read_text(), 'untouched\n')
+            self.assertIn('symlink', maintainer.last(state)['items']['task:P']['outcome'])
+
+    def test_only_a_proven_plan_path_refusal_retries_after_the_policy_correction(self):
+        found = [('P', 'plan', 'ready for planning')]
+        before = {'P': dict(digest='same task', fields={}, planning_paths=['docs/plans/accepted.md'])}
+        with tempfile.TemporaryDirectory() as state:
+            maintainer.remember(state, trigger_key=maintainer.key(found), found=found,
+                                entries=before, outcome=maintainer.PLAN_PATH_REFUSAL)
+            run = maintainer.last(state)
+            run['items']['task:P'].pop('plan_policy')  # exact legacy receipt, not runtime cleanup
+            maintainer.save(state, run)
+            receipt = run['items']['task:P']
+            unchanged_key = maintainer.recovery_key(found[0], before['P'], {}, {'P'})
+            migrated_key = maintainer.recovery_key(found[0], before['P'], {}, {'P'}, receipt=receipt)
+            self.assertNotEqual(unchanged_key, migrated_key)
+            for marker in (dict(phase='in_flight', replay_blocked=True),
+                           dict(phase='failed', replay_blocked=True),
+                           dict(phase='failed', attempts=3, replay_blocked=False)):
+                self.assertEqual(maintainer.recovery_key(found[0], before['P'], {}, {'P'},
+                                                        receipt=receipt, recovery=marker), unchanged_key)
+            from pi_autowork.coordinator import _auxiliary_ready
+            for marker in (dict(key=migrated_key, phase='in_flight', attempts=1, replay_blocked=True),
+                           dict(key=migrated_key, phase='failed', attempts=1, replay_blocked=True),
+                           dict(key=migrated_key, phase='failed', attempts=3, replay_blocked=False)):
+                resumed = maintainer.recovery_key(found[0], before['P'], {}, {'P'},
+                                                  receipt=receipt, recovery=marker)
+                self.assertEqual(resumed, migrated_key)
+                self.assertFalse(_auxiliary_ready(marker, resumed))
+            self.assertEqual(maintainer.pending(state, found, entries=before), found)
+            self.assertEqual(maintainer.pending(state, found, entries=before, eligible=lambda _: False), [])
+            maintainer.remember(state, trigger_key=maintainer.key(found), found=found,
+                                entries=before, outcome=maintainer.PLAN_PATH_REFUSAL)
+            self.assertEqual(maintainer.last(state)['items']['task:P']['tries'], 1)
+            self.assertEqual(maintainer.pending(state, found, entries=before), [])
+            for outcome in ('merged', 'failed', 'no change', 'technical failure: cleanup_unproven'):
+                run['items']['task:P']['outcome'] = outcome
+                maintainer.save(state, run)
+                self.assertEqual(maintainer.pending(state, found, entries=before), [])
+                self.assertEqual(maintainer.recovery_key(found[0], before['P'], {}, {'P'},
+                                                        receipt=run['items']['task:P']), unchanged_key)
+
+    def test_plan_failure_diagnostics_match_the_exact_current_record(self):
+        run = {'items': {'task:P': dict(task='P', digest='current', outcome='planning failed: missing successor')}}
+        self.assertEqual(maintainer.planning_detail(run, 'P', 'current'),
+                         'Agent repair: planning failed: missing successor')
+        self.assertEqual(maintainer.planning_detail(run, 'P', 'new owner edit'), '')
+        self.assertEqual(maintainer.planning_detail(run, 'OTHER', 'current'), '')
+        run['items']['task:P']['outcome'] = 'merged'
+        self.assertEqual(maintainer.planning_detail(run, 'P', 'current'), '')
+        for records in ([], 'invalid', {'task:P': []}, {'task:P': {'digest': 'current', 'outcome': []}}):
+            self.assertEqual(maintainer.planning_detail({'items': records}, 'P', 'current'), '')
 
     def test_the_last_run_is_recorded_for_status(self):
         with tempfile.TemporaryDirectory() as state:
