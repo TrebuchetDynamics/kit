@@ -6,7 +6,7 @@ import { Pressable, RefreshControl, View } from 'react-native';
 import type { ScrollView as NativeScrollView } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
-import { canAnswer, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
+import { canAnswer, closureTone, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
 import { operationsKey, readForHost, rememberOperation, useConfirmedAction, useHostState, useReadBackoff, useWatch, type HostState } from './state';
 import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme, useColors } from './ui';
 
@@ -501,7 +501,7 @@ function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; q
   const meta = [task.position ? `Position ${task.position}` : null, blocked ? `Blocked by ${task.display!.blocker}` : !question && task.section ? `Section: ${task.section}` : null].filter(Boolean).join(' · ');
   // A row inside the queue, not a card inside a card.
   return <View style={{ gap: 6, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
-    <Row><Label mono>{task.id}</Label><StatusPill state={task.display?.state ?? 'unknown'} />{closure ? <Badge label={closure.label} tone={stateTone(closure.label)} /> : null}</Row>
+    <Row><Label mono>{task.id}</Label><StatusPill state={task.display?.state ?? 'unknown'} tone={closure ? closureTone(closure) : undefined} />{closure ? <Badge label={closure.label} tone={closureTone(closure)} /> : null}</Row>
     <Label>{task.title}</Label>
     {meta ? <Caption>{meta}</Caption> : null}
     {task.display?.why ? <Caption>{task.display.why}</Caption> : null}
@@ -713,7 +713,7 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
     <View style={{ gap: 2 }}><Heading level={2}>{taskId}</Heading><Caption>{detail?.title ?? task?.title ?? 'Task detail'}</Caption></View>
     {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
     {detail ? <>
-      <Row><StatusPill state={state} />{closure ? <Badge label={closure.label} tone={stateTone(closure.label)} /> : null}{meta ? <Caption>{meta}</Caption> : null}</Row>
+      <Row><StatusPill state={state} tone={closure ? closureTone(closure) : undefined} />{closure ? <Badge label={closure.label} tone={closureTone(closure)} /> : null}{meta ? <Caption>{meta}</Caption> : null}</Row>
       {presentation?.why ? <Caption>{presentation.why}</Caption> : null}
       {closure && closure.detail !== presentation?.why ? <Caption>{closure.detail}</Caption> : null}
       {answerable ? <>

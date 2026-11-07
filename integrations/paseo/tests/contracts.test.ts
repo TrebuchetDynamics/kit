@@ -11,11 +11,14 @@ describe('wire contracts', () => {
     const runner = runnerSchema.parse({ name: 'example', repo: '/repo', state: 'not running',
       running: null, waiting: null, stopped: null, decisions: null });
     expect([runner.running, runner.waiting, runner.stopped, runner.decisions]).toEqual([0, 0, 0, 0]);
+    expect(runner.display).toBeNull();
     expect(runnerSchema.parse({ name: 'example', repo: '/repo', state: 'running', running: 2 }).running).toBe(2);
   });
-  it('preserves absence of closure evidence for canonical open tasks', () => {
-    expect(taskSchema.parse({ id: 'T-1', title: 'Open', section: 'Now', status: 'open', goal: 'G', rank: 1000,
-      position: 1, blocked_by: null, closure: null }).closure).toEqual({});
+  it('preserves absent closure and display evidence for canonical open tasks', () => {
+    const task = taskSchema.parse({ id: 'T-1', title: 'Open', section: 'Now', status: 'open', goal: 'G', rank: 1000,
+      position: 1, blocked_by: null, closure: null });
+    expect(task.closure).toEqual({});
+    expect(task.display).toBeNull();
   });
   it('requires explicit host generation and source/evidence identity', () => {
     expect(fleetSchema.safeParse({ repos: [] }).success).toBe(false);

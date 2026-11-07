@@ -35,7 +35,7 @@ vi.mock('@getpaseo/plugin/client', () => ({
 import { AutoworkScreen, WorkspacePanel } from '../client/screens';
 import { SettingsScreen } from '../client/settings';
 import { Theme } from '../client/ui';
-import { canAnswer, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, selectionFacts, stateTone, taskMatches } from '../client/presentation';
+import { canAnswer, closureTone, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, selectionFacts, stateTone, taskMatches } from '../client/presentation';
 
 const taskDisplay = { state: 'Waiting · Needs decision', bucket: 'Decision', why: 'in Needs decision',
   question: false, pending: false, blocker: '', closure: null, record_revision: 'working-rev' };
@@ -85,7 +85,11 @@ beforeEach(() => {
 afterEach(async () => { if (root) await act(async () => root.unmount()); query?.clear(); });
 
 describe('canonical presentation', () => {
-  it('allows answers only for the matching open canonical question', () => {
+  it('maps manual and verified closure to one tone and keeps the answer gate', () => {
+    expect(closureTone({ label: 'Manual', detail: 'manual · not verified', verified: false, provenance: 'manual' })).toBe('warning');
+    expect(closureTone({ label: 'Verified', detail: 'coordinator verified · verified', verified: true, provenance: 'coordinator_verified' })).toBe('success');
+    expect(closureTone({ label: 'Verified', detail: 'label is not proof', verified: false, provenance: 'manual' })).toBe('warning');
+    expect(closureTone(null)).toBe('neutral');
     expect(canAnswer(task, fleet().repos[0]!.runner!, detail)).toBe(true);
     expect(canAnswer({ ...task, id: 'T-2' }, fleet().repos[0]!.runner!, detail)).toBe(false);
     expect(canAnswer({ ...task, status: 'done' }, fleet().repos[0]!.runner!, detail)).toBe(false);
@@ -504,8 +508,8 @@ describe('native host-scoped surfaces', () => {
   it('filters completed and canonically held tasks without requiring a live worker lane', async () => {
     const initial = env.invoke.getMockImplementation()!;
     env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [
-      task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done' },
-      { ...task, id: 'T-HELD', title: 'Held task', blocked_by: 'HELD' },
+      task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done', display: { ...task.display, state: 'done' } },
+      { ...task, id: 'T-HELD', title: 'Held task', blocked_by: 'HELD', display: { ...task.display, state: 'Blocker', blocker: 'held', why: 'held' } },
     ] }) : initial(name, data));
     await mount({ params: { view: 'tasks' } }); await press('Filters');
     await input('Filter runtime', 'done'); expect(text()).toContain('Finished task'); expect(text()).not.toContain('Owner task');
