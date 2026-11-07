@@ -327,7 +327,7 @@ def prepare(source, profiles, *, upstream=UPSTREAM):
         if 'retired' not in state:
             deleted = git(repo, 'log', '--format=', '--name-only', '--diff-filter=D',
                           '--no-renames', state['after'], '--', 'skills').decode().splitlines()
-            # Required external skills (graphify, omh-plan) may reuse a once-bundled name.
+            # Required external skills (such as graphify) may reuse a once-bundled name.
             external = set(json.loads((Path(__file__).resolve().parent / 'plugins/defaults.json')
                                       .read_text()).get('required_skills', []))
             state['retired'] = sorted({r for r in deleted if r and r not in state['new']

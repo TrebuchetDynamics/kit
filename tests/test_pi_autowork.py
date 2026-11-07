@@ -228,6 +228,10 @@ elif role == 'maintainer':
     if behavior.startswith('plan_'):
         current = re.search(r'- (\S+) \(plan\):', message)[1]
         edit_task(current, {'status': 'done'}, ('Evidence', 'the next batch is saved'))  # in the same commit
+        if behavior == 'plan_document':
+            os.makedirs('docs/plans', exist_ok=True)
+            open('docs/plans/accepted.md', 'w').write('Measurement round 1: measured; no prototype justified.\n')
+            git('add', 'docs/plans/accepted.md')
         def entry(tid, **kw):
             add_task(tid, 'Next batch ' + tid, goal='PORT', **kw)
         if behavior in ('plan_batch', 'plan_last', 'plan_oversize'):
@@ -237,10 +241,10 @@ elif role == 'maintainer':
             entry('P2', kind='plan', depends_on=['BUILD-1', 'BUILD-2'], notes='- Plan round: 2 of 10\n')
         if behavior == 'plan_decisions':
             entry('CHOICE', section='Needs decision', notes='- Question: Which product?\n')
-        if behavior in ('plan_last', 'plan_stop'):
+        if behavior in ('plan_last', 'plan_stop', 'plan_document'):
             entry('DECIDE-' + current, section='Needs decision',
                   notes='- Question: Goal PORT needs remaining live proof; continue?\n')
-        if behavior in ('plan_last', 'plan_decisions', 'plan_stop'):
+        if behavior in ('plan_last', 'plan_decisions', 'plan_stop', 'plan_document'):
             with open('BLOCKERS.md', 'w') as stream:
                 stream.write(f'### Q-{current} — Planning stopped\n\nGoal PORT still needs live proof; continue?\n')
             git('add', 'BLOCKERS.md')
@@ -944,7 +948,7 @@ class EngineTests(Fixture):
         self.git(self.repo, 'commit', '-qm', 'A lost its Checks line')
 
     def test_rolling_planning_lands_a_bounded_batch_or_stop_question_never_a_code_worker(self):
-        for case in ('batch', 'last', 'decisions', 'oversize', 'invalid_root', 'invalid_task'):
+        for case in ('batch', 'last', 'decisions', 'document', 'symlink', 'oversize', 'invalid_root', 'invalid_task'):
             with self.subTest(case=case):
                 self.repo = self.make_repo(self.root / case, [('A', None)])
                 ledger = dict(version=1, goals=[dict(id='PORT', title='Port project', status='partial',
@@ -954,8 +958,16 @@ class EngineTests(Fixture):
                 self.write_todo(todo([('A', None)]).replace('- [ ] A', '- [x] A').replace('Status: open', 'Status: done')
                     + '\n- [ ] P — Plan the next port batch\n  Goal: PORT\n  Kind: plan\n'
                     + f'  Plan round: {"10" if case == "last" else "1"} of 10\n'
-                    + '  Scope: Port the remaining code\n  Touches: P.txt\n  Acceptance: next batch saved\n'
+                    + '  Scope: Port the remaining code\n'
+                    + f'  Touches: {"docs/plans/accepted.md" if case in ("document", "symlink") else "P.txt"}\n'
+                    + '  Acceptance: next batch saved\n'
                     + '  Checks: inspect saved batch\n  Dependencies: A\n  Status: open\n', ledger=ledger)
+                if case == 'symlink':
+                    external = self.root / 'outside-plan.md'
+                    external.write_text('outside must stay unchanged\n')
+                    (self.repo / 'docs/plans').mkdir(parents=True, exist_ok=True)
+                    (self.repo / 'docs/plans/accepted.md').symlink_to(external)
+                    self.git(self.repo, 'add', 'docs/plans/accepted.md')
                 self.git(self.repo, 'commit', '-qm', 'accepted rolling plan')
                 start = len(self.runs())
                 self.plan({'maintainer': ['plan_' + case, 'plan_stop']})
@@ -965,6 +977,12 @@ class EngineTests(Fixture):
                 self.assertNotIn('P', workers, result.stdout)
                 self.assertNotIn('P2', workers, result.stdout)
                 self.assertFalse((self.repo / '.worktrees/autowork-P').exists())
+                if case == 'symlink':
+                    self.assertEqual(runs, [], 'unsafe output must be refused before any provider call')
+                    self.assertEqual(external.read_text(), 'outside must stay unchanged\n')
+                    self.assertEqual(self.record('P').status, 'open')
+                    self.assertIn('declared plan output uses a symlink', result.stdout)
+                    continue
                 if case in ('oversize', 'invalid_root', 'invalid_task'):
                     self.assertIn('planning failed: ' + ('more than 8 new tasks' if case == 'oversize'
                                                        else 'invalid task store'), result.stdout)
@@ -989,6 +1007,10 @@ class EngineTests(Fixture):
                     self.assertEqual(question.count('### Q-P —'), 1)
                     self.assertIn('PORT', question)
                 self.assertIn('/skill:plan-for-me', next(r['message'] for r in runs if r['role'] == 'maintainer'))
+                if case == 'document':
+                    self.assertIn('measured', (self.repo / 'docs/plans/accepted.md').read_text())
+                    self.assertIn('Exact declared plan outputs for this round: docs/plans/accepted.md',
+                                  next(r['message'] for r in runs if r['role'] == 'maintainer'))
 
     def test_the_docs_maintainer_restates_a_task_that_is_not_runnable_as_written(self):
         """TOOLSET-164-f1: tasks the engine would not run waited hours for the owner."""

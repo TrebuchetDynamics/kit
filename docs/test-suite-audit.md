@@ -25,7 +25,7 @@ is retained but rejected. The corrected run recorded **1,278 of 1,491 contexts
 owned-source lines** are not redundant: text/package/shell-only checks, copied
 fixture sources outside the measured root, scrubbed/isolated environments and
 non-Python commands remain blind spots. Largest missing module counts: plugin
-installation 29, OMH installation 28, behind-only shell realignment 26, skill
+installation 29, behind-only shell realignment 26, skill
 installation 10, check runner 9 and Pi runner 9. Coverage is not shell coverage.
 
 Corrected aggregate: 64 owned Python files, **10,277/11,806 statements (87.05%)**,
@@ -847,12 +847,10 @@ Directory headings supply each filename's path prefix. Totals: **104 K / six T /
 | `test_install.py:21` | 2 | K — shell entrypoint dispatch/argument forwarding, not shell-framework tests. |
 | `test_install_graphify.py:47` | 9 | K — isolated profile/tree install, path safety and no partial publication. |
 | `test_install_menu.py:60` | 16 | K — host selection, preview, failure and streaming; terminal/color contracts remain. |
-| `test_install_omh.py:67` | 28 | K — provider/store isolation, precedence, malformed config and zero-write refusal/preview. |
 | `test_install_plugins.py:61` | 29 | K — profile scope, consent, publication, existing edits and policy opt-out. |
 | `test_install_skills.py:44` | 10 | K — support closure, repeat preservation and unsafe-destination refusal. |
 | `test_isolated_origin_clone.py:36` | 7 | K — shallow/Git-selector isolation, pins and destination bytes. |
 | `test_native_provisioning.py:17` | 4 | K — offline publication races/existing skills; no native qualification. |
-| `test_omh_trim.py:50` | 6 | K — merge preserves user disabled skills, rejects foreign provenance. |
 | `test_owner_cron.py:18` | 27 | K — generated authority/pause/scope and real wiring; G01 stays protected. |
 | `test_pi_autowork.py:309` | 78 | T — F3 fixture/cycle work only; keep composed Git/process, session conflict, quiet planning and bounded scope grant/refusal. |
 | `test_pi_touches.py:13` | 1 | K — old public script inserts Touches without unrelated byte changes. |

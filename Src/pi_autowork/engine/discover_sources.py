@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-PRUNE = {'.git', 'node_modules', '.dart_tool', 'build', 'dist', '.venv', 'venv', '.hermes', '.omh', '.agents', '.cache', 'vendor', 'Pods'}
+PRUNE = {'.git', 'node_modules', '.dart_tool', 'build', 'dist', '.venv', 'venv', '.hermes', '.agents', '.cache', 'vendor', 'Pods'}
 PRIMARY = {'BACKLOG', 'TODO', 'TASKS', 'ROADMAP', 'PLAN', 'GOALS', 'CONTEXT', 'STATUS', 'README', 'AGENTS'}
 HINTS = ('backlog', 'todo', 'roadmap', 'goal', 'plan', 'current-status', 'active-claim', 'ownership', 'parity', 'gap', 'acceptance')
 DOC_DIRS = {'plans', 'planning', 'roadmaps', 'goals', 'coordination', 'architecture', 'adr', 'design', 'specs', 'runbooks', 'audits', 'quality', 'testing', 'troubleshooting', 'api', 'guides'}

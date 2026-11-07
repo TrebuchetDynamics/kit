@@ -11,7 +11,7 @@ from src_fixture import copy_sources
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'install-plugins.sh'
-MANIFEST = ('https://hermes-agent.nousresearch.com/docs/plugins/omh all profiles\n'
+MANIFEST = ('https://hermes-agent.nousresearch.com/docs/plugins/sample-addon all profiles\n'
             'https://hermes-agent.nousresearch.com/docs/plugins/example-plugin default profile only\n')
 
 
@@ -58,15 +58,15 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
         result = self.run_installer()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.calls(), [str(self.hermes_root) + '|' + command for command in (
-            '-p default plugins install omh', '-p coder plugins install omh',
-            '-p research plugins install omh', '-p default plugins install example-plugin')])
+            '-p default plugins install sample-addon', '-p coder plugins install sample-addon',
+            '-p research plugins install sample-addon', '-p default plugins install example-plugin')])
 
     def test_dry_run_never_invokes_cli(self):
         result = self.run_installer('--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.calls(), [])
         self.assertIn('-p default plugins install example-plugin', result.stdout)
-        self.assertIn('-p coder plugins install omh', result.stdout)
+        self.assertIn('-p coder plugins install sample-addon', result.stdout)
 
     def test_invalid_later_entry_prevents_every_install(self):
         self.manifest.write_text(MANIFEST + 'https://example.com/evil all profiles\n')
@@ -76,20 +76,20 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
         self.assertIn('line 3', result.stderr)
 
     def test_existing_install_is_not_overwritten(self):
-        target = self.hermes_root / 'plugins/omh'
+        target = self.hermes_root / 'plugins/sample-addon'
         target.mkdir(parents=True)
-        (target / 'plugin.yaml').write_text('name: omh\n')
+        (target / 'plugin.yaml').write_text('name: sample-addon\n')
         result = self.run_installer()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(self.calls()), 3)
-        self.assertFalse(any('|-p default plugins install omh' in c for c in self.calls()))
+        self.assertFalse(any('|-p default plugins install sample-addon' in c for c in self.calls()))
 
     def test_failure_is_reported_but_other_targets_are_attempted(self):
         self.env['FAIL_PROFILE'] = 'coder'
         result = self.run_installer()
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(len(self.calls()), 4)
-        self.assertIn('omh (coder)', result.stderr)
+        self.assertIn('sample-addon (coder)', result.stderr)
 
     def test_named_home_resolves_back_to_root(self):
         self.env['HERMES_HOME'] = str(self.hermes_root / 'profiles/coder')
@@ -112,7 +112,7 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
 
     def test_conflicting_scopes_and_empty_manifest_fail_before_cli(self):
         for manifest in ('# empty\n', MANIFEST +
-                         'https://hermes-agent.nousresearch.com/docs/plugins/omh default profile only\n'):
+                         'https://hermes-agent.nousresearch.com/docs/plugins/sample-addon default profile only\n'):
             with self.subTest(manifest=manifest):
                 self.manifest.write_text(manifest)
                 result = self.run_installer()
@@ -120,7 +120,7 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
                 self.assertEqual(self.calls(), [])
 
     def test_incomplete_existing_directory_reports_failure(self):
-        (self.hermes_root / 'plugins/omh').mkdir(parents=True)
+        (self.hermes_root / 'plugins/sample-addon').mkdir(parents=True)
         result = self.run_installer()
         self.assertEqual(result.returncode, 1)
         self.assertIn('existing path is not a plugin', result.stderr)
@@ -131,7 +131,7 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
         other.mkdir()
         result = self.run_installer('--hermes-home', str(other))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.calls(), [str(other) + '|-p default plugins install omh',
+        self.assertEqual(self.calls(), [str(other) + '|-p default plugins install sample-addon',
                                        str(other) + '|-p default plugins install example-plugin'])
 
     def test_github_plugin_url_and_existing_install(self):
@@ -196,22 +196,6 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(self.calls()), 4)
         self.assertTrue(all(c.endswith('--enable --yes-deps') for c in self.calls()))
-
-    def test_setup_dispatches_omh_with_all_selected_profiles(self):
-        helper = self.repo / 'install-omh.py'
-        helper.write_text('import os,sys\nfrom pathlib import Path\n'
-                          'with Path(os.environ["CALL_LOG"]).open("a") as f: f.write("omh-setup|" + "|".join(sys.argv[1:]) + "\\n")\n')
-        result = self.run_installer('--setup')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('omh-setup|--hermes-home|' + str(self.hermes_root) +
-                      '|--profile|default|--profile|coder|--profile|research', self.calls())
-
-    def test_omh_setup_never_bypasses_a_failed_native_install(self):
-        self.env['FAIL_PROFILE'] = 'coder'
-        (self.repo / 'install-omh.py').write_text('raise RuntimeError("setup must not run")\n')
-        result = self.run_installer('--setup')
-        self.assertEqual(result.returncode, 1)
-        self.assertNotIn('setup must not run', result.stderr)
 
     def test_setup_applies_gateway_default_only_where_bundle_is_installed(self):
         self.manifest.write_text('https://hermes-agent.nousresearch.com/docs/plugins/example-plugin default profile only\n')

@@ -209,7 +209,7 @@ newest completed responses and original run identity still need separate verific
 uv run --python 3.12 --no-project --with-requirements requirements-test.txt python scripts/check.py
 python3 scripts/check.py --list
 python3 scripts/typecheck.py
-python -m py_compile __init__.py bundle.py install-omh.py install-graphify.py
+python -m py_compile __init__.py bundle.py install-graphify.py
 node --test tests/portable_pi.test.mjs
 ```
 
@@ -424,22 +424,14 @@ These checks do not call a model or send a Telegram message. Use the separate
 
 ## Installer preflight
 
-OMH pin contracts in `test_install_omh.py` check the v3.0.2 immutable source and
-its use in a fresh-install preview without force or live setup. Source inspection
-of that release's manifest admits Hermes 0.22 and its catalog retains all 41 kept
-skills. These are offline contracts, not proof that an existing OMH executable or
-Hermes plugin was upgraded. Native qualification still needs provider status and
-standalone doctor against the same existing profile/store before and after an
-authorized refresh; see [memory compatibility](memory.md#hermes-022-compatibility).
-
 `test_preflight.py` covers admission failure before any installer call, unchanged
 profile snapshots, incomplete destination conflicts, source timeouts and the core
 policy/memory preview. Run it with Hermes's managed Python as well to exercise
-strict YAML rejection, memory conflicts and secret-safe errors (those parser
+strict YAML rejection, preservation of custom memory providers and secret-safe errors (those parser
 cases skip when ruamel.yaml is unavailable). `test_complete_setup.py` separately
 checks orchestration after admission, including no installation calls on dry-run,
 and rejects missing declared native source/bootstrap payloads before stages run.
-The setup/provisioning and OMH/Graphify fixtures copy the same-release Python
+The setup/provisioning and Graphify fixtures copy the same-release Python
 closure and exercise real `Src/autowork_runtime` bodies through the old root
 entrypoints; external commands and gateway responses remain private fixtures.
 No passing preview is evidence of a live model or Telegram workflow.

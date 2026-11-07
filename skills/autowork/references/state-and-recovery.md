@@ -114,7 +114,7 @@ is separate from product ownership; shared plugin links do not expand that scope
    Track `published_branch` and `integrated_main` independently. A later main SHA
    needs live remote identity plus known ancestry; equality alone is insufficient.
    Reuse unchanged remote evidence with its timestamp and label it cached, not fresh.
-6. Check current bundle installation/enablement and OMH provider/store bindings
+6. Check current bundle installation/enablement and memory-provider/store bindings
    read-only; receipt history is not current configuration. Distinct configured
    paths are not retain/recall proof. Disabled legacy-provider warnings alone do
    not authorize restoring Hindsight. Preserve modified managed skills and stores.

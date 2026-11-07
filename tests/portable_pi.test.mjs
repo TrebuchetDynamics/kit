@@ -7,8 +7,9 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 46);
+  assert.equal(commands.size, 47);
   assert.equal(commands.has('push'), true);
+  assert.equal(commands.has('unblock'), true);
   assert.equal(commands.has('apk-get'), true);
   assert.equal(commands.has('engineering'), false);
   assert.equal(commands.has('goal'), true);
@@ -72,7 +73,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
     autowork: 'autowork', autoresearch: 'autoresearch',
     impeccable: 'impeccable', 'ui-taste': 'ui-taste',
     'beautify-github-readme': 'beautify-github-readme', 'grill-me': 'plan-with-me',
-    lgtm: 'lgtm', goal: 'goal', blockers: 'blockers',
+    lgtm: 'lgtm', goal: 'goal', blockers: 'blockers', unblock: 'unblock',
     'git-commit-push': 'git-commit-push', push: 'push',
     ponytail: 'ponytail', 'ponytail-review': 'ponytail-review', 'ponytail-audit': 'ponytail-audit',
     'ponytail-debt': 'ponytail-debt', 'ponytail-gain': 'ponytail-gain', 'ponytail-help': 'ponytail-help',
@@ -200,7 +201,7 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
-    assert.equal(skillCount, 33);
+    assert.equal(skillCount, 34);
     // Execute the packaged CommonJS helper under Autowork's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
@@ -217,7 +218,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 46);
+    assert.equal(commands.size, 47);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {
       assert.match(name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, name);

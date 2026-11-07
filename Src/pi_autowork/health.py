@@ -258,15 +258,21 @@ def update(state_dir, snapshot, *, now=None, runner=None, stall_after=STALL_AFTE
     state = classify(snapshot, paused=paused, stuck=int(runner.get('stuck_integrations') or 0))
     if state == HOST_WAIT and runner.get('blocker'):
         state = 'blocked'  # a load observation must not hide a runner failure
-    observed_state = previous.get('snapshot_state', previous.get('state', ''))
-    since = previous.get('since', now) if observed_state.replace('stalled', 'blocked') == state else now
     roots = list(snapshot.get('roots', []))
     if runner.get('blocker'):  # the runner cannot dispatch or integrate: no model, busy lease, drift
         waiting = sum(t.get('state') == 'waiting' for t in snapshot.get('tasks', [])) \
             + int(runner.get('stuck_integrations') or 0)
         roots.insert(0, dict(id=runner['blocker'], kind='runner', blocks=waiting, cause=None, reason=''))
     stuck = [r for r in roots if r.get('kind') in ACTION_ROOTS]
-    if state == 'blocked' and now - since >= stall_after and stuck:
+    technical = [r for r in stuck if not needs_person(r)]
+    waiting_ids = {t.get('task') for t in snapshot.get('tasks', []) if t.get('state') in ('waiting', 'held')}
+    owner_ids = {task for root in stuck if needs_person(root)
+                 for task in [root.get('id'), *(root.get('tasks') or [])]}
+    if state == 'blocked' and not technical and waiting_ids and waiting_ids <= owner_ids:
+        state = 'waiting on you'
+    observed_state = previous.get('snapshot_state', previous.get('state', ''))
+    since = previous.get('since', now) if observed_state.replace('stalled', 'blocked') == state else now
+    if state == 'blocked' and now - since >= stall_after and technical:
         state = 'stalled'
     keys = sorted(label(r) for r in stuck)
     announce = None

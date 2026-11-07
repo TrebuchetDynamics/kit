@@ -20,7 +20,7 @@ NATIVE = {
         'bundle', 'autoresearch_commands', 'workflow_commands', 'runtime_defaults',
         'telegram_menu_policy', 'install_skills', 'setup_bundle', 'setup_preflight',
         'setup_runtime', 'update_bundle', 'update_bundle_native')},
-    'install-omh.py': 'install_omh.py', 'install-graphify.py': 'install_graphify.py',
+    'install-graphify.py': 'install_graphify.py',
 }
 
 

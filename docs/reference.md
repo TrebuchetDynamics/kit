@@ -41,7 +41,7 @@ Source: [`bundle.py`](../bundle.py) `handle_chat`, `list_commands`, `start_updat
 | `/autowork status NAME` | Read-only status for that registered runner, including repository, workers, holds and waiting reasons. A quoted absolute repository path is also supported; relative paths and options are refused. |
 | `/autowork plugin status` | Bundle version, revision and profile; ready workflow commands; last update; plugin load status and setup gaps (the former status overview). |
 | `/autowork list` | Every available command with its owner and Telegram spelling. |
-| `/autowork list TEXT` | Commands whose name or owner contains `TEXT`, for example `/autowork list omh`. |
+| `/autowork list TEXT` | Commands whose name or owner contains `TEXT`, for example `/autowork list graphify`. |
 | `/autowork update` | Starts the all-profile updater in the background and returns immediately. |
 | `/autowork update --check` | Starts an upstream check only. |
 | `/autowork update status` | Summarizes the durable result from `maintenance/toolset-update/latest.json` at the Hermes root in a few lines, and lists profiles linked to a working checkout. |
@@ -67,7 +67,6 @@ Run from a clone of this repository. The shell installers are thin wrappers.
 | `bash install-skills.sh` | `--dry-run`, `--hermes-home ROOT`, `--profile-home HOME` | Runs [`install_skills.py`](../install_skills.py): copies `skills/` (except retired `repo-docs` and `repo-interview`, and support folders that document themselves with a `README.md` and have no `SKILL.md`) into the default and every existing profile, or only `--profile-home`; `--hermes-home` and `--profile-home` are mutually exclusive. Does not overwrite existing skill contents; a reference-only source container retires a legacy installed `SKILL.md` while keeping the other files. Never changes configuration. |
 | `python3 update_bundle.py` | `--hermes-home ROOT` (required), `--check`, `--dry-run`, `--profile NAME` (repeatable with `--source`), `--source CHECKOUT`, `--revision SHA`, `--native-python PATH`, `--cancel-scoped SHA256` | Cancel an exact unpublished scoped receipt (with `--check` to preview), or all-profile update, or with `--profile`, `--source`, `--revision` and `--native-python` (all four required) a scoped deployment of a reviewed local commit; see [installation](installation.md#deploy-an-exact-local-revision-to-selected-profiles). |
 | `python3 install-graphify.py` | `--hermes-home ROOT`, `--profile NAME` (both required), `--dry-run` | Installs Graphify's Hermes skill into selected existing profiles; installs the `graphifyy` tool with `uv tool install` when missing. |
-| `python3 install-omh.py` | `--hermes-home ROOT`, `--profile NAME` (both required), `--dry-run` | Applies the checked-in OMH defaults to selected homes, installing `omh` with `uv tool install` when missing, and writes `plugins.entries.omh.settings.omh_home`; see [memory](memory.md). |
 | `scripts/pi-autowork.sh` | `--once`, `--until-empty`, `--workers N`, `--dry-run`, `--status`, `--repo PATH`, `--interval SECONDS`, `--max-cycles N`, `--no-fallback`, `--allow-hermes`, `--install-service`, `--remove-service`, `--help` | Runs the Parallel Autowork engine with Pi workers, verified integration and a session merged into the main branch; see [continuous Autowork](cross-host.md#run-autowork-continuously). |
 | `python3 scripts/check.py` | `--list`, `--timeout SECONDS` (default 1800 per test process) | Runs the offline test inventory; see [testing](testing.md). |
 
@@ -193,13 +192,12 @@ values whenever they differ, preserving other settings:
 | `approvals.mcp_reload_confirm` | `false` |
 | `agent.max_turns` | `unlimited` (no per-turn iteration cap; Hermes quick setup writes `90`) |
 | `plugins.entries.kit.allow_gateway_injection` | `true` |
-| `skills.disabled` | Your entries, plus OMH skills outside `omh_keep_skills` in profiles with OMH; bundled toolset skills removed |
-| `plugins.entries.kit.omh_trim` | The OMH skill names the bundle added to `skills.disabled`, so it can remove them later |
+| `skills.disabled` | Your entries preserved; bundled toolset skills removed |
 | `platforms.telegram.extra.command_menu.priority` | Your entries first, then the workflow commands and the `ui_taste`, `beautify_github_readme`, `impeccable`, `lgtm` and `git_commit_push` skill commands appended; retired bundle names and `autoresearch_*` entries removed. Other menu settings such as the mode and cap are not changed ([`telegram_menu_policy.py`](../telegram_menu_policy.py)). |
 
 Every setup, including `--bundle-only`, also clears the per-platform skill disable
-lists, except in opted-out profiles. Full setup additionally applies the `omh` block of `defaults.json`
-(memory mode `auto-safe`, TUI and menubar off). See [installation](installation.md#install) for the policy and
+lists, except in opted-out profiles. Existing memory providers and their settings
+are preserved. See [installation](installation.md#install) for the policy and
 [removal](uninstall.md) to restore values.
 
 ## Environment variables
@@ -207,7 +205,6 @@ lists, except in opted-out profiles. Full setup additionally applies the `omh` b
 | Variable | Read by | Meaning |
 | --- | --- | --- |
 | `HERMES_HOME` | Setup, skill installer, `install-plugins.sh` | Default Hermes root when `--hermes-home` is absent. A named-profile home (`ROOT/profiles/NAME`) resolves to `ROOT`. Defaults to `~/.hermes`. `/autowork update` uses the running profile's Hermes root the same way. |
-| `OMH_HOME` | [`install-omh.py`](../install-omh.py) | An exported or `.env` binding is preserved as the OMH store location; see [memory](memory.md). |
 | `PI_AUTOWORK_MERGE_BACKLOG` | [`parallel_dispatch.py`](../pi-autowork/engine/parallel_dispatch.py) `merge_backlog`, `admit` | Finished commits waiting to merge before fresh dispatch can pause; default half the worker count, at least 2 (4 for 8 workers), so finished work lands before more starts; `0` disables. Counts slots with commits in `reported` or `integrating`, not held or already integrated work. |
 | `PI_AUTOWORK_MERGE_BACKLOG_AFTER` | [`parallel_dispatch.py`](../pi-autowork/engine/parallel_dispatch.py) `merge_backlog` | Oldest finished commit's queue age in seconds before the count gate pauses fresh dispatch; default `1200`. Queue time starts at reporting, not worker launch. Nonnegative integers; invalid settings use their defaults. |
 | `PI_AUTOWORK_STALE_HOURS` | [`coordinator.py`](../pi-autowork/pi_autowork/coordinator.py) `set_aside_stale` | Hours since dispatch after which a finished commit still waiting to merge (`reported`, or `integrating` with no review running) is set aside and its task runs fresh on current main; default `24`, `0` disables. Never while a review or batch runs or a batch-passed candidate waits to land. |

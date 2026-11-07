@@ -25,6 +25,16 @@ and a saved answer is not proof that a held task advanced. Static skill tests an
 offline command-routing fixtures verify these instructions and routing, not live
 model adherence, successful recovery or service delivery.
 
+## Unblock repairs stalled services autonomously
+
+`/unblock [runner|repo|all]` diagnoses and repairs the current repository's runner,
+named targets, or the affected fleet with `all`. It makes reversible recovery
+choices within accepted scope without an interview. The
+[Unblock workflow](../skills/unblock/SKILL.md) owns its service authority, verification
+steps and limits. Paused and deliberately stopped services stay stopped.
+Creating the skill or reading status does not invoke recovery. Offline routing and
+instruction checks do not prove live service recovery.
+
 ## Bundled Ponytail
 
 All workflows apply the [shared Ponytail method](../skills/shared/PONYTAIL.md)
@@ -46,7 +56,7 @@ the chat, ready workflow commands, the last update, plugin load status and setup
 that every tool is enabled in the current chat. Hermes's `/toolsets` lists tool
 groups; plugins that provide skills, commands, or hooks need not appear there.
 Use `/autowork list` in CLI chat or Telegram for the installed command inventory,
-or `/autowork list omh` to filter it. `hermes autowork doctor --core` checks the bundled command layer and lists external
+or `/autowork list graphify` to filter it. `hermes autowork doctor --core` checks the bundled command layer and lists external
 gaps separately. Plain `doctor` requires the full stack; add `--json` for automation. Imported native commands keep their own handlers;
 imported plugin skills without commands receive aliases. Telegram's menu has a
 capacity limit, so some commands must be typed rather than selected in the menu.

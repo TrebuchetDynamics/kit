@@ -32,16 +32,38 @@ class HealthTests(unittest.TestCase):
         return json.loads((self.state / 'status.json').read_text())
 
     def test_a_stall_is_announced_once_after_the_threshold(self):
-        self.assertIsNone(health.update(self.state, snapshot(), now=1000))
+        snap = snapshot(roots=(dict(HELD, cause='validation'),))
+        self.assertIsNone(health.update(self.state, snap, now=1000))
         self.assertEqual(self.status()['state'], 'blocked')
-        self.assertIsNone(health.update(self.state, snapshot(), now=1000 + 1799))
-        line = health.update(self.state, snapshot(), now=1000 + 1800)
+        self.assertIsNone(health.update(self.state, snap, now=1000 + 1799))
+        line = health.update(self.state, snap, now=1000 + 1800)
         self.assertEqual(line, 'STALLED for 30 min: no task can run. Root blockers: '
-                               'T-9 (held for a person: its worker reported a blocker, holds 4). '
+                               'T-9 (engineering hold: validation failed, holds 4). '
                                'See pi-autowork.sh --status.')
         self.assertEqual(self.status()['state'], 'stalled')
-        self.assertIsNone(health.update(self.state, snapshot(), now=1000 + 4000))  # not again
+        self.assertIsNone(health.update(self.state, snap, now=1000 + 4000))  # not again
         self.assertEqual(self.status()['since'], 1000)
+
+    def test_external_waits_do_not_age_into_stalls_or_stop_independent_work(self):
+        snap = dict(outcome='PARALLEL_STATUS', active_workers=0, integration_queue=0,
+                    tasks=[dict(task='A', state='waiting', blocked_by=['A'])],
+                    roots=[dict(id='A', kind='outside', blocks=1, tasks=['A'])])
+        self.assertIsNone(health.update(self.state, snap, now=0))
+        self.assertIsNone(health.update(self.state, snap, now=7200))
+        self.assertEqual(self.status()['state'], 'waiting on you')
+        self.assertEqual(self.status()['stopped'], 1)
+        self.assertEqual(self.status()['stall_roots'], [])
+        held = dict(snap, tasks=[dict(task='H', state='held', cause='blocker'),
+                                dict(task='A', state='waiting', blocked_by=['H'])],
+                    roots=[dict(id='H', kind='held', cause='blocker', blocks=1, tasks=['A'])])
+        health.update(self.state, held, now=7250)
+        self.assertEqual(self.status()['state'], 'waiting on you', 'root membership includes the held task itself')
+        self.assertIsNone(health.update(self.state, dict(snap, active_workers=1), now=7300))
+        self.assertEqual(self.status()['state'], 'working')
+        independent = dict(snap, tasks=snap['tasks'] + [dict(task='B', state='waiting', blocked_by=[])])
+        health.update(self.state, independent, now=7400)
+        self.assertEqual(self.status()['state'], 'blocked', 'one owner task does not own the whole queue')
+        self.assertEqual((self.status()['stopped'], self.status()['waiting']), (1, 1))
 
     def test_exhausted_review_work_is_engineering_not_a_person(self):
         """Running out of reviewer rework does not turn a defect into an owner decision."""
@@ -188,7 +210,8 @@ class HealthTests(unittest.TestCase):
         folder.mkdir()
         runner = dict(repo='/x/repo', pid=os.getpid(), start_time=start_time(os.getpid()))
         (folder / 'runner.json').write_text(json.dumps(runner))
-        health.update(folder, dict(snapshot(), task_source={'observed_at': 1000}), now=1000, runner=runner)
+        snap = snapshot(roots=(dict(HELD, cause='validation'),))
+        health.update(folder, dict(snap, task_source={'observed_at': 1000}), now=1000, runner=runner)
         busy = {'outcome': 'ACTION_REQUIRED', 'reason': 'Repository execution lock is held by a live operation.'}
         for now in (2000, 2500):
             self.assertIsNone(health.update(folder, busy, now=now, runner=runner))
@@ -209,7 +232,7 @@ class HealthTests(unittest.TestCase):
         view, = fleet_view.collect(self.state, self.state, systemctl=str(systemctl), now=2600)
         self.assertEqual((view.state, view.minutes), ('unavailable', 26))  # TUI's persistent State column
         self.assertIn('last snapshot 1600s old', fleet_view.verdict(view)[0])
-        self.assertIsNotNone(health.update(folder, dict(snapshot(), task_source={'observed_at': 2800}),
+        self.assertIsNotNone(health.update(folder, dict(snap, task_source={'observed_at': 2800}),
                                            now=2800, runner=runner))
         record = json.loads((folder / 'status.json').read_text())
         self.assertEqual((record['state'], record['since']), ('stalled', 1000))
@@ -275,8 +298,9 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(self.status()['state'], 'unavailable')
 
     def test_new_root_blockers_are_announced_again(self):
-        health.update(self.state, snapshot(), now=0)
-        self.assertIsNotNone(health.update(self.state, snapshot(), now=2000))
+        snap = snapshot(roots=(dict(HELD, cause='validation'),))
+        health.update(self.state, snap, now=0)
+        self.assertIsNotNone(health.update(self.state, snap, now=2000))
         claim = {'id': 'T-5', 'kind': 'claim', 'blocks': 1}
         line = health.update(self.state, snapshot(roots=(HELD, claim)), now=2100)
         self.assertIn('T-5 (claimed by another session, holds 1)', line)

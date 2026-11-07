@@ -8,7 +8,6 @@ def main(args):
         from ruamel.yaml import YAML
     except ImportError:
         return 3
-    core = '--core' in args
     yaml = YAML(typ='safe')
     yaml.allow_duplicate_keys = False
     failed = False
@@ -35,9 +34,6 @@ def main(args):
                 entries = {k: {} if v is None else v for k, v in entries.items()}
             if not isinstance(entries, dict) or any(not isinstance(v, dict) for v in entries.values()):
                 raise ValueError()
-            if not core and config.get('memory', {}).get('provider') not in (None, '', 'builtin', 'omh'):
-                print(f'{path}: existing memory provider conflicts with OMH setup')
-                failed = True
         except Exception:
             # Parser exceptions may contain source lines with credentials.
             print(f'{path}: invalid/duplicate YAML or incompatible configuration shape; repair before setup')
