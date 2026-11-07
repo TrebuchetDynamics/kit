@@ -30,6 +30,27 @@ runtime state out of Git. Do not edit or patch upstream Hermes Agent.
 - Keep public examples generic and preserve existing per-profile job state.
   Instruction changes alone do not prove that a cron job completed a task.
 
+## Completed work and documentation
+
+This repository keeps current requirements and unfinished work, not a completed-task
+archive. Git history is the record of past work. Do not create or append task-history
+reports, completed-task tables, or `TODO.archive.md`; update current behavior and
+operating instructions instead. Routine completion replies summarize the change and
+checks without listing closed task IDs or task-document paths unless requested.
+
+After real closure and integration, prune completed task records and their dedicated
+receipts/reports through a separate safe reconciliation. Use `autowork tasks` for
+record edits. Check fresh status and actual ownership first; never remove an active
+attempt, alter a running contract, fabricate completion or discard an unresolved live
+obligation. Remove only already-satisfied ordinary dependency edges from inactive
+surviving tasks. Preserve verified-dependency proof and any still-required qualification
+via immutable Git inputs or current open requirements before pruning. Keep goal status
+and live/owner gates unchanged; an empty history is not proof that a goal is met.
+Do not rewrite Git history, remove worktrees/runtime recovery state, or change generic
+archive-import fixtures merely to clean this repository. Runtime closeout may create
+transient done records; this policy does not bypass its checks or promise immediate
+automatic deletion by an already-installed runner.
+
 ## Delegation
 
 Start every dispatched subagent or worker in a **fresh context window**. Some harnesses

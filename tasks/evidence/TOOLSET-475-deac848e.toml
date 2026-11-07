@@ -1,9 +1,0 @@
-schema = 1
-task = "TOOLSET-475-deac848e"
-candidate = "cd4b691957d194f462d602475af762ebdb9726df"
-integration = "db473856077058811fb25f3461da2d921e4c4710"
-tree = "e04c46eb1a2bf26ba61724e8fb3cd3f38b2c845f"
-contract_hash = "2b12c7ba2ed01257e5fa207fd911142702bbc018bdb1c9744458c4fe32377e5e"
-checks = ["<path>", "<path>", "--verify", "<path>", "TOOLSET-475-deac848e"]
-result = "pass"
-review = "passed"

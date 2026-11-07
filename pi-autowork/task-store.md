@@ -663,6 +663,6 @@ only at HEAD, preserving repository state and reporting `legacy_content`.
 either lone legacy file, and both files: only the pair reports legacy planning and force
 guidance. Run it with `python3 scripts/check.py pi-autowork/tests/test_fleet_view.py`.
 
-The [October 2026 object audit](../docs/plans/unreachable-objects-2026-10.md) records
-remaining object-producing paths and preservation/candidate ref reachability. It does
-not establish safety to re-enable automatic GC or authorize cleanup.
+The [object-retention safety requirements](../docs/plans/unreachable-objects-2026-10.md)
+require fresh preservation/candidate ref reachability proof. Removing completed task
+records does not establish safety to re-enable automatic GC or authorize object cleanup.

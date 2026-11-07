@@ -126,7 +126,7 @@ routing or activate a gateway. A read-only invocation against installed local ru
 records additionally checks the source handler; it still does not prove the gateway
 loaded that revision.
 
-README-audit fixtures (TOOLSET-116-fc) exclude Markdown/HTML image examples in
+README-audit fixtures exclude Markdown/HTML image examples in
 single-line backtick spans, including mixed prose and literal shorter backtick runs.
 They retain real image checks beside unmatched/escaped runs, across block boundaries,
 and in literal-backtick link/image destinations, HTML and autolinks. Quoted titles,
@@ -137,13 +137,13 @@ code spans and ambiguous markup retain conservative auditing; these offline chec
 do not establish full CommonMark/hosted GitHub rendering compatibility.
 
 `python3 -m unittest discover -s tests -p test_preflight.py -v` includes runtime
-installation-facts shape regressions (TOOLSET-115-aa). Malformed root, packages,
+installation-facts shape regressions. Malformed root, packages,
 venv and environment values return a generic safe error before any validator
 launch; valid facts retain interpreter selection, validation failure and missing
 parser fallback. Fixture metadata/configuration remain byte-identical. These are
 offline fixtures, not live setup or installed-profile qualification.
 
-Consultation stream-json regressions (TOOLSET-114-c4) exercise real local
+Consultation stream-json regressions exercise real local
 subprocesses with Unicode NEL, line separator and paragraph separator inside
 reply and tool-event JSON strings. LF-only framing must retain exact replies and
 parseable sanitized receipts, preserve tool-limit observations and nonzero exit
@@ -151,41 +151,39 @@ verdicts, and mask synthetic credentials. These fixtures do not establish native
 profile recovery or installed adoption.
 
 `python3 -m unittest discover -s skills/docs-sync/scripts -p test_docs_manifest.py -v`
-checks malformed array/object role statuses through `validate`, `check` and `stale`
-(TOOLSET-113-04). Each command must return exit 1 with a role-specific diagnostic,
+checks malformed array/object role statuses through `validate`, `check` and `stale`. Each command must return exit 1 with a role-specific diagnostic,
 retain independent field errors, emit no traceback and leave fixture files unchanged.
 Supported status values retain the existing positive and negative CLI coverage.
 
 `python3 -m unittest discover -s tests -p test_profile_consult.py -v` includes
 real local subprocesses emitting valid stream-json replies and malformed stderr
-for zero and nonzero exit codes (TOOLSET-112-29). Diagnostics retain replacement
+for zero and nonzero exit codes. Diagnostics retain replacement
 characters without discarding replies or changing failure verdicts. Malformed
 stdout remains refused. These fixtures do not launch models or qualify native
 profile recovery, installed adoption or delivery.
 
 
 Document-anchor CLI fixtures cover numeric-suffix collisions in both heading orders
-and chains of occupied suffixes (TOOLSET-109-f1). They check valid local links and
+and chains of occupied suffixes. They check valid local links and
 role-mapping fragments and reject nonexistent suffixes; this is offline checker
 coverage, not a claim of full Markdown-renderer compatibility.
 
 Document-anchor regressions exclude HTML-commented ATX/Setext headings and explicit
 HTML anchors, including unclosed comments, from both local-link and role-mapping
-checks (TOOLSET-107-93). Commented headings do not consume visible duplicate suffixes;
+checks. Commented headings do not consume visible duplicate suffixes;
 visible headings, explicit anchors and literal comment markers in code spans remain
 supported. CLI fixtures also verify that checking leaves source files unchanged.
 
 The fake-Pi idle-update journey forces different human-readable log timestamps
 before and after an exec restart. It requires multiple startup records bearing the
 original runner PID, alongside the update, completed-queue and interrupt-exit
-assertions. Timestamp variation is not a process-identity change (TOOLSET-105-79).
+assertions. Timestamp variation is not a process-identity change.
 Only display times are replaced; scheduling clocks and ISO timestamps stay real.
 This is offline control-flow evidence, not live Pi/model qualification.
 
 Collector response regressions also mask complete Cookie, Set-Cookie,
 Authorization and Proxy-Authorization lines, including comma/semicolon tails,
-case and indentation variants, through native and legacy response consumers
-(TOOLSET-106-5d). They preserve surrounding status/check lines and source bytes.
+case and indentation variants, through native and legacy response consumers. They preserve surrounding status/check lines and source bytes.
 This covers actual header lines, not comprehensive secret redaction; installed
 adoption and product recovery remain separate.
 
@@ -215,8 +213,7 @@ node --test tests/portable_pi.test.mjs
 
 The checker decodes captured diagnostics as UTF-8 with replacement for malformed
 bytes. Real subprocess fixtures cover successful and failing unittest runs emitting
-invalid bytes, retaining their exit verdicts, sibling output and aggregate summary
-(TOOLSET-110-61). Replacement is display recovery, not byte-exact log preservation.
+invalid bytes, retaining their exit verdicts, sibling output and aggregate summary. Replacement is display recovery, not byte-exact log preservation.
 
 The checker runs top-level and maintained bundled workflow tests in separate
 Python processes, with a 600-second timeout per directory (the Autowork suite
@@ -242,56 +239,23 @@ entries. Receipts created before the `execution-cwd-v1` resolution policy cannot
 be reused; preserve them and run the check with a new receipt path. An unresolved
 executable also prevents reuse.
 
-TOOLSET-072 caches package metadata parsing and the interpreter hash within each
-process, without changing receipt fields or reuse rules. Filesystem stamps include
-metadata files to detect in-place upgrades; unsupported providers or uninspectable
-paths fall back to original discovery. Offline regressions cover add/edit/remove
-drift, interpreter replacement, caller mutation, legacy/ZIP/symlink metadata and
-unreadable search directories. Python 3.12 focused receipt/delivery measurements
-on October 16, 2026 were 72.477/75.685/74.835 seconds before and
-33.928/34.628/34.930 seconds after (three runs each; nine added regressions).
-Those focused final-pair receipts used a pre-commit candidate whose recorded
-inputs match integrated `9f84355`; baseline inputs match `20cbcc5`.
-
-The remaining TOOLSET-072 measurements completed on October 16, 2026 with Python
-3.12.14 on the same Linux x86_64 machine. Three interleaved runs of each exact
-commit used `/usr/bin/time python3 scripts/check.py --jobs 1` in clean detached
-worktrees. Serial full-gate wall seconds were 495.42/468.81/446.33 before and
-423.98/420.92/416.30 after: medians 468.81 → 420.92 seconds (10.2% lower).
-Autowork **unittest suite elapsed**, extracted from its own directory summary, was
-190.695/189.849/183.746 before and 140.612/143.317/135.945 after: medians
-189.849 → 140.612 seconds (25.9% lower). This directory metric excludes interpreter
-startup and test import; neither result measures the default parallel gate. Shared
-host timing varies, so the raw three-run samples accompany the medians.
-
-All six serial gates passed: before 558/689/212/8 tests and after 558/698/212/8
-across the four maintained directories, each with one skip and eight excluded
-modules. All tracked inputs matched their recorded commit and stayed unchanged.
-The interpreter/package snapshot captured during the first baseline matched after
-the sixth run; it is not a retroactive launch fingerprint. Private raw logs and
-source-bound receipts were retained. Independent method review prompted separate
-validation of all six zero exits, exact directory inventories and terminal summaries,
-including a negative parser check that prevents attribution across CHECK blocks.
-The earlier interrupted baseline remains unqualified; it is not one of these six
-measurements. No model/native/live qualification is implied.
+Check receipts cache package metadata and interpreter hashes within a process.
+Filesystem stamps detect in-place upgrades; unsupported providers or uninspectable
+paths fall back to original discovery. Regressions cover add/edit/remove drift,
+interpreter replacement, caller mutation, legacy/ZIP/symlink metadata and unreadable
+search directories. Historical timing samples are not a current performance claim.
 
 Current Autowork executes repository tasks in the current session without Kanban
 setup or native-card transitions. Its direct-execution, recovery and isolated
 no-agent qualification are described in the
 [project verification contract](project.md#todo-first-delivery-qualification).
-Model-driven recovery and useful-action timing remain the separate TOOLSET-003/013
-checks; no-agent execution is not a substitute.
-
-The unreachable native owner-cycle modules and their dedicated handoff,
-reconciliation, registration, containment and controller suites were retired in
-TOOLSET-202-9a. Their source and prior coverage remain in Git history; see the
-[retirement evidence](plans/2026-10-20-owner-cycle-retirement.md). Current execution,
-parallel integration, profile collection, source-bound receipts and their tests
-remain. Four native-only exclusions disappeared with their suites. Removal does
-not migrate historical cards, installed profiles or saved schedules, and no live
-qualification is claimed. The [retirement evidence](plans/2026-10-20-owner-cycle-retirement.md#measured-complete-check-timing)
-records actual paired complete-check wall times and load samples, separate from
-focused checks. The coordinator still owns the merged-tree full-suite gate.
+Model-driven recovery and useful-action timing remain separate qualification
+requirements; no-agent execution is not a substitute. Current execution, parallel
+integration, profile collection and source-bound receipt checks remain in the
+maintained inventory. The coordinator owns the merged-tree full-suite gate.
+Historical suite inventories and timing reports belong in Git history, not a
+completed-task report. This cleanup migrates no installed profiles or schedules
+and supplies no live qualification.
 
 Selection reads every task and goal at one commit with a single `git cat-file --batch`;
 a 1000-task store reads and orders in about half a second (`test_task_select.py` prints the time and
@@ -381,7 +345,7 @@ Rules:
 - The harness prints one JSON object per scenario and exits nonzero on any failure.
   Its transcript is private; the command and its summary are the evidence.
 - A stub worker exercises the engine's launch path. A model-driven delivery and an
-  interrupted real runner remain the owner's live qualification (TOOLSET-451), not
+  interrupted real runner remain the owner's live qualification, not
   this harness.
 - A product defect found by a scenario is reported with its record, never fixed by
   changing the harness's expectation.
@@ -512,5 +476,34 @@ The Pi Node tests cover command registration, literal arguments, queued messages
 and packaged support files. CI uses Node 22 for those tests. See
 [cross-host installation and verification](cross-host.md) for tested client versions
 and disposable-home installation checks. Package discovery does not prove model
-execution or completion of an Autowork task; the outstanding qualification is
-tracked as TOOLSET-003 in [the archive](../TODO.archive.md).
+execution or completion of an Autowork task. Required model-driven qualification
+remains separate from package discovery and needs explicit scope and real evidence.
+
+## Qualification boundaries
+
+Removing completed-task records does not qualify the following current surfaces.
+Any still-required proof remains an open product obligation, under its original
+scope and owner/live gates, not a reason to recreate completed-task reports:
+
+- Installed-profile registration, legacy settings preservation, native security
+  admission, gateway activation and Telegram delivery require their actual host
+  checks. Source tests and installation-script fixtures are insufficient.
+- Real service stop/disable/failure-state cleanup, restart configuration, forced
+  conversion, release/grant binding, interrupted-worker adoption and observation
+  recovery need scoped live proof. Do not operate an unrelated service or infer
+  execution ownership from a saved approval.
+- Work/planning/maintenance instruction adherence, provider execution and private
+  monitor permissions need actual authorized evaluation. Offline routing and
+  classification do not establish model behavior or safe live coexistence.
+- Physical Android/desktop display, SSH responsiveness/freshness and clipboard
+  delivery require the real client/transport. Headless pilots and event-loop
+  assertions do not establish remote latency or installed activation.
+- Consumer-specific touched-project checks still require a complete inventory and
+  actual budget evidence; no source-only result proves a runtime speedup or a
+  fifteen-minute bound. The real-repository evaluation remains independently gated.
+- Native signed downloads/installation and destination executable readback require
+  supported-host qualification. Hosted README rendering, external links and live
+  badge state likewise require external readback; local previews are approximations.
+
+Keep current task and goal requirements authoritative. Never convert an unrun
+qualification to passed because its earlier implementation record was pruned.

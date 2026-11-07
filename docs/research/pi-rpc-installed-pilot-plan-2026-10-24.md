@@ -1,33 +1,18 @@
-# Installed Pi RPC delivery pilot — proposed 2026-10-24
+# Installed Pi RPC delivery pilot requirements
 
-Status: proposed; no task owner. The owner deleted TOOLSET-389-6dedfd8c on
-2026-10-31. This is preparation, **not pilot authorization, an executed result or
-fleet qualification**. Any future pilot needs a new owner task with an explicit
-target, bounded model use and interruption window; `live` remains denied until then.
-Coordinator steering work remains gated on this pilot; source integration alone must
-not release it.
+Status: proposed, no pilot authority. A future pilot requires a new owner task
+with an explicit target, bounded model use and interruption window; live remains
+denied until then. This is not an executed result or fleet qualification.
+Coordinator steering remains gated on this pilot; source integration alone cannot
+release it. Completed task reports and observed fleet snapshots live in Git history.
 
 ## Current evidence boundary
 
-The installed Autowork coordinator was observed selecting release
-`8b99850e52dc55f2fc63d41b46afde2c43630845`, whose default transport is RPC.
-The existing private SDK interpreter reports `pi-agent-python-sdk` 0.2.6 and
-installed Pi reports 1.4.0. Read-only process/metadata inspection did not yet find
-an RPC invocation attributable to that coordinator; retained workers and the most
-recent completed run still lacked RPC transport/version/cleanup evidence.
-**Selected release and configured next-invocation transport are not execution
-proof.** Existing workers may retain their older release across coordinator reload.
-These are a dated observation, not a claim about later fleet state.
-
-TOOLSET-388 already has a documentation-only reconciliation candidate
-`965ed8f00db0077df849dd4ac47c2062d753af20`, tested against unchanged runtime source
-at `8b99850e`. Its worker report records 166 focused tests, 138 legacy engine tests
-(two expected failures), 167 integration tests and five direct native offline
-protocol tests. It is still subject to independent engine verification,
-serialized integration and merged-tree checks. Do not duplicate its implementation,
-edit its live checkout, manually close its task or treat its report as acceptance.
-The historical [qualification report](pi-rpc-qualification-2026-10-24.md) preserves
-the distinction between fake-peer, native-offline and real-model smoke evidence.
+Read back actual selected release, resolved SDK/Pi executables and transport for the
+owned target. Selected release and configured next-invocation transport are not
+execution proof. Existing workers can retain older releases across coordinator
+reload. Use the [qualification boundaries](pi-rpc-qualification-2026-10-24.md)
+to distinguish fake-peer, native-offline, real-model and installed-engine evidence.
 
 ## Proposed target and authorization
 
@@ -36,7 +21,7 @@ production configuration or existing task state, using the installed release's
 supported foreground `--until-empty --workers 1` runner. Its task worktrees belong
 under that repository's own canonical `.worktrees/`. Use an isolated private state
 root and explicitly select the existing pinned SDK interpreter; do not install,
-modify or restart any of the seven existing services. This qualifies the installed
+modify or restart existing services. This qualifies the installed
 CLI/engine path, not systemd rollout or fleet acceptance.
 
 The owner decision must name the exact private target/state paths, executor,
@@ -49,7 +34,7 @@ the disposable-target proposal does not authorize interrupting that service.
 
 ## Preconditions and frozen manifest
 
-1. TOOLSET-388 has genuine coordinator-verified closure and its exact integrated
+1. The selected integrated runtime has genuine independent acceptance and its exact
    revision passes the required offline gate. Preserve the raw full-check result,
    command, exit code, revision/tree, skips and expected failures. An in-progress
    check or pass on an earlier revision is not a substitute. Reuse an already

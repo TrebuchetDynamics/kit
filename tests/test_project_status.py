@@ -30,40 +30,28 @@ def anchors(text):
 
 
 class ProjectStatusTests(unittest.TestCase):
-    def test_reviewed_delivery_is_current_not_pending(self):
+    def test_current_requirements_replace_completed_task_reports(self):
         status = section(PROJECT_TEXT, "Planned work and verification")
-        startup = section(PROJECT_TEXT, "Faster ready-task startup")
-        self.assertRegex(status, r"TOOLSET-002[\s\S]*?reviewed and integrated locally")
-        self.assertRegex(startup, r"TOOLSET-012 is independently reviewed and integrated\s+locally")
-        self.assertNotIn("candidate still requires independent review and integration", PROJECT_TEXT)
+        self.assertIn("task store", status)
+        self.assertNotRegex(PROJECT_TEXT, r"\bTOOLSET-\d+")
+        self.assertNotIn("TODO.archive.md", PROJECT_TEXT)
         authority = section(PROJECT_TEXT, "Autonomous execution authority")
         self.assertIn("operating-policy question without another user permission round", authority)
         self.assertIn("caller scope and saved stop/batch limits control", authority)
-        # The queue reset (2026-10-20) removed their goals from goals.json; the archive keeps them.
-        archive = (ROOT / "TODO.archive.md").read_text()
-        for task in ("TOOLSET-002", "TOOLSET-008", "TOOLSET-012"):
-            with self.subTest(task=task):
-                self.assertIn(task, archive)
 
-    def test_task_context_metrics_and_ids_remain_historical(self):
+    def test_current_spec_does_not_retain_task_context_measurements(self):
         context = section(PROJECT_TEXT, "Task context simplification", 3)
-        self.assertIn("five then-pending IDs", context)
-        for task in ("TOOLSET-003", "TOOLSET-011", "TOOLSET-012", "TOOLSET-013", "TOOLSET-008"):
-            self.assertIn(task, context)
-        for measurement in ("1,524", "1,082", "29.0%"):
-            self.assertIn(measurement, context)
-        self.assertIn("At that point", context)
-        self.assertIn("not a proven runtime speedup", context)
-        self.assertIn("completed TOOLSET-008/012 bodies now reside", context)
-        self.assertIn("At requirement capture (`f617808`)", PROJECT_TEXT)
+        self.assertNotIn("five then-pending IDs", context)
+        self.assertNotIn("29.0%", context)
+        self.assertNotIn("At requirement capture", PROJECT_TEXT)
+        self.assertTrue(context.strip(), "Keep the current context-selection contract")
 
     def test_live_qualification_stays_open_and_separate(self):
-        # TOOLSET-003/011 were deleted with the rest of the queue on 2026-10-20, never closed as
-        # passed; the project contract still says the qualification is pending.
-        self.assertIn("Measured native qualification remains pending", PROJECT_TEXT)
-        self.assertIn("externally enforced spending/descendant limits", PROJECT_TEXT)
-        self.assertIn("not actual model startup or universal latency", PROJECT_TEXT)
-        self.assertIn("Offline helper tests do not establish", PROJECT_TEXT)
+        # Removing completed-task history must not turn pending live proof into success.
+        self.assertRegex(PROJECT_TEXT, r"[Mm]easured native qualification remains pending")
+        self.assertRegex(PROJECT_TEXT, r"externally\s+enforced spending/descendant limits")
+        self.assertRegex(PROJECT_TEXT, r"do not establish actual model startup or universal\s+latency")
+        self.assertRegex(PROJECT_TEXT, r"offline helper tests prove none of those live outcomes")
 
     def test_project_local_links_and_fragments_exist(self):
         links = re.findall(r"\]\(([^)]+)\)", PROJECT_TEXT)
@@ -79,10 +67,13 @@ class ProjectStatusTests(unittest.TestCase):
                 if fragment:
                     self.assertIn(fragment, anchors(target.read_text(encoding="utf-8")))
 
-    def test_completed_continuation_link_targets_archive(self):
-        authority = section(PROJECT_TEXT, "Autonomous execution authority")
-        self.assertIn("[TOOLSET-008](../TODO.archive.md#toolset-008--make-autowork-continuation-authority-consistent)", authority)
-        self.assertNotIn("../TODO.md#toolset-008", PROJECT_TEXT)
+    def test_repository_has_no_completed_task_archive(self):
+        self.assertFalse((ROOT / "TODO.archive.md").exists())
+        self.assertNotIn("docs/tasks/", PROJECT_TEXT)
+        self.assertNotIn("](../TODO.md", PROJECT_TEXT)
+        policy = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Git history is the record of past work", policy)
+        self.assertIn("never remove an active", policy)
 
 
 if __name__ == "__main__":
