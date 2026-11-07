@@ -64,7 +64,7 @@ export function dispatchFor(action: Action, repo: Repo): Dispatch {
       message: action.mode === 'stage' ? 'Store conversion staged in the working tree; HEAD unmoved.' : `Store prepared. ${COMMITTED}` };
     case 'store-migrate': return { command: 'migrate', args: ['migrate', ...(action.commit ? [] : ['--no-commit']), r], options: slow(300_000),
       message: action.commit ? `Repository converted to the tasks/ store. ${COMMITTED}` : 'Store conversion staged; HEAD unmoved.' };
-    case 'commit': return { command: 'tasks', verb: 'commit', args: ['tasks', 'commit', `--message=${action.message}`, r],
+    case 'commit': return { command: 'tasks', verb: 'commit', args: ['tasks', 'commit', `--expect-pending=${action.pendingRevision}`, `--message=${action.message}`, r],
       message: `Task edits committed. ${COMMITTED}` };
     default: throw new Error('Planning actions use the owned planning controller, not argv');
   }
@@ -93,7 +93,7 @@ export function summarize(action: Action, repo: Repo): { description: string; ca
     case 'goal': return { description: `Write goal ${action.goal} in ${label}. ${LOCAL_EDIT}`, captured: `Fields:\n${JSON.stringify(action.fields, null, 2)}` };
     case 'store-prepare': return { description: `Prepare the tasks/ store of ${label} (${action.mode === 'stage' ? 'stage only, HEAD unmoved' : 'may create one local commit'}). ${push}`, captured: '' };
     case 'store-migrate': return { description: `Convert ${label} to the tasks/ store${action.commit ? ' with one local commit' : ' without committing'}. ${push}`, captured: '' };
-    case 'commit': return { description: `Commit the working tree's tasks/ edits in ${label} and nothing else. ${COMMITTED} ${push}`, captured: `Commit message:\n${action.message}` };
+    case 'commit': return { description: `Commit the working tree's tasks/ edits in ${label} and nothing else. ${COMMITTED} ${push}`, captured: `Pending snapshot: ${action.pendingRevision}\nCommit message:\n${action.message}` };
     case 'plan-start': return { description: `Start a plugin-owned planning session for ${label} in ${action.mode} mode${action.task ? ' scoped to ' + action.task : ''}${action.model ? ' with model ' + action.model : ''}. Planning may make model calls; no automatic Apply or runner Start.`, captured: `Objective:\n${action.objective || '(empty: discover useful work)'}` };
     case 'plan-send': return { description: `Send a follow-up to the plugin-owned planning session for ${label}. Planning may make model calls; no automatic Apply.`, captured: `Follow-up for session ${action.sessionId}:\n${action.message}` };
     case 'plan-steer': return { description: `Steer the running planning turn for ${label}.`, captured: `Steering for operation ${action.operationId}:\n${action.message}` };
@@ -145,6 +145,14 @@ export class Operations {
       if (task.record_revision !== action.revision) throw new Error('Task record changed; refresh before editing it');
       if (action.kind === 'decision' && task.status !== 'open') throw new Error('Task record changed; refresh before answering');
       revision = task.record_revision;
+    } else if (action.kind === 'commit') {
+      const pending = object((await this.service.store(this.service.instance, repo.id, 'pending')).value);
+      if (typeof pending.pending_revision !== 'string' || !/^[a-f0-9]{64}$/.test(pending.pending_revision)) {
+        throw new Error('Installed Autowork lacks pending snapshot protection; update the executable before committing');
+      }
+      if (pending.pending_revision !== action.pendingRevision) throw new Error('pending task edits changed; review the diff again');
+      if (!Array.isArray(pending.files) || !pending.files.length) throw new Error('There are no pending task edits to commit');
+      revision = pending.pending_revision;
     } else if (action.kind === 'goal' && action.revision) {
       const { goals } = await this.service.goals(this.service.instance, repo.id, true);
       const goal = goals.find(item => item.id === action.goal);

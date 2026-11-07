@@ -49,12 +49,12 @@ export function relativeTime(value: unknown, now = Date.now()): string {
   if (hours < 48) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
 }
-/** The closure proof selects the tone; the CLI supplies the label and detail words. */
-export function closureTone(closure: NonNullable<Task['display']>['closure']): Tone {
-  if (!closure) return 'neutral';
-  if (closure.verified === true) return 'success';
-  if (closure.verified === false || closure.provenance === 'manual') return 'warning';
-  return 'neutral';
+/** Python owns semantic tone; the client supplies the live-question override. */
+export function taskTone(task: Pick<Task, 'presentation'> | undefined, question = false): Tone {
+  return question ? 'warning' : task?.presentation?.tone ?? 'neutral';
+}
+export function closureTone(task: Pick<Task, 'presentation'> | undefined): Tone {
+  return task?.presentation?.closure_tone ?? 'neutral';
 }
 export function canAnswer(task: Task, runner: Runner, detail: TaskDetail): boolean {
   return task.status === 'open' && detail.status === 'open' && detail.id === task.id && !!detail.record_revision && runner.questions.some(question => question.id === task.id);

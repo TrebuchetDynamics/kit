@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile, writeFile } from 'node:fs/promises';
 import { AutoworkService } from '../server/autowork-client';
 import { Operations, type PlanningApi } from '../server/operations';
@@ -51,6 +51,28 @@ describe('confirmed operations', () => {
     await finished(s.ops, s.fleet.instance, accepted[0]!.value.id);
     const calls = (await readFile(s.log, 'utf8')).trim().split('\n').map(x => JSON.parse(x));
     expect(calls.filter(x => x[0] === 'pause')).toHaveLength(1);
+    await s.ops.close(); await s.service.close();
+  });
+  it('binds commit tickets to the pending snapshot reviewed by the client', async () => {
+    const s = await setup(true); const pendingRevision = 'a'.repeat(64);
+    const pending = vi.spyOn(s.service, 'store').mockResolvedValue({ value: {
+      files: ['tasks/items/T-1.md'], pending_revision: pendingRevision, diff: '+ reviewed answer',
+    }, capturedAt: Date.now() });
+    const action = { kind: 'commit' as const, repoId: s.repoId, message: 'reviewed answer', pendingRevision };
+    const ticket = await s.ops.prepare(s.fleet.instance, action);
+    expect(ticket.summary).toContain(pendingRevision);
+    pending.mockResolvedValue({ value: { files: ['tasks/items/T-1.md', 'tasks/items/T-2.md'],
+      pending_revision: 'b'.repeat(64), diff: '+ unreviewed work' }, capturedAt: Date.now() });
+    await expect(s.ops.commit(s.fleet.instance, ticket.ticket)).rejects.toThrow(/pending task edits changed/);
+    expect((await calls(s.log)).filter(x => x[0] === 'tasks' && x[1] === 'commit' && !x.includes('--dry-run'))).toEqual([]);
+    await expect(s.ops.prepare(s.fleet.instance, action)).rejects.toThrow(/pending task edits changed/);
+    pending.mockResolvedValue({ value: { files: ['tasks/items/T-1.md'], diff: '+ legacy preview' }, capturedAt: Date.now() });
+    await expect(s.ops.prepare(s.fleet.instance, action)).rejects.toThrow(/snapshot|update/);
+    pending.mockRestore();
+    const accepted = await s.ops.prepare(s.fleet.instance, action);
+    const operation = await s.ops.commit(s.fleet.instance, accepted.ticket);
+    expect((await finished(s.ops, s.fleet.instance, operation.id)).status).toBe('succeeded');
+    expect((await calls(s.log)).some(x => x.includes('--expect-pending=' + pendingRevision))).toBe(true);
     await s.ops.close(); await s.service.close();
   });
   it('changed canonical state invalidates a prepared action', async () => {
@@ -170,7 +192,7 @@ describe('server-authored argv', () => {
     expect(dispatchFor({ kind: 'model', repoId: 'r-1', model: 'p/m', fallback: 'p/f' }, repo).args).toEqual(['model', '--fallback=p/f', '/srv/example', 'p/m']);
     expect(dispatchFor({ kind: 'clear-held', repoId: 'r-1', tasks: ['T-1'] }, repo).args).toEqual(['clear-held', '/srv/example', 'T-1']);
     expect(dispatchFor({ kind: 'attention', repoId: 'r-1', minutes: 12.5, task: 'T-1', note: '-n' }, repo).args).toEqual(['attention', '--task=T-1', '--note=-n', '12.5', '/srv/example']);
-    expect(dispatchFor({ kind: 'commit', repoId: 'r-1', message: 'answer T-1' }, repo).args).toEqual(['tasks', 'commit', '--message=answer T-1', '/srv/example']);
+    expect(dispatchFor({ kind: 'commit', pendingRevision: 'a'.repeat(64), repoId: 'r-1', message: 'answer T-1' }, repo).args).toEqual(['tasks', 'commit', '--expect-pending=' + 'a'.repeat(64), '--message=answer T-1', '/srv/example']);
     expect(dispatchFor({ kind: 'store-prepare', repoId: 'r-1', mode: 'stage' }, repo).args).toEqual(['tasks', 'prepare', '--no-commit', '/srv/example']);
     expect(dispatchFor({ kind: 'store-migrate', repoId: 'r-1', commit: false }, repo).args).toEqual(['migrate', '--no-commit', '/srv/example']);
     expect(() => dispatchFor({ kind: 'plan-start', repoId: 'r-1', objective: '', mode: 'plan' }, repo)).toThrow(/planning/);
@@ -180,7 +202,7 @@ describe('server-authored argv', () => {
     const service = new AutoworkService(policy({ executable: f.exe, decisions: true }));
     const ops = new Operations(service); const fleet = await service.fleet(); const repoId = fleet.repos[0]!.id;
     await expect(ops.prepare(fleet.instance, { kind: 'task-place', repoId, task: 'T-1', revision: 'record-v1', section: 'Now' })).rejects.toThrow(/task edits/);
-    await expect(ops.prepare(fleet.instance, { kind: 'commit', repoId, message: 'm' })).rejects.toThrow(/commits/);
+    await expect(ops.prepare(fleet.instance, { kind: 'commit', pendingRevision: 'a'.repeat(64), repoId, message: 'm' })).rejects.toThrow(/commits/);
     await expect(ops.prepare(fleet.instance, { kind: 'model', repoId, model: 'p/m' })).rejects.toThrow(/maintenance/);
     await expect(ops.prepare(fleet.instance, { kind: 'control', repoId, action: 'remove' })).rejects.toThrow(/runner operation/);
     await ops.close(); await service.close();
@@ -199,7 +221,7 @@ describe('server-authored argv', () => {
     const stdin = (await calls(f.log)).find(x => x[0] === 'tasks' && x[1] === 'add')!;
     expect(JSON.parse(stdin[stdin.length - 1].stdin)).toEqual({ goal: 'G', title: 'New', short: 'New' });
     await writeFile(f.exe, (await readFile(f.exe, 'utf8')).replace("'commit',", ''));
-    await expect(all.prepare(snap.instance, { kind: 'commit', repoId, message: 'm' })).rejects.toThrow(/executable changed|lacks/);
+    await expect(all.prepare(snap.instance, { kind: 'commit', pendingRevision: 'a'.repeat(64), repoId, message: 'm' })).rejects.toThrow(/executable changed|lacks/);
     await all.close(); await granted.close();
   });
 });

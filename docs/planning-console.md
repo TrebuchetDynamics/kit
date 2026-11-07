@@ -177,3 +177,50 @@ Textual pilots. They establish transport/control behavior, proposal validation a
 local Git safety; they do not establish live provider availability, model adherence
 to the proposal format, token cost, or deployed TUI/browser behavior. No live model
 session or running service is exercised by those tests.
+
+## Shared display and answer feedback
+
+`task_status.py` owns the task presentation projection returned by `tasks list`
+and `tasks show`: semantic `tone` and `closure_tone` describe committed record
+meaning, not worker health or execution authority. Paseo maps those values to its
+native theme. Old releases without presentation fields render neutral, rather
+than inferring severity from English labels. A currently observed owner question
+still carries a warning in its own view.
+
+The `tasks commit` dry-run/result adds `lifecycle` with a state and message:
+`pending_commit`, `committed`, or `clean`. TUI and Paseo use that same feedback for
+the pending-edit step. Missing/failed reads remain unknown; an older installed
+release can still use the explicit local fallback. Neither the projection nor its
+wording grants admission, verifies acceptance, pushes, or starts a runner.
+
+## Owned turn shutdown outcomes
+
+The Python planning transport's `RPC.close()` now returns an immutable, cached
+`ShutdownOutcome`. Callers that ignore the return still work. Repeated closes
+return the same observations without signalling again. `closed` is visible to
+pending and new requests before bounded teardown finishes; abort/clear-queue
+writes remain internal shutdown operations.
+
+A clean outcome requires the direct child to exit zero without TERM/KILL
+escalation, both pipe readers to stop, and local pipes/private logs to close
+without recorded cleanup errors. Forced termination, nonzero or unknown exit,
+and incomplete reader/resource cleanup are explicit fields, not success. Pipes
+and logs still owned by a live reader are left open rather than risking an
+unbounded buffered close. The cached outcome remains incomplete even if that
+reader later exits; it is not a retry or recovery authorization.
+
+The controller saves these observations in private session metadata as `shutdown`.
+A settled reply is not staged, counted, recorded as an assistant reply or returned
+as successful until shutdown is clean. Missing outcomes (including legacy mock
+clients) or raised cleanup errors fail closed, and metadata is still saved.
+Cancellation/failure retains its status and any prior draft, with the shutdown
+observations/error retained; a raised cleanup error is reported as an error.
+Streaming text remains provisional until the final turn result.
+
+These are **local transport observations, not descendant-cleanup proof**. The
+existing best-effort process-group kill is retained, but does not establish that
+escaped descendants are gone or a workspace is safe to reuse. This change neither
+replaces the execution process guard and its identity checks nor merges the
+planning JSONL protocol with the separate SDK/TypeScript execution protocols.
+Offline fake-process tests cover these outcomes; no live provider or service
+qualification is implied.
