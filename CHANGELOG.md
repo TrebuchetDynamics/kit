@@ -7,6 +7,7 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ### Changed
 
+- Expose Work across portable hosts for continuous in-session task execution without starting a runner (already implemented in baseline; this task reverified it). (TOOLSET-475-deac848e)
 - Rename the source root from `Src/` to `src/`, updating loaders, packaging,
   checks and the Paseo planning bridge.
 - Move Python entrypoint adapters from the repository root into `scripts/`, with

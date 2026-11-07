@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-475-deac848e"
 title = "Deliver continuous in-session Work across portable hosts"
 short = "Ship in-session Work registration"
-status = "open"
+status = "done"
 goal = "SKILL-ADHERENCE"
 section = "Now"
 rank = 1000
@@ -16,9 +16,12 @@ scope = "Forward-port the already-authored and reviewed idle .worktrees/work-ski
 acceptance = ["Portable package and native Pi tests prove work is registered with literal arguments/current-session routing, and metadata is explicit-only on supported hosts without install hooks, model calls or permission changes.", "Instruction contracts prove automatic selection, continued execution, bounded discovery when gated, source-bound checks/manual close, fresh-context reviews and real authority/ownership stop conditions; current push/unblock and all research selectors remain intact."]
 checks = ["python3 scripts/check.py tests/test_portable_package.py tests/test_skill_standard.py tests/test_workflow_commands.py tests/test_skill_descriptions.py tests/test_repo_docs_graphify.py", "node --test tests/portable_pi.test.mjs", "python3 skills/docs-sync/scripts/docs.py check .", "git diff --check"]
 exclusions = ["No background worker/service start, restart, schedules, installation, push, deployment, live qualification or permission/credential changes. Leave Kit runner stopped as explicitly requested.", "Do not mutate owner-only/live-gated task463, adopt foreign dirty work or overwrite newer main behavior. Preserve the original dirty work-skill candidate as recovery evidence."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-475-deac848e.toml"
 +++
 - Sources: User's repeated explicit in-session /work request and accepted retained .worktrees/work-skill implementation; docs/workflows.md Work section will own published semantics.
 - Evidence: Main8ba668ef lacks skills/work and adapters/skills/work, adapters/pi.mjs omits work; user currently invokes a worktree-local pointer. Existing candidate was previously reviewed but never integrated. Runtime ownership barrier was resolved by explicit owner-authorized stop of only Kit runner; no restart authorized.
 - Work search: Selected portable workflow/registration delivery over ownerlive463 (typed denied), transactional-answer backend (active other writer), or novel work where already-reviewed useful implementation exists. No competing background worker launched.
 - Repo obligations triggered: Portable manifests discover adapter folder automatically; native Pi command table, router/docs, command count/package inventory and instruction guards must agree. No manifest/lock/CI/schema changes needed. Current push/unblock and shared handoff guidance are invariants. Checks are offline contract evidence, not model adherence/native deployment proof.
 - Next action: Implementation7a7c592a is locally complete;34Pythoncontracts+6Node tests+docs checkpassed, independent review6fb08aa7 found no blockers. Documentation updated in README/cross-host/workflows/router/skill boundaries. Await serialized canonical integration after the separate Src-to-src migration writer releases main; resolve only attributable overlaps, rerun invalidated package/registration checks, then close honestly. No publication/install/live behavior claimed.
+- Pending live: Portable host installation/update and live model adherence to continuous Work remain unqualified. Offline registration and instruction tests do not prove runtime task execution. No service was started, stopped or restarted, and no installation, push, deployment or permission changes were performed.
