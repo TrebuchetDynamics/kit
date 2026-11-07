@@ -412,6 +412,51 @@ class AsyncMaintenanceTests(unittest.TestCase):
         self.owner.restart_if_updated()
         self.owner.reexec.assert_not_called()
 
+    def test_consumed_update_receipt_pins_activation_after_package_head_moves(self):
+        script = self.repo / 'scripts/pi-autowork.sh'
+        command = self.repo / 'pi-autowork/pi_autowork/command.py'
+        script.parent.mkdir(parents=True)
+        command.parent.mkdir(parents=True)
+        script.write_text('#!/bin/bash\ntrue\n')
+        command.write_text('pass\n')
+        self.git(self.repo, 'add', '.')
+        self.git(self.repo, 'commit', '-qm', 'qualified package A')
+        qualified = self.git(self.repo, 'rev-parse', 'HEAD')
+        maintenance.write(self.owner, 'update', dict(identity=[str(self.repo), self.source], attempts=1,
+                          job=dict(pid=99999999, start_time='missing', started=0, limit=600)))
+        (self.owner.state / 'maintenance-update.exit').write_text('0')
+        (self.owner.state / 'maintenance-update.log').write_text(json.dumps(dict(ok=True, revision=qualified)))
+        maintenance.poll(self.owner)
+        self.assertTrue(maintenance.read(self.owner, 'update')['outcome']['ok'])
+        # Drift happens after the successful receipt has already been consumed.
+        script.write_text('if then fi\n')
+        self.git(self.repo, 'commit', '-qam', 'unchecked package B')
+        unchecked = self.git(self.repo, 'rev-parse', 'HEAD')
+        self.assertNotEqual(qualified, unchecked)
+        self.owner.reexec = Mock()
+        self.assertEqual(self.owner.reexec_due(), 'update')
+        with patch.object(coordinator.release, 'prepare', wraps=coordinator.release.prepare) as prepare:
+            self.owner.restart_if_updated()
+        prepare.assert_called_once_with(str(self.root), str(self.repo), revision=qualified)
+        self.assertEqual(self.owner.reexec.call_args.kwargs['revision'], qualified)
+        # Once A is selected, B cannot cause a repeated automatic activation.
+        self.owner.package_rev = self.git(self.repo, 'rev-parse', '--short', qualified)
+        self.assertEqual(self.owner.reexec_due(), '')
+        with patch.object(coordinator.release, 'prepare') as prepare:
+            self.owner.restart_if_updated()
+        prepare.assert_not_called()
+
+    def test_explicit_reload_still_reselects_settings_and_release(self):
+        maintenance.write(self.owner, 'update', dict(outcome=dict(ok=True, revision=self.source)))
+        self.git(self.repo, 'commit', '-qm', 'owner package change', '--allow-empty')
+        self.owner.reload = True
+        self.owner.reexec = Mock()
+        self.assertEqual(self.owner.reexec_due(), 'reload')
+        with patch.object(coordinator.release, 'prepare') as prepare:
+            self.owner.restart_if_updated()
+        prepare.assert_not_called()
+        self.assertEqual(self.owner.reexec.call_args.kwargs, {'reload': True})
+
     def test_invalid_receipt_exits_finite_drain_nonzero_instead_of_waiting_forever(self):
         (self.owner.state / 'maintenance-publication.json').write_text('[]')
         owner = self.owner

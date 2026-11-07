@@ -3423,6 +3423,11 @@ class Coordinator:
         self.last_update = time.monotonic()
         maintenance.update(self)
 
+    def update_revision(self):
+        """Automatic activation uses the consumed qualification, not a later package HEAD."""
+        outcome = maintenance.read(self, 'update').get('outcome', {})
+        return outcome['revision'] if outcome.get('ok') else 'HEAD'
+
     def reexec_due(self):
         """'reload' or 'update' when the runner should re-execute at its next safe point: an
         asked-for reload, or a package that moved past the release this process runs."""
@@ -3436,7 +3441,7 @@ class Coordinator:
         if self.reload:
             return 'reload'
         if self.mode == 'continuous' and self.toolset_rev != 'unknown' and self.package:
-            rev = git(self.package, 'rev-parse', '--short', 'HEAD')
+            rev = git(self.package, 'rev-parse', '--short', self.update_revision())
             if rev and rev != self.package_rev:
                 return 'update'
         return ''
@@ -3456,11 +3461,12 @@ class Coordinator:
                                reload=True)
         if self.mode != 'continuous' or self.toolset_rev == 'unknown':
             return
-        rev = git(self.package, 'rev-parse', '--short', 'HEAD')
+        revision = self.update_revision()
+        rev = git(self.package, 'rev-parse', '--short', revision)
         if not rev or rev == self.package_rev:
             return
         try:
-            candidate = release.prepare(self.cfg['state_root'], self.package)
+            candidate = release.prepare(self.cfg['state_root'], self.package, revision=revision)
             rev = git(candidate, 'rev-parse', '--short', 'HEAD')
             shell = subprocess.run(['bash', '-n', str(candidate / 'scripts/pi-autowork.sh')], capture_output=True)
             for path in Layout.python_sources(candidate):
