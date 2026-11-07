@@ -68,6 +68,8 @@ states its own boundaries and what "done" means.
 - `/split-folder` — reorganize one folder without changing behavior.
 - `/git-commit-push` — commit, sync and push owned changes; `all` also settles finished
   worktrees into the base branch.
+- `/push` — commit all eligible changes, merge idle worktrees into `main`, sync upstream,
+  and push. Live or unfinished work stays untouched and is reported.
 
 **Improve the codebase**
 

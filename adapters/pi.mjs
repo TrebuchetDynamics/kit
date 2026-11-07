@@ -36,6 +36,7 @@ const workflows = {
   goal: ['goal', 'Keep one objective alive until evidence proves it done'],
   blockers: ['blockers', 'Answer what blocks the queue, one picked option at a time'],
   'git-commit-push': ['git-commit-push', 'Commit and push, or pull and merge, owned changes'],
+  push: ['push', 'Commit all, merge worktrees, sync and push main'],
 };
 
 /** Native Pi command adapter. No subprocess, permission changes or install hooks. */

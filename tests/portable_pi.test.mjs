@@ -7,7 +7,8 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 45);
+  assert.equal(commands.size, 46);
+  assert.equal(commands.has('push'), true);
   assert.equal(commands.has('apk-get'), true);
   assert.equal(commands.has('engineering'), false);
   assert.equal(commands.has('goal'), true);
@@ -72,7 +73,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
     impeccable: 'impeccable', 'ui-taste': 'ui-taste',
     'beautify-github-readme': 'beautify-github-readme', 'grill-me': 'plan-with-me',
     lgtm: 'lgtm', goal: 'goal', blockers: 'blockers',
-    'git-commit-push': 'git-commit-push',
+    'git-commit-push': 'git-commit-push', push: 'push',
     ponytail: 'ponytail', 'ponytail-review': 'ponytail-review', 'ponytail-audit': 'ponytail-audit',
     'ponytail-debt': 'ponytail-debt', 'ponytail-gain': 'ponytail-gain', 'ponytail-help': 'ponytail-help',
     'bug-harvest': 'bug-harvest', 'autonomous-codebase-improver': 'autonomous-codebase-improver',
@@ -88,6 +89,21 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
     await commands.get(name).handler('questions only', {isIdle: () => true});
     await assertWorkflow(skill);
   }
+});
+
+test('Push loads its repo-wide default and preserves narrower requests', async () => {
+  const commands = new Map();
+  const messages = [];
+  register({registerCommand: (name, handler) => commands.set(name, handler),
+    sendUserMessage: (...args) => messages.push(args)});
+  await commands.get('push').handler('', {isIdle: () => true});
+  assert.match(messages[0][0], /host-neutral Push workflow/);
+  assert.equal(messages[0][0].endsWith('User request (preserve scope and restrictions):\n'), true);
+  assert.equal(messages[0][1], undefined);
+  const restricted = 'dry run; no push; only docs/';
+  await commands.get('push').handler(restricted, {isIdle: () => false});
+  assert.equal(messages[1][0].endsWith(restricted), true);
+  assert.deepEqual(messages[1][1], {deliverAs: 'followUp'});
 });
 
 test('APK Get accepts a bare invocation without requiring an app path', async () => {
@@ -184,7 +200,7 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
-    assert.equal(skillCount, 32);
+    assert.equal(skillCount, 33);
     // Execute the packaged CommonJS helper under Autowork's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
@@ -201,7 +217,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 45);
+    assert.equal(commands.size, 46);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {
       assert.match(name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, name);
