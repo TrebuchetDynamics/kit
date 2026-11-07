@@ -11,10 +11,11 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
 
 `/unblock [runner|repo|all]` resolves blockers and delegated decisions so Autowork
-can continue without an interview. A bare invocation targets the current repository's
+can continue without an interview about routine engineering choices. A bare invocation targets the current repository's
 runner, not the skill directory. `all` targets registered runners with faults or
 blocked work; healthy runners are read-only. Named targets narrow this scope.
-Creating or editing this skill does not invoke recovery.
+Creating or editing this skill does not invoke recovery. State the target runners
+and expected task transitions first; recovering one repository is not fleet recovery.
 
 Invocation authorizes routine local repairs and supported service recovery for
 those targets, including reloading an active runner or restarting a failed runner
@@ -46,8 +47,13 @@ instead of offering a menu. Existing user restrictions and explicit pauses win.
    Use `autowork tasks` and its installed verb help for record edits. Return a resolved
    `Needs decision` task to `Now` or `Next` when its placement is authorized; preserve
    explicit deferrals, acceptance, exclusions, ownership and functional dependencies.
-   A technical failure needs a repair, not another approval. For an owner-only choice,
-   retain the exact question and missing authority or input. Never invent an
+   A technical failure needs a repair, not another approval. Trace owner-only labels
+   to the actual restriction: a generated question or `ownership = "owner"` is not
+   its provenance. Reconcile an existing grant only from attributable evidence of
+   its actor, date and exact scope; an ambiguous “yes” supplies no missing scope.
+   When owner input really is required, ask the smallest concrete question with a
+   recommendation and its effect on the queue. Batch independent required inputs;
+   “owner gates remain unchanged” is not a question. Never invent an
    `Owner decision:`, waiver or qualification; notes do not grant typed authority.
    Finish with a disposition for every inventoried decision, not only the displayed
    questions. In read-only mode, give the proposed dispositions without saving them.
@@ -69,7 +75,11 @@ instead of offering a menu. Existing user restrictions and explicit pauses win.
    `autowork tasks why ID REPO` alone does not prove runtime admission. Follow a consumed
    answer through to execution or its next evidenced wait. Separate saved, committed,
    consumed and executing changes; do not claim success from a reload or a vanished
-   question. On failure, inspect the new evidence and change approach; do not loop unchanged retries,
+   question. A known pending sync, check or activation is unfinished recovery: use
+   its completion signal or a bounded wait, then inspect consumption. If the bound
+   expires, report the concrete operation and why it prevents verification; do not
+   substitute a planning closure or another actor's unrelated progress for this proof.
+   On failure, inspect the new evidence and change approach; do not loop unchanged retries,
    erase attempt history or reset retry limits. Reconcile all inventoried causes before
    stopping, including independent work behind an owner-only gate. Do not create backlog work
    merely to make an idle runner busy.
@@ -110,11 +120,15 @@ publication, installation and live acceptance are separate outcomes.
 - Use `/push` only under separate publication authority. A recovery skill cannot
   promise perpetual operation or task completion after the current session ends.
 
-**Done when:** every inventoried blocker and decision is resolved with observed
-continuation, or has an evidenced wait, external gate or ownership limit, and each
-target's remaining queue is accounted for.
+**Done when:** each target has an observed outcome and its whole queue is accounted
+for. Report **Recovered** only for work that consumed the repair and continued;
+**Idle** only for a confirmed queue with no outstanding work; otherwise report
+**Blocked**, with the exact unanswered input, active owner or unfinished operation.
+Mixed results stay per-target. If no task resumed, say “No work resumed.” A changed
+label, a saved decision, a planning closure or an evidenced wait is not recovery.
 
-**Receipt:** targets; decisions resolved and blockers repaired; checks and commits;
-before/after service, release and task states; installed changes; unresolved task IDs
-with exact gates, responsible actors and next actions. Label unobserved transitions
-as pending. Attribute progress by another session or the runner to that actor.
+**Receipt:** outcome per target; actual task transitions; repairs, checks and commits;
+before/after service and running release; installed changes; unresolved task IDs and
+the concrete question or completion event needed. Attribute progress by another
+session or the runner to that actor. Keep unanswered gates visible, not in a success
+summary.

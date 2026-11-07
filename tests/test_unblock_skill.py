@@ -19,6 +19,15 @@ class UnblockSkillTests(unittest.TestCase):
         for forbidden in ('assume all owner approvals', 'clear every hold', 'disable required checks'):
             self.assertNotIn(forbidden, text)
 
+    def test_waits_are_blocked_outcomes_not_successful_recovery(self):
+        text = (ROOT / 'skills/unblock/SKILL.md').read_text()
+        for contract in ('**Recovered** only', '**Idle** only', '**Blocked**',
+                         'No work resumed.', 'smallest concrete question',
+                         'unfinished recovery', 'then inspect consumption',
+                         'a planning closure or an evidenced wait is not recovery'):
+            self.assertIn(contract, text)
+        self.assertNotIn('or has an evidenced wait, external gate or ownership limit', text)
+
     def test_service_branch_preserves_pauses_jobs_and_interruption_authority(self):
         text = (ROOT / 'skills/unblock/references/services.md').read_text()
         for contract in ('deliberate-stop', 'pending service jobs',

@@ -2366,9 +2366,10 @@ fcntl.flock = observed_flock
         health.update(self.state, retained)
         failed = dict(outcome='ERROR', reason='writer lock held')
         empty = dict(outcome='PARALLEL_STATUS', tasks=[])
+        inventory_failed = dict(empty, task_source=dict(revision='missing-inventory-ref'))
         for mode in ('continuous', 'until-empty', 'once'):
             runner.mode, runner.once_task = mode, None
-            for answer in (failed, empty):
+            for answer in (failed, empty, inventory_failed):
                 with self.subTest(mode=mode, failed=answer is failed), \
                         mock.patch.object(runner, 'status', return_value=answer), \
                         mock.patch.object(runner, 'settle'), mock.patch.object(runner, 'handle_requests'), \
@@ -2387,12 +2388,25 @@ fcntl.flock = observed_flock
                         self.assertNotIn('Queue empty', text)
                         self.assertIn('Task state unavailable', text)
                         self.assertIn('writer lock held', text)
+                    elif answer is inventory_failed:
+                        self.assertNotIn('Queue empty', text)
+                        self.assertIn('Task inventory unavailable', text)
                     else:
                         self.assertIn('Queue empty', text)
                     self.assertEqual(pause.call_args_list, [mock.call(300)] if mode == 'continuous' else [])
                     engine.assert_not_called()
                     self.assertIsNone(runner.integ)
         self.assertEqual(self.runs(), [])
+
+    def test_needs_decision_tasks_are_not_reported_as_an_empty_queue(self):
+        self.write_todo(self.scenario.replace('## Next', '## Needs decision'))
+        self.git(self.repo, 'commit', '-qam', 'all tasks need a decision')
+        result = self.run_runner('--until-empty')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('No runnable tasks: 3 in Needs decision', result.stdout)
+        self.assertNotIn('Queue empty', result.stdout)
+        self.assertEqual(self.runs(), [])
+        self.assertFalse(self.done('A', 'B', 'C'))
 
     def test_blocked_tasks_are_not_reported_as_an_empty_queue(self):
         """IDLE with tasks waiting is not an empty queue. A held task (A) is never dispatched
