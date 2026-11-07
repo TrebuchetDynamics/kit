@@ -125,17 +125,18 @@ describe('read admission', () => {
       } finally { await p.close(); time.mockRestore(); }
     }
   });
-  it('waits for a slot without retrying commands or increasing concurrency', async () => {
+  it('admits queued reads once in FIFO order while mutations stay fail-fast', async () => {
     const f = await fixture(); const p = new ProcessRunner(f.exe, { concurrency: 1 });
     await p.run(['literal', 'seed']);
     const first = p.run(['hang'], { timeoutMs: 100 }).catch(error => error);
     try {
-      const next = p.run(['literal', 'queued-read'], { waitForSlotMs: 1000 });
+      const reads = ['queued-read-1', 'queued-read-2', 'queued-read-3'];
+      const next = reads.map(read => p.run(['literal', read], { waitForSlotMs: 5000 }));
       await expect(p.run(['literal', 'mutation'])).rejects.toMatchObject({ code: 'BUSY', started: false });
-      await next;
+      await Promise.all(next);
       expect(await first).toMatchObject({ code: 'TIMEOUT' });
       const calls = (await readFile(f.log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
-      expect(calls.filter(args => args[1] === 'queued-read')).toHaveLength(1);
+      expect(calls.filter(args => args[1]?.startsWith('queued-read-')).map(args => args[1])).toEqual(reads);
       expect(calls.some(args => args[1] === 'mutation')).toBe(false);
     } finally { await p.close(); }
   });
