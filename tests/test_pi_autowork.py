@@ -2620,30 +2620,106 @@ fcntl.flock = observed_flock
 
     def test_a_stalled_service_says_so_once_and_the_fleet_view_shows_why(self):
         """2026-10-16: four services sat idle for seven hours and only logged a poll line."""
-        self.plan({'worker:A': ['blocked']})  # C depends on A: nothing can run once B is done
+        self.check_blocked_service(owner_only=False)
+
+    def test_an_owner_only_service_wait_stays_visible_without_stalling(self):
+        self.check_blocked_service(owner_only=True)
+
+    def check_blocked_service(self, *, owner_only):
+        from pi_autowork import health
+
+        # Use real failed reviews for an engineering hold, not the device fixture's owner question.
+        plan = {'worker:A': ['blocked']} if owner_only else {'verify:A': ['fail', 'fail', 'fail']}
+        self.plan({**plan, 'worker:B': ['released']})
+        cause = 'blocker' if owner_only else 'reviewed_twice'
+        state = 'waiting on you' if owner_only else 'stalled'
+        description = ('held for a person: its worker reported a blocker' if owner_only
+                       else 'engineering hold: reviewed_twice')
+        root_label = f'A ({description}, holds 1)'
         env = {**self.env, 'PI_AUTOWORK_STALL_AFTER': '2'}
-        runner = subprocess.Popen(['bash', str(RUNNER), '--interval', '1'], cwd=self.repo, env=env,
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         log = lambda: ''.join(p.read_text() for p in self.state.glob('*/runner.log'))
         deadline = time.monotonic() + 60
-        while 'STALLED' not in log():
-            self.assertLess(time.monotonic(), deadline, log())
-            time.sleep(0.2)
-        time.sleep(4)  # several more cycles: still announced only once
-        self.assertEqual(log().count('STALLED'), 1, log())
-        self.assertIn('Root blockers: A (held for a person: its worker reported a blocker, holds 1)', log())
-        fleet = subprocess.run(['bash', str(RUNNER), '--fleet'], cwd=self.root, env=self.env,
-                               capture_output=True, text=True, timeout=60)
-        self.assertEqual(fleet.returncode, 0, fleet.stderr)
-        self.assertIn(f'{self.repo.name}', fleet.stdout)
-        # A held task is stopped by a blocker, not a waiting task (TOOLSET-351/352): the
-        # fleet counts it separately and says what holds it.
-        self.assertIn('stalled for 0 min; 0 running, 0 waiting, 1 stopped by a blocker', fleet.stdout)
-        self.assertIn('    blocked by A (held for a person: its worker reported a blocker, holds 1)', fleet.stdout)
-        status = self.run_runner('--status')
-        self.assertIn('Health:     stalled since', status.stdout)
-        runner.send_signal(signal.SIGINT)
-        runner.communicate(timeout=60)
+        identity = self.root / 'runner-process.json'
+        output_path = self.root / 'runner-output'
+        # Reuse the subreaper guard: no undrained pipes, and cleanup also runs on assertion failure.
+        with output_path.open('w') as output:
+            runner = subprocess.Popen(
+                [sys.executable, str(ROOT / 'pi-autowork/pi_autowork/pi_process.py'),
+                 '--identity', str(identity), '--deadline', '120', '--',
+                 'bash', str(RUNNER), '--interval', '1'],
+                cwd=self.repo, env=env, stdout=output, stderr=subprocess.STDOUT)
+
+            def observe(predicate):
+                while True:
+                    paths = list(self.state.glob('*/status.json'))
+                    snapshot = json.loads(paths[0].read_text()) if paths else {}
+                    details = f'{snapshot}\n{log()}\n{output_path.read_text()}'
+                    self.assertIsNone(runner.poll(), details)
+                    self.assertLess(time.monotonic(), deadline, details)
+                    if predicate(snapshot):
+                        return snapshot
+                    time.sleep(0.1)
+
+            def assert_attribution(snapshot):
+                root, = snapshot['roots']
+                self.assertEqual((root['id'], root['kind'], root['cause'], root['tasks'], root['blocks']),
+                                 ('A', 'held', cause, ['C'], 1))
+                self.assertEqual((snapshot['active_workers'], snapshot['waiting'], snapshot['stopped']), (0, 0, 1))
+                self.assertEqual(snapshot['stopped_groups'],
+                                 [dict(label=f'A ({description})', count=1, tasks=['C'])])
+                self.assertEqual(snapshot['stall_roots'], [] if owner_only else ['A'])
+
+            try:
+                observe(lambda s: any(h['task'] == 'A' and h['cause'] == cause for h in s.get('held', []))
+                        and (self.root / 'ready-B').exists())
+                (self.root / 'release-B').touch()  # B can finish even while A holds dependent C.
+                snapshot = observe(lambda s: s.get('state') == state and self.done('B')
+                                   and (owner_only or 'STALLED' in log()))
+                if not owner_only:
+                    self.assertGreaterEqual(snapshot['updated_at'] - snapshot['since'], 2)
+                assert_attribution(snapshot)
+                for _ in range(3):  # observe later interval-spaced updates, not a fixed sleep
+                    previous = snapshot['updated_at']
+                    snapshot = observe(lambda s: s.get('updated_at', 0) >= previous + 1)
+                    self.assertEqual(snapshot['state'], state, snapshot)
+                    assert_attribution(snapshot)
+                    self.assertEqual(log().count('STALLED'), 0 if owner_only else 1, log())
+                self.assertGreaterEqual(snapshot['updated_at'] - snapshot['since'], 2)
+                self.assertNotIn('C', [r['task'] for r in self.runs('worker')])
+                self.assertFalse(self.done('A'))
+                if owner_only:
+                    self.assertIn('A: its blocker needs the owner: A person must attach the device.', log())
+                    self.assertIn('needs a device', snapshot['roots'][0]['reason'])
+                    self.assertIn('### Q-A', (self.repo / 'BLOCKERS.md').read_text())
+                else:
+                    self.assertIn('Root blockers: ' + root_label, log())
+                    self.assertIn('PI_AUTOWORK_VERIFY: fail acceptance not met', snapshot['roots'][0]['reason'])
+                fleet = self.run_runner('--fleet', cwd=self.root, timeout=60)
+                self.assertEqual(fleet.returncode, 0, fleet.stderr)
+                self.assertIn(self.repo.name, fleet.stdout)
+                self.assertRegex(fleet.stdout, re.escape(state) + r' for \d+ min; '
+                                 r'0 running, 0 waiting, 1 stopped by a blocker')
+                # The text fleet summarizes counts; its structured reader retains both kinds of root.
+                row, = health.fleet(self.state)
+                self.assertEqual(row['roots'], snapshot['roots'])
+                self.assertEqual(row['stopped_groups'], snapshot['stopped_groups'])
+                status = self.run_runner('--status')
+                self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+                self.assertIn(f'Health:     {state} since', status.stdout)
+                self.assertRegex(status.stdout, r'A\s+failed\s+' + re.escape(snapshot['roots'][0]['reason']))
+                self.assertRegex(status.stdout, r'C\s+pending\s+dependency: A')
+            finally:
+                (self.root / 'release-B').touch()
+                if runner.poll() is None:
+                    runner.terminate()
+                try:
+                    runner.wait(timeout=10)
+                finally:
+                    if runner.poll() is None:
+                        runner.kill()
+                        runner.wait()
+                self.assertTrue(identity.is_file(), output_path.read_text())
+                self.assertTrue(json.loads(identity.read_text())['cleanup_complete'], output_path.read_text())
 
     def with_waiting_decision(self):
         """Z waits in Needs decision, so the goal keeps an open task after A, B and C close."""
