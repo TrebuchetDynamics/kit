@@ -46,10 +46,11 @@ fn bootstrap_without_pi() {
     let capabilities = output_json(&["capabilities"]);
     assert_eq!(capabilities["commands"]["version"], "available");
     assert_eq!(capabilities["commands"]["capabilities"], "available");
-    assert_eq!(capabilities["model_execution"], "unavailable");
+    assert_eq!(capabilities["model_execution"], "explicit-owned-route");
     assert_eq!(capabilities["installed_runner"], "unchanged");
+    assert_eq!(capabilities["commands"]["run"], "unavailable");
+    assert_eq!(capabilities["commands"]["internal-agent"], "owned-only");
     for command in ["run", "internal-agent"] {
-        assert_eq!(capabilities["commands"][command], "unavailable");
         assert!(!cli(&[command]).status.success());
     }
     assert_eq!(capabilities["unknown_commands"], "unsupported");

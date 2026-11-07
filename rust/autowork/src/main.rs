@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::{self, BufRead, Read};
 use std::process::ExitCode;
 
 use autowork_next::{CONTRACT_VERSION, ENGINE, ENGINE_REVISION, runtime};
@@ -63,7 +63,7 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     "version": "available",
                     "capabilities": "available",
                     "run": "unavailable",
-                    "internal-agent": "unavailable"
+                    "internal-agent": "owned-only"
                 },
                 "unknown_commands": "unsupported",
                 "contracts": {
@@ -74,17 +74,20 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     "max_request_bytes": runtime::MAX_REQUEST_BYTES,
                     "max_event_bytes": runtime::MAX_EVENT_BYTES
                 },
-                "model_execution": "unavailable",
+                "model_execution": "explicit-owned-route",
                 "installed_runner": "unchanged"
             })
         ),
         Command::Run => return Err(autowork_next::Unavailable("run").into()),
         Command::InternalAgent => {
             let mut bytes = Vec::new();
-            io::stdin()
-                .lock()
-                .take(runtime::MAX_REQUEST_BYTES as u64 + 1)
-                .read_to_end(&mut bytes)?;
+            // One bounded JSON line, then stdin remains the owned cancellation pipe.
+            io::BufReader::new(
+                io::stdin()
+                    .lock()
+                    .take(runtime::MAX_REQUEST_BYTES as u64 + 1),
+            )
+            .read_until(b'\n', &mut bytes)?;
             if bytes.len() > runtime::MAX_REQUEST_BYTES {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -92,7 +95,8 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .into());
             }
-            let request: runtime::AgentRequest = serde_json::from_slice(&bytes)?;
+            let request: runtime::AgentRequest = serde_json::from_slice(&bytes)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid agent request"))?;
             if request.schema_version != CONTRACT_VERSION {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -100,8 +104,8 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .into());
             }
-            let result = runtime::serve_owned_agent(request).await?;
-            println!("{}", serde_json::to_string(&result)?);
+            // The child emits normalized RuntimeEvent JSONL, not native reply channels.
+            let _ = runtime::serve_owned_agent(request).await?;
         }
     }
     Ok(())
