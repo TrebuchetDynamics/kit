@@ -1,5 +1,8 @@
 """Keyboard, click and compact-dialog contracts; no live services or devices."""
+import argparse
 import asyncio
+import os
+import tempfile
 from pathlib import Path
 import shutil
 import subprocess
@@ -209,13 +212,95 @@ async def controls_pilot(case):
             fixture.doCleanups()
 
 
+async def play_pilot():
+    from pi_autowork import command, tui
+    fixture = test_task_history.TaskHistoryTests()
+    fixture.setUp()
+    try:
+        fixture.git('branch', '-M', 'main')
+        fixture.git('checkout', '-q', '--detach')
+        before = fixture.git('show-ref', '--heads'), fixture.git('rev-parse', 'HEAD')
+        calls, installs = [], []
+        real_run = subprocess.run
+        with tempfile.TemporaryDirectory() as runtime:
+            paths = dict(env_dir=runtime, state_root=runtime, unit=Path(runtime) / 'unit', systemctl='unused')
+            def effects(argv, **kwargs):
+                if argv[0] == 'git':
+                    return real_run(argv, **kwargs)
+                assert argv == ['bash', 'fixture-installer', '--install-service', '--repo', str(fixture.repo)], argv
+                installs.append(argv)
+                return subprocess.CompletedProcess(argv, 0)
+            def run(argv, **kwargs):
+                assert argv == ['fixture-autowork', 'start', str(fixture.repo)], argv
+                calls.append(argv)
+                with patch.object(command, 'systemctl', return_value=subprocess.CompletedProcess([], 1)), \
+                     patch.object(command, 'package_script', return_value='fixture-installer'), \
+                     patch.object(command.subprocess, 'run', side_effect=effects):
+                    code = command.cmd_start(argparse.Namespace(target=str(fixture.repo)), paths)
+                return subprocess.CompletedProcess(argv, code, '', '')
+            app = tui.FleetApp(command='fixture-autowork', script='unused', state_root=runtime, env_dir=runtime,
+                               browse_root=str(fixture.repo), runner_cmd=run)
+            envelope = fleet_view.FleetSnapshot((), (), 1, time.time())
+            with patch.object(fleet_view, 'collect_for_tui', return_value=envelope), \
+                 patch.dict(os.environ, PI_AUTOWORK_STATE_DIR=runtime):
+                async with run_pilot(app, size=(80, 24)) as pilot:
+                    await settle(app, pilot)
+                    app.action_browse()
+                    await settle(app, pilot)
+                    browser = app.screen
+                    browser.show_repository(fixture.repo)
+                    await settle(app, pilot)
+                    assert browser.chosen.start_branch == 'main' and not browser.chosen.ready
+                    assert fixture.git('show-ref', '--heads') == before[0]
+                    app.view_only = True
+                    await pilot.press('p')
+                    await settle(app, pilot)
+                    assert app.screen is browser and not calls
+                    app.view_only = False
+                    await pilot.press('p')
+                    await settle(app, pilot)
+                    assert isinstance(app.screen, tui.Confirm), type(app.screen)
+                    assert 'switch' in app.screen.question and 'local main' in app.screen.question
+                    await pilot.press('n')
+                    await settle(app, pilot)
+                    assert app.screen is browser and not calls
+                    # Selection changed while confirmation was open: do not reselect or start it.
+                    await pilot.press('p')
+                    await settle(app, pilot)
+                    browser.chosen_path = runtime
+                    await pilot.press('y')
+                    await settle(app, pilot)
+                    assert app.screen is browser and not calls
+                    browser.show_repository(fixture.repo)
+                    await settle(app, pilot)
+                    assert fixture.git('show-ref', '--heads') == before[0]
+                    assert fixture.git('rev-parse', 'HEAD') == before[1]
+                    assert real_run(['git', '-C', str(fixture.repo), 'symbolic-ref', '-q', 'HEAD']).returncode == 1
+                    await pilot.press('p')
+                    await settle(app, pilot)
+                    await pilot.press('y')
+                    await settle(app, pilot)
+                    for worker in list(app.workers):
+                        if worker.group == 'actions':
+                            await worker.wait()
+                    await settle(app, pilot)
+                    assert len(calls) == len(installs) == 1, (calls, installs)
+                    assert fixture.git('symbolic-ref', '--short', 'HEAD') == 'main'
+                    assert fixture.git('show-ref', '--heads') == before[0]
+        print('PASS play: composed Browse confirmation -> cmd_start, no live service')
+    finally:
+        fixture.doCleanups()
+
+
 class TuiControlsTests(unittest.TestCase):
     def run_case(self, case):
         if not shutil.which('uv'):
+            if case == 'play':
+                self.fail('Play acceptance requires uv and the pinned Textual cache')
             self.skipTest('uv is needed for pinned Textual')
         result = subprocess.run(['uv', 'run', '--offline', '--quiet', '--no-project', '--with', 'textual==8.2.8',
                                  'python', __file__, '--pilot', case], capture_output=True, text=True, timeout=90)
-        if textual_unavailable(result):
+        if textual_unavailable(result) and case != 'play':
             self.skipTest('textual==8.2.8 is not in the offline cache')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -231,9 +316,12 @@ class TuiControlsTests(unittest.TestCase):
     def test_the_blockers_report_routes_to_the_decision_form(self):
         self.run_case('blockers')
 
+    def test_play_routes_safe_branch_switch(self):
+        self.run_case('play')
+
 
 if __name__ == '__main__':
     if '--pilot' in sys.argv:
-        asyncio.run(controls_pilot(sys.argv[-1]))
+        asyncio.run(play_pilot() if sys.argv[-1] == 'play' else controls_pilot(sys.argv[-1]))
     else:
         unittest.main()

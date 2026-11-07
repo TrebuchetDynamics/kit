@@ -1811,6 +1811,7 @@ class Readiness:
     ready: bool = False
     problems: list = field(default_factory=list)
     branch: str = ''
+    start_branch: str = ''    # explicit Start may select this branch; inspection never switches
 
     @property
     def mark(self):
@@ -1829,6 +1830,14 @@ def uncommitted_planning(repo, base, required=REQUIRED):
     return [name for name in required if subprocess.run(
         ['git', '-C', str(repo), 'cat-file', '-e', f'{base}:{name}'],
         capture_output=True, timeout=10).returncode]
+
+
+def local_start_branch(repo):
+    """Existing local main, else master; never a remote or a newly created branch."""
+    for branch in ('main', 'master'):
+        if task_prepare._git(repo, 'rev-parse', '--verify', '-q', f'refs/heads/{branch}'):
+            return branch
+    return ''
 
 
 def readiness(path):
@@ -1866,6 +1875,13 @@ def readiness(path):
                 'READY', 'ACTIVATION_PENDING'):
             out.problems.append('task store preparation: ' + report.get('outcome', 'INVALID_STORE'))
     out.ready = not out.problems
+    if out.problems in (['main checked out'], ['a branch (HEAD is detached)']):
+        target = local_start_branch(out.repo)
+        if target and not uncommitted_planning(out.repo, target):
+            report = task_prepare.prepare(out.repo, mode='check')
+            if report.get('ok') and report.get('state') == 'converted' and report.get('outcome') in (
+                    'READY', 'ACTIVATION_PENDING'):
+                out.start_branch = target
     return out
 
 
@@ -1886,7 +1902,8 @@ def how_to_fix(ready):
         elif problem.startswith('commit tasks/ on '):
             hints.append(problem)
         elif problem.startswith('main checked out') or problem.startswith('a branch'):
-            hints.append(f'Check out main in {ready.repo}: the runner works only from the main branch checkout.')
+            hints.append(f'Explicit Play/start can safely select local {ready.start_branch or "main (or master)"} '
+                         f'in {ready.repo}; otherwise check it out manually. Inspection never switches branches.')
         elif problem.startswith('its repository root'):
             hints.append(f'Choose the repository root {ready.repo} instead of a subdirectory.')
     return hints

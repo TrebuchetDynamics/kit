@@ -265,6 +265,193 @@ class AutoworkCommandTests(unittest.TestCase):
                 self.assertNotIn('Traceback', result.stderr)
         self.assertEqual(self.calls(), [])
 
+    def git(self, repo, *args):
+        return subprocess.check_output(['git', '--no-optional-locks', '-C', str(repo),
+                                        '-c', 'user.name=T', '-c', 'user.email=t@example.invalid',
+                                        *args], text=True).strip()
+
+    def submodule(self, parent, name):
+        source = self.make_repo(name)
+        self.git(parent, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', str(source), 'child')
+        self.git(parent, 'commit', '-qam', 'submodule')
+        return parent / 'child'
+
+    def test_start_safely_selects_local_main(self):
+        for case in ('detached', 'ancestor', 'feature', 'main', 'master', 'fallback', 'prefer-main', 'submodule'):
+            with self.subTest(case=case):
+                repo = self.make_repo(case)
+                parent = None
+                if case == 'submodule':
+                    parent = repo
+                    repo = self.submodule(parent, 'module-source')
+                    parent_index = self.git(parent, 'ls-files', '--stage')
+                original = self.git(repo, 'rev-parse', 'HEAD')
+                target = 'master' if case in ('master', 'fallback') else 'main'
+                if case in ('master', 'fallback'):
+                    self.git(repo, 'branch', '-m', 'master')
+                if case == 'master':  # keep already-master, even when main also exists
+                    self.git(repo, 'branch', 'main')
+                if case == 'prefer-main':
+                    self.git(repo, 'branch', 'master')
+                if case == 'ancestor':
+                    self.git(repo, 'commit', '--allow-empty', '-qm', 'target advance')
+                if case in ('detached', 'ancestor', 'submodule'):
+                    self.git(repo, 'checkout', '-q', '--detach', original)
+                elif case in ('feature', 'fallback', 'prefer-main'):
+                    self.git(repo, 'checkout', '-qb', 'feature')
+                    self.git(repo, 'commit', '--allow-empty', '-qm', 'keep feature-only commit')
+                refs = self.git(repo, 'show-ref', '--heads')
+                revision = self.git(repo, 'rev-parse', target)
+                result = self.aw('start', str(repo))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.git(repo, 'symbolic-ref', '--short', 'HEAD'), target)
+                self.assertEqual(self.git(repo, 'rev-parse', 'HEAD'), revision)
+                self.assertEqual(self.git(repo, 'show-ref', '--heads'), refs)
+                self.assertEqual(self.git(repo, 'status', '--porcelain'), '')
+                if parent:
+                    self.assertEqual(self.git(parent, 'ls-files', '--stage'), parent_index)
+
+    def test_start_preserves_unsafe_checkout(self):
+        from pi_autowork import command, task_migrate
+        from unittest.mock import patch
+        import argparse
+        import fcntl
+
+        cases = {
+            'tracked': 'changes', 'index': 'changes', 'untracked': 'changes', 'submodule': 'changes',
+            'operation': 'MERGE_HEAD', 'rebase': 'rebase-merge', 'detached-only': 'detached-only',
+            'missing-target': 'no existing local', 'worktree': 'another worktree',
+            'locked-worktree': 'another worktree', 'runner': 'active runner', 'service': 'active runner',
+            'lease': 'live sequential', 'writer': 'writer lock', 'task-writer': 'autowork-tasks.lock',
+            'ignored': 'switch failed',
+            'drift': 'inputs changed', 'switch-failed': 'switch failed',
+        }
+        for case, diagnostic in cases.items():
+            with self.subTest(case=case):
+                repo = self.make_repo('unsafe-' + case)
+                if case == 'submodule':
+                    child = self.submodule(repo, 'dirty-source')
+                    (child / 'new').write_text('keep child work')
+                if case == 'ignored':
+                    (repo / '.gitignore').write_text('collision\n')
+                    self.git(repo, 'add', '.gitignore')
+                    self.git(repo, 'commit', '-qm', 'ignore')
+                    self.git(repo, 'branch', 'feature')
+                    (repo / 'collision').write_text('target bytes')
+                    self.git(repo, 'add', '-f', 'collision')
+                    self.git(repo, 'commit', '-qm', 'target file')
+                    self.git(repo, 'checkout', '-q', 'feature')
+                    (repo / 'collision').write_text('precious ignored bytes')
+                else:
+                    self.git(repo, 'checkout', '-qb', 'feature')
+                if case in ('tracked', 'index'):
+                    (repo / 'tasks/goals/G.md').write_text(GOAL + '\nkeep edits\n')
+                    if case == 'index':
+                        self.git(repo, 'add', '.')
+                if case == 'untracked':
+                    (repo / 'new').write_text('keep untracked bytes')
+                if case in ('operation', 'rebase'):
+                    operation = repo / '.git' / ('MERGE_HEAD' if case == 'operation' else 'rebase-merge')
+                    operation.write_text(self.git(repo, 'rev-parse', 'HEAD')) if case == 'operation' else operation.mkdir()
+                if case == 'detached-only':
+                    self.git(repo, 'commit', '--allow-empty', '-qm', 'unique detached work')
+                    self.git(repo, 'checkout', '-q', '--detach')
+                if case == 'drift':
+                    self.git(repo, 'commit', '--allow-empty', '-qm', 'feature work')
+                if case == 'missing-target':
+                    self.git(repo, 'branch', '-D', 'main')
+                if case in ('worktree', 'locked-worktree'):
+                    other = self.base / (case + '-held')
+                    self.git(repo, 'worktree', 'add', '-q', str(other), 'main')
+                    if case == 'locked-worktree':
+                        self.git(repo, 'worktree', 'lock', str(other))
+                name = fleet_view.instance(repo)
+                if case == 'runner':
+                    folder = self.state / name
+                    folder.mkdir()
+                    (folder / 'runner.json').write_text(json.dumps(
+                        dict(repo=str(repo), pid=os.getpid(), start_time=start_time(os.getpid()))))
+                if case == 'service':
+                    (self.units / f'pi-autowork@{name}.service.active').touch()
+                lock_handle = task_lock = None
+                if case == 'task-writer':
+                    task_lock = command.task_commands.locked(repo)
+                    task_lock.__enter__()  # the supported task editor may have read this branch's store already
+                if case in ('lease', 'writer'):
+                    common = repo / '.git/autowork-execution'
+                    common.mkdir()
+                    if case == 'lease':
+                        from pi_autowork.engine import task_execution
+                        (common / 'active.json').write_text(json.dumps(
+                            dict(owner=task_execution.identity(os.getpid()), task_id='T-1')))
+                    else:
+                        lock_handle = (common / 'writer.lock').open('w')
+                        fcntl.flock(lock_handle, fcntl.LOCK_EX)
+                markers = [self.env_dir / f'{name}.paused', command.service.stop_marker(self.env_dir / f'{name}.env')]
+                for marker in markers:
+                    marker.write_text('preserve marker')
+                def snapshot():
+                    return (self.git(repo, 'rev-parse', 'HEAD'), self.git(repo, 'show-ref', '--heads'),
+                            self.git(repo, 'ls-files', '--stage'), (repo / '.git/index').read_bytes(),
+                            {str(p.relative_to(repo)): p.read_bytes() for p in repo.rglob('*')
+                             if p.is_file() and '.git' not in p.relative_to(repo).parts})
+                before = snapshot()
+                self.log.write_text('')
+                try:
+                    if case in ('drift', 'switch-failed'):
+                        original = command._start_checkout_snapshot
+                        reads = []
+                        def drifting(*args):
+                            nonlocal before
+                            value = original(*args)
+                            if not reads:
+                                self.git(repo, 'update-ref', 'refs/heads/main', value[1])
+                                before = snapshot()  # retain the external writer's ref change, not our stale inputs
+                            reads.append(value)
+                            return value
+                        git = task_migrate._git
+                        def failing(repo, *args, **kwargs):
+                            if args[0] == 'switch':
+                                raise task_migrate.Refused('git switch failed: fixture refusal')
+                            return git(repo, *args, **kwargs)
+                        with patch.dict(os.environ, self.env, clear=True), \
+                             patch.object(command, '_start_checkout_snapshot', drifting if case == 'drift' else original), \
+                             patch.object(task_migrate, '_git', failing if case == 'switch-failed' else git):
+                            with self.assertRaises(command.Fail) as caught:
+                                command.cmd_start(argparse.Namespace(target=str(repo)), command.env_paths(self.env))
+                            message = str(caught.exception)
+                    else:
+                        result = self.aw('start', str(repo))
+                        self.assertNotEqual(result.returncode, 0, result.stdout)
+                        message = result.stderr
+                    self.assertIn(diagnostic, message)
+                    self.assertEqual(snapshot(), before)
+                    self.assertTrue(all(p.read_text() == 'preserve marker' for p in markers))
+                    self.assertFalse(any(c.startswith('script') or 'enable' in c or 'restart' in c for c in self.calls()))
+                finally:
+                    if lock_handle:
+                        lock_handle.close()
+                    if task_lock:
+                        task_lock.__exit__(None, None, None)
+
+    def test_start_rechecks_selected_tree_without_rolling_back(self):
+        # Feature is prepared, but main's committed store is invalid.
+        self.git(self.repo, 'branch', 'feature')
+        (self.repo / 'tasks/goals/G.md').write_text('invalid store')
+        self.git(self.repo, 'commit', '-qam', 'invalid main store')
+        self.git(self.repo, 'checkout', '-q', 'feature')
+        from pi_autowork import service
+        markers = [self.env_dir / 'india.paused', service.stop_marker(self.env_dir / 'india.env')]
+        for marker in markers:
+            marker.write_text('preserve marker')
+        result = self.aw('start', str(self.repo))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(all(p.read_text() == 'preserve marker' for p in markers))
+        self.assertIn('Switched', result.stdout)
+        self.assertIn('task store preparation', result.stderr)
+        self.assertEqual(self.git(self.repo, 'symbolic-ref', '--short', 'HEAD'), 'main')
+        self.assertEqual(self.calls(), [c for c in self.calls() if not c.startswith('script')])
+
     def test_start_installs_once_then_only_starts(self):
         first = self.aw('start', cwd=self.repo)
         self.assertEqual(first.returncode, 0, first.stderr)
@@ -511,7 +698,7 @@ class AutoworkCommandTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('commit tasks/ on main first', result.stderr)
         subprocess.run(['git', '-C', str(self.repo), 'checkout', '-q', '-b', 'feature'], check=True)
-        self.assertIn('main checked out', self.aw('start', str(self.repo)).stderr)
+        self.assertIn('changes', self.aw('start', str(self.repo)).stderr)
         self.assertIn('not ready', self.aw('start', str(self.base)).stderr)
         self.assertEqual(self.calls(), [c for c in self.calls() if not c.startswith('script')])
 

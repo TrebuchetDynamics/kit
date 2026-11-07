@@ -804,7 +804,11 @@ class FleetViewTests(unittest.TestCase):
         (repo / 'sub').mkdir()
         self.assertIn(f'its repository root ({repo})', fleet_view.readiness(repo / 'sub').problems)
         subprocess.run(['git', '-C', str(repo), 'checkout', '-q', '-b', 'feature'], check=True)
-        self.assertEqual(fleet_view.readiness(repo).problems, ['main checked out'])
+        ready = fleet_view.readiness(repo)
+        self.assertEqual(ready.problems, ['main checked out'])
+        self.assertEqual(ready.start_branch, 'main')
+        self.assertEqual(subprocess.check_output(['git', '-C', str(repo), 'branch', '--show-current'],
+                                                text=True).strip(), 'feature', 'inspection must not switch')
         self.assertEqual(fleet_view.readiness(self.base).mark, 'not a repository')
         subprocess.run(['git', '-C', str(repo), 'checkout', '-q', 'main'], check=True)
         (repo / 'tasks/items/T-1.md').write_text('not a task record\n')
