@@ -15,6 +15,7 @@ const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 export const questionSchema = z.object({
   id: idSchema, effort: z.string(), unblocks: z.number().int().nonnegative(),
   needs: z.string(), answer: z.string().default(''), kind: z.string().default(''),
+  task: z.string().optional(), // Canonical task label, not an owner-supplied answer.
 });
 export const laneSchema = z.object({ task: z.string(), phase: z.string(), detail: z.string().default(''),
   attempt: z.number().default(1), minutes: z.number().nullable().optional(),

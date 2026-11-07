@@ -19,6 +19,8 @@ OWNERS = {
 }
 
 
+OWNERS = {('scripts/' + entry if entry != '__init__.py' else entry): owner
+          for entry, owner in OWNERS.items()}
 SUBFOLDER = {'autoresearch_commands.py': 'commands', 'workflow_commands.py': 'commands'}
 
 
@@ -52,7 +54,7 @@ for entry, (owner, function) in {OWNERS!r}.items():
     func = getattr(module, function)
     assert func.__globals__ is module.__dict__ and func.__module__ == spec.name
     # Remote command modules live in their own subfolder; the rest stay at the root.
-    source = root / 'Src/autowork_runtime' / {SUBFOLDER!r}.get(owner, '') / owner
+    source = root / 'src/autowork_runtime' / {SUBFOLDER!r}.get(owner, '') / owner
     assert func.__code__.co_filename == str(source), func.__code__.co_filename
     assert module._AUTOWORK_LAYOUT.implementation(entry) == source
     tree = ast.parse((root / entry).read_text())
@@ -99,7 +101,7 @@ for plugin, root in zip(plugins, roots):
     assert ctx.skills['autowork'] == root / 'skills/autowork/SKILL.md'
     handler = ctx.commands['autowork']
     bundle = importlib.import_module(handler.func.__module__ + '.bundle')
-    assert bundle.__file__ == str(root / 'bundle.py')
+    assert bundle.__file__ == str(root / 'scripts/bundle.py')
     bundle.start_update = lambda **kwargs: 'patched update'
     assert handler('update') == 'patched update'
     plugin.blockers_args = lambda raw: 'patched target'
@@ -114,7 +116,7 @@ for plugin, root in zip(plugins, roots):
     assert bundle.defaults()['hermes']['approvals_mode'] == 'manual'
     plugin.SKILLS_DIR = roots[1] / 'skills'
     assert plugin._discover_skills()[0][2].is_relative_to(roots[1])
-standalone = [read(root, 'runtime_defaults.py', 'policy_' + str(i)) for i, root in enumerate(roots)]
+standalone = [read(root, 'scripts/runtime_defaults.py', 'policy_' + str(i)) for i, root in enumerate(roots)]
 assert [m.expected_settings({{}})['approvals']['mode'] for m in standalone] == ['off', 'manual']
 one = standalone[0]._AUTOWORK_COMPAT.peer(standalone[0].__dict__, 'bundle')
 one.defaults = lambda: {{'hermes': {{'approvals_mode': 'patched', 'destructive_slash_confirm': False,
@@ -126,7 +128,7 @@ assert standalone[1].expected_settings({{}})['approvals']['mode'] == 'manual'
     def test_missing_migrated_payload_refuses_without_legacy_or_cached_fallback(self):
         for entry, (owner, _) in OWNERS.items():
             with self.subTest(entry=entry):
-                source = self.root / 'Src/autowork_runtime' / SUBFOLDER.get(owner, '') / owner
+                source = self.root / 'src/autowork_runtime' / SUBFOLDER.get(owner, '') / owner
                 self.assertTrue(source.is_file(), f'missing owner: {source}')
                 source.unlink()
                 self.probe(f'''import importlib.util, sys, types

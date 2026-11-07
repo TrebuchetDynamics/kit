@@ -1,7 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
-spec=importlib.util.spec_from_file_location('menu_policy',Path(__file__).resolve().parents[1]/'telegram_menu_policy.py')
+spec=importlib.util.spec_from_file_location('menu_policy',Path(__file__).resolve().parents[1]/'scripts/telegram_menu_policy.py')
 policy=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(policy)
 WORKFLOWS=['plan_with_me', 'blockers', 'plan_for_me', 'docs_sync', 'autowork',
@@ -17,7 +17,7 @@ class MenuPolicyTests(unittest.TestCase):
         self.assertNotIn('max_commands',menu)
     def test_every_advertised_skill_command_is_a_bundled_skill(self):
         # Telegram spells a skill's hyphens as underscores; workflow aliases are registered separately.
-        skills={p.name.replace('-','_') for p in (Path(policy.__file__).parent/'skills').iterdir() if (p/'SKILL.md').is_file()}
+        skills={p.name.replace('-','_') for p in (policy._AUTOWORK_LAYOUT.root/'skills').iterdir() if (p/'SKILL.md').is_file()}
         self.assertTrue({'ui_taste','beautify_github_readme','impeccable','lgtm',
                          'git_commit_push'} <= skills)
         self.assertNotIn('engineering', skills)
@@ -81,13 +81,13 @@ class SelfHealTests(unittest.TestCase):
         root=Path(__file__).resolve().parents[1]
         pkg=types.ModuleType('toolset_pkg'); pkg.__path__=[str(root)]
         sys.modules['toolset_pkg']=pkg
-        bundle_spec=importlib.util.spec_from_file_location('toolset_pkg.bundle', root/'bundle.py')
+        bundle_spec=importlib.util.spec_from_file_location('toolset_pkg.bundle', root/'scripts/bundle.py')
         bundle=importlib.util.module_from_spec(bundle_spec); bundle_spec.loader.exec_module(bundle)
         bundle.defaults=lambda: {'hermes': {'approvals_mode':'off','destructive_slash_confirm':False,
                                             'mcp_reload_confirm':False,'max_turns':'unlimited','allow_gateway_injection':True}}
         sys.modules['toolset_pkg.bundle']=bundle
         self.addCleanup(lambda: [sys.modules.pop(k,None) for k in list(sys.modules) if k.startswith('toolset_pkg')])
-        spec=importlib.util.spec_from_file_location('toolset_pkg.runtime_defaults', root/'runtime_defaults.py')
+        spec=importlib.util.spec_from_file_location('toolset_pkg.runtime_defaults', root/'scripts/runtime_defaults.py')
         rd=importlib.util.module_from_spec(spec); sys.modules[spec.name]=rd; spec.loader.exec_module(rd)
         old={'approvals':{'mode':'off','destructive_slash_confirm':False,'mcp_reload_confirm':False},
              'agent':{'max_turns':90},
@@ -111,7 +111,7 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
         import sys, types
         root=Path(__file__).resolve().parents[1]
         pkg=types.ModuleType('toolset_pkg'); pkg.__path__=[str(root)]
-        bundle_spec=importlib.util.spec_from_file_location('toolset_pkg.bundle', root/'bundle.py')
+        bundle_spec=importlib.util.spec_from_file_location('toolset_pkg.bundle', root/'scripts/bundle.py')
         bundle=importlib.util.module_from_spec(bundle_spec); bundle_spec.loader.exec_module(bundle)
         bundle.defaults=lambda: {'hermes': {'approvals_mode':'off','destructive_slash_confirm':False,
                                             'mcp_reload_confirm':False,'max_turns':'unlimited','allow_gateway_injection':True}}
@@ -127,7 +127,7 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
                 if v is None: sys.modules.pop(k,None)
                 else: sys.modules[k]=v
         self.addCleanup(restore)
-        spec=importlib.util.spec_from_file_location('toolset_pkg.runtime_defaults', root/'runtime_defaults.py')
+        spec=importlib.util.spec_from_file_location('toolset_pkg.runtime_defaults', root/'scripts/runtime_defaults.py')
         self.rd=importlib.util.module_from_spec(spec); sys.modules[spec.name]=self.rd; spec.loader.exec_module(self.rd)
 
     def entry(self, value):
@@ -198,7 +198,7 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
     def test_native_registration_probe_config_opts_out(self):
         import yaml
         spec=importlib.util.spec_from_file_location(
-            'native_probe', Path(__file__).resolve().parents[1]/'update_bundle_native.py')
+            'native_probe', Path(__file__).resolve().parents[1]/'scripts/update_bundle_native.py')
         native=importlib.util.module_from_spec(spec); spec.loader.exec_module(native)
         probe=yaml.safe_load(native.PROBE_CONFIG)
         self.assertEqual(probe['plugins']['enabled'], ['kit'])
@@ -207,7 +207,7 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
 
 class CompatibilityRegistrationTests(unittest.TestCase):
     def test_autoresearch_spellings_require_text_so_telegram_menus_omit_them(self):
-        spec=importlib.util.spec_from_file_location('ar_commands',Path(__file__).resolve().parents[1]/'autoresearch_commands.py')
+        spec=importlib.util.spec_from_file_location('ar_commands',Path(__file__).resolve().parents[1]/'scripts/autoresearch_commands.py')
         module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
         hints={}
         class Ctx:

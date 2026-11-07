@@ -16,7 +16,7 @@ or a detached HEAD is installed as it is, and says so.
 
 Each host item runs its own supported install command; a host whose CLI is not
 installed is skipped and says so, and fails when named with --only. Octet instead
-bootstraps official stable native binaries on supported platforms. Hermes options
+bootstraps official stable native binaries and Kit skills on supported platforms. Hermes options
 (--hermes-home, --bundle-only, --no-reload, --yes-deps) apply to the Hermes item.
 Standard library only.
 """
@@ -368,7 +368,7 @@ def hermes_item(hermes_args):
     label = 'Hermes plugin + bundled Ponytail (every live profile)'
     home = hermes_installed(hermes_args)
     if home:
-        argv = [sys.executable, str(ROOT / 'update_bundle.py'), '--hermes-home', str(home)]
+        argv = [sys.executable, str(ROOT / 'scripts/update_bundle.py'), '--hermes-home', str(home)]
         # A Hermes profile that rewrites a skill file while the bundle writes it fails the
         # destination recheck; update_bundle re-plans every run, so retry that one race once.
         item = Item('hermes', label, needs='hermes',
@@ -382,7 +382,7 @@ def hermes_item(hermes_args):
         return item
     item = Item('hermes', label, needs='hermes',
                 steps=[Step('setup_bundle.py ' + ' '.join(hermes_args),
-                            [sys.executable, str(ROOT / 'setup_bundle.py'), *hermes_args])])
+                            [sys.executable, str(ROOT / 'scripts/setup_bundle.py'), *hermes_args])])
     home, named = hermes_home(hermes_args)
     if not named and not home.is_dir():  # a named home is checked by setup_bundle.py itself
         item.missing = f'no Hermes home at {home}; start hermes once first'
@@ -519,18 +519,92 @@ def install_octet(output=None):
     return f'{destination / "octet"}: {version.stdout.strip()}'
 
 
+def install_octet_skills():
+    """Native, non-symlink entrypoints; shared instructions stay in this checkout."""
+    destination = HOME / '.octet' / 'skills'
+    sources = sorted((ROOT / 'adapters/skills').glob('*/SKILL.md'))
+    if not sources:
+        raise OSError('No portable Kit skills found in this checkout')
+    entries = []
+    prompts = {}
+    for source in sources:
+        source = source.resolve()
+        header, separator, _ = source.read_text(encoding='utf-8').partition('\n---\n')
+        if not header.startswith('---\n') or not separator:
+            raise OSError(f'Missing skill metadata: {source}')
+        target = destination / source.parent.name / 'SKILL.md'
+        body = (header + separator + '\n# Kit workflow for Octet\n\n'
+                f'Read and follow the portable workflow at `{source}`.\n'
+                f'Resolve its relative references from `{source.parent}`, not this directory.\n'
+                'Use Octet\'s native tools and preserve the user\'s scope and restrictions.\n')
+        entries.append((target, body))
+        name = source.parent.name
+        prompts[f'kit-{name}'] = (
+            f'---\ndescription: {json.dumps("Kit " + name.replace("-", " ") + " workflow")}\n---\n\n'
+            f'Read and follow the portable workflow at `{source}`.\n'
+            f'Resolve its relative references from `{source.parent}`.\n'
+            'Work in the current target repository, not the Kit source directory.\n'
+            'Use /kit-NAME for referenced Kit /NAME commands; preserve caller restrictions.\n\n'
+            'User request (preserve scope and restrictions):\n$@\n')
+    for selector in json.loads((ROOT / 'skills/autoresearch/UPSTREAM.json').read_text())['commands']:
+        prompts[f'kit-autoresearch-{selector}'] = prompts['kit-autoresearch'].replace(
+            'User request (preserve scope and restrictions):',
+            f'Selected subcommand: {selector}\n\nUser request (preserve scope and restrictions):')
+    prompts['kit-grill-me'] = prompts['kit-plan-with-me'].replace(
+        'User request (preserve scope and restrictions):',
+        'Selected mode: challenge\n\nUser request (preserve scope and restrictions):')
+    entries.extend((destination.parent / 'prompts' / f'{name}.md', body)
+                   for name, body in sorted(prompts.items()))
+    # Refuse redirected resource roots before writing any entrypoint.
+    for folder in (destination.parent, destination, *(target.parent for target, _ in entries)):
+        if folder.is_symlink() or (folder.exists() and not folder.is_dir()):
+            raise OSError(f'Octet skills require a regular directory: {folder}')
+    def identity(target):
+        if target.is_symlink():
+            return ('symlink', os.readlink(target))
+        return ('file', target.read_bytes()) if target.exists() else None
+
+    originals = {}
+    for target, _ in entries:
+        if target.exists() and not target.is_symlink() and not target.is_file():
+            raise OSError(f'Octet skill entrypoint is not a file: {target}')
+        originals[target] = identity(target)
+    updated, backups = 0, []
+    for target, body in entries:
+        if not target.is_symlink() and target.is_file() and target.read_bytes() == body.encode('utf-8'):
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=target.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            try:
+                stream.write(body)
+                stream.close()
+                if identity(target) != originals[target]:
+                    raise OSError(f'Octet resource changed during installation: {target}; kept unchanged')
+                if target.exists() or target.is_symlink():
+                    backups.append(str(set_aside(target)))
+                temporary.replace(target)
+            finally:
+                temporary.unlink(missing_ok=True)
+        updated += 1
+    note = '; preserved previous files: ' + ', '.join(backups) if backups else ''
+    return f'{len(sources)} Kit skills and {len(prompts)} prompts ready in {destination.parent} ({updated} updated){note}'
+
+
 def octet_item(output=None):
     system, machine = platform.system(), platform.machine().lower()
     supported = ((system == 'Darwin' and machine in ('x86_64', 'arm64', 'aarch64'))
                  or (system == 'Linux' and machine in ('x86_64', 'amd64')
                      and platform.libc_ver()[0] == 'glibc'))
     destination = BIN.absolute()
-    return Item('octet', 'Octet official stable native binaries',
-                note='bootstraps the CLI; no Kit resources or optional extensions',
+    return Item('octet', 'Octet official stable native binaries + Kit skills',
+                note='bootstraps the CLI and native skills; no optional extensions',
                 missing='' if supported else f'unsupported Octet binary platform: {system} {machine} (needs GNU/Linux x86-64 or macOS x86-64/arm64)',
                 steps=[Step(f'download {OCTET_INSTALLER} privately; run unmodified sh installer in binary mode '
                             f'with OCTET_INSTALL_DIR={destination} OCTET_NO_MODIFY_PATH=1; '
-                            f'verify {destination}/octet --version', run=lambda: install_octet(output))])
+                            f'verify {destination}/octet --version', run=lambda: install_octet(output)),
+                       Step(f'install Kit skills in {HOME / ".octet/skills"} from this checkout',
+                            run=install_octet_skills)])
 
 
 def items(hermes_args, output=None):
@@ -736,7 +810,7 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
               for state in ('installed', 'planned', 'skipped', 'failed')}
     output.line('\n' + ', '.join(f'{count} {state}' for state, count in counts.items())
                 + f' — {time.monotonic() - started:.1f}s', 'failed' if counts['failed'] else 'heading')
-    if any(key in ('claude', 'codex', 'pi') and outcome == 'installed' for key, outcome, _ in results):
+    if any(key in ('claude', 'codex', 'pi', 'octet') and outcome == 'installed' for key, outcome, _ in results):
         output.line('Open a new host session to discover the installed skills.')
     return int(bool(counts['failed']))
 

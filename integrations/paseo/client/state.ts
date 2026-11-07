@@ -47,7 +47,7 @@ export function useHostState(hostId: string) {
   const queries = useQueryClient();
   useEffect(() => { if (enabled) void queries.invalidateQueries({ queryKey: ['autowork', hostId] }); }, [enabled, hostId, queries]);
   const captureAge = fleet.data ? Date.now() - fleet.data.capturedAt : Infinity;
-  const current = enabled && fleet.isSuccess && !fleet.isFetching && !fleet.isStale && fleet.dataUpdatedAt >= scope.current.since && captureAge >= -5000 && captureAge <= 30000;
+  const current = enabled && fleet.isSuccess && !fleet.isFetching && fleet.dataUpdatedAt >= scope.current.since && captureAge >= -5000 && captureAge <= 30000;
   const refresh = () => { if (scope.current.enabled) void queries.invalidateQueries({ queryKey: ['autowork', hostId] }); };
   return { online, foreground, enabled, scope, fleet, current, refresh };
 }

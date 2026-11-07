@@ -58,7 +58,7 @@ class PiToolsetBundleTests(unittest.TestCase):
             self.assertTrue(all(cell.strip() for cell in row), row)
 
     def test_native_profile_receives_self_contained_specialists_and_preserves_edits(self):
-        spec = importlib.util.spec_from_file_location('specialist_install', ROOT / 'install_skills.py')
+        spec = importlib.util.spec_from_file_location('specialist_install', ROOT / 'scripts/install_skills.py')
         installer = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(installer)
         selected = [ROOT / 'skills' / name for name in (*NAMES, 'shared', 'ponytail', 'engineering')]

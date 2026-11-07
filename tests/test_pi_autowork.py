@@ -44,7 +44,7 @@ def setUpModule():
     subprocess.run(['git', '-C', str(ROOT), 'checkout', '-q', '--detach', head], check=True)
     # Snapshot dependencies together: a merge can change both the engine's CLI
     # and the helpers it calls, not just the runner entry points.
-    paths = ['Src', 'autowork_bootstrap.py', 'pi-autowork/pi_autowork', 'pi-autowork/engine',
+    paths = ['src', 'scripts/autowork_bootstrap.py', 'pi-autowork/pi_autowork', 'pi-autowork/engine',
              'skills/docs-sync/scripts', 'scripts/pi-autowork.sh']
     patch = subprocess.run(['git', '-C', str(source), 'diff', '--binary', 'HEAD', '--', *paths],
                            check=True, capture_output=True).stdout
@@ -3260,13 +3260,13 @@ fcntl.flock = observed_flock
         sys.path.insert(0, str(ROOT / 'pi-autowork'))
         from pi_autowork import coordinator
         runner = object.__new__(coordinator.Coordinator)
-        source = (ROOT / 'Src/pi_autowork/worker.py').read_text()
+        source = (ROOT / 'src/pi_autowork/worker.py').read_text()
         folder = self.root / 'fingerprint'
         folder.mkdir()
         path = folder / 'worker.py'
         path.write_text(source)
         policy = folder / 'review_policy.py'
-        policy.write_text((ROOT / 'Src/pi_autowork/review_policy.py').read_text())
+        policy.write_text((ROOT / 'src/pi_autowork/review_policy.py').read_text())
         with patch.object(coordinator, '__file__', str(folder / 'coordinator.py')):
             original = runner.reviewer_version()
             for before, after, changes in (
@@ -4103,8 +4103,9 @@ class SetupTests(Fixture):
         shutil.copytree(ROOT / 'skills', package / 'skills', ignore=shutil.ignore_patterns('__pycache__'))
         shutil.copytree(ROOT / 'adapters', package / 'adapters')
         shutil.copytree(ROOT / 'pi-autowork', package / 'pi-autowork', ignore=shutil.ignore_patterns('__pycache__'))
-        shutil.copytree(ROOT / 'Src', package / 'Src', ignore=shutil.ignore_patterns('__pycache__'))
-        shutil.copy2(ROOT / 'autowork_bootstrap.py', package / 'autowork_bootstrap.py')
+        shutil.copytree(ROOT / 'src', package / 'src', ignore=shutil.ignore_patterns('__pycache__'))
+        (package / 'scripts').mkdir()
+        shutil.copy2(ROOT / 'scripts/autowork_bootstrap.py', package / 'scripts/autowork_bootstrap.py')
         self.git(package, 'init', '-q')
         self.git(package, 'add', '-A')
         self.git(package, 'commit', '-qm', 'installed package')
@@ -4133,9 +4134,9 @@ class SetupTests(Fixture):
         """A disposable autowork Pi package whose local origin holds one newer,
         compatible release, so the update check passes and `pi update` applies."""
         package = self.root / 'pi-package'
-        for part in ('skills', 'adapters', 'scripts', 'pi-autowork', 'Src'):
+        for part in ('skills', 'adapters', 'scripts', 'pi-autowork', 'src'):
             shutil.copytree(ROOT / part, package / part, ignore=shutil.ignore_patterns('__pycache__'))
-        shutil.copy2(ROOT / 'autowork_bootstrap.py', package / 'autowork_bootstrap.py')
+        shutil.copy2(ROOT / 'scripts/autowork_bootstrap.py', package / 'scripts/autowork_bootstrap.py')
         (package / '.gitignore').write_text('.updated\n')
         self.git(package, 'init', '-q', '-b', 'main')
         self.git(package, 'add', '-A')

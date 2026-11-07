@@ -206,7 +206,7 @@ pilot hour as a separate end-to-end metric so shutdowns cannot improve the headl
 
 ### Capability boundaries and chosen designs
 
-Use the existing Python standard-library modules under `Src/pi_autowork/`, unittest
+Use the existing Python standard-library modules under `src/pi_autowork/`, unittest
 fixtures in `pi-autowork/tests/` and `tests/`, and existing docs/task records. No new
 service, queue, telemetry store, spec registry, approval layer or scheduling authority.
 The source style is small helpers and explicit dictionaries, for example the current

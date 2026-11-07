@@ -14,7 +14,7 @@ class ProvisioningTests(unittest.TestCase):
         self.release = tempfile.TemporaryDirectory()
         self.addCleanup(self.release.cleanup)
         repo = copy_sources(Path(self.release.name) / 'repo')
-        spec = importlib.util.spec_from_file_location('native_provisioning', repo / 'install_skills.py')
+        spec = importlib.util.spec_from_file_location('native_provisioning', repo / 'scripts/install_skills.py')
         self.provisioning = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.provisioning)
 

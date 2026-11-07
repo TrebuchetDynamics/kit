@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DoctorModes(unittest.TestCase):
     def setUp(self):
-        spec = importlib.util.spec_from_file_location('doctor_bundle', ROOT / 'bundle.py')
+        spec = importlib.util.spec_from_file_location('doctor_bundle', ROOT / 'scripts/bundle.py')
         self.bundle = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.bundle)
         names = [p.parent.name for p in (ROOT / 'skills').glob('*/SKILL.md')]

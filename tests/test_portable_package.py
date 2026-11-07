@@ -8,6 +8,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 class PortablePackageTests(unittest.TestCase):
+    def test_only_the_required_hermes_adapter_is_python_at_root(self):
+        self.assertEqual({p.name for p in ROOT.glob('*.py')}, {'__init__.py'})
+
     def test_native_manifests_select_portable_resources(self):
         codex = json.loads((ROOT / '.codex-plugin/plugin.json').read_text())
         pi = json.loads((ROOT / 'package.json').read_text())
@@ -15,10 +18,10 @@ class PortablePackageTests(unittest.TestCase):
         self.assertEqual(pi['pi']['skills'], ['./adapters/skills'])
         self.assertEqual(pi['pi']['extensions'], ['./adapters/pi.mjs'])
         self.assertNotIn('scripts', pi, 'installation must not run setup hooks')
-        for entry in ('autowork_bootstrap.py', 'Src/autowork_bootstrap.py', 'Src/pi_autowork/'):
+        for entry in ('scripts/autowork_bootstrap.py', 'src/autowork_bootstrap.py', 'src/pi_autowork/'):
             self.assertIn(entry, pi['files'])
-        self.assertNotIn('Src/', pi['files'], 'native-only sources must not leak into npm')
-        self.assertNotIn('Src/autowork_runtime/', pi['files'])
+        self.assertNotIn('src/', pi['files'], 'native-only sources must not leak into npm')
+        self.assertNotIn('src/autowork_runtime/', pi['files'])
         marketplace = json.loads((ROOT / '.agents/plugins/marketplace.json').read_text())
         self.assertEqual(marketplace['plugins'][0]['source'], {'source': 'local', 'path': '.'})
 

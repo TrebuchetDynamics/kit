@@ -4,9 +4,9 @@ Removing the plugin stops future use; it does **not** restore the profile to its
 pre-install state. The installer has no complete transaction journal or automatic
 rollback command. This page describes manual recovery, not a guarantee of reversal.
 
-Source: [runtime configuration writes](../runtime_defaults.py),
+Source: [runtime configuration writes](../scripts/runtime_defaults.py),
 [setup configuration writes](../install-plugins.sh), and
-[native skill provisioning](../install_skills.py).
+[native skill provisioning](../scripts/install_skills.py).
 
 ## Before installation
 

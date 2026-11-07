@@ -38,13 +38,24 @@ executor. Current-reference helpers (including acceptance receipts and backlog
 planning) and the profile collectors remain. See the source-bound
 [retirement inventory](plans/2026-10-20-owner-cycle-retirement.md).
 
+## Accepted Rust and Octet redesign
+
+The owner now requests [Rust Autowork with Octet](plans/rust-octet-autowork.md).
+This supersedes the earlier language-retention direction for future redesign work.
+The accepted outcome is a Rust coordinator using Octet's native Rust agent engine,
+with automatic planning re-entry for ordinary decisions and recovery. Sudo and
+special credentials are routine owner-help cases; safety gates still apply.
+The linked plan separates the first offline batch from UI, services, migration and
+live qualification. It does not describe implemented Rust behavior or change the
+current Python runtime's authority. No migration or service restart is implied.
+
 ## Current components
 
 | Component | Source | Responsibility |
 | --- | --- | --- |
-| Hermes registration | [entry point](../__init__.py), [workflow aliases](../workflow_commands.py), [research aliases](../autoresearch_commands.py) | Discover skill folders, provision them and `skills/shared` into the profile, apply runtime defaults and cron scripts, publish current skill IDs, register commands (with `/autowork status` and imported-skill aliases from [bundle](../bundle.py)) and route conversation arguments |
-| Hermes diagnostics | [bundle](../bundle.py), [menu policy](../telegram_menu_policy.py) | Distinguish core registration from integration readiness and prioritize public commands |
-| Fleet installation | [orchestrator](../setup_bundle.py), [preflight](../setup_preflight.py), [finalization](../setup_runtime.py) | Validate prerequisites, install resources/configuration, check profiles and refresh supported gateways |
+| Hermes registration | [entry point](../__init__.py), [workflow aliases](../scripts/workflow_commands.py), [research aliases](../scripts/autoresearch_commands.py) | Discover skill folders, provision them and `skills/shared` into the profile, apply runtime defaults and cron scripts, publish current skill IDs, register commands (with `/autowork status` and imported-skill aliases from [bundle](../scripts/bundle.py)) and route conversation arguments |
+| Hermes diagnostics | [bundle](../scripts/bundle.py), [menu policy](../scripts/telegram_menu_policy.py) | Distinguish core registration from integration readiness and prioritize public commands |
+| Fleet installation | [orchestrator](../scripts/setup_bundle.py), [preflight](../scripts/setup_preflight.py), [finalization](../scripts/setup_runtime.py) | Validate prerequisites, install resources/configuration, check profiles and refresh supported gateways |
 | Autowork execution | [cycle](../pi-autowork/engine/owner_cycle.py), [task execution](../pi-autowork/engine/task_execution.py) | Select repository tasks and coordinate direct execution with live-writer protection; the agent implements and reports actual results |
 | Task store | [TaskStore](../pi-autowork/engine/task_store.py), [selection](../pi-autowork/engine/task_select.py), [`autowork tasks`](../pi-autowork/pi_autowork/task_commands.py), [`autowork migrate`](../pi-autowork/pi_autowork/task_migrate.py) | Read `tasks/` at a pinned commit, select by section, rank and goal, edit task and goal files with whole-store validation, and convert a TODO.md + goals.json repository once ([reference](../pi-autowork/task-store.md)) |
 | Codex package | [manifest](../.codex-plugin/plugin.json), [marketplace](../.agents/plugins/marketplace.json) | Install portable skills into Codex; no Hermes gateway or configuration dependency |
@@ -75,8 +86,8 @@ discovery is distinct from model execution and cross-host live qualification.
 
 ## Interface and state contract
 
-The [workflow registrar](../workflow_commands.py) and
-[research registrar](../autoresearch_commands.py) own Hermes aliases and literal
+The [workflow registrar](../scripts/workflow_commands.py) and
+[research registrar](../scripts/autoresearch_commands.py) own Hermes aliases and literal
 argument routing. [Pi registration](../adapters/pi.mjs) owns portable commands.
 These are conversation interfaces, not an owned HTTP service; there is no Toolset
 OpenAPI contract. Collisions preserve the existing command owner, as described in
@@ -662,7 +673,7 @@ Historical identifiers, expanded with `git rev-parse PIN^{commit}`:
 TOOLSET-461-61800c0c resumed the pin review at `9e2cc1ad` (the review baseline,
 which is an ancestor of the change commit). It reverified six roles against
 their current covered source, following the top-level compatibility shims into
-`Src/autowork_runtime/` and `Src/pi_autowork/`, corrected the drift it found, and
+`src/autowork_runtime/` and `src/pi_autowork/`, corrected the drift it found, and
 advanced those `verified_at` values to `9e2cc1ad`: [readme](../README.md),
 [reference](reference.md), [install-upgrade](installation.md),
 [troubleshooting](troubleshooting.md), [memory](memory.md) and
@@ -2195,12 +2206,12 @@ establish recovery. No services are operated in this planning pass.
 
 Source evidence:
 
-- `Src/pi_autowork/supervision/main_checks.py::check_main_start` persists optional
+- `src/pi_autowork/supervision/main_checks.py::check_main_start` persists optional
   `crashed`/`gated` values; `Coordinator.health_update` copies check fields to status.
-  `Src/pi_autowork/health.py::_validate_observation` requires these present fields
+  `src/pi_autowork/health.py::_validate_observation` requires these present fields
   to be strings, including nulls. The preceding in-memory audit reproduced
   rejection of `crashed=None`; no new implementation test was run here.
-- `Src/pi_autowork/engine/execution_journal.py::append` timestamps with wall time;
+- `src/pi_autowork/engine/execution_journal.py::append` timestamps with wall time;
   `read(ordered=True)` rejects decreasing timestamps. Both `parallel_status.journal`
   and `_snapshot` use ordered reads. This blocks the whole observation rather than
   only duration metrics. The cause of the actual clock reversals remains unknown;
@@ -2213,7 +2224,7 @@ Source evidence:
   `test_supervision_main_checks.py`, `test_fleet_view.py`, engine
   `test_parallel_status.py`/`test_parallel_e2e.py`, and
   `tests/test_pi_autowork.py`. Use stable public import adapters: direct import of
-  the engine with only `PYTHONPATH=Src` failed on the compatibility-owned
+  the engine with only `PYTHONPATH=src` failed on the compatibility-owned
   `worktree_paths` module during the audit; that probe was not a journal repro.
 
 Completed TOOLSET-399-1f9c37c3 supplies malformed-observation isolation, not nullable
@@ -2298,9 +2309,9 @@ findings are recorded in each task; no new product choice or scope change arose.
 Status: Accepted
 
 Decision: planning proposals use one machine authority for the rules that can be
-enforced. `Src/pi_autowork/planning_authority.py` owns the allowed paths, proposal
+enforced. `src/pi_autowork/planning_authority.py` owns the allowed paths, proposal
 size and secret checks, and generates the prompt block that the planning console
-injects. `Src/pi_autowork/engine/task_store.py::planner_authority` owns record
+injects. `src/pi_autowork/engine/task_store.py::planner_authority` owns record
 schema and authority diffs: closure fields, owner attestations, holds, live
 authorization, ownership, task status and goal status. The console policy and the
 proposal validator call these owners instead of carrying their own copies.

@@ -56,7 +56,7 @@ class PonytailBundleTests(unittest.TestCase):
         self.assertNotIn('dietrichgebert/ponytail', (ROOT / 'plugins/PLUGINS.md').read_text().lower())
 
     def test_existing_profile_gets_missing_shared_resources_without_overwriting_edits(self):
-        spec = importlib.util.spec_from_file_location('ponytail_upgrade', ROOT / 'install_skills.py')
+        spec = importlib.util.spec_from_file_location('ponytail_upgrade', ROOT / 'scripts/install_skills.py')
         installer = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(installer)
         with tempfile.TemporaryDirectory() as temporary:
@@ -117,7 +117,7 @@ assert.ok(read > 0 && read <= 65536, 'must read at most 64 KiB');
             self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_native_install_carries_the_method_protocols_and_executable_map(self):
-        spec = importlib.util.spec_from_file_location('ponytail_install', ROOT / 'install_skills.py')
+        spec = importlib.util.spec_from_file_location('ponytail_install', ROOT / 'scripts/install_skills.py')
         installer = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(installer)
         with tempfile.TemporaryDirectory() as temporary:

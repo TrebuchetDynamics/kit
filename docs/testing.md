@@ -209,7 +209,7 @@ newest completed responses and original run identity still need separate verific
 uv run --python 3.12 --no-project --with-requirements requirements-test.txt python scripts/check.py
 python3 scripts/check.py --list
 python3 scripts/typecheck.py
-python -m py_compile __init__.py bundle.py install-graphify.py
+python -m py_compile __init__.py scripts/bundle.py scripts/install-graphify.py
 node --test tests/portable_pi.test.mjs
 ```
 
@@ -432,7 +432,7 @@ cases skip when ruamel.yaml is unavailable). `test_complete_setup.py` separately
 checks orchestration after admission, including no installation calls on dry-run,
 and rejects missing declared native source/bootstrap payloads before stages run.
 The setup/provisioning and Graphify fixtures copy the same-release Python
-closure and exercise real `Src/autowork_runtime` bodies through the old root
+closure and exercise real `src/autowork_runtime` bodies through the `scripts/`
 entrypoints; external commands and gateway responses remain private fixtures.
 No passing preview is evidence of a live model or Telegram workflow.
 

@@ -24,18 +24,18 @@ class SrcBootstrapTests(unittest.TestCase):
 
     def probe(self, body):
         result = subprocess.run([sys.executable, '-B', '-c', body], cwd=self.root,
-                                env=dict(os.environ, PYTHONPATH=str(self.root)),
+                                env=dict(os.environ, PYTHONPATH=str(self.root / 'scripts')),
                                 text=True, capture_output=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(list(self.root.rglob('__pycache__')))
 
     def test_layout_is_frozen_bounded_and_reports_actual_owners(self):
-        self.write('Src/pi_autowork/nested/owner.py', 'VALUE = 1\n')
-        self.write('Src/pi_autowork/test_ignored.py', 'raise RuntimeError\n')
-        self.write('Src/pi_autowork/fixtures/ignored.py', 'raise RuntimeError\n')
+        self.write('src/pi_autowork/nested/owner.py', 'VALUE = 1\n')
+        self.write('src/pi_autowork/test_ignored.py', 'raise RuntimeError\n')
+        self.write('src/pi_autowork/fixtures/ignored.py', 'raise RuntimeError\n')
         outside = self.base / 'outside.py'
         outside.write_text('raise RuntimeError\n')
-        (self.root / 'Src/pi_autowork/escape.py').symlink_to(outside)
+        (self.root / 'src/pi_autowork/escape.py').symlink_to(outside)
         alias = self.base / 'linked'
         alias.symlink_to(self.root, target_is_directory=True)
         self.probe(f'''from pathlib import Path
@@ -43,8 +43,11 @@ from dataclasses import FrozenInstanceError
 import autowork_bootstrap as b
 layout = b.Layout(Path({str(alias)!r}))
 assert layout.root == Path.cwd()
+assert layout.src == Path.cwd() / 'src'
+assert layout.src.is_dir()
+assert 'Src' not in {{p.name for p in Path.cwd().iterdir()}}
 assert layout.entrypoint('main_check') == Path.cwd() / 'pi-autowork/pi_autowork/main_check.py'
-assert layout.entrypoint('runtime_defaults') == Path.cwd() / 'runtime_defaults.py'
+assert layout.entrypoint('runtime_defaults') == Path.cwd() / 'scripts/runtime_defaults.py'
 assert layout.entrypoint('pi_autowork.legacy.task_migrate') == layout.component / 'pi_autowork/legacy/task_migrate.py'
 assert layout.resource('skills') == Path.cwd() / 'skills'
 assert layout.implementation('pi-autowork/pi_autowork/nested/owner.py') == layout.package / 'nested/owner.py'
@@ -60,21 +63,21 @@ else: raise AssertionError('mutable layout')
     def test_native_namespace_and_release_local_peers_preserve_patches(self):
         shim = '''from pathlib import Path
 import importlib.util
-p = Path(__file__).parent / 'autowork_bootstrap.py'
+p = Path(__file__).parent / 'scripts/autowork_bootstrap.py'
 s = importlib.util.spec_from_file_location(__name__ + '._bootstrap', p)
 b = importlib.util.module_from_spec(s)
 s.loader.exec_module(b)
-b.execute(globals(), 'Src/autowork_runtime/example.py')
+b.execute(globals(), 'src/autowork_runtime/example.py')
 '''
         self.write('example.py', shim)
-        self.write('sibling.py', 'VALUE = "selected"\n')
-        self.write('another.py', 'VALUE = 2\n')
-        self.write('Src/autowork_runtime/example.py', '''ROOT = __file__
+        self.write('scripts/sibling.py', 'VALUE = "selected"\n')
+        self.write('scripts/another.py', 'VALUE = 2\n')
+        self.write('src/autowork_runtime/example.py', '''ROOT = __file__
 def value():
     return _AUTOWORK_COMPAT.peer(globals(), 'sibling').VALUE
 ''')
-        other = copy_sources(self.base / 'other', source=self.root, entries=('sibling.py',))
-        (other / 'sibling.py').write_text('VALUE = "other"\n')
+        other = copy_sources(self.base / 'other', source=self.root, entries=('scripts/sibling.py',))
+        (other / 'scripts/sibling.py').write_text('VALUE = "other"\n')
         self.probe(f'''import importlib.util, sys, types
 from pathlib import Path
 sys.modules['sibling'] = types.SimpleNamespace(VALUE='poison')
@@ -100,9 +103,9 @@ assert one._AUTOWORK_LAYOUT.root == Path.cwd()
 ''')
 
     def test_runner_canonical_and_flat_import_orders_share_identity(self):
-        self.write('Src/pi_autowork/engine/__init__.py', '')
-        self.write('Src/pi_autowork/engine/example.py', 'class Error(Exception): pass\nVALUE = []\n')
-        self.write('Src/pi_autowork/command.py', 'def _compat_main(argv): return len(argv)\n')
+        self.write('src/pi_autowork/engine/__init__.py', '')
+        self.write('src/pi_autowork/engine/example.py', 'class Error(Exception): pass\nVALUE = []\n')
+        self.write('src/pi_autowork/command.py', 'def _compat_main(argv): return len(argv)\n')
         for first in ('example', 'pi_autowork.engine.example'):
             with self.subTest(first=first):
                 self.probe(f'''from pathlib import Path
@@ -133,8 +136,8 @@ for name in ('worktree_paths', 'checkout_lock'):
         (self.root / 'pi-autowork/pi_autowork/main_check.py').unlink()
         (self.root / 'pi-autowork/pi_autowork/main_check.py').symlink_to(outside / 'main_check.py')
         (self.root / 'pi-autowork/bin').symlink_to(outside, target_is_directory=True)
-        self.write('Src/pi_autowork/engine/__init__.py', '')
-        self.write('Src/pi_autowork/engine/example.py', 'VALUE = 1\n')
+        self.write('src/pi_autowork/engine/__init__.py', '')
+        self.write('src/pi_autowork/engine/example.py', 'VALUE = 1\n')
         self.probe('''from pathlib import Path
 import sys, types
 import autowork_bootstrap as b
@@ -145,7 +148,7 @@ def refuses(call):
     else: raise AssertionError('borrowed missing or foreign source')
 refuses(lambda: b.Layout(root).entrypoint('main_check'))
 refuses(lambda: b.Layout(root).entrypoint('autowork'))
-refuses(lambda: b.execute({'__file__': str(root / 'example.py'), '__name__': 'example'}, 'Src/autowork_runtime/missing.py'))
+refuses(lambda: b.execute({'__file__': str(root / 'example.py'), '__name__': 'example'}, 'src/autowork_runtime/missing.py'))
 refuses(lambda: b.execute({'__file__': str(root / 'example.py')}, '../outside.py'))
 poison = types.ModuleType('pi_autowork')
 poison.__file__ = '/foreign/pi_autowork/__init__.py'
@@ -154,7 +157,7 @@ refuses(lambda: b.activate(root))
 del sys.modules['pi_autowork']
 b.activate(root)
 refuses(lambda: b.load(root.parent / 'other', 'pi_autowork.command'))
-(root / 'Src/pi_autowork/engine/example.py').unlink()
+(root / 'src/pi_autowork/engine/example.py').unlink()
 refuses(lambda: b.load(root, 'pi_autowork.engine.example'))
 ''')
 

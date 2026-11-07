@@ -236,7 +236,7 @@ def read_database(path):
 
 _source = Path(__file__).resolve().parents[1]
 _bootstrap_spec = importlib.util.spec_from_file_location(
-    '_autowork_consult_bootstrap', _source / 'autowork_bootstrap.py')
+    '_autowork_consult_bootstrap', _source / 'scripts/autowork_bootstrap.py')
 _bootstrap = importlib.util.module_from_spec(_bootstrap_spec)
 _bootstrap_spec.loader.exec_module(_bootstrap)
 response_body = _bootstrap.load(_source, 'pi_autowork.engine.cron_output').response_body
@@ -344,9 +344,9 @@ def reuse_fingerprint(name, root, hermes, seconds):
         paths = [source / 'scripts/profile-consult.py', source / 'scripts/wire-owner-cron.py',
                  source / 'skills/autowork/references/profile-feedback.md']
         # Include adapters, actual owners and their selected-release loader dependencies.
-        paths += [source / name for name in ('autowork_bootstrap.py', 'Src/autowork_bootstrap.py',
-                  'Src/pi_autowork/__init__.py', 'Src/pi_autowork/layout.py',
-                  'Src/pi_autowork/engine/__init__.py')]
+        paths += [source / name for name in ('scripts/autowork_bootstrap.py', 'src/autowork_bootstrap.py',
+                  'src/pi_autowork/__init__.py', 'src/pi_autowork/layout.py',
+                  'src/pi_autowork/engine/__init__.py')]
         layout = _bootstrap.Layout(source)
         with os.scandir(layout.component / 'engine') as entries:
             for index, entry in enumerate(entries):

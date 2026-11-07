@@ -456,7 +456,7 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
   const common = { repo, fleet, host, hostId, enabled, request };
   const revision = query.data ? revisionParts(query.data.revision) : null;
   return <Stack gap={12}>
-    {blockers ? <DecisionsCard runner={runner} onAnswer={select} /> : null}
+    {blockers ? <DecisionsCard runner={runner} tasks={all} onAnswer={select} /> : null}
     {/* An answer is an uncommitted record edit and the runner reads committed records, so the
         commit step belongs where the answer is recorded, not only in Tasks. */}
     {editing || fleet.permissions.commit ? <PendingCard {...common} /> : null}
@@ -486,7 +486,7 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
       {!query.isFetching && !query.isError && query.data && !visibleTasks.length ? <Notice><Label>{!all.length ? 'No tasks observed.' : hasFilters ? 'No tasks match these filters.' : blockers ? 'No blocked tasks observed.' : counts.done ? 'No open tasks; completed work is hidden.' : 'No tasks observed.'}</Label></Notice> : null}
     </Card>
     <Sheet title="Task detail" open={!!selected} onClose={() => select('')}>
-      {selected ? <TaskView key={selected} task={all.find(task => task.id === selected)} taskId={selected} {...common} enabled={enabled && !query.isStale && !query.isError} /> : null}
+      {selected ? <TaskView key={selected} task={all.find(task => task.id === selected)} taskId={selected} {...common} enabled={enabled && !!query.data && !query.isFetching && !query.isError} /> : null}
     </Sheet>
     {!blockers && editing ? <AddTaskCard {...common} /> : null}
     {!blockers && editing ? <GoalsCard {...common} /> : null}
@@ -514,15 +514,15 @@ function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; q
 }
 
 /** Decisions lead with the question and the answer action; evidence waits behind a tap. */
-function DecisionsCard({ runner, onAnswer }: { runner: Runner | null; onAnswer: (task: string) => void }) {
+function DecisionsCard({ runner, tasks, onAnswer }: { runner: Runner | null; tasks: Task[]; onAnswer: (task: string) => void }) {
   const questions = runner?.questions ?? [];
   return <Card tone={questions.length ? 'warning' : undefined}>
     <Row between><Heading level={2}>{questions.length ? `Decision needed · ${questions.length}` : 'No decision waiting'}</Heading></Row>
     {runner?.display?.question_summary ? <Caption>{runner.display.question_summary}</Caption> : null}
     {questions.length ? questions.map(question => <View key={question.id} style={{ gap: 6, paddingVertical: 6 }}>
-      <Label bold>{headline(question.needs)}</Label>
-      <Row><Label mono>{question.id}</Label><Badge label={`${question.effort} effort`} tone="neutral" /><Caption>unblocks {plural(question.unblocks, 'task')}</Caption></Row>
-      {question.answer ? <Caption>Existing answer: {question.answer}</Caption> : null}
+      <Label bold>{tasks.find(task => task.id === question.id)?.title ?? question.task ?? question.id}</Label>
+      <Label>{headline(question.needs)}</Label>
+      <Caption>{question.id} · unblocks {plural(question.unblocks, 'task')}</Caption>
       <Row><Button label="Answer" variant="primary" compact accessibilityLabel={`Answer ${question.id}`} onPress={() => onAnswer(question.id)} /></Row>
       <Divider />
     </View>) : <Caption>No canonical owner question observed.</Caption>}
@@ -694,6 +694,8 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
   });
   const [answer, setAnswer] = useState('');
   const detail = query.data;
+  // Cache age alone is not a stale-record check. Preparation and dispatch recheck the revision.
+  const writable = enabled && !!detail && !query.isFetching && !query.isError;
   const question = repo.runner?.questions.find(item => item.id === taskId);
   const answerable = !!(task && repo.runner && detail && canAnswer(task, repo.runner, detail));
   const presentation = (detail && task?.display?.record_revision === detail.record_revision
@@ -714,8 +716,12 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
     .filter(key => detail.closure[key] !== undefined && detail.closure[key] !== null && detail.closure[key] !== '')
     .map(key => [key.replace(/_/g, ' '), key === 'timestamp' ? relativeTime(detail.closure[key]) : human(detail.closure[key])]) : [];
   return <Card tone={answerable ? 'warning' : undefined}>
-    <View style={{ gap: 2 }}><Heading level={2}>{taskId}</Heading><Caption>{detail?.title ?? task?.title ?? 'Task detail'}</Caption></View>
-    {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
+    <View style={{ gap: 2 }}><Heading level={2}>{detail?.title ?? task?.title ?? 'Task detail'}</Heading><Caption>{taskId}</Caption></View>
+    {query.error ? <Notice tone="warning">
+      <Label>{friendlyError(query.error)}</Label>
+      <Caption>Your draft is kept. Retry task details before sending.</Caption>
+      <Button label="Retry task details" compact disabled={!host.enabled || query.isFetching} onPress={() => { void query.refetch(); }} />
+    </Notice> : null}
     {detail ? <>
       <Row><StatusPill state={state} tone={taskTone(detail ?? task, answerable)} />{closure ? <Badge label={closure.label} tone={closureTone(detail ?? task)} /> : null}{meta ? <Caption>{meta}</Caption> : null}</Row>
       {presentation?.why ? <Caption>{presentation.why}</Caption> : null}
@@ -723,9 +729,11 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
       {answerable ? <>
         <Heading level={3}>Decision needed</Heading>
         <Markdown text={question?.needs ?? ''} />
-        {question ? <Caption>{question.effort} effort · unblocks {plural(question.unblocks, 'task')}{question.answer ? ` · existing answer: ${question.answer}` : ''}</Caption> : null}
-        <Input label="Owner answer" value={answer} onChange={setAnswer} multiline placeholder="Your decision, in your words. It is recorded on the task, never executed." />
-        <Button label="Send answer" variant="primary" disabled={!enabled || query.isStale || !answer.trim() || !fleet.permissions.decisions} onPress={() => request({ kind: 'decision', repoId: repo.id, task: taskId, revision: detail.record_revision, text: answer })} />
+        {question ? <Caption>unblocks {plural(question.unblocks, 'task')}</Caption> : null}
+        <Input label="Owner answer" value={answer} onChange={setAnswer} multiline placeholder="State the decision and its scope, or explain why the task stays deferred." />
+        <Button label="Send answer" variant="primary" disabled={!writable || !answer.trim() || !fleet.permissions.decisions} onPress={() => request({ kind: 'decision', repoId: repo.id, task: taskId, revision: detail.record_revision, text: answer })} />
+        <Caption>Review and confirm next. Saves a note; commit it separately. An answer alone does not grant live permission or move this task.</Caption>
+        {question?.answer ? <Expand title="How to resolve"><Markdown text={question.answer} /></Expand> : null}
         {!fleet.permissions.decisions ? <Caption>Owner answers are not granted by operator policy.</Caption> : null}
       </> : blocked ? <Notice tone="warning">
         <Label bold>Blocked by {presentation!.blocker}</Label>
@@ -743,8 +751,8 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
           <Expand title="Raw selection data"><Label mono>{display(explanation.data.value)}</Label></Expand>
         </> : <Caption>Reading…</Caption>}
       </Expand>
-      {editing ? <TaskActions detail={detail} repo={repo} enabled={enabled && !query.isStale} request={request} /> : null}
-    </> : <Caption>Loading task…</Caption>}
+      {editing ? <TaskActions detail={detail} repo={repo} enabled={writable} request={request} /> : null}
+    </> : query.isFetching ? <Caption>Loading task…</Caption> : null}
   </Card>;
 }
 

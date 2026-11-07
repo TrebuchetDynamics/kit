@@ -8,7 +8,7 @@ import unittest
 
 from src_fixture import copy_sources
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'install-graphify.py'
+SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/install-graphify.py'
 GRAPHIFY = '''import os, sys
 from pathlib import Path
 assert sys.argv[1:] == ['install', '--platform', 'hermes', '--project']
@@ -28,7 +28,7 @@ class InstallGraphifyTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        self.script = copy_sources(self.root / 'repo') / SCRIPT.name
+        self.script = copy_sources(self.root / 'repo') / 'scripts' / SCRIPT.name
         self.home = self.root / 'hermes'
         (self.home / 'profiles/coder').mkdir(parents=True)
         (self.home / 'profiles/coder/config.yaml').touch()

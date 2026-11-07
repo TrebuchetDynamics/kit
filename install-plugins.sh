@@ -32,7 +32,7 @@ die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 # legacy source installation separate so it cannot recursively launch setup.
 if [[ ${1:-} != --sources-only ]]; then
     script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-    exec python3 "$script_dir/setup_bundle.py" "$@"
+    exec python3 "$script_dir/scripts/setup_bundle.py" "$@"
 fi
 shift
 
@@ -138,7 +138,7 @@ planned=0
 runtime_opt_out() {
     local config=$hermes_root
     [[ $1 == default ]] || config=$hermes_root/profiles/$1
-    python3 -B - "$script_dir/runtime_defaults.py" "$config/config.yaml" <<'PYOPTOUT'
+    python3 -B - "$script_dir/scripts/runtime_defaults.py" "$config/config.yaml" <<'PYOPTOUT'
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location('setup_runtime_defaults', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
@@ -227,7 +227,7 @@ for ((i=0; i<${#plugins[@]}; i++)); do
     targets=(default)
     [[ ${scopes[i]} != 'all profiles' ]] || targets=("${profiles[@]}")
     if [[ ${source,,} == https://github.com/graphify-labs/graphify ]]; then
-        helper_args=(python3 "$script_dir/install-graphify.py" --hermes-home "$hermes_root")
+        helper_args=(python3 "$script_dir/scripts/install-graphify.py" --hermes-home "$hermes_root")
         for profile in "${targets[@]}"; do helper_args+=(--profile "$profile"); done
         $dry_run && helper_args+=(--dry-run)
         if "${helper_args[@]}"; then
@@ -261,7 +261,7 @@ for ((i=0; i<${#plugins[@]}; i++)); do
                 python3 - "$script_dir" "$profile_dir" "$source" "${skill_files[@]}" <<'PY'
 import sys
 from pathlib import Path
-sys.path.insert(0, sys.argv[1])
+sys.path.insert(0, str(Path(sys.argv[1]) / 'scripts'))
 from bundle import record_skill_repository
 record_skill_repository(sys.argv[2], sys.argv[3], [Path(p).parent.name for p in sys.argv[4:]])
 PY

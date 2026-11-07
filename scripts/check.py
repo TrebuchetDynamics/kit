@@ -214,17 +214,17 @@ def source_guard(root):
     Old copies of the checker without a source foundation keep their inventory.
     A present bootstrap is authoritative: missing payloads are not a fallback.
     """
-    bootstrap = root / 'autowork_bootstrap.py'
+    bootstrap = root / 'scripts/autowork_bootstrap.py'
     if not bootstrap.is_file():
         return True
     try:
         layout_api = runpy.run_path(str(bootstrap))['Layout']
         sources = layout_api.python_sources(root)
-        engine_names = {p.stem for folder in (root / 'Src/pi_autowork/engine', root / 'pi-autowork/engine')
+        engine_names = {p.stem for folder in (root / 'src/pi_autowork/engine', root / 'pi-autowork/engine')
                         for p in folder.glob('*.py') if not p.name.startswith('test_')}
         for source in sources:
             tree = ast.parse(source.read_bytes(), str(source))
-            if source.is_relative_to(root / 'Src/pi_autowork'):
+            if source.is_relative_to(root / 'src/pi_autowork'):
                 for node in ast.walk(tree):
                     names = ([alias.name for alias in node.names] if isinstance(node, ast.Import)
                              else [node.module or ''] if isinstance(node, ast.ImportFrom) and node.level == 0

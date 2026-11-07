@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def load():
-    spec = importlib.util.spec_from_file_location('update_quiet_under_test', ROOT / 'update_bundle.py')
+    spec = importlib.util.spec_from_file_location('update_quiet_under_test', ROOT / 'scripts/update_bundle.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

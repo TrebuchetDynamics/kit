@@ -19,7 +19,7 @@ class PluginDirectoryTests(unittest.TestCase):
     """The installed directory follows whatever the profile already has."""
 
     def module(self):
-        spec = importlib.util.spec_from_file_location('updater_dir', ROOT / 'update_bundle.py')
+        spec = importlib.util.spec_from_file_location('updater_dir', ROOT / 'scripts/update_bundle.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -74,7 +74,7 @@ class UpdateTests(unittest.TestCase):
             (home/'plugins/autowork').symlink_to(self.repo)
             (home/'skills/demo').mkdir(parents=True)
             (home/'skills/demo/SKILL.md').write_text('old\n')
-        spec=importlib.util.spec_from_file_location('update_under_test',ROOT/'update_bundle.py')
+        spec=importlib.util.spec_from_file_location('update_under_test',ROOT/'scripts/update_bundle.py')
         self.mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.mod)
         self.setup_stub = ModuleType('setup_bundle')
         self.setup_stub.live_profiles = lambda root: self.profiles
@@ -89,7 +89,7 @@ class UpdateTests(unittest.TestCase):
         releases = [copy_sources(self.root / name) for name in ('one', 'two')]
         modules = []
         for release in releases:
-            spec = importlib.util.spec_from_file_location('update_release_test', release / 'update_bundle.py')
+            spec = importlib.util.spec_from_file_location('update_release_test', release / 'scripts/update_bundle.py')
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             modules.append(module)
@@ -102,10 +102,10 @@ class UpdateTests(unittest.TestCase):
         self.assertIsNot(peers[0], peers[1])
         for release, module, peer in zip(releases, modules, peers):
             self.assertEqual(peer.ROOT, release)
-            self.assertEqual(module.__file__, str(release / 'update_bundle.py'))
+            self.assertEqual(module.__file__, str(release / 'scripts/update_bundle.py'))
             self.assertIs(module.prepare.__globals__, vars(module))
             self.assertEqual(module.prepare.__code__.co_filename,
-                             str(release / 'Src/autowork_runtime/update/update_bundle.py'))
+                             str(release / 'src/autowork_runtime/update/update_bundle.py'))
         with patch.object(peers[0], 'live_profiles', return_value=[('patched', self.home)]):
             self.assertEqual(modules[0].selected_profiles(self.home, ['patched']), [('patched', self.home)])
             self.assertEqual(modules[1].selected_profiles(self.home, ['default']), [('default', self.home)])
@@ -113,8 +113,8 @@ class UpdateTests(unittest.TestCase):
     def test_missing_updater_payload_never_borrows_another_release(self):
         release = copy_sources(self.root / 'incomplete')
         for entry in ('update_bundle', 'update_bundle_native'):
-            (release / f'Src/autowork_runtime/update/{entry}.py').unlink(missing_ok=True)
-            result = subprocess.run([sys.executable, str(release / f'{entry}.py'), '--help'],
+            (release / f'src/autowork_runtime/update/{entry}.py').unlink(missing_ok=True)
+            result = subprocess.run([sys.executable, str(release / f'scripts/{entry}.py'), '--help'],
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('missing selected-release source', result.stderr)
@@ -1209,7 +1209,7 @@ class ScopedUpdateTests(unittest.TestCase):
 
     def test_git_export_attributes_do_not_change_deployed_blob_hashes(self):
         copy_sources(self.remote, entries=('plugins/defaults.json',))
-        payload = 'Src/autowork_runtime/update/update_bundle.py'
+        payload = 'src/autowork_runtime/update/update_bundle.py'
         (self.remote / payload).chmod(0o755)
         (self.remote/'.gitattributes').write_text(f'skills/demo/SKILL.md export-ignore\n{payload} export-ignore\n')
         self.git(self.remote, 'add', '.'); self.git(self.remote, 'commit', '-m', 'archive attributes')
@@ -1637,7 +1637,7 @@ def cmd_install(source, *, force, ref, enable):
 
     def run_helper(self, action, scan='safe'):
         import os, sys
-        return subprocess.run([sys.executable, str(ROOT/'update_bundle_native.py'), action,
+        return subprocess.run([sys.executable, str(ROOT/'scripts/update_bundle_native.py'), action,
                                str(self.home), str(self.stage), 'a'*40],
                               env=dict(os.environ, PYTHONPATH=str(self.root), FAKE_SCAN=scan),
                               capture_output=True, text=True)
@@ -1660,7 +1660,7 @@ def cmd_install(source, *, force, ref, enable):
         bootstrap = f'import sys; sys.path.insert(0, {str(self.root)!r})'
         launcher.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} -I -c {shlex.quote(bootstrap)} "$@"\n')
         launcher.chmod(0o755)
-        spec = importlib.util.spec_from_file_location('update_launcher_test', ROOT/'update_bundle.py')
+        spec = importlib.util.spec_from_file_location('update_launcher_test', ROOT/'scripts/update_bundle.py')
         updater = importlib.util.module_from_spec(spec); spec.loader.exec_module(updater)
         with patch.dict(os.environ, PATH=str(self.root), PYTHONPATH=''), \
              patch.object(sys, 'path', [str(ROOT), *sys.path]):
@@ -1669,7 +1669,7 @@ def cmd_install(source, *, force, ref, enable):
         self.assertEqual(list(self.home.iterdir()), [])
 
     def test_native_adapter_exists(self):
-        self.assertTrue((ROOT/'update_bundle_native.py').is_file(), 'native admission adapter missing')
+        self.assertTrue((ROOT/'scripts/update_bundle_native.py').is_file(), 'native admission adapter missing')
 
     def test_native_scan_refusal_and_disabled_scanning_fail_closed(self):
         for verdict in ('caution', 'disabled'):
@@ -1689,7 +1689,7 @@ class ChatMenuEnvTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
-        spec = importlib.util.spec_from_file_location('update_env_under_test', ROOT/'update_bundle.py')
+        spec = importlib.util.spec_from_file_location('update_env_under_test', ROOT/'scripts/update_bundle.py')
         self.mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.mod)
         sys.path.insert(0, str(ROOT)); self.addCleanup(sys.path.remove, str(ROOT))
 

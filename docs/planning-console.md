@@ -1,11 +1,11 @@
 # Planning and decisions in the TUI and CLI
 
-Sources of truth: [CLI](../Src/pi_autowork/planning_commands.py),
-[controller](../Src/pi_autowork/planning.py),
-[RPC transport](../Src/pi_autowork/planning_rpc.py),
-[proposal validation/Apply](../Src/pi_autowork/planning_proposals.py),
-[TUI](../Src/pi_autowork/planning_ui.py) and
-[task decisions](../Src/pi_autowork/task_commands.py) (`cmd_decide`).
+Sources of truth: [CLI](../src/pi_autowork/planning_commands.py),
+[controller](../src/pi_autowork/planning.py),
+[RPC transport](../src/pi_autowork/planning_rpc.py),
+[proposal validation/Apply](../src/pi_autowork/planning_proposals.py),
+[TUI](../src/pi_autowork/planning_ui.py) and
+[task decisions](../src/pi_autowork/task_commands.py) (`cmd_decide`).
 Update this page when those contracts, launch flags or safety guards change.
 
 The planning console is separate from execution. It uses a Pi RPC subprocess for

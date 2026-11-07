@@ -871,13 +871,63 @@ describe('management surface', () => {
     expect(text()).toContain('Manual closure detail');
     expect(text()).not.toContain('blocked by DONE');
   });
+  it('shows task titles and separates resolution guidance from saved answers', async () => {
+    const value = fleet(); value.repos[0]!.runner!.questions[0]!.answer = 'Move the task to **Next** or defer it.';
+    capture(value);
+    await mount({ params: { view: 'blockers' } });
+    expect(text()).toContain('Owner task');
+    expect(text()).not.toContain('Existing answer');
+    expect(text()).not.toContain('Move the task');
+    await press('Answer T-1');
+    expect(text()).not.toContain('existing answer');
+    expect(text()).toContain('How to resolve');
+    await press('How to resolve');
+    expect(text()).toContain('Move the task to '); expect(text()).toContain('Next');
+    expect(text()).not.toContain('**');
+    expect(text()).toContain('does not grant live permission');
+  });
+  it('keeps a revision-bound answer usable while the owner types beyond the cache freshness window', async () => {
+    await mount({ params: { view: 'blockers' } });
+    await press('Answer T-1');
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 16000);
+    try {
+      await act(async () => {
+        query.setQueryData(['autowork', 'a', 'generation-1', 'repo', 'task', 'T-1', true], detail, { updatedAt: now });
+        query.setQueryData(['autowork', 'a', 'generation-1', 'repo', 'tasks'], { revision: 'rev', tasks: [task] }, { updatedAt: now });
+        query.setQueryData(['autowork', 'a', 'fleet'], { ...fleet(), capturedAt: now }, { updatedAt: now });
+      });
+      await flush(); await input('Owner answer', 'Keep it deferred');
+      expect(button('Send answer')!.props.disabled).toBe(false);
+      await press('Send answer');
+      expect(env.invoke).toHaveBeenCalledWith('autowork.prepare', expect.objectContaining({ action: expect.objectContaining({ kind: 'decision', revision: 'working-rev', text: 'Keep it deferred' }) }));
+    } finally { clock.mockRestore(); }
+  });
+  it('retries failed detail reads in place without losing the answer or dispatching it', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    let fail = false;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.task' && fail
+      ? Promise.reject(new Error('Autowork request limit reached; refresh later')) : initial(name, data));
+    await mount({ params: { view: 'blockers' } });
+    await press('Answer T-1'); await input('Owner answer', 'Keep it deferred');
+    fail = true;
+    await act(async () => { await query.invalidateQueries({ queryKey: ['autowork', 'a', 'generation-1', 'repo', 'task'] }); });
+    await flush();
+    expect(button('Send answer')!.props.disabled).toBe(true);
+    expect(button('Retry task details')).toBeTruthy();
+    expect(text()).toContain('Your draft is kept');
+    fail = false; await press('Retry task details');
+    expect(root.root.find(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'Owner answer').props.value).toBe('Keep it deferred');
+    expect(button('Send answer')!.props.disabled).toBe(false);
+    expect(env.invoke.mock.calls.some(([name]) => name === 'autowork.prepare' || name === 'autowork.commit')).toBe(false);
+  });
   it('turns a raw request-limit failure into a retryable cached-data message', async () => {
     const initial = env.invoke.getMockImplementation()!;
     env.invoke.mockImplementation((name, data) => name === 'autowork.tasks'
       ? Promise.reject(new Error('Request failed: Autowork request limit reached; refresh later requestType=plugin.rpc.invoke.request code=handler_error'))
       : initial(name, data));
     await mount({ params: { view: 'tasks' } });
-    expect(text()).toContain('Autowork is busy; refresh later.');
+    expect(text()).toContain('Autowork is busy. Retry the read.');
     expect(text()).not.toContain('requestType=');
     expect(text()).not.toContain('handler_error');
     expect(button('Retry')).toBeTruthy();

@@ -22,9 +22,9 @@ sys.path[:0] = [str(root / 'pi-autowork/engine'), str(root / 'pi-autowork')]
 a = importlib.import_module({first!r})
 b = importlib.import_module('pi_autowork.engine.task_store')
 assert a is b is importlib.import_module('task_store')
-assert Path(a.__file__) == root / 'Src/pi_autowork/engine/task_store.py'
+assert Path(a.__file__) == root / 'src/pi_autowork/engine/task_store.py'
 from pi_autowork import command, task_snapshot, fleet_view
-assert Path(command.__file__) == root / 'Src/pi_autowork/command.py'
+assert Path(command.__file__) == root / 'src/pi_autowork/command.py'
 assert fleet_view.TaskRow is task_snapshot.TaskRow
 from pi_autowork import workspaces
 from pi_autowork.engine import worktree_paths
@@ -58,7 +58,7 @@ for name in ('STATE_SCHEMA', 'STATE_SCHEMA_READS'):
                                         text=True, capture_output=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn('prepare_api', result.stdout)
-            (root / 'Src/pi_autowork/command.py').unlink()
+            (root / 'src/pi_autowork/command.py').unlink()
             for argv, environment in commands:
                 result = subprocess.run(argv, cwd=folder, env=environment,
                                         text=True, capture_output=True, timeout=30)

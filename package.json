@@ -16,9 +16,9 @@
     "url": "https://github.com/TrebuchetDynamics/kit.git"
   },
   "files": [
-    "autowork_bootstrap.py",
-    "Src/autowork_bootstrap.py",
-    "Src/pi_autowork/",
+    "scripts/autowork_bootstrap.py",
+    "src/autowork_bootstrap.py",
+    "src/pi_autowork/",
     "adapters/",
     "skills/",
     "scripts/pi-autowork.sh",

@@ -7,10 +7,10 @@
       "path": "README.md",
       "covers": [
         "install.sh",
-        "bundle.py",
+        "scripts/bundle.py",
         "plugins/defaults.json",
-        "update_bundle.py",
-        "runtime_defaults.py"
+        "scripts/update_bundle.py",
+        "scripts/runtime_defaults.py"
       ],
       "verified_at": "9e2cc1ad"
     },
@@ -19,15 +19,15 @@
       "path": "docs/reference.md",
       "verified_at": "9e2cc1ad",
       "covers": [
-        "bundle.py",
-        "setup_bundle.py",
-        "update_bundle.py",
-        "install_skills.py",
+        "scripts/bundle.py",
+        "scripts/setup_bundle.py",
+        "scripts/update_bundle.py",
+        "scripts/install_skills.py",
         "install-plugins.sh",
-        "install-graphify.py",
-        "runtime_defaults.py",
+        "scripts/install-graphify.py",
+        "scripts/runtime_defaults.py",
         "plugins/defaults.json",
-        "telegram_menu_policy.py",
+        "scripts/telegram_menu_policy.py",
         "scripts/check.py",
         "pi-autowork/pi_autowork/task_commands.py",
         "skills/docs-sync/scripts/docs.py"
@@ -37,15 +37,15 @@
       "status": "maintained",
       "path": "docs/installation.md",
       "covers": [
-        "setup_bundle.py",
-        "setup_preflight.py",
-        "setup_runtime.py",
-        "update_bundle.py",
-        "update_bundle_native.py",
+        "scripts/setup_bundle.py",
+        "scripts/setup_preflight.py",
+        "scripts/setup_runtime.py",
+        "scripts/update_bundle.py",
+        "scripts/update_bundle_native.py",
         "install-plugins.sh",
         "plugins/PLUGINS.md",
         "plugins/defaults.json",
-        "runtime_defaults.py",
+        "scripts/runtime_defaults.py",
         "skills/grill-me/SKILL.md"
       ],
       "verified_at": "9e2cc1ad"
@@ -55,11 +55,11 @@
       "path": "docs/troubleshooting.md",
       "verified_at": "9e2cc1ad",
       "covers": [
-        "bundle.py",
-        "setup_runtime.py",
-        "update_bundle.py",
-        "runtime_defaults.py",
-        "telegram_menu_policy.py"
+        "scripts/bundle.py",
+        "scripts/setup_runtime.py",
+        "scripts/update_bundle.py",
+        "scripts/runtime_defaults.py",
+        "scripts/telegram_menu_policy.py"
       ]
     },
     "architecture": {
@@ -68,9 +68,9 @@
       "path": "docs/project.md#current-components",
       "covers": [
         "__init__.py",
-        "bundle.py",
-        "workflow_commands.py",
-        "autoresearch_commands.py",
+        "scripts/bundle.py",
+        "scripts/workflow_commands.py",
+        "scripts/autoresearch_commands.py",
         "skills",
         "adapters/pi.mjs"
       ],
@@ -99,13 +99,13 @@
       "path": "docs/onboarding.md"
     },
     "workflows": {
-      "reason": "Source-evidence gap: TOOLSET-461 rechecked the pin at 9e2cc1ad without completing current-source reverification; current alias, routing and menu claims remain unchecked, and the three covered registrar entrypoints now delegate to Src/ implementations outside covers. Those registrars alone do not qualify the task-store workflow instructions. See docs/project.md#role-source-evidence-gaps.",
+      "reason": "Source-evidence gap: TOOLSET-461 rechecked the pin at 9e2cc1ad without completing current-source reverification; current alias, routing and menu claims remain unchecked, and the three covered registrar entrypoints now delegate to src/ implementations outside covers. Those registrars alone do not qualify the task-store workflow instructions. See docs/project.md#role-source-evidence-gaps.",
       "status": "maintained",
       "path": "docs/workflows.md",
       "covers": [
-        "workflow_commands.py",
-        "autoresearch_commands.py",
-        "telegram_menu_policy.py"
+        "scripts/workflow_commands.py",
+        "scripts/autoresearch_commands.py",
+        "scripts/telegram_menu_policy.py"
       ],
       "verified_at": "8738cc636fdc"
     },
@@ -129,8 +129,8 @@
       "status": "maintained",
       "path": "docs/memory.md",
       "covers": [
-        "setup_preflight.py",
-        "runtime_defaults.py",
+        "scripts/setup_preflight.py",
+        "scripts/runtime_defaults.py",
         "plugins/defaults.json"
       ]
     },

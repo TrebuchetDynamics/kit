@@ -202,7 +202,7 @@ export function reloadRequired(error: unknown): boolean {
 export function friendlyError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   const clean = raw.replace(/\s*requestType=.*$/s, '').replace(/\s*code=.*$/s, '').replace(/^Request failed:\s*/i, '').trim();
-  if (/request limit reached/i.test(clean)) return 'Autowork is busy; refresh later.';
+  if (/request limit reached/i.test(clean)) return 'Autowork is busy. Retry the read.';
   if (reloadRequired(clean)) return 'Autowork updated on this host; this plugin needs a reload.';
   if (/plugin stopped/i.test(clean)) return 'The plugin restarted; refresh.';
   return clean || 'The request failed; retry when the host is available.';

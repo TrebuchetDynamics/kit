@@ -2447,6 +2447,8 @@ finally:
         command = [sys.executable, '-c', '''
 from pathlib import Path
 import tempfile
+import sys
+sys.path.insert(0, str(Path('scripts').resolve()))
 import install_skills
 assert not Path('skills/autowork/scripts').exists()
 assert not Path('kept/__pycache__/ignored.pyc').exists()

@@ -20,10 +20,10 @@ class NestedLayoutTests(unittest.TestCase):
             runner.package, runner.package_rev = str(candidate), 'old'
             runner.toolset_rev, runner.mode = 'running', 'continuous'
             runner.reload = False
-            cases = (candidate / 'Src/pi_autowork/legacy/reader.py',
-                     candidate / 'Src/pi_autowork/engine/task_store.py',
-                     candidate / 'Src/pi_autowork/worker.py',
-                     candidate / 'Src/pi_autowork/coordinator.py')
+            cases = (candidate / 'src/pi_autowork/legacy/reader.py',
+                     candidate / 'src/pi_autowork/engine/task_store.py',
+                     candidate / 'src/pi_autowork/worker.py',
+                     candidate / 'src/pi_autowork/coordinator.py')
             for path in cases:
                 original = path.read_bytes()
                 if path.name == 'reader.py':

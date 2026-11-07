@@ -5,6 +5,14 @@ claim of a tagged release, completed installation or live workflow qualification
 
 ## [Unreleased]
 
+### Changed
+
+- Rename the source root from `Src/` to `src/`, updating loaders, packaging,
+  checks and the Paseo planning bridge.
+- Move Python entrypoint adapters from the repository root into `scripts/`, with
+  callers and resource paths updated. Keep only the Hermes-required `__init__.py`
+  adapter beside `plugin.yaml`.
+
 ### Removed
 
 - External memory provisioning and managed catalog trimming. Setup no longer selects

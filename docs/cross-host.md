@@ -1,7 +1,8 @@
-# Claude Code, Codex and Pi installation
+# Claude Code, Codex, Pi and Octet installation
 
-Autowork provides native packages for four hosts. Claude Code, Codex and Pi
-use the portable adapters, not the Hermes plugin loader. None requires Hermes installed.
+Kit supports Claude Code, Codex, Pi, Octet and optional Hermes integration.
+Claude Code, Codex, Pi and Octet use the portable adapters, not the Hermes plugin
+loader. None requires Hermes installed.
 These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Autowork, Work,
 Autoresearch, Impeccable, UI Taste, Beautify GitHub README,
 LGTM, Git Commit Push, Blockers, Pending, the six bundled Ponytail skills,
@@ -18,6 +19,15 @@ outcome keeps focused planning, and `read-only` saves nothing.
 Supporting protocols are bundled and loaded only when needed. Hermes profile
 creation, Telegram routing,
 Kanban workers, fleet setup, memory and speech integrations remain Hermes-only.
+
+## Octet
+
+Run `./install.sh --only octet` from a Kit checkout. Full install and update include
+the official stable binary bootstrap, native skills and `/kit-*` prompt pointers,
+even when the CLI is absent. Open a new session or use `/reload`, then invoke
+`/kit-ask-kit`, `/kit-work` or another `/kit-<name>` prompt. Explicit skills use
+`/skill:<name>`. These regular files reference this checkout; keep it in place.
+No executable Pi bridge is enabled. See [installation and qualification limits](installation.md#octet-native-binaries).
 
 ## Work in the current session
 
@@ -49,6 +59,7 @@ Existing external Ponytail installations are left alone; check command collision
 | Claude Code | `/kit:ponytail-review` |
 | Codex | `$kit:ponytail-review` |
 | Pi | `/ponytail-review` or `/skill:ponytail-review` |
+| Octet | `/kit-ponytail-review` or `/skill:ponytail-review` |
 
 The suite also includes `ponytail`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`
 and `ponytail-help`; Pi command aliases use the same hyphenated names.

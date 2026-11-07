@@ -192,7 +192,7 @@ class OfflineCheckTests(unittest.TestCase):
         self.write('tests/test_one.py', 'import unittest\n')
         self.write('tests/test_two.py', 'import unittest\n')
         self.affected_repo()
-        for path in ('unknown.dat', 'Src/pi_autowork/__init__.py', 'tests/conftest.py', 'pyproject.toml',
+        for path in ('unknown.dat', 'src/pi_autowork/__init__.py', 'tests/conftest.py', 'pyproject.toml',
                      '.github/workflows/ci.yml', 'scripts/check.py'):
             with self.subTest(path=path):
                 base = self.git('rev-parse', 'HEAD')
@@ -232,17 +232,17 @@ class OfflineCheckTests(unittest.TestCase):
         from src_fixture import copy_sources
         copy_sources(self.root)
         self.write('tests/test_one.py', 'import unittest\nclass One(unittest.TestCase):\n    def test_one(self): pass\n')
-        self.write('bundle.py', "bootstrap.execute(globals(), 'Src/autowork_runtime/bundle.py')\n")
-        owner = self.write('Src/autowork_runtime/bundle.py', 'def broken(:\n')
+        self.write('scripts/bundle.py', "bootstrap.execute(globals(), 'src/autowork_runtime/bundle.py')\n")
+        owner = self.write('src/autowork_runtime/bundle.py', 'def broken(:\n')
         result = self.run_check('tests/test_one.py')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Src/autowork_runtime/bundle.py', result.stdout)
+        self.assertIn('src/autowork_runtime/bundle.py', result.stdout)
         owner.unlink()
         result = self.run_check('tests/test_one.py')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('missing selected-release source', result.stdout)
-        self.write('Src/autowork_runtime/bundle.py', 'VALUE = 1\n')
-        bad = self.write('Src/pi_autowork/consumer.py', 'import task_store\n')
+        self.write('src/autowork_runtime/bundle.py', 'VALUE = 1\n')
+        bad = self.write('src/pi_autowork/consumer.py', 'import task_store\n')
         result = self.run_check('tests/test_one.py')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('unqualified engine import', result.stdout)
@@ -322,6 +322,8 @@ class Check(unittest.TestCase):
 
     def test_a_broken_tree_fails_before_any_test_runs(self):
         """Conflict markers twice reached main in Python modules; the tree guard runs first."""
+        from src_fixture import copy_sources
+        copy_sources(self.root)
         guard = ROOT / 'scripts/tree_guard.py'
         self.assertTrue(guard.is_file(), 'missing tree guard')
         # Every helper check.py runs before the tests, not only the guard: a new one it named

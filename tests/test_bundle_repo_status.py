@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class RepositoryStatusTests(unittest.TestCase):
     def setUp(self):
-        spec = importlib.util.spec_from_file_location('repo_status_bundle', ROOT / 'bundle.py')
+        spec = importlib.util.spec_from_file_location('repo_status_bundle', ROOT / 'scripts/bundle.py')
         assert spec is not None and spec.loader is not None
         self.bundle = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.bundle)

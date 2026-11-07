@@ -189,7 +189,7 @@ class ClosureDocumentsTests(unittest.TestCase):
 
     def test_actual_src_leaf_rejects_reverse_imports_and_import_time_side_effects(self):
         leaf = importlib.import_module(LEAF)
-        path = ROOT / 'Src/pi_autowork/engine/integration/closure_documents.py'
+        path = ROOT / 'src/pi_autowork/engine/integration/closure_documents.py'
         self.assertEqual(Path(leaf.__file__), path)
         self.assertEqual(path.with_name('__init__.py').read_bytes(), b'')
         package = LEAF.rpartition('.')[0]
@@ -206,7 +206,7 @@ class ClosureDocumentsTests(unittest.TestCase):
                     'pi_autowork.engine.task_store', 'pi_autowork.engine.check_receipt'), name)
         code = f'''
 import os, sys
-sys.path.insert(0, {str(ROOT / 'Src')!r})
+sys.path.insert(0, {str(ROOT / 'src')!r})
 def audit(event, args):
     if event == 'open':
         mode, flags = args[1:3]

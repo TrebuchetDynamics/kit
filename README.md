@@ -129,7 +129,7 @@ Restart your host session to discover the installed skills. See the
 
 From a checkout, `install.sh` installs every available component with verbose output:
 the Pi package, the `autowork` command and TUI, the `tx` tmux launcher, official stable
-Octet native binaries, and the Hermes, Claude Code and Codex plugins with their complete
+Octet native binaries with Kit skills, and the Hermes, Claude Code and Codex plugins with their complete
 skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
 item runs that host's own install command. `tx` keeps an existing `~/.tmux.conf`.
 
@@ -151,8 +151,11 @@ Octet bootstraps even when its CLI is absent. Default/`--all` and `update` use t
 it alone and `--skip octet` excludes it. It supports GNU/Linux x86-64 and macOS
 x86-64/arm64, needs `curl`, `sh`, Python 3 and native verification utilities, and
 reports the destination version. This installs upstream binaries and packaged docs,
-not Kit skill/prompt pointers or optional extensions. Credentials and shell profiles
-are unchanged. See [installation limits and failure recovery](docs/installation.md#octet-native-binaries).
+plus Kit skill entrypoints in `~/.octet/skills/` referencing this checkout. Keep the
+checkout in place. Kit also writes `/kit-*` prompt pointers in `~/.octet/prompts/`;
+use `/kit-ask-kit` or `/kit-work`. Use `/reload` for prompts and `/skills reload` for
+skills after updates. Optional
+extensions, credentials and shell profiles are unchanged. See [installation limits and failure recovery](docs/installation.md#octet-native-binaries).
 
 </details>
 

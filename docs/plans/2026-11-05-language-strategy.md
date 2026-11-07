@@ -3,6 +3,14 @@
 Status: Accepted (owner recommendation, 2026-11-05). The Go supervisor prototype
 remains conditional on the measurement gate below.
 
+**Superseded direction, 2026-11-07:** the owner now requests
+[Rust Autowork with Octet](rust-octet-autowork.md#accepted-direction), with planning
+resolving ordinary decisions. The Python-retention and conditional Go choices below
+are historical, not constraints on that redesign. Preserve completed measurement/type
+work and its receipts. The existing Python runtime remains authoritative until an
+explicitly qualified cutover; this note neither changes a live task contract nor
+starts a replacement runner.
+
 ## Decision
 
 - Keep Autowork's coordinator, task store, authority, leases, dispatch, integration
@@ -36,10 +44,10 @@ which already exists in the Paseo plugin and the Pi adapter.
   Paseo plugin is TypeScript; the Pi adapter is JavaScript.
 - [Dependencies](../dependencies.md#current-source-policy): pi-autowork stays
   standard-library Python; Textual and `uv` are optional presentation and tooling.
-- [`scorecard.py`](../../Src/pi_autowork/scorecard.py) already reports observed
+- [`scorecard.py`](../../src/pi_autowork/scorecard.py) already reports observed
   phase diagnostics, including dispatch-to-integration latency (TOOLSET-394). It
   does not sample coordinator memory or CPU.
-- [`parallel_dispatch.py`](../../Src/pi_autowork/engine/parallel_dispatch.py)
+- [`parallel_dispatch.py`](../../src/pi_autowork/engine/parallel_dispatch.py)
   measures host memory, disk and load for admission. It does not measure the
   coordinator's own footprint.
 - [`test_parallel_adversarial.py`](../../pi-autowork/engine/test_parallel_adversarial.py),
@@ -47,8 +55,8 @@ which already exists in the Paseo plugin and the Pi adapter.
   and [`test_parallel_state.py`](../../pi-autowork/engine/test_parallel_state.py)
   already cover worker lifecycle races, concurrent task-store writes and lease
   expiry. No new test-only task is needed for that outcome.
-- [`task_select.py`](../../Src/pi_autowork/engine/task_select.py) and
-  [`planning_authority.py`](../../Src/pi_autowork/planning_authority.py) are the
+- [`task_select.py`](../../src/pi_autowork/engine/task_select.py) and
+  [`planning_authority.py`](../../src/pi_autowork/planning_authority.py) are the
   critical selection and authority seam. They carry partial annotations and the
   repository had no type-check configuration when this plan was written.
 
@@ -182,8 +190,8 @@ prototype, restart or worker dispatch. Existing accepted work continues independ
 - Owner recommendation, 2026-11-05 (the request that produced this plan).
 - [Current components](../project.md#current-components).
 - [Dependencies](../dependencies.md#current-source-policy).
-- [`scorecard.py`](../../Src/pi_autowork/scorecard.py).
-- [`parallel_dispatch.py`](../../Src/pi_autowork/engine/parallel_dispatch.py).
+- [`scorecard.py`](../../src/pi_autowork/scorecard.py).
+- [`parallel_dispatch.py`](../../src/pi_autowork/engine/parallel_dispatch.py).
 - [`test_parallel_adversarial.py`](../../pi-autowork/engine/test_parallel_adversarial.py).
 - [`test_task_transactions.py`](../../pi-autowork/tests/test_task_transactions.py).
 - [`test_parallel_state.py`](../../pi-autowork/engine/test_parallel_state.py).

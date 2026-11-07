@@ -8,15 +8,15 @@ procedures and their side effects are in [installation](installation.md).
 
 ## Terminal: `hermes autowork`
 
-Source: [`bundle.py`](../bundle.py) `setup_parser` and `handle_cli`. Add `-p PROFILE`
+Source: [`scripts/bundle.py`](../scripts/bundle.py) `setup_parser` and `handle_cli`. Add `-p PROFILE`
 after `hermes` to run from a named profile; `setup` and `update` still target every
 live profile under the same Hermes root.
 
 | Command | Flags | Effect |
 | --- | --- | --- |
 | `hermes autowork doctor` | `--json`; `--core` (alias `--bundle-only`) | Reports plugin load and command/skill registration, and lists profiles linked to a working checkout (`linked_profiles`; never a failure). Exit 1 unless `status` is `ready`. `--core` ignores external integration gaps. |
-| `hermes autowork setup` | `--dry-run`, `--yes-deps`, `--bundle-only`, `--no-reload`, `--hermes-home ROOT` | Runs [`setup_bundle.py`](../setup_bundle.py): installs sources in [`plugins/PLUGINS.md`](../plugins/PLUGINS.md), applies [defaults](../plugins/defaults.json), finalizes every live profile. |
-| `hermes autowork update` | `--check`, `--hermes-home ROOT` | Runs [`update_bundle.py`](../update_bundle.py) and waits: fast-forward-only update of every live profile. `--check` fetches and previews only. |
+| `hermes autowork setup` | `--dry-run`, `--yes-deps`, `--bundle-only`, `--no-reload`, `--hermes-home ROOT` | Runs [`scripts/setup_bundle.py`](../scripts/setup_bundle.py): installs sources in [`plugins/PLUGINS.md`](../plugins/PLUGINS.md), applies [defaults](../plugins/defaults.json), finalizes every live profile. |
+| `hermes autowork update` | `--check`, `--hermes-home ROOT` | Runs [`scripts/update_bundle.py`](../scripts/update_bundle.py) and waits: fast-forward-only update of every live profile. `--check` fetches and previews only. |
 | `hermes autowork pin NAME` | `--dry-run`, `--unpin`, `--hermes-home ROOT` | Replaces one profile's plugin link with a clone at the same revision, saving the link; `--unpin` restores it. See [linked profiles](installation.md#linked-profiles-and-pinned-clones). |
 | `hermes autowork finalize` | `--hermes-home ROOT` (required), `--bundle-only`, `--no-reload` | Verifies one profile's registrations and runtime settings and refreshes gateway commands; setup calls it per profile. |
 
@@ -32,7 +32,7 @@ live profile under the same Hermes root.
 
 ## Chat: `/autowork status`, `list` and `update`
 
-Source: [`bundle.py`](../bundle.py) `handle_chat`, `list_commands`, `start_update`,
+Source: [`scripts/bundle.py`](../scripts/bundle.py) `handle_chat`, `list_commands`, `start_update`,
 `update_status`, `repository_status`. Works in CLI chat and Telegram.
 
 | Form | Effect |
@@ -63,10 +63,10 @@ Run from a clone of this repository. The shell installers are thin wrappers.
 | Script | Flags | Effect |
 | --- | --- | --- |
 | `./install.sh` | `--all`/`--full`, `--only a,b`, `--skip a,b`, `--list`, `--menu`, `--no-pull`, `--dry-run`, `--verbose`/`--quiet`, `--color auto\|always\|never`; Hermes options for the Hermes item | The suite installer ([`scripts/install_menu.py`](../scripts/install_menu.py)): Pi package, `autowork`, `tx`, Hermes, Claude Code, Codex. Defaults to all available components with verbose output; the explicit interactive menu requires a terminal. |
-| `bash install-plugins.sh` | Same as `hermes autowork setup`; `--help` | Public calls, including `--help`, execute `setup_bundle.py`. The source-installer usage appears only with the internal `--sources-only --help`. |
-| `bash install-skills.sh` | `--dry-run`, `--hermes-home ROOT`, `--profile-home HOME` | Runs [`install_skills.py`](../install_skills.py): copies `skills/` (except retired `repo-docs` and `repo-interview`, and support folders that document themselves with a `README.md` and have no `SKILL.md`) into the default and every existing profile, or only `--profile-home`; `--hermes-home` and `--profile-home` are mutually exclusive. Does not overwrite existing skill contents; a reference-only source container retires a legacy installed `SKILL.md` while keeping the other files. Never changes configuration. |
-| `python3 update_bundle.py` | `--hermes-home ROOT` (required), `--check`, `--dry-run`, `--profile NAME` (repeatable with `--source`), `--source CHECKOUT`, `--revision SHA`, `--native-python PATH`, `--cancel-scoped SHA256` | Cancel an exact unpublished scoped receipt (with `--check` to preview), or all-profile update, or with `--profile`, `--source`, `--revision` and `--native-python` (all four required) a scoped deployment of a reviewed local commit; see [installation](installation.md#deploy-an-exact-local-revision-to-selected-profiles). |
-| `python3 install-graphify.py` | `--hermes-home ROOT`, `--profile NAME` (both required), `--dry-run` | Installs Graphify's Hermes skill into selected existing profiles; installs the `graphifyy` tool with `uv tool install` when missing. |
+| `bash install-plugins.sh` | Same as `hermes autowork setup`; `--help` | Public calls, including `--help`, execute `scripts/setup_bundle.py`. The source-installer usage appears only with the internal `--sources-only --help`. |
+| `bash install-skills.sh` | `--dry-run`, `--hermes-home ROOT`, `--profile-home HOME` | Runs [`scripts/install_skills.py`](../scripts/install_skills.py): copies `skills/` (except retired `repo-docs` and `repo-interview`, and support folders that document themselves with a `README.md` and have no `SKILL.md`) into the default and every existing profile, or only `--profile-home`; `--hermes-home` and `--profile-home` are mutually exclusive. Does not overwrite existing skill contents; a reference-only source container retires a legacy installed `SKILL.md` while keeping the other files. Never changes configuration. |
+| `python3 scripts/update_bundle.py` | `--hermes-home ROOT` (required), `--check`, `--dry-run`, `--profile NAME` (repeatable with `--source`), `--source CHECKOUT`, `--revision SHA`, `--native-python PATH`, `--cancel-scoped SHA256` | Cancel an exact unpublished scoped receipt (with `--check` to preview), or all-profile update, or with `--profile`, `--source`, `--revision` and `--native-python` (all four required) a scoped deployment of a reviewed local commit; see [installation](installation.md#deploy-an-exact-local-revision-to-selected-profiles). |
+| `python3 scripts/install-graphify.py` | `--hermes-home ROOT`, `--profile NAME` (both required), `--dry-run` | Installs Graphify's Hermes skill into selected existing profiles; installs the `graphifyy` tool with `uv tool install` when missing. |
 | `scripts/pi-autowork.sh` | `--once`, `--until-empty`, `--workers N`, `--dry-run`, `--status`, `--repo PATH`, `--interval SECONDS`, `--max-cycles N`, `--no-fallback`, `--allow-hermes`, `--install-service`, `--remove-service`, `--help` | Runs the Parallel Autowork engine with Pi workers, verified integration and a session merged into the main branch; see [continuous Autowork](cross-host.md#run-autowork-continuously). |
 | `python3 scripts/check.py` | `--list`, `--timeout SECONDS` (default 1800 per test process) | Runs the offline test inventory; see [testing](testing.md). |
 
@@ -174,7 +174,7 @@ Offline fixture checks cover scheduling and landing, not real-model plan quality
 
 ## Plugin settings
 
-Source: [`runtime_defaults.py`](../runtime_defaults.py),
+Source: [`scripts/runtime_defaults.py`](../scripts/runtime_defaults.py),
 [`plugins/defaults.json`](../plugins/defaults.json). Set them per profile with
 `hermes -p PROFILE config set KEY VALUE`.
 
@@ -193,7 +193,7 @@ values whenever they differ, preserving other settings:
 | `agent.max_turns` | `unlimited` (no per-turn iteration cap; Hermes quick setup writes `90`) |
 | `plugins.entries.kit.allow_gateway_injection` | `true` |
 | `skills.disabled` | Your entries preserved; bundled toolset skills removed |
-| `platforms.telegram.extra.command_menu.priority` | Your entries first, then the workflow commands and the `ui_taste`, `beautify_github_readme`, `impeccable`, `lgtm` and `git_commit_push` skill commands appended; retired bundle names and `autoresearch_*` entries removed. Other menu settings such as the mode and cap are not changed ([`telegram_menu_policy.py`](../telegram_menu_policy.py)). |
+| `platforms.telegram.extra.command_menu.priority` | Your entries first, then the workflow commands and the `ui_taste`, `beautify_github_readme`, `impeccable`, `lgtm` and `git_commit_push` skill commands appended; retired bundle names and `autoresearch_*` entries removed. Other menu settings such as the mode and cap are not changed ([`scripts/telegram_menu_policy.py`](../scripts/telegram_menu_policy.py)). |
 
 Every setup, including `--bundle-only`, also clears the per-platform skill disable
 lists, except in opted-out profiles. Existing memory providers and their settings

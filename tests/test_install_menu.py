@@ -185,6 +185,7 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
         self.assertRegex(result.stdout, r'tx\s+installed')
         self.assertRegex(result.stdout, r'octet\s+installed.*octet 1.2.3')
         self.assertEqual(len(self.calls('octet-installer')), 1)
+        self.assert_octet_skills()
         self.assertLess(self.calls().index('codex plugin add kit@autowork-marketplace'),
                         next(i for i, call in enumerate(self.calls()) if call.startswith('octet-installer')))
 
@@ -192,10 +193,102 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
         result = self.install('update')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('Autowork suite update', result.stdout)
+        self.assert_octet_skills()
         self.assertRegex(result.stdout, r'octet\s+installed.*octet 1.2.3')
         self.assertIn(f'pi install {NEW}', self.calls('pi'))
         self.assertIn('claude plugin install kit@autowork', self.calls('claude'))
         self.assertIn('codex plugin add kit@autowork-marketplace', self.calls('codex'))
+
+    def assert_octet_skills(self):
+        root = self.home / '.octet/skills'
+        sources = sorted((ROOT / 'adapters/skills').glob('*/SKILL.md'))
+        self.assertGreater(len(sources), 0)
+        self.assertEqual({p.parent.name for p in root.glob('*/SKILL.md')},
+                         {p.parent.name for p in sources})
+        for source in sources:
+            target = root / source.parent.name / 'SKILL.md'
+            self.assertFalse(target.is_symlink())
+            body = target.read_text()
+            self.assertEqual(body.partition('\n---\n')[0], source.read_text().partition('\n---\n')[0])
+            self.assertIn(f'`{source}`', body)
+            self.assertIn(f'`{source.parent}`', body)
+            prompt = self.home / '.octet/prompts' / f'kit-{source.parent.name}.md'
+            self.assertIn(f'`{source}`', prompt.read_text())
+            self.assertIn('$@', prompt.read_text())
+        for selector in json.loads((ROOT / 'skills/autoresearch/UPSTREAM.json').read_text())['commands']:
+            prompt = self.home / '.octet/prompts' / f'kit-autoresearch-{selector}.md'
+            self.assertIn(f'Selected subcommand: {selector}', prompt.read_text())
+        self.assertIn('Selected mode: challenge',
+                      (self.home / '.octet/prompts/kit-grill-me.md').read_text())
+
+    def test_octet_prompts_preserve_existing_files_and_forward_arguments(self):
+        target = self.home / '.octet/prompts/kit-autowork.md'
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b'custom prompt\xff')
+        unrelated = target.parent / 'personal.md'
+        unrelated.write_text('personal prompt')
+        with patch.object(install_menu, 'HOME', self.home):
+            install_menu.install_octet_skills()
+            first_stat = target.stat()
+            self.assertIn('(0 updated)', install_menu.install_octet_skills())
+        self.assertEqual(target.with_name('kit-autowork.md.bak').read_bytes(), b'custom prompt\xff')
+        self.assertEqual(target.stat().st_mtime_ns, first_stat.st_mtime_ns)
+        self.assertIn('$@', target.read_text())
+        self.assertEqual(unrelated.read_text(), 'personal prompt')
+
+    def test_octet_skills_preserve_existing_files_and_refresh_idempotently(self):
+        root = self.home / '.octet/skills'
+        target = root / 'autowork/SKILL.md'
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b'custom workflow\xff')
+        backup = target.with_name('SKILL.md.bak')
+        backup.write_text('earlier backup')
+        unrelated = root / 'personal/SKILL.md'
+        unrelated.parent.mkdir()
+        unrelated.write_text('personal workflow')
+        config = self.home / '.octet/config.toml'
+        config.write_text('# user configuration\n')
+        with patch.object(install_menu, 'HOME', self.home):
+            result = install_menu.install_octet_skills()
+            self.assertIn('preserved previous files', result)
+            self.assertEqual(backup.read_text(), 'earlier backup')
+            self.assertEqual(target.with_name('SKILL.md.bak.1').read_bytes(), b'custom workflow\xff')
+            first_stat = target.stat()
+            self.assertIn('(0 updated)', install_menu.install_octet_skills())
+            self.assertEqual(target.stat().st_mtime_ns, first_stat.st_mtime_ns)
+            self.assertFalse(target.with_name('SKILL.md.bak.2').exists())
+            target.write_text('edited installed workflow')
+            install_menu.install_octet_skills()
+            self.assertEqual(target.with_name('SKILL.md.bak.2').read_text(), 'edited installed workflow')
+        self.assertEqual(unrelated.read_text(), 'personal workflow')
+        self.assertEqual(config.read_text(), '# user configuration\n')
+
+    def test_octet_skills_replace_entrypoint_symlink_without_writing_through_it(self):
+        original = self.home / 'custom-skill.md'
+        original.write_text('keep me')
+        target = self.home / '.octet/skills/autowork/SKILL.md'
+        target.parent.mkdir(parents=True)
+        target.symlink_to(original)
+        with patch.object(install_menu, 'HOME', self.home):
+            install_menu.install_octet_skills()
+        self.assertEqual(original.read_text(), 'keep me')
+        self.assertTrue(target.with_name('SKILL.md.bak').is_symlink())
+        self.assert_octet_skills()
+
+    def test_octet_skills_refuse_symlinked_directories(self):
+        outside = self.home / 'outside'
+        outside.mkdir()
+        for index, relative in enumerate(('.octet', '.octet/skills', '.octet/skills/autowork', '.octet/prompts')):
+            with self.subTest(relative=relative):
+                home = self.home / str(index)
+                redirected = home / relative
+                redirected.parent.mkdir(parents=True)
+                redirected.symlink_to(outside, target_is_directory=True)
+                with patch.object(install_menu, 'HOME', home):
+                    with self.assertRaisesRegex(OSError, 'regular directory'):
+                        install_menu.install_octet_skills()
+                self.assertFalse(list(outside.iterdir()))
+                self.assertFalse(list(home.glob('.octet/skills/*/SKILL.md')))
 
     def test_octet_bootstrap_uses_official_stable_installer(self):
         import hashlib
@@ -215,9 +308,22 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
                 self.assertIn(flags, call)
             self.assertTrue(call.endswith('https://octet.skaft.org/install'))
         self.assertFalse(list(self.home.glob('kit-octet-*')))
-        self.assertFalse((self.home / '.octet').exists())
+        self.assert_octet_skills()
+        self.assertFalse(list((self.home / '.octet/skills').glob('*/SKILL.md.bak*')))
+        self.assertEqual({p.name for p in (self.home / '.octet').iterdir()}, {'skills', 'prompts'})
         self.assertFalse((self.home / '.profile').exists())
         self.assertFalse(self.calls('pi install'))
+
+    def test_octet_skill_failure_keeps_binary_and_continues_other_components(self):
+        outside = self.home / 'outside'
+        outside.mkdir()
+        (self.home / '.octet').symlink_to(outside, target_is_directory=True)
+        result = self.install('--only', 'octet,tx')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r'octet\s+failed.*regular directory')
+        self.assertRegex(result.stdout, r'tx\s+installed')
+        self.assertTrue((self.home / '.local/bin/octet').is_file())
+        self.assertFalse(list(outside.iterdir()))
 
     def test_octet_bootstrap_failure_stages(self):
         import contextlib
@@ -243,6 +349,7 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
                     self.assertIn('partial installation', result.stdout)
                     self.assertIn('no rollback', result.stdout)
                 self.assertFalse(list(self.home.glob('kit-octet-*')))
+                self.assertFalse((self.home / '.octet').exists())
         for prerequisite in ('curl', 'sh', 'python3', 'uname'):
             with self.subTest(prerequisite=prerequisite), \
                  patch.object(install_menu.shutil, 'which',
@@ -284,6 +391,8 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
             self.log.write_text('')
             result = self.install(*args)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            if '--dry-run' in args:
+                self.assertIn(f'install Kit skills in {self.home / ".octet/skills"}', result.stdout)
             self.assertFalse(self.calls('curl'))
             self.assertFalse(self.calls('octet-installer'))
             self.assertFalse((self.home / '.local/bin/octet').exists())

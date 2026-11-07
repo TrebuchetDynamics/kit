@@ -78,6 +78,9 @@ the same files today so no two writers meet in one module.
 
 Status: Accepted
 
+Current layout amendment: the owner renamed the source root to lowercase `src/`.
+The `Src/` spelling below records the original plan; current paths use `src/`.
+
 ### Requested scope and authority
 
 The owner clarified that SDD targets **Autowork's codebase**, then explicitly added **`Src/`** to the maintainability/folder/file-structure request. Preserve that capitalization. This amendment supersedes the earlier planner call in commit `e52a6c8b` that excluded a source-root migration; it does not reopen completed TOOLSET-355–359 or discard their fixes. Standalone planning saves this specification and task batch only: no product code, tests, fixtures, skills, installations, live jobs or service changes are authorized in this occurrence.

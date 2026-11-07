@@ -146,14 +146,15 @@ test('npm package excludes local bytecode and keeps portable support files', asy
   assert.equal(paths.has('adapters/skills/grill-me/SKILL.md'), false);
   assert.equal(paths.has('adapters/skills/grill-me/PROTOCOL.md'), true);
   assert.equal([...paths].some(p => p.includes('__pycache__') || p.endsWith('.pyc')), false);
-  assert.equal([...paths].some(p => p.startsWith('Src/autowork_runtime/')), false);
+  assert.equal([...paths].some(p => p.startsWith('src/autowork_runtime/')), false);
+  assert.equal([...paths].some(p => p.startsWith('Src/')), false);
   for (const path of ['adapters/pi.mjs', 'adapters/skills/COMMON.md',
     'skills/docs-sync/scripts/docs.py', 'skills/autoresearch/upstream/plan.md', 'skills/impeccable/LICENSE',
     'skills/test-optimizer/SKILL.md', 'skills/engineering/local/test-suite-optimization/PROTOCOL.md',
     'skills/apk-get/SKILL.md', 'skills/apk-get/BUILD.md', 'skills/apk-get/scripts/verify_apk.py',
     'skills/shared/COMMUNICATION.md', 'skills/work/SKILL.md',
     'adapters/skills/work/SKILL.md', 'adapters/skills/work/agents/openai.yaml',
-    'autowork_bootstrap.py', 'Src/autowork_bootstrap.py', 'Src/pi_autowork/__init__.py']) {
+    'scripts/autowork_bootstrap.py', 'src/autowork_bootstrap.py', 'src/pi_autowork/__init__.py']) {
     assert.equal(paths.has(path), true, path);
   }
 });
@@ -179,16 +180,16 @@ test('installed archive resolves portable references and commands without checko
       try { await cp(join(root, entry), target, {recursive: true}); }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
-    await mkdir(join(source, 'Src/autowork_runtime'), {recursive: true});
-    await writeFile(join(source, 'Src/autowork_runtime/private.py'), 'raise RuntimeError("native payload")\n');
-    await writeFile(join(source, 'Src/pi_autowork/fixture_reader.py'),
+    await mkdir(join(source, 'src/autowork_runtime'), {recursive: true});
+    await writeFile(join(source, 'src/autowork_runtime/private.py'), 'raise RuntimeError("native payload")\n');
+    await writeFile(join(source, 'src/pi_autowork/fixture_reader.py'),
       'def _compat_main(argv): return len(argv)\n');
     const archive = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--offline', '--json', '--pack-destination', scratch],
       {cwd: source, encoding: 'utf8'}))[0];
-    assert.equal(archive.files.some(f => f.path.startsWith('Src/autowork_runtime/')), false);
+    assert.equal(archive.files.some(f => f.path.startsWith('src/autowork_runtime/')), false);
     execFileSync('tar', ['-xzf', join(scratch, archive.filename), '-C', scratch]);
     const installed = join(scratch, 'package');
-    const pythonEnv = {...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: installed};
+    const pythonEnv = {...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: join(installed, 'scripts')};
     const probe = code => execFileSync('python3', ['-B', '-c', code],
       {cwd: installed, env: pythonEnv, encoding: 'utf8'});
     probe('from pathlib import Path\nimport autowork_bootstrap as b\nassert b.run(Path.cwd(), "pi_autowork.fixture_reader", ["read"]) == 1\n');

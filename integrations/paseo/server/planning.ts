@@ -53,7 +53,7 @@ export class PlanningManager {
 
   constructor(options: PlanningOptions) {
     const source = realpathSync(absolute(options.source, 'source'));
-    for (const file of ['autowork_bootstrap.py', 'Src/pi_autowork/planning.py', 'Src/pi_autowork/planning_hub.py']) {
+    for (const file of ['scripts/autowork_bootstrap.py', 'src/pi_autowork/planning.py', 'src/pi_autowork/planning_hub.py']) {
       const path = realpathSync(join(source, file));
       if (!inside(path, source) || !statSync(path).isFile()) throw new Error('Planning controller escapes selected source');
     }

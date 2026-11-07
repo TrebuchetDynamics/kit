@@ -63,9 +63,9 @@ def repository_files():
 
 
 def module_name(path):
-    """Canonical source names, including the stable pre-Src public entry names."""
+    """Canonical source names, including the stable pre-src public entry names."""
     name = path.removesuffix('.py').replace('/', '.')
-    if name.startswith('Src.'):
+    if name.startswith('src.'):
         name = name[4:]
     elif name.startswith('pi-autowork.pi_autowork.'):
         name = name[len('pi-autowork.'):]
@@ -144,7 +144,7 @@ def dependency_graph(files, tests=(), *, conservative=False):
         # Public adapter -> canonical owner, even while independent migrations land.
         canonical = module_name(path)
         if path.startswith('pi-autowork/'):
-            deps |= {p for p in modules.get(canonical, ()) if p.startswith('Src/')}
+            deps |= {p for p in modules.get(canonical, ()) if p.startswith('src/')}
         if conservative and path.endswith('.py'):
             # Loading a package member executes every ancestor package initializer,
             # including unchanged initializers that import a changed dependency.

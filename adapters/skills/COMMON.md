@@ -1,9 +1,9 @@
-# Claude Code, Codex and Pi host contract
+# Claude Code, Codex, Pi and Octet host contract
 
 Use the [ASD-STE100 and project language rules](../../skills/shared/COMMUNICATION.md)
 for user-facing text. Read the target project's glossary map and glossary when available.
 
-These adapters run repository workflows in the current Claude Code, Codex or Pi session.
+These adapters run repository workflows in the current Claude Code, Codex, Pi or Octet session.
 Use this host's actual file, terminal, search, question and delegation tools.
 Read repository instructions and user scope first; preserve unrelated work.
 Every bundled workflow applies the [shared Ponytail method](../../skills/shared/PONYTAIL.md)
@@ -23,6 +23,9 @@ invocation (`/kit:plan-with-me` in Claude Code), select `plan-with-me`
 and request challenge mode.
 Shared source files are reference material; this contract takes
 precedence over Hermes-specific execution procedures in linked upstream material.
+Octet prompt pointers use `/kit-<name>`; native skills use `/skill:<name>`.
+Use `/kit-<name>` for Kit command handoffs on Octet. They load the same adapters;
+the optional executable Pi bridge is not required.
 Pi command aliases use hyphens, including `/autoresearch-<protocol>`; use these
 spellings even when linked Hermes references show Telegram's underscore aliases.
 Never change host permissions, memory configuration, model credentials or approval

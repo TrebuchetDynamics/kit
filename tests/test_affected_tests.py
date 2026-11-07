@@ -25,7 +25,7 @@ class AffectedTestsTests(unittest.TestCase):
         for change, failed in (('pi-autowork/pi_autowork/task_commands.py', ['tests/test_task_commands.py']),
                                ('pi-autowork/pi_autowork/task_migrate.py', ['pi-autowork/engine/test_parallel_plan.py']),
                                ('pi-autowork/pi_autowork/worker.py', ['tests/test_pi_autowork.py']),
-                               ('install_skills.py', ['tests/test_engineering_vendor.py'])):
+                               ('scripts/install_skills.py', ['tests/test_engineering_vendor.py'])):
             with self.subTest(change=change):
                 tests, _, full = affected_tests.select([change])
                 self.assertFalse(full)
@@ -45,11 +45,11 @@ class AffectedTestsTests(unittest.TestCase):
 
     def test_src_relative_qualified_and_legacy_edges_do_not_confuse_duplicate_stems(self):
         files = {
-            'Src/pi_autowork/__init__.py': '',
-            'Src/pi_autowork/engine/__init__.py': '',
-            'Src/pi_autowork/engine/owner.py': 'VALUE = 1\n',
-            'Src/pi_autowork/engine/consumer.py': 'from .owner import VALUE\n',
-            'Src/pi_autowork/command.py': 'from .engine import consumer\n',
+            'src/pi_autowork/__init__.py': '',
+            'src/pi_autowork/engine/__init__.py': '',
+            'src/pi_autowork/engine/owner.py': 'VALUE = 1\n',
+            'src/pi_autowork/engine/consumer.py': 'from .owner import VALUE\n',
+            'src/pi_autowork/command.py': 'from .engine import consumer\n',
             'pi-autowork/pi_autowork/command.py': '# old entry\n',
             'unrelated/owner.py': 'VALUE = 2\n',
             'tests/test_public.py': 'import pi_autowork.command\n',
@@ -64,11 +64,11 @@ class AffectedTestsTests(unittest.TestCase):
                 path.write_text(body)
             with patch.object(affected_tests, 'ROOT', root):
                 graph = affected_tests.dependency_graph(list(files), conservative=True)
-                self.assertIn('Src/pi_autowork/engine/owner.py', graph['Src/pi_autowork/engine/consumer.py'])
-                self.assertIn('Src/pi_autowork/command.py', graph['pi-autowork/pi_autowork/command.py'])
-                self.assertIn('Src/pi_autowork/__init__.py', graph['tests/test_public.py'])
-                self.assertNotIn('unrelated/owner.py', graph['Src/pi_autowork/engine/consumer.py'])
-                self.assertNotIn('Src/pi_autowork/engine/owner.py', graph['tests/test_other.py'])
+                self.assertIn('src/pi_autowork/engine/owner.py', graph['src/pi_autowork/engine/consumer.py'])
+                self.assertIn('src/pi_autowork/command.py', graph['pi-autowork/pi_autowork/command.py'])
+                self.assertIn('src/pi_autowork/__init__.py', graph['tests/test_public.py'])
+                self.assertNotIn('unrelated/owner.py', graph['src/pi_autowork/engine/consumer.py'])
+                self.assertNotIn('src/pi_autowork/engine/owner.py', graph['tests/test_other.py'])
 
     def test_an_unmapped_document_selects_nothing_but_unmapped_code_selects_the_whole_suite(self):
         """A changelog line cost the whole suite before every push; code with no mapped test still does."""

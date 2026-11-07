@@ -131,7 +131,7 @@ class EvidenceOnlyTests(unittest.TestCase):
     def test_only_the_dispatch_writer_imports_or_reads_provenance(self):
         engine = Path(__file__).resolve().parent
         allowed = {'parallel_dispatch.py', 'provenance.py'}
-        package = engine.parents[1] / 'Src/pi_autowork'
+        package = engine.parents[1] / 'src/pi_autowork'
         for path in sorted([*engine.rglob('*.py'), *package.rglob('*.py')]):
             if '__pycache__' in path.parts or path.name.startswith('test_') or path.name in allowed:
                 continue
@@ -140,7 +140,7 @@ class EvidenceOnlyTests(unittest.TestCase):
             for read in ('provenance.read', 'provenance.capture', 'provenance.jsonl'):
                 self.assertNotIn(read, text, path.name)
         self.assertIn('from pi_autowork.engine import provenance',
-                      (engine.parents[1] / 'Src/pi_autowork/engine/parallel_dispatch.py').read_text())
+                      (engine.parents[1] / 'src/pi_autowork/engine/parallel_dispatch.py').read_text())
 
 
 if __name__ == '__main__':

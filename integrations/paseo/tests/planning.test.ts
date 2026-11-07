@@ -109,12 +109,13 @@ function fixture() {
   const repo = join(root, 'repo');
   const other = join(root, 'other');
   const stateRoot = join(root, 'private', 'planning');
-  mkdirSync(join(source, 'Src', 'pi_autowork'), { recursive: true });
+  mkdirSync(join(source, 'src', 'pi_autowork'), { recursive: true });
+  mkdirSync(join(source, 'scripts'));
   mkdirSync(repo); mkdirSync(other);
-  writeFileSync(join(source, 'Src', 'pi_autowork', '__init__.py'), '');
-  writeFileSync(join(source, 'Src', 'pi_autowork', 'planning.py'), planner);
-  writeFileSync(join(source, 'Src', 'pi_autowork', 'planning_hub.py'), hub);
-  writeFileSync(join(source, 'autowork_bootstrap.py'), `import sys, importlib\ndef load(root, module):\n    sys.path.insert(0, str(root / 'Src'))\n    return importlib.import_module(module)\n`);
+  writeFileSync(join(source, 'src', 'pi_autowork', '__init__.py'), '');
+  writeFileSync(join(source, 'src', 'pi_autowork', 'planning.py'), planner);
+  writeFileSync(join(source, 'src', 'pi_autowork', 'planning_hub.py'), hub);
+  writeFileSync(join(source, 'scripts/autowork_bootstrap.py'), `import sys, importlib\ndef load(root, module):\n    sys.path.insert(0, str(root / 'src'))\n    return importlib.import_module(module)\n`);
   const options = { source, python, stateRoot };
   const manager = new PlanningManager(options);
   managers.push(manager);
@@ -257,7 +258,7 @@ describe('owned planning adapter', () => {
     const { id } = await f.manager.start(f.repo, 'x');
     await settled(f.manager, f.repo, id);
     expect(existsSync(join(f.source, '__pycache__'))).toBe(false);
-    expect(existsSync(join(f.source, 'Src/pi_autowork/__pycache__'))).toBe(false);
+    expect(existsSync(join(f.source, 'src/pi_autowork/__pycache__'))).toBe(false);
   });
   it('the Python boundary independently rejects unowned sessions, arbitrary methods and authority fields', () => {
     const f = fixture();

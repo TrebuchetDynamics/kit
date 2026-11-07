@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 CRAFT = ' '.join((ROOT / 'skills/shared/PLANNING-CRAFT.md').read_text().split())
-MAINTAINER = (ROOT / 'Src/pi_autowork/maintainer.py').read_text()
+MAINTAINER = (ROOT / 'src/pi_autowork/maintainer.py').read_text()
 
 
 class PlanningDecompositionContractTests(unittest.TestCase):
@@ -52,7 +52,7 @@ class PlanningDecompositionContractTests(unittest.TestCase):
                 self.assertIn(rule, MAINTAINER)
 
     def test_public_seam_budget_keeps_required_checks_and_review(self):
-        worker = (ROOT / 'Src/pi_autowork/engine/parallel_dispatch.py').read_text()
+        worker = (ROOT / 'src/pi_autowork/engine/parallel_dispatch.py').read_text()
         budget = 'at most one focused test per behavior'
         self.assertIn(budget, worker)
         self.assertIn(budget, CRAFT)

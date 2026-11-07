@@ -30,7 +30,7 @@ class CompleteBundleTests(unittest.TestCase):
         self.assertIn('reference/routing.md', manifest['sha256'])
 
     def test_clean_profiles_receive_every_skill_and_support_file_offline(self):
-        spec = importlib.util.spec_from_file_location('complete_bundle_installer', ROOT / 'install_skills.py')
+        spec = importlib.util.spec_from_file_location('complete_bundle_installer', ROOT / 'scripts/install_skills.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         with tempfile.TemporaryDirectory() as td:

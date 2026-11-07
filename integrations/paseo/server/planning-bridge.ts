@@ -33,14 +33,14 @@ def main():
     require(source.is_absolute() and state.is_absolute(), 'absolute runtime paths required')
     source = source.resolve(strict=True)
     require(not state.is_relative_to(source), 'planning state overlaps source')
-    spec = importlib.util.spec_from_file_location('_paseo_autowork_bootstrap', source / 'autowork_bootstrap.py')
+    spec = importlib.util.spec_from_file_location('_paseo_autowork_bootstrap', source / 'scripts/autowork_bootstrap.py')
     bootstrap = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = bootstrap
     spec.loader.exec_module(bootstrap)
     planning = bootstrap.load(source, 'pi_autowork.planning')
     hubs = bootstrap.load(source, 'pi_autowork.planning_hub')
     for module, name in ((planning, 'planning'), (hubs, 'planning_hub')):
-        require(Path(module.__file__).resolve() == (source / 'Src/pi_autowork' / (name + '.py')).resolve(),
+        require(Path(module.__file__).resolve() == (source / 'src/pi_autowork' / (name + '.py')).resolve(),
                 'controller source mismatch')
     hub = hubs.PlanningHub(max_text=MAX_TEXT)
     owned = {}

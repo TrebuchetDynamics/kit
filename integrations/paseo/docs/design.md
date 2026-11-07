@@ -53,4 +53,4 @@ Physical Android/Linux app connection, background/reconnect/battery/touch/clipbo
 - https://github.com/getpaseo/paseo/blob/72e3316f4f5dfe775c77dbf998968c92e2de9019/packages/cli/src/commands/plugin/scaffold.ts
 - https://github.com/getpaseo/paseo/blob/72e3316f4f5dfe775c77dbf998968c92e2de9019/packages/plugin/src/server/contracts.ts
 - https://github.com/getpaseo/paseo/blob/72e3316f4f5dfe775c77dbf998968c92e2de9019/packages/server/src/server/authorization/operation-permissions.ts
-- Autowork: Src/pi_autowork/{command,task_commands,fleet_view,planning_commands,planning,planning_hub}.py, canonical sources inspected without modifying them.
+- Autowork: src/pi_autowork/{command,task_commands,fleet_view,planning_commands,planning,planning_hub}.py, canonical sources inspected without modifying them.

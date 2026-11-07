@@ -1,13 +1,14 @@
 # Installation and profile effects
 
-Source: [setup orchestrator](../setup_bundle.py), [source installer](../install-plugins.sh),
-[profile defaults](../runtime_defaults.py), [native skill provisioning](../install_skills.py).
+Source: [setup orchestrator](../scripts/setup_bundle.py), [source installer](../install-plugins.sh),
+[profile defaults](../scripts/runtime_defaults.py), [native skill provisioning](../scripts/install_skills.py).
 
-The native setup bodies live in [`Src/autowork_runtime/`](../Src/autowork_runtime/):
-`setup_bundle.py`, `setup_preflight.py`, `setup_runtime.py`, `install_skills.py`
-and `install_graphify.py`. The root Python files remain the public
-entrypoints, including `install-graphify.py`. Keep their
-same-release `autowork_bootstrap.py` and `Src/` payload together; a single copied
+The native setup bodies live in [`src/autowork_runtime/install/`](../src/autowork_runtime/install/).
+Their Python entrypoints live in `scripts/`, including `scripts/setup_bundle.py`
+and `scripts/install-graphify.py`. Only `__init__.py` stays at the repository root:
+Hermes requires that adapter beside `plugin.yaml` to load the plugin.
+Keep the entrypoints, same-release `scripts/autowork_bootstrap.py` and `src/`
+payload together; a single copied
 installer is not standalone. Preflight rejects missing declared source payloads
 before installation stages. This layout does not change setup targets or policy.
 
@@ -24,7 +25,7 @@ Use `--menu` when you want to select components interactively:
 ```
 
 The suite includes the Pi package, `autowork` command/TUI, `tx` launcher, Hermes
-fleet setup, official stable Octet native binaries, and Claude Code and Codex plugins
+fleet setup, official stable Octet native binaries with Kit skills, and Claude Code and Codex plugins
 with their complete portable skill suites, including [bundled Ponytail](cross-host.md#bundled-ponytail-on-every-host).
 All Autowork skills apply its shared method within their existing authority; no
 separate Ponytail plugin, hooks or persistent modes are installed. Existing external
@@ -64,7 +65,7 @@ Successful components remain installed; retry just Hermes with
 
 `--dry-run` prints selected commands without installing. `--hermes-home`,
 `--bundle-only`, `--no-reload` and `--yes-deps` apply only to Hermes. When a
-profile already has its own plugin clone, Hermes is updated with `update_bundle.py`,
+profile already has its own plugin clone, Hermes is updated with `scripts/update_bundle.py`,
 which supports none of those three and can restart gateways on ordinary updates, so passing one fails the
 Hermes item instead of being ignored. Host security and dependency prompts still
 apply; full mode does not supply consent flags.
@@ -72,7 +73,7 @@ apply; full mode does not supply consent flags.
 ### Octet native binaries
 
 Default, `--all`/`--full` and `update` include `octet`, even without an existing
-Octet CLI. Use `./install.sh --only octet` to install just Octet,
+Octet CLI. Use `./install.sh --only octet` to install Octet and its Kit skills,
 `./install.sh update --only octet` to rerun the same stable channel, or
 `--skip octet` to leave it out. `--list` and `--dry-run` do not download or execute
 Octet tooling, and skipping Octet leaves its files untouched.
@@ -105,10 +106,32 @@ or final version failure can leave a **partial installation**: no rollback is
 claimed or performed. Inspect the native diagnostics, resolve the cause, then
 retry `./install.sh --only octet`.
 
-This component installs upstream executables and packaged documentation (by
-default in the sibling `share/octet`), not native Kit skill/prompt resource
-pointers. It does not migrate credentials, enable optional extensions, change
-trust or permission policy, or manage active services or unrelated user configuration.
+After the binary version check, this component installs every portable Kit skill
+from `adapters/skills/` as a regular `~/.octet/skills/<name>/SKILL.md` entrypoint.
+Each preserves the skill's metadata and points to its workflow in this checkout,
+including the base directory for relative references. **Keep this checkout in
+place**; rerun `./install.sh --only octet` if you move it. These are regular files,
+not symlinks, so Octet's native resource discovery can admit them. Symlinked
+resource directories are refused rather than written through.
+
+Reruns refresh changed entrypoints and leave identical files untouched. Existing
+same-name files or symlinks are preserved as `SKILL.md.bak` (then `.bak.1`, etc.);
+unrelated skills are left alone. Prompt pointers in `~/.octet/prompts/kit-<name>.md`
+load the same adapters and forward the caller's arguments with Octet's `$@` expansion.
+Use `/kit-ask-kit`, `/kit-plan-with-me`, `/kit-autowork` or `/kit-work`;
+`/kit-autoresearch-<selector>` and `/kit-grill-me` preserve the research/challenge
+routes. Names are prefixed to avoid native command collisions. Existing prompt
+files are backed up before replacement, like skill files. A symlinked prompts
+directory refuses the resource step before any skill or prompt writes.
+Open a new Octet session or use `/reload` to refresh prompts and `/skills reload`,
+then `/skills` to list them and `/skills load <name>` or `/skill:<name>` to load one.
+Discovery does not automatically activate a workflow. If skill installation fails,
+the binary remains installed; fix the reported path or permission problem and rerun.
+
+Upstream executables and packaged documentation (by default in the sibling
+`share/octet`) are still installed by the official installer. Kit does not install
+executable extensions, migrate credentials, change trust or
+permission policy, or manage active services or unrelated user configuration.
 Offline fake-installer tests verify orchestration only. Real signed native
 installation and destination `octet --version` remain **NOT_CHECKED** until
 separately observed; they do not imply model or extension qualification.
@@ -196,7 +219,7 @@ Use `hermes autowork setup --dry-run` to preview target profiles.
 
 ## Preflight before fleet writes
 
-Every complete setup starts with [read-only preflight](../setup_preflight.py).
+Every complete setup starts with [read-only preflight](../scripts/setup_preflight.py).
 It inventories all live profiles and prints planned skill copies, preserved
 existing skills, plugin links, approval/gateway settings and memory effects.
 The autonomous fleet defaults are unchanged; this adds no interactive approval
@@ -524,7 +547,7 @@ published HEAD, tracked bytes, profile output, permissions and source binding be
 success. An unchanged retry validates the completed recovery without reinstalling,
 rescanning, resetting preserved customizations or creating a new backup.
 
-`python3 update_bundle.py --hermes-home /path/to/home --dry-run` only previews;
+`python3 scripts/update_bundle.py --hermes-home /path/to/home --dry-run` only previews;
 it performs no fetch, staging or state/profile writes. `--check` retains its
 fetch/check semantics, but performs no recovery publication. Installer `--dry-run`
 and `--skip hermes` never execute recovery. Offline real-Git fixtures cover recovery,
@@ -586,7 +609,7 @@ The legacy `/autowork update` remains the all-profile upstream update. For an
 already reviewed local fix, use the scoped updater from a clean checkout:
 
 ```bash
-python3 update_bundle.py --hermes-home /path/to/hermes-home \
+python3 scripts/update_bundle.py --hermes-home /path/to/hermes-home \
   --profile project-a --profile project-b \
   --source /path/to/reviewed-checkout --revision <full-40-character-commit> \
   --native-python /path/to/hermes-python --check
@@ -649,7 +672,7 @@ and its backup manifest, then cancel only that exact attempt:
 
 ```bash
 sha256sum /path/to/hermes-home/maintenance/toolset-update/scoped.json
-python3 update_bundle.py --hermes-home /path/to/hermes-home \
+python3 scripts/update_bundle.py --hermes-home /path/to/hermes-home \
   --cancel-scoped <receipt-sha256> --check
 # After inspecting the preview, repeat without --check.
 ```

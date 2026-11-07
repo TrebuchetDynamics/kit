@@ -24,7 +24,7 @@ class InstallTests(unittest.TestCase):
         self.assertIn('"/tmp/home with spaces"', result.stdout)
 
     def test_install_plugins_sh_is_the_hermes_setup(self):
-        result = self.entry('install-plugins.sh', 'setup_bundle.py')
+        result = self.entry('install-plugins.sh', 'scripts/setup_bundle.py')
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertIn('"--yes-deps"', result.stdout)
 

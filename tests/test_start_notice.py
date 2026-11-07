@@ -18,7 +18,7 @@ def load(name, path):
 
 
 notice = load('start_notice', SCRIPT)
-defaults = load('runtime_defaults_under_test', ROOT / 'runtime_defaults.py')
+defaults = load('runtime_defaults_under_test', ROOT / 'scripts/runtime_defaults.py')
 
 
 class Reply(io.BytesIO):

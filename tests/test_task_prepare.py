@@ -682,7 +682,7 @@ class PackageImportTests(unittest.TestCase):
     def test_optional_renderers_do_not_disable_graph_or_other_import_checks(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            package = root / 'Src/pi_autowork'
+            package = root / 'src/pi_autowork'
             package.mkdir(parents=True)
             (package / 'planning_ui.py').write_text('')
             other = package / 'z_other.py'
@@ -710,7 +710,7 @@ class PackageImportTests(unittest.TestCase):
                 self.assertIn('import cycle', result.failures[0][1])
 
     def test_every_module_imports_in_isolation_and_all_import_edges_are_acyclic(self):
-        package = ROOT / 'Src/pi_autowork'
+        package = ROOT / 'src/pi_autowork'
         modules = {}
         for path in sorted(package.rglob('*.py')):
             if 'engine' in path.relative_to(package).parts:

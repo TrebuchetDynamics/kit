@@ -68,7 +68,7 @@ class UiTasteBundleTests(unittest.TestCase):
         self.assertIn('../../../skills/ui-taste/upstream/PROTOCOL.md', portable)
 
     def test_clean_profile_receives_ui_taste_offline(self):
-        spec = importlib.util.spec_from_file_location('ui_taste_installer', ROOT / 'install_skills.py')
+        spec = importlib.util.spec_from_file_location('ui_taste_installer', ROOT / 'scripts/install_skills.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         with tempfile.TemporaryDirectory() as td:

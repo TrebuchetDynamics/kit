@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class BundleTests(unittest.TestCase):
     def setUp(self):
-        self.assertTrue((ROOT / 'bundle.py').exists(), 'Missing bundle integration')
-        spec = importlib.util.spec_from_file_location('bundle_test', ROOT / 'bundle.py')
+        self.assertTrue((ROOT / 'scripts/bundle.py').exists(), 'Missing bundle integration')
+        spec = importlib.util.spec_from_file_location('bundle_test', ROOT / 'scripts/bundle.py')
         self.bundle = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.bundle)
         self.tmp = tempfile.TemporaryDirectory()
@@ -79,7 +79,7 @@ class BundleTests(unittest.TestCase):
         args=argparse.Namespace(action='update', check=True, hermes_home='/tmp/home')
         with patch.object(self.bundle.subprocess, 'run', return_value=types.SimpleNamespace(returncode=0)) as run:
             self.assertEqual(self.bundle.handle_cli(args), 0)
-            self.assertIn(str(ROOT/'update_bundle.py'),run.call_args.args[0])
+            self.assertIn(str(ROOT/'scripts/update_bundle.py'),run.call_args.args[0])
             self.assertIn('--check',run.call_args.args[0])
 
     def test_chat_update_receipt_keeps_paths_as_literal_json_not_attachments(self):
@@ -213,8 +213,8 @@ class BundleTests(unittest.TestCase):
     def _chat_updater(self, body):
         """Point start_update at a disposable updater script; never the real one."""
         checkout = Path(self.tmp.name) / 'checkout'
-        checkout.mkdir(exist_ok=True)
-        (checkout / 'update_bundle.py').write_text(body)
+        (checkout / 'scripts').mkdir(parents=True, exist_ok=True)
+        (checkout / 'scripts/update_bundle.py').write_text(body)
         self.bundle.ROOT = checkout
 
     def _wait_exited(self, pid):
@@ -382,7 +382,7 @@ class BundleTests(unittest.TestCase):
                 telegram_menu_commands=lambda **_: ([], []), telegram_menu_max_commands=lambda: 100),
             'agent.skill_commands': types.SimpleNamespace(get_skill_commands=lambda: {}),
         }
-        spec = importlib.util.spec_from_file_location('ponytail_setup_inventory', ROOT / 'setup_runtime.py')
+        spec = importlib.util.spec_from_file_location('ponytail_setup_inventory', ROOT / 'scripts/setup_runtime.py')
         runtime = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(runtime)
         with patch.dict('sys.modules', stubs):
@@ -434,7 +434,7 @@ class BundleTests(unittest.TestCase):
                                   yes_deps=True, bundle_only=True, no_reload=True)
         with patch.object(self.bundle.subprocess, 'run', return_value=types.SimpleNamespace(returncode=7)) as run:
             self.assertEqual(self.bundle.handle_cli(args), 7)
-        self.assertEqual(run.call_args.args[0], ['python3', str(ROOT / 'setup_bundle.py'),
+        self.assertEqual(run.call_args.args[0], ['python3', str(ROOT / 'scripts/setup_bundle.py'),
             '--dry-run', '--yes-deps', '--bundle-only', '--no-reload', '--hermes-home', '/tmp/home with spaces'])
         self.assertNotIn('shell', run.call_args.kwargs)
 

@@ -16,7 +16,7 @@ class EngineeringVendorTests(unittest.TestCase):
     def test_the_engine_ships_with_pi_autowork_not_the_installed_skill(self):
         """The autowork skill carries no code: profiles get its instructions and Docs Sync's
         helpers, and the engine runs from the toolset's pi-autowork/engine."""
-        spec = importlib.util.spec_from_file_location('ready_install_fixture', ROOT / 'install_skills.py')
+        spec = importlib.util.spec_from_file_location('ready_install_fixture', ROOT / 'scripts/install_skills.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         with tempfile.TemporaryDirectory() as td:
@@ -118,7 +118,7 @@ class EngineeringVendorTests(unittest.TestCase):
         self.assertNotEqual(r.returncode,0)
 
     def test_native_install_preserves_support_tree(self):
-        spec=importlib.util.spec_from_file_location('install_fixture',ROOT/'install_skills.py')
+        spec=importlib.util.spec_from_file_location('install_fixture',ROOT/'scripts/install_skills.py')
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         with tempfile.TemporaryDirectory() as td:
             home=Path(td)

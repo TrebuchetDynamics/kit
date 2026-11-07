@@ -1,6 +1,6 @@
 # Adding and updating skills
 
-Source: [command discovery](../__init__.py) and [native provisioning](../install_skills.py).
+Source: [command discovery](../__init__.py) and [native provisioning](../scripts/install_skills.py).
 
 ## Work on a repository task
 
@@ -45,9 +45,9 @@ skill's scope. Keep vendored protocols byte-exact behind local adapters, as in
 Use a folder name of 1–32 lowercase letters, digits, hyphens, or underscores,
 starting with a letter or digit. The folder determines the command name; keep
 the skill's frontmatter `name` consistent with it (enforced only for portable
-adapters). Most folders are registered automatically; `workflow_commands.py`
+adapters). Most folders are registered automatically; `scripts/workflow_commands.py`
 registers both spellings for Plan With Me, Plan For Me and Docs Sync, and
-`autoresearch_commands.py` registers the research selectors. Underscores become hyphens
+`scripts/autoresearch_commands.py` registers the research selectors. Underscores become hyphens
 in CLI commands and Telegram uses underscores: `my_skill` becomes `/my-skill`
 in CLI chat and `/my_skill` in Telegram. `my-skill` and `my_skill` cannot coexist.
 
@@ -69,7 +69,7 @@ For a local symlink installation, edit this checkout and restart instead. New co
 discovered on startup, not watched live. A restart does not refresh a skill already
 copied into the profile's native skill directory; use `/autowork update` for that.
 Telegram's menu has limited capacity; the bundle prioritizes only the five workflow
-commands in [`telegram_menu_policy.py`](../telegram_menu_policy.py).
+commands in [`scripts/telegram_menu_policy.py`](../scripts/telegram_menu_policy.py).
 
 
 ### Skill style

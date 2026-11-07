@@ -33,7 +33,7 @@ class CompleteSetupTests(unittest.TestCase):
         self.env = dict(os.environ, HERMES_HOME=str(self.home), LOG=str(self.log))
         # These tests exercise orchestration after admission; the real preflight
         # and its no-write failure paths are covered in test_preflight.py.
-        (self.repo / 'setup_preflight.py').write_text(
+        (self.repo / 'scripts/setup_preflight.py').write_text(
             "def preflight(*args, **kwargs): return {'errors': [], 'plan': []}\n"
             "def print_plan(report): pass\n")
         for name in ('install-skills.sh', 'install-plugins.sh'):
@@ -54,8 +54,8 @@ sys.exit(5 if os.environ.get('VERIFY_FAIL')==sys.argv[2] else 0)
         self.env['PATH'] = str(self.repo) + ':' + self.env['PATH']
 
     def run_setup(self, *args):
-        self.assertTrue((ROOT / 'setup_bundle.py').is_file(), 'missing complete setup orchestrator')
-        return subprocess.run([sys.executable, str(self.repo / 'setup_bundle.py'), *args],
+        self.assertTrue((ROOT / 'scripts/setup_bundle.py').is_file(), 'missing complete setup orchestrator')
+        return subprocess.run([sys.executable, str(self.repo / 'scripts/setup_bundle.py'), *args],
                               env=self.env, capture_output=True, text=True)
 
     def test_missing_declared_source_payload_refuses_before_any_stage(self):
@@ -68,11 +68,11 @@ sys.exit(5 if os.environ.get('VERIFY_FAIL')==sys.argv[2] else 0)
         skill = self.repo / 'skills/example/SKILL.md'
         skill.parent.mkdir(parents=True)
         skill.write_text('fixture')
-        spec = importlib.util.spec_from_file_location('copied_preflight', self.repo / 'setup_preflight.py')
+        spec = importlib.util.spec_from_file_location('copied_preflight', self.repo / 'scripts/setup_preflight.py')
         pre = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(pre)
-        payload = ['autowork_bootstrap.py', 'Src/autowork_bootstrap.py',
-                   *['Src/autowork_runtime/install/' + name for name in (
+        payload = ['scripts/autowork_bootstrap.py', 'src/autowork_bootstrap.py',
+                   *['src/autowork_runtime/install/' + name for name in (
                        'install_skills.py', 'setup_bundle.py', 'setup_preflight.py',
                        'setup_runtime.py', 'install_graphify.py')]]
         before = sorted(self.home.rglob('*'))

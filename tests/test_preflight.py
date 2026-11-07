@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def module(name):
-    spec = importlib.util.spec_from_file_location(name, ROOT / (name + '.py'))
+    spec = importlib.util.spec_from_file_location(name, ROOT / 'scripts' / (name + '.py'))
     assert spec is not None and spec.loader is not None
     value = importlib.util.module_from_spec(spec)
     with patch.object(sys, 'path', [str(ROOT), *sys.path]):

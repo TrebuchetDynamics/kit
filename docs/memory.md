@@ -1,7 +1,7 @@
 # Memory and retained data
 
-Sources: [setup preflight](../setup_preflight.py),
-[runtime policy](../runtime_defaults.py) and [bundle defaults](../plugins/defaults.json).
+Sources: [setup preflight](../scripts/setup_preflight.py),
+[runtime policy](../scripts/runtime_defaults.py) and [bundle defaults](../plugins/defaults.json).
 
 Kit does not install or select an external memory provider. Full setup and
 bundle-only setup preserve existing provider selection, store bindings and records.
