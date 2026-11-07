@@ -2,96 +2,36 @@
 
 [![Offline CI](https://github.com/TrebuchetDynamics/kit/actions/workflows/test.yml/badge.svg)](https://github.com/TrebuchetDynamics/kit/actions/workflows/test.yml)
 
-### A toolset of skills for coding agents.
+<a id="a-toolset-of-skills-for-coding-agents"></a>
 
-Kit gives an agent a set of practised workflows: plan a decision, document it, execute
-accepted work, review a change, shrink a test suite. The skills run in **Pi**,
-**Claude Code** and **Codex**; **Hermes** is an optional native fleet. Paseo can host
-any of those agents. All hosts share one work queue: a Git-versioned `tasks/` store in
-your own repository.
+**Coding-agent skills. A native Paseo plugin. An optional background runner.**
 
-**Autowork is one tool in the kit**, not the whole set: an optional Linux runner that
-keeps working through that queue after a session ends. Everything else works without
-it.
+Kit is a kit of skills for **Pi**, **Claude Code** and **Codex**, with an optional
+**Hermes** integration. Use it to plan work, document decisions, implement tasks,
+review changes and improve a codebase.
 
-[Install](#install) · [The skills](#the-skills) · [First use](#first-use-in-your-project) ·
-[The runner](#the-runner-autowork) · [Safety](#safety-before-installing) ·
-[Evidence and limits](#what-verification-proves) · [Docs](#documentation)
+The **Paseo plugin** brings Autowork's tasks, goals, runners and owner questions
+into Paseo. Inspect work in read-only mode, or enable specific actions through a
+daemon-side operator policy.
 
-| Your host | Install | Ask for a workflow |
-| --- | --- | --- |
-| **Pi** | [Git package](#pi) | `/plan-with-me` |
-| **Claude Code** | [Marketplace plugin](#claude-code) | `/kit:plan-with-me` |
-| **Codex** | [Marketplace plugin](#codex) | `$kit:plan-with-me` |
-| **Paseo** | [Agent host](#paseo) | `/ask-kit` in the hosted agent |
-| **Hermes** | [Optional native plugin](#hermes-optional) | `/plan-with-me` |
+| Choose a part | What you get |
+| --- | --- |
+| [Skills](#the-skills) | Explicit workflows in your coding-agent session. No background runner required. |
+| [Paseo plugin](#paseo) | A native interface for an existing Linux Autowork installation. Read-only by default. |
+| [Autowork runner](#the-runner-autowork) | Optional Linux automation that works through accepted tasks after your session ends. |
 
-Not sure which skill fits? `/ask-kit` names one for your situation, then the next
-step it implies (`/kit:ask-kit` in Claude Code, `$kit:ask-kit` in Codex).
+[Install](#install) · [First use](#first-use-in-your-project) ·
+[Skills](#the-skills) · [Paseo interface](#paseo-interface) ·
+[Safety](#safety-before-installing) · [Evidence](#what-verification-proves) ·
+[Docs](#documentation)
 
-<p align="center">
-  <img src="assets/readme/workflow.svg" width="100%" alt="Plan accepted work, queue it in tasks/, execute an eligible task, and report checks and delivery. Further work requires the caller's authority; this diagram does not promise a background scheduler.">
-</p>
+**Start with one skill.** Not sure which fits? Ask `/ask-kit` in Pi,
+`/kit:ask-kit` in Claude Code or `$kit:ask-kit` in Codex.
 
 **A skill invocation is not a background service.** The skills act in your session and
-stop when it ends. The Pi runner is the one continuous option, and you start it
-yourself. Hermes adds native scheduling for its own profiles; Paseo can supervise
-agents, but Kit does not start a service there.
-
----
-
-## The skills
-
-Every skill is explicit: you type its command, or a workflow hands off to it. Each
-states its own boundaries and what "done" means.
-
-**Plan and decide**
-
-- `/plan-with-me` — plan together through focused questions and research.
-- `/plan-for-me` — investigate and save a plan and tasks without an interview.
-- `/grilling` — stress-test an idea in rounds, one recommendation per question.
-- `/grill-with-docs` — the same interview, recording what it settles as ADRs and
-  glossary terms.
-- `/grill-me` — challenge a plan that already exists.
-
-**Document and track**
-
-- `/docs-sync` — maintain the docs and the `tasks/` store from current source.
-- `/pending` — read what is open, done and next without changing anything.
-- `/blockers` — resolve held work and the questions only the owner can answer.
-
-**Execute and deliver**
-
-- `/autowork` — implement and verify one ready task, then close it.
-- `/goal` — keep one objective alive until evidence proves it done.
-- `/lgtm` — say yes to the latest recommendation and continue.
-- `/split-folder` — reorganize one folder without changing behavior.
-- `/git-commit-push` — commit, sync and push owned changes; `all` also settles finished
-  worktrees into the base branch.
-
-**Improve the codebase**
-
-- `/bug-harvest` — hunt evidence-backed defects, one candidate at a time.
-- `/test-optimizer` — delete redundant tests and shrink the suite that remains.
-- `/unused-code` — remove code whose unreachability is proven.
-- `/improve-codebase-architecture` — expose waste and bugs; verify explicitly requested fixes.
-- `/autonomous-codebase-improver` — work several improvement lanes in one campaign.
-- `/autoresearch` — bounded research or a measured experiment loop.
-
-**Design, capture and write**
-
-- `/impeccable`, `/ui-taste` — design, audit and polish frontend and iOS interfaces.
-- `/beautify-github-readme` — redesign or audit a README with project-native SVG.
-- `/responsive-screenshots` — capture pages at breakpoints, report overflow.
-- `/writing-for-agents` — write and prune skills and `AGENTS.md`.
-- `/graphify` — query a local code graph before reading many files.
-- `/ponytail`, `/ponytail-review`, `/ponytail-audit` and siblings — choose a simplicity
-  level, review a change, audit a repository, list deferred shortcuts.
-
-**Operate**
-
-- `/ask-kit` — ask which of the above fits.
-- `/autowork` runner — the optional section [below](#the-runner-autowork).
+stop when it ends. The Pi runner is the continuous option, and you start it yourself.
+Hermes adds native scheduling for its own profiles. Paseo can host agents, but
+installing the Kit plugin does not start an Autowork service.
 
 ## Install
 
@@ -104,6 +44,16 @@ Start with Pi, Claude Code or Codex and configure that host's model. These are t
 primary portable targets. Hermes is optional and adds a native fleet with its own
 policy defaults; review its safety notes before enabling it. Paseo hosts any of the
 three portable agents.
+
+| Coding-agent host | Package | Example workflow |
+| --- | --- | --- |
+| **Pi** | Git package | `/plan-with-me` |
+| **Claude Code** | Marketplace plugin | `/kit:plan-with-me` |
+| **Codex** | Marketplace plugin | `$kit:plan-with-me` |
+| **Hermes** | Optional native plugin | `/plan-with-me` |
+
+Paseo has a [separate plugin](#paseo). To use the skills inside Paseo, install
+Kit in the coding-agent host, then run that agent in a Paseo workspace.
 
 ### Pi
 
@@ -131,9 +81,24 @@ codex plugin add kit@autowork-marketplace
 
 ### Paseo
 
-Paseo hosts agents; it does not install Kit itself. Install Kit in Pi, Claude Code or
-Codex as above, then run that agent inside a Paseo workspace. For native fleet, task,
-blocker and planning management, see [Paseo interface](#paseo-interface).
+Install the **Autowork Paseo plugin** on the intended daemon host. It requires
+Paseo 0.13, 0.14 or 0.15 and an existing Linux Autowork installation.
+See the [full requirements](integrations/paseo/README.md#requirements).
+
+> **Trusted, unsandboxed code:** a Paseo plugin runs as the daemon user.
+> Review the [security notes](integrations/paseo/docs/security.md) before installation.
+> It is read-only by default. Execution grants are shared by authenticated daemon
+> managers, not isolated per user.
+
+```sh
+paseo plugin add git:TrebuchetDynamics/kit
+paseo plugin ls
+```
+
+Confirm that `kit-autowork` is running. Open **Autowork** in Paseo's sidebar and
+select **Refresh** to inspect repositories already known to Autowork.
+Installation does not start a runner or grant mutations.
+See [Paseo interface](#paseo-interface) for controls and planning.
 
 ### Hermes (optional)
 
@@ -199,12 +164,90 @@ smoke check **you perform**, not an outcome established by automated tests. Cont
 with the [core-only interview](docs/onboarding.md#core-only-requirements-interview) or
 the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-task).
 
+## The skills
+
+Every skill is explicit: you type its command, or a workflow hands off to it. Each
+states its own boundaries and what "done" means.
+
+**Plan and decide**
+
+- `/plan-with-me` — plan together through focused questions and research.
+- `/plan-for-me` — investigate and save a plan and tasks without an interview.
+- `/grilling` — stress-test an idea in rounds, one recommendation per question.
+- `/grill-with-docs` — the same interview, recording what it settles as ADRs and
+  glossary terms.
+- `/grill-me` — challenge a plan that already exists.
+
+**Document and track**
+
+- `/docs-sync` — maintain the docs and the `tasks/` store from current source.
+- `/pending` — read what is open, done and next without changing anything.
+- `/blockers` — resolve held work and the questions only the owner can answer.
+
+**Execute and deliver**
+
+- `/autowork` — implement and verify one ready task, then close it.
+- `/goal` — keep one objective alive until evidence proves it done.
+- `/lgtm` — say yes to the latest recommendation and continue.
+- `/split-folder` — reorganize one folder without changing behavior.
+- `/git-commit-push` — commit, sync and push owned changes; `all` also settles finished
+  worktrees into the base branch.
+
+**Improve the codebase**
+
+- `/bug-harvest` — hunt evidence-backed defects, one candidate at a time.
+- `/test-optimizer` — delete redundant tests and shrink the suite that remains.
+- `/unused-code` — remove code whose unreachability is proven.
+- `/improve-codebase-architecture` — expose waste and bugs; verify explicitly requested fixes.
+- `/autonomous-codebase-improver` — work several improvement lanes in one campaign.
+- `/autoresearch` — bounded research or a measured experiment loop.
+
+**Design, capture and write**
+
+- `/impeccable`, `/ui-taste` — design, audit and polish frontend and iOS interfaces.
+- `/beautify-github-readme` — redesign or audit a README with project-native SVG.
+- `/responsive-screenshots` — capture pages at breakpoints, report overflow.
+- `/writing-for-agents` — write and prune skills and `AGENTS.md`.
+- `/graphify` — query a local code graph before reading many files.
+- `/ponytail`, `/ponytail-review`, `/ponytail-audit` and siblings — choose a simplicity
+  level, review a change, audit a repository, list deferred shortcuts.
+
+**Operate**
+
+- `/ask-kit` — ask which of the above fits.
+- `/autowork` runner — the optional section [below](#the-runner-autowork).
+
+## Paseo interface
+
+The [Autowork Paseo plugin](integrations/paseo/README.md) lives in `integrations/paseo/`.
+Install it from Git with the [command above](#paseo), or follow the
+[local checkout instructions](integrations/paseo/README.md#install-only-after-reviewing-trusted-code).
+
+- **See the work:** inspect runners, tasks, goals, owner questions, logs and the scorecard.
+- **Review the plan:** prepare staged planning proposals, then review and explicitly apply them.
+- **Confirm the action:** edit tasks and goals, commit only task files, answer owner questions,
+  or control runners with the required operator grants and exact-action confirmations.
+
+The plugin uses the existing Autowork engine. It is not a model provider or scheduler.
+Planning does not start a runner. Physical client and live control qualification
+remain pending. See the [qualification record](integrations/paseo/docs/qualification.md).
+
+Developer checks use `npm --prefix integrations/paseo run check` after
+`npm --prefix integrations/paseo ci --ignore-scripts`.
+See [testing](docs/testing.md#paseo-plugin-checks).
+
 ## The runner (Autowork)
 
 The runner is the only part of Kit that keeps going without you. It reads the same
 `tasks/` store, admits dependency-ready tasks in parallel, verifies each one, and merges
 the result into `main`/`master`. It is Linux-only and entirely optional: the skills above
 already do the work one task at a time.
+
+<p align="center">
+  <img src="assets/readme/workflow.svg" width="100%" alt="Plan accepted work, queue it in tasks/, execute an eligible task, and report checks and delivery. Further work requires the caller's authority; this diagram does not promise a background scheduler.">
+</p>
+
+The diagram shows the optional task workflow, not a background service started by a skill.
 
 ```sh
 autowork                      # the live TUI: runners, workers, blockers, questions
@@ -337,19 +380,6 @@ regressions, owner attention, cost per verified task, time to merge and crash re
 `autowork scorecard` measures part of it today. See
 [Is Autowork worth it?](docs/evaluation.md) for the assessment and the gaps still to
 instrument.
-
-## Paseo interface
-
-The [Autowork Paseo plugin](integrations/paseo/README.md) lives in `integrations/paseo/`.
-Install that directory, not the repository root, and only after reading its
-[security notes](integrations/paseo/docs/security.md).
-
-It shows runners, tasks, goals, owner questions, logs and the scorecard inside Paseo.
-With a daemon-side operator policy file it performs every `autowork` command through
-exact confirmations: task and goal edits with a tasks-only commit, runner controls and
-maintenance, owner answers and staged planning, all through the existing engine. Paseo 0.13, 0.14 or 0.15 on a Linux daemon host
-is required. Its checks run with `npm --prefix integrations/paseo run check` after
-`npm --prefix integrations/paseo ci --ignore-scripts`; see [testing](docs/testing.md#paseo-plugin-checks).
 
 ## Documentation
 

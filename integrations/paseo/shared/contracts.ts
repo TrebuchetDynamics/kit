@@ -64,7 +64,10 @@ export const fleetSchema = z.object({
 export const closureSchema = recordSchema.nullable().transform(value => value ?? {});
 export const taskSchema = z.object({ display: taskDisplaySchema.nullable().default(null), id: idSchema, title: z.string(), section: z.string().nullable(),
   status: z.string(), goal: z.string().nullable(), rank: z.number().nullable(),
-  position: z.number().nullable(), blocked_by: z.string().nullable(), closure: closureSchema });
+  position: z.number().nullable(), blocked_by: z.string().nullable(), closure: closureSchema,
+  // Old releases omit semantic presentation. Neutral is safer than inferring meaning from words.
+  presentation: z.object({ tone: z.enum(['success', 'warning', 'danger', 'neutral']),
+    closure_tone: z.enum(['success', 'warning', 'danger', 'neutral']) }).optional() });
 export const taskDetailSchema = taskSchema.omit({ position: true, blocked_by: true }).extend({
   short: z.string().nullable(), depends_on: z.array(z.string()), verified_depends_on: z.array(z.string()),
   touches: z.array(z.string()), resources: z.array(z.string()), kind: z.string(), ownership: z.string(),
@@ -111,7 +114,7 @@ export const actionSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('goal'), repoId: idSchema, goal: idSchema, revision: z.string().min(1).max(128).optional(), fields: goalFieldsSchema }),
   z.strictObject({ kind: z.literal('store-prepare'), repoId: idSchema, mode: z.enum(['stage', 'commit']) }),
   z.strictObject({ kind: z.literal('store-migrate'), repoId: idSchema, commit: z.boolean().default(true) }),
-  z.strictObject({ kind: z.literal('commit'), repoId: idSchema, message: text(500) }),
+  z.strictObject({ kind: z.literal('commit'), repoId: idSchema, message: text(500), pendingRevision: z.string().regex(/^[a-f0-9]{64}$/) }),
   z.strictObject({ kind: z.literal('plan-start'), repoId: idSchema, objective: z.string().max(16000).default(''),
     mode: z.enum(['plan', 'discuss', 'investigate']).default('plan'), task: idSchema.optional(), model: modelSchema.optional() }),
   z.strictObject({ kind: z.literal('plan-send'), repoId: idSchema, sessionId: idSchema, message: text() }),
