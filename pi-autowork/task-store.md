@@ -69,8 +69,11 @@ resource must be covered, and an undeclared item is refused. A grant field on a 
 `live` is not `"authorized"` is refused, as is a complete grant that names foreign scope or
 misses a declared live/exclusive resource. A legacy or migrated grant without the three
 companions stays valid history but never dispatches: the task waits with
-`grant lacks live_actor, live_at, live_scope`, and the owner completes it with
-`autowork tasks field`.
+`grant lacks live_actor, live_at, live_scope`. The owner, or a coordinator explicitly
+acting under an owner-adopted standing delegation, records the existing grant with
+`autowork tasks field`. An already-approved action needs no second permission
+question. Record the actual approval source, actor, date and covered scope; a policy
+note alone does not satisfy admission.
 
 An owner waiver is structured the same way. `owner_waiver` or `owner_qualification` needs
 `waiver_actor`, `waiver_at` (`YYYY-MM-DD`) and `waiver_for` naming one of the task's own
@@ -81,8 +84,10 @@ Incremental `field` writes are allowed; the task simply waits until the grant or
 complete.
 
 Neither authority is derived from a worker report, a commit message, a body note or a merge:
-only the owner's task-store write sets them, a worker's edit under `tasks/` is held, and a
-merge value must come from one of its parents.
+the owner supplies the authority. A coordinator may record an existing live grant
+under an explicit standing delegation, but cannot manufacture owner waivers or
+qualification. A worker's edit under `tasks/` is held, and a merge value must come
+from one of its parents. Queue placement alone grants nothing.
 
 The closure fields and `verified_depends_on` are optional. All other fields except
 `live` are needed for a complete task contract. Missing fields

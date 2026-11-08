@@ -90,9 +90,11 @@ commits. Choose reasonable reversible implementation details without waiting for
 an owner, parent session or another profile to approve them. This section replaces
 older owner-acknowledgement and blanket main-only development requirements for
 that local work; it does not override product safety or explicit task exclusions.
-For the delegated decision domains that the coordinator may settle without a new
-owner question, follow [the standing decision policy](docs/autonomy.md). It does
-not widen publication, live, money, secret or destructive authority.
+For approved Autowork, follow [the standing decision policy](docs/autonomy.md):
+approval delegates the actions necessary to complete the accepted scope, including
+publication and live execution, without repeated owner approval. Reconcile stale
+owner-only labels and missing grant records from that approval through the supported
+task commands; do not bypass runtime guards or infer approval from queue placement.
 
 - Read the current task and repository state. Repair attributable task metadata,
   links and missing backlog structure from source evidence; preserve existing
@@ -120,7 +122,8 @@ not widen publication, live, money, secret or destructive authority.
 - Run checks proportional to the change. Commit only attributable, verified work.
   Report task ID/title, actual changes, checks, commit, next task and exact remaining
   blocker. Distinguish local commit, integration, push and live acceptance.
-- Existing explicit publication authority remains valid; this policy alone does
-  not authorize remote publication, deployment, money movement, secret access or
-  destructive/live operations. Preserve paused jobs and task-specific exclusions.
+- Approved scope, not a repeated permission ceremony, governs execution. Preserve
+  explicit exclusions, paused jobs, access controls and human-only requirements.
+  Missing credentials or external inputs remain real limitations; report them
+  precisely and continue independent approved work. Never fabricate completion.
 <!-- autowork-local-authority:end -->
