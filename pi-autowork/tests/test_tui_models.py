@@ -121,7 +121,7 @@ async def session_pilot(size):
 
 async def status_pilot(size):
     from pi_autowork import tui
-    from textual.widgets import Input
+    from textual.widgets import Input, Select
     async with fixture_app(size) as (app, pilot, ready, calls):
         release = threading.Event()
         def delayed():
@@ -132,8 +132,9 @@ async def status_pilot(size):
             await pilot.pause()
             picker = app.screen
             status = picker.query_one('#model-status')
-            for selector in ('#filter', '#models', '#model-status'):
+            for selector in ('#provider', '#filter', '#models', '#model-status'):
                 visible(picker.query_one(selector), size)
+            assert picker.query_one('#provider', Select).disabled
             assert 'load' in text(status).lower(), text(status)
             assert app.focused is picker.query_one('#filter', Input)
         finally:
@@ -141,6 +142,8 @@ async def status_pilot(size):
         await settle(app, pilot)
         visible(status, size)
         assert '2' in text(status), text(status)
+        assert picker.query_one('#provider', Select).value == 'fixture'
+        assert not picker.query_one('#provider', Select).disabled
         await pilot.press('escape')
         for loader, words in ((lambda: [], ('no', 'model', 'login')),
                               (lambda: (_ for _ in ()).throw(RuntimeError('fixture list unavailable')),
@@ -151,6 +154,10 @@ async def status_pilot(size):
             visible(status, size)
             shown = text(status).lower()
             assert all(word in shown for word in words), shown
+            provider = app.screen.query_one('#provider', Select)
+            visible(provider, size)
+            assert provider.disabled
+            assert provider.value is Select.NULL
             await pilot.press('enter')
             assert isinstance(app.screen, tui.PickModel), 'An unavailable list cannot select a model'
             await pilot.press('escape')
@@ -239,6 +246,101 @@ async def existing_pilot(size):
             assert env.read_bytes() == before
 
 
+async def providers_pilot(size):
+    from pi_autowork import tui
+    from textual.widgets import Input, Label, OptionList, Select
+    catalog = ['fixture/shared', 'fixture/beta', 'another/shared',
+               'nous-local/openai/shared', 'nous-local/openai/unique']
+    async with fixture_app(size, loader=lambda: catalog[:]) as (app, pilot, ready, calls):
+        app.action_pick_model('model')
+        await settle(app, pilot)
+        picker = app.screen
+        provider = picker.query_one('#provider', Select)
+        field = picker.query_one('#filter', Input)
+        options = picker.query_one('#models', OptionList)
+        for widget in (provider, field, options, picker.query_one('#model-status')):
+            visible(widget, size)
+        assert provider.region.bottom <= field.region.y
+        assert provider.value is Select.NULL and not provider.disabled
+        assert options.option_count == 0 and app.new_model == ''
+        status = text(picker.query_one('#model-status')).lower()
+        assert 'provider' in status, status
+        field.focus()
+        await pilot.press('enter')
+        assert app.screen is picker and app.new_model == ''
+
+        # Exercise the real provider menu, including the narrow terminal layout.
+        provider.focus()
+        await pilot.press('enter')
+        await pilot.pause()
+        assert provider.expanded
+        await pilot.press('end', 'enter')
+        await pilot.pause()
+        assert provider.value == 'nous-local', provider.value
+        assert app.focused is field
+        assert picker.shown == catalog[3:], picker.shown
+        assert options.option_count == 2
+        status = text(picker.query_one('#model-status')).lower()
+        assert '2' in status and ('model' in status or 'match' in status), status
+        field.value = 'OPENAI/SHARED'
+        await pilot.pause()
+        assert picker.shown == ['nous-local/openai/shared']
+
+        # A provider switch clears search without persisting any model choice.
+        provider.value = 'fixture'
+        await pilot.pause()
+        assert field.value == '' and app.focused is field
+        assert picker.shown == catalog[:2], picker.shown
+        assert app.new_model == ''
+        field.value = 'shared'
+        await pilot.pause()
+        assert picker.shown == ['fixture/shared']
+        await pilot.press('enter')
+        await settle(app, pilot)
+        assert len(app.screen_stack) == 1 and app.new_model == 'fixture/shared'
+
+        app.action_pick_model('model')
+        await settle(app, pilot)
+        picker = app.screen
+        provider = picker.query_one('#provider', Select)
+        assert provider.value == 'fixture'
+        assert picker.shown == catalog[:2]
+        current = next(label for label in picker.query(Label) if 'fixture/shared' in text(label))
+        visible(current, size)
+        provider.value = 'another'
+        await pilot.pause()
+        assert picker.shown == ['another/shared']
+        await pilot.press('escape')
+        assert app.new_model == 'fixture/shared'
+
+        # A stored model absent from Pi's catalog must not choose another provider.
+        app.new_model = 'missing/shared'
+        app.action_pick_model('model')
+        await settle(app, pilot)
+        picker = app.screen
+        assert picker.query_one('#provider', Select).value is Select.NULL
+        assert picker.query_one('#models', OptionList).option_count == 0
+        await pilot.press('escape')
+        assert app.new_model == 'missing/shared'
+
+        # Nested model IDs retain their complete provider/model value when the
+        # model list (rather than the search field) submits the choice.
+        app.new_model = 'nous-local/openai/shared'
+        app.action_pick_model('model')
+        await settle(app, pilot)
+        picker = app.screen
+        assert picker.query_one('#provider', Select).value == 'nous-local'
+        picker.query_one('#filter', Input).value = 'unique'
+        await pilot.pause()
+        options = picker.query_one('#models', OptionList)
+        assert options.option_count == 1
+        options.focus()
+        options.highlighted = 0
+        await pilot.press('enter')
+        await settle(app, pilot)
+        assert len(app.screen_stack) == 1 and app.new_model == 'nous-local/openai/unique'
+
+
 class TuiModelsTests(unittest.TestCase):
     def run_case(self, case):
         self.assertIsNotNone(shutil.which('uv'), 'Model acceptance requires uv and pinned Textual cache')
@@ -258,6 +360,9 @@ class TuiModelsTests(unittest.TestCase):
 
     def test_existing_service_model_consent_and_settings_are_preserved(self):
         self.run_case('existing')
+
+    def test_provider_selection_scopes_search_and_preserves_cancelled_choice(self):
+        self.run_case('providers')
 
 
 async def main(case):

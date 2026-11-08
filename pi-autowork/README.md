@@ -441,10 +441,13 @@ paths leave the current directory unchanged and show an error. Browsing changes
 neither the process working directory nor a runner's repository.
 
 A visible **Choose model** row shows the selected service's model. Press `m` (or
-click it with `autowork tui --mouse`) to search Pi's available models; use Down to
+click it with `autowork tui --mouse`) to choose a **Provider**, then search that
+provider's models. With multiple providers, select one before choosing a model;
+the current provider or the only available provider is preselected. Use Down to
 browse, Enter to select and Escape to return. Loading, no matches and catalog
-failures appear inside the selector.
-If no models are available, open `pi`, run `/login`, then reopen the selector.
+failures appear inside the selector. Providers come from Pi's available model
+catalog. If a provider is missing or no models are available, open `pi`, run
+`/login`, then reopen the selector.
 
 Before starting a new service, choose its model in the TUI. You can select it from
 the fleet before browsing, or Play asks for it before the start confirmation.

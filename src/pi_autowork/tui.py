@@ -480,11 +480,11 @@ class PortalSetup(ModalScreen[dict]):
 
 
 class PickModel(ReadScreen, ModalScreen[str]):
-    """Choose a model from Pi's own list; type to filter."""
+    """Choose a Pi provider, then search its available models."""
     BINDINGS = [Binding('escape', 'cancel', 'cancel')]
     DEFAULT_CSS = '''
     PickModel { align: center middle; }
-    PickModel > Vertical { width: 80; max-width: 100%; height: 80%; border: thick $accent; background: $surface; padding: 1 2; }
+    PickModel > Vertical { width: 80; max-width: 100%; height: 90%; border: thick $accent; background: $surface; padding: 0 2; }
     PickModel OptionList { height: 1fr; min-height: 1; }
     #model-status { height: auto; max-height: 3; }
     '''
@@ -494,28 +494,34 @@ class PickModel(ReadScreen, ModalScreen[str]):
         self.title_text, self.models, self.current = title, models, current
         self.loader, self.identity = loader, identity
         self.catalog_loading, self.load_error = bool(loader), ''
+        self.provider = ''
 
     def compose(self) -> ComposeResult:
         from textual.widgets import Input
         with Vertical():
             yield Label(Text(self.title_text, style='bold'))
             yield Label(Text(f'Current: {self.current}' if self.current else 'Choose a model available through Pi.'))
-            yield Input(placeholder='Search provider or model', id='filter')
-            yield OptionList(*self.models, id='models')
+            yield Select([], prompt='1. Choose a Pi provider', id='provider', disabled=True)
+            yield Input(placeholder='2. Search this provider\'s models', id='filter')
+            yield OptionList(id='models')
             yield Static('Loading Pi models…' if self.loader else '', id='model-status', markup=False)
             yield Label('Type to search · ↓ browse · Enter select · Esc back')
 
     def on_mount(self):
-        self.shown = list(self.models)
+        self.shown = []
         self.query_one('#filter', Input).focus()
         if self.loader:
             self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
         else:
-            self.on_input_changed(self.query_one('#filter', Input))
+            self.loaded_models(self.models)
 
     def load_failed(self, error):
         self.catalog_loading, self.load_error = False, str(error)
         self.models, self.shown = [], []
+        selector = self.query_one('#provider', Select)
+        selector.set_options([])
+        selector.disabled = True
+        self.provider = ''
         self.query_one('#models', OptionList).clear_options()
         self.query_one('#model-status', Static).update(
             f'Cannot load Pi models: {error}\nOpen pi and use /login, then reopen this selector.')
@@ -523,10 +529,32 @@ class PickModel(ReadScreen, ModalScreen[str]):
     def loaded_models(self, models):
         self.catalog_loading, self.load_error = False, ''
         self.models = models
+        providers = sorted({model.partition('/')[0] for model in models})
+        selector = self.query_one('#provider', Select)
+        selector.set_options([(provider, provider) for provider in providers])
+        selector.disabled = not providers
+        current_provider = self.current.partition('/')[0]
+        self.provider = (current_provider if current_provider in providers else
+                         providers[0] if len(providers) == 1 else '')
+        selector.value = self.provider or Select.NULL
         self.on_input_changed(self.query_one('#filter', Input))
+        (self.query_one('#filter', Input) if self.provider else selector).focus()
+
+    def on_select_changed(self, event):
+        if event.select.id != 'provider' or event.value != event.select.value:
+            return
+        provider = '' if event.value is Select.NULL else str(event.value)
+        field = self.query_one('#filter', Input)
+        if provider != self.provider:
+            field.value = ''
+        self.provider = provider
+        self.on_input_changed(field)
+        if self.provider:
+            field.focus()
 
     def on_input_changed(self, event):
-        self.shown = [m for m in self.models if event.value.lower() in m.lower()]
+        provider_models = [m for m in self.models if m.partition('/')[0] == self.provider]
+        self.shown = [m for m in provider_models if event.value.lower() in m.lower()]
         options = self.query_one('#models', OptionList)
         options.clear_options()
         options.add_options(self.shown)
@@ -534,8 +562,10 @@ class PickModel(ReadScreen, ModalScreen[str]):
             status = 'Loading Pi models…'
         elif self.load_error:
             status = f'Cannot load Pi models: {self.load_error}\nOpen pi and use /login, then reopen this selector.'
+        elif self.models and not self.provider:
+            status = 'Choose a Pi provider to see its models. Missing one? Open pi and use /login.'
         elif self.models:
-            status = (f'{len(self.shown)} of {len(self.models)} Pi models · Enter selects the first match'
+            status = (f'{len(self.shown)} of {len(provider_models)} Pi models · {self.provider}'
                       if self.shown else 'No matching models. Clear or change your search.')
         else:
             status = 'No Pi models available. Open pi and use /login, then reopen this selector.'
@@ -551,7 +581,9 @@ class PickModel(ReadScreen, ModalScreen[str]):
             self.query_one('#models', OptionList).focus()
 
     def on_option_list_option_selected(self, event):
-        self.dismiss(str(event.option.prompt))
+        model = str(event.option.prompt)
+        if model in self.shown:
+            self.dismiss(model)
 
     def action_cancel(self):
         self.dismiss(None)
