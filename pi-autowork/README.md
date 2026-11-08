@@ -516,19 +516,23 @@ Mergeable work. Session/canonical revision divergence is disclosed. Questions fo
 closed or noninventory IDs remain visible as annotations in the Questions view.
 The task record body is labelled as independently read working-tree content.
 
-The Inventory line shows revision, generation, capture age and separate execution
-freshness; pending paths and questions are independently observed working data.
+The Tasks window shows one short Inventory line with inventory and execution
+freshness. Stale capture age and acquisition warnings remain visible. Press `i`
+(**Info/Help**) for revision, generation, capture age, full diagnostics and all task
+keys. Pending paths and questions are independently observed working data.
 A valid empty store has zero counts. Unavailable or invalid inventory shows `?`
 and `unknown / unavailable`, not zero. Failed refreshes can retain last-good
 inventory with its original revision/capture age, visibly stale. Pending-path read
 failure means unknown, never clean. In the Tasks window, unavailable inventory
 shows `?` for every view count and an unavailable placeholder rather than a verified
-empty list. Essential freshness, revision and capture age stay visible separately
-from bounded, scrollable diagnostics and wrapping view labels, including at 80 columns,
-without displacing the task table. In this window, `i` (**Inventory**) toggles focus
-between the task table and diagnostics; Page Down/End reads long errors. Verified
-empty keeps zero counts; stale last-good rows keep their counts and original
-revision/age with the acquisition error visible. The rendered pilot opens all three
+empty list. The selected task shows the next action before its state. Owner-action
+questions show the committed scope and acceptance criteria. Missing instructions
+are identified, not replaced with another approval request. The main menu shows
+Open, Decide, Info/Help and Back where applicable. Other keys remain available in
+Info/Help. In this window, `i` shows or hides the scrollable diagnostics and returns
+focus to the task table when hidden. Page Down/End reads long errors. Verified
+empty keeps zero counts. Stale last-good rows keep their counts and capture age
+with an acquisition warning visible. Info/Help retains the original revision. The rendered pilot opens all three
 states in wide and narrow viewports, checks painted cells/layout bounds, and scrolls
 a long acquisition error through its final line.
 

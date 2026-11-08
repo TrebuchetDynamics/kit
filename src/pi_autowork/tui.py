@@ -728,7 +728,7 @@ class TasksScreen(ReadScreen, Screen):
     #task-views { height: auto; max-height: 3; padding: 0 1; }
     #task-freshness { height: auto; padding: 0 1; }
     #task-pending { height: auto; padding: 0 1; }
-    #task-provenance { height: 3; border: none; padding: 0 1; }
+    #task-provenance { display: none; height: 3; border: none; padding: 0 1; }
     #tasks { height: 1fr; }
     #task-detail { height: auto; max-height: 7; padding: 0 1; border-top: solid $panel; }
     '''
@@ -838,7 +838,8 @@ class TasksScreen(ReadScreen, Screen):
 
     def action_snapshot_info(self):
         info = self.query_one('#task-provenance', TextArea)
-        (self.query_one('#tasks', DataTable) if info.has_focus else info).focus()
+        info.display = not info.display
+        (info if info.display else self.query_one('#tasks', DataTable)).focus()
 
     def refresh_tasks(self, follow=None):
         """``follow``: keep the cursor on this task wherever it moved (after a re-sort)."""
@@ -856,20 +857,19 @@ class TasksScreen(ReadScreen, Screen):
         self.query_one('#task-views', Static).update(views)
         freshness = Text('Inventory ' + (snapshot.freshness if snapshot else 'unavailable'), style='bold')
         if snapshot:
-            freshness.append(f' · revision {snapshot.revision or "unknown"}\n'
-                             f'generation {snapshot.generation} · captured '
-                             + fleet_view.ago(max(0, int(time.time() - snapshot.captured_at)))
-                             + f' · execution {snapshot.engine_freshness}', style='dim')
+            freshness.append(f' · execution {snapshot.engine_freshness}',
+                             style='dim' if snapshot.engine_freshness == 'fresh' else 'yellow')
+            if snapshot.freshness != 'fresh':
+                freshness.append(' · captured ' + fleet_view.ago(max(0, int(time.time() - snapshot.captured_at))),
+                                 style='yellow')
+            if snapshot.errors:
+                freshness.append(' · ' + ' '.join(snapshot.errors[0].split())[:100] + ' (i Info)', style='yellow')
         if runner and runner.display_deleted:
             freshness.append(f'\nDeletion pending commit: {len(runner.display_deleted)} record(s) (display only)', style='yellow')
         if runner and runner.display_recreated:
             freshness.append(f'\nRestored/recreated pending record(s): {len(runner.display_recreated)} (not committed inventory)',
                              style='yellow')
         self.query_one('#task-freshness', Static).update(freshness)
-        provenance = fleet_view.freshness(runner, detailed=True) if runner else 'Runner unavailable.'
-        info = self.query_one('#task-provenance', TextArea)
-        if info.text != provenance:
-            info.load_text(provenance)
         table = self.query_one('#tasks', DataTable)
         previous_row = table.cursor_row
         current = follow or (self.current().task if self.current() else None)
@@ -910,16 +910,43 @@ class TasksScreen(ReadScreen, Screen):
         else:
             text.append(row.task, style='bold')
             text.append(f'  {row.short}\n')
+            runner = self.runner()
+            question = next((q for q in runner.questions if q.id == row.task), None) if runner else None
+            snapshot = fleet_view.snapshot_for(runner) if runner else None
+            record = snapshot.store.tasks.get(row.task) if snapshot and snapshot.store else None
+            if question and question.kind == 'owner_action':
+                action = record.scope if record and record.scope else 'Exact action not recorded; Enter opens the task.'
+                text.append('You: ' + fleet_view.short(' '.join(action.split()), max(20, self.size.width - 8))
+                            + '\n', style='bold yellow')
+                result = '; '.join(record.acceptance) if record and record.acceptance else 'Required result not recorded.'
+                text.append('Needed result: ' + fleet_view.short(' '.join(result.split()), max(20, self.size.width - 18))
+                            + '\n')
+                text.append('Approval is not completion. Enter: full task.\n', style='dim')
+            elif question:
+                text.append('Next: ' + (question.answer or question.needs) + '\n', style='yellow')
+            elif row.why:
+                text.append(('' if row.kind == 'closed' else 'Next: ') + row.why + '\n')
             text.append(f'{row.section} · {row.state}\n', style=fleet_view.state_style(row) or 'dim')
-            if row.why:
-                text.append(row.why + '\n', style='yellow' if row.question else '')
         keys = [(a.key, a.label) for a in self.actions(row)]
         if not self.app.view_only:
             keys.append(('n', 'New'))
             if row:
                 keys = ([('e', 'Decide')] if row.kind != 'closed' else []) + [('g', 'Discuss'), ('v', 'Investigate')] + keys
-        self.query_one('#menubar', MenuBar).show(([('enter', 'Open')] if row else [])
-                                                 + keys + [('i', 'Info'), ('esc', 'Back')])
+        controls = ([('enter', 'Open')] if row else []) + keys + [('i', 'Info/Help'), ('esc', 'Back')]
+        runner = self.runner()
+        provenance = fleet_view.freshness(runner, detailed=True) if runner else 'Runner unavailable.'
+        if row and row.why:
+            provenance = row.why + '\n\n' + provenance
+        provenance = 'Keys: ' + ' · '.join(f'{key} {label}' for key, label in controls) + '\n\n' + provenance
+        info = self.query_one('#task-provenance', TextArea)
+        if info.text != provenance:
+            info.load_text(provenance)
+        essential = ([('enter', 'Open')] if row else [])
+        if row and row.kind != 'closed' and not self.app.view_only:
+            essential.append(('e', 'Decide'))
+        if self.pending and not self.app.view_only:
+            essential.append(('C', 'Commit'))
+        self.query_one('#menubar', MenuBar).show(essential + [('i', 'Info/Help'), ('esc', 'Back')])
         self.query_one('#task-detail', Static).update(text)
 
     def on_data_table_row_selected(self, event):
