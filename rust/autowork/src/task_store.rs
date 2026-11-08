@@ -292,6 +292,7 @@ fn parse(path: &str, bytes: &[u8]) -> Result<Record> {
             .chain(LISTS)
             .copied()
             .chain(["rank", "kind", "ownership"])
+            .filter(|key| *key != "goal")
             .collect()
     };
     let allowed: BTreeSet<_> = required
@@ -305,7 +306,7 @@ fn parse(path: &str, bytes: &[u8]) -> Result<Record> {
                 .iter()
                 .chain(GRANT)
                 .copied()
-                .chain(["live", "verified_depends_on"])
+                .chain(["goal", "live", "verified_depends_on"])
                 .collect()
         })
         .collect();
@@ -819,13 +820,13 @@ impl Snapshot {
             }
         }
         selected.sort_by_key(|t| {
-            let g = &self.goals[t.string("goal")];
+            let g = self.goals.get(t.string("goal"));
             (
-                !g.focus(),
+                !g.is_some_and(Record::focus),
                 if t.string("section") == "Now" { 0 } else { 1 },
                 t.number("rank"),
-                g.number("priority"),
-                match g.string("status") {
+                g.map_or(100, |g| g.number("priority")),
+                match g.map_or("unmet", |g| g.string("status")) {
                     "unverified" => 0,
                     "partial" => 1,
                     "unmet" => 2,
@@ -887,16 +888,17 @@ impl Snapshot {
                 return reason("HELD", holder.trim());
             }
         }
-        let Some(goal) = self.goals.get(task.string("goal")) else {
-            return reason("NO_GOAL", task.string("goal"));
-        };
-        if goal.string("status") == "met" {
-            return reason("GOAL_MET", &goal.id);
-        }
-        for dep in goal.strings("depends_on") {
-            if self.goals[dep].string("status") != "met" {
-                return reason("GOAL_DEPENDENCY_UNMET", dep);
+        if let Some(goal) = self.goals.get(task.string("goal")) {
+            if goal.string("status") == "met" {
+                return reason("GOAL_MET", &goal.id);
             }
+            for dep in goal.strings("depends_on") {
+                if self.goals[dep].string("status") != "met" {
+                    return reason("GOAL_DEPENDENCY_UNMET", dep);
+                }
+            }
+        } else if !task.string("goal").is_empty() {
+            return reason("NO_GOAL", task.string("goal"));
         }
         for dep in task.strings("depends_on") {
             let Some(prerequisite) = self.tasks.get(dep).filter(|t| t.string("status") == "done")

@@ -1,6 +1,6 @@
 ---
 name: docs-sync
-description: "Maintain docs and goal-linked tasks."
+description: "Maintain docs and repository tasks."
 version: 0.15.0
 license: MIT
 metadata:
@@ -277,13 +277,13 @@ A repository's tasks live in `tasks/`, its only task store (format:
 [the task store reference](../../pi-autowork/task-store.md)). Apply the
 [shared task rules](../shared/TODO-WORKCENTER.md) for `touches` and `resources`.
 
-- `tasks/goals/<ID>.md`: one goal per file, with `title`, `priority` (1 first),
+- `tasks/goals/<ID>.md`: optional multi-task outcomes, one goal per file, with `title`, `priority` (1 first),
   `source` (the accepted plan or spec heading, `path#anchor`), `status`
   (`unmet`, `partial`, `unverified`, `met`), `focus` (at most one goal) and
   `depends_on` (goal IDs that must be met first).
 - `tasks/items/<ID>.md`: one task per file. TOML frontmatter between `+++` lines
   holds the typed contract: `title`, `short` (40 characters at most), `status`
-  (`open`, `done`, `superseded`), `goal`, `section` (`Now`, `Next`,
+  (`open`, `done`, `superseded`), optional `goal`, `section` (`Now`, `Next`,
   `Needs decision`), `rank` (lower first within its section), `depends_on`,
   `touches`, `resources`, `kind` (`implementation`, `plan`, `inspection`),
   `ownership` (`worker`, `coordinator`, `owner`), `live` (`denied`, `authorized`),
@@ -338,7 +338,7 @@ The `state` values remain:
 | --- | --- | --- |
 | `legacy` | Converted TODO.md + goals.json through `autowork migrate`'s proven transaction: same task set, IDs, dependencies, ranks and selection order; TODO.archive.md kept | Reconcile on the converted store and report the conversion commit |
 | `conversion_pending` | Finished an interrupted or staged conversion, or refused | Resolve the named path, then rerun |
-| `none` | Nothing; listed `documents` and `accepted` headings | Bootstrap goals and tasks from accepted headings only; with none, report the missing intent and create no queue |
+| `none` | Nothing; listed `documents` and `accepted` headings | Bootstrap tasks from accepted intent, adding goals only for shared outcomes; with none, report the missing intent and create no queue |
 | `uncommitted` | Read the working-tree store | Continue; commit the task files with the docs when authorized |
 | `converted` | Read the committed store | Reconcile |
 | `invalid` | Refused with `path:line` errors | Fix that line from its accepted source or Git history, then rerun |
@@ -408,7 +408,7 @@ repository. Read first, then write:
 | Detect, convert, recover, diagnose | `autowork tasks prepare [--check\|--no-commit]` |
 | Inspect | `autowork tasks list`, `autowork tasks show ID [--worktree]`, `autowork tasks why ID` |
 | Add or change a goal | `autowork tasks goal ID --title T --source path#anchor --priority N [--status S] [--focus/--no-focus] [--depends-on G] [--evidence TEXT]` |
-| Add a task | `autowork tasks add --goal G --title T --short S [--section Next] [--scope TEXT] [--acceptance A ...] [--checks C ...] [--touches P ...] [--depends-on ID ...] [--resources R ...] [--exclusions E ...] [--kind K] [--ownership O] [--sources path#anchor]` |
+| Add a task | `autowork tasks add --title T [--goal G] [--short S] [--section Next] [--scope TEXT] [--acceptance A ...] [--checks C ...] [--touches P ...] [--depends-on ID ...] [--resources R ...] [--exclusions E ...] [--kind K] [--ownership O] [--sources path#anchor]` |
 | Set a typed field or note | `autowork tasks field ID LABEL VALUE` (for example `rank`, `touches`, `checks`, `kind`, `ownership`, `resources`, `exclusions`, `depends_on`, or a note label such as `Sources`) |
 | Change section | `autowork tasks place ID Now\|Next\|"Needs decision" [--decision TEXT]` |
 | Reorder | `autowork tasks move ID up\|down`, or `field ID rank N` |
@@ -432,7 +432,11 @@ replacing it. Do not mix JSON with value flags or label/value arguments.
 See [literal input](../../pi-autowork/task-store.md#literal-prose-input---json)
 for keys, types and examples. Existing validation and `--expect REV` still apply.
 
-A new goal needs `--title`, `--source` and `--priority`. `add` rejects an unknown
+A new goal needs `--title`, `--source` and `--priority`; ordinary tasks need no goal.
+Use title, scope, acceptance and checks for authoring. `add` derives the short label;
+bounded touches and actual resources must be resolved before dispatch. Do not create
+extra specifications, plans, goals, TODO.md views or completion reports for routine
+work. Reference existing intent rather than copying contracts. `add` rejects a supplied unknown
 goal and allocates the next ID (`autowork tasks new-id` shows it); it defaults to
 `kind = "implementation"`, `ownership = "worker"` and the bottom of its section, and
 writes the whole contract in one write. It refuses a second task with the same goal
@@ -486,8 +490,9 @@ corroborated relationships, not graph centrality alone.
 
 ### Task contract
 
-Each executable task has its goal, a `Sources:` note linking the exact accepted
-`path#heading`, a bounded `scope` with `exclusions`, observable `acceptance`, and
+Each executable task may have a goal for a real shared outcome. Reference existing
+accepted intent in `Sources:` when it exists; do not create a specification merely
+to obtain a `path#heading`. Each task owns a bounded `scope` with `exclusions`, observable `acceptance`, and
 separate `checks` holding the exact verification commands. Do not bury commands in
 acceptance: the runner needs checks. Mark proposed fixtures and unexecuted commands
 as planned; a check records the required procedure, not a passing result. List

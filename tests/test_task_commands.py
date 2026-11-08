@@ -101,6 +101,56 @@ class TaskCommandTests(unittest.TestCase):
         self.assertNotEqual(self.tasks('validate', '--worktree', ok=False).returncode, 0)
         self.assertEqual(self.git('count-objects', '-v'), objects)
 
+    def test_simple_authoring_defaults_without_a_goal_preserve_admission(self):
+        tid = self.tasks('add', '--title', 'A small independent fix', '--scope', 'Bounded offline change',
+                         '--acceptance', 'Focused behavior passes', '--checks', 'python3 -m unittest test_example').stdout.split()[-1]
+        record = json.loads(self.tasks('show', tid, '--worktree').stdout)
+        self.assertIsNone(record['goal'])
+        self.assertEqual(record['short'], 'A small independent fix')
+        self.assertEqual(record['missing_fields'], ['touches'])
+        self.assertEqual((record['kind'], record['ownership'], record['live'], record['resources']),
+                         ('implementation', 'worker', 'denied', []))
+        self.assertNotIn('goal =', (self.repo / record['path']).read_text())
+        self.tasks('field', tid, 'touches', 'src/example.py')
+        self.commit()
+        ready = json.loads(self.tasks('why', tid).stdout)
+        self.assertTrue(ready['eligible'])
+        duplicate = self.tasks('add', '--title', 'A small independent fix', ok=False)
+        self.assertNotEqual(duplicate.returncode, 0)
+        self.assertIn(tid, duplicate.stderr)
+        denied = self.tasks('add', '--title', 'Unknown group', '--goal', 'MISSING', ok=False)
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertIn('unknown goal', denied.stderr)
+
+    def test_json_authoring_and_explicit_goal_removal_keep_scope_bounded(self):
+        payload = Path(self.tmp.name) / 'task.json'
+        payload.write_text(json.dumps({'title': 'JSON independent task', 'scope': 'Bounded',
+                                       'acceptance': ['Works'], 'checks': ['true'], 'touches': ['src/']}))
+        tid = self.tasks('add', '--json', str(payload)).stdout.split()[-1]
+        self.assertIsNone(json.loads(self.tasks('show', tid, '--worktree').stdout)['goal'])
+        grouped = self.add('Group can be removed')
+        payload.write_text(json.dumps({'label': 'goal', 'value': None}))
+        self.tasks('field', grouped, '--json', str(payload))
+        self.assertIsNone(json.loads(self.tasks('show', grouped, '--worktree').stdout)['goal'])
+        payload.write_text(json.dumps({'label': 'scope', 'value': None}))
+        self.assertNotEqual(self.tasks('field', grouped, '--json', str(payload), ok=False).returncode, 0)
+
+    def test_first_ungrouped_task_bootstraps_without_a_fake_goal_or_legacy_bypass(self):
+        shutil.rmtree(self.repo / 'tasks')
+        self.commit()
+        (self.repo / 'TODO.md').write_text('Existing legacy work\n')
+        blocked = self.tasks('add', '--title', 'New work', ok=False)
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertIn('prepare', blocked.stderr)
+        self.assertFalse((self.repo / 'tasks').exists())
+        (self.repo / 'TODO.md').unlink()
+        tid = self.tasks('add', '--title', 'New work', '--scope', 'Small change',
+                         '--acceptance', 'Works', '--checks', 'true', '--touches', 'src/').stdout.split()[-1]
+        self.commit()
+        self.assertEqual(json.loads(self.tasks('goals').stdout), [])
+        self.assertTrue(json.loads(self.tasks('why', tid).stdout)['eligible'])
+        self.assertTrue(json.loads(self.tasks('prepare', '--check').stdout)['ok'])
+
     def test_add_then_show(self):
         legacy = self.add('Legacy task', '--id', 'T-010-ab')
         legacy_path = self.repo / 'tasks/items' / f'{legacy}.md'

@@ -33,7 +33,7 @@ def visible(widget, screen):
 
 async def controls_pilot(case):
     from pi_autowork import tui
-    from textual.widgets import Button, OptionList, Select, TextArea
+    from textual.widgets import Button, Input, OptionList, Select, TextArea
 
     for size in ((80, 24), (60, 18)):
         fixture = test_task_history.TaskHistoryTests()
@@ -147,6 +147,20 @@ async def controls_pilot(case):
                             visible(screen.query_one(cancel), screen)
                             await pilot.click(cancel)
                             assert len(app.screen_stack) == 1, (type(screen).__name__, screen.query_one(cancel).region)
+                        created = []
+                        await app.push_screen(tui.NewTask([]), created.append)
+                        await pilot.pause()
+                        for key, value in {'title': 'Independent fix', 'scope': 'Bounded change',
+                                           'acceptance': 'Works', 'checks': 'python3 -c "assert \'a  b\' != \'a b\'"'}.items():
+                            app.screen.query_one(f'#{key}', Input).value = value
+                        await pilot.click('#add')
+                        await pilot.pause()
+                        assert created and created[0]['goal'] is None, (
+                            created, type(app.screen).__name__,
+                            {key: app.screen.query_one(f'#{key}', Input).value for key in
+                             ('title', 'scope', 'acceptance', 'checks')} if not created else {})
+                        assert created[0]['checks'] == 'python3 -c "assert \'a  b\' != \'a b\'"'
+                        assert created[0]['touches'] == ''
                         decisions = []
                         await app.push_screen(tui.Confirm('\n'.join(f'Consent detail {i}' for i in range(80))), decisions.append)
                         await pilot.pause()

@@ -328,6 +328,12 @@ the [runner guide](pi-autowork/README.md) and
 `field`, `move`, `done`, …). The store is read from a commit, so a run's decisions are
 reproducible, and `/docs-sync` prepares or converts it.
 
+Ordinary authoring needs **title, scope, acceptance and checks**. The CLI derives
+IDs, list labels and scheduling defaults. Goals are optional multi-task outcomes;
+a routine task needs no separate plan or specification. Missing bounded write scope
+keeps a task draft until the coordinator resolves it. Existing permission and
+verification gates still apply. See [simple authoring](pi-autowork/task-store.md#simple-task-authoring).
+
 <details>
 <summary><strong>An illustrative task record</strong></summary>
 
