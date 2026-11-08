@@ -430,8 +430,28 @@ Keys are highlighted in the top menu, which wraps on narrow terminals:
 `l` (or Enter) **L**og, `p` **P**lay/**P**ause (starts a stopped service, resumes a
 paused one, pauses a running one), `s` **S**top, `r` **R**estart, `m` **M**odel
 (from Pi's list, type to filter), `t` **T**asks, `g` **Plan**, `u` **U**ninstall the
-service, `n` **N**ew: browse directories (from `~/git`, `AUTOWORK_BROWSE_ROOT`), see which
+service, `n` **Browse**: browse directories (from `~/git`, `AUTOWORK_BROWSE_ROOT`), see which
 repositories are ready or what they need, and `p` there plays one; `q` **Q**uit.
+The browser shows an editable directory path plus **Parent** and **Home** buttons.
+Use arrows to select folders and Enter to open the selected folder. **Ctrl+L**
+selects the path for typing or pasting; Enter opens it. Relative paths resolve
+from the current browser directory, and `~` opens your home directory.
+**Alt+Up** goes to the parent and **Alt+Home** goes home. Invalid or unreadable
+paths leave the current directory unchanged and show an error. Browsing changes
+neither the process working directory nor a runner's repository.
+
+A visible **Choose model** row shows the selected service's model. Press `m` (or
+click it with `autowork tui --mouse`) to search Pi's available models; use Down to
+browse, Enter to select and Escape to return. Loading, no matches and catalog
+failures appear inside the selector.
+If no models are available, open `pi`, run `/login`, then reopen the selector.
+
+Before starting a new service, choose its model in the TUI. You can select it from
+the fleet before browsing, or Play asks for it before the start confirmation.
+This choice stays in the TUI session until Start saves it for the new service;
+the confirmation names the model and disables automatic fallback. Existing services
+keep their saved model, fallback and Pi configuration. Changing an existing service's
+model still uses the separate model-change confirmation.
 The fleet has no Fallback or Nous Portal controls. Fallback remains visible in
 runner details; configure it with `autowork model --fallback` and use
 `autowork setup-portal` for opt-in provider setup.

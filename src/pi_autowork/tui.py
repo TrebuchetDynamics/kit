@@ -484,31 +484,45 @@ class PickModel(ReadScreen, ModalScreen[str]):
     BINDINGS = [Binding('escape', 'cancel', 'cancel')]
     DEFAULT_CSS = '''
     PickModel { align: center middle; }
-    PickModel > Vertical { width: 80; height: 80%; border: thick $accent; background: $surface; padding: 1 2; }
-    PickModel OptionList { height: 1fr; }
+    PickModel > Vertical { width: 80; max-width: 100%; height: 80%; border: thick $accent; background: $surface; padding: 1 2; }
+    PickModel OptionList { height: 1fr; min-height: 1; }
+    #model-status { height: auto; max-height: 3; }
     '''
 
     def __init__(self, title, models, current, loader=None, identity=None):
         super().__init__()
         self.title_text, self.models, self.current = title, models, current
         self.loader, self.identity = loader, identity
+        self.catalog_loading, self.load_error = bool(loader), ''
 
     def compose(self) -> ComposeResult:
         from textual.widgets import Input
         with Vertical():
-            yield Label(f'{self.title_text} (now {self.current})')
-            yield Input(placeholder='filter, e.g. india or deepseek', id='filter')
+            yield Label(Text(self.title_text, style='bold'))
+            yield Label(Text(f'Current: {self.current}' if self.current else 'Choose a model available through Pi.'))
+            yield Input(placeholder='Search provider or model', id='filter')
             yield OptionList(*self.models, id='models')
+            yield Static('Loading Pi models…' if self.loader else '', id='model-status', markup=False)
+            yield Label('Type to search · ↓ browse · Enter select · Esc back')
 
     def on_mount(self):
         self.shown = list(self.models)
+        self.query_one('#filter', Input).focus()
         if self.loader:
-            self.read('models', self.identity, self.loader, self.loaded_models)
+            self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
+        else:
+            self.on_input_changed(self.query_one('#filter', Input))
+
+    def load_failed(self, error):
+        self.catalog_loading, self.load_error = False, str(error)
+        self.models, self.shown = [], []
+        self.query_one('#models', OptionList).clear_options()
+        self.query_one('#model-status', Static).update(
+            f'Cannot load Pi models: {error}\nOpen pi and use /login, then reopen this selector.')
 
     def loaded_models(self, models):
+        self.catalog_loading, self.load_error = False, ''
         self.models = models
-        if not models:
-            self.notify('Pi listed no models (pi --list-models).', severity='error')
         self.on_input_changed(self.query_one('#filter', Input))
 
     def on_input_changed(self, event):
@@ -516,6 +530,16 @@ class PickModel(ReadScreen, ModalScreen[str]):
         options = self.query_one('#models', OptionList)
         options.clear_options()
         options.add_options(self.shown)
+        if self.catalog_loading:
+            status = 'Loading Pi models…'
+        elif self.load_error:
+            status = f'Cannot load Pi models: {self.load_error}\nOpen pi and use /login, then reopen this selector.'
+        elif self.models:
+            status = (f'{len(self.shown)} of {len(self.models)} Pi models · Enter selects the first match'
+                      if self.shown else 'No matching models. Clear or change your search.')
+        else:
+            status = 'No Pi models available. Open pi and use /login, then reopen this selector.'
+        self.query_one('#model-status', Static).update(status)
 
     def on_input_submitted(self, event):
         """Enter in the filter takes the first match."""
@@ -1262,8 +1286,16 @@ class RepoTree(DirectoryTree):
 class BrowseScreen(ReadScreen, Screen):
     """Pick a repository and start its service."""
     BINDINGS = [Binding('p', 'start', 'Play'), Binding('g', 'plan_selected', 'Plan'),
+                Binding('ctrl+l', 'edit_path', 'Path', priority=True),
+                Binding('alt+up', 'parent', 'Parent', priority=True),
+                Binding('alt+home', 'home', 'Home', priority=True),
+                Binding('enter', 'open_directory', 'Open folder', priority=True, show=False),
                 Binding('escape,q', 'app.pop_screen', 'back')]
     CSS = '''
+    #browser-location { height: 3; }
+    #browse-path { width: 1fr; }
+    #browser-location Button { width: 9; min-width: 9; padding: 0; }
+    #browse-status { height: auto; max-height: 2; padding: 0 1; }
     #browser-body { height: 1fr; }
     #tree, #info-scroll { width: 1fr; }
     #info-scroll { border-left: solid $panel; }
@@ -1281,10 +1313,16 @@ class BrowseScreen(ReadScreen, Screen):
         self.prepare_result = None
         self.chosen_path = None
         self.starting = False
+        self.navigating = False
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield MenuBar(id='menubar')
+        with Horizontal(id='browser-location'):
+            yield Input(value=str(self.root or Path.home()), placeholder='Directory path · Enter to open', id='browse-path')
+            yield Button('Parent', id='browse-up', tooltip='Open the parent directory (Alt+Up)')
+            yield Button('Home', id='browse-home', tooltip='Open your home directory (Alt+Home)')
+        yield Static('Enter opens a folder · Ctrl+L edits the path · Alt+↑ goes up', id='browse-status', markup=False)
         with Horizontal(id='browser-body'):
             yield RepoTree(self.root or str(Path.home()), id='tree')
             with VerticalScroll(id='info-scroll'):
@@ -1293,17 +1331,99 @@ class BrowseScreen(ReadScreen, Screen):
     def on_mount(self):
         self.set_class(self.size.width < 100, 'compact')
         self.title = f'start a runner: {self.root or Path.home()}'
-        self.query_one('#menubar', MenuBar).show([('p', 'Play'), ('g', 'Plan'), ('esc', 'Back')])
+        self.query_one('#menubar', MenuBar).show([('p', 'Play'), ('g', 'Plan'), ('ctrl+l', 'Path'), ('esc', 'Back')])
+        self.query_one('#tree', RepoTree).focus()
         if self.root is None:
             home = Path.home()
             def loaded(root):
                 self.root = str(root)
                 self.query_one('#tree', RepoTree).path = root
+                self.query_one('#browse-path', Input).value = str(root)
                 self.title = f'start a runner: {root}'
             self.read('browse-root', str(home), lambda: home / 'git' if (home / 'git').is_dir() else home, loaded)
 
     def on_resize(self, event):
         self.set_class(event.size.width < 100, 'compact')
+
+    def action_edit_path(self):
+        address = self.query_one('#browse-path', Input)
+        address.focus()
+        address.action_select_all()
+
+    def action_parent(self):
+        self.navigate_to(Path(self.root or Path.home()).parent)
+
+    def action_home(self):
+        self.navigate_to(Path.home())
+
+    def on_button_pressed(self, event):
+        if event.button.id in ('browse-up', 'browse-home'):
+            event.stop()
+            (self.action_parent if event.button.id == 'browse-up' else self.action_home)()
+
+    def on_input_submitted(self, event):
+        if event.input.id == 'browse-path':
+            event.stop()
+            self.navigate_to(event.value)
+
+    def check_action(self, action, parameters):
+        if action == 'open_directory':
+            return self.focused is self.query_one('#tree', RepoTree)
+        return True
+
+    def action_open_directory(self):
+        node = self.query_one('#tree', RepoTree).cursor_node
+        if node is not None and node.data is not None:
+            path = node.data.path
+            if str(path) != str(self.root):
+                self.navigate_to(path)
+            else:
+                node.expand()
+
+    def navigate_to(self, value):
+        """Change the browser root after a read-only, off-loop directory check."""
+        value = str(value).strip()
+        self.invalidate_read()
+        self.navigating = bool(value)
+        if not value:
+            self.query_one('#browse-status', Static).update('Enter a directory path, for example ~ or /home.')
+            return
+        base = Path(self.root or Path.home())
+        self.query_one('#browse-status', Static).update(f'Opening {value}…')
+        def load():
+            path = Path(value).expanduser()
+            path = (path if path.is_absolute() else base / path).resolve(strict=True)
+            if not path.is_dir():
+                raise NotADirectoryError(f'{path} is not a directory')
+            with os.scandir(path) as entries:
+                next(entries, None)  # also verify permission to list it
+            return path
+        def loaded(path):
+            self.navigating = False
+            self.root = str(path)
+            self.chosen, self.chosen_path, self.starting = None, None, False
+            self.prepare_result = None
+            self.query_one('#browse-path', Input).value = str(path)
+            tree = self.query_one('#tree', RepoTree)
+            tree.path = path
+            tree.focus()
+            self.title = f'start a runner: {path}'
+            self.query_one('#browse-status', Static).update(
+                'Enter opens a folder · Ctrl+L edits the path · Alt+↑ goes up')
+            self.show_repository(path)
+        def failed(error):
+            self.navigating = False
+            self.query_one('#browse-status', Static).update(f'Cannot open directory: {error}')
+        token = self.read('browse-path', (str(base), value), load, loaded, failed)
+        self.navigation_read = token
+        if token is not None:
+            def finished(future):
+                if token.cancelled and self.navigation_read is token:
+                    self.navigating = False
+                    if self.is_mounted and self.is_current:
+                        self.query_one('#browse-status', Static).update('Navigation cancelled. Enter a directory path to retry.')
+            token.done.add_done_callback(finished)
+        return token
 
     def read_labels(self, paths):
         def load():
@@ -1384,7 +1504,7 @@ class BrowseScreen(ReadScreen, Screen):
         self.query_one('#info', Static).update(info)
 
     def action_start(self):
-        if self.app.view_only or self.preparing or self.starting:
+        if self.app.view_only or self.preparing or self.starting or self.navigating:
             return
         if self.chosen_path is None:
             self.notify('Choose a repository first.', severity='warning')
@@ -1408,7 +1528,7 @@ class BrowseScreen(ReadScreen, Screen):
                 self.prepare(ready.path, choice == 'prepare-start')))
 
     def action_plan_selected(self):
-        if self.chosen and self.chosen.repo:
+        if self.chosen and self.chosen.repo and not self.navigating:
             self.plan(self.chosen.repo)
 
     def plan(self, path):
@@ -1595,6 +1715,7 @@ class FleetApp(App):
     # Stacked, each part full width: a side-by-side split left a ~30-column pane on an
     # 80-column terminal, which wrapped the detail and cut the log.
     CSS = '''
+    #modelbar { height: 1; padding: 0 1; background: $boost; }
     #runners { height: auto; min-height: 3; max-height: 25%; }
     #overview { height: auto; max-height: 6; padding: 0 1; background: $boost; }
     #detail-scroll { display: none; height: 6; border-top: solid $panel; }
@@ -1621,7 +1742,7 @@ class FleetApp(App):
         Binding('i', 'toggle_details', 'Details', show=False),
         Binding('g', 'run("g")', 'Plan', show=False),
         Binding('u', 'run("u")', 'Uninstall', show=False),
-        Binding('n', 'browse', 'New', show=False),
+        Binding('n', 'browse', 'Browse', show=False),
         Binding('q', 'quit', 'Quit', show=False),
     ]
     CONTROL = {'run', 'browse', 'pick_model', 'answer_question'}
@@ -1649,6 +1770,8 @@ class FleetApp(App):
         self._report_busy = False
         self._report_pending = None
         self.details_open = False
+        self.new_model = ''
+        self.new_model_agent_dir = portal.service_agent_dir(os.environ)
 
     def check_action(self, action, parameters):
         """View-only (for example served to a browser on a shared network): no control keys."""
@@ -1666,6 +1789,7 @@ class FleetApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield MenuBar(id='menubar')
+        yield Static(id='modelbar')
         yield DataTable(id='runners', cursor_type='row', zebra_stripes=True)
         yield Static(id='overview')
         with VerticalScroll(id='detail-scroll'):
@@ -2012,6 +2136,15 @@ class FleetApp(App):
         menubar = self.query_one('#menubar', MenuBar)
         # Mouse mode and keyboard use the same bindings and check_action guards.
         clicks = {key: 'app.' + binding.action for binding in self.BINDINGS for key in binding.key.split(',')}
+        modelbar = Text(no_wrap=True, overflow='ellipsis')
+        if not self.view_only:
+            hotkeys(modelbar, [('m', 'Choose model')], {'m': 'app.pick_model("model")'})
+            modelbar.append(' · ')
+        else:
+            modelbar.append('Model (read only) · ', style='dim')
+        model = runner.model if runner and runner.has_service else self.new_model
+        modelbar.append(model or 'Select a Pi model for a new runner', style='bold' if model else 'dim')
+        self.query_one('#modelbar', Static).update(modelbar)
         self.show_overview(runner)
         if runner is None:
             errors = (*(self.fleet_snapshot.errors if self.fleet_snapshot else ()),
@@ -2022,10 +2155,10 @@ class FleetApp(App):
             elif self.fleet_snapshot is None:
                 detail.update('Loading pi-autowork runners…')
             else:
-                detail.update('No pi-autowork runners yet. Press n for a new one: choose a repository and play its service.')
+                detail.update('No pi-autowork runners yet. Press n to browse directories, choose a repository and play its service.')
             self.query_one('#overview', Static).update(detail.render())
             self.query_one('#lanes', DataTable).display = False
-            menubar.show([] if self.view_only else [('g', 'Plan'), ('n', 'New'), ('q', 'Quit')],
+            menubar.show([] if self.view_only else [('g', 'Plan'), ('n', 'Browse'), ('q', 'Quit')],
                          click_actions=clicks)
             return
         # The keys go in the menu bar at the top, like a GUI app's menu; the pane holds the facts.
@@ -2036,7 +2169,7 @@ class FleetApp(App):
         else:
             menubar.show([(a.key, a.label) for a in self.available(runner)]
                          + [('i', 'Summary' if self.details_open else 'Details'),
-                            ('b', 'Blockers'), ('n', 'New'), ('q', 'Quit')],
+                            ('b', 'Blockers'), ('n', 'Browse'), ('q', 'Quit')],
                          click_actions=clicks)
         text = Text()
         # First the answer to "is it stuck, and why": one sentence, wrapped, never cut.
@@ -2278,9 +2411,12 @@ class FleetApp(App):
             self.execute(action)
 
     def action_pick_model(self, which):
+        if self.view_only:
+            return
         runner = self.current()
         if runner is None or not runner.has_service:
-            self.notify('Models are set per service; play one first (p, or n for a new one).', severity='warning')
+            if which == 'model':
+                self.pick_new_model()
             return
         settings_path = Path(self.env_dir) / f'{runner.name}.env'
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
@@ -2303,6 +2439,23 @@ class FleetApp(App):
                                                   if runner.service == 'running' else '?'))
             self.push_screen(Confirm(action.confirm), lambda yes: yes and self.execute(action))
         self.push_screen(PickModel(title, [], current, loader=load, identity=(runner.name, str(settings_path))), chosen)
+
+    def pick_new_model(self, on_chosen=None):
+        list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
+        agent_dir = self.new_model_agent_dir
+        def load():
+            return (list_models(pi=pi, agent_dir=agent_dir)
+                    if list_models is fleet_view.models else list_models())
+        def chosen(model):
+            if model and not self.view_only:
+                self.new_model = model
+                self.show_detail()
+                if on_chosen:
+                    on_chosen(model)
+            elif on_chosen:
+                on_chosen(None)
+        self.push_screen(PickModel('Choose a Pi model for a new runner', [], self.new_model,
+                                   loader=load, identity=('new-runner', agent_dir)), chosen)
 
     def action_browse(self):
         self.push_screen(BrowseScreen(str(self.browse_root) if self.browse_root else None, self.start_repository))
@@ -2341,7 +2494,37 @@ class FleetApp(App):
                     self.starting_repositories.discard(ready.repo)
             else:
                 self.starting_repositories.discard(ready.repo)
-        self.push_screen(Confirm(action.confirm), go)
+        def model_chosen(model):
+            if not model or self.view_only or not browser.is_mounted or self.screen is not browser:
+                self.starting_repositories.discard(ready.repo)
+                return
+            action.env.update(PI_AUTOWORK_PRIMARY=model, PI_AUTOWORK_NO_FALLBACK='1',
+                              PI_CODING_AGENT_DIR=self.new_model_agent_dir)
+            action.confirm += f' Model: {model}. Only this model will be used (no fallback).'
+            self.push_screen(Confirm(action.confirm), go)
+
+        async def prepare_model():
+            try:
+                env_dir, repo = self.env_dir, ready.repo
+                def has_settings():
+                    return (Path(env_dir) / f'{fleet_view.instance(repo)}.env').is_file()
+                saved = await asyncio.to_thread(has_settings)
+                if (self.view_only or not browser.is_mounted or self.screen is not browser
+                        or browser.chosen_path != ready.path):
+                    self.starting_repositories.discard(ready.repo)
+                elif saved:
+                    self.push_screen(Confirm(action.confirm), go)
+                elif self.new_model:
+                    model_chosen(self.new_model)
+                else:
+                    self.pick_new_model(model_chosen)
+            except OSError as error:
+                self.starting_repositories.discard(ready.repo)
+                self.notify(f'Cannot read service settings: {error}', severity='error')
+            except asyncio.CancelledError:
+                self.starting_repositories.discard(ready.repo)
+                raise
+        self.run_worker(prepare_model(), group='start-model')
 
     def execute(self, action, on_complete=None):
         env = {**os.environ, **action.env}

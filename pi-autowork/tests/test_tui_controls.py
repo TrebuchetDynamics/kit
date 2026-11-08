@@ -246,6 +246,8 @@ async def play_pilot():
                 return subprocess.CompletedProcess(argv, 0)
             def run(argv, **kwargs):
                 assert argv == ['fixture-autowork', 'start', str(fixture.repo)], argv
+                assert kwargs['env']['PI_AUTOWORK_PRIMARY'] == 'fixture/model'
+                assert kwargs['env']['PI_AUTOWORK_NO_FALLBACK'] == '1'
                 calls.append(argv)
                 with patch.object(command, 'systemctl', return_value=subprocess.CompletedProcess([], 1)), \
                      patch.object(command, 'package_script', return_value='fixture-installer'), \
@@ -254,6 +256,7 @@ async def play_pilot():
                 return subprocess.CompletedProcess(argv, code, '', '')
             app = tui.FleetApp(command='fixture-autowork', script='unused', state_root=runtime, env_dir=runtime,
                                browse_root=str(fixture.repo), runner_cmd=run)
+            app.new_model = 'fixture/model'
             envelope = fleet_view.FleetSnapshot((), (), 1, time.time())
             with patch.object(fleet_view, 'collect_for_tui', return_value=envelope), \
                  patch.dict(os.environ, PI_AUTOWORK_STATE_DIR=runtime):
