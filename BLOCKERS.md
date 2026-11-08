@@ -16,14 +16,6 @@ no extra approval step or execution authority.
 - Answer: Perform the task outside this runner and record the actual completion evidence, or explicitly defer or cancel it. Saved direction is not completion evidence; another approval or live grant does not transfer an owner-owned task to the runner.
 - Kind: owner_action
 
-### Q-TOOLSET-450-e643cb7a — USER_INPUT — effort input — unblocks 1
-
-- Task: TOOLSET-450-e643cb7a — Make Hermes approvals conservative unless autonomous policy is explicit
-- Needs: TOOLSET-450-e643cb7a requires owner-performed action, not unattended execution. Saved owner answer: 2026-11-07: approved. Another approval is not requested.
-- Since: 2026-11-07T21:55:54Z
-- Answer: Perform the task outside this runner and record the actual completion evidence, or explicitly defer or cancel it. Saved direction is not completion evidence; another approval or live grant does not transfer an owner-owned task to the runner.
-- Kind: owner_action
-
 ### Q-TOOLSET-451-ba324296 — USER_INPUT — effort input — unblocks 1
 
 - Task: TOOLSET-451-ba324296 — Qualify one disposable-repository delivery under real interruption
@@ -37,14 +29,6 @@ no extra approval step or execution authority.
 - Task: TOOLSET-463-8af43073 — Verify a deliberate stop is terminal and a restart re-asserts configuration
 - Needs: TOOLSET-463-8af43073 requires owner-performed action, not unattended execution. Saved owner answer: 2026-11-07: approved. Another approval is not requested.
 - Since: 2026-11-05T02:13:30Z
-- Answer: Perform the task outside this runner and record the actual completion evidence, or explicitly defer or cancel it. Saved direction is not completion evidence; another approval or live grant does not transfer an owner-owned task to the runner.
-- Kind: owner_action
-
-### Q-TOOLSET-469-7ba77973 — USER_INPUT — effort input — unblocks 1
-
-- Task: TOOLSET-469-7ba77973 — Decide how to qualify the planning-authority goal
-- Needs: TOOLSET-469-7ba77973 requires owner-performed action, not unattended execution. Saved owner answer: 2026-11-07: approved. Another approval is not requested.
-- Since: 2026-11-07T21:55:54Z
 - Answer: Perform the task outside this runner and record the actual completion evidence, or explicitly defer or cancel it. Saved direction is not completion evidence; another approval or live grant does not transfer an owner-owned task to the runner.
 - Kind: owner_action
 
