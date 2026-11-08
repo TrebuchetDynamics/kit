@@ -126,7 +126,7 @@ elif message.startswith('This worktree is on branch '):
     role, task = 'merge', None
 elif 'could not run its checks because this is missing' in message:
     role, task = 'provision', re.search(r'review of task (\S+) ', message)[1]
-elif message.startswith('You are the DOCS-MAINTAINER'):
+elif message.startswith(('You are the DOCS-MAINTAINER', 'You are discovering independent maintenance work')):
     role, task = 'maintainer', None
 elif message.startswith('You triage a blocker'):
     role, task = 'triage', re.search(r'The worker of task (\S+) ', message)[1]
@@ -2879,7 +2879,10 @@ fcntl.flock = observed_flock
             journal = [json.loads(l) for l in (common / 'autowork-execution/journal.jsonl').read_text().splitlines()]
             lease_events = [e['event'] for e in journal if e['event'].startswith('coordinator_')]
             self.assertEqual(lease_events[:20], ['coordinator_claimed', 'coordinator_released'] * 10)
-            self.assertEqual(self.runs(), [])
+            # Continuous idle runs search once, not once per interval. Discovery has
+            # settled before releasing the lease and must not become a code worker.
+            self.assertEqual([r['role'] for r in self.runs()], ['maintainer'])
+            self.assertTrue(self.runs()[0]['message'].startswith('You are discovering independent maintenance work'))
         finally:
             if runner.poll() is None:
                 runner.send_signal(signal.SIGINT)
