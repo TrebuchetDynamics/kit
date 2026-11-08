@@ -38,7 +38,11 @@ review step. Keep Hermes Agent unchanged.
 ## Apply standing approval
 
 Read and apply [standing approval](references/iteration-and-decisions.md#apply-standing-approval)
-before asking again. Preserve explicit exclusions, pauses and human-only requirements.
+before asking again. An explicit Autowork invocation authorizes completion of its
+requested scope, not just planning. Under an owner-adopted full-authority policy,
+apply that standing grant to every occurrence and newly discovered in-scope task;
+the coordinator records missing typed grants before admission rather than asking
+for approval again. Preserve explicit exclusions, pauses and human-only requirements.
 
 ## Select and execute
 
