@@ -156,8 +156,9 @@ for affected owners; save task changes with `autowork tasks`; do not start a who
    ownership, focus, completed history and unrelated edits. An in-progress cache
    benchmark remains that same task, not a second “research cache” task.
 3. For accepted unmet work, save complete task records with `autowork tasks add`
-   (and the goal with `autowork tasks goal`): goal, a `Sources:` note (research
-   receipt plus graph/source evidence), bounded `scope`/`exclusions`, measurable
+   under [ordinary authoring](../shared/TODO-WORKCENTER.md#ordinary-authoring).
+   Use `autowork tasks goal` only for a meaningful shared outcome. Link existing
+   intent and research evidence in `Sources:`; keep bounded `scope`/`exclusions`, observable
    `acceptance`/`checks`, `depends_on`, `ownership` and `touches` (plus `resources`
    where needed). Place them in **Now/Next** by actual priority (section, then rank)
    and dependencies. Use one discriminating investigation only for a blocking

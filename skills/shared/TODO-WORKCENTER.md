@@ -66,6 +66,8 @@ The four authoring inputs save intent, not dispatch permission. A record without
 bounded `touches` stays draft. The coordinator resolves write scope and real shared
 resources from source before dispatch, retaining all live and verification gates.
 Defaults never authorize a repository-wide write or fabricate completion.
+For the saved text, apply [task names](#task-names) and
+[task descriptions](#task-descriptions).
 
 ### Task names
 
@@ -168,7 +170,7 @@ invent work. A task may stand alone. Add a goal with `autowork tasks goal ID
 --title T --source path#anchor --priority N` only for a meaningful shared outcome.
 
 Put executable details in the record: `scope`, `acceptance`, `checks`, `depends_on`,
-and a `Sources:` note linking the plan; a task that uses another's output may name the
+and a `Sources:` note for existing shared intent when applicable; a task that uses another's output may name the
 seam in `Produces:`/`Consumes:` notes. Each acceptance criterion names the test that
 proves it ([executable acceptance](PLANNING-CRAFT.md#executable-acceptance)). `checks`
 names the focused commands that prove the acceptance (a test file, class or

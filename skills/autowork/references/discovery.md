@@ -78,7 +78,10 @@ claiming a worker started. Honor the saved reporting policy; every-occurrence jo
 
 Use the store's evidence-backed `Now` and `Next` tasks as candidates, not automatic
 execution permission. Prefer tasks whose `goal` is a partial or unmet goal in
-`tasks/goals/`. When you finish a slice, close the task and update the goal's status
+`tasks/goals/`; ordinary tasks may be ungrouped under
+[ordinary authoring](../../shared/TODO-WORKCENTER.md#ordinary-authoring).
+When you finish a slice, close the task under its evidence rules. If it has a goal,
+update that goal's status
 (`autowork tasks goal ID --status ...`; a met goal needs `--evidence` naming an
 executed, passing check), so the next run sees the goal move. Follow each item's
 source, scope, project payoff, acceptance check, dependencies, and ownership; verify

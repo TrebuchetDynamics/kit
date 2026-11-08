@@ -31,7 +31,8 @@ offline maintenance when the queue cannot run. Existing scope and safety limits 
    use [repository maintenance](../autowork/references/repository-maintenance.md)
    within the authorized scope. Inspect source, tests, docs and existing user flows
    for a concrete useful offline task. Reuse an existing record or create a bounded
-   task through `autowork tasks`, with evidence, acceptance, checks and dependencies.
+   task through `autowork tasks`, following
+   [ordinary authoring](../shared/TODO-WORKCENTER.md#ordinary-authoring).
    Use `/docs-sync` for a missing store and `/plan-for-me` only for consequential
    missing choices. Finish the selected offline work in this session.
    Preserve live and owner-only tasks as pending. Their gates do not block unrelated

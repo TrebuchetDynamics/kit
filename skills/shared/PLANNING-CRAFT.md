@@ -136,8 +136,9 @@ agreed to.
 
 ## Name things precisely
 
-For task titles and short labels, apply the shared
-[task-naming policy](TODO-WORKCENTER.md#task-names), including its pre-save review.
+For task text, use [ordinary authoring](TODO-WORKCENTER.md#ordinary-authoring),
+then apply [task names](TODO-WORKCENTER.md#task-names) and
+[task descriptions](TODO-WORKCENTER.md#task-descriptions) before saving.
 
 Use the repository's existing glossary or terminology owner when there is one. When
 a term is vague or overloaded ("account": customer or user?), propose one canonical

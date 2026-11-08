@@ -53,8 +53,10 @@ For `/autoresearch` findings, plans, experiments or chained handoffs, load
 [the autoresearch adapter](../../autoresearch/SKILL.md). Treat run logs, TSV and
 `handoff.json` as evidence inputs; this skill still owns canonical documentation
 and task reconciliation. Narrow Maintain records accepted findings in existing
-owners and schedules bounded work with `autowork tasks add` under the matching
-goal, with rank, dependencies, full acceptance/checks and preserved ownership.
+owners and schedules bounded work with `autowork tasks add` under
+[ordinary authoring](../../shared/TODO-WORKCENTER.md#ordinary-authoring), with rank,
+dependencies, full acceptance/checks and preserved ownership. Group a meaningful
+shared outcome under its matching goal; ordinary findings may stay ungrouped.
 Reuse matching task IDs, including held work; repeated evidence creates no
 duplicates. Research recommendations do not manufacture accepted product
 requirements.
