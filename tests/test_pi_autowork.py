@@ -1152,7 +1152,7 @@ class EngineTests(Fixture):
                     if check_pid and Path(f'/proc/{check_pid}').exists():
                         os.killpg(check_pid, signal.SIGKILL)
 
-    def test_a_main_failure_that_passes_alone_is_green_without_a_maintainer(self):
+    def test_a_main_failure_that_passes_alone_is_green_without_a_repair_maintainer(self):
         self.write_todo(todo([]))
         tests = self.repo / 'tests'
         tests.mkdir()
@@ -1176,7 +1176,12 @@ class EngineTests(Fixture):
             self.assertEqual(record['state'], 'green', log())
             self.assertEqual(record['flaky'], ['test_flaky.Flaky.test_flaky'])
             self.assertEqual(record['flaky_history'], {'test_flaky.Flaky.test_flaky': [rev]})
-            self.assertFalse(self.runs('maintainer'), log())
+            # Independent discovery is allowed, but a single flaky result must not
+            # trigger task repair or test-hardening work.
+            repairs = [r for r in self.runs('maintainer')
+                       if not r['message'].startswith('You are discovering independent maintenance work')]
+            self.assertFalse(repairs, log())
+            self.assertLessEqual(len(self.runs('maintainer')), 1, log())
         finally:
             runner.send_signal(signal.SIGINT)
             runner.communicate(timeout=60)
