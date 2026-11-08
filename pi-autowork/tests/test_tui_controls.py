@@ -207,17 +207,24 @@ async def controls_pilot(case):
                         for label, expected in [('Log', tui.LogScreen), ('Stop', tui.Confirm),
                                                 ('Answer', tui.QuestionPicker)]:
                             text = bar.render().plain
+                            shown_label = 'More' if label == 'Stop' and size[1] < 22 else label
                             # Find its rendered cell after wrapping, rather than assume
                             # every action fits on the first line.
                             position = None
                             for y in range(bar.content_size.height):
                                 line = bar.render_line(y).text
-                                if label in line:
-                                    position = (line.index(label) + bar.styles.padding.left, y + bar.styles.padding.top)
+                                if shown_label in line:
+                                    position = (line.index(shown_label) + bar.styles.padding.left, y + bar.styles.padding.top)
                                     break
                             assert position is not None, (label, text, bar.region)
                             await pilot.click('#menubar', offset=position)
                             await pilot.pause()
+                            if shown_label == 'More':
+                                assert isinstance(app.screen, tui.ActionMenu)
+                                app.screen.query_one('#action-filter', Input).value = label
+                                await pilot.pause()
+                                await pilot.press('enter')
+                                await pilot.pause()
                             assert isinstance(app.screen, expected), (label, type(app.screen).__name__)
                             await pilot.press('escape')
                         assert not calls, 'Opening screens/declining must not execute control commands'
@@ -246,6 +253,8 @@ async def play_pilot():
                 return subprocess.CompletedProcess(argv, 0)
             def run(argv, **kwargs):
                 assert argv == ['fixture-autowork', 'start', str(fixture.repo)], argv
+                assert kwargs['env']['PI_AUTOWORK_PRIMARY'] == 'fixture/model'
+                assert kwargs['env']['PI_AUTOWORK_NO_FALLBACK'] == '1'
                 calls.append(argv)
                 with patch.object(command, 'systemctl', return_value=subprocess.CompletedProcess([], 1)), \
                      patch.object(command, 'package_script', return_value='fixture-installer'), \
@@ -254,6 +263,7 @@ async def play_pilot():
                 return subprocess.CompletedProcess(argv, code, '', '')
             app = tui.FleetApp(command='fixture-autowork', script='unused', state_root=runtime, env_dir=runtime,
                                browse_root=str(fixture.repo), runner_cmd=run)
+            app.new_model = 'fixture/model'
             envelope = fleet_view.FleetSnapshot((), (), 1, time.time())
             with patch.object(fleet_view, 'collect_for_tui', return_value=envelope), \
                  patch.dict(os.environ, PI_AUTOWORK_STATE_DIR=runtime):

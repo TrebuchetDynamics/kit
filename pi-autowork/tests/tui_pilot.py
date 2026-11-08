@@ -650,6 +650,7 @@ async def main():
         app = FleetApp(command='aw', script='pa.sh', state_root=base / 'state', env_dir=env,
                        systemctl=str(systemctl), journalctl=str(journal), agent=None, runner_cmd=run,
                        browse_root=str(tree), list_models=lambda: ['openai-codex/gpt-6-luna', 'openai-codex/gpt-6.1-sol'])
+        app.new_model = 'openai-codex/gpt-6.1-sol'
         async with run_pilot(app, size=(150, 45)) as pilot:
             # A resize can paint before the first fleet read returns: say loading, not "no runners".
             app.fleet_snapshot = None
@@ -794,9 +795,9 @@ async def main():
             menubar = app.query_one('#menubar')
             assert menubar.region.y < app.query_one('#runners').region.y, 'the menu bar is above the runners'
             hints = menubar.render()
-            assert str(hints).rstrip().endswith('Log  Pause  Stop  Restart  Model  Tasks  g Plan  Details  Blockers  New  Quit'), str(hints)
+            assert str(hints).rstrip().endswith('Log  Pause  Stop  Restart  Model  Tasks  g Plan  Details  Blockers  ? More  n Browse  Quit'), str(hints)
             marked = {str(hints)[span.start:span.end] for span in hints.spans if 'underline' in str(span.style)}
-            assert marked == set('LPSRMTBNQgi'), marked
+            assert marked == set('LPSRMTBQgin?'), marked
             log = '\n'.join(line.text for line in app.query_one('#log').lines)
             assert 'TASK-036: waiting' in log and 'pending —' not in log, log
             agent = base / 'agent'
@@ -811,17 +812,17 @@ async def main():
                 for view_only in (False, True):
                     app.view_only = view_only
                     for service, state_name, menu in (
-                            ('running', 'stalled', 'Log  Pause  Stop  Restart  Model  Tasks  g Plan  Details  Blockers  New  Quit'),
-                            ('stopped', 'not running', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  New  Quit'),
-                            ('stopped', 'paused', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  New  Quit'),
-                            ('', '', 'g Plan  New  Quit')):
+                            ('running', 'stalled', 'Log  Pause  Stop  Restart  Model  Tasks  g Plan  Details  Blockers  ? More  n Browse  Quit'),
+                            ('stopped', 'not running', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  ? More  n Browse  Quit'),
+                            ('stopped', 'paused', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  ? More  n Browse  Quit'),
+                            ('', '', 'g Plan  n Browse  ? Help  Quit')):
                         selected = replace(runner, service=service, state=state_name) if service else None
                         envelope = fleet_view.FleetSnapshot((selected,) if selected else (),
                             (fleet_view.snapshot_for(selected),) if selected else (), 1, time.time())
                         async with patched_reads(app, mock.patch.object(fleet_view, 'collect_for_tui', return_value=envelope),
                                 mock.patch.object(portal, 'probe', side_effect=AssertionError('fleet key probed Portal'))):
                             await refresh(app, pilot)
-                            expected = ('view only  Log  Details  Blockers  Quit' if selected else '') if view_only else menu
+                            expected = ('view only  Log  Details  Blockers  ? More  Quit' if selected else '? Help  Quit') if view_only else menu
                             assert str(menubar.render()).strip() == expected, menubar.render()
                             painted = ' '.join(menubar.render_line(y).text for y in range(menubar.content_size.height))
                             assert ' '.join(painted.split()) == ' '.join(expected.split()), painted
@@ -977,15 +978,20 @@ async def main():
             await pilot.pause()
             await pilot.press('n')                      # a new task, from the form
             await pilot.pause()
+            await drain_reads(app)
             form = app.screen
             form.query_one('#title').value = 'Add a thing'
             form.query_one('#short').value = 'A thing'
             form.query_one('#goal').value = store_fixture.FIXTURE_GOAL
+            form.query_one('#scope').value = 'Add the bounded thing'
+            form.query_one('#acceptance').value = 'The thing exists'
+            form.query_one('#checks').value = 'test -f thing'
             form.query_one('#add').press()
             await pilot.pause()
             await app.workers.wait_for_complete()
-            assert calls[-1] == ['aw', 'tasks', 'add', '--title', 'Add a thing', '--short', 'A thing',
-                                          '--goal', 'FIXTURE', '--section', 'Next', 'india'], calls
+            assert calls[-1] == ['aw', 'tasks', 'add', '--title', 'Add a thing', '--section', 'Next',
+                                '--short', 'A thing', '--goal', 'FIXTURE', '--scope', 'Add the bounded thing',
+                                '--acceptance', 'The thing exists', '--checks', 'test -f thing', 'india'], calls
             await pilot.press('escape')
             await pilot.pause()
             (india / 'BLOCKERS.md').unlink()            # the later views expect no question

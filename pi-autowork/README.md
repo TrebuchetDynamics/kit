@@ -430,8 +430,43 @@ Keys are highlighted in the top menu, which wraps on narrow terminals:
 `l` (or Enter) **L**og, `p` **P**lay/**P**ause (starts a stopped service, resumes a
 paused one, pauses a running one), `s` **S**top, `r` **R**estart, `m` **M**odel
 (from Pi's list, type to filter), `t` **T**asks, `g` **Plan**, `u` **U**ninstall the
-service, `n` **N**ew: browse directories (from `~/git`, `AUTOWORK_BROWSE_ROOT`), see which
+service, `n` **Browse**: browse directories (from `~/git`, `AUTOWORK_BROWSE_ROOT`), see which
 repositories are ready or what they need, and `p` there plays one; `q` **Q**uit.
+Press **? More** to search all available actions and see their shortcuts. Choosing
+an action uses the same command and confirmation as its direct key. Read-only
+views list only read-only actions. Compact terminals show the primary actions in
+the menu; secondary actions remain in More and retain their keyboard shortcuts.
+
+The fleet separates **Runners**, **Workers** and **Activity** with labelled rules.
+Below 22 terminal rows, the selected summary uses three lines and keeps the main
+check visible. The activity journal retains at least four rows. Repeated identical
+text does not repaint widgets; style and click-target changes still update them.
+Acquisition and freshness rules are unchanged. See [DESIGN.md](../DESIGN.md) for the maintained
+terminal layout and interaction contract.
+
+The browser shows an editable directory path plus **Parent** and **Home** buttons.
+Use arrows to select folders and Enter to open the selected folder. **Ctrl+L**
+selects the path for typing or pasting; Enter opens it. Relative paths resolve
+from the current browser directory, and `~` opens your home directory.
+**Alt+Up** goes to the parent and **Alt+Home** goes home. Invalid or unreadable
+paths leave the current directory unchanged and show an error. Browsing changes
+neither the process working directory nor a runner's repository.
+
+A visible **Choose model** row shows the selected service's model. Press `m` (or
+click it with `autowork tui --mouse`) to choose a **Provider**, then search that
+provider's models. With multiple providers, select one before choosing a model;
+the current provider or the only available provider is preselected. Use Down to
+browse, Enter to select and Escape to return. Loading, no matches and catalog
+failures appear inside the selector. Providers come from Pi's available model
+catalog. If a provider is missing or no models are available, open `pi`, run
+`/login`, then reopen the selector.
+
+Before starting a new service, choose its model in the TUI. You can select it from
+the fleet before browsing, or Play asks for it before the start confirmation.
+This choice stays in the TUI session until Start saves it for the new service;
+the confirmation names the model and disables automatic fallback. Existing services
+keep their saved model, fallback and Pi configuration. Changing an existing service's
+model still uses the separate model-change confirmation.
 The fleet has no Fallback or Nous Portal controls. Fallback remains visible in
 runner details; configure it with `autowork model --fallback` and use
 `autowork setup-portal` for opt-in provider setup.
