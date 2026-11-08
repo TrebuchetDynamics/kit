@@ -41,6 +41,7 @@ The fleet remains a full-width stack: commands, model, runners, selected summary
 worker observations, and activity. Details holds long diagnostics. The More menu
 exposes secondary actions and shortcuts; direct keys remain available.
 Model selection follows provider → search → model → existing change/start confirmation.
+Login opens Pi against the same agent directory and refreshes the model catalog on return.
 Browse exposes the current path, Parent/Home, folder navigation, and readiness.
 Escape returns from a secondary screen; opening a menu changes no runner state.
 

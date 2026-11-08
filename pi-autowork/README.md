@@ -459,7 +459,9 @@ the current provider or the only available provider is preselected. Use Down to
 browse, Enter to select and Escape to return. Loading, no matches and catalog
 failures appear inside the selector. Providers come from Pi's available model
 catalog. If a provider is missing or no models are available, open `pi`, run
-`/login`, then reopen the selector.
+`/login`, then reopen the selector. The picker also has **Login in Pi** and
+**Refresh models** buttons: Login opens Pi against the same agent directory, and
+the catalog refreshes when you return.
 
 Before starting a new service, choose its model in the TUI. You can select it from
 the fleet before browsing, or Play asks for it before the start confirmation.

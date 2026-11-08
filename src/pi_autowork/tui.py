@@ -558,13 +558,15 @@ class PickModel(ReadScreen, ModalScreen[str]):
     PickModel { align: center middle; }
     PickModel > Vertical { width: 80; max-width: 100%; height: 90%; border: thick $accent; background: $surface; padding: 0 2; }
     PickModel OptionList { height: 1fr; min-height: 1; }
+    #model-actions { height: 3; }
+    #model-actions Button { width: auto; margin-right: 1; }
     #model-status { height: auto; max-height: 3; }
     '''
 
-    def __init__(self, title, models, current, loader=None, identity=None):
+    def __init__(self, title, models, current, loader=None, identity=None, login=None):
         super().__init__()
         self.title_text, self.models, self.current = title, models, current
-        self.loader, self.identity = loader, identity
+        self.loader, self.identity, self.login = loader, identity, login
         self.catalog_loading, self.load_error = bool(loader), ''
         self.provider = ''
 
@@ -577,7 +579,10 @@ class PickModel(ReadScreen, ModalScreen[str]):
             yield Input(placeholder='2. Search this provider\'s models', id='filter')
             yield OptionList(id='models')
             yield Static('Loading Pi models…' if self.loader else '', id='model-status', markup=False)
-            yield Label('Type to search · ↓ browse · Enter select · Esc back')
+            with Horizontal(id='model-actions'):
+                yield Button('Login in Pi', id='model-login', disabled=self.login is None)
+                yield Button('Refresh models', id='model-refresh', disabled=self.loader is None)
+            yield Label('To see another provider: Login in Pi → /login · Esc back')
 
     def on_mount(self):
         self.shown = []
@@ -596,7 +601,7 @@ class PickModel(ReadScreen, ModalScreen[str]):
         self.provider = ''
         self.query_one('#models', OptionList).clear_options()
         self.query_one('#model-status', Static).update(
-            f'Cannot load Pi models: {error}\nOpen pi and use /login, then reopen this selector.')
+            f'Cannot load Pi models: {error}\nUse Login in Pi and refresh the list.')
 
     def loaded_models(self, models):
         self.catalog_loading, self.load_error = False, ''
@@ -633,15 +638,40 @@ class PickModel(ReadScreen, ModalScreen[str]):
         if self.catalog_loading:
             status = 'Loading Pi models…'
         elif self.load_error:
-            status = f'Cannot load Pi models: {self.load_error}\nOpen pi and use /login, then reopen this selector.'
+            status = f'Cannot load Pi models: {self.load_error}\nUse Login in Pi and refresh the list.'
         elif self.models and not self.provider:
-            status = 'Choose a Pi provider to see its models. Missing one? Open pi and use /login.'
+            status = 'Choose a provider. Missing one? Login in Pi, then refresh.'
         elif self.models:
             status = (f'{len(self.shown)} of {len(provider_models)} Pi models · {self.provider}'
                       if self.shown else 'No matching models. Clear or change your search.')
         else:
-            status = 'No Pi models available. Open pi and use /login, then reopen this selector.'
+            status = 'No Pi models available. Login in Pi, then refresh.'
         self.query_one('#model-status', Static).update(status)
+
+    def refresh_models(self):
+        if not self.loader:
+            return
+        self.invalidate_read()
+        self.catalog_loading, self.load_error = True, ''
+        self.query_one('#provider', Select).disabled = True
+        self.query_one('#models', OptionList).clear_options()
+        self.query_one('#model-status', Static).update('Refreshing models from Pi…')
+        self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
+
+    def on_button_pressed(self, event):
+        if event.button.id == 'model-refresh':
+            self.refresh_models()
+        elif event.button.id == 'model-login' and self.login:
+            event.stop()
+            self.invalidate_read()
+            self.query_one('#model-status', Static).update(
+                'In Pi, run /login and exit Pi to refresh this list.')
+            try:
+                self.login()
+            except OSError as error:
+                self.load_failed(error)
+                return
+            self.refresh_models()
 
     def on_input_submitted(self, event):
         """Enter in the filter takes the first match."""
@@ -2645,7 +2675,9 @@ class FleetApp(App):
                                                + ('? Its service restarts; workers resume on the same attempt.'
                                                   if runner.service == 'running' else '?'))
             self.push_screen(Confirm(action.confirm), lambda yes: yes and self.execute(action))
-        self.push_screen(PickModel(title, [], current, loader=load, identity=(runner.name, str(settings_path))), chosen)
+        self.push_screen(PickModel(title, [], current, loader=load, identity=(runner.name, str(settings_path)),
+                                   login=lambda: self.login_to_pi(portal.service_agent_dir(
+                                       fleet_view.read_env(settings_path)))), chosen)
 
     def pick_new_model(self, on_chosen=None):
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
@@ -2662,7 +2694,15 @@ class FleetApp(App):
             elif on_chosen:
                 on_chosen(None)
         self.push_screen(PickModel('Choose a Pi model for a new runner', [], self.new_model,
-                                   loader=load, identity=('new-runner', agent_dir)), chosen)
+                                   loader=load, identity=('new-runner', agent_dir),
+                                   login=lambda: self.login_to_pi(agent_dir)), chosen)
+
+    def login_to_pi(self, agent_dir):
+        """Open Pi's own login UI against the same profile the model list uses."""
+        pi = os.environ.get('AUTOWORK_PI', 'pi')
+        env = dict(os.environ, PI_CODING_AGENT_DIR=agent_dir)
+        with self.suspend():
+            return self.runner_cmd([pi, '--no-session'], cwd=str(Path.home()), env=env).returncode
 
     def action_browse(self):
         self.push_screen(BrowseScreen(str(self.browse_root) if self.browse_root else None, self.start_repository))
