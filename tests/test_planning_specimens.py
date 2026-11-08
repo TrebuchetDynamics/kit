@@ -46,6 +46,8 @@ class PlanningSpecimenTests(unittest.TestCase):
         }
         expected |= {f'{entry}-{case}' for entry in ('native', 'portable') for case in (
             'technical-choice', 'local-fixture', 'external-input', 'owner-destructive', 'builder-closure')}
+        expected |= {f'{entry}-task-{case}' for entry in ('native', 'portable') for case in (
+            'vague-name', 'sibling-names', 'path-scope', 'repetitive-body')}
         interviews = {'two-decisions', 'vague-intent', 'fully-specified', 'ambiguous-round',
                       'shared-constraint', 'stop-resume', 'delegation', 'builder-followup'}
         for script, names in (
@@ -140,6 +142,50 @@ class PlanningSpecimenTests(unittest.TestCase):
         # Read/validation commands must not disguise implementation writes.
         for row in self.builder('scenarios.py', 'inspect', root, '--cases', ','.join(names)):
             self.assertEqual(row['outside_planning_owners'], [])
+
+    def test_task_writing_cases_preserve_scope_and_evidence(self):
+        cases = ('task-vague-name', 'task-sibling-names', 'task-path-scope',
+                 'task-repetitive-body', 'external-input')
+        names = [f'{entry}-{case}' for entry in ('native', 'portable') for case in cases]
+        root = self.scratch / 'task-writing'
+        prepared = self.builder('scenarios.py', 'prepare', root, '--cases', ','.join(names))
+        self.assertEqual(set(prepared['prepared']), set(names))
+        hashes = json.loads((root / 'source-sha256.json').read_text())
+        for path in ('skills/plan-with-me/SKILL.md', 'adapters/skills/plan-with-me/SKILL.md',
+                     'skills/plan-for-me/SKILL.md',
+                     'adapters/skills/plan-for-me/SKILL.md', 'skills/shared/TODO-WORKCENTER.md',
+                     'skills/shared/RESEARCH-PLAN.md', 'skills/shared/PLAN-HANDOFF.md'):
+            self.assertEqual(hashes[path], hashlib.sha256((ROOT / path).read_bytes()).hexdigest())
+        self.assertEqual((root / 'source-revision.txt').read_text(),
+                         self.run_command('git', 'rev-parse', 'HEAD'))
+        for name in names:
+            with self.subTest(name=name):
+                repo = root / name
+                mode = 'for' if name.endswith('external-input') else 'with'
+                prefix = 'skills' if name.startswith('native-') else 'adapters/skills'
+                self.assertIn(str(ROOT / f'{prefix}/plan-{mode}-me/SKILL.md'),
+                              (root / f'{name}.request.txt').read_text())
+                self.assertTrue(json.loads(self.tasks(repo, 'validate'))['ok'])
+                task = json.loads(self.tasks(repo, 'show', 'FMT-01'))
+                self.assertFalse(task['draft'])
+                self.assertEqual(task['scope'], 'src/formatting.py and tests/test_formatting.py; no dependencies.')
+                self.assertEqual(task['checks'], ['python3 -m unittest discover -s tests'])
+                self.assertIn('Sources: docs/plan.md#accepted-scope', task['notes'])
+                self.assertEqual(self.run_command('git', 'status', '--porcelain', cwd=repo), '')
+                plan = (repo / 'docs/plan.md').read_text()
+                if name.endswith('external-input'):
+                    self.assertFalse((repo / 'external/scanner-v2.json').exists())
+                    self.assertIn('retain the device transcript', plan)
+                else:
+                    self.assertIn('" X Y " becomes "x y"', plan)
+                    self.assertIn('No new dependencies or network access', plan)
+                if name.endswith('sibling-names'):
+                    self.assertIn('without lowercasing or a final newline', plan)
+                    self.assertIn('python3 -m unittest discover -s tests -p test_export.py', plan)
+                elif name.endswith('repetitive-body'):
+                    self.assertEqual(plan.count('Inspect the source, implement the change'), 6)
+        self.assertTrue(all(not row['changed'] for row in self.builder(
+            'scenarios.py', 'inspect', root, '--cases', ','.join(names))))
 
     def test_inspect_accepts_native_planning_but_reports_forbidden_inventories(self):
         # A blanket tasks/ or .git/ exception would hide the negative inventory.

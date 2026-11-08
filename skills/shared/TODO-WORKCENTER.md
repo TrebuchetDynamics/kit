@@ -76,7 +76,8 @@ needed just for naming.
 | Defect | Fix retries | Stop invoice retries after payment succeeds | Stop retries after invoice payment |
 | Planning | Update plan | Plan offline invoice checks before rollout | Plan offline invoice checks |
 
-Before saving, read `title` and `short` as separate task-list entries: can a reader
+Before saving, read `title` and `short` independently and beside sibling tasks
+as separate task-list entries: can a reader
 identify what changes, which object it affects, and what distinguishes it from
 nearby work? Check the short label's length and revise vague wording using only
 the task's existing scope.
@@ -85,6 +86,36 @@ Naming never changes a task's meaning, acceptance, ID, authority or status. Keep
 historical records unchanged; do not bulk rename the backlog. No title length cap,
 rigid word-count rule or naming heuristic is added to CLI validation or selection.
 These are planning instructions, not evidence of future model output quality.
+
+### Task descriptions
+
+Apply this shared standard when Plan For Me, Plan With Me, Docs Sync, Autoresearch,
+Autowork discovery or other task-producing skills create or materially refine an
+in-scope task. Use existing fields and brief notes only where they add information:
+
+- **`scope`:** Explain the intended behavior change and its bounded context, not
+  just a path list or a restatement of the title. Include the reason when it helps
+  distinguish the work. Preserve known constraints and exclusions; `touches` owns
+  the write set, not the behavioral description.
+- **`acceptance`:** Name observable results and the tests or evidence that will
+  prove them. **`checks`:** Give the exact commands separately. Mark future tests
+  unrun; a required command is not a passing result.
+- **Notes:** Give a concrete first action, source-backed decisions and required
+  inputs in existing notes such as `Next action:`, `Decisions:` and `Sources:`.
+  Add only what the typed fields do not already say. Link evidence and shared
+  inputs rather than restating them. Identify genuinely unavailable external
+  inputs on only the affected work, with the exact missing input and resume
+  condition; do not invent inputs, readiness or another settled permission question.
+- Do not repeat the same procedure across scope, acceptance and multiple notes.
+  Link shared workflow rules instead of pasting boilerplate into every task.
+  Brevity must preserve all mandatory checks, constraints and real limitations.
+
+Before saving, read the task as an implementer: are the outcome, boundary,
+starting action, reachable inputs and evidence of success clear without another
+design round? Repair wording from source evidence; unresolved intent stays explicit.
+Do not rewrite an active contract or bulk-edit unrelated tasks to apply this
+standard. No fixed prose length is required; this is not a schema or CLI quality
+gate, nor proof of future model adherence.
 
 ## Read orders before selecting
 
