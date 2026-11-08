@@ -646,7 +646,8 @@ def items(hermes_args, output=None):
              # different source for the same marketplace id. Drop it before adding.
              steps=[Step(f'codex plugin marketplace remove {CODEX_MARKETPLACE}',
                          ['codex', 'plugin', 'marketplace', 'remove', CODEX_MARKETPLACE],
-                         tolerate=('not found', 'no marketplace', 'not registered')),
+                         tolerate=('not found', 'no marketplace', 'not registered',
+                                   'is not configured or installed')),
                     Step(f'codex plugin marketplace add {SOURCE} --ref main',
                          ['codex', 'plugin', 'marketplace', 'add', SOURCE, '--ref', 'main']),
                     Step(f'codex plugin marketplace upgrade {CODEX_MARKETPLACE}',
