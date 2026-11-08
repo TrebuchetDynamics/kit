@@ -33,6 +33,12 @@ The diagram describes the control flow. It is not a screenshot. Inspection is re
 
 Every screen leads with one banner: the most urgent repository and the single next action (answer a decision, see why a runner stopped, or start one). A blocker shared by several runners is stated once at the top, not once per row. Colour follows meaning and always travels with an icon and the word itself: green only for live or verified states, amber for paused, waiting or decisions, red for failures, and plain grey for *not running*, stopped or closed. Hashes show their first eight characters with a copy action, times are relative, owner text renders its Markdown as words, and fields whose value is unknown are left out rather than repeated. Fleet rows sort by urgency and carry two lines plus **Open** and **Answer** when a decision waits. The six views wrap instead of hiding behind a horizontal scroll. On repository views, **Switch repository** opens a picker sheet that lists every matching repository with its state and counts; search appears when more than six match. The task queue hides completed work until **Show completed**, keeps its four filters behind **Filters**, and counts open, deciding, blocked and done work. A decision shows its task title, first sentence, what it unblocks and **Answer** first. Generated resolution guidance is behind **How to resolve**, never labeled as an existing owner answer. Saved notes remain under **Contract and evidence → Task notes**. A failed detail read offers **Retry task details** without clearing your draft. Cache age alone does not disable a revision-bound answer; refreshes and errors still block submission, and the server checks the record again before writing. An answer records a note, not live authorization or a task move; commit it separately.
 
+Task authoring starts with title, scope, acceptance and checks. **Task options**
+contains optional goal, custom list label, scheduling, ownership, write paths and
+dependencies. Missing bounded write paths save a draft, not a dispatch grant.
+This simplified input requires the matching updated Autowork consumer; older
+backends can still use the explicit goal/list-label options.
+
 ## Requirements
 
 - Paseo **0.13.x, 0.14.x or 0.15.x**, for both the daemon and connected app. The manifest accepts `>=0.13.0 <0.16.0`; it rejects a later minor until that release is tested. The connected Android app may be newer than the daemon; each runtime checks its own version.

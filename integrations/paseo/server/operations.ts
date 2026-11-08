@@ -81,7 +81,7 @@ export function summarize(action: Action, repo: Repo): { description: string; ca
     case 'clear-held': return { description: `Return ${action.tasks.length ? action.tasks.join(', ') : 'every held commit'} in ${label} to integration as technical recovery. No owner decision is asked.`, captured: '' };
     case 'attention': return { description: `Record ${action.minutes} owner minute(s) for ${action.task ? action.task + ' in ' : ''}${label} in private runner state.`, captured: action.note ? `Note:\n${action.note}` : '' };
     case 'decision': return { description: `Record owner direction for ${action.task} in ${label}${action.section ? '; move to ' + action.section : ''}. ${LOCAL_EDIT}`, captured: `Owner answer for ${action.task}:\n${action.text}` };
-    case 'task-add': return { description: `Add task "${action.fields.title}" under goal ${action.fields.goal} in ${label}. ${LOCAL_EDIT}`, captured: `Record:\n${JSON.stringify(action.fields, null, 2)}` };
+    case 'task-add': return { description: `Add task "${action.fields.title}"${action.fields.goal ? ` under goal ${action.fields.goal}` : " without a goal"} in ${label}. ${LOCAL_EDIT}`, captured: `Record:\n${JSON.stringify(action.fields, null, 2)}` };
     case 'task-field': return { description: `Set ${action.label} on ${action.task} in ${label}. ${LOCAL_EDIT}`, captured: `Value:\n${action.value}` };
     case 'task-place': return { description: `Move ${action.task} to ${action.section} in ${label}. ${LOCAL_EDIT}`, captured: action.decision ? `Owner decision:\n${action.decision}` : '' };
     case 'task-move': return { description: `Move ${action.task} ${action.direction} within its section in ${label}. ${LOCAL_EDIT}`, captured: '' };

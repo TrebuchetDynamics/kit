@@ -7,6 +7,12 @@ describe('wire contracts', () => {
     expect(actionSchema.safeParse({ kind: 'control', repoId: 'repo', action: 'pause', executable: '/tmp/evil' }).success).toBe(false);
     expect(prepareSchema.safeParse({ instance: 'host-a', action: { kind: 'control', repoId: 'repo', action: 'pause' } }).success).toBe(true);
   });
+  it('accepts simple task authoring without fabricating a goal or authority', () => {
+    const input = { kind: 'task-add', repoId: 'repo', fields: { title: 'Small fix', scope: 'Bounded', acceptance: ['Works'], checks: ['true'] } };
+    expect(actionSchema.parse(input)).toEqual(input);
+    expect(actionSchema.safeParse({ ...input, fields: { ...input.fields, goal: '' } }).success).toBe(false);
+    expect(actionSchema.safeParse({ ...input, fields: { ...input.fields, live: 'authorized' } }).success).toBe(false);
+  });
   it('treats a null Autowork count as zero', () => {
     const runner = runnerSchema.parse({ name: 'example', repo: '/repo', state: 'not running',
       running: null, waiting: null, stopped: null, decisions: null });

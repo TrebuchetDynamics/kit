@@ -701,27 +701,40 @@ def _same_title(title):
 
 
 @_serialized
-def cmd_add(repo, goal, title, short, section='Now', scope=None, acceptance=(), checks=(), touches=(),
+def cmd_add(repo, goal=None, title=None, short=None, section='Now', scope=None, acceptance=(), checks=(), touches=(),
             depends_on=(), task_id=None, prefix=None, resources=(), exclusions=(), kind='implementation',
             ownership='worker', sources=None, verified_depends_on=(), notes=None):
     """One complete record in one write. A task of the same goal with the same title, open or
     done, is the same outcome: it is refused, naming that task, so a repeated pass adds nothing."""
-    store = worktree_store(repo)
-    if goal not in store.goals:
+    root = Path(repo)
+    if (root / 'tasks').exists() or (root / 'tasks').is_symlink():
+        store = worktree_store(repo)
+    else:
+        if any((root / name).exists() for name in ('TODO.md', 'goals.json')):
+            raise CommandError('legacy task files exist: run `autowork tasks prepare` before adding work')
+        store = TaskStore(rev='', tasks={}, goals={})
+    if goal is not None and goal not in store.goals:
         raise CommandError(f'unknown goal {goal}')
+    if not isinstance(title, str) or not title.strip():
+        raise CommandError('title must be a nonempty string')
+    if short is None:
+        short = title if len(title) <= 40 else title[:37].rstrip() + '...'
     for dep in depends_on:
         if dep not in store.tasks:
             raise CommandError(f'unknown task dependency {dep}')
     same = sorted(t.id for t in store.tasks.values()
                   if t.goal == goal and t.status != 'superseded' and _same_title(t.title) == _same_title(title))
     if same:
-        raise CommandError(f'{same[0]} already records "{title}" under {goal}; change that task instead')
+        group = f'under {goal}' if goal is not None else 'without a goal'
+        raise CommandError(f'{same[0]} already records "{title}" {group}; change that task instead')
     tid = task_id or new_id(repo, store, prefix)
     if tid in store.tasks:
         raise CommandError(f'{tid} already exists')
-    fields = dict(schema=1, id=tid, title=title, short=short, status='open', goal=goal, section=section,
+    fields = dict(schema=1, id=tid, title=title, short=short, status='open', section=section,
                   rank=bottom_rank(store, section), depends_on=list(depends_on), touches=list(touches),
                   resources=list(resources), kind=kind, ownership=ownership, exclusions=list(exclusions))
+    if goal is not None:
+        fields['goal'] = goal
     if verified_depends_on:
         fields['verified_depends_on'] = list(verified_depends_on)
     if scope:
@@ -1173,7 +1186,7 @@ _INPUT_TYPES = {
     'field': dict(label=str, value=object),
 }
 _INPUT_DEFAULTS = {
-    'add': dict(section='Now', task_id=None, scope=None, kind='implementation', ownership='worker',
+    'add': dict(goal=None, short=None, section='Now', task_id=None, scope=None, kind='implementation', ownership='worker',
                 sources=None, notes=None, **{k: [] for k in ('acceptance', 'checks', 'touches', 'depends_on',
                                                           'verified_depends_on', 'resources', 'exclusions')}),
     'goal': {k: None for k in _INPUT_TYPES['goal']},
@@ -1209,6 +1222,8 @@ def _input_values(args):
             types = {**types, 'value': TYPED.get(values['label'], str) if isinstance(values['label'], str) else str}
         for key, value in values.items():
             kind = types[key]
+            if args.verb == 'field' and values.get('label') == 'goal' and key == 'value' and value is None:
+                continue  # Explicitly remove optional grouping; the active-contract guard still applies.
             if type(value) is not kind or (kind is list and any(not isinstance(v, str) for v in value)):
                 raise CommandError(f'--json {key} must be {kind.__name__}' + (' of strings' if kind is list else ''))
         for key, value in values.items():
@@ -1232,7 +1247,7 @@ def _input_values(args):
                     raise CommandError(f'{flag} needs a JSON array of strings')
                 items.extend(parsed)
             setattr(args, key, items)
-    required = {'add': ('goal', 'title', 'short'), 'field': ('label', 'value'), 'goal': ()}[args.verb]
+    required = {'add': ('title',), 'field': ('label', 'value'), 'goal': ()}[args.verb]
     missing = [key for key in required if not hasattr(args, key)]
     if missing:
         raise CommandError('missing required values: ' + ', '.join(missing))

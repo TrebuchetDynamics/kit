@@ -954,6 +954,26 @@ finally:
         self.assertTrue(root.exists())
 
 
+    def test_ungrouped_task_integrates_and_closes_with_source_bound_evidence(self):
+        from pi_autowork.engine import task_store
+        path = self.repo / 'tasks/items/A.md'
+        path.write_text(task_store.edit(path.read_text(), {'goal': None}))
+        self.git('add', str(path))
+        self.git('commit', '-qm', 'standalone task')
+        self.baseline = self.git('rev-parse', 'HEAD')
+        self.assertIn('A', [task['id'] for task in dispatch.contracts(self.repo)])
+        self.worker()
+        module = self.module()
+        result = module.integrate(self.repo, self.owner, 'A', ['true'], 10)
+        self.assertEqual(result['outcome'], 'INTEGRATED', result)
+        result = module.close(self.repo, self.owner, 'A')
+        self.assertEqual(result['outcome'], 'CLOSED', result)
+        self.close_committed()
+        record = self.record('A')
+        self.assertIsNone(record.goal)
+        self.assertTrue(record.verified)
+        self.assertEqual(self.record('B').status, 'open')
+
     def test_close_requires_validation_and_closes_only_integrated_task(self):
         root, commit = self.worker()
         module = self.module()
@@ -1432,6 +1452,20 @@ finally:
             max_workers=None, worker_command='["true"]', worker_host='auto', worker_profile=None,
             worker_timeout=10, min_free_mem_mb=0, tasks=None, plan=None)
         self.assertEqual(module.retry_held(args)['outcome'], 'IDLE')
+
+    def test_ungrouped_live_followups_are_task_scoped_without_wildcard_writes(self):
+        from dataclasses import replace
+        from pi_autowork.engine.integration.closure_documents import followup_text, live_backlog_id
+        from pi_autowork.engine.task_store import _Document
+        record = replace(self.record('A'), goal=None, touches=('app.py',))
+        other = replace(record, id='B')
+        self.assertNotEqual(live_backlog_id(record), live_backlog_id(other))
+        tid, text = followup_text('A', record, ['Physical device check'])
+        parsed = _Document(f'tasks/items/{tid}.md', text.encode()).record(text.encode())
+        self.assertIsNone(parsed.goal)
+        self.assertEqual(parsed.touches, ('app.py',))
+        self.assertEqual((parsed.section, parsed.ownership.value), ('Needs decision', 'owner'))
+        self.assertFalse(parsed.runnable)
 
     @patch.dict(os.environ, PI_AUTOWORK_LIVE_FOLLOWUP="backlog")
     def test_pending_live_checks_close_into_one_goal_backlog_not_one_task_per_close(self):

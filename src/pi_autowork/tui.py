@@ -365,7 +365,7 @@ class PickSection(ModalScreen[str]):
 
 
 class NewTask(ReadScreen, ModalScreen[dict]):
-    """A new task's title, short title, goal and section, and optionally its scope and acceptance."""
+    """Simple task authoring; grouping and list labels are optional."""
     BINDINGS = [Binding('escape', 'cancel', 'cancel')]
     DEFAULT_CSS = '''
     NewTask { align: center middle; }
@@ -394,11 +394,13 @@ class NewTask(ReadScreen, ModalScreen[dict]):
             yield Label(Text('New task', style='bold'))
             with VerticalScroll(id='new-task-fields'):
                 yield Input(placeholder='Title: the outcome, in a sentence', id='title')
-                yield Input(placeholder='Short title for task lists (at most 40 characters)', id='short', max_length=40)
-                yield Select([(f'{gid}  {title}'[:70], gid) for gid, title in self.goals], prompt='Goal', id='goal')
+                yield Input(placeholder='Short title (optional; derived from title)', id='short', max_length=40)
+                yield Select([(f'{gid}  {title}'[:70], gid) for gid, title in self.goals], prompt='Goal (optional)', id='goal')
                 yield Select([(name, name) for name in PickSection.SECTIONS], value='Next', allow_blank=False, id='section')
-                yield Input(placeholder='Scope (optional)', id='scope')
-                yield Input(placeholder='Acceptance (optional): the test that proves it', id='acceptance')
+                yield Input(placeholder='Scope: the bounded change', id='scope')
+                yield Input(placeholder='Acceptance: the test that proves it', id='acceptance')
+                yield Input(placeholder='Checks: the exact verification command', id='checks')
+                yield Input(placeholder='Touches (optional): leave blank to save a draft', id='touches')
             with Horizontal():
                 yield Button('Add', variant='primary', id='add')
                 yield Button('Cancel', id='cancel')
@@ -407,13 +409,13 @@ class NewTask(ReadScreen, ModalScreen[dict]):
         if event.button.id == 'cancel':
             self.dismiss(None)
             return
-        value = {key: ' '.join(str(self.query_one(f'#{key}').value or '').split())
-                 for key in ('title', 'short', 'scope', 'acceptance')}
+        value = {key: str(self.query_one(f'#{key}').value or '').strip()
+                 for key in ('title', 'short', 'scope', 'acceptance', 'checks', 'touches')}
         goal = self.query_one('#goal', Select).value
-        if not value['title'] or not value['short'] or goal in (None, Select.BLANK):
-            self.notify('A new task needs a title, a short title and a goal.', severity='warning')
+        if not all(value[key] for key in ('title', 'scope', 'acceptance', 'checks')):
+            self.notify('A new task needs title, scope, acceptance and checks.', severity='warning')
             return
-        self.dismiss(dict(value, goal=goal, section=self.query_one('#section', Select).value))
+        self.dismiss(dict(value, goal=goal if isinstance(goal, str) and goal else None, section=self.query_one('#section', Select).value))
 
     def action_cancel(self):
         self.dismiss(None)
@@ -978,9 +980,8 @@ class TasksScreen(ReadScreen, Screen):
         def add(task):
             if not task:
                 return
-            argv = [self.app.command, 'tasks', 'add', '--title', task['title'], '--short', task['short'],
-                    '--goal', task['goal'], '--section', task['section']]
-            for key in ('scope', 'acceptance'):
+            argv = [self.app.command, 'tasks', 'add', '--title', task['title'], '--section', task['section']]
+            for key in ('short', 'goal', 'scope', 'acceptance', 'checks', 'touches'):
                 if task[key]:
                     argv += [f'--{key}', task[key]]
             self.app.execute(fleet_view.Action('n', f'New task in {runner.name}', argv + [runner.name]))

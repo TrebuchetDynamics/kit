@@ -81,7 +81,7 @@ function confirmationEffect(action: ActionInput, repoLabel: string): string {
     case 'clear-held': return action.tasks?.length ? `Returns ${action.tasks.join(', ')} to integration.` : 'Returns every held commit to integration.';
     case 'decision': return `Records your answer on ${action.task}. It does not start work.`;
     case 'commit': return 'Commits the pending tasks/ edits. It does not push.';
-    case 'task-add': return `Adds a task record under ${action.fields.goal}. Commit it separately.`;
+    case 'task-add': return `Adds a task record${action.fields.goal ? ` under ${action.fields.goal}` : ' without a goal'}. Commit it separately.`;
     case 'goal': return `Writes goal ${action.goal}. Commit it separately.`;
     case 'task-delete': return `Deletes the ${action.task} record. It does not delete worktrees or commits.`;
     case 'task-field': case 'task-place': case 'task-move': case 'task-hold': case 'task-release': case 'task-done': case 'task-supersede':
@@ -581,28 +581,33 @@ function AddTaskCard({ repo, fleet, host, hostId, enabled, request }: RepoViewPr
   const [checks, setChecks] = useState('');
   const [touches, setTouches] = useState('');
   const [dependsOn, setDependsOn] = useState('');
-  const ready = goal.trim() && title.trim() && short.trim();
+  const [advanced, setAdvanced] = useState(false);
+  const ready = title.trim() && scope.trim() && lines(acceptance).length && lines(checks).length;
   return <Card>
     <Row between><Heading level={2}>Add task</Heading><Button label={open ? 'Hide task form' : 'New task'} compact selected={open} onPress={() => setOpen(!open)} /></Row>
     {open ? <>
-      {goals.data?.goals.length ? <ScrollRow>{goals.data.goals.map(item => <Button key={item.id} label={item.id} compact selected={goal === item.id} onPress={() => setGoal(item.id)} />)}</ScrollRow> : null}
-      <Input label="Goal ID" value={goal} onChange={setGoal} placeholder="pick above or type" />
+      {advanced && goals.data?.goals.length ? <ScrollRow>{goals.data.goals.map(item => <Button key={item.id} label={item.id} compact selected={goal === item.id} onPress={() => setGoal(item.id)} />)}</ScrollRow> : null}
       <Input label="Title" value={title} onChange={setTitle} placeholder="What must be true when this is done" />
-      <Input label="Short (at most 80 characters)" value={short} onChange={setShort} />
-      <Choice label="Section" value={section} options={sections} onChange={setSection} />
-      <Choice label="Kind" value={kind} options={kinds} onChange={setKind} />
-      <Choice label="Ownership" value={ownership} options={ownerships} onChange={setOwnership} />
-      <Input label="Scope" value={scope} onChange={setScope} multiline placeholder="optional" />
+      <Input label="Scope" value={scope} onChange={setScope} multiline />
       <Input label="Acceptance (one per line)" value={acceptance} onChange={setAcceptance} multiline />
       <Input label="Checks (one per line)" value={checks} onChange={setChecks} multiline />
-      <Input label="Touches (one per line)" value={touches} onChange={setTouches} multiline />
-      <Input label="Depends on (IDs)" value={dependsOn} onChange={setDependsOn} placeholder="T-12 T-13" />
+      <Button label={advanced ? "Hide task options" : "Task options"} compact onPress={() => setAdvanced(!advanced)} />
+      {advanced ? <>
+        <Input label="Goal ID" value={goal} onChange={setGoal} placeholder="optional; pick above or type" />
+        <Input label="Short (at most 80 characters)" value={short} onChange={setShort} placeholder="optional; derived from title" />
+        <Choice label="Section" value={section} options={sections} onChange={setSection} />
+        <Choice label="Kind" value={kind} options={kinds} onChange={setKind} />
+        <Choice label="Ownership" value={ownership} options={ownerships} onChange={setOwnership} />
+        <Input label="Touches (one per line)" value={touches} onChange={setTouches} multiline />
+        <Input label="Depends on (IDs)" value={dependsOn} onChange={setDependsOn} placeholder="T-12 T-13" />
+      </> : null}
       <Button label="Add task" variant="primary" disabled={!enabled || !ready} onPress={() => request({ kind: 'task-add', repoId: repo.id, fields: {
-        goal: goal.trim(), title: title.trim(), short: short.trim(), section, kind, ownership,
+        title: title.trim(), section, kind, ownership,
+        ...(goal.trim() ? { goal: goal.trim() } : {}), ...(short.trim() ? { short: short.trim() } : {}),
         ...(scope.trim() ? { scope: scope.trim() } : {}), ...(lines(acceptance).length ? { acceptance: lines(acceptance) } : {}), ...(lines(checks).length ? { checks: lines(checks) } : {}),
         ...(lines(touches).length ? { touches: lines(touches) } : {}), ...(words(dependsOn).length ? { depends_on: words(dependsOn) } : {}),
       } })} />
-      <Caption>The record is written to the working tree; commit it from Pending task edits.</Caption>
+      <Caption>The record is written to the working tree; commit it from Pending task edits. Without bounded Touches it stays a draft, never dispatched.</Caption>
     </> : null}
   </Card>;
 }

@@ -712,6 +712,20 @@ describe('management surface', () => {
     expect(text()).toContain('Update Autowork for exact pending-snapshot protection');
     expect(env.invoke.mock.calls.some(([name]) => name === 'autowork.prepare')).toBe(false);
   });
+  it('authors an ungrouped task from four primary inputs and leaves dispatch bounds explicit', async () => {
+    const captured = capture(grantAll());
+    await mount({ params: { view: 'tasks' } });
+    await press('New task');
+    expect(text()).toContain('Without bounded Touches it stays a draft');
+    expect(root.root.findAll(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'Goal ID')).toHaveLength(0);
+    await input('Title', 'Independent fix'); await input('Scope', 'Bounded change');
+    await input('Acceptance (one per line)', 'Works'); await input('Checks (one per line)', 'true');
+    await press('Add task');
+    expect(captured.action).toEqual({ kind: 'task-add', repoId: 'repo', fields: {
+      title: 'Independent fix', scope: 'Bounded change', acceptance: ['Works'], checks: ['true'],
+      section: 'Next', kind: 'implementation', ownership: 'worker',
+    } });
+  });
   it('edits tasks against the working-tree revision, adds records and commits only task paths after showing the diff', async () => {
     const captured = capture(grantAll());
     await mount({ params: { view: 'tasks' } });
@@ -728,8 +742,8 @@ describe('management surface', () => {
     expect(captured.action).toEqual({ kind: 'task-done', repoId: 'repo', task: 'T-1', revision: 'working-rev', by: 'owner', reason: 'obsolete' });
     await press('Placement'); expect(field('Closed by')).toBe(0); await press('Move up');
     expect(captured.action).toEqual({ kind: 'task-move', repoId: 'repo', task: 'T-1', revision: 'working-rev', direction: 'up' });
-    await press('New task'); await press('goal'); await input('Title', 'New work'); await input('Short (at most 80 characters)', 'New'); await input('Acceptance (one per line)', 'a\nb'); await press('Add task');
-    expect(captured.action).toEqual({ kind: 'task-add', repoId: 'repo', fields: { goal: 'goal', title: 'New work', short: 'New', section: 'Next', kind: 'implementation', ownership: 'worker', acceptance: ['a', 'b'] } });
+    await press('New task'); await press('Task options'); await press('goal'); await input('Title', 'New work'); await input('Short (at most 80 characters)', 'New'); await input('Scope', 'Bounded fix'); await input('Acceptance (one per line)', 'a\nb'); await input('Checks (one per line)', 'true'); await press('Add task');
+    expect(captured.action).toEqual({ kind: 'task-add', repoId: 'repo', fields: { goal: 'goal', title: 'New work', short: 'New', section: 'Next', kind: 'implementation', ownership: 'worker', scope: 'Bounded fix', acceptance: ['a', 'b'], checks: ['true'] } });
     await press('Show goals'); await press('Edit goal goal'); await input('Goal priority', '3'); await press('focus'); await press('Save goal');
     expect(captured.action).toEqual({ kind: 'goal', repoId: 'repo', goal: 'goal', revision: 'goal-v1', fields: { priority: 3, focus: true } });
   });

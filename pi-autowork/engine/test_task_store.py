@@ -40,6 +40,18 @@ class TaskStoreTests(unittest.TestCase):
         self.path.write_text(text)
         return TaskStore.at(self.repo, self.commit()).tasks['T-1']
 
+    def test_ungrouped_task_keeps_contract_and_draft_guards(self):
+        grouped = TaskStore.at(self.repo, self.rev).tasks['T-1']
+        ungrouped = self.load_edit(self.original.replace('goal = "G-1"\n', ''))
+        self.assertIsNone(ungrouped.goal)
+        self.assertFalse(ungrouped.draft)
+        self.assertEqual(ungrouped.contract_hash, grouped.contract_hash)
+        self.assertTrue(ungrouped.runnable)
+        draft = self.load_edit(self.original.replace('goal = "G-1"\n', '').replace('touches = ["src/"]', 'touches = []'))
+        self.assertTrue(draft.draft)
+        self.assertIn('touches', draft.missing_fields)
+        self.assertFalse(draft.runnable)
+
     def test_reads_the_pinned_commit_not_the_worktree(self):
         self.path.write_text('not even TOML')
         store = TaskStore.at(self.repo, self.rev)
