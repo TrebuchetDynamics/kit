@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-450-e643cb7a"
 title = "Hermes approvals stay interactive unless autonomy is selected"
 short = "Hermes opt-in autonomy"
-status = "open"
+status = "done"
 goal = "RELIABILITY-2026-10"
 section = "Now"
 rank = 5000
@@ -16,6 +16,8 @@ scope = "The native Hermes plugin currently applies approvals.mode=off, destruct
 acceptance = ["A fresh profile with no policy setting receives manual approvals, destructive and MCP-reload confirmations enabled, and max_turns=90; it never receives approvals.mode=off or max_turns=unlimited implicitly.", "An explicit autonomous policy applies the current fleet values, while apply_runtime_defaults=false still writes no approval, turn, injection or skill-list policy; both the canonical kit key and legacy autowork key are covered.", "Setup and preflight show the selected policy and the values it will write, and do not silently change an existing profile's approval or turn policy.", "Focused fixtures cover a fresh interactive profile, an explicit autonomous profile, an opted-out profile, a legacy-key profile and a setup preview; no live profile is changed by the offline checks."]
 checks = ["python3 scripts/check.py tests/test_preflight.py tests/test_install_plugins.py tests/test_plugin.py tests/test_complete_setup.py", "python3 -m pytest -q tests/integration_plugin.py"]
 exclusions = ["No live Hermes profile, gateway, plugin install or approval setting is changed by this task's offline checks.", "No removal of Hermes hard blocks, deny rules, the runner's review/publication gates or the existing opt-out.", "No npm publication, deployment or remote service change."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-450-e643cb7a.toml"
 +++
 - Sources: docs/evaluation.md#risks; docs/installation.md#install; docs/reference.md#plugin-settings
 - Question: Resolved by the existing 2026-11-07 approval of this exact offline interactive/autonomous policy. No live profile action is requested or granted.
