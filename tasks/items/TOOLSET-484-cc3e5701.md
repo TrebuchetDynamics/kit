@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-484-cc3e5701"
-title = "Verify current planning authority and shared protocol against accepted requirements"
-short = "Verify planning authority and protocol"
+title = "Planning permissions and mode boundaries match accepted rules"
+short = "Planning permission boundaries"
 status = "open"
 goal = "PLANNING-AUTHORITY"
 section = "Next"

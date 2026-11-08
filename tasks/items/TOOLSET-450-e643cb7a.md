@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-450-e643cb7a"
-title = "Default Hermes to interactive approvals and require explicit autonomous policy"
-short = "Make Hermes autonomy explicit"
+title = "Hermes approvals stay interactive unless autonomy is selected"
+short = "Hermes opt-in autonomy"
 status = "open"
 goal = "RELIABILITY-2026-10"
 section = "Now"

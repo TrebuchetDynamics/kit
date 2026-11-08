@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-478-9a8d7ece"
-title = "Plan the next Rust Autowork batch from verified first-round results"
-short = "Plan Rust Autowork from first-run proof"
+title = "Rust round-two plan follows first-batch evidence"
+short = "Rust round-two plan"
 status = "open"
 goal = "RUST-OCTET"
 section = "Next"
