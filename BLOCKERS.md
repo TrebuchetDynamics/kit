@@ -57,10 +57,8 @@ None.
 - Kind: input
 - Boundary: No Go prototype, new sampler, restart or planning round is authorized by retaining this stop. Completed inspection records remain in Git history.
 
-### PLANNING-AUTHORITY — Owner qualification pending
+### PLANNING-AUTHORITY — Verification pending
 
-- Goal: PLANNING-AUTHORITY remains partial; deleting completed member records does not qualify it.
-- Task: TOOLSET-469-7ba77973 retains the owner-performed qualification requirement and pinned immutable proof inputs.
-- Needs: Actual completion evidence or explicit deferral/cancellation through the current owner-action question above. The saved approval supplies neither a goal Evidence note nor the missing qualification; no repeated approval is requested.
-- Kind: owner_action
-- Boundary: Preserve the distinction between manual closures and coordinator-verified evidence. No status changes or fresh verification follow from this documentation cleanup.
+- Goal: PLANNING-AUTHORITY remains partial. The saved proof-basis decision is settled; no repeated approval is requested.
+- Needs: The [current goal requirement](tasks/goals/PLANNING-AUTHORITY.md) names the missing source-bound authority/protocol verification, exact check seams and independent acceptance review.
+- Boundary: Manual inspection and implementation closures remain unqualified for a met-goal transition. Preserve typed qualification gates and pinned proof; no waiver, new implementation pass or live qualification is implied.
