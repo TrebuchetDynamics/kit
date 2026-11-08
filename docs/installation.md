@@ -63,6 +63,18 @@ JSON brace. Non-JSON or truncated output gets a bounded diagnostic fallback.
 Successful components remain installed; retry just Hermes with
 `./install.sh --only hermes` (and the same `--hermes-home` if supplied).
 
+Every nonempty install/update ends with a restart phase, even when files are
+unchanged or a component failed. It restarts all active user-systemd
+`pi-autowork@*.service`, `hermes-gateway*.service` and `kit-*.service` units,
+regardless of the selected components. Autowork uses `restart --stop-workers --if-active`
+to wait for its merge-safe restart guard, then uses systemd's active-only restart.
+An intervening explicit stop is preserved. Other units use `try-restart`.
+Stopped/paused services and unrelated host services stay untouched. Failures are
+reported in the summary and make the installer exit nonzero. Hosts without Linux
+user systemd report that restarts are unavailable. Preview/list/menu cancellation
+perform no restarts. `--no-reload` only defers Hermes setup's wiring step; it does
+not suppress this final service restart phase.
+
 `--dry-run` prints selected commands without installing. `--hermes-home`,
 `--bundle-only`, `--no-reload` and `--yes-deps` apply only to Hermes. When a
 profile already has its own plugin clone, Hermes is updated with `scripts/update_bundle.py`,
