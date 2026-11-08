@@ -900,8 +900,22 @@ shows the same health for one repository. A runner with nothing running while wo
 waits for `PI_AUTOWORK_STALL_AFTER` seconds (1800) logs one `STALLED` line with
 those roots, at warning priority in the journal, and again only if they change.
 
-A task a worker reported blockers for, or one held with no attempt left, waits for a
-person and blocks only the tasks that depend on it. Once its cause is
+In continuous repository-development mode, an empty or fully blocked queue is not
+an instruction to stop improving the repository. After existing task repairs are
+exhausted, the runner starts a bounded independent-work search in a disposable
+checkout, alongside its normal loop. It inspects source, tests, documentation and
+user flows and may add up to three evidence-backed offline building tasks. Normal
+dispatch, review, integration and checks execute them; discovery is not completed
+implementation. The merge guard permits only new task/goal records, never edits to
+existing contracts or goals. Searches have a persistent 30-minute cooldown even
+when they fail or find nothing, and subsequent searches begin with another seam.
+No work is fabricated to keep the queue nonempty. Explicit task-only scope,
+repository-wide holds, pauses, live authorization, active writers and reload/drain
+boundaries still apply. Finite `--once` and `--until-empty` runs do not replenish.
+An already-running immutable release needs a supported reload to gain this behavior.
+
+A task a worker reported blockers for, or one held with no attempt left, retains its
+specific recovery/input requirement and blocks only the tasks that depend on it. Once its cause is
 resolved, `pi-autowork.sh --repo PATH --set-aside TASK` asks that repository's
 running runner to retire the slot: its earlier work stays on `-set-aside-N`
 branches and worktrees, and the task runs fresh.

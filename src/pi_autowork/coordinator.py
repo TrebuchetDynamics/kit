@@ -25,7 +25,7 @@ import tempfile
 import time
 
 from . import (fleet_view, health, janitor, landing, main_check, maintainer, optimistic, pi_runtime, questions, release,
-               post_merge_barrier, service, task_commands, telemetry, worker, workspaces)
+               post_merge_barrier, repository_work, service, task_commands, telemetry, worker, workspaces)
 from .common import GIT, LOG, atomic_write, dirty, git, git_ok, lifecycle, open_for_writing, safe_name, summary_list
 from .processes import own_process, process_name, start_time
 from .supervision import main_checks, maintenance
@@ -2680,7 +2680,8 @@ class Coordinator:
             return True
         return False
 
-    def maintain(self, main_only=False, ledger_errors=None, ledger_edits_only=False, overlap=False):
+    def maintain(self, main_only=False, ledger_errors=None, ledger_edits_only=False, overlap=False,
+                 discovery=False):
         """DOCS-MAINTAINER (TOOLSET-164-f1): when nothing runs and tasks are held for a planning
         cause or are not runnable as written, one Pi job restates them from the repository's own
         evidence in a disposable checkout. Its commit merges into the session only if it changed
@@ -2688,6 +2689,9 @@ class Coordinator:
         the prompt; proven-safe runtime failures get bounded technical retry without spending semantic repairs.
         True when its repair merged, or another ledger-proposal batch still waits."""
         if self.stop or not self.integ or self.maintainer_job:
+            return False
+        if discovery and (self.mode != 'continuous' or self.draining
+                          or time.monotonic() < self.pause_until or self.reexec_due()):
             return False
         if overlap and self.reexec_due():
             # A due reload already holds new reviews and batches and waits for a re-cut beside the
@@ -2711,7 +2715,10 @@ class Coordinator:
                     if r.get('state') == 'held' and r.get('cause') in ('validation', 'reviewed_twice') and r.get('task')}
         dispatch = dispatch_module(self.toolset)
         main = {} if ledger_edits_only or post_merge_barrier.enabled() else main_check.read(self.state)
-        found = (maintainer.overlaps(rows) if overlap and not self.ledger_errors else
+        if discovery and self.ledger_errors:
+            return False  # discovery cannot work around a globally invalid store
+        found = (repository_work.trigger(self.state) if discovery else
+                 maintainer.overlaps(rows) if overlap and not self.ledger_errors else
                  maintainer.triggers(rows, main, findings, ledger_errors=self.ledger_errors, limit=None,
                                      reported_flakes=maintainer.last(self.state).get('flaky_tests', []),
                                      common=dispatch.state.common_dir(self.repo)))
@@ -2737,8 +2744,15 @@ class Coordinator:
             item, before.get(item[0], {}), reasons, ids,
             receipt=history.get('items', {}).get(maintainer.item_key(item)),
             recovery=recovery.get(maintainer.item_key(item))) for item in found}
-        found = maintainer.pending(self.state, found, entries=before, reasons=reasons, eligible=lambda item:
-            _auxiliary_ready(recovery.get(maintainer.item_key(item)), incidents[maintainer.item_key(item)]))
+        if discovery:
+            # Constant identity: neither another round nor a restart may replay an
+            # uncertain provider. Successful collection resets only this technical budget.
+            incidents = {'repository-work': 'repository-work-v1'}
+            if not _auxiliary_ready(recovery.get('repository-work'), incidents['repository-work']):
+                return False
+        else:
+            found = maintainer.pending(self.state, found, entries=before, reasons=reasons, eligible=lambda item:
+                _auxiliary_ready(recovery.get(maintainer.item_key(item)), incidents[maintainer.item_key(item)]))
         if not found:
             return False
         trigger_key = maintainer.key(found)
@@ -2750,7 +2764,8 @@ class Coordinator:
         LOG.say(f'{maintainer.ROLE}: repairing the task docs of {", ".join(names)}')
         try:
             base = git(scratch, 'rev-parse', 'HEAD')
-            message = maintainer.prompt(found, self.repo, self.tasks_cli, entries=before, workspace=scratch)
+            message = (repository_work.prompt(self.repo, self.tasks_cli, self.state) if discovery else
+                       maintainer.prompt(found, self.repo, self.tasks_cli, entries=before, workspace=scratch))
             if rolling:
                 message += f'\nFinished batch reports: {Path(self.cfg["git_common"]) / "autowork-execution/slot-data"}.'
         except ValueError as exc:
@@ -2765,12 +2780,17 @@ class Coordinator:
             raise
         job = dict(found=found, names=names, scratch=scratch, base=base, before=before, reasons=reasons,
                    rows=rows, trigger_key=trigger_key, rolling=rolling,
-                   recovery={maintainer.item_key(item): incidents[maintainer.item_key(item)] for item in found})
+                   discovery=discovery,
+                   recovery=incidents if discovery else {maintainer.item_key(item): incidents[maintainer.item_key(item)]
+                                                  for item in found})
         for identity, incident in job['recovery'].items():
             _auxiliary_reserve(recovery_path, recovery, identity, incident)
         self.remember_job_cleanup(scratch, {})  # Clear stale/foreign evidence before submission.
         session = f'pi-autowork-maintainer-{datetime.now():%Y%m%d%H%M%S}'
-        if overlap:
+        if discovery:
+            repository_work.reserve(self.state)
+            LOG.say('Repository work discovery: inspecting independent work while the queue is blocked or empty')
+        if overlap or discovery:
             # A re-cut runs beside the loop, as merge resolutions do: it held reviews, landings
             # and dispatch for five minutes at a time while workers were busy.
             self.start_maintainer(job, message, session)
@@ -2810,7 +2830,11 @@ class Coordinator:
             result = {}
         result = result if isinstance(result, dict) else {}
         self.remember_job_cleanup(job['scratch'], result)
-        job['result'] = self._job_results[str(job['scratch'])]
+        job['result'] = dict(self._job_results[str(job['scratch'])])
+        if job.get('discovery'):
+            # Cleanup receipts deliberately omit provider text. Preserve the search
+            # findings separately before deleting its transient output file.
+            job['result']['text'] = str(result.get('text') or '')[:16000]
         if not self._scratch_cleanup[str(job['scratch'])]:
             self.maintainer_result(job, False)
             job['cleanup_unproven'] = True
@@ -2866,6 +2890,8 @@ class Coordinator:
             _auxiliary_failed(recovery_path, recovery, identity, incident, failure, retryable=safe)
         if not safe:
             self._scratch_cleanup[str(scratch)] = False
+        if job.get('discovery'):
+            repository_work.complete(self.state, result, 'technical failure: ' + failure)
         if job.get('found'):
             maintainer.remember(self.state, trigger_key=job['trigger_key'], found=job['found'],
                                 outcome='technical failure: ' + failure, technical=True, result=result)
@@ -2925,6 +2951,10 @@ class Coordinator:
                 outcome = 'refused: planning checkout has uncommitted changes'
             elif invalid:
                 outcome = 'refused: invalid task store: ' + invalid
+            elif job.get('discovery') and (discovery_error := repository_work.proposal_error(
+                    paths, before, entries(proposed),
+                    (git(scratch, 'diff', '--name-only', '--diff-filter=A', '-z', base, head) or '').split('\0'))):
+                outcome = 'refused: ' + discovery_error
             elif (repair_error := maintainer.repair_error(found, before, entries(proposed))):
                 outcome = 'refused: ' + repair_error
             elif self.merge_planning(head):
@@ -2936,11 +2966,14 @@ class Coordinator:
         finally:
             self.drop_scratch(scratch)
         after = before
-        if outcome == 'merged' and before:
+        if outcome == 'merged':
             after = entries(queue.store(Path(self.integ)))
-            changed = [task for task in names if before.get(task) != after.get(task)
-                       or (task in ('MAIN', 'LEDGER') and task in changed)]
+            changed = (sorted(set(after) - set(before)) if job.get('discovery') else
+                       [task for task in names if before.get(task) != after.get(task)
+                        or (task in ('MAIN', 'LEDGER') and task in changed)])
             self.snapshot = None  # waiting reasons must be reread against the repaired entries
+        if job.get('discovery'):
+            repository_work.complete(self.state, result, outcome)
         maintainer.remember(self.state, trigger_key=trigger_key, found=found, outcome=outcome, changed=changed,
                             entries=after, before=before, reasons=reasons,
                             main_edit=(base, head) if outcome == 'merged' else (), result=result)
@@ -2951,6 +2984,8 @@ class Coordinator:
             recovery = json.loads(recovery_path.read_text())
             for identity in job['recovery']:
                 recovery[identity].update(phase='completed', failure='', replay_blocked=False, retry_at=0)
+                if job.get('discovery'):
+                    recovery[identity]['attempts'] = 0
             health.write_status(recovery_path, recovery)
         LOG.say(f'{maintainer.ROLE}: {outcome}' + (f'; changed {", ".join(changed)}' if changed else ''))
         if self.ledger_errors:
@@ -3900,6 +3935,10 @@ class Coordinator:
             if self.maintain():  # also check a ledger the engine did not flag
                 self.last_waiting = ''
                 return None  # dispatch again on the repaired docs first
+            # Exhausted task repair is not repository-wide exhaustion. Discover independent
+            # work asynchronously; settlement and main checks must keep cycling meanwhile.
+            if self.mode == 'continuous' and not self.draining:
+                self.maintain(discovery=True)
         elif outcome in ('DRAINING', 'PAUSED'):
             pass
         elif outcome == 'BUSY':
@@ -4026,6 +4065,10 @@ class Coordinator:
         if self.in_flight():
             self.engine('--parallel', str(self.workers), '--max-workers', '16', '--wait', '--timeout', '5')
             return
+        if self.maintainer_job:
+            # Discovery owns a scratch/job rooted in this session. Do not release the
+            # engine lease or rotate an empty session while that writer is still live.
+            return self.pause(min(self.interval, 5))
         if self.draining and any(r.get('state') == 'interrupted' and r.get('paused')
                                  and (not self.once_task or r['task'] == self.once_task) for r in self.tasks()):
             if outcome in ('WAITING', 'PAUSED'):
