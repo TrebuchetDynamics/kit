@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-475-66aacc5f"
-title = "Add a durable Rust runtime journal with generation-fenced crash recovery"
-short = "Persist and reconcile run state"
+title = "Recover Rust runtime state after crashes and reject stale owners"
+short = "Recover Rust state after crashes"
 status = "open"
 goal = "RUST-OCTET"
 section = "Next"
