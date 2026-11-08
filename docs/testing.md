@@ -277,6 +277,13 @@ instead of sending Telegram messages or calling a model. Native command collisio
 such as Hermes' `/goal`, require a registered namespaced Kit skill fallback; they do
 not replace the Hermes command or excuse a missing skill.
 
+The focused profile-policy fixtures in `tests/test_plugin.py`,
+`tests/test_preflight.py` and `tests/test_install_plugins.py` cover fresh interactive
+profiles, explicit autonomous selection, retained approval/turn values, canonical
+and legacy settings, opt-outs and read-only setup previews. The native loader check
+also verifies interactive values, explicit autonomy, opt-out and idempotent writes.
+It does not qualify a live profile or unattended model behavior.
+
 `tests/integration_bundle.py` checks an existing isolated `HERMES_HOME`: all
 loaded skill content, CLI queues and captured gateway routing for every generated
 alias, plus the expected-import inventory. Run it with the same Hermes Python

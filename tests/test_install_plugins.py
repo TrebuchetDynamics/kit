@@ -208,19 +208,28 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
             self.assertIn(str(self.hermes_root) + f'|-p {profile} config set plugins.entries.kit.allow_gateway_injection true', self.calls())
             self.assertNotIn(str(self.hermes_root) + f'|-p {profile} config set plugins.entries.autowork.allow_gateway_injection true', self.calls())
 
-    def test_setup_disables_command_prompts_only_for_installed_bundle_profiles(self):
+    def test_setup_uses_each_installed_profiles_explicit_or_default_policy(self):
         self.manifest.write_text('https://hermes-agent.nousresearch.com/docs/plugins/example-plugin default profile only\n')
         plugin = self.hermes_root / 'profiles/coder/plugins/autowork'
         plugin.mkdir(parents=True)
         (plugin / 'plugin.yaml').write_text('name: autowork\n')
+        (self.hermes_root / 'profiles/coder/config.yaml').write_text(
+            'plugins:\n  entries:\n    kit:\n      settings:\n        runtime_policy: autonomous\n')
+        (self.hermes_root / 'profiles/research/config.yaml').write_text(
+            'approvals:\n  mode: smart\nagent:\n  max_turns: 37\n')
         preview = self.run_installer('--setup', '--dry-run')
         self.assertEqual(preview.returncode, 0, preview.stderr)
+        self.assertIn('Runtime policy=autonomous (coder)', preview.stdout)
         self.assertIn('command approvals=off (coder)', preview.stdout)
+        self.assertIn('Runtime policy=interactive (default)', preview.stdout)
+        self.assertIn('Plan: config approvals.mode=smart (research)', preview.stdout)
+        self.assertIn('Plan: config agent.max_turns=37 (research)', preview.stdout)
         self.assertEqual(self.calls(), [])
         result = self.run_installer('--setup')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(str(self.hermes_root) + '|-p coder config set approvals.mode off', self.calls())
-        self.assertIn(str(self.hermes_root) + '|-p default config set approvals.mode off', self.calls())
+        self.assertIn(str(self.hermes_root) + '|-p default config set approvals.mode manual', self.calls())
+        self.assertIn(str(self.hermes_root) + '|-p research config set agent.max_turns 37', self.calls())
 
     def test_bundle_only_installs_and_enables_every_live_profile_idempotently(self):
         preview = self.run_installer('--bundle-only', '--dry-run')
@@ -257,8 +266,8 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
             prefix = str(self.hermes_root) + f'|-p {profile} '
             enabled = calls.index(prefix + 'plugins enable autowork')
             for setting in ('plugins.entries.kit.allow_gateway_injection true',
-                            'approvals.mode off', 'approvals.destructive_slash_confirm false',
-                            'approvals.mcp_reload_confirm false', 'agent.max_turns unlimited',
+                            'approvals.mode manual', 'approvals.destructive_slash_confirm true',
+                            'approvals.mcp_reload_confirm true', 'agent.max_turns 90',
                             'skills.platform_disabled {}'):
                 self.assertLess(calls.index(prefix + 'config set ' + setting), enabled)
 
@@ -273,8 +282,9 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
         preview = self.run_installer('--bundle-only', '--dry-run')
         self.assertEqual(preview.returncode, 0, preview.stderr)
         self.assertIn('runtime-defaults opt-out (coder)', preview.stdout)
-        self.assertNotIn('Plan: config approvals.mode=off (coder)', preview.stdout)
-        self.assertIn('Plan: config approvals.mode=off (research)', preview.stdout)
+        self.assertFalse(any(line.startswith('Plan: config ') and line.endswith('(coder)')
+                             for line in preview.stdout.splitlines()))
+        self.assertIn('Plan: config approvals.mode=manual (research)', preview.stdout)
         for args in (('--bundle-only',), ('--setup',)):
             self.log.unlink(missing_ok=True)
             result = self.run_installer(*args)
@@ -285,7 +295,7 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
             self.assertIn(prefix + 'coder plugins enable autowork', calls)
             for profile in ('default', 'research'):
                 for setting in ('plugins.entries.kit.allow_gateway_injection true',
-                                'approvals.mode off', 'skills.platform_disabled {}'):
+                                'approvals.mode manual', 'skills.platform_disabled {}'):
                     self.assertIn(prefix + f'{profile} config set ' + setting, calls)
 
     def test_skill_dry_run_does_not_clone_or_install(self):

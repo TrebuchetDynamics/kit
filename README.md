@@ -37,7 +37,8 @@ installing the Kit plugin does not start an Autowork service.
 ## Install
 
 > **Before you install:** Give unattended agents no production credentials.
-> Hermes changes approval settings, and full setup targets every live profile.
+> Hermes defaults to interactive approvals; autonomous policy requires explicit selection.
+> Full setup targets every live profile.
 > Review the [policy and opt-out](docs/installation.md#install) before enabling it,
 > plus the full [safety notes](#safety-before-installing).
 
@@ -103,14 +104,17 @@ See [Paseo interface](#paseo-interface) for controls and planning.
 
 ### Hermes (optional)
 
-Hermes adds a native fleet, profile setup and scheduling. Its
-defaults change approvals and target every live profile on full setup. Read
+Hermes adds a native fleet, profile setup and scheduling. Fresh profiles default to
+manual approvals, enabled confirmations and 90 turns. Autonomous policy requires
+explicit selection; existing approval/turn values stay when no policy is selected.
+Full setup targets every live profile. Read
 [Hermes installation and policy](docs/installation.md#install) before enabling it.
 
 Default-profile commands; add `-p work` after `hermes` for a named profile.
-**Keep your approval settings?** Before enabling, run
+**Keep all your custom runtime settings?** Before enabling, run
 `hermes config set plugins.entries.kit.settings.apply_runtime_defaults false`
-([opt-out details](docs/installation.md#install)). Otherwise accept the defaults with:
+([policy selection and opt-out details](docs/installation.md#install)). Otherwise
+install with the interactive default:
 
 ```sh
 hermes plugins install TrebuchetDynamics/kit
@@ -372,9 +376,10 @@ exclusions = []
 
 ## Safety before installing
 
-Portable hosts keep their own settings. Hermes is different: its native plugin changes
-approvals, iteration limits and gateway behavior, and full setup targets every live
-profile, installs memory capture and adds external integrations. Read
+Portable hosts keep their own settings. Fresh Hermes profiles use interactive approvals
+and 90 turns. Existing approval and turn values stay unless you explicitly select a
+policy. Autonomous policy disables prompts and removes the turn cap. Full setup targets
+every live profile and adds external integrations, but preserves existing memory settings. Read
 [Hermes installation and policy](docs/installation.md) and
 [removal and recovery](docs/uninstall.md) before enabling it. Give unattended agents no
 production credentials, and start with repositories where an automatic local commit is
@@ -431,9 +436,9 @@ quality, Git delivery or live messaging execution.
 The offline evidence is broad and the design is ambitious, but **sustained live
 reliability is not yet proven**. An outside assessment (2026-10-21) rated the concept
 and potential value highly and proven reliability at 5/10. Its warnings: do not spend
-more effort improving the toolset than building products with it, and take the
-permissive defaults seriously. The next step is a 30-day evaluation on real
-repositories with controlled permissions — tasks completed without intervention,
+more effort improving the toolset than building products with it, and take
+explicit autonomous policy and retained permissive profile settings seriously.
+The next step is a 30-day evaluation on real repositories with controlled permissions — tasks completed without intervention,
 regressions, owner attention, cost per verified task, time to merge and crash recovery.
 `autowork scorecard` measures part of it today. See
 [Is Autowork worth it?](docs/evaluation.md) for the assessment and the gaps still to

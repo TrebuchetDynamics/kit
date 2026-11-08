@@ -147,18 +147,9 @@ def preflight(repo, root, profiles, *, bundle_only=False):
     except (ValueError, OSError) as exc:
         errors.append(str(exc))
     plan.extend(messages)
-    defaults = json.loads((repo / 'plugins/defaults.json').read_text())['hermes']
     spec = importlib.util.spec_from_file_location('preflight_runtime_defaults', repo / 'scripts/runtime_defaults.py')
     runtime = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runtime)
-    settings = {
-        'approvals.mode': defaults['approvals_mode'],
-        'approvals.destructive_slash_confirm': defaults['destructive_slash_confirm'],
-        'approvals.mcp_reload_confirm': defaults['mcp_reload_confirm'],
-        'agent.max_turns': defaults['max_turns'],
-        'skills.platform_disabled': defaults['skills_platform_disabled'],
-        f'plugins.entries.{runtime.PLUGIN}.allow_gateway_injection': defaults['allow_gateway_injection'],
-    }
     for name, home in profiles:
         plan.append(f'Profile {name}: {home}')
         for relative in ('config.yaml', 'plugins', 'skills'):
@@ -181,13 +172,17 @@ def preflight(repo, root, profiles, *, bundle_only=False):
             plan.append(f'  Preserve existing bundle path: {target}')
         else:
             plan.append(f'  Link bundle: {target} -> {repo}')
-        opted_out = runtime.setup_opted_out(home / 'config.yaml')
-        if opted_out is None:
-            errors.append(f'{name}: cannot verify the runtime-defaults opt-out without PyYAML')
-        elif opted_out:
-            plan.append('  Enable autowork; runtime-defaults opt-out: bundle policy settings skipped')
+        try:
+            selected = runtime.setup_profile_policy(home / 'config.yaml')
+        except (OSError, ValueError):
+            errors.append(f'{name}: cannot verify runtime policy/opt-out; valid YAML and PyYAML required')
         else:
-            plan.append('  Enable autowork; apply settings: ' + json.dumps(settings, sort_keys=True))
+            if selected['policy'] == 'disabled':
+                plan.append('  Enable autowork; runtime-defaults opt-out: bundle policy settings skipped')
+            else:
+                plan.append(f"  Enable autowork; runtime policy={selected['policy']}; apply settings: " +
+                            json.dumps(selected['settings'], sort_keys=True))
+                plan.append('  Existing approval/turn values preserved unless runtime_policy is explicit')
         plan.append('  Existing skill copies are preserved; auth and conversation history unchanged')
         if bundle_only:
             plan.append('  External integrations and memory unchanged')

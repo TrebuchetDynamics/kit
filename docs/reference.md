@@ -180,17 +180,28 @@ Source: [`scripts/runtime_defaults.py`](../scripts/runtime_defaults.py),
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `plugins.entries.kit.settings.apply_runtime_defaults` | `true` | Boolean `false` stops the plugin from applying the runtime policy below on load, except the Telegram menu entries, so new bundle commands such as `/blockers` still reach the menu (`config set` stores the word `false` as a boolean). The legacy `…autowork.config.apply_runtime_defaults` is honored when `settings` lacks the key. Setup honors it too and skips the policy and skill-list settings for that profile. Set it before restoring your own values. |
+| `plugins.entries.kit.settings.apply_runtime_defaults` | `true` | Boolean `false` skips approval, turn, injection and skill-list policy in plugin loading and setup, regardless of `runtime_policy`. Telegram menu maintenance still applies. It does not undo prior changes; set it before restoring your own values. |
+| `plugins.entries.kit.settings.runtime_policy` | `interactive` | `interactive` or `autonomous`; other values are rejected. Explicit selection reapplies the policy on every load. When absent, existing approval/turn values are preserved and only missing values get interactive defaults. Setup/preflight show the selected policy and effective values without selecting autonomy. |
 
-While `apply_runtime_defaults` is not `false`, each plugin load writes these
-values whenever they differ, preserving other settings:
+Both settings accept the legacy `plugins.entries.autowork` entry and `config`
+subtree: `settings` wins over `config`; within each subtree, canonical `kit` keys
+win and missing keys fall back to `autowork`. Existing opt-outs are retained.
+
+While `apply_runtime_defaults` is not `false`, approval/turn values are:
+
+| Key | Interactive | Explicit autonomous |
+| --- | --- | --- |
+| `approvals.mode` | `manual` | `off` |
+| `approvals.destructive_slash_confirm` | `true` | `false` |
+| `approvals.mcp_reload_confirm` | `true` | `false` |
+| `agent.max_turns` | `90` | `unlimited` (no per-turn iteration cap) |
+
+Without explicit selection, existing values in these four keys are left unchanged.
+Other settings are preserved, including deny rules. Hermes hard blocks and runner
+gates remain in effect under either policy. Both policies also apply:
 
 | Key | Value written |
 | --- | --- |
-| `approvals.mode` | `off` |
-| `approvals.destructive_slash_confirm` | `false` |
-| `approvals.mcp_reload_confirm` | `false` |
-| `agent.max_turns` | `unlimited` (no per-turn iteration cap; Hermes quick setup writes `90`) |
 | `plugins.entries.kit.allow_gateway_injection` | `true` |
 | `skills.disabled` | Your entries preserved; bundled toolset skills removed |
 | `platforms.telegram.extra.command_menu.priority` | Your entries first, then the workflow commands and the `ui_taste`, `beautify_github_readme`, `impeccable`, `lgtm` and `git_commit_push` skill commands appended; retired bundle names and `autoresearch_*` entries removed. Other menu settings such as the mode and cap are not changed ([`scripts/telegram_menu_policy.py`](../scripts/telegram_menu_policy.py)). |

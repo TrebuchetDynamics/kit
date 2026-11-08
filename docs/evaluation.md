@@ -51,8 +51,11 @@ Whether this combination beats existing tools is **not yet benchmarked**.
   than building the products it exists for. Agents supervising agents, and then
   tasks to make that supervision safer, is interesting engineering, but it is not
   delivery.
-- **Permissive defaults.** Loading the Hermes plugin sets `approvals.mode: off` and
-  `agent.max_turns: unlimited` ([read before installing](../README.md#safety-before-installing)).
+- **Explicit autonomy and retained profile settings.** Fresh Hermes profiles now
+  default to interactive approvals and 90 turns. Explicit `runtime_policy: autonomous`
+  sets `approvals.mode: off` and `agent.max_turns: unlimited`; existing approval/turn
+  values remain when no policy is selected
+  ([read before installing](../README.md#safety-before-installing)).
   Combined with unattended runners, that matters wherever agents can reach
   credentials or production systems. Evaluate with controlled permissions: no
   production credentials, disposable or low-risk targets, and pushes only to

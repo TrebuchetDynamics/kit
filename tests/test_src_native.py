@@ -68,7 +68,7 @@ for entry, (owner, function) in {OWNERS!r}.items():
             import json
             path = root / 'plugins/defaults.json'
             settings = json.loads(path.read_text())
-            settings['hermes']['approvals_mode'] = mode
+            settings['hermes']['policies']['interactive']['approvals_mode'] = mode
             path.write_text(json.dumps(settings))
             for name in ('autowork', 'blockers', 'plan-with-me'):
                 path = root / 'skills' / name / 'SKILL.md'
@@ -113,15 +113,16 @@ for plugin, root in zip(plugins, roots):
     assert bundle.handle_cli(argparse.Namespace(action='finalize')) == 7
     # ROOT and SKILLS_DIR remain effective host-global resource patches.
     bundle.ROOT = roots[1]
-    assert bundle.defaults()['hermes']['approvals_mode'] == 'manual'
+    assert bundle.defaults()['hermes']['policies']['interactive']['approvals_mode'] == 'manual'
     plugin.SKILLS_DIR = roots[1] / 'skills'
     assert plugin._discover_skills()[0][2].is_relative_to(roots[1])
 standalone = [read(root, 'scripts/runtime_defaults.py', 'policy_' + str(i)) for i, root in enumerate(roots)]
 assert [m.expected_settings({{}})['approvals']['mode'] for m in standalone] == ['off', 'manual']
 one = standalone[0]._AUTOWORK_COMPAT.peer(standalone[0].__dict__, 'bundle')
-one.defaults = lambda: {{'hermes': {{'approvals_mode': 'patched', 'destructive_slash_confirm': False,
-    'mcp_reload_confirm': False, 'max_turns': 10, 'allow_gateway_injection': True}}}}
-assert standalone[0].expected_settings({{}})['approvals']['mode'] == 'patched'
+patched = one.defaults()
+patched['hermes']['policies']['interactive']['approvals_mode'] = 'smart'
+one.defaults = lambda: patched
+assert standalone[0].expected_settings({{}})['approvals']['mode'] == 'smart'
 assert standalone[1].expected_settings({{}})['approvals']['mode'] == 'manual'
 ''')
 

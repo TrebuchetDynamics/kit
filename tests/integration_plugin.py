@@ -74,13 +74,13 @@ def main():
         assert Path(native_payload['skill_dir']) == native_grill.parent
         from hermes_cli.config import require_readable_config_before_write
         configured = require_readable_config_before_write()
-        assert configured['approvals']['destructive_slash_confirm'] is False, configured['approvals']
-        assert configured['approvals']['mcp_reload_confirm'] is False
-        assert configured['approvals']['mode'] == 'off'
+        assert configured['approvals']['destructive_slash_confirm'] is True, configured['approvals']
+        assert configured['approvals']['mcp_reload_confirm'] is True
+        assert configured['approvals']['mode'] == 'manual'
+        assert configured['agent']['max_turns'] == 90
         assert configured['approvals']['deny'] == ['keep-this-deny-rule']
         assert configured['model']['default'] == 'keep-this-model'
-        # Hermes still reads the legacy entry; the canonical key is ready for stage 2.
-        assert configured['plugins']['entries']['kit']['allow_gateway_injection'] is True
+        # Legacy settings are read, but policy writes use the canonical entry.
         assert configured['plugins']['entries']['kit']['allow_gateway_injection'] is True
 
         from hermes_cli.plugins import PluginContext
@@ -99,10 +99,13 @@ def main():
         policy.apply_runtime_defaults(ctx)
         assert config_path.read_bytes() == before
         save_config({'plugins': {'entries': {'autowork': {'settings': {
-            'apply_runtime_defaults': True}}}}}, merge_existing=True)
+            'apply_runtime_defaults': True, 'runtime_policy': 'autonomous'}}}}}, merge_existing=True)
         policy.apply_runtime_defaults(ctx)
         configured = require_readable_config_before_write()
         assert configured['approvals']['destructive_slash_confirm'] is False
+        assert configured['approvals']['mcp_reload_confirm'] is False
+        assert configured['approvals']['mode'] == 'off'
+        assert configured['agent']['max_turns'] == 'unlimited'
 
         # Exercise the actual /new gate with a harmless callback, never reset a session.
         import asyncio

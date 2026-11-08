@@ -207,30 +207,44 @@ autowork itself in every existing live profile, preserving existing plugin
 installations. After creating another profile, rerun setup or, from this checkout,
 run `bash install-plugins.sh --bundle-only` to add just this bundle and its defaults
 across profiles. The links depend on keeping this checkout installed. It applies
-[our defaults](../plugins/defaults.json): allow toolset gateway injection and
-set `approvals.mode` to `off` for profiles with autowork installed. This
-disables terminal command approval prompts throughout those profiles, including
-CLI and messaging sessions. The plugin itself applies these approval and gateway
-injection defaults whenever it loads, including disabling `/new`, `/clear`,
-`/reset`, `/undo` and MCP-reload confirmations, and setting `agent.max_turns` to
-`unlimited` so long Autowork turns are not cut off at a per-turn iteration cap
-(Hermes quick setup writes `90`); each load also sets its Telegram
-command-menu priority and installs the bundle's managed cron helper script. No setup command is needed for
-this policy after the plugin is enabled. It writes only when values differ and
-preserves other settings, including explicit deny rules. Hermes hard blocks still
-apply. Your own `skills.disabled` entries stay, except that the bundle enables its
-own skills. External skill catalogs and memory providers are not managed.
-Setup also clears per-platform skill disable lists.
+[our defaults](../plugins/defaults.json): toolset gateway injection plus the
+`interactive` runtime policy. A fresh profile receives `approvals.mode: manual`,
+destructive-slash and MCP-reload confirmations enabled, and `agent.max_turns: 90`.
+Without an explicit policy setting, existing approval and turn values are preserved;
+only missing values receive interactive defaults. Installing or updating never
+silently selects autonomous policy for an existing profile.
+
+To explicitly select a policy for one profile, set
+`plugins.entries.kit.settings.runtime_policy` to `interactive` or `autonomous`.
+An explicit policy reapplies its approval and turn values on every plugin load.
+`autonomous` sets `approvals.mode: off`, disables destructive-slash (`/new`, `/clear`,
+`/reset`, `/undo`) and MCP-reload confirmations, and sets `agent.max_turns: unlimited`.
+It disables terminal command approval prompts in CLI and messaging sessions.
+For example, **only for a profile you intend to run unattended**:
+
+```sh
+hermes -p PROFILE config set plugins.entries.kit.settings.runtime_policy autonomous
+```
+
+Plugin loading also sets Telegram command-menu priority and installs the bundle's
+managed cron helper script. No setup command is needed after enabling the plugin.
+Writes occur only when values differ. Other settings, including explicit deny rules,
+are preserved; Hermes hard blocks and the runner's gates still apply. Your own
+`skills.disabled` entries stay, except that the bundle enables its own skills.
+External skill catalogs and memory providers are not managed. Setup also clears
+per-platform skill disable lists.
+
 To opt out of automatic policy application, first run
 `hermes -p PROFILE config set plugins.entries.kit.settings.apply_runtime_defaults false`,
-**Renamed from Autowork to Kit.** The plugin and its command namespace are now `kit`;
-`plugins.entries.autowork` from an earlier release keeps being read for one release, so
-an opt-out you already set still applies. New writes go to `plugins.entries.kit`, and a
-profile that carries both is reported once and uses the `kit` value.
+then restore desired values. The opt-out takes precedence over either policy:
+it writes no approval, turn, gateway-injection or skill-list policy, but still
+maintains the bundle's Telegram menu entries. It does not undo earlier changes.
 
-then restore the desired settings, for example
-`hermes -p PROFILE config set approvals.mode manual` and
-`hermes -p PROFILE config set approvals.destructive_slash_confirm true`.
+**Renamed from Autowork to Kit.** Both settings are also read under the legacy
+`plugins.entries.autowork` key for one release. `settings` takes precedence over
+legacy `config`; within either subtree, `kit` wins per key and missing keys fall
+back to `autowork`. Existing opt-outs remain effective. Writes use `kit`, and a
+profile carrying both entries is reported once.
 Setup, including `--bundle-only`, honors the same opt-out: it skips the approval,
 gateway-injection and skill-disable-list settings for that profile and says so in
 its preview.
@@ -249,8 +263,10 @@ Use `hermes autowork setup --dry-run` to preview target profiles.
 Every complete setup starts with [read-only preflight](../scripts/setup_preflight.py).
 It inventories all live profiles and prints planned skill copies, preserved
 existing skills, plugin links, approval/gateway settings and memory effects.
-The autonomous fleet defaults are unchanged; this adds no interactive approval
-round. `--dry-run` runs preflight only and exits without installation stages.
+Each profile's selected runtime policy and effective values are shown, including
+preserved approval/turn values and opt-outs. Previews never change policy selections.
+Unknown policy names fail before policy writes. `--dry-run` runs preflight only and
+exits without installation stages.
 Full previews contact Git source servers with bounded timeouts; core previews
 need no dependency network access.
 
