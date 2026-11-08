@@ -229,6 +229,34 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
         self.assertLess(self.calls().index('codex plugin add kit@autowork-marketplace'),
                         next(i for i, call in enumerate(self.calls()) if call.startswith('octet-installer')))
 
+    def test_codex_install_continues_when_marketplace_is_not_configured_or_installed(self):
+        self.fake('codex', LOGGING + '''
+if [[ $2 == marketplace && $3 == remove ]]; then
+  echo 'Error: marketplace `autowork-marketplace` is not configured or installed' >&2
+  exit 1
+fi
+''')
+        result = self.install('--only', 'codex')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('codex plugin marketplace add TrebuchetDynamics/kit --ref main',
+                      self.calls('codex'))
+        self.assertIn('codex plugin add kit@autowork-marketplace', self.calls('codex'))
+        self.assertRegex(result.stdout, r'codex\s+installed')
+
+    def test_codex_marketplace_removal_errors_still_fail_the_install(self):
+        self.fake('codex', LOGGING + '''
+if [[ $2 == marketplace && $3 == remove ]]; then
+  echo 'Error: permission denied while removing marketplace' >&2
+  exit 1
+fi
+''')
+        result = self.install('--only', 'codex')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('permission denied', result.stdout)
+        self.assertEqual(self.calls('codex'), [
+            'codex plugin marketplace remove autowork-marketplace'])
+        self.assertRegex(result.stdout, r'codex\s+failed')
+
     def test_update_runs_the_same_items_as_a_full_install(self):
         result = self.install('update')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

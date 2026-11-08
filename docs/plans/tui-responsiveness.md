@@ -101,3 +101,132 @@ Planned checks: `python3 scripts/check.py pi-autowork/tests/test_fleet_view.py p
 Acceptance/oracles: extend `tui_pilot.py` with a deterministic post-delete case with timer refresh disabled and a blocked fleet reader. After releasing command success, assert row/detail/menu removal and matching displayed counts before releasing the reader, including last-row/closed-history deletion. Then release a pre-delete snapshot and assert no resurrection. Use the real native CLI in a private Git fixture to demonstrate successful working-tree deletion while HEAD still contains the record, plus warning-success, failed/cancelled deletion, duplicate completion, another repository with the same ID, close/reopen or selection change, and later commit or restore/recreation. Existing fleet/snapshot/reader/history/command guards remain intact; tests must not delete a real repository task or invoke live services/models.
 
 Pre-mortem guards: (1) a stale reader restores a deleted row — barrier-controlled old-result and unchanged-HEAD tests; (2) optimistic feedback hides a failed delete or another repository's row — failure/cancel/warning and captured-identity cases; (3) counters/detail disagree or a restored task stays hidden — shared projection, last-row/history and fresh restore/recreation tests. Keep no-write/view-only guards, confirmation, worker warnings, task-store format, receipts, locks and live authority unchanged. No arbitrary millisecond latency or SSH-delivery claim.
+
+## Operational state and screen boundaries
+
+Status: Accepted scope from the owner's request to improve TUI architecture and UI.
+The design choices below are planner calls, not claims that implementation or live
+qualification has passed. This is a standalone planning batch, not a runner restart.
+
+### Outcome and evidence
+
+The operator must see one consistent answer to what the selected runner is doing,
+what it waits for, and which action is useful. Keep the current terminal workflow,
+keyboard/mouse controls, read-only web mode and committed task inventory.
+
+At source `6d636540`, `fleet_view.runner_rows` renders raw `Runner.state`, while
+`verdict` uses captured task counts, jobs and questions. This permits the supplied
+fleet row to say working while its selected overview says Waiting on you.
+`FleetApp.show_overview` adds all snapshot annotations to its warning count, although
+`fleet_view.freshness` already distinguishes some historical annotations from errors.
+The screenshot's 176 warnings are not a measured count of 176 current failures.
+Current `task_snapshot.capture` already ignores observations belonging to known
+closed/superseded records; preserve that fix instead of recreating its task.
+
+The read-only runtime observation during planning showed zero active workers, a
+background main check for `d2cdc71`, and existing reported/integrating attempts for
+450, 475, 479 and 484. Those are execution/check/recovery states, not evidence that
+the UI is frozen or that a new implementation of their tasks is needed. This plan
+neither retries their candidates nor changes their contracts, checks or ownership.
+Main-check duration and superseded revision are evidence to display, not a UI timer
+to reset. Runtime files and private process identities remain outside Git.
+
+`tui.py` currently owns fleet rendering, read lifetimes, task/decision screens,
+forms, actions and planning navigation. Task screens reach app-owned execution and
+planning callbacks through `self.app`. `tui_reads.ReadCoordinator` already supplies
+four physical reads, identity/epoch rejection and suspension-safe publication.
+`tui_dialogs.Confirm` is already a shared leaf. Reuse these boundaries.
+
+### Selected design and alternatives
+
+1. **One captured presentation.** Add a pure `fleet_view.presentation(runner)`
+   value for label, explanation, style, observed activity and grouped diagnostics.
+   Reuse `verdict`, `task_counts`, existing lane phases and snapshot provenance;
+   do not create another scheduler, truth store or filesystem reader. Preserve raw
+   `Runner.state` as service/health data. Fleet State, selected overview and Details
+   use the same semantic label. Real live work may coexist with recorded questions;
+   those questions remain a separate actionable indicator, not a claim of idleness.
+   A main check is separate observed background work, not an invented active worker.
+   Unknown/stale/unmatched observations stay explicit and cannot inflate active counts.
+2. **Separate task screens from the app.** Move ReadScreen and shared widget/text
+   helpers needed by both owners to flat `tui_common.py`. Move TasksScreen,
+   TaskScreen, DecisionScreen, NewTask, PickSection, CommitEdits and TextPrompt to
+   `tui_tasks.py`. FleetApp retains application lifetime, selection, read coordinator,
+   command execution, deletion overlays, planning hub and navigation. Task screens
+   call that host through the existing callbacks, not an import of FleetApp.
+   Retain same-object exports from `pi_autowork.tui` for existing imports and tests.
+   Keep Confirm and tui_reads as their existing owners. No framework, service locator,
+   new dependency, nested package migration or duplicate class implementation.
+3. **Action-first UI.** On the fleet screen show runner identity, consistent state,
+   compact count/provenance and the primary useful action. Put secondary controls
+   behind a labelled More menu while retaining every direct binding and confirmation.
+   Selection must not move on refresh. Task/lane cells show committed task names,
+   then phase and concrete wait reason; IDs stay available in Details and remain row
+   keys/action identity. Duplicate titles cannot redirect actions. Missing names fall
+   back to IDs. Long last-agent prose belongs in worker/log views, not the primary
+   status column. Waiting for a check slot, review, integration or a dependency must
+   remain distinguishable. Unmatched runtime lanes remain annotations, not inventory.
+4. **Explain diagnostics.** Separate actual acquisition errors from source/provenance
+   notes. Deduplicate identical messages for the overview, summarize their categories
+   and retain every original message and affected ID in Details/Blockers. Never hide
+   stale source, contract mismatch or unavailable inventory to make a green screen.
+   Keep main-check running/red/green/broken state and checked/current revisions with
+   their original age. Superseded work does not mean the current main passed.
+
+Rejected: cosmetic label changes in each widget (keeps contradictory authorities),
+a replacement TUI/web stack (unnecessary dependencies and lost guards), a fresh task
+ledger or forced recovery/restart (outside this UI request), and splitting every
+screen now (unbounded refactoring with no user benefit). Preserve the existing
+immediate post-delete feedback contract above, including pending-commit overlays.
+
+### Executable batch
+
+- `TOOLSET-485-93544fa5`: consistent runner presentation and grouped observations.
+- `TOOLSET-486-e49cf8cb`: extract task-screen/read helper ownership with unchanged behavior.
+- `TOOLSET-487-2938d3f0`: consume both seams for the action-first fleet/task UI.
+
+The first two have no product dependency on each other. The third consumes their
+actual presentation and screen interfaces. All name the existing
+`autowork-python-layout` resource because migration 479 is actively moving these
+source/test owners. This serializes actual admission, including the first two;
+independent selection-ready does not mean simultaneous execution. Do not alter
+479 or invent completion of its retained candidate. Preserve goal priority/focus.
+
+Path rule: edit the actual selected source owner only. The accepted component map
+moves `src/pi_autowork/X.py` to `pi-autowork/src/pi_autowork/X.py`, product test files
+to `pi-autowork/tests/runner/`, and `src/README.md` to
+`pi-autowork/docs/source-layout.md`. Task touches explicitly permit both alternatives;
+never recreate a retired path or edit a public compatibility adapter as a second owner.
+The records contain conditional focused check commands for these exact alternatives.
+
+### Verification and boundaries
+
+Use synthetic captured Runner/TaskSnapshot inputs for contradictory state, live
+review plus questions, valid empty, invalid/stale inputs, unmatched contract rows,
+repeated source notes and superseded main checks. No live service/model is needed.
+Extend only changed assertions in existing suites and add bounded behavior-owned
+fixtures, not another giant all-purpose pilot. Preserve the existing rendered tests.
+
+The UI slice owns a new focused Textual pilot/wrapper at 80x24, 120x32 and 160x48
+(planner-selected terminal cell sizes). Keep text and actionable controls inside the
+viewport or an explicitly scrollable region; keyboard and mouse must reach the same
+routes. At 80x24 prioritize primary state/actions, task identity and evidence access,
+not every secondary column. A blocked reader must not prevent input acknowledgement,
+selection, menu open/close or pending-delete feedback; use event barriers, not an
+invented millisecond benchmark. Missing pinned Textual setup is a disclosed unmet
+check, never rendered acceptance via skip. Existing offline setup may provision its
+isolated pinned dependencies during later implementation; planning installs nothing.
+
+Pre-mortem: contradictory status returns through a second renderer (shared projection
+fixture); extraction breaks suspended screen/action identity (existing lifetime,
+view-only, duplicate callback and same-object export guards); compact layout hides
+truth or targets the wrong task (named viewport pilot with duplicate titles, long
+names, stale reads, mismatched source, failure/cancel and restored deletion cases).
+
+Expected delivery: three implementation integrations and three independent reviews,
+plus this one planning commit. Worker checks are focused; the runner owns affected
+landing checks and its separate full-main check. All proposed implementation/pilot
+checks are UNRUN in this planning pass. Physical terminal/SSH/browser appearance and
+installed-release behavior remain unqualified; no live acceptance or deployment is
+inferred from offline fixtures. No speculative rolling successor is needed: this
+request has a fully defined three-task frontier. Stop after saving and validating it.
