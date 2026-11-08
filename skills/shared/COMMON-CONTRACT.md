@@ -60,5 +60,7 @@ runtime behavior, severity or effort saved. The Graphify workflow in
 Resolve helper paths from the actual loaded skill directory, not an assumed
 Hermes home. Sibling bundled skills and this support directory retain their
 relative layout. Quote absolute paths and repository arguments in shell commands.
-Edit task and goal records through `autowork tasks` ([work center](TODO-WORKCENTER.md)).
+Before creating or refining repository tasks, read
+[ordinary authoring](TODO-WORKCENTER.md#ordinary-authoring) for task text and grouping,
+then use the [work center](TODO-WORKCENTER.md) for `autowork tasks` edits and selection.
 See [plan handoff](PLAN-HANDOFF.md) for accepted backlog boundaries.

@@ -142,18 +142,22 @@ Distinguish the **strategic roadmap** (accepted outcomes and their real
 dependencies) from the **execution frontier** (the smallest high-value group that
 can be specified accurately and acted on now).
 
-Apply the existing [rolling-planning rules](../../shared/TODO-WORKCENTER.md#rolling-planning):
-at most eight new tasks per round, including any closing planning task, all under
-the same goal. Do not fill the allowance artificially. Add a successor planning
-task only when later content genuinely depends on implementation evidence. Stop
+Save at most eight new tasks per discovery frontier; do not fill the allowance
+artificially. For evidence-dependent rolling work, apply the existing
+[rolling-planning rules](../../shared/TODO-WORKCENTER.md#rolling-planning):
+the limit includes the closing planning task, and the rolling batch shares the same goal.
+Add a successor planning task only when later content genuinely depends on
+implementation evidence. Stop
 when the goal is complete, further work needs new owner intent, or the round adds
 no building task. Never create an unbounded self-replenishing chain or a second
 planning daemon.
 
-Each executable task needs a canonical ID, an existing or justified goal, a
-concrete outcome, bounded scope, observable acceptance, exact known checks, real
-dependencies, bounded `touches`, resources, exclusions, kind, ownership, Now/Next
-rank and source references. Do not invent worker ownership, live authorization or
+Save executable tasks through
+[ordinary authoring](../../shared/TODO-WORKCENTER.md#ordinary-authoring):
+canonical ID, concrete outcome, bounded scope, observable acceptance and exact
+known checks. Goal and custom short label are optional; an ordinary task needs no
+separate plan. Resolve real dependencies, bounded `touches`, resources, exclusions,
+kind, ownership, Now/Next rank and relevant source links before dispatch. Do not invent worker ownership, live authorization or
 permission the repository does not grant. A check that does not exist yet is a
 proposed, unrun check, not a passing test.
 

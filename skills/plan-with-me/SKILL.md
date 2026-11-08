@@ -140,9 +140,10 @@ content depends on implementation evidence, follow
 Run the [builder check](../shared/PLANNING-CRAFT.md#builder-check-before-handoff) on
 the saved tasks and fold its answers in. Validate changed docs and run
 `autowork tasks validate --worktree .`; fix every error and every draft you did not mean. Then commit
-the batch once. Put the accepted-plan anchor in each affected task's `Sources:` note
-and, when used, its goal's `source`. Ordinary tasks need no separate plan or goal;
-reference shared intent instead of copying their contract. After the commit, `autowork tasks why ID` reports
+the batch once. Link existing accepted intent in each affected task's `Sources:` note;
+preserve its governing plan anchor when one exists. A goal, when used, keeps its
+accepted `source`. Ordinary tasks need no separate plan or goal; reference shared
+intent instead of copying their contract. After the commit, `autowork tasks why ID` reports
 committed-store selection eligibility and position only, not resource/ownership
 admission, capacity or dispatch. Report the selection-ready first task separately
 from a dependent successor: a successor waiting on its dependency is normal ordering,

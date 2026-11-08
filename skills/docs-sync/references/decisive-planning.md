@@ -67,8 +67,8 @@ require a separate authorized task.
    the original records privately for comparison; never regenerate them from
    summaries.
 2. Keep one bounded remaining outcome per existing record: action, acceptance, exact
-   checks, stop/next step, with goal, `Sources:`, `depends_on` and `ownership`
-   intact. For active work the action is observing the original continuation; for
+   checks, stop/next step, with any existing goal, source links, `depends_on` and
+   `ownership` intact. For active work the action is observing the original continuation; for
    held work, the precise missing input. Link accepted depth instead of duplicating
    it; similar titles do not prove redundant acceptance. Prefer reconciling a
    reviewed candidate over a new coding task, and keep convenience wrappers from
@@ -77,8 +77,10 @@ require a separate authorized task.
 3. Do not edit an admitted task's contract while its worker may depend on it;
    return the proposal to its coordinator. Check the launcher's admission contract
    before promising fewer runs: shared artifacts do not remove dependencies.
-4. Keep general workflow links in a separate note or navigation, not `Sources:`:
-   another accepted source there makes the governing plan ambiguous.
+4. Keep general workflow links in navigation and diagnostic evidence in additive
+   notes. `Sources:` links relevant accepted intent; when a task has a governing
+   plan, distinguish that owner from supporting references rather than inventing
+   a plan for an ordinary task.
 5. Edit records in place with `autowork tasks field`; Git history keeps the
    previous text. Verify one record per open ID, unchanged sections and ranks,
    acceptance and command literals. Missing environment or owner inputs remain

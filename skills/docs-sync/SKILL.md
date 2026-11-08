@@ -324,7 +324,7 @@ converts or initializes anything by hand:
 | --- | --- | --- |
 | `READY` | A valid store (working tree when task files are uncommitted) | Work the diagnostics, then reconcile |
 | `MIGRATED` | Converted TODO.md + goals.json now, one local commit | Reconcile; report the conversion commit |
-| `NO_STORE` | No store; `documents` and `accepted` headings listed | Bootstrap from accepted headings only |
+| `NO_STORE` | No store; `documents` and `accepted` headings listed | Bootstrap tasks from the accepted request or existing requirements; no separate plan or goal is required |
 | `MIGRATION_DEFERRED` | Work was in flight; nothing was written to the repository, and the request is recorded. The repository's runner (on this release) starts nothing new, lets live workers finish, sets the remaining attempts aside with their work kept, and converts. Exit status 3 | Report it as pending, not done; continue document work; run prepare again later |
 | `MIGRATION_BLOCKED` | A safety refusal (planning drift, an invalid queue, remaining legacy consumers, a preservation-path collision), or a deferral without commit authority | Resolve from evidence within scope, or report the exact missing authority |
 | `INVALID_STORE` | Refused with `path:line` errors | Fix that line from its accepted source or Git history, then rerun |
@@ -482,11 +482,11 @@ leaves `tasks/` byte-identical on repeat.
 5. Deduplicate against existing records before adding: `autowork tasks list` and
    `show` the candidates sharing a goal or outcome.
 
-When graph analysis was used or explicitly required, include `Graph evidence:` in
-the affected task's `Sources:` note: verified nodes/paths, confidence and coverage,
-or the graph gap. Otherwise cite direct source evidence without inventing graph
-metadata. Derive bounded outcome slices, blast radius and real prerequisites from
-corroborated relationships, not graph centrality alone.
+When graph analysis was used or explicitly required, save a separate
+`Graph evidence:` note under the [graph-evidence rules](references/graphify-analysis.md).
+Keep `Sources:` for relevant intent links. Otherwise cite direct source evidence
+without inventing graph metadata. Derive bounded outcome slices, blast radius and
+real prerequisites from corroborated relationships, not graph centrality alone.
 
 ### Task contract
 
@@ -573,8 +573,10 @@ confirm with `autowork tasks why ID` that it is not selected.
 To simplify tasks or speed Autowork, give each live record one concrete next action
 and remove repeated discovery or rationale; keep IDs, rank, scope, acceptance,
 mandatory checks, dependencies, ownership, live gates and verified partial delivery.
-Git history keeps the earlier text. Keep each `Sources:` note bound to its exact
-accepted product-plan heading; a queue-simplification plan does not replace it.
+Git history keeps the earlier text. Preserve existing accepted intent links in
+`Sources:`. When a task has a governing product plan, keep its exact accepted
+heading; a queue-simplification plan does not replace it. Ordinary tasks need no
+new plan heading.
 Never rewrite a running worker's admitted contract. Report prose reduction, not
 measured speedup. Follow
 [queue compaction](references/decisive-planning.md#compact-an-existing-queue).

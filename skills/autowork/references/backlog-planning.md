@@ -83,8 +83,9 @@ Do not duplicate its unchanged plan or evade a shared integration conflict.
    Keep live gates on their own task. Do not remove real dependencies or duplicate
    already implemented work to increase task counts.
 4. Load docs-sync narrow Maintain with these findings. Reuse tasks before adding
-   them; add complete tasks and goals with `autowork tasks add` / `autowork tasks goal`
-   under the current authorized coordinator, run `autowork tasks validate --worktree .`
+   them; follow [ordinary authoring](../../shared/TODO-WORKCENTER.md#ordinary-authoring)
+   with `autowork tasks add`, using `autowork tasks goal` only for shared outcomes.
+   Under the current authorized coordinator, run `autowork tasks validate --worktree .`
    and commit. An owner's section and rank edits stand; place new tasks around them.
    Respect Graphify requirements, actual live writers and source-bound revision
    guards. Do not require external owner acknowledgement for ordinary local work.
