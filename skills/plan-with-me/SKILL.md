@@ -130,7 +130,7 @@ accepting a pitch does not approve an unseen mockup or added requirement.
 
 In writable mode, run a narrow docs-sync Maintain pass for the affected document
 owners. Accepted intent becomes bounded Now/Next tasks, saved with
-`autowork tasks add` (and their goal with `autowork tasks goal`), with dependencies,
+`autowork tasks add` (optionally group a multi-task outcome with `autowork tasks goal`), with dependencies,
 acceptance, verification and `touches` (plus `resources` where needed) per the
 [work center](../shared/TODO-WORKCENTER.md). Cut and write them by the
 [planning craft](../shared/PLANNING-CRAFT.md#size-each-task). For future work whose
@@ -141,7 +141,8 @@ Run the [builder check](../shared/PLANNING-CRAFT.md#builder-check-before-handoff
 the saved tasks and fold its answers in. Validate changed docs and run
 `autowork tasks validate --worktree .`; fix every error and every draft you did not mean. Then commit
 the batch once. Put the accepted-plan anchor in each affected task's `Sources:` note
-and its goal's `source`. After the commit, `autowork tasks why ID` reports
+and, when used, its goal's `source`. Ordinary tasks need no separate plan or goal;
+reference shared intent instead of copying their contract. After the commit, `autowork tasks why ID` reports
 committed-store selection eligibility and position only, not resource/ownership
 admission, capacity or dispatch. Report the selection-ready first task separately
 from a dependent successor: a successor waiting on its dependency is normal ordering,

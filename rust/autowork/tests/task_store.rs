@@ -106,6 +106,35 @@ impl Drop for Repo {
 }
 
 #[test]
+fn ungrouped_tasks_preserve_contracts_and_dependency_guards() {
+    let r = Repo::new();
+    let original = TaskStore::read_at(&r.0, "HEAD").unwrap();
+    let hash = original.tasks()["T-1"].contract_hash.clone();
+    let ungrouped = TASK.replace("goal = \"G-1\"\n", "");
+    r.write("tasks/items/T-1.md", &ungrouped);
+    r.write(
+        "tasks/items/WAIT.md",
+        ungrouped
+            .replace("id = \"T-1\"", "id = \"WAIT\"")
+            .replace("depends_on = []", "depends_on = [\"T-1\"]"),
+    );
+    r.commit();
+    let snapshot = TaskStore::read_at(&r.0, "HEAD").unwrap();
+    assert_eq!(snapshot.tasks()["T-1"].contract_hash, hash);
+    assert!(!snapshot.tasks()["T-1"].draft());
+    let selection = snapshot.select(&Scope::default()).unwrap();
+    assert_eq!(selection.task_ids, vec!["T-1"]);
+    assert_eq!(selection.blocked["WAIT"].code, "DEPENDENCY_UNFINISHED");
+    r.write(
+        "tasks/items/T-1.md",
+        ungrouped.replace("touches = [\"src/\"]", "touches = []"),
+    );
+    r.commit();
+    let snapshot = TaskStore::read_at(&r.0, "HEAD").unwrap();
+    assert!(snapshot.tasks()["T-1"].draft());
+}
+
+#[test]
 fn pinned_selection_preserves_contracts() {
     let r = Repo::new();
     r.write(

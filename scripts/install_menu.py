@@ -4,7 +4,7 @@
     install.sh                every available component, live output and exact commands
     install.sh --menu         a checkbox menu on a terminal (arrows, Space, Enter)
     install.sh --full          the full suite for available hosts, no menu (--all also works)
-    install.sh update          update the installed suite in place (the same items as --full)
+    install.sh update          explicitly refresh the installed suite (same items as --full)
     install.sh --only tx,pi    just these; --skip hermes leaves those out
     install.sh --list          the items and whether each host is available
     install.sh --dry-run ...   print each command instead of running it
@@ -272,7 +272,9 @@ def pi_package(source=PI_SOURCE):
     for i, line in enumerate(lines):
         # Pi marks a package with a filter as `<source> (filtered)`.
         if line.split()[:1] == [source] and i + 1 < len(lines):
-            return Path(lines[i + 1].strip())
+            package = Path(lines[i + 1].strip())
+            if package.is_dir():
+                return package
     return None
 
 
@@ -479,13 +481,28 @@ def drop_codex_plugin():
 OCTET_INSTALLER = 'https://octet.skaft.org/install'
 
 
-def install_octet(output=None):
-    """Run release-bound upstream tooling unchanged; upstream owns integrity and placement."""
+def octet_version(destination):
+    """Verify the selected destination, never a different executable on PATH."""
+    version = subprocess.run([str(destination / 'octet'), '--version'],
+                             stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                             errors='replace', timeout=5)
+    if version.returncode or not re.fullmatch(r'octet [0-9]+\.[0-9]+\.[0-9]+\n?', version.stdout):
+        raise OSError('Octet destination version verification failed')
+    return version.stdout.strip()
+
+
+def install_octet(output=None, update=False):
+    """Reuse a working binary on install; upstream owns explicit updates and repairs."""
     output = output or Output()
+    destination = BIN.absolute()
+    if not update and (destination / 'octet').is_file():
+        try:
+            return f'{destination / "octet"}: {octet_version(destination)} (already installed; kept)'
+        except (OSError, subprocess.SubprocessError):
+            pass  # Broken destination: retry the official installer, never force placement.
     for command in ('curl', 'sh', 'python3', 'uname'):
         if not shutil.which(command):
             raise OSError(f'Octet requires {command}; install it and retry --only octet')
-    destination = BIN.absolute()
 
     def run(argv, stage, env=None):
         if output.verbosity > 1:
@@ -510,13 +527,10 @@ def install_octet(output=None):
             run(['sh', str(installer)], 'Octet upstream installer failed', env)
             # Upstream proves the exact release version before and after placement.
             # Read back the destination, never a different Octet earlier on PATH.
-            version = subprocess.run([str(destination / 'octet'), '--version'],
-                                     stdin=subprocess.DEVNULL, capture_output=True, text=True, errors='replace', timeout=5)
-            if version.returncode or not re.fullmatch(r'octet [0-9]+\.[0-9]+\.[0-9]+\n?', version.stdout):
-                raise OSError('Octet destination version verification failed')
+            version = octet_version(destination)
         except (OSError, subprocess.SubprocessError) as exc:
             raise OSError(f'{exc}; upstream may have left a partial installation; no rollback performed') from exc
-    return f'{destination / "octet"}: {version.stdout.strip()}'
+    return f'{destination / "octet"}: {version}'
 
 
 def install_octet_skills():
@@ -591,7 +605,7 @@ def install_octet_skills():
     return f'{len(sources)} Kit skills and {len(prompts)} prompts ready in {destination.parent} ({updated} updated){note}'
 
 
-def octet_item(output=None):
+def octet_item(output=None, mode='install'):
     system, machine = platform.system(), platform.machine().lower()
     supported = ((system == 'Darwin' and machine in ('x86_64', 'arm64', 'aarch64'))
                  or (system == 'Linux' and machine in ('x86_64', 'amd64')
@@ -600,21 +614,24 @@ def octet_item(output=None):
     return Item('octet', 'Octet official stable native binaries + Kit skills',
                 note='bootstraps the CLI and native skills; no optional extensions',
                 missing='' if supported else f'unsupported Octet binary platform: {system} {machine} (needs GNU/Linux x86-64 or macOS x86-64/arm64)',
-                steps=[Step(f'download {OCTET_INSTALLER} privately; run unmodified sh installer in binary mode '
+                steps=[Step(('refresh Octet; ' if mode == 'update' else 'reuse a working destination or bootstrap Octet; ')
+                            + f'download {OCTET_INSTALLER} privately when needed; run unmodified sh installer in binary mode '
                             f'with OCTET_INSTALL_DIR={destination} OCTET_NO_MODIFY_PATH=1; '
-                            f'verify {destination}/octet --version', run=lambda: install_octet(output)),
+                            f'verify {destination}/octet --version', run=lambda: install_octet(output, update=mode == 'update')),
                        Step(f'install Kit skills in {HOME / ".octet/skills"} from this checkout',
                             run=install_octet_skills)])
 
 
-def items(hermes_args, output=None):
+def items(hermes_args, output=None, mode='install'):
     package = pi_package()
     pi = Item('pi', 'Pi package + bundled Ponytail', needs='pi', note='needs Node 22+')
     if package:
-        # Brought to the latest release here; the runners move onto it at their next safe point.
-        # Leaving it to them kept this host's command and skills a release behind for hours.
-        pi.note = f'installed at {package}; updated here, and its runners move onto it at a safe point'
-        pi.steps.append(Step(f'pi update {PI_SOURCE}', ['pi', 'update', PI_SOURCE]))
+        pi.note = f'installed at {package}; use install.sh update to refresh'
+        if mode == 'update':
+            pi.steps.append(Step(f'pi update {PI_SOURCE}', ['pi', 'update', PI_SOURCE]))
+        else:
+            pi.steps.append(Step(f'keep the installed Pi package at {package}',
+                                 run=lambda: f'{PI_SOURCE} already installed at {package}; kept'))
     else:
         pi.steps.append(Step(f'pi install {PI_SOURCE}', ['pi', 'install', PI_SOURCE]))
     # `pi config` filters outlive the install, so enable the package resources here.
@@ -655,7 +672,7 @@ def items(hermes_args, output=None):
                     Step('drop the cached plugin', run=drop_codex_plugin),
                     Step(f'codex plugin add {CODEX_PLUGIN}@{CODEX_MARKETPLACE}',
                          ['codex', 'plugin', 'add', f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'])]),
-        octet_item(output),
+        octet_item(output, mode=mode),
     ]
 
 
@@ -926,7 +943,7 @@ def main(argv=None):
                               ('--yes-deps', args.yes_deps), ('--dry-run', args.dry_run)) if on]
     if args.hermes_home:
         hermes += ['--hermes-home', args.hermes_home]
-    all_items = items(hermes, output)
+    all_items = items(hermes, output, mode=args.command)
     keys = [i.key for i in all_items]
     for given in (args.only, args.skip):
         unknown = [k for k in (given or '').split(',') if k and k not in keys]

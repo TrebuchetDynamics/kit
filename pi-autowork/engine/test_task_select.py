@@ -135,6 +135,21 @@ class SelectionParityTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 
+    def test_ungrouped_tasks_keep_focus_order_and_task_dependencies(self):
+        root = Path(self.tmp.name) / 'ungrouped'
+        store = build(root, 'G', [goal('G')],
+                      [task('U'), task('WAIT', depends_on=['U']), task('FOCUSED')])
+        for tid in ('U', 'WAIT'):
+            path = root / f'tasks/items/{tid}.md'
+            path.write_text(path.read_text().replace('goal = "G"\n', ''))
+        subprocess.run(['git', '-C', str(root), '-c', 'user.email=f@example.invalid', '-c', 'user.name=F',
+                        'commit', '-qam', 'ungroup tasks'], check=True, capture_output=True)
+        store = TaskStore.at(root, 'HEAD')
+        self.assertEqual([t.id for t in task_select.order(store)], ['FOCUSED', 'U'])
+        self.assertEqual(task_select.why(store, 'WAIT')[1][0].code, 'DEPENDENCY_UNFINISHED')
+        self.assertEqual([t.id for t in task_select.order(store, done=['U'])], ['FOCUSED', 'U', 'WAIT'])
+        self.assertEqual(list(store.goals), ['G'])
+
     def test_each_fixture_selects_like_the_todo_queue(self):
         for index, (name, (focus, goals, tasks, expected)) in enumerate(FIXTURES.items()):
             with self.subTest(fixture=name):

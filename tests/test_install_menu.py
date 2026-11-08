@@ -358,6 +358,40 @@ fi
                 self.assertFalse(list(outside.iterdir()))
                 self.assertFalse(list(home.glob('.octet/skills/*/SKILL.md')))
 
+    def test_octet_install_is_idempotent_but_update_refreshes(self):
+        dest = self.home / 'custom bin'
+        env = {'AUTOWORK_BIN_DIR': str(dest)}
+        first = self.install('--only', 'octet', env=env)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        binary = dest / 'octet'
+        before = binary.stat().st_mtime_ns
+        skills = {p: p.stat().st_mtime_ns for p in (self.home / '.octet').rglob('*.md')}
+        second = self.install('--only', 'octet', env=env)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn('already installed', second.stdout)
+        self.assertEqual(len(self.calls('curl')), 1)
+        self.assertEqual(len(self.calls('octet-installer')), 1)
+        self.assertEqual(binary.stat().st_mtime_ns, before)
+        self.assertEqual({p: p.stat().st_mtime_ns for p in skills}, skills)
+        updated = self.install('update', '--only', 'octet', env=env)
+        self.assertEqual(updated.returncode, 0, updated.stdout + updated.stderr)
+        self.assertEqual(len(self.calls('octet-installer')), 2)
+
+    def test_pi_install_is_idempotent_and_stale_registration_is_repaired(self):
+        (self.home / 'pi-installed').write_text(NEW + '\n')  # absent package directory
+        first = self.install('--only', 'pi')
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        settings = self.home / '.pi/agent/settings.json'
+        settings.parent.mkdir(parents=True)
+        settings.write_text(json.dumps({'packages': [{'source': NEW, 'skills': [], 'extensions': []}]}))
+        second = self.install('--only', 'pi')
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn('already installed', second.stdout)
+        self.assertEqual(self.calls('pi install'), [f'pi install {NEW}'])
+        self.assertEqual(self.calls('pi update'), [])
+        self.assertEqual(json.loads(settings.read_text())['packages'], [NEW])
+        self.assertIn('Restart active Kit services', second.stdout)
+
     def test_octet_bootstrap_uses_official_stable_installer(self):
         import hashlib
         dest = self.home / 'custom bin'
@@ -420,6 +454,7 @@ fi
                 self.assertFalse((self.home / '.octet').exists())
         for prerequisite in ('curl', 'sh', 'python3', 'uname'):
             with self.subTest(prerequisite=prerequisite), \
+                 patch.object(install_menu, 'BIN', destination.parent), \
                  patch.object(install_menu.shutil, 'which',
                               side_effect=lambda name: None if name == prerequisite else '/fixture/' + name):
                 output = io.StringIO()
@@ -684,7 +719,8 @@ exit 0
 
     def test_an_installed_package_is_updated_and_its_runners_move_onto_it(self):
         (self.home / 'pi-installed').write_text(NEW + '\n')
-        result = self.install('--only', 'pi')
+        (self.home / 'pkg/kit').mkdir(parents=True)
+        result = self.install('update', '--only', 'pi')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.calls('pi install'), [])
         self.assertEqual(self.calls('pi update'), [f'pi update {NEW}'])
@@ -953,7 +989,7 @@ fi
         result = self.install('--only', 'pi,autowork')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('pi install'), [])
-        self.assertEqual(self.calls('pi update'), [f'pi update {NEW}'])
+        self.assertEqual(self.calls('pi update'), [])
         self.assertEqual(Path(os.readlink(self.home / '.local/bin/autowork')), package / 'pi-autowork/bin/autowork')
 
     def test_install_clears_empty_pi_filters_that_hide_skills_and_commands(self):

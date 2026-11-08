@@ -160,7 +160,7 @@ _CLOSURE_FIELDS = ('closure', 'closure_actor', 'closure_timestamp', 'closure_rea
 _PLANNER_NOTE = re.compile(
     r'\s*-?\s*(Evidence|Verified|Held by|Owner (decision|waiver|qualification)|Live authorization)\s*:', re.I)
 _TASK_STRINGS = ('id', 'title', 'short', 'status', 'goal', 'section', 'scope')
-_TASK_REQUIRED = (*_TASK_STRINGS, 'rank', *_TASK_LISTS, 'kind', 'ownership')
+_TASK_REQUIRED = (*(key for key in _TASK_STRINGS if key != 'goal'), 'rank', *_TASK_LISTS, 'kind', 'ownership')
 _GOAL_REQUIRED = ('id', 'title', 'priority', 'source', 'status', 'focus')
 # Status is a transition, not contract: closing a task must keep the hash its verification
 # pinned. Consumers check done and superseded explicitly; Needs decision is section_group.
@@ -278,7 +278,7 @@ class _Document:
     def validate(self, goal=False):
         required = _GOAL_REQUIRED if goal else _TASK_REQUIRED
         allowed = {'schema', *required} | ({'depends_on'} if goal else
-                                           {'live', 'verified_depends_on', *_CLOSURE_FIELDS, *_AUTHORITY_FIELDS})
+                                           {'goal', 'live', 'verified_depends_on', *_CLOSURE_FIELDS, *_AUTHORITY_FIELDS})
         for key in self.data.keys() - allowed:
             self.fail(f'unknown field {key}', key)
         for key in (_GOAL_REQUIRED if goal else _TASK_STRINGS):

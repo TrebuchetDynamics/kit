@@ -82,7 +82,7 @@ export const goalSchema = z.object({ id: idSchema, title: z.string(), priority: 
 export const taskKindSchema = z.enum(['implementation', 'plan', 'inspection']);
 export const ownershipSchema = z.enum(['worker', 'coordinator', 'owner']);
 export const taskFieldsSchema = z.strictObject({
-  goal: idSchema, title: text(300), short: text(80), section: sectionSchema.optional(), scope: optionalText(),
+  goal: idSchema.optional(), title: text(300), short: text(80).optional(), section: sectionSchema.optional(), scope: optionalText(),
   kind: taskKindSchema.optional(), ownership: ownershipSchema.optional(), id: idSchema.optional(), sources: optionalText(500),
   acceptance: z.array(text(2000)).max(32).optional(), checks: z.array(text(2000)).max(32).optional(),
   touches: z.array(text(500)).max(64).optional(), depends_on: z.array(idSchema).max(64).optional(),
