@@ -17,6 +17,21 @@ HANDOFF = 'skills/shared/PLAN-HANDOFF.md'
 INTERACTIVE = ('skills/plan-with-me/SKILL.md', 'adapters/skills/plan-with-me/SKILL.md')
 AUTONOMOUS = (PLANNER, 'adapters/skills/plan-for-me/SKILL.md')
 SPECIAL_CASES = 'skills/plan-with-me/references/special-cases.md'
+TASK_WRITING_LINKS = (
+    *((path, ('../../../skills/shared/' if path.startswith('adapters/') else '../shared/')
+       + 'RESEARCH-PLAN.md') for path in (*INTERACTIVE, *AUTONOMOUS)),
+    ('skills/docs-sync/SKILL.md', '../shared/TODO-WORKCENTER.md'),
+    ('adapters/skills/docs-sync/SKILL.md', '../../../skills/docs-sync/SKILL.md'),
+    ('skills/autoresearch/SKILL.md', '../shared/RESEARCH-PLAN.md'),
+    ('adapters/skills/autoresearch/SKILL.md', '../../../skills/shared/TODO-WORKCENTER.md'),
+    ('skills/autowork/SKILL.md', '../shared/TODO-WORKCENTER.md'),
+    ('adapters/skills/autowork/SKILL.md', '../../../skills/autowork/SKILL.md'),
+    ('skills/autowork/references/backlog-planning.md', '../../shared/TODO-WORKCENTER.md'),
+    ('skills/plan-for-me/references/discovery.md', '../../shared/RESEARCH-PLAN.md'),
+    ('skills/goal/SKILL.md', '../shared/COMMON-CONTRACT.md'),
+    ('skills/autonomous-codebase-improver/SKILL.md', '../shared/TODO-WORKCENTER.md'),
+    ('skills/shared/COMMON-CONTRACT.md', 'TODO-WORKCENTER.md'),
+)
 
 
 def prose(path):
@@ -102,23 +117,26 @@ class PlanningCliContractTests(unittest.TestCase):
         for required in ('operation-local', 'reread', 'reapply', 'blind retry', 'stale full snapshot'):
             self.assertIn(required, center)
 
+    def assert_task_writing_routes(self):
+        for path, link in TASK_WRITING_LINKS:
+            with self.subTest(route=path):
+                self.assertRegex(prose(path), r'\]\(' + re.escape(link) + r'(?:#[^)]+)?\)')
+                self.assertTrue((ROOT / path).parent.joinpath(link).is_file())
+
     def test_planners_share_descriptive_task_name_policy(self):
         protocol = 'skills/shared/RESEARCH-PLAN.md'
         craft = 'skills/shared/PLANNING-CRAFT.md'
-        for path in (*INTERACTIVE, *AUTONOMOUS):
-            relative = ('../../../skills/shared/' if path.startswith('adapters/') else '../shared/')
-            with self.subTest(entrypoint=path):
-                self.assertIn(relative + 'RESEARCH-PLAN.md', prose(path))
+        self.assert_task_writing_routes()
         records = prose(protocol).split('### Task records', 1)[1].split('## Full requested batch', 1)[0]
         naming = prose(craft).split('## Name things precisely', 1)[1].split('## Plan for an unattended worker', 1)[0]
         for section in (records, naming):
             self.assertIn('TODO-WORKCENTER.md#task-names', section)
-        policy = prose(WORKCENTER).split('### Task names', 1)[1].split('## Read orders before selecting', 1)[0]
+        policy = prose(WORKCENTER).split('### Task names', 1)[1].split('### Task descriptions', 1)[0]
         for rule in ('concrete action or observable outcome', 'affected component or user-visible object',
                      'without opening the task', 'condition or failure case only when',
                      'action-led', 'outcome-led', 'padding', 'unexplained acronyms',
                      'Improve', 'Fix', 'Update', 'standalone summary of at most 40 characters',
-                     'distinguishing object and outcome', 'Do not merely truncate',
+                     'distinguishing object and outcome', 'Do not merely truncate', 'beside sibling tasks',
                      'repeat the ID', 'Before saving', 'creating or materially refining',
                      'both planning modes', 'no extra interview',
                      'meaning, acceptance, ID, authority or status',
@@ -135,6 +153,23 @@ class PlanningCliContractTests(unittest.TestCase):
             with self.subTest(example=kind):
                 self.assertIn(f'| {kind} | {weak} | {title} | {short} |', policy)
                 self.assertLessEqual(len(short), 40)
+
+    def test_task_writers_share_actionable_description_policy(self):
+        self.assert_task_writing_routes()
+        for path in ('skills/shared/RESEARCH-PLAN.md', HANDOFF):
+            self.assertIn('TODO-WORKCENTER.md#task-descriptions', prose(path))
+        policy = prose(WORKCENTER).split('### Task descriptions', 1)[1].split('## Read orders before selecting', 1)[0]
+        for rule in ('Plan For Me', 'Plan With Me', 'Docs Sync', 'Autoresearch', 'Autowork discovery',
+                     'other task-producing skills', 'intended behavior change', 'bounded context',
+                     'not just a path list', 'constraints and exclusions', 'concrete first action',
+                     'source-backed decisions', 'required inputs', 'observable results', 'exact commands',
+                     'future tests unrun', 'genuinely unavailable', 'resume condition',
+                     'brief notes only where they add information', 'Do not repeat',
+                     'Link shared workflow rules', 'mandatory checks', 'as an implementer',
+                     'unresolved intent stays explicit', 'active contract', 'No fixed prose length',
+                     'not a schema or CLI quality gate'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, policy)
 
     def test_identifier_guidance_matches_current_allocation_without_renaming_history(self):
         center = prose(WORKCENTER)
