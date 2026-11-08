@@ -149,7 +149,12 @@ See [restart scope and failure handling](docs/installation.md#full-suite-from-a-
 Hermes still runs its complete fleet setup and its own dependency and
 security prompts; use `--yes-deps` only when you intend to consent to them.
 
-Octet bootstraps even when its CLI is absent. Default/`--all` and `update` use the
+Ordinary installs reuse the installed Pi package and a working Octet binary in the
+selected destination. `./install.sh update` explicitly refreshes both. Kit skill
+and settings reconciliation still runs, as does the service-restart phase.
+
+Octet bootstraps when its destination binary is absent or fails version verification.
+Bootstrap and explicit updates use the
 [official stable installer](https://octet.skaft.org/install); `--only octet` selects
 it alone and `--skip octet` excludes it. It supports GNU/Linux x86-64 and macOS
 x86-64/arm64, needs `curl`, `sh`, Python 3 and native verification utilities, and

@@ -82,6 +82,12 @@ which supports none of those three and can restart gateways on ordinary updates,
 Hermes item instead of being ignored. Host security and dependency prompts still
 apply; full mode does not supply consent flags.
 
+Ordinary installs reuse an already registered Pi package when its directory exists;
+a stale registration with a missing directory is reinstalled. They do not run
+`pi update`. Empty package filters are still reconciled so skills and commands
+remain enabled. `./install.sh update --only pi` explicitly updates an existing
+package, or installs it when absent.
+
 ### Octet native binaries
 
 Default, `--all`/`--full` and `update` include `octet`, even without an existing
@@ -90,7 +96,15 @@ Octet CLI. Use `./install.sh --only octet` to install Octet and its Kit skills,
 `--skip octet` to leave it out. `--list` and `--dry-run` do not download or execute
 Octet tooling, and skipping Octet leaves its files untouched.
 
-Kit downloads the [official stable installer](https://octet.skaft.org/install)
+Ordinary installs first verify `octet --version` in the selected binary directory.
+A successful version check reuses that binary without downloading or rerunning the
+upstream installer. It does not check whether a newer release exists. Missing,
+non-executable or invalid-version destinations retry the official bootstrap;
+upstream collision and integrity checks still apply. Kit skill/prompt reconciliation
+and the suite's mandatory service-restart phase still run. Explicit `update`
+always refreshes the binary through the upstream installer.
+
+When bootstrap or update is needed, Kit downloads the [official stable installer](https://octet.skaft.org/install)
 from [skaft-software/octet](https://github.com/skaft-software/octet) into a private
 temporary file with HTTPS-only redirects, a 15-second connection timeout, a
 300-second transfer limit and a 1 MiB size limit. It runs the published file
@@ -99,7 +113,7 @@ unmodified with `sh`, in default native binary mode (never `--from-source`).
 `AUTOWORK_BIN_DIR`); `OCTET_NO_MODIFY_PATH=1` leaves shell profiles unchanged.
 The summary reads `--version` from that destination executable, not from PATH.
 There is no Rust, npm or Homebrew fallback and no Kit-pinned Octet version:
-reruns follow the current official stable release.
+bootstrap and explicit updates follow the current official stable release.
 
 Supported targets are GNU/Linux x86-64 (not musl) and macOS x86-64/arm64.
 Unsupported platforms are skipped by default and fail when explicitly requested
@@ -116,7 +130,8 @@ success. Pre-placement integrity/version refusals preserve an existing binary.
 Upstream places executables and packaged data in separate steps, so execution
 or final version failure can leave a **partial installation**: no rollback is
 claimed or performed. Inspect the native diagnostics, resolve the cause, then
-retry `./install.sh --only octet`.
+retry `./install.sh update --only octet` to rerun upstream placement even when
+the binary already passes its version check.
 
 After the binary version check, this component installs every portable Kit skill
 from `adapters/skills/` as a regular `~/.octet/skills/<name>/SKILL.md` entrypoint.
