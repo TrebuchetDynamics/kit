@@ -11,12 +11,14 @@ and [upstream license notice](THIRD_PARTY_NOTICES.md).
 
 ## Build and offline checks
 
-From the repository root, use Rust/Cargo 1.95.0, Git, a C compiler and a linker:
+From the repository root, use Rust/Cargo 1.95.0, Git, a C compiler and a linker.
+The task store also uses the Linux `sha256sum` and `date` utilities:
 
 ```sh
 RUSTUP_TOOLCHAIN=1.95.0 cargo build --locked --manifest-path rust/autowork/Cargo.toml
 RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test runtime_native
 RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test cli
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test task_store
 ```
 
 The native tests use a local OpenAI Chat-compatible HTTP fixture through the real
@@ -32,6 +34,63 @@ Otherwise, the operating system assigns local ports. Test files use `TMPDIR`.
 
 These checks do not qualify a live provider, task completion, integration,
 publication, deployment, devices or sustained service operation.
+
+## Revision-bound task store
+
+[`task_store.rs`](src/task_store.rs) implements the current
+[schema-1 contract](../../pi-autowork/task-store.md), without a Python runtime or
+another queue. `TaskStore::read_at(repo, revision)` resolves a commit once, disables
+Git replacement refs and inherited `GIT_*` redirection, and eagerly reads its
+records and evidence. `Snapshot::revision()`, `records()`, `tasks()` and `goals()`
+expose immutable views. Record revisions hash exact bytes; contract hashes retain
+the current canonical JSON rules. Free Markdown notes and historical IDs are not
+rewritten. Missing task fields remain drafts; malformed records refuse the store.
+
+`Snapshot::select(&Scope)` orders eligible IDs by focus, section, rank, goal
+priority, goal status and ID. An empty scope includes all tasks, including planning
+tasks. `Selection::blocked` names blocking rules. `select_on(scope, YYYY-MM-DD)`
+accepts an explicit local date for repeatable expiring-hold decisions; `select`
+uses today's local date. Needs-decision records, holds, unfinished dependencies
+and unqualified verified dependencies stay blocked. A passing receipt must bind
+the contract to a real two-parent integration ancestor and its candidate/tree;
+legacy waiver prose alone qualifies nothing. Selection does not evaluate runtime
+pauses, leases, resources or caller authority. The coordinator must retain those
+admission gates and protect active contracts before applying a proposal.
+
+`TaskService::new(repo_root)` binds writes to one checkout. `apply(base, proposal)`
+requires the full HEAD commit in both base fields, plus each changed record's
+SHA-256 revision (an empty string means a new path). It validates the whole proposed
+store before writing, compares inputs again, and preserves the proposed bytes
+without normalization. Planner changes cannot alter existing ownership, closure,
+owner attestations, live gates or protected evidence/hold/owner notes. The result
+is only `PendingEdit`; committed selection does not advance.
+
+Writers and recovery hold `<git dir>/autowork-tasks.lock`. A flushed
+`autowork-rust-tasks.transaction` undo journal precedes replacements. Removing and
+syncing the journal commits the working-tree batch, not a Git revision. `recover()`
+(and the next `apply`) rolls back an interrupted batch. Recovery preserves external
+edits and retains the journal/original bytes on conflicts; reconcile the named
+paths, journal and any `.autowork-rust.undo` file before retrying. Do not delete a
+journal to bypass recovery. Python journals require recovery by their owning
+runtime; never run Python and Rust writers concurrently. Direct editors that skip
+the lock do not get an atomic multi-file view.
+
+`capture_pending()` refuses an interrupted transaction without recovering it. It
+returns frozen `base_head`, full branch ref, candidate `tree`, all candidate
+record `captured_bytes` and a content-bound `token`. A temporary index starts at
+HEAD and changes only task/goal record entries, using exact bytes without Git
+clean filters. Unrelated staged content and pending evidence edits cannot enter
+that tree; the real index, refs and HEAD stay unchanged. Candidate blobs/trees
+remain in Git's object database for publication. A pending tree/token is not a
+selectable committed revision. The coordinator owns drift checks, tasks-only
+commit publication and publication crash recovery; this API never commits or pushes.
+
+The Rust-owned fixtures retain the existing schema-1 sample and static SHA-256
+expectations. `pinned_selection_preserves_contracts` covers selection, notes,
+drafts, holds and dependency evidence. `transaction_refuses_stale_or_invalid_records`
+covers revision/authority refusal, batch validation, interrupted recovery,
+cooperative locking and index-isolated capture. These are offline checks, not
+runtime admission or live task-completion evidence.
 
 ## Coordinator API and authority
 
