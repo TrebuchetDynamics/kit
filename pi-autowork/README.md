@@ -436,6 +436,10 @@ Press **? More** to search all available actions and see their shortcuts. Choosi
 an action uses the same command and confirmation as its direct key. Read-only
 views list only read-only actions. Compact terminals show the primary actions in
 the menu; secondary actions remain in More and retain their keyboard shortcuts.
+Press **Ctrl+P** to search fleet commands, switch themes, or find screen-specific
+actions. The palette includes provider/model selection on the fleet and Pi login
+and refresh while the model picker is open. Read-only mode omits actions that
+change runner or repository state.
 
 The fleet separates **Runners**, **Workers** and **Activity** with labelled rules.
 Below 22 terminal rows, the selected summary uses three lines and keeps the main

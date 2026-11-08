@@ -33,7 +33,7 @@ from pi_autowork.tui_dialogs import Confirm  # noqa: E402
 from rich.text import Text  # noqa: E402  (installed with textual)
 from rich.cells import cell_len, set_cell_size  # noqa: E402
 from rich.style import Style  # noqa: E402
-from textual.app import App, ComposeResult  # noqa: E402
+from textual.app import App, ComposeResult, SystemCommand  # noqa: E402
 from textual.binding import Binding  # noqa: E402
 from textual.containers import Horizontal, Vertical, VerticalScroll  # noqa: E402
 from textual.screen import ModalScreen, Screen  # noqa: E402
@@ -658,20 +658,25 @@ class PickModel(ReadScreen, ModalScreen[str]):
         self.query_one('#model-status', Static).update('Refreshing models from Pi…')
         self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
 
+    def action_login(self):
+        if not self.login or not self.is_current:
+            return
+        self.invalidate_read()
+        self.query_one('#model-status', Static).update(
+            'In Pi, run /login and exit Pi to refresh this list.')
+        try:
+            self.login()
+        except OSError as error:
+            self.load_failed(error)
+            return
+        self.refresh_models()
+
     def on_button_pressed(self, event):
         if event.button.id == 'model-refresh':
             self.refresh_models()
         elif event.button.id == 'model-login' and self.login:
             event.stop()
-            self.invalidate_read()
-            self.query_one('#model-status', Static).update(
-                'In Pi, run /login and exit Pi to refresh this list.')
-            try:
-                self.login()
-            except OSError as error:
-                self.load_failed(error)
-                return
-            self.refresh_models()
+            self.action_login()
 
     def on_input_submitted(self, event):
         """Enter in the filter takes the first match."""
@@ -1888,6 +1893,38 @@ class FleetApp(App):
     ]
     CONTROL = {'run', 'browse', 'pick_model', 'answer_question', 'more'}
 
+    def get_system_commands(self, screen):
+        yield from super().get_system_commands(screen)
+        if isinstance(screen, PickModel):
+            if screen.login:
+                yield SystemCommand('Login in Pi', 'Sign in to a Pi provider, then refresh models',
+                                    screen.action_login)
+            if screen.loader:
+                yield SystemCommand('Refresh Pi models', 'Reload providers and models from Pi',
+                                    screen.refresh_models)
+            return
+        # The palette itself is an overlay; `screen` is the screen that was
+        # active when Ctrl+P was pressed, not the palette currently on top.
+        if not self.screen_stack or screen is not self.screen_stack[0]:
+            return
+        runner = self.current()
+        yield SystemCommand('Refresh Autowork fleet', 'Read the latest runner state', self.action_refresh)
+        yield SystemCommand('Search fleet actions', 'Open the searchable actions menu', self.action_more)
+        if not self.view_only:
+            yield SystemCommand('Choose provider and model', 'Select a Pi model for a runner',
+                                lambda: self.action_pick_model('model'))
+            yield SystemCommand('Browse repositories', 'Find and prepare a repository', self.action_browse)
+            yield SystemCommand('Plan work', 'Open planning for the selected repository or current directory',
+                                lambda: self.action_run('g'))
+        if runner is not None:
+            yield SystemCommand('Open activity log', 'Read recent runner output', lambda: self.action_run('l'))
+            yield SystemCommand('Open task inventory', 'Inspect the runner task queue', lambda: self.action_run('t'))
+            yield SystemCommand('Inspect blockers', 'Read the runner blockers report', self.action_show_blockers)
+            yield SystemCommand('Toggle runner details', 'Show or hide runner details', self.action_toggle_details)
+            if not self.view_only and self.answerable_questions(runner):
+                yield SystemCommand('Answer owner question', 'Choose and record an answer',
+                                    self.action_answer_question)
+
     def __init__(self, *, command, script, state_root, env_dir, systemctl='systemctl',
                  journalctl='journalctl', agent=None, runner_cmd=subprocess.run, view_only=False, browse_root=None,
                  list_models=fleet_view.models):
@@ -2360,14 +2397,15 @@ class FleetApp(App):
             publish_text(detail, Text(message))
             publish_text(self.query_one('#overview', Static), Text(message))
             self.query_one('#lanes', DataTable).display = False
-            menubar.show([('?', 'Help'), ('q', 'Quit')] if self.view_only else
-                         [('g', 'Plan'), ('m', 'Model'), ('n', 'Browse'), ('?', 'Help'), ('q', 'Quit')],
+            menubar.show([('ctrl+p', 'Commands'), ('?', 'Help'), ('q', 'Quit')] if self.view_only else
+                         [('g', 'Plan'), ('m', 'Model'), ('n', 'Browse'), ('ctrl+p', 'Commands'),
+                          ('?', 'Help'), ('q', 'Quit')],
                          click_actions=clicks)
             return
         # The keys go in the menu bar at the top, like a GUI app's menu; the pane holds the facts.
         if self.view_only:
             menubar.show([('l', 'Log'), ('i', 'Summary' if self.details_open else 'Details'),
-                          ('b', 'Blockers'), ('?', 'More'), ('q', 'Quit')], prefix='view only',
+                          ('b', 'Blockers'), ('ctrl+p', 'Commands'), ('?', 'More'), ('q', 'Quit')], prefix='view only',
                          click_actions=clicks)
         else:
             primary = [(a.key, a.label) for a in self.available(runner)]
@@ -2375,7 +2413,8 @@ class FleetApp(App):
                 primary = [(key, label) for key, label in primary if key in ('a', 'l', 'p', 't')]
             else:
                 primary += [('i', 'Summary' if self.details_open else 'Details'), ('b', 'Blockers')]
-            menubar.show(primary + [('?', 'More'), ('n', 'Browse'), ('q', 'Quit')], click_actions=clicks)
+            menubar.show(primary + [('ctrl+p', 'Commands'), ('?', 'More'), ('n', 'Browse'), ('q', 'Quit')],
+                         click_actions=clicks)
         text = Text()
         # First the answer to "is it stuck, and why": one sentence, wrapped, never cut.
         sentence, style = fleet_view.verdict(runner)

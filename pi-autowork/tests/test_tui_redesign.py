@@ -294,6 +294,39 @@ async def welcome_pilot():
         assert app.query_one('#empty-card').region.bottom <= 18
 
 
+async def palette_pilot():
+    from pi_autowork import tui
+    from textual.command import CommandList, CommandPalette
+    from textual.widgets import Input
+    async with fixture_app((80, 24)) as (app, pilot):
+        titles = {command.title for command in app.get_system_commands(app.screen)}
+        assert {'Refresh Autowork fleet', 'Search fleet actions', 'Choose provider and model',
+                'Browse repositories', 'Open activity log', 'Open task inventory'} <= titles, titles
+        await pilot.press('ctrl+p')
+        await pilot.pause()
+        assert isinstance(app.screen, CommandPalette), type(app.screen).__name__
+        command_list = app.screen.query_one(CommandList)
+        await pilot.pause(0.5)
+        discovered = [str(command_list.get_option_at_index(i).prompt)
+                      for i in range(command_list.option_count)]
+        assert any('Choose provider and model' in result for result in discovered), discovered
+        search = app.screen.query_one(Input)
+        search.value = 'choose provider and model'
+        await pilot.pause(0.5)
+        results = [str(command_list.get_option_at_index(i).prompt)
+                   for i in range(command_list.option_count)]
+        assert results and any('Choose provider and model' in result for result in results), results
+        await pilot.press('enter')
+        await settle(app, pilot)
+        assert isinstance(app.screen, tui.PickModel), type(app.screen).__name__
+        model_commands = {command.title for command in app.get_system_commands(app.screen)}
+        assert {'Login in Pi', 'Refresh Pi models'} <= model_commands, model_commands
+        await pilot.press('escape')
+        app.view_only = True
+        read_only = {command.title for command in app.get_system_commands(app.screen)}
+        assert 'Browse repositories' not in read_only and 'Choose provider and model' not in read_only
+
+
 class TuiRedesignTests(unittest.TestCase):
     def run_case(self, case):
         if not shutil.which('uv'):
@@ -320,6 +353,9 @@ class TuiRedesignTests(unittest.TestCase):
     def test_empty_fleet_has_responsive_guided_welcome(self):
         self.run_case('welcome')
 
+    def test_command_palette_exposes_contextual_autowork_actions(self):
+        self.run_case('palette')
+
 
 if __name__ == '__main__':
     if '--pilot' in sys.argv:
@@ -328,6 +364,7 @@ if __name__ == '__main__':
             publisher_contract()
         else:
             asyncio.run({'redraw': redraw_pilot, 'menu': menu_pilot,
-                         'layout': layout_pilot, 'welcome': welcome_pilot}[case]())
+                         'layout': layout_pilot, 'welcome': welcome_pilot,
+                         'palette': palette_pilot}[case]())
     else:
         unittest.main()
