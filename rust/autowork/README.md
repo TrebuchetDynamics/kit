@@ -1,7 +1,7 @@
 # Native-Octet Autowork candidate
 
-This Linux Rust component provides an owned-agent runtime, not the installed
-Python runner. `version` and `capabilities` work without a model. The coordinator
+This Linux Rust component provides an owned-agent runtime and durable journal,
+not the installed Python runner. `version` and `capabilities` work without a model. The coordinator
 `run` command remains unavailable. This component does not install a service,
 import global authentication, or replace an existing runner.
 
@@ -19,6 +19,7 @@ RUSTUP_TOOLCHAIN=1.95.0 cargo build --locked --manifest-path rust/autowork/Cargo
 RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test runtime_native
 RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test cli
 RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test task_store
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test state_recovery
 ```
 
 The native tests use a local OpenAI Chat-compatible HTTP fixture through the real
@@ -91,6 +92,72 @@ drafts, holds and dependency evidence. `transaction_refuses_stale_or_invalid_rec
 covers revision/authority refusal, batch validation, interrupted recovery,
 cooperative locking and index-isolated capture. These are offline checks, not
 runtime admission or live task-completion evidence.
+
+## Durable runtime journal
+
+[`state.rs`](src/state.rs) provides `StateStore::open(common_dir)`. The coordinator
+supplies the consumer repository's resolved Git common directory, not its checkout,
+the Kit source directory or an Octet session directory. The journal launches no
+processes. It uses only `<common_dir>/autowork-rust/journal.sqlite3` and its own lock,
+SQLite sidecars and migration backup. It does not read, import or write Python
+runtime state. Native sessions and source revisions remain separate inputs.
+
+The directory must be owned by the current user with no group/other permissions.
+Journal and lock files must also be private, regular and single-linked. The store
+holds `writer.lock` exclusively until it is dropped. All cooperating Rust journal
+writers for linked worktrees use that same common-directory lock. This does not
+lock the Python runner, direct editors or external Git commands. Do not run the
+Python and Rust coordinators against the same live work concurrently.
+
+SQLite uses immediate write transactions, WAL, `synchronous=FULL` and foreign keys.
+Linux mount information must identify a supported local filesystem: ext2/3/4,
+XFS, Btrfs, ZFS, tmpfs or overlay. Network, FUSE and unknown mounts are refused.
+Tmpfs supports restart recovery, not persistence across a host reboot. Unsupported
+newer schemas and nonempty unversioned databases are refused without resetting
+state. Schema 1 is the first version. Upgrading an existing empty schema-0 database
+retains `journal.schema-0.backup.sqlite3`; reopening after an interrupted upgrade
+validates and reuses that backup rather than overwriting it. Future nonempty schema
+migrations need their own supported, backed-up migration.
+
+Use `repo_id()` in each `RunIdentity`. It binds the journal to the canonical common
+directory, device and inode. `claim(previous_generation, identity, source_revision)`
+admits exactly the next per-task generation and records its `Ready` projection.
+The writer lease binds Linux PID, process birth ticks, boot ID and a durable owner
+epoch. Every write verifies that lease. A restart requires a new generation claim;
+it never adopts a retained PID or grants the old attempt new authority.
+
+`transition(expected_generation, Transition)` requires the current claimed task,
+attempt, role, contract and source revision. `Transition.key` is a repository-wide
+record key: retrying its exact payload returns the original `EventId`; different
+content is refused. Use distinct keys for individual runtime stream records.
+Events, per-generation projections and effect records commit in one transaction.
+`events()` returns ordered journal records; `projection(task, generation)` returns
+the corresponding last event and durable status.
+
+Before a child or Git mutation, commit `RecordKind::Intent(Child | Git)` with its
+stable `RuntimeEvent.operation_id`. Only then perform the external effect. Record
+`Completion` with the same identity, operation and source, plus an evidence
+reference. Completion records describe an effect, not canonical task acceptance.
+An unresolved effect blocks further intents and the `Complete` status for that
+task. An applied operation cannot be replayed under a fresh generation or record key.
+
+After interruption, call `reconcile(Observations)`. The coordinator must inspect
+actual Git effects or runtime-owned child receipts, then supply identity- and
+source-bound `EffectObservation` evidence. Missing or `Unknown` observations stay
+in `reconcile_operation_ids`. `Applied` or `Absent` observations produce resolved
+receipts and an `Uncertain` projection for the original generation. They never
+mark a task complete or overwrite a newer generation's projection. Verified
+absence permits an explicitly requested new intent; the store never retries it.
+SQLite cannot make child processes or Git atomic, and this API makes no
+exactly-once external-effect claim.
+
+`state_recovery` uses disposable local repositories and an external-effect file
+fixture. `recover_without_duplicate_effects` exercises abrupt exits before/after
+journal commits and effect completion, transaction rollback, idempotence and
+observation-driven recovery. `fence_foreign_owner_and_schema` covers competing
+writers, reused-PID birth identities, stale generations, contract/source binding,
+common-directory identity, retained backups and newer-schema refusal. These tests
+do not qualify a live runner, model, Git integration or task acceptance.
 
 ## Coordinator API and authority
 

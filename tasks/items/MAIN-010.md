@@ -3,7 +3,7 @@ schema = 1
 id = "MAIN-010"
 title = "Discovery requests no longer consume main-repair fixtures"
 short = "Discovery/repair fixture mix-up"
-status = "open"
+status = "done"
 goal = "RELIABILITY-2026-10"
 section = "Now"
 rank = 0
@@ -16,6 +16,8 @@ scope = "Resolve test_pi_autowork.EngineTests.test_a_red_main_after_a_landing_ge
 acceptance = ["The named red-main test passes with independent discovery present: discovery cannot consume the fake repair_main plan action or be parsed as a main-repair evidence-bundle message.", "The test still proves one repair_main action, at most one repair evidence refresh per checked revision, exactly one repair-task creation commit, genuine repair messages with their evidence bundles, and main returning green after the repair lands; do not weaken these assertions or disable discovery to pass.", "Current-tree full offline check reaches its results and passes; report the checked revision/tree, actual results and skips separately from the saved failing revision and the already-integrated correction. Offline proof grants no live or installed-runner qualification."]
 checks = ["python3 scripts/check.py", "Focused named-test reproduction and discovery/repair fixture regression checks using the repository-provisioned interpreter; reuse matching full-check results rather than rerunning the full suite."]
 exclusions = ["No product-policy, scheduler, acceptance-gate or independent-discovery behavior redesign; fix only evidence-demonstrated residual defects within this regression.", "No removal, skipping or weakening of tests, timeout inflation without evidence, live model calls, production operations, service lifecycle changes, publication, runtime-state edits or interference with the active component relocation."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/MAIN-010.toml"
 +++
 - Sources: docs/project.md#reliability-bug-harvest-2026-10-15; pi-autowork/README.md#affected-landing-checks; docs/testing.md#verify; tests/test_pi_autowork.py (named red-main regression and fake maintainer plan routing); commits b075e370, 5a38570a, a865a05e and integrated correction 1b161f58d0cc65b0b8afb0f6a308ba49a18bcad7.
 - Evidence: Revision 9a86e02affa6034422b51cc2b0962c426ea83f5e; last green 4bbe6fa553b3ed9fb666f24995fb388a060c506f; bundle .git/autowork-execution/main-evidence/9a86e02affa6034422b51cc2b0962c426ea83f5e relative to the canonical repository root (resolve the Git common directory from linked worktrees; read main_check.json, main-check.log, main-check.exit, main-check-reruns.log and flaky_history.json in place). Full check exit 1, TEST_FAILURE: test_pi_autowork.EngineTests.test_a_red_main_after_a_landing_gets_one_repair_task, tests/test_pi_autowork.py:1219, TypeError: 'NoneType' object is not subscriptable while indexing re.search for an evidence-bundle message. Isolated rerun also exited 1 with the same error (one test, 19.813s); no passing isolated revisions for this test are recorded in flaky_history.json. Not a flaky-test classification or a check-tool crash.

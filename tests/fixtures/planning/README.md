@@ -153,6 +153,103 @@ mandatory negative controls. The offline tests exercise valid seeds, both routes
 executable convention evidence, the intentionally missing fixture and unchanged
 inspector boundaries; they do not evaluate a model's decisions.
 
+## Task-writing quality specimens
+
+The shared [name policy](../../../skills/shared/TODO-WORKCENTER.md#task-names) and
+[description standard](../../../skills/shared/TODO-WORKCENTER.md#task-descriptions)
+own the rubric. Four new synthetic cases per native/portable **Plan With Me**
+entrypoint reuse the committed FMT-01 seed, including its path-only scope. The
+existing native/portable **Plan For Me** external-input cases supply the fifth
+observation; they are not duplicated. These are public invented inputs, not
+historical model failures. Model evaluations are optional and **unrun**; offline
+preparation and source-contract checks do not establish output quality.
+
+| Case suffix | Input weakness | Expected saved outcome (human review) |
+| --- | --- | --- |
+| task-vague-name | Request calls FMT-01 "Fix formatting". | Reuse FMT-01; title and short identify lowercase normalization, not generic repair. |
+| task-sibling-names | Two independent outcomes both called "Fix formatting". | Normalization lowercases; export trimming preserves case. Names/shorts distinguish the objects and outcomes beside each other; no invented dependency. |
+| task-path-scope | Seed scope only lists source/test paths. | Explain trimming/lowercasing nonblank text, preserving internal whitespace and the interface; retain no-dependency/network constraints and the check. |
+| task-repetitive-body | Draft repeats the same procedure six times. | Keep one concrete first action with additive evidence/decisions, separate acceptance and checks; no repeated process across fields/notes and no lost obligation. |
+| external-input (existing) | Scanner-v2 device and calibration corpus are unavailable. | Keep independent FMT-01 ready. Only qualification is pending with exact missing inputs, resume condition, every-row equality and device transcript; do not invent a device command or offline pass. |
+
+Prepare a bounded subset with the existing builder, for example:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 tests/fixtures/planning/scenarios.py prepare "$TMPDIR/task-writing-eval" --cases native-task-vague-name,portable-task-sibling-names,native-task-path-scope,portable-task-repetitive-body,native-external-input
+```
+
+### Positive and negative output examples
+
+These are illustrative field excerpts, not new records or a required prose length.
+The planner must preserve all other seed fields and notes, including ID, goal,
+rank, maintainer note, scope constraints and mandatory checks.
+
+**Negative:** `title: Fix formatting`; `short: Fix formatting`; scope only
+`src/formatting.py and tests/test_formatting.py; no dependencies.` A file list
+does not tell the worker what to change. Repeating "inspect, implement, test and
+report" in scope, acceptance and three notes adds no success evidence. Shortening
+this to "make it work; checks: true" loses the existing obligations and also fails.
+
+**Positive normalization handoff:**
+
+- Title: Lowercase normalized text while preserving internal whitespace
+- Short: Lowercase normalized text
+- Scope: Trim and lowercase nonblank input to normalize(value), preserving internal
+  whitespace and its interface. No new dependencies or network access.
+- Acceptance: Proposed, unrun test_lowercase in tests/test_formatting.py proves
+  normalize(" X Y ") returns "x y"; the existing trim regression still passes.
+- Checks: `python3 -m unittest discover -s tests` (required, not yet run for this change).
+- Sources: docs/plan.md#normalization-contract; src/formatting.py and tests/test_formatting.py.
+- Decisions: Reuse the existing string operations; no formatter/export coupling.
+- Next action: Add the proposed test_lowercase and observe its failure on current normalize.
+
+For the sibling export task, **negative** is another "Fix formatting"/"Fix
+formatting" with "same as FMT-01" as its scope. **Positive** is title "Trim export
+values without lowercasing", short "Trim export values, preserve case", scope
+"Strip each export value before newline joining; preserve case and omit a final
+newline. No new dependencies; independent of normalize." Acceptance names proposed,
+unrun test_trim_values proving `export([" X ", " Y "]) == "X\nY"`; checks retain
+`python3 -m unittest discover -s tests -p test_export.py`. Cite
+`docs/plan.md#export-trimming` and `src/export.py`; first add that test to expose
+current surrounding whitespace, not another investigation of capitalization.
+
+For missing input, **negative** is "Scanner checks pass offline; ask for access
+later" or blocking FMT-01 on scanner delivery. **Positive** is a pending scanner
+qualification task citing docs/plan.md#scanner-qualification: the scanner-v2
+device and owner-supplied external/scanner-v2.json corpus are absent. Resume only
+with that corpus and authorized device access; compare every device-decoded
+exported row to its input and retain the real device transcript. The first action
+is to obtain/verify those inputs, then record the runnable command for the actual
+device interface, which is not yet known. Offline formatter tests cannot qualify
+it; keep FMT-01 independent and do not invent authority or passing results.
+
+### Human readback rubric
+
+Review each saved task, not phrase counts, against its request and accepted source:
+
+- Read title and short independently and next to siblings. Can you distinguish the
+  changed behavior and affected object? Does short fit 40 characters without
+  losing the distinction? Action-led and outcome-led wording can both pass.
+- Can an implementer explain the behavior, boundary, constraints/exclusions and
+  first action without a new design round? Paths alone and title restatements fail.
+- Are decisions source-backed and inputs reachable or honestly pending only where
+  needed? Do not score invented intent, missing-input waivers or settled permission
+  questions as clarity.
+- Are observable acceptance and exact commands separate, future tests unrun, and
+  notes additive rather than repeated boilerplate? All original checks and real
+  limitations must survive compression; shorter text alone is not success.
+- Are IDs/history, authority, active ownership and the planning-only boundary
+  preserved? Apply the existing inventory/trace negative controls regardless of
+  wording quality; static store validity is not a subjective language grade.
+
+For any separately authorized model run, retain the source revision/hashes of all
+loaded references, actual entrypoint, host/model, request, full tool trace, saved
+bodies and before/after inventory as above. Record pass/fail/unscored with concrete
+counterexamples and artifact locations. No run means unscored, never compliance.
+`test_task_writing_cases_preserve_scope_and_evidence` only verifies the native seed,
+case inventory, evidence and source provenance; no evaluator service or CLI quality
+gate is added.
+
 ## Consequential-question interviews
 
 `interviews.py` extends the same disposable repository with eight bounded

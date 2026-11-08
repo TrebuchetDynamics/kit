@@ -243,6 +243,48 @@ for entry, source in (('native', 'skills/plan-for-me/SKILL.md'),
         CASES[f'{entry}-{name}'] = case(source, request, repository)
 
 
+# Task-writing inputs reuse the native seed (including its deliberately path-only scope).
+# The existing external-input cases also serve this rubric; do not duplicate them.
+WRITING_FILES = {
+    **FILES,
+    'docs/plan.md': FILES['docs/plan.md'] + '\n## Normalization contract\nStatus: Accepted\n'
+                    'FMT-01 trims and lowercases nonblank text, preserving internal whitespace '
+                    'and the normalize(value) interface. For example, " X Y " becomes "x y". '
+                    'No new dependencies or network access. Keep the existing formatter check.\n',
+}
+WRITING_CASES = {
+    'task-vague-name': (
+        'Plan "Fix formatting" for existing FMT-01 from the accepted normalization contract. '
+        'Save a complete handoff; preserve its identity and constraints.', WRITING_FILES),
+    'task-sibling-names': (
+        'Plan two independent outcomes both informally called "Fix formatting": existing '
+        'FMT-01 normalization and trimming each export value. The accepted contracts are '
+        'in docs/plan.md; preserve FMT-01 and save the separate exporter work.',
+        {**WRITING_FILES,
+         'docs/plan.md': WRITING_FILES['docs/plan.md'] + '\n## Export trimming\nStatus: Accepted\n'
+                         'export(values) strips each value before joining with newlines, without '
+                         'lowercasing or a final newline. export([" X ", " Y "]) returns "X\\nY". '
+                         'It remains independent of normalize; no new dependencies. Add a proposed '
+                         'test_trim_values in tests/test_export.py and check with '
+                         'python3 -m unittest discover -s tests -p test_export.py.\n'}),
+    'task-path-scope': (
+        'Refine existing FMT-01 into an executable task from docs/plan.md. Its current scope '
+        'lists paths, but the accepted behavior and boundaries must survive the handoff.', WRITING_FILES),
+    'task-repetitive-body': (
+        'Refine existing FMT-01 using the accepted normalization contract and draft handoff. '
+        'Keep its obligations and exact check, without repeated process prose.',
+        {**WRITING_FILES,
+         'docs/plan.md': WRITING_FILES['docs/plan.md'] + '\n## Draft handoff\nStatus: Proposed wording\n'
+                         + ('Inspect the source, implement the change, run '
+                            'python3 -m unittest discover -s tests and report results. ' * 6)
+                         + '\nThis draft repeats process, not additional acceptance.\n'}),
+}
+for entry, source in (('native', 'skills/plan-with-me/SKILL.md'),
+                      ('portable', 'adapters/skills/plan-with-me/SKILL.md')):
+    for name, (request, repository) in WRITING_CASES.items():
+        CASES[f'{entry}-{name}'] = case(source, request, repository)
+
+
 def run(root, *command):
     """Use the disposable repo, never an inherited Git index/worktree or host hook."""
     env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}

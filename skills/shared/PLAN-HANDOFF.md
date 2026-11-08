@@ -36,7 +36,10 @@ action, which starts with the failing test named in Acceptance (see the
 [planning craft](PLANNING-CRAFT.md#executable-acceptance)). Include known setup/recovery steps
 and separate live qualification when applicable. This is a content standard, not
 a new schema, receipt or approval gate; fill only actual gaps in existing tasks.
-Do not prescribe every edit or require unknown implementation details up front.
+Apply the shared [description standard](TODO-WORKCENTER.md#task-descriptions)
+on save/readback: keep field roles distinct and notes additive, not a second copy
+of scope, acceptance or checks. Do not prescribe every edit or require unknown
+implementation details up front.
 Apply [decision closure](PLANNING-CRAFT.md#decision-closure) before reporting ready:
 for every material builder finding, persist a resolution or keep only the affected
 task pending with its exact missing input and resume condition. Metadata validity
