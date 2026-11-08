@@ -21,7 +21,7 @@ def main():
         (home / "plugins").mkdir()
         (home / "plugins" / "autowork").symlink_to(root, target_is_directory=True)
         (home / "config.yaml").write_text(
-            "plugins:\n  enabled: [autowork]\n  entries:\n"
+            "plugins:\n  enabled: [kit]\n  entries:\n"
             "    autowork:\n      allow_gateway_injection: false\n"
             "approvals:\n  mode: manual\n  destructive_slash_confirm: true\n"
             "  mcp_reload_confirm: true\n  deny: ['keep-this-deny-rule']\n"
@@ -134,7 +134,7 @@ def main():
         with contextlib.redirect_stdout(output):
             code = bundle.handle_cli(parser.parse_args(['doctor', '--core', '--json']))
         readiness = json.loads(output.getvalue())
-        assert code == 0 and readiness['core_status'] == 'ready', readiness
+        assert code == 0 and readiness['core_status'] == 'ready', readiness['core_errors']
         assert readiness['integrations_status'] == 'unavailable', readiness
         with contextlib.redirect_stdout(io.StringIO()):
             assert bundle.handle_cli(parser.parse_args(['doctor', '--json'])) == 1
@@ -180,7 +180,7 @@ def main():
             assert accepted[-1]["plugin_home"] == home, accepted
         finally:
             clear_session_vars(tokens)
-        manager.unload("autowork")
+        manager.unload("kit")
         assert "docs-sync" not in manager._plugin_commands
         assert manager.find_plugin_skill("kit:docs-sync") is None
         # Broken YAML must remain recoverable, never replaced by fallback defaults.
@@ -195,6 +195,13 @@ def main():
         assert config_path.read_bytes() == before
         print("PASS: loader approval defaults, /new gate, profile isolation, idempotency, opt-out, "
               "malformed YAML, core/full diagnostics, skill_view, Telegram menu, CLI queue, gateway routing, unload")
+
+
+def test_native_loader():
+    import hermes_bootstrap  # noqa: F401 — native runtime initialization
+    from unittest.mock import patch
+    with patch.dict(os.environ):
+        main()
 
 
 if __name__ == "__main__":

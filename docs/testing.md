@@ -273,7 +273,9 @@ a close a merge left under another contract (`pi-autowork/tests/test_task_reopen
 reader, native install security scan, loader, bundled skill reader, Telegram menu, CLI queue, gateway routing,
 and unload behavior. Run it using Hermes' Python environment with the Hermes
 source root on `PYTHONPATH`. It uses a temporary profile and a capture callback
-instead of sending Telegram messages or calling a model.
+instead of sending Telegram messages or calling a model. Native command collisions,
+such as Hermes' `/goal`, require a registered namespaced Kit skill fallback; they do
+not replace the Hermes command or excuse a missing skill.
 
 `tests/integration_bundle.py` checks an existing isolated `HERMES_HOME`: all
 loaded skill content, CLI queues and captured gateway routing for every generated
