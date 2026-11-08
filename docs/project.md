@@ -993,6 +993,12 @@ Blocker; identify the root and affected tasks. Automatically lifted overlap is
 Waiting. An open owner question in `BLOCKERS.md` shows Needs you; do not invent an
 External mapping where the implementation has none.
 
+A live, attempt-matched merge resolver shows **Active · Resolving conflict**, not
+failure. Its engine slot stays held until adoption; this display grants no merge
+or closure authority. Queued recovery is not a running resolver. After adoption,
+the commit waits for verification; recovery alone is not checked or complete.
+Absent, finished or stale recovery evidence leaves the engineering hold visible.
+
 Failure type and resolution owner are separate typed fields shared by engine,
 health, questions and TUI. Exhausted review rework, dead workers, timeouts, conflicts
 and dependency waits remain engineering/recovery holds even after retries end;

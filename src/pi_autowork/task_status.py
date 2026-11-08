@@ -16,6 +16,12 @@ WAIT_LABELS = {'Implemented': 'implemented, waiting for review', 'Merge turn': '
 WAIT_CAUSES = ('overlap',)
 
 
+def resolving_conflict(row):
+    """Coordinator-observed recovery activity, not merge or verification evidence."""
+    return (row.get('state') == 'held' and row.get('cause') == 'conflict'
+            and row.get('recovery') == 'resolving_conflict')
+
+
 def blocked_reason(code):
     """Humanize selection codes while preserving task IDs."""
     import re

@@ -20,6 +20,7 @@ import time
 
 from pi_autowork.processes import running, start_time  # noqa: E402
 from pi_autowork.engine import failure_policy  # noqa: E402
+from pi_autowork.task_status import resolving_conflict
 
 SCHEMA = 1
 STALL_AFTER = 1800      # seconds with nothing running while work waits
@@ -49,7 +50,8 @@ def classify(snapshot, *, paused=False, stuck=0):
 
     ``stuck`` integrations only wait for another session to leave the main checkout:
     they are in flight but make no progress (flutter, 2026-10-16)."""
-    if snapshot.get('active_workers') or (snapshot.get('integration_queue') or 0) > stuck:
+    if (snapshot.get('active_workers') or (snapshot.get('integration_queue') or 0) > stuck
+            or any(resolving_conflict(row) for row in snapshot.get('tasks', []))):
         return 'working'
     if paused:
         return 'paused'

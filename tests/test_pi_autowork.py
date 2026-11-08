@@ -1924,6 +1924,9 @@ sys.exit(result.returncode)
                 # Both resolutions finish before either candidate lands; discovery need not be
                 # in the same batch. No fresh worker or separate full check is needed for either.
                 self.assertGreaterEqual(result.stdout.count('merged the session into its commit'), 2, result.stdout)
+                for task in ('A', 'B'):
+                    self.assertIn(f'{task}: resolving conflict — automatic merge recovery', result.stdout)
+                    self.assertNotIn(f'{task}: failed', result.stdout)
                 self.assertEqual(runs.read_text().splitlines(), ['ran', 'ran'], result.stdout)  # A+B, then C
                 self.assertIn('Batch: 2 passed (A, B)', result.stdout)
                 self.assertCountEqual([r['task'] for r in self.runs('worker')], ['A', 'B', 'C'], result.stdout)
@@ -3628,8 +3631,10 @@ fcntl.flock = observed_flock
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('A: its commit conflicts with the session in: A.txt; asking Pi to resolve the merge '
                       'in its worktree', result.stdout)
-        self.assertIn('A: merged the session into its commit; verifying again', result.stdout)
-        self.assertIn('A: merged the session into its commit again (2 of 3); verifying again', result.stdout)
+        self.assertIn('A: resolving conflict — automatic merge recovery; verification still required', result.stdout)
+        self.assertNotIn('A: failed', result.stdout)
+        self.assertIn('A: merged the session into its commit; queued for verification', result.stdout)
+        self.assertIn('A: merged the session into its commit again (2 of 3); queued for verification', result.stdout)
         self.assertEqual(len([r for r in self.runs('merge') if Path(r['cwd']).name == 'autowork-A']), 2)
         self.assertEqual(len([r for r in self.runs('worker') if r['task'] == 'A']), 1)  # no fresh attempt
         self.assertTrue(self.done('A', 'B', 'C'))
@@ -3644,6 +3649,7 @@ fcntl.flock = observed_flock
         question = blockers.read_text() if blockers.exists() else ''
         self.assertNotIn('Q-A', question)
         self.assertIn('the merge could not be resolved; it remains a visible engineering hold', result.stdout)
+        self.assertIn('A: failed', result.stdout)
 
     def test_a_refused_adoption_holds_technically_without_running_the_resolver(self):
         self.plan({'verify:A': ['fail', 'fail', 'fail']})  # with its one rework after review

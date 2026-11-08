@@ -83,6 +83,9 @@ def task_row(record, store, *, observation=None, phase=None, stopped='', questio
         bucket, detail = view.phase_status(phase)
         words, kind = f'{bucket} · {detail}', 'working'
         why = view.WAIT_LABELS.get(detail, detail.lower()) if bucket == view.WAITING else row.get('reason') or detail
+    elif view.resolving_conflict(row):
+        bucket, words, kind = view.ACTIVE, 'Active · Resolving conflict', 'working'
+        why = 'automatic merge recovery; verification still required'
     elif state == 'held':
         bucket = view.WAITING if cause in view.WAIT_CAUSES else view.BLOCKER
         words, kind = f'{bucket} · ' + view.blocker_detail(cause, bool(question)), 'held'
