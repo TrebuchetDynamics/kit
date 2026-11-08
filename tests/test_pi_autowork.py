@@ -132,7 +132,8 @@ elif message.startswith('You triage a blocker'):
     role, task = 'triage', re.search(r'The worker of task (\S+) ', message)[1]
 else:
     role, task = 'worker', field('Task')
-key = role if role in ('merge', 'maintainer') else f'{role}:{task}'
+key = ('discovery' if message.startswith('You are discovering independent maintenance work') else
+       role if role in ('merge', 'maintainer') else f'{role}:{task}')
 with open(os.environ['FAKE_PI_PLAN'], 'r+') as stream:
     fcntl.flock(stream, fcntl.LOCK_EX)
     plan = json.load(stream)
@@ -1214,7 +1215,8 @@ class EngineTests(Fixture):
         self.assertIn('(test_other.OtherTests.test_broken)', log())
         self.assertIn('DOCS-MAINTAINER: repairing the task docs of MAIN', log())
         self.assertIn('Main is green again at', log())
-        maintenance = self.runs('maintainer')
+        maintenance = [run for run in self.runs('maintainer')
+                       if not run['message'].startswith('You are discovering independent maintenance work')]
         self.assertEqual(sum(run['run'] == 'repair_main' for run in maintenance), 1, log())
         bundles = [re.search(r'; evidence bundle: ([^\n]+)', run['message'])[1] for run in maintenance]
         self.assertEqual(len(bundles), len(set(bundles)), log())  # at most one refresh per checked revision
