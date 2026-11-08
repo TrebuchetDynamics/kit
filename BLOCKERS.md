@@ -8,25 +8,9 @@ no extra approval step or execution authority.
 
 <!-- pi-autowork:questions:start -->
 
-### Q-TOOLSET-431-47a7152e — USER_INPUT — effort input — unblocks 1
-
-- Task: TOOLSET-431-47a7152e — Verify Hermes settings survive the Autowork-to-Kit rename
-- Needs: TOOLSET-431-47a7152e requires owner-performed action, not unattended execution. Saved owner answer: 2026-11-07: approved. Another approval is not requested.
-- Since: 2026-11-07T21:55:00Z
-- Answer: Perform the task outside this runner and record the actual completion evidence, or explicitly defer or cancel it. Saved direction is not completion evidence; another approval or live grant does not transfer an owner-owned task to the runner.
-- Kind: owner_action
-
-### Q-TOOLSET-451-ba324296 — USER_INPUT — effort input — unblocks 1
-
-- Task: TOOLSET-451-ba324296 — Verify Autowork resumes an interrupted delivery without duplicate work
-- Needs: TOOLSET-451-ba324296 requires owner-performed action, not unattended execution. Saved owner answer: 2026-11-07: approved. Another approval is not requested.
-- Since: 2026-11-07T21:55:54Z
-- Answer: Perform the task outside this runner and record the actual completion evidence, or explicitly defer or cancel it. Saved direction is not completion evidence; another approval or live grant does not transfer an owner-owned task to the runner.
-- Kind: owner_action
-
 ### Q-TOOLSET-463-8af43073 — USER_INPUT — effort input — unblocks 1
 
-- Task: TOOLSET-463-8af43073 — Verify runner stop persists and restart keeps push disabled
+- Task: TOOLSET-463-8af43073 — Stopped runners stay stopped; restart cannot enable push
 - Needs: TOOLSET-463-8af43073 requires owner-performed action, not unattended execution. Saved owner answer: 2026-11-07: approved. Another approval is not requested.
 - Since: 2026-11-05T02:13:30Z
 - Answer: Perform the task outside this runner and record the actual completion evidence, or explicitly defer or cancel it. Saved direction is not completion evidence; another approval or live grant does not transfer an owner-owned task to the runner.
