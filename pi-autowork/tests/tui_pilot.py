@@ -238,7 +238,8 @@ async def blocked_readers(app, pilot):
 
 
 async def task_inventory_viewport(app, pilot):
-    """Unknown must not paint empty counts; freshness/errors must occupy visible space."""
+    """Unknown counts and warnings stay visible; routine evidence stays in Info."""
+    from types import SimpleNamespace
     original = app.current()
     good = original.snapshot
     cases = (
@@ -277,7 +278,10 @@ async def task_inventory_viewport(app, pilot):
             table = screen.query_one('#tasks')
             assert table.region.height >= 3 and table.region.bottom <= screen.region.bottom, table.region
             widgets = [screen.query_one('#task-views'), screen.query_one('#task-detail'),
-                       *screen.query('#task-freshness'), *screen.query('#task-provenance')]
+                       *screen.query('#task-freshness')]
+            assert not screen.query_one('#task-provenance').display
+            assert 'generation' not in painted(screen.query_one('#task-freshness'))
+            assert 'Discuss' not in painted(screen.query_one('#menubar'))
             visible = ' '.join(painted(w) for w in widgets)
             assert snapshot.freshness in visible, (state, visible)
             if state != 'empty':
@@ -298,16 +302,51 @@ async def task_inventory_viewport(app, pilot):
                 assert table.row_count == 0
                 assert 'No task in this view' in painted(screen.query_one('#task-detail'))
             else:
-                assert snapshot.revision in visible and '15m ago' in visible, visible
+                assert snapshot.revision not in visible and '15m ago' in visible, visible
                 assert 'Open 3' in counts and table.row_count == 3, counts
                 await pilot.press('i', 'end')  # keyboard users must reach the rest of a long acquisition error
                 await pilot.pause()
                 assert screen.query_one('#task-provenance').scroll_y > 0
                 assert 'END OF INVENTORY ERROR' in painted(screen.query_one('#task-provenance'))
                 pinned = painted(screen.query_one('#task-freshness'))
-                assert snapshot.revision in pinned and '15m ago' in pinned, pinned
+                assert snapshot.revision not in pinned and '15m ago' in pinned, pinned
+                assert snapshot.revision in screen.query_one('#task-provenance').text
                 await pilot.press('i')  # return to task navigation
                 assert table.has_focus
+                assert not screen.query_one('#task-provenance').display
+            app.pop_screen()
+            await pilot.pause()
+    # Use committed scope/acceptance, not the generic permission text, for owner work.
+    row = replace(good.rows[0], question=True)
+    question = fleet_view.Question(row.task, 'input', 0, 'Approval already saved.',
+                                   'Perform the task yourself.', 'owner_action')
+    for record in (SimpleNamespace(scope='Run the device check.', acceptance=('Save the device result.',)), None):
+        snapshot = replace(good, rows=(row,), questions=(question,),
+                           store=SimpleNamespace(tasks={row.task: record} if record else {}))
+        selected = replace(original, snapshot=snapshot, questions=[question])
+        envelope = fleet_view.FleetSnapshot((selected,), (snapshot,), 8, time.time())
+        async with patched_reads(app, mock.patch.object(fleet_view, 'collect_for_tui', return_value=envelope)):
+            await refresh(app, pilot)
+            app.push_screen(TasksScreen(selected.name))
+            await pilot.pause()
+            screen = app.screen
+            detail = screen.query_one('#task-detail').render().plain
+            if record:
+                assert 'You: Run the device check.' in detail, detail
+                assert 'Needed result: Save the device result.' in detail, detail
+                visible = painted(screen.query_one('#task-detail'))
+                assert 'You: Run the device check.' in visible, visible
+                assert 'Needed result: Save the device result.' in visible, visible
+            else:
+                assert 'Exact action not recorded' in detail, detail
+                assert 'Required result not recorded' in detail, detail
+            assert 'Approval is not completion' in detail, detail
+            await pilot.press('i')
+            info = screen.query_one('#task-provenance')
+            assert info.display and info.has_focus
+            assert 'Discuss' in info.text and 'Investigate' in info.text
+            await pilot.press('i')
+            assert not info.display and screen.query_one('#tasks').has_focus
             app.pop_screen()
             await pilot.pause()
     await refresh(app, pilot)
@@ -895,7 +934,9 @@ async def main():
             await pilot.pause()
             assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['T-9'], tasks.row_count
             keys = str(app.screen.query_one('#menubar').render())
-            assert keys.rstrip().endswith('enter Open  Decide  g Discuss  Investigate  Up  Down  Section  Clear  Aside  x Delete  New  Info  esc Back'), keys
+            assert keys.rstrip().endswith('enter Open  Decide  Info/Help  esc Back'), keys
+            assert 'Up' in app.screen.query_one('#task-provenance').text
+            assert 'Delete' in app.screen.query_one('#task-provenance').text
             await pilot.press('x')                      # delete asks first; decline here
             await pilot.pause()
             assert isinstance(app.screen, Confirm), app.screen
