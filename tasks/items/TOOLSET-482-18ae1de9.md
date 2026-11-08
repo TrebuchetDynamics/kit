@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-482-18ae1de9"
-title = "Prove one-folder Autowork ownership and complete offline release closure"
-short = "Verify one-root ownership"
+title = "Verify all Autowork components and offline packages use the new root"
+short = "Verify Autowork layout and packages"
 status = "open"
 goal = "CODE-HEALTH-2026-10"
 section = "Next"
@@ -22,3 +22,5 @@ exclusions = ["No live model calls, production/device operations, runtime or sys
 - Planner calls: Preserve selected-release and host compatibility; one product source owner, no new runtime framework. See the accepted fixed map and acceptance oracles.
 - Queue disposition: Accepted and open, no planning-only hold. Selection is not admission, ownership or dispatch.
 - Checks status: Proposed and UNRUN. Inspect command side effects; retain source-bound results and independent review. Planning did not install dependencies.
+- Next action: After the Python, Paseo and Rust moves land, extend the existing ownership/package tests with the exact shared-file and host-entry exceptions from docs/plans/pi-autowork-component-layout.md. Do not replace the existing oracles with a second registry.
+- Execution: Compare baseline and final file/test inventories across all three languages. Check archive closure, production/test separation, current links and documented commands. Repair only migration-attributable placement or verification gaps. Run the declared affected and focused checks, reusing receipts only for matching source/tool/config inputs. Report offline source/package proof separately from installation, running-release and live-model qualification.

@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-478-9a8d7ece"
-title = "Plan the next Rust and Octet batch from the first native execution evidence"
-short = "Plan Rust Octet round two"
+title = "Plan the next Rust Autowork batch from verified first-round results"
+short = "Plan Rust Autowork from first-run proof"
 status = "open"
 goal = "RUST-OCTET"
 section = "Next"
@@ -21,3 +21,5 @@ exclusions = ["No production code, tests, fixtures, manifests, source pin edits,
 - Plan round: 1 of 10
 - Planner calls: New system replans routine decisions automatically. This record follows the existing runner's bounded rolling-plan contract while that runner remains canonical.
 - Queue disposition: Open in Next, no planning-only hold; waits on all six original building tasks and TOOLSET-481-33040cb9, the accepted mechanical crate relocation. Round two uses pi-autowork/rust/autowork after that prerequisite; first-batch contracts, seven IDs, native acceptance and live-denied gates are preserved. An already-authorized runner may continue after integration; this saved plan starts none.
+- Next action: Wait for all six original Rust builders and TOOLSET-481-33040cb9, then read their actual reports and source-bound checks. Use the relocated pi-autowork/rust/autowork owner and reconcile remaining outcomes in docs/plans/rust-octet-autowork.md.
+- Execution: Map implemented evidence and unmet outcomes before selecting the next known batch. Save at most eight tasks, including the closing successor when warranted, through autowork tasks. Preserve this task's Plan round: 1 of 10; a successor is round 2 of 10. Run the read-only builder check, validate once, and read back the saved plan and records. Close only this planning activity with real attribution, not the implementation or live-qualification goals.

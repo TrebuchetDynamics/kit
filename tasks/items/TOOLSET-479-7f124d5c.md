@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-479-7f124d5c"
-title = "Consolidate Autowork Python source tools and product tests under pi-autowork"
-short = "One-root Python and tests"
+title = "Move Autowork Python code, tools and tests into pi-autowork"
+short = "Move Autowork Python code and tests"
 status = "open"
 goal = "CODE-HEALTH-2026-10"
 section = "Now"

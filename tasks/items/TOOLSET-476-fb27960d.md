@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-476-fb27960d"
-title = "Resolve ordinary blockers through automatic revision-bound planning"
-short = "Replan without owner menus"
+title = "Replan blocked Rust tasks and continue independent offline work"
+short = "Replan blocked Rust tasks automatically"
 status = "open"
 goal = "RUST-OCTET"
 section = "Next"
@@ -22,3 +22,5 @@ exclusions = ["No live models, device operations, service changes, old-runtime c
 - Verification: Proposed checks and test names are unrun until implementation; no model/live qualification is claimed.
 - Queue disposition: Open in Next; no planning-only hold. Explicit user scope and existing ownership still govern execution.
 - Builder resolution: Resolved from fresh read-only builder findings: Return PendingEdit/token to the coordinator after validated application; do not select from an uncommitted proof tree. The coordinator's commit_proposal publishes it locally before committed selection. Never emit or expand ExecutionAdmission, executable identity or arbitrary check argv from model proposals.
+- Next action: After the declared prerequisites land, add the failing planning_reentry.rs cases named in Acceptance. Start with the live-gated-queue case and assert that applying a valid proposal returns PendingEdit without selecting its uncommitted tree.
+- Execution: Implement Planner::propose with the existing read-only Runtime role, TaskService and StateStore seams. Bind proposals to revision, contract, failed operation and generation. Test stale proposals, unchanged failure evidence and observed sudo/credential prerequisites. Leave task publication to Coordinator::commit_proposal and never let model output expand execution grants. Run the declared locked planning_reentry test target.
