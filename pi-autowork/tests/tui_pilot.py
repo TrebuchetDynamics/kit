@@ -815,7 +815,7 @@ async def main():
                             ('running', 'stalled', 'Log  Pause  Stop  Restart  Model  Tasks  g Plan  Details  Blockers  ? More  n Browse  Quit'),
                             ('stopped', 'not running', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  ? More  n Browse  Quit'),
                             ('stopped', 'paused', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  ? More  n Browse  Quit'),
-                            ('', '', 'g Plan  n Browse  ? Help  Quit')):
+                            ('', '', 'g Plan  Model  n Browse  ? Help  Quit')):
                         selected = replace(runner, service=service, state=state_name) if service else None
                         envelope = fleet_view.FleetSnapshot((selected,) if selected else (),
                             (fleet_view.snapshot_for(selected),) if selected else (), 1, time.time())

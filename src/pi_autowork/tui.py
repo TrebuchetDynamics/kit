@@ -1821,6 +1821,8 @@ class FleetApp(App):
     CSS = '''
     Header { background: $panel; }
     #modelbar { height: 1; padding: 0 1; background: $surface; }
+    #empty-state { display: none; height: 1fr; align-horizontal: center; align-vertical: middle; }
+    #empty-card { width: 72; max-width: 100%; height: auto; padding: 1 2; border: round $accent; background: $surface; content-align: center middle; }
     #runners, #lanes { background: $surface; }
     #runners, #lanes, #log { border-title-color: $text; border-title-style: bold; }
     #runners { border-top: solid $panel; }
@@ -1901,6 +1903,8 @@ class FleetApp(App):
         yield Header()
         yield MenuBar(id='menubar')
         yield Static(id='modelbar')
+        with Vertical(id='empty-state'):
+            yield Static(id='empty-card', markup=False)
         yield DataTable(id='runners', cursor_type='row', zebra_stripes=True)
         yield Static(id='overview')
         with VerticalScroll(id='detail-scroll'):
@@ -2120,6 +2124,14 @@ class FleetApp(App):
 
     def render_fleet(self):
         table = self.query_one('#runners', DataTable)
+        snapshot_errors = self.fleet_snapshot.errors if self.fleet_snapshot else ()
+        read_errors = self.__dict__.get('_read_errors', {})
+        welcome = (not self.runners and self.fleet_snapshot is not None
+                   and not snapshot_errors and not read_errors)
+        self.query_one('#empty-state').display = welcome
+        self.query_one('#modelbar').display = not welcome
+        for selector in ('#runners', '#overview', '#lanes', '#log'):
+            self.query_one(selector).display = not welcome
         keep = self.selected
         # At narrow widths the selected summary carries the full count breakdown.
         # Bound identity/state cells, rather than letting a long name widen every row.
@@ -2279,6 +2291,11 @@ class FleetApp(App):
         model = runner.model if runner and runner.has_service else self.new_model
         modelbar.append(model or 'Select a Pi model for a new runner', style='bold' if model else 'dim')
         publish_text(self.query_one('#modelbar', Static), modelbar)
+        welcome = self.query_one('#empty-state')
+        welcome.display = (runner is None and self.fleet_snapshot is not None
+                           and not self.fleet_snapshot.errors
+                           and not self.__dict__.get('_read_errors', {}))
+        self.query_one('#modelbar').display = not welcome.display
         self.show_overview(runner)
         if runner is None:
             errors = (*(self.fleet_snapshot.errors if self.fleet_snapshot else ()),
@@ -2289,13 +2306,32 @@ class FleetApp(App):
             elif self.fleet_snapshot is None:
                 message = 'Loading pi-autowork runners…'
             else:
-                message = ('No pi-autowork runners yet.\nThis view is read only.' if self.view_only else
-                           'No pi-autowork runners yet.\nPress m to choose a provider/model, n to browse a repository, or ? for actions.')
+                message = ('No runners are available to inspect.\nThis fleet view is read only.' if self.view_only else
+                           'No runners are available yet.')
+            if welcome.display:
+                card = Text()
+                if self.view_only:
+                    card.append('READ ONLY  /  EMPTY FLEET\n\n', style='bold cyan')
+                    card.append('No runners are available to inspect.\n', style='bold')
+                    card.append('This view is read only.', style='dim')
+                else:
+                    card.append('AUTOWORK  /  GETTING STARTED\n\n', style='bold cyan')
+                    card.append('Start your first runner\n', style='bold')
+                    card.append('Choose a model and a project to get going.\n\n', style='dim')
+                    card.append('m', style='bold underline cyan')
+                    card.append('  Choose provider and model\n')
+                    card.append('n', style='bold underline cyan')
+                    card.append('  Browse for a project\n\n')
+                    if self.new_model:
+                        card.append('Selected model  ', style='dim')
+                        card.append(self.new_model + '\n', style='bold green')
+                    card.append('Autowork checks the project before starting.', style='dim')
+                publish_text(self.query_one('#empty-card', Static), card)
             publish_text(detail, Text(message))
             publish_text(self.query_one('#overview', Static), Text(message))
             self.query_one('#lanes', DataTable).display = False
             menubar.show([('?', 'Help'), ('q', 'Quit')] if self.view_only else
-                         [('g', 'Plan'), ('n', 'Browse'), ('?', 'Help'), ('q', 'Quit')],
+                         [('g', 'Plan'), ('m', 'Model'), ('n', 'Browse'), ('?', 'Help'), ('q', 'Quit')],
                          click_actions=clicks)
             return
         # The keys go in the menu bar at the top, like a GUI app's menu; the pane holds the facts.

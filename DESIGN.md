@@ -87,7 +87,9 @@ Resize uses cached observations and performs no filesystem or service acquisitio
 ## Interaction states
 
 Distinguish loading, valid empty, unavailable, and stale states. An empty fleet
-points to model choice, Browse, and Help only when controls are allowed.
+uses a centered welcome panel with model choice and Browse steps; read-only views
+explain their boundary without showing unavailable actions. Loading and discovery
+failures keep their diagnostic view.
 More/filter with no matches cannot dispatch an action. Provider/catalog failures
 retain login guidance. Invalid directories preserve the previous location.
 Action selection rechecks runner identity before dispatch; confirmations remain.
