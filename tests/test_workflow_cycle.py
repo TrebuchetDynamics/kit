@@ -146,6 +146,10 @@ class CycleGuidanceTests(unittest.TestCase):
         # Instruction coverage, not evidence of runtime admission or live execution.
         policy = ' '.join((ROOT / 'docs/autonomy.md').read_text().split())
         for requirement in ('without another owner approval',
+                            'Every Autowork invocation and recurring occurrence',
+                            'fully authorized for its accepted scope',
+                            'model execution and its ordinary usage cost',
+                            'outside the runner being stopped',
                             'publication and live operations',
                             'not itself evidence of owner approval',
                             'Do not change a running contract',

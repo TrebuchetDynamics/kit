@@ -94,6 +94,14 @@ for its accepted outcome; record and apply it without asking again. Queue placem
 alone is not approval, and explicit exclusions, pauses and human-only requirements
 still apply.
 
+Make this reconciliation before selection/admission, including newly discovered
+tasks inside the delegated scope. A complete task with a covered owner-only label
+or missing live grant is bookkeeping to repair, not a fresh permission request.
+Ordinary model usage is covered when the standing policy explicitly includes it;
+only genuinely unavailable provider/target inputs remain an input question.
+A self-stop verification runs in an authorized external coordinator, not inside
+the service it must stop. Preserve that execution-context exclusion.
+
 The coordinator, not a worker, reconciles stale ownership and live fields through
 `autowork tasks`, citing the actual approval source, actor, date and scope. Preserve
 live contracts, validate and commit attributable edits, then re-read admission.

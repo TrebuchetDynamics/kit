@@ -6,6 +6,20 @@ approved scope, not just preparation of a plan.
 
 ## Approved work has full delegated authority
 
+Every Autowork invocation and recurring occurrence in this repository is
+fully authorized for its accepted scope. The owner reaffirmed this standing grant
+on 2026-11-07: Autowork must be fully authorized always. It covers selected accepted
+tasks and bounded engineering prerequisites within the accepted direction, not
+unaccepted product strategies. No second execution approval is required.
+
+The grant includes model execution and its ordinary usage cost, isolated test
+targets and routine live qualification needed by the task, in addition to the
+implementation and delivery actions below. The coordinator chooses available
+configured providers and disposable targets within scope. Missing credentials,
+real external inputs and explicit caller limits remain limitations, not reasons
+to repeat an already-settled authorization question. Standalone planning, interviews
+and read-only requests keep their own non-execution boundaries.
+
 Approved Autowork may take the actions needed to complete its accepted scope
 without another owner approval. This includes implementation, environment repair,
 testing, integration, publication and live operations when they are necessary to
@@ -30,9 +44,11 @@ task in Now/Next is not itself evidence of owner approval or adoption of this po
    instructions. Identify the actual operation and target covered by approval.
 2. Inspect fresh task status and actual worker/session ownership. Do not change a
    running contract or overlap another writer.
-3. When approval covers unattended execution, the coordinator may use
+3. Before selection/admission, the coordinator must use
    `autowork tasks` to reconcile a stale owner-only label to worker ownership and
-   record the existing live grant. Preserve scope, acceptance, checks, dependencies,
+   record the existing live grant whenever this policy covers unattended execution.
+   Do this for newly discovered in-scope tasks too, before emitting a missing-authority
+   question. Preserve scope, acceptance, checks, dependencies,
    resource declarations and explicit exclusions.
 4. For live work, record `live = "authorized"`, `live_actor`, `live_at` and
    `live_scope` from the actual approval. Cite this policy and its owner adoption
@@ -58,6 +74,14 @@ what was attempted. Keep the affected obligation open and continue independent
 approved work. A human-only action may block its dependents, not the whole queue.
 Do not repeatedly report an unchanged blocker or manufacture busywork when no
 independent work remains.
+
+A check that stops its own service needs execution outside the runner being stopped.
+That is an executor/context requirement, not missing authorization. An authorized
+external coordinator performs it; do not remove the exclusion, dispatch it inside
+the service it must stop, or ask the owner to approve it again. A physical action
+or credential that no authorized executor can supply remains a specific input gap.
+Shared-resource waits, active writers, required review and source-freshness checks
+are execution constraints; full authority does not make them completed or available.
 
 ## Evidence and change control
 
