@@ -162,7 +162,73 @@ async def layout_pilot():
         print('LAYOUT PILOT OK')
 
 
+async def task_names_pilot():
+    from pi_autowork import tui
+    from textual.widgets import DataTable
+
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        name = 'Descriptive task name using all 40 cols!'
+        assert len(name) == 40
+        rows = tuple(fleet_view.TaskRow(f'TOOLSET-{i:03d}-abcdef12', name, 'Now',
+                     'Waiting · Implemented', 'working', 'waiting for review', bucket='Waiting')
+                     for i in range(16))
+        snap = task_snapshot.TaskSnapshot(str(root), str(root / '.git'), 'a' * 40, 1, time.time(),
+                    rows=rows, counts=(0, 0, 16, 0, 0, 16), pending_paths=())
+        runner = fleet_view.Runner('fixture', repo=str(root), snapshot=snap)
+        envelope = fleet_view.FleetSnapshot((runner,), (snap,), 1, time.time())
+        def no_command(*args, **kwargs):
+            raise AssertionError('layout must not run a command')
+        app = tui.FleetApp(command='fixture', script='fixture', state_root=root, env_dir=root,
+                           runner_cmd=no_command, view_only=True)
+        with patch.object(fleet_view, 'collect_for_tui', return_value=envelope), \
+             patch.object(fleet_view, 'logs', return_value='fixture journal'), \
+             patch.object(tui, 'pending_edits', return_value={'files': []}), \
+             patch.object(tui.TaskScreen, 'refresh_tasks', lambda screen: screen.show_task()):
+            async with run_pilot(app, size=(60, 24)) as pilot:
+                await settle(app, pilot)
+                await app.push_screen(tui.TasksScreen('fixture'))
+                await settle(app, pilot)
+                screen = app.screen
+                table = screen.query_one('#tasks', DataTable)
+                for width, height in ((60, 24), (40, 18), (120, 30), (60, 24)):
+                    await pilot.resize_terminal(width, height)
+                    await pilot.pause()
+                    assert [str(c.label) for c in table.columns.values()][:2] == ['#', 'Task']
+                    assert 'Short' not in [str(c.label) for c in table.columns.values()]
+                    assert not table.show_horizontal_scrollbar, (width, table.max_scroll_x)
+                    assert sum(c.get_render_width(table) for c in table.columns.values()) <= width - 2
+                    painted = '\n'.join(table.render_line(y).text for y in range(table.content_size.height))
+                    assert 'TOOLSET-' not in painted, painted
+                    if width >= 60:
+                        assert str(table.get_row_at(0)[1]) == name
+                        assert name in painted, painted
+                    # Identical names must not merge rows or redirect selection/actions.
+                    table.move_cursor(row=1)
+                    await pilot.pause()
+                    assert screen.current().task == rows[1].task
+                    screen.refresh_tasks()
+                    assert screen.current().task == rows[1].task
+                    assert rows[1].task in str(screen.query_one('#task-detail').render())
+                await pilot.press('enter')
+                await pilot.pause()
+                assert isinstance(app.screen, tui.TaskScreen)
+                assert app.screen.task_id == rows[1].task
+                assert rows[1].task in str(app.screen.query_one('#task-body').render())
+        print('TASK NAMES PILOT OK')
+
+
 class TuiLayoutTests(unittest.TestCase):
+    def test_task_names_use_id_column_space_without_changing_identity(self):
+        if not shutil.which('uv'):
+            self.skipTest('uv is needed for pinned Textual')
+        result = subprocess.run(['uv', 'run', '--offline', '--quiet', '--no-project', '--with', 'textual==8.2.8',
+                                 'python3', __file__, '--task-names-pilot'], capture_output=True, text=True, timeout=90)
+        if textual_unavailable(result):
+            self.skipTest('textual==8.2.8 is not in the uv cache (offline)')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('TASK NAMES PILOT OK', result.stdout)
+
     def test_responsive_layout_preserves_evidence_and_read_only_controls(self):
         if not shutil.which('uv'):
             self.skipTest('uv is needed for pinned Textual')
@@ -192,7 +258,9 @@ class TuiLayoutTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    if '--pilot' in sys.argv:
+    if '--task-names-pilot' in sys.argv:
+        asyncio.run(task_names_pilot())
+    elif '--pilot' in sys.argv:
         asyncio.run(layout_pilot())
     else:
         unittest.main()

@@ -525,7 +525,10 @@ and `unknown / unavailable`, not zero. Failed refreshes can retain last-good
 inventory with its original revision/capture age, visibly stale. Pending-path read
 failure means unknown, never clean. In the Tasks window, unavailable inventory
 shows `?` for every view count and an unavailable placeholder rather than a verified
-empty list. The selected task shows the next action before its state. Owner-action
+empty list. The task table uses descriptive names instead of a separate ID column,
+leaving more room for names and status on narrow terminals. IDs remain in the
+selected-task details and the full record; actions still target the exact ID even
+when names match. The selected task shows the next action before its state. Owner-action
 questions show the committed scope and acceptance criteria. Missing instructions
 are identified, not replaced with another approval request. The main menu shows
 Open, Decide, Info/Help and Back where applicable. Other keys remain available in

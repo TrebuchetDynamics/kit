@@ -733,7 +733,7 @@ class TasksScreen(ReadScreen, Screen):
     #task-detail { height: auto; max-height: 7; padding: 0 1; border-top: solid $panel; }
     '''
     # State and Why are cut to what the terminal has left; Why goes first on a narrow one.
-    FIXED, TEXT = ('#', 'Task', 'Short'), ('State', 'Why')
+    FIXED, TEXT = ('#', 'Task'), ('State', 'Why')
 
     def __init__(self, runner_name, view='all'):
         super().__init__()
@@ -759,6 +759,10 @@ class TasksScreen(ReadScreen, Screen):
         self.read_pending()
         self.query_one('#tasks', DataTable).focus()
         self.set_interval(REFRESH, self.refresh_tasks)
+
+    def on_resize(self, event):
+        if self.is_mounted:
+            self.call_after_refresh(self.refresh_tasks)  # cached rows only, at the new width
 
     def runner(self):
         return next((r for r in self.app.runners if r.name == self.runner_name), None)
@@ -875,11 +879,13 @@ class TasksScreen(ReadScreen, Screen):
         current = follow or (self.current().task if self.current() else None)
         self.shown = self.view_rows(self.view)
         position = {row.task: number + 1 for number, row in enumerate(self.rows)}
-        cells = [{'#': (str(position[row.task]), 'dim'), 'Task': (row.task, 'bold'),
-                  'Short': (row.short, ''),
+        cells = [{'#': (str(position[row.task]), 'dim'), 'Task': (row.short, 'bold'),
                   'State': (row.state, fleet_view.state_style(row)),
                   'Why': (row.why, 'yellow' if row.question else 'dim')} for row in self.shown]
-        self.app.fill(table, cells, self.FIXED, self.TEXT, minimum=10)
+        # Names get the space previously spent on opaque IDs; IDs remain in details
+        # and self.shown for selection/actions, including tasks with identical names.
+        name_room = max(1, self.size.width - len(str(max(position.values(), default=0))) - 8)
+        self.app.fill(table, cells, self.FIXED, self.TEXT, minimum=10, limits={'Task': name_room})
         tasks = [row.task for row in self.shown]
         target = tasks.index(current) if current in tasks else min(previous_row, len(tasks) - 1)
         if target >= 0 and table.cursor_row != target:

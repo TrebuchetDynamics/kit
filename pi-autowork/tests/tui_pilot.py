@@ -928,11 +928,12 @@ async def main():
             assert isinstance(app.screen, TasksScreen), app.screen
             assert app.reader.applied['fleet'] > generation, read_state(app)
             tasks = app.screen.query_one('#tasks')
-            assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['TASK-034', 'T-9', 'TASK-040']
-            assert str(tasks.get_row_at(0)[2]) == 'Ship it'  # its short name
+            assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['Ship it', 'Held task', 'Waits']
+            assert [row.task for row in app.screen.shown] == ['TASK-034', 'T-9', 'TASK-040']
             await pilot.press('3')                      # the Held view
             await pilot.pause()
-            assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['T-9'], tasks.row_count
+            assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['Held task'], tasks.row_count
+            assert app.screen.current().task == 'T-9'
             keys = str(app.screen.query_one('#menubar').render())
             assert keys.rstrip().endswith('enter Open  Decide  Info/Help  esc Back'), keys
             assert 'Up' in app.screen.query_one('#task-provenance').text
