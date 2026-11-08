@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-475-66aacc5f"
 title = "Recover Rust runtime state after crashes and reject stale owners"
 short = "Recover Rust state after crashes"
-status = "open"
+status = "done"
 goal = "RUST-OCTET"
 section = "Next"
 rank = 11000
@@ -16,6 +16,8 @@ scope = "Implement StateStore in private per-repository local SQLite using bundl
 acceptance = ["Given injected crash boundaries before/after journal commits and external-effect completion, state_recovery.rs::recover_without_duplicate_effects proves committed transitions/projections agree and unresolved operations require reconciliation instead of blind replay or success.", "Given competing owners, PID reuse or stale generations, state_recovery.rs::fence_foreign_owner_and_schema proves only the verified current owner can transition and a newer schema is refused without changing retained state."]
 checks = ["cargo test --locked --manifest-path rust/autowork/Cargo.toml --test state_recovery"]
 exclusions = ["No live models, device operations, service changes, old-runtime cutover, push or deployment in offline acceptance.", "No changes to upstream Octet, unrelated work or existing user grants."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-475-66aacc5f.toml"
 +++
 - Sources: docs/plans/rust-octet-autowork.md#accepted-direction; docs/plans/rust-octet-autowork.md#first-implementation-batch
 - Planner calls: Consumes: foundation event/identity seams. Produces: StateStore transition/reconcile APIs used by planner and coordinator. SQLite atomicity does not cover subprocesses or Git; no exactly-once external-effect claim.
