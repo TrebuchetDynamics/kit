@@ -60,20 +60,97 @@ def plugin_entry(raw):
     return entry
 
 
+def plugin_setting(raw, key, default=None):
+    """Read settings first, then the legacy config subtree, with per-key fallback."""
+    entry = plugin_entry(raw)
+    for subtree in ('settings', 'config'):
+        values = entry.get(subtree)
+        if isinstance(values, dict) and key in values:
+            return values[key]
+    return default
+
+
+def runtime_policy(raw):
+    policy = plugin_setting(raw, 'runtime_policy', 'interactive')
+    if policy not in ('interactive', 'autonomous'):
+        raise ValueError('runtime_policy must be interactive or autonomous')
+    return policy
+
+
+def policy_values(raw):
+    """Without an explicit policy, fill missing leaves but preserve existing decisions."""
+    defaults = _AUTOWORK_COMPAT.peer(globals(), 'bundle').defaults()['hermes']
+    for key in ('approvals', 'agent'):
+        if isinstance(raw, dict) and raw.get(key) is not None and not isinstance(raw[key], dict):
+            raise ValueError('Invalid profile policy section: ' + key)
+    wanted = {**defaults, **defaults['policies'][runtime_policy(raw)]}
+    if plugin_setting(raw, 'runtime_policy') is None:
+        approvals = (raw.get('approvals') or {}) if isinstance(raw, dict) else {}
+        agent = (raw.get('agent') or {}) if isinstance(raw, dict) else {}
+        for key, setting in (('mode', 'approvals_mode'),
+                             ('destructive_slash_confirm', 'destructive_slash_confirm'),
+                             ('mcp_reload_confirm', 'mcp_reload_confirm')):
+            if key in approvals:
+                wanted[setting] = approvals[key]
+        if 'max_turns' in agent:
+            wanted['max_turns'] = agent['max_turns']
+    if wanted['approvals_mode'] not in ('manual', 'smart', 'off'):
+        raise ValueError('Invalid command approval policy')
+    for key in ('allow_gateway_injection', 'destructive_slash_confirm', 'mcp_reload_confirm'):
+        if type(wanted[key]) is not bool:
+            raise ValueError('Invalid boolean policy: ' + key)
+    turns = wanted['max_turns']
+    if turns != 'unlimited' and not (type(turns) is int and turns > 0):
+        raise ValueError('Invalid turn budget policy')
+    if not isinstance(wanted['skills_platform_disabled'], dict):
+        raise ValueError('Invalid platform skill policy')
+    return wanted
+
+
+def setup_profile_policy(config_path):
+    """Read-only policy/values shared by setup and preflight; never boot Hermes."""
+    try:
+        text = Path(config_path).read_text(encoding='utf-8')
+    except FileNotFoundError:
+        text = ''
+    try:
+        import yaml
+    except ImportError as exc:
+        raise ValueError('PyYAML is required to read profile policy safely') from exc
+    try:
+        raw = yaml.safe_load(text)
+        raw = {} if raw is None else raw
+    except yaml.YAMLError as exc:
+        raise ValueError('Cannot read profile policy safely: invalid YAML') from exc
+    if not isinstance(raw, dict) or (raw.get('plugins') is not None and not isinstance(raw['plugins'], dict)):
+        raise ValueError('Profile policy must be a mapping')
+    entries = (raw.get('plugins') or {}).get('entries')
+    if entries is not None and not isinstance(entries, dict):
+        raise ValueError('Profile plugin entries must be a mapping')
+    if _opted_out(raw):
+        return {'policy': 'disabled', 'settings': {}}
+    wanted = policy_values(raw)
+    settings = {path: wanted[key] for path, key in (
+        (f'plugins.entries.{PLUGIN}.allow_gateway_injection', 'allow_gateway_injection'),
+        ('approvals.mode', 'approvals_mode'),
+        ('approvals.destructive_slash_confirm', 'destructive_slash_confirm'),
+        ('approvals.mcp_reload_confirm', 'mcp_reload_confirm'),
+        ('agent.max_turns', 'max_turns'),
+        ('skills.platform_disabled', 'skills_platform_disabled'))}
+    return {'policy': runtime_policy(raw), 'settings': settings}
+
+
 def expected_settings(raw):
     """Bundle policy for one profile's raw config: approvals, turn budget, injection and menu."""
-    defaults = _AUTOWORK_COMPAT.peer(globals(), 'bundle').defaults
     menu_patch = _AUTOWORK_COMPAT.peer(globals(), 'telegram_menu_policy').menu_patch
 
-    settings = defaults()
-    wanted = settings['hermes']
+    wanted = policy_values(raw)
     patch = {
         'approvals': {
             'mode': wanted['approvals_mode'],
             'destructive_slash_confirm': wanted['destructive_slash_confirm'],
             'mcp_reload_confirm': wanted['mcp_reload_confirm'],
         },
-        # Hermes quick setup writes a 90-iteration cap that cuts Autowork turns short.
         'agent': {'max_turns': wanted['max_turns']},
         # Writes go to the canonical entry only; reads accept the legacy entry.
         'plugins': {'entries': {
@@ -115,36 +192,15 @@ def _leaf_paths(expected, prefix=()):
 
 
 def _opted_out(raw):
-    """Mirror Hermes' ctx.get_config: `settings.<key>`, then the legacy `config.<key>`."""
-    entry = plugin_entry(raw)
-    for subtree in ('settings', 'config'):
-        values = entry.get(subtree)
-        if isinstance(values, dict) and 'apply_runtime_defaults' in values:
-            return values['apply_runtime_defaults'] is False
-    return False
+    return plugin_setting(raw, 'apply_runtime_defaults', True) is False
 
 
 def setup_opted_out(config_path):
-    """Setup-time `_opted_out` for one profile config: True, False or None (unknown).
-
-    Parses with PyYAML, the loader Hermes reads config with. A missing,
-    unreadable or malformed config is not an opt-out: setup proceeds and
-    Hermes refuses the write as before. Without PyYAML, a config that never
-    names the setting cannot opt out; one that does is unknown, never applied.
-    """
+    """Setup opt-out readback: True, False or None when policy cannot be read safely."""
     try:
-        text = Path(config_path).read_text(encoding='utf-8')
-    except (OSError, UnicodeError):
-        return False
-    try:
-        import yaml
-    except ImportError:
-        return None if 'apply_runtime_defaults' in text else False
-    try:
-        raw = yaml.safe_load(text)
-    except yaml.YAMLError:
-        return False
-    return _opted_out(raw)
+        return setup_profile_policy(config_path)['policy'] == 'disabled'
+    except (OSError, ValueError):
+        return None
 
 
 def opted_out_settings(raw):

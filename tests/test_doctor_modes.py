@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import types
 import unittest
 from unittest.mock import patch
 
@@ -13,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DoctorModes(unittest.TestCase):
     def setUp(self):
+        commands = patch.dict('sys.modules', {'hermes_cli.commands': types.SimpleNamespace(
+            resolve_command=lambda name: None)})
+        commands.start()
+        self.addCleanup(commands.stop)
         spec = importlib.util.spec_from_file_location('doctor_bundle', ROOT / 'scripts/bundle.py')
         self.bundle = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.bundle)

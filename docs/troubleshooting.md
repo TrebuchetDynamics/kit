@@ -87,16 +87,20 @@ them, or keep using the core workflows; see [installation](installation.md#insta
 
 ### Approval prompts disappeared after installing
 
-This is the bundle's documented runtime policy (`approvals.mode: off` and related
-keys), applied on every plugin load. Set
-`plugins.entries.kit.settings.apply_runtime_defaults` to `false`
-first, then restore your values; see [reference](reference.md#plugin-settings)
-and [removal and recovery](uninstall.md#restore-configuration-deliberately).
+Fresh profiles default to interactive approvals. Prompts are disabled only by an
+explicit `runtime_policy: autonomous` or retained profile values such as
+`approvals.mode: off`. To restore the interactive policy, select
+`plugins.entries.kit.settings.runtime_policy: interactive`. To keep custom values,
+set `plugins.entries.kit.settings.apply_runtime_defaults` to `false` first, then
+restore your values. See [reference](reference.md#plugin-settings) and
+[removal and recovery](uninstall.md#restore-configuration-deliberately).
 
 ### Settings return after you changed them
 
-Same cause: while `apply_runtime_defaults` is not `false`, each load rewrites the
-policy keys that differ. Opt out first, then change them.
+An explicit `runtime_policy` reapplies its approval and turn values on each load.
+Without a policy selection, existing approval and turn values stay unchanged.
+Other bundle policy settings still apply unless `apply_runtime_defaults` is `false`.
+Opt out first to keep custom values.
 
 ### `--dry-run` still changed configuration
 

@@ -24,7 +24,9 @@ class RuntimeSetupTests(unittest.TestCase):
         self.reload=Mock(return_value={'reloaded':True,'home':str(self.home),'adapters_rewired':1,
             'activations':[{'name':'kit','activated_now':{'gateway_commands':['grill-me']}}]})
         self.pid=Mock(return_value=None)
-        modules={'gateway.control_socket':types.SimpleNamespace(query_gateway_control=self.query,reload_gateway_plugins=self.reload),
+        self.resolve = Mock(return_value=None)
+        modules={'hermes_cli.commands':types.SimpleNamespace(resolve_command=self.resolve),
+                 'gateway.control_socket':types.SimpleNamespace(query_gateway_control=self.query,reload_gateway_plugins=self.reload),
                  'gateway.status':types.SimpleNamespace(get_running_pid=self.pid)}
         p=patch.dict('sys.modules',modules); p.start(); self.addCleanup(p.stop)
 
@@ -83,6 +85,18 @@ class RuntimeSetupTests(unittest.TestCase):
         self.assertEqual(code, 0, report)
         self.assertNotIn('ponytail-review', report['bundled_commands'])
         self.assertEqual(report['bundled_skill_fallbacks'], ['kit:ponytail-review'])
+        self.report['plugin_skills'] = []
+        self.assertEqual(self.finish(bundle_only=True, no_reload=True)[1], 1)
+
+    def test_native_command_collision_requires_a_registered_bundled_skill_fallback(self):
+        skill = self.bundle / 'skills/goal/SKILL.md'
+        skill.parent.mkdir()
+        skill.write_text('fixture')
+        self.resolve.side_effect = lambda name: object() if name == 'goal' else None
+        self.report['plugin_skills'] = ['kit:goal']
+        report, code = self.finish(bundle_only=True, no_reload=True)
+        self.assertEqual(code, 0, report)
+        self.assertEqual(report['bundled_skill_fallbacks'], ['kit:goal'])
         self.report['plugin_skills'] = []
         self.assertEqual(self.finish(bundle_only=True, no_reload=True)[1], 1)
 

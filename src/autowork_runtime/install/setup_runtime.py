@@ -6,14 +6,17 @@ PLUGIN_NAME = 'kit'
 OWNER_NAMES = (PLUGIN_NAME, 'autowork')
 
 
-def ponytail_skill_fallbacks(inventory):
-    """Old external Ponytail commands stay owned; only a registered local skill substitutes."""
+def bundled_skill_fallbacks(inventory):
+    """Keep native and Ponytail commands owned; require a registered local skill fallback."""
+    from hermes_cli.commands import resolve_command
     suite = {'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
              'ponytail-gain', 'ponytail-help'}
     registered = set(inventory.get('plugin_skills', []))
-    return {row['command'] for row in inventory['commands']
-            if row.get('kind') == 'plugin' and row.get('source') == 'ponytail'
-            and row['command'] in suite and 'kit:' + row['command'] in registered}
+    native = {name.removeprefix('kit:') for name in registered
+              if name.startswith('kit:') and resolve_command(name.removeprefix('kit:').replace('_', '-')) is not None}
+    return native | {row['command'] for row in inventory['commands']
+                     if row.get('kind') == 'plugin' and row.get('source') == 'ponytail'
+                     and row['command'] in suite and 'kit:' + row['command'] in registered}
 
 
 def finish_profile(bundle, home, root, inventory, *, bundle_only=False, no_reload=False, verify_settings=None):
@@ -22,7 +25,7 @@ def finish_profile(bundle, home, root, inventory, *, bundle_only=False, no_reloa
                if p.parent.name not in {'repo-docs', 'repo-interview'}}
     commands = {r['command'] for r in inventory['commands']
                 if r.get('kind') == 'plugin' and r.get('source') in OWNER_NAMES}
-    fallbacks = ponytail_skill_fallbacks(inventory) & bundled
+    fallbacks = bundled_skill_fallbacks(inventory) & bundled
     missing = sorted(bundled - commands - fallbacks)
     if missing: errors.append('Unavailable bundled commands: ' + ', '.join(missing))
     own = next((p for p in inventory['plugins'] if p['name'] in OWNER_NAMES), {})
@@ -42,7 +45,7 @@ def finish_profile(bundle, home, root, inventory, *, bundle_only=False, no_reloa
               'note': 'Command registration is verified, not a Telegram message or model invocation. '
                       'Existing sessions may retain their previous tools, prompts and memory provider.'}
     if fallbacks:
-        result['note'] += ' Existing Ponytail commands are unchanged; invoke bundled skills: ' + ', '.join(result['bundled_skill_fallbacks']) + '.'
+        result['note'] += ' Existing native or Ponytail commands are unchanged; invoke bundled skills: ' + ', '.join(result['bundled_skill_fallbacks']) + '.'
     if no_reload:
         result['gateway'] = 'deferred_by_request'
     else:

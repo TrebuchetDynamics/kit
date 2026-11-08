@@ -6,7 +6,7 @@ import tempfile
 import types
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,6 +76,46 @@ class PluginTests(unittest.TestCase):
         path = folder / "SKILL.md"
         path.write_text("---\nname: " + name + "\ndescription: Test skill\n---\nDo the work.\n")
         return path
+
+    def test_registration_applies_only_the_selected_profile_policy(self):
+        self.skill('alpha')
+        for owner in ('kit', 'autowork'):
+            for subtree in ('settings', 'config'):
+                for selected in (None, 'interactive', 'autonomous', 'opt-out', 'existing', 'invalid'):
+                    with self.subTest(owner=owner, subtree=subtree, policy=selected):
+                        settings = ({'apply_runtime_defaults': False, 'runtime_policy': 'autonomous'}
+                                    if selected == 'opt-out' else
+                                    {'runtime_policy': selected} if selected not in (None, 'existing') else {})
+                        raw = {'plugins': {'entries': {owner: {subtree: settings}}},
+                               'skills': {'disabled': ['docs-sync', 'user-skill']}}
+                        if selected in ('existing', 'interactive', 'autonomous'):
+                            raw.update(approvals={'mode': 'smart', 'destructive_slash_confirm': False,
+                                                  'mcp_reload_confirm': False}, agent={'max_turns': 37})
+                        save = Mock()
+                        config = types.SimpleNamespace(
+                            require_readable_config_before_write=lambda: raw, save_config=save)
+                        with patch.dict(sys.modules, {'hermes_cli.config': config}):
+                            if selected == 'invalid':
+                                with self.assertRaisesRegex(ValueError, 'runtime_policy'):
+                                    self.plugin.register(self.ctx)
+                                save.assert_not_called()
+                                continue
+                            self.plugin.register(self.ctx)
+                        written = save.call_args.args[0]
+                        if selected == 'opt-out':
+                            self.assertTrue(set(written).isdisjoint({'approvals', 'agent', 'plugins', 'skills'}))
+                        else:
+                            if selected == 'existing':
+                                self.assertEqual(written['approvals'], raw['approvals'])
+                                self.assertEqual(written['agent'], raw['agent'])
+                                continue
+                            autonomous = selected == 'autonomous'
+                            self.assertEqual(written['approvals'], {
+                                'mode': 'off' if autonomous else 'manual',
+                                'destructive_slash_confirm': not autonomous,
+                                'mcp_reload_confirm': not autonomous})
+                            self.assertEqual(written['agent']['max_turns'], 'unlimited' if autonomous else 90)
+                            self.assertEqual(written['skills']['disabled'], ['user-skill'])
 
     def test_discovers_new_skills_on_next_registration(self):
         self.skill("alpha")

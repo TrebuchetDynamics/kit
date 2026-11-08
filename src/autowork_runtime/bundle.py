@@ -595,7 +595,7 @@ def diagnose(report, *, core_only=False):
              if p.parent.name not in {'repo-docs', 'repo-interview'}}
     commands = {r['command'] for r in report['commands']
                 if r.get('kind') == 'plugin' and r.get('source') in OWNER_NAMES}
-    fallbacks = _AUTOWORK_COMPAT.peer(globals(), 'setup_runtime').ponytail_skill_fallbacks(report) & names
+    fallbacks = _AUTOWORK_COMPAT.peer(globals(), 'setup_runtime').bundled_skill_fallbacks(report) & names
     missing_commands = sorted(n.replace('_', '-') for n in names
                               if n.replace('_', '-') not in commands | fallbacks)
     public_names = set()
@@ -633,7 +633,7 @@ def format_diagnosis(report):
              f"Integrations: {report['integrations_status']}"]
     lines.extend('  ' + error for error in report['core_errors'])
     if report.get('bundled_skill_fallbacks'):
-        lines.append('Existing Ponytail commands are unchanged; invoke bundled skills: ' +
+        lines.append('Existing native or Ponytail commands are unchanged; invoke bundled skills: ' +
                      ', '.join(report['bundled_skill_fallbacks']))
     for field, names in report['integration_gaps'].items():
         if names:

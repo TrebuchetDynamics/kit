@@ -21,7 +21,7 @@ def main():
         (home / "plugins").mkdir()
         (home / "plugins" / "autowork").symlink_to(root, target_is_directory=True)
         (home / "config.yaml").write_text(
-            "plugins:\n  enabled: [autowork]\n  entries:\n"
+            "plugins:\n  enabled: [kit]\n  entries:\n"
             "    autowork:\n      allow_gateway_injection: false\n"
             "approvals:\n  mode: manual\n  destructive_slash_confirm: true\n"
             "  mcp_reload_confirm: true\n  deny: ['keep-this-deny-rule']\n"
@@ -74,13 +74,13 @@ def main():
         assert Path(native_payload['skill_dir']) == native_grill.parent
         from hermes_cli.config import require_readable_config_before_write
         configured = require_readable_config_before_write()
-        assert configured['approvals']['destructive_slash_confirm'] is False, configured['approvals']
-        assert configured['approvals']['mcp_reload_confirm'] is False
-        assert configured['approvals']['mode'] == 'off'
+        assert configured['approvals']['destructive_slash_confirm'] is True, configured['approvals']
+        assert configured['approvals']['mcp_reload_confirm'] is True
+        assert configured['approvals']['mode'] == 'manual'
+        assert configured['agent']['max_turns'] == 90
         assert configured['approvals']['deny'] == ['keep-this-deny-rule']
         assert configured['model']['default'] == 'keep-this-model'
-        # Hermes still reads the legacy entry; the canonical key is ready for stage 2.
-        assert configured['plugins']['entries']['kit']['allow_gateway_injection'] is True
+        # Legacy settings are read, but policy writes use the canonical entry.
         assert configured['plugins']['entries']['kit']['allow_gateway_injection'] is True
 
         from hermes_cli.plugins import PluginContext
@@ -99,10 +99,13 @@ def main():
         policy.apply_runtime_defaults(ctx)
         assert config_path.read_bytes() == before
         save_config({'plugins': {'entries': {'autowork': {'settings': {
-            'apply_runtime_defaults': True}}}}}, merge_existing=True)
+            'apply_runtime_defaults': True, 'runtime_policy': 'autonomous'}}}}}, merge_existing=True)
         policy.apply_runtime_defaults(ctx)
         configured = require_readable_config_before_write()
         assert configured['approvals']['destructive_slash_confirm'] is False
+        assert configured['approvals']['mcp_reload_confirm'] is False
+        assert configured['approvals']['mode'] == 'off'
+        assert configured['agent']['max_turns'] == 'unlimited'
 
         # Exercise the actual /new gate with a harmless callback, never reset a session.
         import asyncio
@@ -134,7 +137,7 @@ def main():
         with contextlib.redirect_stdout(output):
             code = bundle.handle_cli(parser.parse_args(['doctor', '--core', '--json']))
         readiness = json.loads(output.getvalue())
-        assert code == 0 and readiness['core_status'] == 'ready', readiness
+        assert code == 0 and readiness['core_status'] == 'ready', readiness['core_errors']
         assert readiness['integrations_status'] == 'unavailable', readiness
         with contextlib.redirect_stdout(io.StringIO()):
             assert bundle.handle_cli(parser.parse_args(['doctor', '--json'])) == 1
@@ -180,7 +183,7 @@ def main():
             assert accepted[-1]["plugin_home"] == home, accepted
         finally:
             clear_session_vars(tokens)
-        manager.unload("autowork")
+        manager.unload("kit")
         assert "docs-sync" not in manager._plugin_commands
         assert manager.find_plugin_skill("kit:docs-sync") is None
         # Broken YAML must remain recoverable, never replaced by fallback defaults.
@@ -195,6 +198,13 @@ def main():
         assert config_path.read_bytes() == before
         print("PASS: loader approval defaults, /new gate, profile isolation, idempotency, opt-out, "
               "malformed YAML, core/full diagnostics, skill_view, Telegram menu, CLI queue, gateway routing, unload")
+
+
+def test_native_loader():
+    import hermes_bootstrap  # noqa: F401 — native runtime initialization
+    from unittest.mock import patch
+    with patch.dict(os.environ):
+        main()
 
 
 if __name__ == "__main__":

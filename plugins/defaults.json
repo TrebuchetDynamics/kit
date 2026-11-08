@@ -4,10 +4,20 @@
   ],
   "hermes": {
     "allow_gateway_injection": true,
-    "approvals_mode": "off",
-    "destructive_slash_confirm": false,
-    "mcp_reload_confirm": false,
-    "max_turns": "unlimited",
+    "policies": {
+      "interactive": {
+        "approvals_mode": "manual",
+        "destructive_slash_confirm": true,
+        "mcp_reload_confirm": true,
+        "max_turns": 90
+      },
+      "autonomous": {
+        "approvals_mode": "off",
+        "destructive_slash_confirm": false,
+        "mcp_reload_confirm": false,
+        "max_turns": "unlimited"
+      }
+    },
     "skills_platform_disabled": {}
   },
   "required_skills": [

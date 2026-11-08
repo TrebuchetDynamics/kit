@@ -132,63 +132,52 @@ failed=0
 installed=0
 skipped=0
 planned=0
-# Honor plugins.entries.kit.settings.apply_runtime_defaults: false (and the
-# legacy plugins.entries.autowork key, including its config.* subtree) with the
-# same rule the plugin runtime uses.
-runtime_opt_out() {
+# Use the same per-profile policy and legacy-key fallback as native plugin loading.
+runtime_policy() {
     local config=$hermes_root
     [[ $1 == default ]] || config=$hermes_root/profiles/$1
     python3 -B - "$script_dir/scripts/runtime_defaults.py" "$config/config.yaml" <<'PYOPTOUT'
-import importlib.util, sys
+import importlib.util, json, sys
 spec = importlib.util.spec_from_file_location('setup_runtime_defaults', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-sys.exit({True: 10, False: 0}.get(module.setup_opted_out(sys.argv[2]), 11))
+try:
+    selected = module.setup_profile_policy(sys.argv[2])
+except (OSError, ValueError):
+    sys.exit(11)
+if selected['policy'] == 'disabled':
+    sys.exit(10)
+print('policy\t' + selected['policy'])
+for key, value in selected['settings'].items():
+    print(key + '\t' + (value if isinstance(value, str) else json.dumps(value)))
 PYOPTOUT
 }
 apply_bundle_defaults() {
-    local profile=$1 key value errors=0 status=0
-    runtime_opt_out "$profile" || status=$?
+    local profile=$1 key value bundle_defaults errors=0 status=0
+    bundle_defaults=$(runtime_policy "$profile") || status=$?
     if ((status == 10)); then
         $dry_run && printf 'Plan: ' || printf 'Skip: '
         printf 'bundle policy settings; runtime-defaults opt-out (%s)\n' "$profile"
         return 0
     elif ((status)); then
-        printf 'Error: cannot verify runtime-defaults opt-out; bundle policy settings not applied (%s)\n' "$profile" >&2
+        printf 'Error: cannot verify runtime policy/opt-out; bundle policy settings not applied (%s)\n' "$profile" >&2
         return 1
     fi
     while IFS=$'\t' read -r key value; do
-        if $dry_run; then
+        if [[ $key == policy ]]; then
+            printf 'Runtime policy=%s (%s); existing approval/turn values preserved unless policy is explicit\n' "$value" "$profile"
+        elif $dry_run; then
             printf 'Plan: config %s=%s (%s)\n' "$key" "$value" "$profile"
             [[ $key != approvals.mode ]] || printf 'Plan: command approvals=%s (%s)\n' "$value" "$profile"
-        elif ! HERMES_HOME=$hermes_root hermes -p "$profile" config set "$key" "$value"; then
-            errors=$((errors + 1))
+        else
+            printf 'Apply: config %s=%s (%s)\n' "$key" "$value" "$profile"
+            if ! HERMES_HOME=$hermes_root hermes -p "$profile" config set "$key" "$value"; then
+                errors=$((errors + 1))
+            fi
         fi
     done <<< "$bundle_defaults"
     ((errors == 0))
 }
-bundle_defaults=''
-if $setup; then
-    bundle_defaults=$(python3 - "$script_dir/plugins/defaults.json" <<'PYDEFAULTS'
-import json, sys
-cfg = json.load(open(sys.argv[1]))['hermes']
-assert cfg['approvals_mode'] in ('off', 'manual', 'smart'), 'Invalid command approval default'
-for key in ('allow_gateway_injection', 'destructive_slash_confirm', 'mcp_reload_confirm'):
-    assert type(cfg[key]) is bool, 'Invalid boolean default: ' + key
-assert cfg['max_turns'] == 'unlimited' or (type(cfg['max_turns']) is int and cfg['max_turns'] > 0), 'Invalid turn budget default'
-assert isinstance(cfg['skills_platform_disabled'], dict)
-for setting, key in (
-    ('plugins.entries.kit.allow_gateway_injection', 'allow_gateway_injection'),
-    ('approvals.mode', 'approvals_mode'),
-    ('approvals.destructive_slash_confirm', 'destructive_slash_confirm'),
-    ('approvals.mcp_reload_confirm', 'mcp_reload_confirm'),
-    ('agent.max_turns', 'max_turns'),
-    ('skills.platform_disabled', 'skills_platform_disabled')):
-    value = cfg[key]
-    print(setting + '\t' + (value if isinstance(value, str) else json.dumps(value)))
-PYDEFAULTS
-    ) || die 'Invalid bundle defaults'
-fi
 temp_dir=''
 trap '[[ -z $temp_dir ]] || rm -rf -- "$temp_dir"' EXIT
 if $setup; then

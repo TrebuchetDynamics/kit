@@ -83,15 +83,14 @@ class SelfHealTests(unittest.TestCase):
         sys.modules['toolset_pkg']=pkg
         bundle_spec=importlib.util.spec_from_file_location('toolset_pkg.bundle', root/'scripts/bundle.py')
         bundle=importlib.util.module_from_spec(bundle_spec); bundle_spec.loader.exec_module(bundle)
-        bundle.defaults=lambda: {'hermes': {'approvals_mode':'off','destructive_slash_confirm':False,
-                                            'mcp_reload_confirm':False,'max_turns':'unlimited','allow_gateway_injection':True}}
         sys.modules['toolset_pkg.bundle']=bundle
         self.addCleanup(lambda: [sys.modules.pop(k,None) for k in list(sys.modules) if k.startswith('toolset_pkg')])
         spec=importlib.util.spec_from_file_location('toolset_pkg.runtime_defaults', root/'scripts/runtime_defaults.py')
         rd=importlib.util.module_from_spec(spec); sys.modules[spec.name]=rd; spec.loader.exec_module(rd)
         old={'approvals':{'mode':'off','destructive_slash_confirm':False,'mcp_reload_confirm':False},
              'agent':{'max_turns':90},
-             'plugins':{'entries':{'autowork':{'allow_gateway_injection':True}}},
+             'plugins':{'entries':{'autowork':{'allow_gateway_injection':True,
+                                             'settings':{'runtime_policy':'autonomous'}}}},
              'platforms':{'telegram':{'extra':{'command_menu':{'priority':['autoresearch','autoresearch_plan','autowork']}}}}}
         self.assertEqual(rd.settings_drift(old, rd.expected_settings(old)),
                          ['agent.max_turns', 'platforms.telegram.extra.command_menu.priority'])
@@ -113,8 +112,6 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
         pkg=types.ModuleType('toolset_pkg'); pkg.__path__=[str(root)]
         bundle_spec=importlib.util.spec_from_file_location('toolset_pkg.bundle', root/'scripts/bundle.py')
         bundle=importlib.util.module_from_spec(bundle_spec); bundle_spec.loader.exec_module(bundle)
-        bundle.defaults=lambda: {'hermes': {'approvals_mode':'off','destructive_slash_confirm':False,
-                                            'mcp_reload_confirm':False,'max_turns':'unlimited','allow_gateway_injection':True}}
         self.raw={}
         config=types.ModuleType('hermes_cli.config'); config.read_raw_config=lambda: self.raw
         cli=types.ModuleType('hermes_cli'); cli.config=config
@@ -154,16 +151,17 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
             self.assertFalse(self.rd.setup_opted_out(path))  # missing
             path.write_text('plugins:\n  entries:\n    autowork:\n      config:\n        apply_runtime_defaults: false\n')
             self.assertTrue(self.rd.setup_opted_out(path))
-            path.write_text('plugins: [\n  apply_runtime_defaults: false\n')  # malformed: Hermes refuses later
-            self.assertFalse(self.rd.setup_opted_out(path))
+            path.write_text('plugins: [\n  apply_runtime_defaults: false\n')
+            self.assertIsNone(self.rd.setup_opted_out(path))
             with patch.dict(sys.modules, {'yaml': None}):
                 self.assertIsNone(self.rd.setup_opted_out(path))
                 path.write_text('approvals:\n  mode: manual\n')
-                self.assertFalse(self.rd.setup_opted_out(path))
+                self.assertIsNone(self.rd.setup_opted_out(path))
 
     def test_documented_opt_out_with_restored_values_reports_no_drift(self):
         self.raw={'approvals':{'mode':'manual','destructive_slash_confirm':True},
-                  'plugins':{'entries':{'autowork':{'settings':{'apply_runtime_defaults':False}}}}}
+                  'plugins':{'entries':{'autowork':{'settings':{'apply_runtime_defaults':False,
+                                                              'runtime_policy':'autonomous'}}}}}
         # Opted out, only the bundle's menu entries are expected.
         self.assertEqual(self.rd.verify_runtime_defaults(), ['platforms.telegram.extra.command_menu.priority'])
         self.raw.update(self.rd.opted_out_settings(self.raw))
@@ -171,7 +169,7 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
         self.raw['plugins']['entries']['autowork']['settings']['apply_runtime_defaults']=True
         self.assertIn('approvals.mode', self.rd.verify_runtime_defaults())
         del self.raw['plugins']['entries']['autowork']['settings']
-        self.assertIn('approvals.mode', self.rd.verify_runtime_defaults())
+        self.assertNotIn('approvals.mode', self.rd.verify_runtime_defaults())
 
 
     def test_an_opted_out_profile_gets_new_menu_commands_and_keeps_its_own_settings(self):

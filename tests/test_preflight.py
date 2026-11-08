@@ -53,14 +53,34 @@ class PreflightTests(unittest.TestCase):
             self.assertTrue(report['errors'])
             self.assertEqual(before, sorted(str(p) for p in home.rglob('*')))
 
-    def test_core_plan_preserves_memory_and_states_autonomous_policy(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            report = self.check(Path(tmp))
-            self.assertEqual(report['errors'], [])
-            plan = '\n'.join(report['plan'])
-            self.assertIn('approvals.mode', plan)
-            self.assertIn('memory unchanged', plan)
-            self.assertIn('default', plan)
+    def test_core_plan_preserves_memory_and_previews_the_selected_policy(self):
+        cases = (
+            ('', 'interactive', 'manual', 90),
+            ('plugins:\n  entries:\n    kit:\n      settings:\n        runtime_policy: autonomous\n',
+             'autonomous', 'off', 'unlimited'),
+            ('plugins:\n  entries:\n    autowork:\n      config:\n        runtime_policy: autonomous\n',
+             'autonomous', 'off', 'unlimited'),
+            ('approvals:\n  mode: smart\nagent:\n  max_turns: 37\n', 'interactive', 'smart', 37),
+            ('plugins:\n  entries:\n    kit:\n      settings:\n        runtime_policy: unknown\n',
+             'unknown', None, None),
+        )
+        for config, policy, mode, turns in cases:
+            with self.subTest(policy=policy, mode=mode), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                path = home / 'config.yaml'
+                path.write_text(config)
+                report = self.check(home)
+                self.assertEqual(path.read_text(), config)
+                plan = '\n'.join(report['plan'])
+                if policy == 'unknown':
+                    self.assertTrue(report['errors'])
+                    self.assertNotIn('apply settings', plan)
+                    continue
+                self.assertEqual(report['errors'], [])
+                self.assertIn('runtime policy=' + policy, plan)
+                self.assertIn('"approvals.mode": ' + json.dumps(mode), plan)
+                self.assertIn('"agent.max_turns": ' + json.dumps(turns), plan)
+                self.assertIn('memory unchanged', plan)
 
     def test_core_plan_previews_the_canonical_plugin_settings_key(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -189,7 +209,7 @@ class PluginSettingsDualReadTests(unittest.TestCase):
         self.path.write_text('approvals:\n  mode: manual\n')
         self.assertFalse(self.policy.setup_opted_out(self.path))
         raw = yaml.safe_load(self.path.read_text())
-        settings = self.policy._AUTOWORK_COMPAT.peer(self.policy.__dict__, 'bundle').defaults()['hermes']
+        settings = self.policy.policy_values(raw)
         patch = self.policy.expected_settings(raw)
         self.assertEqual(patch['approvals']['mode'], settings['approvals_mode'])
         self.assertEqual(patch['plugins']['entries']['kit']['allow_gateway_injection'],
