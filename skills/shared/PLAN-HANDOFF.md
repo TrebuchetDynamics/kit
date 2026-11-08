@@ -5,8 +5,12 @@ It owns write classification, no-write scopes, standalone versus coordinator-own
 planning and the full requested batch. This handoff does not widen that authority.
 
 Keep ideas and unanswered decisions in their existing documentation owner until
-accepted. An accepted plan section names its status (`Status: Accepted`), scope,
-acceptance and sources. Preserve existing task/goal IDs and completed history.
+accepted. A routine task keeps its scope, acceptance and checks in its record;
+no extra plan or goal is required. Use an existing specification for shared intent
+without copying the task contract. Goal and custom short label are optional;
+missing bounded write scope stays draft until the coordinator resolves it.
+When a separate plan is justified, its accepted section names its status
+(`Status: Accepted`), scope, acceptance and sources. Preserve existing task/goal IDs and completed history.
 Planning saves accepted work as complete records in `tasks/` through `autowork tasks`
 ([work center](TODO-WORKCENTER.md)); a goal without tasks is not an executable task.
 

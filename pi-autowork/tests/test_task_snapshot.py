@@ -163,6 +163,43 @@ class TaskSnapshotTests(unittest.TestCase):
         self.assertEqual([row.task for row in snapshot.closed_rows], ['OLD'])
         self.assertEqual(snapshot.counts[-1], 1)
 
+    def test_conflict_recovery_is_active_only_with_current_compatible_evidence(self):
+        obs = self.observation()
+        row = next(r for r in obs['tasks'] if r['task'] == 'A')
+        row.update(state='held', cause='conflict', admitted_contract_hash=row['contract_hash'],
+                   recovery='resolving_conflict')
+        snap = task_snapshot.capture(self.repo, engine_observation=obs, generation=1)
+        self.assertEqual(snap.rows[0].state, 'Active · Resolving conflict')
+        self.assertEqual(snap.rows[0].kind, 'working')
+        self.assertIn('verification still required', snap.rows[0].why)
+        self.assertEqual(snap.counts, (1, 0, 2, 0, 1, 4))
+        runner = fleet_view.Runner('fixture', repo=str(self.repo), snapshot=snap)
+        self.assertEqual(command.runner_json(runner)['display']['tasks']['A']['state'], snap.rows[0].state)
+        for change in ('stale', 'contract', 'finished', 'other_hold', 'reported', 'decision'):
+            with self.subTest(change=change):
+                bad = json.loads(json.dumps(obs))
+                candidate = bad['tasks'][0]
+                if change == 'stale':
+                    bad['task_source']['observed_at'] = 1
+                elif change == 'contract':
+                    candidate['admitted_contract_hash'] = 'old'
+                elif change == 'finished':
+                    candidate.pop('recovery')
+                elif change == 'other_hold':
+                    candidate['cause'] = 'validation'
+                elif change == 'reported':
+                    candidate['state'] = 'reported'
+                else:
+                    candidate['task'] = 'D'
+                    bad['tasks'] = [candidate]
+                    candidate['contract_hash'] = candidate['admitted_contract_hash'] = task_queue.store(self.repo).tasks['D'].contract_hash
+                result = task_snapshot.capture(self.repo, engine_observation=bad, generation=2)
+                self.assertEqual(result.counts[:2], (0, 0))
+                if change in ('finished', 'other_hold'):
+                    self.assertEqual(result.rows[0].bucket, 'Blocker')
+                elif change == 'reported':
+                    self.assertEqual(result.rows[0].state, 'Waiting · Implemented')
+
     def test_stale_log_phase_cannot_upgrade_a_current_reported_attempt(self):
         obs = self.observation()
         row = next(r for r in obs['tasks'] if r['task'] == 'A')

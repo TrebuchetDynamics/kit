@@ -28,7 +28,7 @@ notes, one per line as `- Label: value`.
 | --- | --- |
 | `id`, `title`, `short` | The ID, its outcome, and one line of at most 40 characters for task lists such as the autowork TUI's Tasks window (`Retained commits resume their worker`). |
 | `status` | `open`, `done` or `superseded`. There is no in-progress status. |
-| `goal` | The goal ID the task serves. |
+| `goal` | Optional goal ID for a meaningful multi-task outcome. |
 | `section`, `rank` | `Now`, `Next` or `Needs decision`, and an integer; lower runs first within its section. |
 | `depends_on`, `verified_depends_on` | Task IDs that must be done first; the verified subset additionally requires verification or an explicit owner exception. |
 | `touches`, `resources` | The write set and the shared resources (see [Bound the write set](#bound-the-write-set)). |
@@ -53,6 +53,20 @@ Priority is the section (Now before Next), then rank, gated by goal focus, goal
 priority and dependencies. Moving a task is editing its rank; there is no other
 recorded order.
 
+### Ordinary authoring
+
+Supply title, scope, acceptance and checks. `autowork tasks add` derives the ID,
+short label and scheduling defaults; goal and custom short label are optional.
+Do not invent a goal, duplicate specification, separate plan, completion report or
+TODO.md for an ordinary task. Link shared intent instead of copying it. Existing
+BLOCKERS.md managed questions are a projection of task/runtime state, not a second
+backlog; preserve still-needed external inputs outside that projection.
+
+The four authoring inputs save intent, not dispatch permission. A record without
+bounded `touches` stays draft. The coordinator resolves write scope and real shared
+resources from source before dispatch, retaining all live and verification gates.
+Defaults never authorize a repository-wide write or fabricate completion.
+
 ### Task names
 
 Use this policy when creating or materially refining an in-scope task in both
@@ -64,7 +78,8 @@ needed just for naming.
   understand the change without opening the task. Add a condition or failure case only when
   it distinguishes similar work. Prefer direct action-led titles; clear outcome-led
   titles are also valid. This is guidance, not a mandatory grammar.
-- **`short`:** Write a meaningful standalone summary of at most 40 characters for
+- **`short`:** Optional authoring override; the CLI derives a bounded label from
+  the title. When supplying an override, write a meaningful standalone summary of at most 40 characters for
   task lists. Preserve the distinguishing object and outcome. Do not merely truncate
   `title` or repeat the ID.
 - Reject padding, unexplained acronyms, and generic Improve/Fix/Update titles that
@@ -149,8 +164,8 @@ across clones, not guaranteeing uniqueness. `autowork tasks add` allocates one
 (`autowork tasks new-id` prints a candidate, not a reservation). Keep existing IDs unchanged,
 including legacy IDs with shorter suffixes or none; never normalize them. A discovery pass that finds the existing backlog already covers the
 evidenced gaps reports that and changes nothing; a short queue is not permission to
-invent work. A task serves a goal: add a missing one with `autowork tasks goal ID
---title T --source path#anchor --priority N`.
+invent work. A task may stand alone. Add a goal with `autowork tasks goal ID
+--title T --source path#anchor --priority N` only for a meaningful shared outcome.
 
 Put executable details in the record: `scope`, `acceptance`, `checks`, `depends_on`,
 and a `Sources:` note linking the plan; a task that uses another's output may name the
@@ -221,7 +236,7 @@ reservations.
 | Command | Effect |
 | --- | --- |
 | `autowork tasks list`, `validate`, `show ID`, `why ID` | Read the committed store; `list`, `validate` and `show` also accept `--worktree` for uncommitted edits. `why` is selection evidence only. |
-| `autowork tasks add --goal G --title T --short S [--section] [--scope] [--acceptance] [--checks] [--touches] [--depends-on]` | A new open task at the bottom of its section; repeat a list flag per item. |
+| `autowork tasks add --title T [--goal G] [--short S] [--section] [--scope] [--acceptance] [--checks] [--touches] [--depends-on]` | A new open task at the bottom of its section; repeat a list flag per item. |
 | `autowork tasks field ID LABEL VALUE` | A typed field (`rank`, `touches`, `checks`, `kind`, ...) or any note label. |
 | `autowork tasks place ID Now\|Next\|"Needs decision" [--decision TEXT]` | Move to the bottom of a section; `--decision` also records an `Owner decision:` note. |
 | `autowork tasks move ID up\|down` | One place up or down within its section. |

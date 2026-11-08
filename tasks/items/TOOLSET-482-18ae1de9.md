@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-482-18ae1de9"
-title = "Verify all Autowork components and offline packages use the new root"
-short = "Verify Autowork layout and packages"
+title = "Autowork source layout and archives match the component map"
+short = "Component layout and archives"
 status = "open"
 goal = "CODE-HEALTH-2026-10"
 section = "Next"

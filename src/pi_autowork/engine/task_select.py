@@ -17,6 +17,7 @@ from pi_autowork.engine.task_store import GoalRecord, TaskRecord, TaskStore
 SECTION_RANK = {'Now': 0, 'Next': 1}
 # Lower runs first: unverified goals before partial ones, partial before unmet.
 GOAL_STATUS_RANK = {'unverified': 0, 'partial': 1, 'unmet': 2, 'met': 3}
+UNGROUPED_PRIORITY = 100
 KEY_RULES = ('FOCUS', 'SECTION', 'RANK', 'GOAL_PRIORITY', 'GOAL_STATUS', 'TASK_ID')
 # `- Held by: <who>; until <YYYY-MM-DD>` in a task's body is its claim: an open task held by
 # someone is not selected. Without a date it holds until the line is removed.
@@ -48,13 +49,14 @@ def blocking(store: TaskStore, task: TaskRecord, done: Iterable[str] = ()) -> Re
     if (holder := held_by(task)) is not None:
         return Reason('HELD', holder)
     goal = store.goals.get(task.goal) if task.goal is not None else None
-    if goal is None:
-        return Reason('NO_GOAL', task.goal or '')
-    if goal.status == 'met':
-        return Reason('GOAL_MET', goal.id)
-    for dep in goal.depends_on:
-        if store.goals[dep].status != 'met':
-            return Reason('GOAL_DEPENDENCY_UNMET', dep)
+    if task.goal is not None and goal is None:
+        return Reason('NO_GOAL', task.goal)
+    if goal is not None:
+        if goal.status == 'met':
+            return Reason('GOAL_MET', goal.id)
+        for dep in goal.depends_on:
+            if store.goals[dep].status != 'met':
+                return Reason('GOAL_DEPENDENCY_UNMET', dep)
     finished = _finished(store, done)
     for dep in task.depends_on:
         if dep not in finished:
@@ -79,10 +81,11 @@ def held_by(task: TaskRecord, today: datetime.date | None = None) -> str | None:
 
 
 def _key(store: TaskStore, task: TaskRecord) -> tuple[int, int, int, int, int, str]:
-    assert task.goal is not None and task.section is not None and task.rank is not None
-    goal: GoalRecord = store.goals[task.goal]
-    return (0 if goal.focus else 1, SECTION_RANK[task.section], task.rank, goal.priority,
-            GOAL_STATUS_RANK[goal.status], task.id)
+    assert task.section is not None and task.rank is not None
+    goal: GoalRecord | None = store.goals.get(task.goal) if task.goal is not None else None
+    return (0 if goal and goal.focus else 1, SECTION_RANK[task.section], task.rank,
+            goal.priority if goal else UNGROUPED_PRIORITY,
+            GOAL_STATUS_RANK[goal.status if goal else 'unmet'], task.id)
 
 
 def order(store: TaskStore, done: Iterable[str] = ()) -> list[TaskRecord]:

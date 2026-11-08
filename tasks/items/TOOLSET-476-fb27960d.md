@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-476-fb27960d"
-title = "Replan blocked Rust tasks and continue independent offline work"
-short = "Replan blocked Rust tasks automatically"
+title = "Rust planner repairs blocked queues without owner task selection"
+short = "Rust blocked-queue replanning"
 status = "open"
 goal = "RUST-OCTET"
 section = "Next"

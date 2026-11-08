@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "MAIN-010"
-title = "Resolve the red-main repair fixture regression and verify the integrated correction"
-short = "Repair red-main discovery fixture regression"
+title = "Discovery requests no longer consume main-repair fixtures"
+short = "Discovery/repair fixture mix-up"
 status = "done"
 goal = "RELIABILITY-2026-10"
 section = "Now"

@@ -85,6 +85,22 @@ These operating priorities apply to every Autowork run.
    Read owner replies (chat / `session_search`) at each run and apply them; do not
    repeatedly return `[SILENT]` for an unanswered material question.
 
+## Apply standing approval
+
+Read the repository's owner-adopted standing decision policy before treating an
+owner-only label or missing live grant as a new owner question. When that policy
+delegates full execution of approved work, approval covers the actions necessary
+for its accepted outcome; record and apply it without asking again. Queue placement
+alone is not approval, and explicit exclusions, pauses and human-only requirements
+still apply.
+
+The coordinator, not a worker, reconciles stale ownership and live fields through
+`autowork tasks`, citing the actual approval source, actor, date and scope. Preserve
+live contracts, validate and commit attributable edits, then re-read admission.
+Do not bypass typed runtime gates or fabricate missing approval evidence. A policy
+edit alone does not update task records or prove runner execution. If a real input
+is unavailable, retain that obligation and continue independent approved work.
+
 ## Decision handoff recovery
 
 Before repeating an owner question or treating an answer as consumed, inspect

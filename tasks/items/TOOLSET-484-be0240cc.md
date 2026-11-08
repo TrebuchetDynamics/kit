@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-484-be0240cc"
-title = "Make task-writing skills produce clear names and actionable descriptions"
-short = "Write clear tasks ready for execution"
+title = "Task-writing skills produce distinct labels and usable instructions"
+short = "Task-writing rules and examples"
 status = "done"
 goal = "PLANNING-AUTHORITY"
 section = "Next"

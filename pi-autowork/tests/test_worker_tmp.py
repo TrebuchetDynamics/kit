@@ -1303,6 +1303,50 @@ class BatchLandingTests(unittest.TestCase):
                                       'autowork/B-set-aside-1, and the task runs fresh on current main')
             self.assertIn('it remains a visible engineering hold', said[1])
 
+    def test_running_conflict_recovery_is_not_failed_while_session_is_busy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runner, coordinator = self.runner(folder, {})
+            runner.known_at_start, runner.once_task, runner.draining = True, 'B', False
+            runner.settle_resume_report = lambda row: False
+            runner.session_busy = lambda: True
+            runner.resolvers['B'] = {'proc': unittest.mock.Mock()}
+            runner.count_failure = lambda *args: self.fail('recovery is not a failure')
+            runner.seen['B'] = 'resolving conflict'
+            said = []
+            row = dict(task='B', state='held', cause='conflict', reason='merge conflict')
+            with patch.object(coordinator.LOG, 'say', side_effect=said.append):
+                runner.settle_reports([row])
+            self.assertEqual(said, [])
+            self.assertEqual(runner.seen['B'], 'resolving conflict')
+            self.assertFalse(runner.draining)
+            runner.resolvers.clear()
+            with patch.object(coordinator.LOG, 'say', side_effect=said.append):
+                runner.note_state('B', 'held', 'resolver failed; worktree preserved')
+            self.assertEqual(said, ['B: failed — resolver failed; worktree preserved'])
+
+    def test_recovery_observation_requires_the_live_matching_attempt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runner, _ = self.runner(folder, {})
+            proc = unittest.mock.Mock()
+            proc.poll.return_value = None
+            row = dict(task='B', state='held', cause='conflict', commit='candidate',
+                       worktree=folder, attempt=2, admitted_contract_hash='contract')
+            snapshot = dict(outcome='PARALLEL_STATUS', tasks=[row])
+            runner.resolvers['B'] = dict(proc=proc, commit='candidate', root=folder,
+                                         attempt=2, contract_hash='contract')
+            observed = runner.recovery_snapshot(snapshot)
+            self.assertEqual(observed['tasks'][0]['recovery'], 'resolving_conflict')
+            self.assertNotIn('recovery', row, 'cached engine state must not be mutated')
+            for field, value in [('commit', 'other'), ('worktree', '/other'), ('attempt', 3),
+                                 ('admitted_contract_hash', 'other'), ('cause', 'validation'),
+                                 ('state', 'reported')]:
+                with self.subTest(field=field):
+                    changed = dict(snapshot, tasks=[dict(row, **{field: value})])
+                    self.assertNotIn('recovery', runner.recovery_snapshot(changed)['tasks'][0])
+            proc.poll.return_value = 1
+            self.assertNotIn('recovery', runner.recovery_snapshot(snapshot)['tasks'][0])
+            self.assertEqual(runner.recovery_snapshot({'outcome': 'BUSY'}), {'outcome': 'BUSY'})
+
     def test_a_candidate_landing_behind_a_busy_checkout_is_said_once(self):
         with tempfile.TemporaryDirectory() as folder:
             runner, coordinator = self.runner(folder, {})
@@ -1326,7 +1370,7 @@ class BatchLandingTests(unittest.TestCase):
                 runner.note_state('C', 'reported')  # requeued after a real review: said again
             self.assertEqual(said, ['C: implemented', 'C: verifying',
                                     'C: waiting to integrate until another session leaves the main checkout '
-                                    '(live session in the checkout)', 'C: failed — merge conflict', 'C: implemented'])
+                                    '(live session in the checkout)', 'C: waiting for conflict recovery — merge conflict', 'C: implemented'])
 
     def test_a_day_old_commit_is_set_aside_and_its_task_runs_fresh(self):
         """Twenty day-old commits conflicted with each other at every landing and held back every

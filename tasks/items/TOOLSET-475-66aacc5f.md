@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-475-66aacc5f"
-title = "Recover Rust runtime state after crashes and reject stale owners"
-short = "Recover Rust state after crashes"
+title = "Rust journal recovers crashes and fences stale owners"
+short = "Rust crash-safe state journal"
 status = "done"
 goal = "RUST-OCTET"
 section = "Next"

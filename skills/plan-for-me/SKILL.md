@@ -112,8 +112,11 @@ conversion, install updates or interrupt workers to complete planning.
 
 Apply the [single-pass handoff](../shared/PLAN-HANDOFF.md#one-planning-pass-one-handoff).
 Save the batch as task records with `autowork tasks add
---goal G --title T --short S --scope ... --acceptance ... --checks ... --touches ...
---depends-on ...`, adding or updating its goal first with `autowork tasks goal`.
+--title T --scope ... --acceptance ... --checks ... --touches ...
+--depends-on ...`. Goal and custom short label are optional; use `--goal G` and
+`autowork tasks goal` for a real multi-task outcome. A routine task needs no
+separate plan/specification; keep its scope and acceptance in its record and link
+existing shared intent rather than duplicating it.
 Include acceptance criteria, dependencies, verification and Now/Next placement;
 distinguish proposed decisions from accepted scope. Save observable criteria in
 `acceptance` and exact verification commands in `checks`. Give each executable task
@@ -130,8 +133,8 @@ For future work whose content depends on implementation evidence, follow
 [builder check](../shared/PLANNING-CRAFT.md#builder-check-before-handoff) and fold
 its answers in. Validate changed docs and run `autowork tasks validate --worktree .`;
 fix every error and every draft you did not mean. Commit the batch once. Put the
-accepted-plan anchor in each affected task's `Sources:` note and its goal's
-`source`. Close a finished planning task with `autowork tasks done ID --by WHO
+existing intent reference in each affected task's `Sources:` note and, when used,
+its goal's `source`. Close a finished planning task with `autowork tasks done ID --by WHO
 --reason TEXT [--evidence REF]`; it writes no verification receipt.
 
 After the commit, `autowork tasks why ID` reports committed-store selection

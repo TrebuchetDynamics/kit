@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-477-e5de6356"
-title = "Run and recover complete multi-task Rust deliveries offline"
-short = "Verify offline Rust delivery cycles"
+title = "Rust coordinator completes and recovers multi-task deliveries offline"
+short = "Rust multi-task delivery cycle"
 status = "open"
 goal = "RUST-OCTET"
 section = "Next"

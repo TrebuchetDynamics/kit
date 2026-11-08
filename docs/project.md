@@ -993,6 +993,12 @@ Blocker; identify the root and affected tasks. Automatically lifted overlap is
 Waiting. An open owner question in `BLOCKERS.md` shows Needs you; do not invent an
 External mapping where the implementation has none.
 
+A live, attempt-matched merge resolver shows **Active · Resolving conflict**, not
+failure. Its engine slot stays held until adoption; this display grants no merge
+or closure authority. Queued recovery is not a running resolver. After adoption,
+the commit waits for verification; recovery alone is not checked or complete.
+Absent, finished or stale recovery evidence leaves the engineering hold visible.
+
 Failure type and resolution owner are separate typed fields shared by engine,
 health, questions and TUI. Exhausted review rework, dead workers, timeouts, conflicts
 and dependency waits remain engineering/recovery holds even after retries end;
@@ -1018,7 +1024,14 @@ only attributable changes; do not treat historical claims as proof of current us
 Status: Accepted current task architecture.
 
 `tasks/items/<ID>.md` and `tasks/goals/<ID>.md` are Markdown under `+++` TOML frontmatter;
-`tasks/evidence/` carries sanitized runtime closure receipts. The engine reads only
+`tasks/evidence/` carries sanitized runtime closure receipts. Goals are optional
+multi-task outcomes; an ungrouped task is a first-class record, not an implicit goal.
+Ordinary authoring supplies title, scope, acceptance and checks; tooling derives
+IDs, list labels and scheduling defaults. The coordinator still resolves bounded
+write scope and shared resources before dispatch, with denied live authority by
+default. Reference shared specifications instead of copying task contracts; routine
+tasks need no separate plan, goal or completion report. BLOCKERS.md managed questions
+are a task/runtime projection, and no TODO.md view is created by default. The engine reads only
 `tasks/`. `autowork migrate <repo>` converts once. An unconverted one-shot exits with
 that instruction; a service waits at zero tokens. There is no legacy second reader,
 generated index or dual write.

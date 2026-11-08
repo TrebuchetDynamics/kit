@@ -45,7 +45,7 @@ def receipt_text(repo, task, slot, info, checks, record, *, ports):
 
 def live_backlog_id(record):
     """One live-qualification backlog per goal, never one Needs-decision task per close."""
-    goal = record.goal or 'UNASSIGNED'
+    goal = record.goal or record.id
     return 'LIVE-' + re.sub(r'[^A-Za-z0-9._-]+', '-', goal)
 
 
@@ -64,17 +64,20 @@ def followup_text(task, record, items, *, existing=None, followup=None):
         parsed = task_store._Document(path, text.encode()).record(text.encode(), False)
         fields = dict(
             depends_on=sorted(set(parsed.depends_on) | {task}),
-            touches=list(dict.fromkeys([*parsed.touches, *(record.touches or ['**'])])),
+            touches=list(dict.fromkeys([*parsed.touches, *record.touches])),
             resources=list(dict.fromkeys([*parsed.resources, *record.resources])),
             acceptance=list(dict.fromkeys([*parsed.acceptance, *proof])))
         return followup, task_store.edit(text, fields)
-    fields = dict(schema=1, id=followup, title='Live qualifications for ' + (record.goal or 'unassigned work'),
-                  short='Live qualifications', status='open', goal=record.goal,
+    fields = dict(schema=1, id=followup, title='Live qualifications for ' + (record.goal or record.id),
+                  short='Live qualifications', status='open',
                   section='Needs decision', rank=task_store_rank(record), depends_on=[task],
-                  touches=list(record.touches) or ['**'], resources=list(record.resources),
+                  touches=list(record.touches), resources=list(record.resources),
                   kind='implementation', ownership='owner', exclusions=['Offline evidence does not count'],
-                  scope='Owner-authorized live checks accumulated from offline task closures in this goal.',
+                  scope='Owner-authorized live checks accumulated from offline task closures in '
+                        + ('this goal.' if record.goal else 'this task.'),
                   acceptance=proof, checks=['Live qualification by an authorized person'])
+    if record.goal is not None:
+        fields['goal'] = record.goal
     return followup, task_store.render(fields, '\n')
 
 

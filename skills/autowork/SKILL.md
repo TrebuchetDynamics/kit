@@ -37,19 +37,8 @@ review step. Keep Hermes Agent unchanged.
 
 ## Apply standing approval
 
-Read the repository's owner-adopted standing decision policy before treating an
-owner-only label or missing live grant as a new owner question. When that policy
-delegates full execution of approved work, approval covers the actions necessary
-for its accepted outcome; record and apply it without asking again. Queue placement
-alone is not approval, and explicit exclusions, pauses and human-only requirements
-still apply.
-
-The coordinator, not a worker, reconciles stale ownership and live fields through
-`autowork tasks`, citing the actual approval source, actor, date and scope. Preserve
-live contracts, validate and commit attributable edits, then re-read admission.
-Do not bypass typed runtime gates or fabricate missing approval evidence. A policy
-edit alone does not update task records or prove runner execution. If a real input
-is unavailable, retain that obligation and continue independent approved work.
+Read and apply [standing approval](references/iteration-and-decisions.md#apply-standing-approval)
+before asking again. Preserve explicit exclusions, pauses and human-only requirements.
 
 ## Select and execute
 
@@ -134,12 +123,9 @@ is unavailable, retain that obligation and continue independent approved work.
    Every `--apply` task claim also removes earlier integrated, clean, unused
    worktrees and reports the rest under `worktree_cleanup`. Preserve active, dirty,
    unmerged or recovery-bearing worktrees; report integration/cleanup pending.
-   Close a task only after verified acceptance: the engine's verified close writes
-   `status = "done"` plus the receipt in `tasks/evidence/<ID>.toml` in one commit, and
-   replay is a no-op. A manual close uses `autowork tasks done ID --by WHO
-   --reason TEXT [--evidence REF]`. It records Manual, not Verified, and writes no
-   verified receipt. An existing `TODO.archive.md` is frozen history, never written.
-   Read-only runs do not write.
+   Close a task only after verified acceptance. A manual close uses
+   `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]` and records
+   Manual, not Verified. Read-only runs do not write.
 
 ## Ownership, limits and continuation
 

@@ -31,6 +31,22 @@ class HealthTests(unittest.TestCase):
     def status(self):
         return json.loads((self.state / 'status.json').read_text())
 
+    def test_conflict_recovery_is_working_without_changing_the_engine_hold(self):
+        snap = snapshot(waiting=(), roots=(dict(HELD, cause='conflict'),))
+        row = snap['tasks'][0]
+        row.update(cause='conflict', recovery='resolving_conflict')
+        for now in (0, 7200):
+            self.assertIsNone(health.update(self.state, snap, now=now))
+            self.assertEqual(self.status()['state'], 'working')
+            self.assertEqual(self.status()['task_observations'][0], row)
+            self.assertEqual(self.status()['held'][0]['cause'], 'conflict')
+        row.pop('recovery')
+        health.update(self.state, snap, now=7300)
+        self.assertEqual(self.status()['state'], 'blocked')
+        self.assertIn('engineering hold: merge conflict', health.update(self.state, snap, now=9100))
+        row.update(cause='validation', recovery='resolving_conflict')
+        self.assertEqual(health.classify(snap), 'blocked', 'a recovery tag must not hide other failures')
+
     def test_a_stall_is_announced_once_after_the_threshold(self):
         snap = snapshot(roots=(dict(HELD, cause='validation'),))
         self.assertIsNone(health.update(self.state, snap, now=1000))

@@ -2147,6 +2147,8 @@ class Coordinator:
     def settle_resolve_hold(self, row):
         """Resolve conflicts and triage blockers before treating a hold as final."""
         state = row.get('state') or ''
+        if state == 'held' and row.get('cause') == 'conflict' and row.get('task') in self.resolvers:
+            return True  # recovery runs even while an unrelated review owns the session
         if state == 'held' and row.get('cause') == 'conflict' and not self.session_busy():
             if self.resolve_task_conflict(row):
                 self.settled = True
@@ -2344,7 +2346,8 @@ class Coordinator:
                     # Grouping: hold it. The engine never retries a conflict with a fresh worker,
                     # so it waits safely for the grouped resolution; a transient conflict is not a
                     # failure streak either.
-                    self.note_state(task, 'held', reason)
+                    self.note_state(task, 'resolving conflict' if task in self.resolvers
+                                    else 'waiting for conflict recovery', reason)
                     return
             self.note_state(task, 'held', reason)
             self.count_failure(task, result.get('cause'), reason)
@@ -3201,7 +3204,9 @@ class Coordinator:
                                      merge_prompt(branch=branch, base=head[:12], files=conflicts, tasks=self.tasks_cli,
                                                   repo=self.repo)], stdout=stream, env=env)
         self.resolvers[task] = {'proc': proc, 'out': out.name, 'root': root, 'head': head, 'commit': commit,
+                                'attempt': row.get('attempt'), 'contract_hash': row.get('admitted_contract_hash'),
                                 'merged_count': adoption.get('merged_count')}
+        self.note_state(task, 'resolving conflict', 'automatic merge recovery; verification still required')
         self.note_resolvers()
         self.restart_status()
         return False
@@ -3276,7 +3281,7 @@ class Coordinator:
             return False
         count = result.get('merged_count', 1)
         again = f' again ({count} of 3)' if count > 1 else ''
-        LOG.say(f'{task}: merged the session into its commit{again}; verifying again')
+        LOG.say(f'{task}: merged the session into its commit{again}; queued for verification')
         return True
 
     # --- Touches proposals ------------------------------------------------------------
@@ -3354,6 +3359,23 @@ class Coordinator:
             else:
                 LOG.say(f'{task}: could not clear its hold: {result.get("reason") or result.get("outcome")}')
 
+    def recovery_snapshot(self, snapshot):
+        """Display-only evidence of a live resolver; never change the engine's held slot."""
+        if snapshot.get('outcome') != 'PARALLEL_STATUS' or not isinstance(snapshot.get('tasks'), list):
+            return snapshot
+        rows = []
+        for row in snapshot['tasks']:
+            observed = dict(row)
+            observed.pop('recovery', None)
+            job = self.resolvers.get(row.get('task'))
+            if (row.get('state') == 'held' and row.get('cause') == 'conflict' and job
+                    and job['proc'].poll() is None and row.get('commit') == job.get('commit')
+                    and row.get('worktree') == job.get('root') and row.get('attempt') == job.get('attempt')
+                    and row.get('admitted_contract_hash') == job.get('contract_hash')):
+                observed['recovery'] = 'resolving_conflict'
+            rows.append(observed)
+        return dict(snapshot, tasks=rows)
+
     def health_update(self, snapshot=None):
         snapshot = self.status() if snapshot is None else snapshot
         paused = int(time.time() + self.pause_until - time.monotonic()) if self.pause_until > time.monotonic() else 0
@@ -3372,7 +3394,8 @@ class Coordinator:
                   'stuck_integrations': str(len(waiting)), 'maintainer': maintainer.last(self.state),
                   'main_check': {k: v for k, v in main_check.read(self.state).items() if k not in ('pid', 'path', 'tmp')}}
         try:
-            line = health.update(self.state, snapshot, runner=runner, stall_after=int(self.stall_after))
+            line = health.update(self.state, self.recovery_snapshot(snapshot), runner=runner,
+                                 stall_after=int(self.stall_after))
         except (OSError, ValueError):
             return
         if line:

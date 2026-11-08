@@ -149,7 +149,12 @@ See [restart scope and failure handling](docs/installation.md#full-suite-from-a-
 Hermes still runs its complete fleet setup and its own dependency and
 security prompts; use `--yes-deps` only when you intend to consent to them.
 
-Octet bootstraps even when its CLI is absent. Default/`--all` and `update` use the
+Ordinary installs reuse the installed Pi package and a working Octet binary in the
+selected destination. `./install.sh update` explicitly refreshes both. Kit skill
+and settings reconciliation still runs, as does the service-restart phase.
+
+Octet bootstraps when its destination binary is absent or fails version verification.
+Bootstrap and explicit updates use the
 [official stable installer](https://octet.skaft.org/install); `--only octet` selects
 it alone and `--skip octet` excludes it. It supports GNU/Linux x86-64 and macOS
 x86-64/arm64, needs `curl`, `sh`, Python 3 and native verification utilities, and
@@ -322,6 +327,12 @@ the [runner guide](pi-autowork/README.md) and
 (`tasks/goals/<ID>.md`), edited only through `autowork tasks` (`list`, `goals`, `show`, `add`,
 `field`, `move`, `done`, …). The store is read from a commit, so a run's decisions are
 reproducible, and `/docs-sync` prepares or converts it.
+
+Ordinary authoring needs **title, scope, acceptance and checks**. The CLI derives
+IDs, list labels and scheduling defaults. Goals are optional multi-task outcomes;
+a routine task needs no separate plan or specification. Missing bounded write scope
+keeps a task draft until the coordinator resolves it. Existing permission and
+verification gates still apply. See [simple authoring](pi-autowork/task-store.md#simple-task-authoring).
 
 <details>
 <summary><strong>An illustrative task record</strong></summary>
