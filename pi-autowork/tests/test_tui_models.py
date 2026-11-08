@@ -1,6 +1,7 @@
 """Model choice and first-service consent; pinned Textual, fixture readers only."""
 import asyncio
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -9,7 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pi_autowork import fleet_view
@@ -80,6 +81,16 @@ async def session_pilot(size):
         assert app.focused is field, 'Typing should immediately filter the model list'
         for selector in ('#filter', '#models', '#model-status'):
             visible(picker.query_one(selector), size)
+        assert not picker.query_one('#model-login').disabled
+        assert not picker.query_one('#model-refresh').disabled
+        with patch.object(app, 'login_to_pi', return_value=0) as login:
+            await pilot.click('#model-login')
+            await settle(app, pilot)
+            login.assert_called_once_with(app.new_model_agent_dir)
+        assert loads == [True, True], 'Returning from Pi login must refresh the catalog'
+        await pilot.click('#model-refresh')
+        await settle(app, pilot)
+        assert loads == [True, True, True], 'The manual refresh must reload the Pi catalog'
         status = text(picker.query_one('#model-status')).lower()
         assert '2' in status and ('model' in status or 'match' in status), status
         await pilot.press('z', 'z', 'z')
@@ -111,13 +122,29 @@ async def session_pilot(size):
         await pilot.press('m')
         app.action_pick_model('model')
         await pilot.pause()
-        assert len(app.screen_stack) == 1 and len(loads) == 2
+        assert len(app.screen_stack) == 1 and len(loads) == 4
     # A read-only empty fleet still explains model choice without enabling it.
     async with fixture_app(size, view_only=True) as (app, pilot, ready, calls):
         visible(app.query_one('#modelbar'), size)
         app.action_pick_model('model')
         await pilot.pause()
         assert len(app.screen_stack) == 1
+
+
+async def login_pilot(size):
+    from contextlib import nullcontext
+    from pi_autowork import tui
+    async with fixture_app(size) as (app, pilot, ready, calls):
+        runner_cmd = Mock(return_value=subprocess.CompletedProcess([], 0))
+        app.runner_cmd = runner_cmd
+        with patch.dict(os.environ, {'AUTOWORK_PI': 'fixture-pi'}), \
+             patch.object(app, 'suspend', return_value=nullcontext()):
+            assert app.login_to_pi('/tmp/pi-agent') == 0
+        argv = runner_cmd.call_args.args[0]
+        kwargs = runner_cmd.call_args.kwargs
+        assert argv == ['fixture-pi', '--no-session']
+        assert kwargs['cwd'] == str(Path.home())
+        assert kwargs['env']['PI_CODING_AGENT_DIR'] == '/tmp/pi-agent'
 
 
 async def status_pilot(size):
@@ -353,6 +380,9 @@ class TuiModelsTests(unittest.TestCase):
     def test_session_choice_filter_and_read_only_modelbar(self):
         self.run_case('session')
 
+    def test_login_uses_pi_terminal_and_selected_agent_directory(self):
+        self.run_case('login')
+
     def test_model_loading_empty_and_error_status(self):
         self.run_case('status')
 
@@ -368,7 +398,9 @@ class TuiModelsTests(unittest.TestCase):
 
 async def main(case):
     for size in ((80, 24), (60, 18)):
-        await globals()[case + '_pilot'](size)
+        await {'session': session_pilot, 'login': login_pilot,
+               'status': status_pilot, 'start': start_pilot,
+               'existing': existing_pilot, 'providers': providers_pilot}[case](size)
         print('PASS', case, size)
     print('MODEL PILOT OK', case)
 
