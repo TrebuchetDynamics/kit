@@ -71,7 +71,7 @@ async def session_pilot(size):
         app.runners = []
         app.render_fleet()
         await pilot.pause()
-        await pilot.click('#modelbar', offset=(4, 0))
+        await pilot.press('m')
         await settle(app, pilot)
         picker = app.screen
         assert isinstance(picker, tui.PickModel), type(picker).__name__
@@ -105,8 +105,9 @@ async def session_pilot(size):
         assert app.new_model == 'fixture/beta'
         app.view_only = True
         app.render_fleet()
-        visible(bar, size)
-        assert 'read' in text(bar).lower(), text(bar)
+        panel = app.query_one('#empty-card', Static)
+        visible(panel, size)
+        assert 'read only' in text(panel).lower(), text(panel)
         await pilot.press('m')
         app.action_pick_model('model')
         await pilot.pause()

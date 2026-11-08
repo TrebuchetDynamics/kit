@@ -253,6 +253,47 @@ async def layout_pilot():
         assert '1 warnings' in painted and 'Main:' in painted, painted
 
 
+async def welcome_pilot():
+    from pi_autowork import tui
+    from textual.widgets import Static
+    async with fixture_app((60, 18)) as (app, pilot):
+        app.runners = []
+        app.fleet_snapshot = fleet_view.FleetSnapshot((), (), 1, time.time())
+        app.render_fleet()
+        await pilot.pause()
+        panel = app.query_one('#empty-state')
+        card = app.query_one('#empty-card', Static)
+        assert panel.display and card.display
+        content = str(card.render())
+        for expected in ('GETTING STARTED', 'Start your first runner',
+                         'Choose provider and model', 'Browse for a project',
+                         'checks the project before starting'):
+            assert expected in content, (expected, content)
+        for width, height in ((60, 18), (100, 30), (150, 45)):
+            await pilot.resize_terminal(width, height)
+            await pilot.pause()
+            assert panel.region.bottom <= height and panel.region.width <= width
+            assert card.region.bottom <= height and card.region.right <= width
+            assert not app.query_one('#runners').display and not app.query_one('#log').display
+        await pilot.press('m')
+        await pilot.pause()
+        assert isinstance(app.screen, tui.PickModel)
+        await pilot.press('escape')
+        app.runners = [fleet_view.Runner('fixture', service='running', state='running')]
+        app.render_fleet()
+        await pilot.pause()
+        assert not panel.display and app.query_one('#runners').display
+    async with fixture_app((60, 18), view_only=True) as (app, pilot):
+        app.runners = []
+        app.fleet_snapshot = fleet_view.FleetSnapshot((), (), 1, time.time())
+        app.render_fleet()
+        await pilot.pause()
+        content = str(app.query_one('#empty-card').render())
+        assert 'READ ONLY' in content and 'no runners' in content.lower(), content
+        assert 'Browse for a project' not in content and 'Choose provider' not in content
+        assert app.query_one('#empty-card').region.bottom <= 18
+
+
 class TuiRedesignTests(unittest.TestCase):
     def run_case(self, case):
         if not shutil.which('uv'):
@@ -276,6 +317,9 @@ class TuiRedesignTests(unittest.TestCase):
     def test_compact_and_wide_layout_keep_help_and_journal_visible(self):
         self.run_case('layout')
 
+    def test_empty_fleet_has_responsive_guided_welcome(self):
+        self.run_case('welcome')
+
 
 if __name__ == '__main__':
     if '--pilot' in sys.argv:
@@ -283,6 +327,7 @@ if __name__ == '__main__':
         if case == 'publisher':
             publisher_contract()
         else:
-            asyncio.run({'redraw': redraw_pilot, 'menu': menu_pilot, 'layout': layout_pilot}[case]())
+            asyncio.run({'redraw': redraw_pilot, 'menu': menu_pilot,
+                         'layout': layout_pilot, 'welcome': welcome_pilot}[case]())
     else:
         unittest.main()
