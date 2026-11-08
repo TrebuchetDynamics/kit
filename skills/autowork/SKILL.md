@@ -35,6 +35,22 @@ only for that gap. Planning resolves consequential missing choices through
 loop. Apply [Ponytail](references/ponytail.md) within the existing implementation and
 review step. Keep Hermes Agent unchanged.
 
+## Apply standing approval
+
+Read the repository's owner-adopted standing decision policy before treating an
+owner-only label or missing live grant as a new owner question. When that policy
+delegates full execution of approved work, approval covers the actions necessary
+for its accepted outcome; record and apply it without asking again. Queue placement
+alone is not approval, and explicit exclusions, pauses and human-only requirements
+still apply.
+
+The coordinator, not a worker, reconciles stale ownership and live fields through
+`autowork tasks`, citing the actual approval source, actor, date and scope. Preserve
+live contracts, validate and commit attributable edits, then re-read admission.
+Do not bypass typed runtime gates or fabricate missing approval evidence. A policy
+edit alone does not update task records or prove runner execution. If a real input
+is unavailable, retain that obligation and continue independent approved work.
+
 ## Select and execute
 
 1. **Step 0 — reconcile, never fingerprint-exit.** Reconcile once: inspect current
@@ -109,7 +125,9 @@ review step. Keep Hermes Agent unchanged.
    Use ordinary Git, repository review and integration policy. Inspect fresh target
    state and serialize canonical writes; preserve unrelated dirty work. Never push,
    deploy, publish, spend money, place trades or broaden live authority without its
-   explicit scoped authorization. Report actual commit/review/integration separately.
+   explicit scoped authorization, which may already be supplied by an owner-adopted
+   standing policy for approved work. Do not request that authorization twice.
+   Report actual commit/review/integration separately.
    For worktree-backed work, finish [worktree closeout](references/worktree-closeout.md):
    verify integration on the canonical `main` or `master`, then remove the task's
    worktree with `<toolset>/pi-autowork/engine/worktree_closeout.py CANONICAL --worktree PATH --apply`.

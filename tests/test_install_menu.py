@@ -95,6 +95,10 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
                     'FAKE_HOME': str(self.home), 'XDG_CONFIG_HOME': str(self.home / '.config'),
                     'PI_AUTOWORK_SYSTEMCTL': str(self.bin / 'systemctl'), 'LANG': 'C.UTF-8',
                     'TMPDIR': str(self.home), 'AUTOWORK_INSTALL_NO_PULL': '1'}  # never pull the checkout under test
+        # In-process installer tests must also never discover the real host fleet.
+        self.environment = patch.dict(os.environ, self.env)
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
 
     def fake(self, name, body):
         path = self.bin / name
@@ -107,6 +111,42 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
 
     def calls(self, prefix=''):
         return [c for c in self.log.read_text().splitlines() if c.startswith(prefix)]
+
+    def test_restart_services_uses_safe_runner_restart_and_tries_every_service(self):
+        listed = subprocess.CompletedProcess([], 0,
+            'pi-autowork@repo.service loaded active running Runner\n'
+            'hermes-gateway.service loaded active running Hermes\n'
+            'kit-helper.service loaded active running Helper\n'
+            'unrelated.service loaded active running Other\n', '')
+        with patch.object(install_menu.platform, 'system', return_value='Linux'), \
+                patch.object(install_menu.shutil, 'which', return_value='/bin/systemctl'), \
+                patch.object(install_menu.subprocess, 'run', return_value=listed) as discover, \
+                patch.object(install_menu, 'run_command', side_effect=[(1, 'failure'), (0, ''), (0, '')]) as run:
+            with self.assertRaisesRegex(RuntimeError, 'hermes-gateway.service'):
+                install_menu.restart_services(install_menu.Output(verbosity=0))
+        self.assertIn('--state=active', discover.call_args.args[0])
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(len(commands), 3)
+        self.assertEqual(commands[0][-2:], ['try-restart', 'hermes-gateway.service'])
+        self.assertEqual(commands[-1][-4:], ['restart', '--stop-workers', '--if-active', 'repo'])
+
+    def test_restart_phase_runs_on_unchanged_and_failed_installs_but_not_preview(self):
+        item = install_menu.Item('fixture', 'Fixture', steps=[
+            install_menu.Step('unchanged', run=lambda: 'already current')])
+        with patch.object(install_menu, 'restart_services', return_value='restarted') as restart:
+            for _ in range(2):
+                self.assertEqual(install_menu.install([item], {'fixture'}), 0)
+            self.assertEqual(restart.call_count, 2)
+            install_menu.install([item], {'fixture'}, dry_run=True)
+            self.assertEqual(restart.call_count, 2)
+            item.refuse = 'fixture failure'
+            self.assertEqual(install_menu.install([item], {'fixture'}), 1)
+            self.assertEqual(restart.call_count, 3)
+
+    def test_restart_failure_makes_install_fail(self):
+        with patch.object(install_menu, 'restart_services', side_effect=RuntimeError('restart failed')):
+            item = install_menu.Item('fixture', 'Fixture')
+            self.assertEqual(install_menu.install([item], {'fixture'}), 1)
 
     def test_every_host_includes_bundled_ponytail_without_a_second_plugin(self):
         self.fake('hermes', LOGGING)
@@ -543,7 +583,7 @@ exit 0
                                                 output=install_menu.Output('never', 0))
                 self.assertEqual(code, 1)
                 summary = output.getvalue().split('Summary:')[1]
-                self.assertIn('5 installed', summary)
+                self.assertIn('6 installed', summary)  # five components plus service activation
                 self.assertIn(cause, summary)
                 self.assertNotIn('failed    }', summary)
                 self.assertLess(len(summary), 2000)
@@ -715,7 +755,9 @@ fi
         self.assertEqual(code, 1)
         self.assertEqual(attempts.read_text(), 'xx')
         self.assertEqual(continued, [])
-        self.assertEqual(json.loads(report.read_text()), {'item': 'retry', 'status': 'failed', 'exit': 23})
+        rows = [json.loads(line) for line in report.read_text().splitlines()]
+        self.assertEqual(rows[0], {'item': 'retry', 'status': 'failed', 'exit': 23})
+        self.assertEqual(rows[1], {'item': 'services', 'status': 'installed', 'exit': 0})
 
     def test_full_selects_all_hosts_and_bundled_skills(self):
         self.fake('hermes', LOGGING)

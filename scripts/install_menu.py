@@ -718,6 +718,45 @@ def choose_text(all_items, chosen, read=input, write=print):
 
 
 # -- installing -------------------------------------------------------------------
+def restart_services(output):
+    """Restart every active Kit service, including on unchanged/partial installs.
+
+    Never revive stopped services or bypass the runner's merge-safe restart guard.
+    Other host services are deliberately outside the installer's authority.
+    """
+    ctl = os.environ.get('PI_AUTOWORK_SYSTEMCTL', 'systemctl')
+    if platform.system() != 'Linux' or not shutil.which(ctl):
+        return 'service restarts unavailable (requires Linux user systemd)'
+    listed = subprocess.run(
+        [ctl, '--user', 'list-units', '--type=service', '--state=active',
+         '--plain', '--no-legend', 'pi-autowork@*.service', 'hermes-gateway*.service',
+         'kit-*.service'], capture_output=True, text=True)
+    if listed.returncode:
+        raise RuntimeError('cannot discover Kit services: ' + failure_summary(listed.stderr))
+    units = sorted({line.split()[0] for line in listed.stdout.splitlines() if line.split()
+                    and re.fullmatch(r'(?:pi-autowork@.+|hermes-gateway[^/]*|kit-[^/]+)\.service',
+                                     line.split()[0])})
+    failed = []
+    for unit in units:
+        if unit.startswith('pi-autowork@'):
+            # Use the checkout entrypoint even if the autowork component was skipped.
+            argv = ['bash', str(ROOT / 'pi-autowork/bin/autowork'), 'restart',
+                    '--stop-workers', '--if-active', unit[len('pi-autowork@'):-len('.service')]]
+        else:
+            argv = [ctl, '--user', 'try-restart', unit]
+        output.line('  $ ' + shlex.join(argv), 'command')
+        try:
+            code, _ = run_command(argv, output)
+            if code:
+                failed.append(unit)
+        except (OSError, subprocess.SubprocessError) as exc:
+            output.line(f'  FAILED: {unit}: {exc}', 'failed')
+            failed.append(unit)
+    if failed:
+        raise RuntimeError('service restart failed: ' + ', '.join(failed))
+    return 'restarted: ' + ', '.join(units) if units else 'no active Kit services'
+
+
 def install(all_items, chosen, dry_run=False, output=None, mode='install'):
     output = output or Output()
     results = []
@@ -803,6 +842,15 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
                 output.line(f'  Done in {time.monotonic() - step_started:.1f}s', 'installed')
         record(item.key, 'planned' if dry_run else outcome, '; '.join(d for d in detail if d),
                None if dry_run else exit_code)
+    if chosen:
+        output.line('\nRestart active Kit services (always, including unchanged installs)', 'heading')
+        if dry_run:
+            record('services', 'planned', 'discover and restart all active Autowork, Hermes gateway and kit-* user services')
+        else:
+            try:
+                record('services', 'installed', restart_services(output), 0)
+            except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+                record('services', 'failed', str(exc), 1)
     output.line('\nSummary:', 'heading')
     for key, outcome, detail in results:
         output.line(f'  {key:<9} {outcome:<9} {detail}', outcome)

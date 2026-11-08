@@ -71,7 +71,12 @@ These operating priorities apply to every Autowork run.
    authority or required review acceptance. Prepare authorized work up to that
    boundary and continue independent work; if nothing can proceed, report the real
    dependency honestly. Do not relabel incomplete work as done to avoid a pause.
-   Existing explicit authority carries forward. Failing tests, missing user-space
+   Existing explicit authority carries forward. Apply an owner-adopted standing
+   delegation to approved work before escalating owner-only labels or missing live
+   records. The coordinator records covered authority through `autowork tasks` and
+   verifies the committed handoff; it does not request a second approval or bypass
+   admission. Distinguish missing bookkeeping from genuinely unavailable inputs.
+   Failing tests, missing user-space
    tooling, routine debugging and agent-invented restrictions are not owner decisions.
    A real tool `pending_approval` holds its original operation and dependent work
    only. Preserve its resume step and supplied request ID; do not resubmit through another tool
@@ -102,7 +107,9 @@ committed dated deferral. It does not acknowledge runner execution or grant auth
 - `deferred`: retain the documented wait and work on independent authorized tasks.
 - `answer_required`: ask only for the genuinely missing material input, within the
   task's scope. A bare `yes` cannot supply missing participants, credentials,
-  publication scope or structured live authorization.
+  publication scope or structured live authorization. When an owner-adopted
+  standing policy already supplies the grant, the coordinator records that existing
+  authority rather than asking again; do not invent missing approval provenance.
 
 If the installed backend lacks `handoff`, use `tasks commit --dry-run`,
 `tasks show ID --worktree` and the committed record as separate, explicit evidence.

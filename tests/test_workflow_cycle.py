@@ -142,6 +142,27 @@ class CycleGuidanceTests(unittest.TestCase):
                 with self.subTest(path=path, phrase=phrase):
                     self.assertNotIn(phrase, text)
 
+    def test_approved_autowork_records_authority_without_reapproval(self):
+        # Instruction coverage, not evidence of runtime admission or live execution.
+        policy = ' '.join((ROOT / 'docs/autonomy.md').read_text().split())
+        for requirement in ('without another owner approval',
+                            'publication and live operations',
+                            'not itself evidence of owner approval',
+                            'Do not change a running contract',
+                            'live_actor', 'live_at', 'live_scope',
+                            'continue independent approved work',
+                            'Approval is never completion evidence',
+                            'Runtime admission still reads the committed typed task records'):
+            with self.subTest(requirement=requirement):
+                self.assertIn(requirement, policy)
+        for path in ('AGENTS.md', 'skills/autowork/SKILL.md',
+                     'skills/autowork/references/iteration-and-decisions.md',
+                     'pi-autowork/task-store.md'):
+            with self.subTest(path=path):
+                text = (ROOT / path).read_text()
+                self.assertIn('standing', text)
+                self.assertIn('approval', text)
+
     def test_autonomy_does_not_turn_missing_intent_into_approval(self):
         core = (ROOT / 'skills/autowork/SKILL.md').read_text() + (ROOT / 'skills/autowork/references/iteration-and-decisions.md').read_text()
         self.assertNotIn('proceed on the recommended reading', core)

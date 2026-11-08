@@ -143,7 +143,10 @@ git clone https://github.com/TrebuchetDynamics/kit && cd kit
 
 `--full` (`--all`) and `--verbose` (`-v`) are the defaults. Missing hosts are skipped,
 while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
-installs nothing. Hermes still runs its complete fleet setup and its own dependency and
+installs nothing. Every install/update also restarts all active Kit user services,
+even when nothing changed; paused/stopped and unrelated services stay untouched.
+See [restart scope and failure handling](docs/installation.md#full-suite-from-a-checkout).
+Hermes still runs its complete fleet setup and its own dependency and
 security prompts; use `--yes-deps` only when you intend to consent to them.
 
 Octet bootstraps even when its CLI is absent. Default/`--all` and `update` use the
