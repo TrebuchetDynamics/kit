@@ -176,9 +176,11 @@ from unsupported execution paths, including dynamic and external callers.
 ## Record tasks, do not edit (audit default)
 
 An audit changes no tests or product sources. Unless read-only, record a compact
-keep/consolidate/remove/repair/quarantine/investigate map in the existing plan owner,
+keep/consolidate/remove/repair/quarantine/investigate map in the existing task or plan owner,
 with exact test/fixture IDs, risk-to-oracle mapping, evidence, unknowns, budgets and
-bounded next tasks. Reuse existing audit/suite-thinning IDs and ownership. Unsupported
+bounded next tasks. Follow
+[ordinary authoring](../../../shared/TODO-WORKCENTER.md#ordinary-authoring)
+when creating or refining records. Reuse existing audit/suite-thinning IDs and ownership. Unsupported
 candidates remain investigate findings, not executable removal tasks. Order supported
 work by payoff and risk, preferring supported case removal and then smaller fixtures
 when both preserve the required protection. Do not retain useless cases to preserve

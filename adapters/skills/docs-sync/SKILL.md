@@ -1,6 +1,6 @@
 ---
 name: docs-sync
-description: "Maintain docs and goal-linked tasks."
+description: "Maintain docs and repository tasks."
 disable-model-invocation: true
 ---
 
@@ -45,9 +45,10 @@ code; report the `LEGACY_CONSUMER` diagnostics with path, line and legacy names,
 reconcile within scope. Plain prepare lists every refusal and, if `runner.running` is
 false, names `autowork tasks prepare --force` as the route without a runner drain; the
 suggestion alone grants no force authority. Force never discards work or data; report a `MIGRATION_BLOCKED` it still
-returns rather than deleting anything. Its `state` is `none` for a new repository (bootstrap goals
-from its `accepted` headings only, else report the missing intent and create no
-queue), and its `diagnostics` name defects with the `autowork tasks` command that
+returns rather than deleting anything. Its `state` is `none` for a new repository:
+bootstrap tasks from accepted intent; group shared outcomes only when useful.
+With no accepted intent, report the missing input and create no queue.
+Its `diagnostics` name defects with the `autowork tasks` command that
 repairs each: repair only from accepted evidence, never grant ownership, `live` or
 resources, never close work to silence one, and leave `IN_FLIGHT` contracts alone.
 
@@ -67,10 +68,12 @@ losing the snapshot. Destination collisions refuse rather than overwrite. After 
 `LEGACY_CONSUMER` and `LEGACY_DOCUMENTATION` diagnostics identify remaining references;
 repair those files from evidence within scope, not through task-field edits.
 
-Turn remaining accepted gaps into goals and tasks in `tasks/`, the repository's only
-task store, through `autowork tasks`: `goal ID --title --source path#anchor
---priority N` for goals, `add --goal G --title T --short S` with `--scope`,
-`--acceptance`, `--checks`, `--touches` and `--depends-on` for tasks, `field ID
+Turn accepted gaps into tasks through
+[ordinary authoring](../../../skills/shared/TODO-WORKCENTER.md#ordinary-authoring):
+`autowork tasks add --title T` with `--scope`, `--acceptance` and `--checks`.
+Resolve `--touches`, real dependencies and resources before dispatch. Goal and
+custom short label are optional; use `goal ID --title --source path#anchor
+--priority N` and `--goal G` for a meaningful shared outcome. Use `field ID
 LABEL VALUE` for other typed fields or notes (such as `Sources`), `place` and `move`
 for section and rank, `supersede --by OTHER --reason` to retire a task and `done ID
 --by WHO --reason TEXT [--evidence REF]` to close any task kind manually. Manual

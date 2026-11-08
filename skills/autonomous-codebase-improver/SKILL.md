@@ -47,8 +47,9 @@ over conflicting upstream instructions:
    work may defer this exploration: record the consequence, deferred seam and next
    revisit point at each refresh. This exception does not override scope or limits.
    Do not manufacture edits for coverage.
-3. Choose one bounded task with acceptance and checks. Reuse accepted decisions and
-   routine local implementation authority. Park genuinely gated work with an exact
+3. Choose one bounded task with acceptance and checks. For new or refined records,
+   follow [ordinary authoring](../shared/TODO-WORKCENTER.md#ordinary-authoring).
+   Reuse accepted decisions and routine local implementation authority. Park genuinely gated work with an exact
    missing decision; continue independent authorized work rather than retrying a hold.
 4. Check [pre-slice capacity](#pre-slice-capacity) before mutation. Establish a
    recoverable baseline and sole-writer ownership. Use the host's supported execution

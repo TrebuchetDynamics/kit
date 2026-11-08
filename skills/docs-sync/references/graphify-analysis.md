@@ -89,9 +89,10 @@ accepted intent remain proposals or owner questions, not executable work. Reuse
 IDs and preserve completed work, holds and focus; add tasks only through
 `autowork tasks` and do not invent task IDs from graph node IDs.
 
-For graph-backed work, every added or materially revised task carries the required contract fields
-plus `Graph evidence:` inside its `Sources:` note (node/path, source locations,
-confidence and scope). If graph coverage is unavailable, say so and cite the
+For graph-backed work, follow
+[ordinary authoring](../../shared/TODO-WORKCENTER.md#ordinary-authoring).
+Save a separate `Graph evidence:` note with nodes/paths, source locations,
+confidence, coverage and scope; keep `Sources:` for relevant intent links. If graph coverage is unavailable, say so and cite the
 verified source instead. Do not require graph metadata for untouched historical tasks.
 Name the user/system outcome rather than "review hub" or "improve documentation".
 

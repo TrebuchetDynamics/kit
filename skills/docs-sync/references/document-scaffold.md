@@ -109,7 +109,7 @@ guard commands from current manifests, not guessed script names.
 | Role | Content |
 | --- | --- |
 | `tasks/goals/<ID>.md` | One goal: title, priority, accepted `source` (`path#anchor`), status, focus, goal dependencies |
-| `tasks/items/<ID>.md` | One task: typed contract (goal, section, rank, scope, acceptance, checks, depends_on, touches, resources, kind, ownership, live, exclusions) plus `- Label: value` notes |
+| `tasks/items/<ID>.md` | One task: title, scope, acceptance and checks; optional goal/short; scheduling, bounded writes, dependencies and authority fields; additive `- Label: value` notes |
 | `tasks/evidence/<ID>.toml` | The receipt the engine's verified close writes; never hand-written |
 | BLOCKERS.md | Active/Resolved external inputs under the parent skill's hard-blocker contract |
 | Existing `TODO.archive.md` | Frozen, read-only history; never written or created |
@@ -125,29 +125,22 @@ Goals and tasks come from the CLI, never from hand-seeded records. Start with
 `autowork tasks prepare .`: it converts a TODO.md + goals.json repository itself
 (one proven local commit; `--no-commit` stages it), finishes an interrupted
 conversion, and for a repository with no task store reports `state: none` with
-the headings marked `Status: Accepted`. Never hand-convert. With no accepted
-heading, report the missing intent instead of creating tasks. Otherwise the first
-`autowork tasks goal` starts `tasks/`.
+the headings marked `Status: Accepted`. Never hand-convert. Use the accepted request
+or existing requirements for intent; with neither, report the missing intent
+instead of creating tasks. For accepted work,
+`autowork tasks add` can initialize `tasks/` directly. Follow
+[ordinary authoring](../../shared/TODO-WORKCENTER.md#ordinary-authoring), not a
+mandatory goal or separate plan. Reuse an existing accepted source when available.
+Create a goal only for a meaningful shared outcome; rolling plans retain their
+shared-goal contract.
 
-Put actual accepted intent in a plan heading (only when the owner accepted this scope):
-
-```markdown
-# Startup slice
-
-Status: Accepted
-
-The application must start successfully; verify startup with the project test.
-```
-
-Then, from the consumer root (substituting the real plan path, scope and checks):
+From the consumer root, substitute the real scope, acceptance, check and write paths:
 
 ```sh
-autowork tasks goal STARTUP --title "Application starts" --source docs/plan.md#startup-slice --priority 1 --focus
-autowork tasks add --goal STARTUP --title "Verify startup" --short "Verify startup" \
+autowork tasks add --title "Verify application startup" \
   --scope "Add the startup check; no deployment or runtime configuration changes." \
   --acceptance "The project's startup test passes." \
-  --checks "<exact test command>" --touches tests/ \
-  --sources "docs/plan.md#startup-slice"
+  --checks "<exact test command>" --touches tests/
 autowork tasks validate --worktree .
 autowork tasks prepare .
 ```
@@ -157,8 +150,8 @@ diagnostics. Give every executable
 task its `touches` through `--touches` (widen to owning directories when
 unsure, or set `resources` to `exclusive` with a reason). An added goal starts
 `unmet`; never mark it met without completed tasks and an executed, passing check.
-Commit the new `tasks/` files with the plan when authorized; `autowork tasks list`
-then shows the task in Now. Validation neither authorizes nor starts execution.
+Commit the new `tasks/` files and any changed owning docs when authorized;
+`autowork tasks list` then shows the committed task. Validation neither authorizes nor starts execution.
 
 ## Conditional documents
 

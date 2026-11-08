@@ -40,6 +40,8 @@ Preserve existing user pauses, live claims, dependencies and safety gates.
 Explicit invocation authorizes the documented default action within user scope.
 Questions-only/read-only/no-write/no-commit/no-push restrictions propagate through
 all handoffs. Product intent is distinct from proposals and current behavior.
+When creating or refining repository tasks, read
+[ordinary authoring](../../skills/shared/TODO-WORKCENTER.md#ordinary-authoring).
 The repository's `tasks/` store is the one work queue: task and goal records edited
 through `autowork tasks`, never by a worker's commit. Do not fabricate completion,
 review, attribution or live qualification there. Python 3 is needed only when
