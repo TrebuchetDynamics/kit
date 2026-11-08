@@ -123,9 +123,9 @@ before asking again. Preserve explicit exclusions, pauses and human-only require
    Every `--apply` task claim also removes earlier integrated, clean, unused
    worktrees and reports the rest under `worktree_cleanup`. Preserve active, dirty,
    unmerged or recovery-bearing worktrees; report integration/cleanup pending.
-   Close a task only after verified acceptance. Follow
-   [verified/manual closeout](references/iteration-and-decisions.md#close-verified-completion);
-   manual closure is not verification. Read-only runs do not write.
+   Close a task only after verified acceptance. A manual close uses
+   `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]` and records
+   Manual, not Verified. Read-only runs do not write.
 
 ## Ownership, limits and continuation
 
