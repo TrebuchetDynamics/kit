@@ -58,6 +58,52 @@ task/attempt/candidate/source evidence to the same authorized coordinator for su
 recovery; do not manufacture new product decisions or duplicate tasks. Runtime failure
 alone is not permission to split acceptance or erase the original obligation.
 
+## Task writing quality
+
+Status: Accepted scope from the owner's request that skills create better task
+names and descriptions. The choices below are planner calls within that request.
+This extends the existing naming policy; it does not repeat its completed
+implementation or rename the current backlog.
+
+Use one shared quality standard in `skills/shared/TODO-WORKCENTER.md`, reached
+through the existing planning and handoff links. It applies when Plan For Me,
+Plan With Me, Docs Sync, Autoresearch or Autowork discovery creates or materially
+refines a task. Other task-producing skills use the same work-center contract.
+Do not copy the standard into every adapter or add a task-store schema field.
+
+- Keep the existing concrete action/outcome plus affected-object naming rule.
+  Read title and short independently and beside sibling tasks. Short stays within
+  40 characters without truncating away the distinguishing outcome.
+- Make `scope` explain the intended behavior change and its bounded context, not
+  just a path list or a restatement of the title. Include the reason when it helps
+  distinguish the work. Keep known constraints and exclusions explicit.
+- Give the implementer a concrete first action, source-backed decisions and the
+  required inputs. Keep observable acceptance separate from exact check commands.
+  Mark future tests unrun. Identify genuine missing inputs without inventing
+  requirements or repeating an already settled permission question.
+- Use existing fields and brief notes only where they add information. Do not
+  repeat the same procedure across scope, acceptance and multiple body notes.
+  Link shared workflow rules instead of pasting them into every task. Retain all
+  mandatory checks and real limitations; brevity must not remove obligations.
+- Before saving, read the task as an implementer: can they identify the outcome,
+  boundary, starting action and evidence of success without another design round?
+  Repair wording from source evidence; unresolved intent stays explicit. Do not
+  rewrite an active contract, manufacture readiness or bulk-edit unrelated tasks.
+
+Extend the existing instruction-contract tests for shared routing and add bounded
+cases to the existing planning specimens. Cover vague names, sibling tasks with
+similar titles, a path-only description, a long repetitive description and a
+missing external input. Include positive and negative output examples with a
+human review rubric. Offline tests prove fixture validity, expected inventory and
+instruction delivery, not future model output quality. Optional model evaluations
+retain the existing source hashes, traces, write restrictions and separate live
+execution authority; no model call is required for this offline change.
+
+Keep this as one cohesive implementation task: shared policy, its links and the
+existing test/fixture seams change together. No new evaluator service, subjective
+CLI rejection, rigid prose length limit, public command or runtime authority change.
+One task review and integration are expected under the existing runner contract.
+
 ## Evaluation specimens
 
 Use disposable native Git task-store fixtures and synthetic public identities.
