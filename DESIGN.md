@@ -39,7 +39,9 @@ Terminals may be small, remote, keyboard-only, or configured for native text cop
 
 The fleet remains a full-width stack: commands, model, runners, selected summary,
 worker observations, and activity. Details holds long diagnostics. The More menu
-exposes secondary actions and shortcuts; direct keys remain available.
+exposes secondary actions and shortcuts; direct keys remain available. Ctrl+P
+opens Textual's searchable command palette with fleet actions, Pi model controls,
+and the built-in theme switcher, scoped to the active screen and access mode.
 Model selection follows provider → search → model → existing change/start confirmation.
 Login opens Pi against the same agent directory and refreshes the model catalog on return.
 Browse exposes the current path, Parent/Home, folder navigation, and readiness.
@@ -63,7 +65,8 @@ spacer rows. No imagery, motion, custom fonts, or additional dependencies.
 ## Components
 
 Reuse MenuBar, DataTable, Static, RichLog, PickModel, and BrowseScreen.
-Add a searchable ActionMenu using existing modal/input/list patterns.
+Keep the searchable ActionMenu and add Textual's built-in command palette for
+cross-screen discovery without adding a package.
 Label the existing runner, worker, and journal separators without adding rows.
 Keep provider/model and browse controls in their established locations.
 Shared text publication compares full Rich Text, including styles and click spans.
