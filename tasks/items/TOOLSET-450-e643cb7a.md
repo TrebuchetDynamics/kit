@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-450-e643cb7a"
-title = "Make Hermes approvals conservative unless autonomous policy is explicit"
-short = "Require explicit autonomous policy"
+title = "Default Hermes to interactive approvals and require explicit autonomous policy"
+short = "Make Hermes autonomy explicit"
 status = "open"
 goal = "RELIABILITY-2026-10"
 section = "Now"
@@ -21,3 +21,5 @@ exclusions = ["No live Hermes profile, gateway, plugin install or approval setti
 - Question: Resolved by the existing 2026-11-07 approval of this exact offline interactive/autonomous policy. No live profile action is requested or granted.
 - Owner decision: 2026-11-07: approved
 - Standing policy: Unblock reconciles the accepted worker contract, not a new security decision: creation f14f8c47, owner-only question 54b317c6, and owner answer 7e081dc18a41870c5e2b048c01f00aff552ae4ea (2026-11-07). Scope, acceptance, checks, exclusions and live denial are unchanged. Touches names the same four native modules at current and accepted relocated paths; use the existing selected-source owners, never recreate retired paths. The existing autowork-python-layout resource serializes these source writes with active relocation. CHANGELOG is coordinator-owned; update the existing in-scope product docs, not completed-task reports.
+- Next action: Extend the existing profile-policy fixtures in tests/test_plugin.py and tests/test_preflight.py to fail on implicit autonomous defaults. Use the selected source owners named in Standing policy, including their relocated paths if that migration has landed.
+- Execution: Implement the interactive/autonomous policy selection, then align setup, preflight and the in-scope installation/reference docs. Cover canonical and legacy settings keys, existing opt-outs and setup previews. Run every declared check in its required environment; tests/integration_plugin.py needs the optional Hermes loader and is not proved by an offline-suite exclusion. Do not change a live profile.

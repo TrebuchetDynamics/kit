@@ -1,8 +1,8 @@
 +++
 schema = 1
 id = "TOOLSET-477-e5de6356"
-title = "Complete an offline multi-task Rust cycle with checks review Git and recovery"
-short = "Complete autonomous Rust cycles"
+title = "Run and recover complete multi-task Rust deliveries offline"
+short = "Verify offline Rust delivery cycles"
 status = "open"
 goal = "RUST-OCTET"
 section = "Next"
@@ -22,3 +22,5 @@ exclusions = ["No live models, device operations, service changes, old-runtime c
 - Verification: Proposed checks and test names are unrun until implementation; no model/live qualification is claimed.
 - Queue disposition: Open in Next; no planning-only hold. Explicit user scope and existing ownership still govern execution.
 - Builder resolution: Resolved from fresh read-only builder findings: Implement commit_proposal: capture/validate the exact task-edit snapshot, private-index tasks-only local commit bound to base HEAD/branch/tree, journal intent/completion, retain ordinary hooks, and reconcile apply/commit/selection crash windows before selecting the resulting committed revision. Preserve unrelated staged/dirty bytes. Respect explicit no-commit scope and retain pending edits without pretending they are selectable. Implement the frozen CheckOperationSpec registry from foundation: fixed Git checks and same-built-binary fixture operations only in this slice, accepted executable/source identities, explicit argv/cwd/sanitized env/time/output limits and bound receipts. Model/planner supplies operation IDs only; reject arbitrary shell/check strings, unknown IDs and changed/untrusted executable/source. Unsupported required checks stay unmet; later candidate-script execution requires its explicit authority boundary.
+- Next action: After the planner and journal prerequisites land, add the failing autonomous_cycle.rs cases named in Acceptance. Use disposable repositories, deterministic fixture operations and the existing native-runtime fixture route, not a billable model.
+- Execution: Wire run_until_quiescent and commit_proposal through the existing services. Exercise two-task completion with checks, independent review, serialized integration and source-bound closure. Then inject proposal-commit and Git-integration failures, preserve unrelated dirty/staged bytes, and test one-task, pause and no-commit limits. Reject unknown operations and executable/source drift. Run both declared Cargo checks without replacing required evidence with fixture success claims.
