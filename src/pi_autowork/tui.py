@@ -11,6 +11,7 @@ has its tasks/ store committed on its main branch.
 """
 from pi_autowork.layout import LAYOUT
 import argparse
+from collections import Counter
 from copy import deepcopy as _deepcopy
 import asyncio
 from dataclasses import replace
@@ -81,6 +82,18 @@ def hotkeys(text, keys, click_actions=None):
             text.stylize(Style(meta={'@click': click_actions[key]}), start, len(text))
 
 
+def publish_text(widget, text):
+    """Avoid redundant paint requests; include styling and click metadata in equality."""
+    previous = getattr(widget, '_published_text', None)
+    presentation = ('style', 'justify', 'overflow', 'no_wrap', 'end', 'tab_size')
+    if previous is not None and text == previous and all(
+            getattr(text, key) == getattr(previous, key) for key in presentation):
+        return False
+    widget._published_text = text.copy()
+    widget.update(text)
+    return True
+
+
 class MenuBar(Static):
     """A screen's keys under its title, wrapping rather than hiding narrow-screen actions."""
     DEFAULT_CSS = 'MenuBar { dock: top; height: auto; max-height: 3; background: $boost; padding: 0 1; }'
@@ -90,7 +103,66 @@ class MenuBar(Static):
         if prefix:
             text.append(prefix + '  ', style='dim')
         hotkeys(text, keys, click_actions)
-        self.update(text)
+        publish_text(self, text)
+
+
+class ActionMenu(ModalScreen[str]):
+    """Search existing actions without dispatching anything until selection."""
+    BINDINGS = [Binding('escape', 'cancel', 'Back')]
+    DEFAULT_CSS = '''
+    ActionMenu { align: center middle; }
+    ActionMenu > Vertical { width: 72; max-width: 100%; height: 80%; border: thick $accent; background: $surface; padding: 0 2; }
+    #actions { height: 1fr; min-height: 1; }
+    #action-status { height: 1; }
+    '''
+
+    def __init__(self, actions):
+        super().__init__()
+        self.actions, self.shown = tuple(actions), list(actions)
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label(Text('Actions and shortcuts', style='bold'))
+            yield Input(placeholder='Search actions, e.g. model, pause or tasks', id='action-filter')
+            yield OptionList(id='actions')
+            yield Static('', id='action-status', markup=False)
+            yield Label('↓ browse · Enter select · Esc back')
+
+    def on_mount(self):
+        field = self.query_one('#action-filter', Input)
+        field.focus()
+        self.on_input_changed(field)
+
+    def on_input_changed(self, event):
+        query = event.value.casefold()
+        self.shown = [(key, label) for key, label in self.actions if query in f'{key} {label}'.casefold()]
+        options = self.query_one('#actions', OptionList)
+        options.clear_options()
+        for key, label in self.shown:
+            text = Text(f'{key:>3}  {label}')
+            text.stylize('bold cyan', 0, 3)
+            options.add_option(text)
+        options.highlighted = 0 if self.shown else None
+        self.query_one('#action-status', Static).update(
+            f'{len(self.shown)} actions' if self.shown else 'No matching actions. Change your search.')
+
+    def on_input_submitted(self, event):
+        if self.shown:
+            self.dismiss(self.shown[0][0])
+
+    def on_key(self, event):
+        if event.key == 'down' and self.focused is self.query_one('#action-filter'):
+            self.query_one('#actions', OptionList).focus()
+            event.stop()
+
+    def on_option_list_option_selected(self, event):
+        if 0 <= event.option_index < len(self.shown):
+            key, label = self.shown[event.option_index]
+            if str(event.option.prompt) == f'{key:>3}  {label}':
+                self.dismiss(key)
+
+    def action_cancel(self):
+        self.dismiss(None)
 
 
 def detail_row(text, label, value, style=''):
@@ -1747,15 +1819,19 @@ class FleetApp(App):
     # Stacked, each part full width: a side-by-side split left a ~30-column pane on an
     # 80-column terminal, which wrapped the detail and cut the log.
     CSS = '''
-    #modelbar { height: 1; padding: 0 1; background: $boost; }
+    Header { background: $panel; }
+    #modelbar { height: 1; padding: 0 1; background: $surface; }
+    #runners, #lanes { background: $surface; }
+    #runners, #lanes, #log { border-title-color: $text; border-title-style: bold; }
+    #runners { border-top: solid $panel; }
     #runners { height: auto; min-height: 3; max-height: 25%; }
-    #overview { height: auto; max-height: 6; padding: 0 1; background: $boost; }
+    #overview { height: auto; max-height: 6; padding: 0 1; background: $surface; }
     #detail-scroll { display: none; height: 6; border-top: solid $panel; }
     #detail { height: auto; padding: 0 1; }
-    #lanes { height: auto; max-height: 20%; border-top: solid $panel; }
+    #lanes { height: auto; min-height: 3; max-height: 20%; border-top: solid $panel; }
     #log { height: 1fr; min-height: 4; border-top: solid $panel; }
     .short #runners { max-height: 20%; }
-    .short #overview { max-height: 5; }
+    .short #overview { max-height: 3; }
     .short #detail-scroll { height: 5; }
     '''
     BINDINGS = [
@@ -1775,9 +1851,10 @@ class FleetApp(App):
         Binding('g', 'run("g")', 'Plan', show=False),
         Binding('u', 'run("u")', 'Uninstall', show=False),
         Binding('n', 'browse', 'Browse', show=False),
+        Binding('?', 'more', 'More', show=False),
         Binding('q', 'quit', 'Quit', show=False),
     ]
-    CONTROL = {'run', 'browse', 'pick_model', 'answer_question'}
+    CONTROL = {'run', 'browse', 'pick_model', 'answer_question', 'more'}
 
     def __init__(self, *, command, script, state_root, env_dir, systemctl='systemctl',
                  journalctl='journalctl', agent=None, runner_cmd=subprocess.run, view_only=False, browse_root=None,
@@ -1807,6 +1884,8 @@ class FleetApp(App):
 
     def check_action(self, action, parameters):
         """View-only (for example served to a browser on a shared network): no control keys."""
+        if action == 'more':
+            return len(self.screen_stack) == 1
         if action in ('show_blockers', 'toggle_details'):
             return len(self.screen_stack) == 1 and self.current() is not None
         if self.view_only and action in self.CONTROL and parameters not in (('l',), ('t',)):  # read-only views
@@ -1844,8 +1923,10 @@ class FleetApp(App):
         self.reads = tui_reads.ReadCoordinator()
         self.reader = self.reads.owner(self.read_done)
         table = self.query_one('#runners', DataTable)
+        table.border_title = 'Runners'
         table.add_columns(*self.RUNNER_COLUMNS, *self.RUNNER_TEXT)
         self.query_one('#lanes', DataTable).add_columns(*self.LANE_COLUMNS, *self.LANE_TEXT)
+        self.query_one('#log', RichLog).border_title = 'Activity · last hour'
         self.action_refresh()
         self.refresh_log()
         self.set_interval(REFRESH, self.poll_refresh)
@@ -2131,6 +2212,30 @@ class FleetApp(App):
         headline, _, reason = verdict.partition(' — ')
         line(f'{runner.name} · {headline}', style)
         counts = fleet_view.task_counts(runner)
+        if self.size.height < 22:
+            snap = fleet_view.snapshot_for(runner)
+            provenance = []
+            if snap.freshness != 'fresh':
+                provenance.append(f'Inventory {snap.freshness}')
+            if snap.engine_freshness != 'fresh':
+                provenance.append(f'execution {snap.engine_freshness}')
+            warnings = len(set((*snap.errors, *runner.acquisition_errors))) + len(snap.annotations)
+            if warnings:
+                provenance.append(f'{warnings} warnings')
+            if counts is None:
+                count_line = 'Tasks unknown / unavailable'
+            else:
+                active, mergeable, waiting, blocker, decision, total = counts
+                count_line = f'{total} open · {active} active · {blocker} blocker · {decision} decisions'
+            line(' · '.join([*provenance, count_line]), 'yellow' if provenance or counts is None else '')
+            check = fleet_view.main_check.line(runner.main_check)
+            if check:
+                line('Main: ' + check, 'bold red' if runner.main_check.get('state') in ('red', 'broken') else '')
+            else:
+                line('Next: ' + self.next_hint(runner), 'dim')
+            text.rstrip()
+            publish_text(self.query_one('#overview', Static), text)
+            return
         if counts is None:
             line('Tasks unknown / unavailable', 'yellow')
         else:
@@ -2144,11 +2249,8 @@ class FleetApp(App):
             observation += f' · {warnings + len(snap.annotations)} warnings'
         line(observation, 'yellow' if warnings or snap.engine_freshness != 'fresh' else 'dim')
         check = fleet_view.main_check.line(runner.main_check)
-        short_check = bool(check) and self.size.height < 22
         check_style = 'bold red' if runner.main_check.get('state') in ('red', 'broken') else ''
-        if short_check:
-            line('Main: ' + check, check_style)
-        elif runner.questions:
+        if runner.questions:
             actions = 'a Answer · b Blockers' if self.answerable_questions(runner) else 'b Blockers (read only)'
             line(f'{len(runner.questions)} recorded questions · {actions}', 'yellow')
         elif 'unavailable' in headline.lower():
@@ -2157,10 +2259,10 @@ class FleetApp(App):
             line('Why: ' + ' '.join(reason.split()))
         else:
             line('Next: ' + self.next_hint(runner), 'dim')
-        if check and not short_check:
+        if check:
             line('Main: ' + check, check_style)
         text.rstrip()
-        self.query_one('#overview', Static).update(text)
+        publish_text(self.query_one('#overview', Static), text)
 
     def show_detail(self):
         detail = self.query_one('#detail', Static)
@@ -2176,33 +2278,38 @@ class FleetApp(App):
             modelbar.append('Model (read only) · ', style='dim')
         model = runner.model if runner and runner.has_service else self.new_model
         modelbar.append(model or 'Select a Pi model for a new runner', style='bold' if model else 'dim')
-        self.query_one('#modelbar', Static).update(modelbar)
+        publish_text(self.query_one('#modelbar', Static), modelbar)
         self.show_overview(runner)
         if runner is None:
             errors = (*(self.fleet_snapshot.errors if self.fleet_snapshot else ()),
                       *(f'{kind}: stale / unavailable: {message}'
                         for kind, message in self.__dict__.get('_read_errors', {}).items()))
             if errors:
-                detail.update('Discovery unavailable: ' + ' · '.join(errors))
+                message = 'Discovery unavailable: ' + ' · '.join(errors)
             elif self.fleet_snapshot is None:
-                detail.update('Loading pi-autowork runners…')
+                message = 'Loading pi-autowork runners…'
             else:
-                detail.update('No pi-autowork runners yet. Press n to browse directories, choose a repository and play its service.')
-            self.query_one('#overview', Static).update(detail.render())
+                message = ('No pi-autowork runners yet.\nThis view is read only.' if self.view_only else
+                           'No pi-autowork runners yet.\nPress m to choose a provider/model, n to browse a repository, or ? for actions.')
+            publish_text(detail, Text(message))
+            publish_text(self.query_one('#overview', Static), Text(message))
             self.query_one('#lanes', DataTable).display = False
-            menubar.show([] if self.view_only else [('g', 'Plan'), ('n', 'Browse'), ('q', 'Quit')],
+            menubar.show([('?', 'Help'), ('q', 'Quit')] if self.view_only else
+                         [('g', 'Plan'), ('n', 'Browse'), ('?', 'Help'), ('q', 'Quit')],
                          click_actions=clicks)
             return
         # The keys go in the menu bar at the top, like a GUI app's menu; the pane holds the facts.
         if self.view_only:
             menubar.show([('l', 'Log'), ('i', 'Summary' if self.details_open else 'Details'),
-                          ('b', 'Blockers'), ('q', 'Quit')], prefix='view only',
+                          ('b', 'Blockers'), ('?', 'More'), ('q', 'Quit')], prefix='view only',
                          click_actions=clicks)
         else:
-            menubar.show([(a.key, a.label) for a in self.available(runner)]
-                         + [('i', 'Summary' if self.details_open else 'Details'),
-                            ('b', 'Blockers'), ('n', 'Browse'), ('q', 'Quit')],
-                         click_actions=clicks)
+            primary = [(a.key, a.label) for a in self.available(runner)]
+            if self.size.height < 22 or self.size.width < 80:
+                primary = [(key, label) for key, label in primary if key in ('a', 'l', 'p', 't')]
+            else:
+                primary += [('i', 'Summary' if self.details_open else 'Details'), ('b', 'Blockers')]
+            menubar.show(primary + [('?', 'More'), ('n', 'Browse'), ('q', 'Quit')], click_actions=clicks)
         text = Text()
         # First the answer to "is it stuck, and why": one sentence, wrapped, never cut.
         sentence, style = fleet_view.verdict(runner)
@@ -2254,19 +2361,22 @@ class FleetApp(App):
             detail_row(text, 'Toolset', runner.toolset_problem, 'bold red')
         elif runner.toolset:  # a development checkout instead of the Pi package: say so
             detail_row(text, 'Toolset', f'{runner.toolset} (PI_AUTOWORK_TOOLSET, not the Pi package)', 'yellow')
-        if text.plain != getattr(self, '_detail', None):
-            self._detail = text.plain
-            detail.update(text)
+        publish_text(detail, text)
         self.show_lanes(runner)
 
     def show_lanes(self, runner):
         """One row per worker: phase, attempt, how long, and what it is doing in plain words."""
         table = self.query_one('#lanes', DataTable)
-        rows = [{'Task': (lane.task if sum(l.task == lane.task for l in runner.lanes) == 1 else f'{lane.task} [{i + 1}]', ''),
-                 'Status': fleet_view.lane_status(runner, lane),
-                 'Try': (str(lane.attempt), ''), 'For': (fleet_view.duration(lane.minutes), ''),
-                 'Quiet': (fleet_view.quiet(lane).removeprefix('quiet '), 'bold yellow'),
-                 'Doing': (doing(lane), fleet_view.action_style(doing(lane)))} for i, lane in enumerate(runner.lanes)]
+        counts = Counter(lane.task for lane in runner.lanes)
+        rows = []
+        for i, lane in enumerate(runner.lanes):
+            activity = doing(lane)
+            rows.append({'Task': (lane.task if counts[lane.task] == 1 else f'{lane.task} [{i + 1}]', ''),
+                         'Status': fleet_view.lane_status(runner, lane),
+                         'Try': (str(lane.attempt), ''), 'For': (fleet_view.duration(lane.minutes), ''),
+                         'Quiet': (fleet_view.quiet(lane).removeprefix('quiet '), 'bold yellow'),
+                         'Doing': (activity, fleet_view.action_style(activity))})
+        table.border_title = f'Workers · {len(runner.lanes)} observed'
         keep = table.cursor_row
         compact = self.size.width < 120
         if compact:
@@ -2320,6 +2430,35 @@ class FleetApp(App):
             log.call_after_refresh(log.scroll_to, y=at, animate=False, force=True)
 
     # -- actions ----------------------------------------------------------------
+    def action_more(self):
+        if len(self.screen_stack) != 1:
+            return
+        runner = self.current()
+        identity = (runner.name, runner.repo) if runner else None
+        if self.view_only:
+            actions = ([('l', 'Log'), ('t', 'Tasks'), ('i', 'Details'), ('b', 'Blockers')] if runner else [])
+        else:
+            actions = ([(action.key, action.label) for action in self.available(runner)]
+                       + [('i', 'Summary' if self.details_open else 'Details'), ('b', 'Blockers')]
+                       if runner else [('g', 'Plan'), ('m', 'Choose provider and model')])
+            if not any(key == 'm' for key, label in actions):
+                actions += [('m', 'Choose provider and model')]
+            actions += [('n', 'Browse repositories')]
+        actions += [('q', 'Quit')]
+        keys = {key for key, label in actions}
+
+        async def chosen(key):
+            if key not in keys:
+                return
+            current = self.current()
+            if key not in ('n', 'q') and ((current.name, current.repo) if current else None) != identity:
+                self.notify('Runner selection changed. Reopen More for the current runner.', severity='warning')
+                return
+            action = {'m': 'pick_model("model")', 'a': 'answer_question', 'i': 'toggle_details', 'b': 'show_blockers',
+                      'n': 'browse', 'q': 'quit'}.get(key, f'run("{key}")')
+            await self.run_action(action)
+        self.push_screen(ActionMenu(actions), chosen)
+
     def available(self, runner):
         answers = [fleet_view.Action('a', 'Answer', [])] if self.answerable_questions(runner) else []
         return answers + [action for action in fleet_view.actions(

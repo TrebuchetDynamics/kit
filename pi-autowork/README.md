@@ -432,6 +432,18 @@ paused one, pauses a running one), `s` **S**top, `r` **R**estart, `m` **M**odel
 (from Pi's list, type to filter), `t` **T**asks, `g` **Plan**, `u` **U**ninstall the
 service, `n` **Browse**: browse directories (from `~/git`, `AUTOWORK_BROWSE_ROOT`), see which
 repositories are ready or what they need, and `p` there plays one; `q` **Q**uit.
+Press **? More** to search all available actions and see their shortcuts. Choosing
+an action uses the same command and confirmation as its direct key. Read-only
+views list only read-only actions. Compact terminals show the primary actions in
+the menu; secondary actions remain in More and retain their keyboard shortcuts.
+
+The fleet separates **Runners**, **Workers** and **Activity** with labelled rules.
+Below 22 terminal rows, the selected summary uses three lines and keeps the main
+check visible. The activity journal retains at least four rows. Repeated identical
+text does not repaint widgets; style and click-target changes still update them.
+Acquisition and freshness rules are unchanged. See [DESIGN.md](../DESIGN.md) for the maintained
+terminal layout and interaction contract.
+
 The browser shows an editable directory path plus **Parent** and **Home** buttons.
 Use arrows to select folders and Enter to open the selected folder. **Ctrl+L**
 selects the path for typing or pasting; Enter opens it. Relative paths resolve

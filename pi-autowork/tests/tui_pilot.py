@@ -795,9 +795,9 @@ async def main():
             menubar = app.query_one('#menubar')
             assert menubar.region.y < app.query_one('#runners').region.y, 'the menu bar is above the runners'
             hints = menubar.render()
-            assert str(hints).rstrip().endswith('Log  Pause  Stop  Restart  Model  Tasks  g Plan  Details  Blockers  n Browse  Quit'), str(hints)
+            assert str(hints).rstrip().endswith('Log  Pause  Stop  Restart  Model  Tasks  g Plan  Details  Blockers  ? More  n Browse  Quit'), str(hints)
             marked = {str(hints)[span.start:span.end] for span in hints.spans if 'underline' in str(span.style)}
-            assert marked == set('LPSRMTBQgin'), marked
+            assert marked == set('LPSRMTBQgin?'), marked
             log = '\n'.join(line.text for line in app.query_one('#log').lines)
             assert 'TASK-036: waiting' in log and 'pending —' not in log, log
             agent = base / 'agent'
@@ -812,17 +812,17 @@ async def main():
                 for view_only in (False, True):
                     app.view_only = view_only
                     for service, state_name, menu in (
-                            ('running', 'stalled', 'Log  Pause  Stop  Restart  Model  Tasks  g Plan  Details  Blockers  n Browse  Quit'),
-                            ('stopped', 'not running', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  n Browse  Quit'),
-                            ('stopped', 'paused', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  n Browse  Quit'),
-                            ('', '', 'g Plan  n Browse  Quit')):
+                            ('running', 'stalled', 'Log  Pause  Stop  Restart  Model  Tasks  g Plan  Details  Blockers  ? More  n Browse  Quit'),
+                            ('stopped', 'not running', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  ? More  n Browse  Quit'),
+                            ('stopped', 'paused', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  ? More  n Browse  Quit'),
+                            ('', '', 'g Plan  n Browse  ? Help  Quit')):
                         selected = replace(runner, service=service, state=state_name) if service else None
                         envelope = fleet_view.FleetSnapshot((selected,) if selected else (),
                             (fleet_view.snapshot_for(selected),) if selected else (), 1, time.time())
                         async with patched_reads(app, mock.patch.object(fleet_view, 'collect_for_tui', return_value=envelope),
                                 mock.patch.object(portal, 'probe', side_effect=AssertionError('fleet key probed Portal'))):
                             await refresh(app, pilot)
-                            expected = ('view only  Log  Details  Blockers  Quit' if selected else '') if view_only else menu
+                            expected = ('view only  Log  Details  Blockers  ? More  Quit' if selected else '? Help  Quit') if view_only else menu
                             assert str(menubar.render()).strip() == expected, menubar.render()
                             painted = ' '.join(menubar.render_line(y).text for y in range(menubar.content_size.height))
                             assert ' '.join(painted.split()) == ' '.join(expected.split()), painted
