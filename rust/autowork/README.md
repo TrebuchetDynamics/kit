@@ -24,7 +24,7 @@ RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.
 
 The native tests use a local OpenAI Chat-compatible HTTP fixture through the real
 Octet `Agent`. They need no live provider or credentials. They use ports within
-`AUTOWORK_PORT_BASE` through `AUTOWORK_PORT_BASE+6` when that variable is set.
+`AUTOWORK_PORT_BASE` through `AUTOWORK_PORT_BASE+7` when that variable is set.
 Otherwise, the operating system assigns local ports. Test files use `TMPDIR`.
 
 | Native test | Offline evidence |
@@ -237,3 +237,12 @@ provider error bodies. Diagnostics retain only status and the discarded stderr
 byte count. Native sessions are separate private transcripts, not sanitized public
 logs. Keep their file contents private. A `succeeded` runtime outcome means only
 that Octet completed the run. It does not prove that the task or its checks passed.
+
+
+Repository IDs preserve `StateStore::repo_id()` exactly across owned requests
+and native events. They are opaque strings, bounded to 4096 bytes with no control
+characters; runtime admission must carry the same value. They never become file
+paths. Task, attempt, model, contract and source identifiers retain their strict
+safe-token rules. `runtime_native::native_state_repository_identity` exercises a
+real state-store identity through native Octet and rejects mismatched, control,
+oversized and empty IDs without dispatch. No journal identity migration occurs.

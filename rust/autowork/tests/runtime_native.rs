@@ -632,3 +632,55 @@ async fn reject_scope_and_redact_secret() {
         "provider failure is not success"
     );
 }
+
+#[tokio::test]
+async fn native_state_repository_identity() {
+    let scratch = Scratch::new("state-identity");
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(scratch.workspace())
+        .args(["init", "-q"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let state = autowork_next::state::StateStore::open(scratch.workspace().join(".git")).unwrap();
+    let fixture = Fixture::new(7, vec![], false, false);
+    let runtime = scratch.runtime(&fixture, Duration::from_secs(5));
+    let mut request = scratch.request(Role::Planner);
+    request.repo_id = state.repo_id().into();
+    request.admission.repo_id = request.repo_id.clone();
+    state
+        .claim(0, request.identity(), &request.source_revision)
+        .unwrap();
+    // The state ID is canonical common-dir/device/inode JSON, not a safe token.
+    assert!(request.repo_id.contains("common_dir"));
+    for invalid in [
+        String::new(),
+        "repo\nidentity".into(),
+        "repo\0identity".into(),
+        "x".repeat(MAX_REPO_ID_BYTES + 1),
+    ] {
+        let mut rejected = request.clone();
+        rejected.repo_id = invalid.clone();
+        rejected.admission.repo_id = invalid;
+        assert!(runtime.run(rejected).await.is_err());
+    }
+    let mut mismatch = request.clone();
+    mismatch.admission.repo_id = "different".into();
+    assert!(runtime.run(mismatch).await.is_err());
+    let mut unsafe_task = request.clone();
+    unsafe_task.task_id = "../task".into();
+    unsafe_task.admission.task_id = unsafe_task.task_id.clone();
+    assert!(runtime.run(unsafe_task).await.is_err());
+    let output = events(runtime.run(request.clone()).await.unwrap()).await;
+    assert_eq!(output.last().unwrap().status, RuntimeStatus::Succeeded);
+    assert!(output.iter().all(|event| event.repo_id == state.repo_id()));
+    assert_eq!(
+        state
+            .projection(&request.task_id, request.generation)
+            .unwrap()
+            .identity
+            .repo_id,
+        request.repo_id
+    );
+}
