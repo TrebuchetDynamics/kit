@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-476-fb27960d"
 title = "Rust planner repairs blocked queues without owner task selection"
 short = "Rust blocked-queue replanning"
-status = "open"
+status = "done"
 goal = "RUST-OCTET"
 section = "Next"
 rank = 12000
@@ -16,6 +16,11 @@ scope = "Implement Planner::propose and coordinator-validated PlanProposal dispo
 acceptance = ["Given a design ambiguity, repeated failed repair or a queue consisting of live-gated tasks, planning_reentry.rs::replan_and_select_independent_offline_work proves a validated useful offline contract is applied and a pending publication token is handed to the coordinator without an owner-choice menu. No selection advances until the coordinator commits that snapshot; original live/acceptance gates and immutable execution grants remain.", "Given structured sudo/credential prerequisites, stale proposal revisions or identical failed-operation fingerprints, planning_reentry.rs::classify_owner_help_and_reject_stale_plan proves only the two routine help reasons request owner input, unsafe/stale proposals cannot mutate records, and unchanged evidence does not cause an infinite plan loop."]
 checks = ["cargo test --locked --manifest-path rust/autowork/Cargo.toml --test planning_reentry"]
 exclusions = ["No live models, device operations, service changes, old-runtime cutover, push or deployment in offline acceptance.", "No changes to upstream Octet, unrelated work or existing user grants."]
+closure = "manual"
+closure_actor = "AnimatroniCode2"
+closure_timestamp = "2026-11-09T19:48:08.492288+00:00"
+closure_reason = "Rust planner re-entry implemented; planning_reentry tests passed."
+closure_evidence = "commit 8db90299"
 +++
 - Sources: docs/plans/rust-octet-autowork.md#accepted-direction; docs/plans/rust-octet-autowork.md#first-implementation-batch
 - Planner calls: Consumes: Runtime read-only planner role; TaskStore/TaskService; StateStore transition/reconcile. Produces: revision-bound PlanProposal and disposition behavior consumed by run_until_quiescent. Physical/live gates are preserved, not reclassified as authorization.

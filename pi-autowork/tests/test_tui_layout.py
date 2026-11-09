@@ -183,7 +183,7 @@ async def task_names_pilot():
                            runner_cmd=no_command, view_only=True)
         with patch.object(fleet_view, 'collect_for_tui', return_value=envelope), \
              patch.object(fleet_view, 'logs', return_value='fixture journal'), \
-             patch.object(tui, 'pending_edits', return_value={'files': []}), \
+             patch.object(sys.modules['pi_autowork.tui_tasks'], 'pending_edits', return_value={'files': []}), \
              patch.object(tui.TaskScreen, 'refresh_tasks', lambda screen: screen.show_task()):
             async with run_pilot(app, size=(60, 24)) as pilot:
                 await settle(app, pilot)
