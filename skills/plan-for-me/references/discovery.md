@@ -27,7 +27,9 @@ plan the concrete outcome and record the aspiration as a separate proposal.
 
 ## Goal classes
 
-Build an explicit goal model from the evidence:
+Build an explicit goal model from the evidence. Goal classes describe intent, not
+mandatory task grouping. A standalone task may be ungrouped; use a goal record for
+a meaningful shared or rolling outcome:
 
 | Class | Meaning | Planner authority |
 | --- | --- | --- |
