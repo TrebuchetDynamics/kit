@@ -2657,6 +2657,10 @@ fcntl.flock = observed_flock
     def check_blocked_service(self, *, owner_only):
         from pi_autowork import health
 
+        # XDG_CONFIG_HOME isolates the service from host settings, including Git identity.
+        # Merge/review processes need a test-owned identity, not the helper's per-call -c.
+        self.git(self.repo, 'config', 'user.name', 'Fixture')
+        self.git(self.repo, 'config', 'user.email', 'fixture@example.invalid')
         # Use real failed reviews for an engineering hold, not the device fixture's owner question.
         plan = {'worker:A': ['blocked']} if owner_only else {'verify:A': ['fail', 'fail', 'fail']}
         self.plan({**plan, 'worker:B': ['released']})
