@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-486-e49cf8cb"
 title = "Separate task screens and read lifetimes from the fleet application"
 short = "Task screens with clear module owners"
-status = "open"
+status = "done"
 goal = "RELIABILITY-2026-10"
 section = "Next"
 rank = 20000
@@ -16,6 +16,11 @@ scope = "Extract ReadScreen and shared widget/text helpers needed by both app an
 acceptance = ["Given direct and public-adapter imports in a private selected-release fixture, test_tui_architecture.py::test_task_screens_have_one_owner proves moved classes/helpers are same-object reexports, task/common modules do not import FleetApp or the application module, and no duplicate editable implementation or foreign-release fallback exists.", "Given screen suspension/reopen, selection changes and blocked reads, existing test_tui_reads.py and rendered test_tui_controls.py cases plus test_tui_architecture.py::test_extracted_screens_keep_host_routes prove read lifetime/epoch safety, exactly-once command/decision/confirmation routing and view-only refusal survive the extraction. Keep the existing four-physical-reader limit and pending-delete overlay authority unchanged.", "Given a code change in either new flat module, test_tui_architecture.py::test_screen_modules_participate_in_reload_stamp proves existing code_stamp discovers the selected owner while open dialogs/actions retain the established reload deferral. Existing task/history/planning screen pilot regressions still execute; missing pinned Textual is not rendered acceptance."]
 checks = ["if test -f pi-autowork/src/pi_autowork/tui.py; then python3 scripts/check.py pi-autowork/tests/runner/test_tui_architecture.py pi-autowork/tests/runner/test_tui_reads.py pi-autowork/tests/runner/test_tui_controls.py pi-autowork/tests/runner/test_task_history.py pi-autowork/tests/runner/test_tui_layout.py; else python3 scripts/check.py pi-autowork/tests/test_tui_architecture.py pi-autowork/tests/test_tui_reads.py pi-autowork/tests/test_tui_controls.py pi-autowork/tests/test_task_history.py pi-autowork/tests/test_tui_layout.py; fi", "git diff --check"]
 exclusions = ["No worker edits to tasks/, BLOCKERS.md, runtime state, scheduling, service lifecycle, model credentials or recorded authority. No live model/service/device operations, installs of shared tools, publication or deployment.", "No new UI framework/dependency, task-state schema, source-root migration or removal/weakening of existing identity, freshness, pending-deletion, confirmation and view-only guards. Do not change active task contracts or fabricate main-check/visual acceptance."]
+closure = "manual"
+closure_actor = "AnimatroniCode2"
+closure_timestamp = "2026-11-09T19:48:09.646559+00:00"
+closure_reason = "Task screens and shared read owners separated; TUI architecture/layout/controls tests passed."
+closure_evidence = "commit 097b6fa9"
 +++
 - Sources: docs/plans/tui-responsiveness.md#operational-state-and-screen-boundaries
 - Planner calls: Extract only the named task/decision screens and shared read/widget leaf, not every screen or a service container. Keep app-owned execution/navigation callbacks and same-object compatibility exports. Routine helper names and import arrangement remain worker-reversible inside those boundaries.

@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-489-7df25e0a"
 title = "Reject pre-push checks for a different checked-out commit"
 short = "Reject wrong-revision push checks"
-status = "open"
+status = "done"
 goal = "RELIABILITY-2026-10"
 section = "Next"
 rank = 23000
@@ -16,6 +16,11 @@ scope = "Bind the default pre-push check path to the advertised local commit bef
 acceptance = ["Given an advertised changed ref resolving to another commit, an unavailable object or a non-commit object, tests/test_pre_push_check.py::MainTests.test_rejects_wrong_revision_before_checks proves a nonzero result, a useful checkout/candidate diagnostic, no core/affected callback and unchanged Git refs/index/worktree. New fixture and assertion are proposed, UNRUN.", "Given matching candidates followed by a changed or unreadable HEAD after otherwise passing checks, tests/test_pre_push_check.py::MainTests.test_refuses_head_drift_after_checks proves refusal rather than success. With unchanged HEAD the same fixture passes; check failures retain their original failure result. Proposed, UNRUN.", "Given an unchanged matching HEAD, tests/test_pre_push_check.py::MainTests.test_matching_candidate_preserves_existing_routes and the existing hook suite prove distinct remote-base ordering/dedup, unknown-base fallback, same-HEAD dirty-worktree behavior, same-commit multi-ref and annotated/lightweight tags, deletion/no-op handling, explicit KIT_PRE_PUSH=0, environment sanitation and private-hook chaining remain intact. Documentation names the wrong-revision refusal and retains the working-tree/CI limits. Proposed extension, UNRUN."]
 checks = ["python3 scripts/check.py tests/test_pre_push_check.py", "python3 skills/docs-sync/scripts/docs.py check .", "git diff --check"]
 exclusions = ["No product implementation during planning; future implementation has no live remote push, service action, hook installation, stash/reset/rebase, source restoration, task-store write or dependency change.", "Do not introduce an immutable-export/worktree manager, a general receipt cache, a language-aware selector, new concurrency or a new environment bypass. Preserve explicit KIT_PRE_PUSH=0 as the existing caller choice, never an automatic fallback.", "Do not claim complete candidate-tree qualification: same-HEAD dirty files and changes not observable from HEAD remain outside this revision-only guard. Do not weaken required checks, the conservative selector fallback, private-terms hooks or current active layout contracts."]
+closure = "manual"
+closure_actor = "AnimatroniCode2"
+closure_timestamp = "2026-11-09T19:48:06.129239+00:00"
+closure_reason = "Pre-push checks bound to the advertised revision; pre-push tests passed."
+closure_evidence = "commit 8eb18cf4"
 +++
 - Sources: docs/project.md#interface-and-state-contract; docs/testing.md#verify; scripts/pre_push_check.py; tests/test_pre_push_check.py; skills/git-commit-push/SKILL.md#fast-path
 - Discovery evidence: OBSERVED at ea5e7d0d: scripts/pre_push_check.py:42-58 retains only remote bases; :98-111 checks ROOT; :142-166 never compares advertised local_sha with HEAD. A read-only runpy probe substituted known=True and no-op check callbacks: two distinct advertised local revisions both returned 0 and invoked the same working-tree core plus remote-base callback. This proves routing only, not real test success or a live push. Rechecked against planning base a92defdb: these hook/test owners are unchanged.

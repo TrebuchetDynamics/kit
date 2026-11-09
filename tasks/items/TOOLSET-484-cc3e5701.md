@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-484-cc3e5701"
 title = "Planning permissions and mode boundaries match accepted rules"
 short = "Planning permission boundaries"
-status = "open"
+status = "done"
 goal = "PLANNING-AUTHORITY"
 section = "Next"
 rank = 18000
@@ -16,6 +16,11 @@ scope = "Qualify the two existing accepted planning requirements against current
 acceptance = ["PlanningAuthorityTests plus existing planning-console refusal tests pass at the inspected revision, and a source trace confirms console and validator use the shared planning_authority owner while schema and record-authority diffs remain store-owned. Ordinary edits pass and protected closure, owner attestation, hold, live, ownership and goal/task status edits remain refused.", "The existing test_workflow_commands, test_planning_cli_contract, test_plan_for_me_discovery, test_task_touches_contract, test_blockers and test_skill_standard modules pass for that same source, with both entry skills reaching the shared protocol and no-write/coordinator boundaries preserved; text guards are not called model adherence evidence.", "The current plan document accurately distinguishes fresh source-bound check/independent-review proof from historical manual closures and remaining unqualified criteria. Supported coordinator receipts retain the exact revision and checks. No goal status, owner qualification/waiver, live gate, historical proof or task contract is altered to manufacture success."]
 checks = ["if test -f pi-autowork/tests/runner/test_planning_authority.py; then python3 scripts/check.py pi-autowork/tests/runner/test_planning_authority.py pi-autowork/tests/runner/test_planning.py tests/test_workflow_commands.py tests/test_planning_cli_contract.py tests/test_plan_for_me_discovery.py tests/test_task_touches_contract.py tests/test_blockers.py tests/test_skill_standard.py; else python3 scripts/check.py tests/test_planning_authority.py pi-autowork/tests/test_planning.py tests/test_workflow_commands.py tests/test_planning_cli_contract.py tests/test_plan_for_me_discovery.py tests/test_task_touches_contract.py tests/test_blockers.py tests/test_skill_standard.py; fi", "git diff --check"]
 exclusions = ["No production code, tests, executable skill instructions, manifests or runtime-state changes; report behavior defects to the existing coordinator without claiming qualification or silently expanding this inspection.", "No model calls, live profiles, dependency installation, service operations, publication, deployment, owner waivers or historical record deletion. No goal-met transition from inspection alone."]
+closure = "manual"
+closure_actor = "AnimatroniCode2"
+closure_timestamp = "2026-11-09T19:48:02.368919+00:00"
+closure_reason = "Planning authority qualification boundaries documented."
+closure_evidence = "commit b761fd9f"
 +++
 - Sources: docs/plans/planning-authority-2026-11-01.md#remaining-offline-qualification; tasks/goals/PLANNING-AUTHORITY.md
 - Planner calls: Derived engineering qualification within the accepted planning goal, not a new product direction. Reuse current tests and shared policy owners rather than rewrite either implementation or skills. No successor planning task: the qualification boundary is known. Preserve goal priority/status and retained immutable proof.

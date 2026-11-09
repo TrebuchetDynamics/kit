@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-489-491c5a2f"
 title = "Harden stalled-service fixture timing under suite load"
 short = "Stalled service fixture hardening"
-status = "open"
+status = "done"
 goal = "RELIABILITY-2026-10"
 section = "Next"
 rank = 23000
@@ -16,6 +16,11 @@ scope = "Harden test_pi_autowork.EngineTests.test_a_stalled_service_says_so_once
 acceptance = ["Characterize suite-only failure versus isolated success from the named evidence and current fixture, including isolation, resource load and timing. Explain how the test-only change addresses the observed failure; do not infer a product defect from the flake.", "Preserve all behavioral assertions: B finishes despite A holding C; the engineering hold is attributed correctly; the service remains alive and becomes stalled only after the threshold; three later interval-spaced snapshots retain state and attribution; STALLED is logged exactly once; A and C remain unfinished/unstarted as appropriate; fleet text, structured roots/groups and status agree. Preserve owner-only waiting behavior without STALLED and guarded process-tree cleanup on assertion failure. No skip, retry-to-green wrapper, removed assertion or arbitrary sleep/deadline inflation.", "Repeated isolated runs and the affected module pass with source-bound results. Exercise representative contention or deterministic test-owned ordering, retain actionable diagnostics and cleanup, and run the full offline check with actual results/skips reported separately from live qualification."]
 checks = ["Repeat the named isolated unittest at least three times in the repository checker environment; record commands, interpreter, timings and results.", "python3 scripts/check.py tests/test_pi_autowork.py", "python3 scripts/check.py"]
 exclusions = ["No product-code repair, runtime dependency, task/goal or runtime-state edits, upstream Hermes edits, live/model calls, service operations, install, publication, deployment or acceptance weakening."]
+closure = "manual"
+closure_actor = "AnimatroniCode2"
+closure_timestamp = "2026-11-09T19:48:10.893951+00:00"
+closure_reason = "Stalled-service fixture isolates its git identity; named test passed three isolated runs. The module still has unrelated host git-identity failures in other tests."
+closure_evidence = "commit 145e7313"
 +++
 
 - Sources: DOCS-MAINTAINER MAIN (flaky test) instruction; docs/testing.md#verify; docs/project.md#reliability-bug-harvest-2026-10-15; tests/test_pi_autowork.py

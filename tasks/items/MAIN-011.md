@@ -3,7 +3,7 @@ schema = 1
 id = "MAIN-011"
 title = "Restore closure fixtures and the lean Autowork skill check"
 short = "Closure and skill checks pass"
-status = "open"
+status = "done"
 goal = "RELIABILITY-2026-10"
 section = "Now"
 rank = -1000
@@ -16,6 +16,11 @@ scope = "Repair the two reproducible offline main failures at revision 93f98ee62
 acceptance = ["The named closure test passes with realistic records. Preserve worktree-before-HEAD reads, closed-backlog suffix reuse, ordered deduplication of touches/resources/acceptance, dependency union and bounded suffix exhaustion. Add or retain explicit goal-grouped and goal-free task-ID fallback coverage consistent with simple task authoring, without inventing a grouping or dropping pending-live obligations.", "The Autowork core SKILL.md is strictly less than 16000 UTF-8 bytes and links every reference; all existing picker-policy assertions pass. Move detail rather than deleting standing-approval, exclusions, human-only boundaries or continuation/selection requirements. Do not raise the limit or skip the test.", "Both named failures and their affected modules pass, and the full offline check reaches its results and passes. Record the tested tree/revision, interpreter, results and skips separately from saved evidence; offline success does not qualify a live or installed runner."]
 checks = ["python3 scripts/check.py pi-autowork/engine/test_closure_documents.py pi-autowork/engine/test_picker_policy.py", "python3 scripts/check.py"]
 exclusions = ["No acceptance weakening, product redesign, optional-goal or standing-approval rollback, task/goal edits, runtime-state edits, upstream Hermes edits, live/model calls, service operations, install, publication or deployment."]
+closure = "manual"
+closure_actor = "AnimatroniCode2"
+closure_timestamp = "2026-11-09T19:47:55.120896+00:00"
+closure_reason = "Closure fixtures and lean Autowork skill landed and validated."
+closure_evidence = "commit f7d175a0"
 +++
 
 - Sources: DOCS-MAINTAINER MAIN (main red) instruction; docs/testing.md#verify; pi-autowork/task-store.md#simple-task-authoring; docs/autonomy.md; pi-autowork/engine/test_closure_documents.py; pi-autowork/engine/test_picker_policy.py
