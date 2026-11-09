@@ -26,6 +26,8 @@ pub use octet_ai as native_ai;
 
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 pub const MAX_EVENT_BYTES: usize = 16 * 1024;
+/// Opaque repository identity is not a path or safe-token identifier.
+pub const MAX_REPO_ID_BYTES: usize = 4096;
 pub const ROLES: [Role; 3] = [Role::Worker, Role::Reviewer, Role::Planner];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -288,7 +290,6 @@ impl AgentRequest {
     fn validate(&self) -> Result<()> {
         let a = &self.admission;
         let ids = [
-            &self.repo_id,
             &self.task_id,
             &self.attempt_id,
             &self.contract_hash,
@@ -296,6 +297,9 @@ impl AgentRequest {
             &self.model_ref,
         ];
         if self.schema_version != CONTRACT_VERSION
+            || self.repo_id.is_empty()
+            || self.repo_id.len() > MAX_REPO_ID_BYTES
+            || self.repo_id.chars().any(char::is_control)
             || self.generation == 0
             || ids.iter().any(|s| {
                 s.is_empty()

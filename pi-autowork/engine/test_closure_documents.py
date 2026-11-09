@@ -31,7 +31,7 @@ class ClosureDocumentsTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(dir=os.environ['TMPDIR'])
         self.addCleanup(self.temp.cleanup)
         self.repo = Path(self.temp.name)
-        self.record = SimpleNamespace(goal='GOAL-1', rank=7, touches=('src/a.py', 'shared'),
+        self.record = SimpleNamespace(id='A', goal='GOAL-1', rank=7, touches=('src/a.py', 'shared'),
                                       resources=('device',), contract_hash='contract')
         self.slot = {'commit': 'candidate', 'report': {'pending_live': ['Phone check']}}
         self.info = {'commit': 'merge'}
@@ -126,11 +126,13 @@ class ClosureDocumentsTests(unittest.TestCase):
         working = self.repo / 'tasks/items/LIVE-GOAL-1-2.md'
         working.parent.mkdir(parents=True)
         working.write_text(open_text.replace('B: First', 'B: Working'))
+        self.record.resources = ('device', 'bench')
         self.slot['report']['pending_live'] = ['Phone check', 'Second check', 'Second check']
         writes = self.prepare()
         self.assertEqual(writes['tasks/items/LIVE-GOAL-1-2.md'],
                          open_text.replace('["B"]', '["A", "B"]')
                          .replace('["shared", "b.py"]', '["shared", "b.py", "src/a.py"]')
+                         .replace('["lab", "device"]', '["lab", "device", "bench"]')
                          .replace('B: First', 'B: Working')
                          .replace('"A: Phone check"]', '"A: Phone check", "A: Second check"]'))
         working.unlink()
@@ -141,9 +143,38 @@ class ClosureDocumentsTests(unittest.TestCase):
             self.head[f'tasks/items/LIVE-GOAL-1-{number}.md'] = closed
         with self.assertRaisesRegex(ValueError, 'too many closed live backlogs'):
             self.prepare()
-        self.assertEqual(facade.live_backlog_id(SimpleNamespace(goal='a / b')), 'LIVE-a-b')
-        self.assertEqual(facade.live_backlog_id(SimpleNamespace(goal=None)), 'LIVE-UNASSIGNED')
+        self.assertEqual(facade.live_backlog_id(SimpleNamespace(id='A', goal='a / b')), 'LIVE-a-b')
+        self.assertEqual(facade.live_backlog_id(SimpleNamespace(id='A', goal=None)), 'LIVE-A')
         self.assertEqual(facade.task_store_rank(SimpleNamespace(rank=None)), 1)
+
+    @patch.dict(os.environ, PI_AUTOWORK_LIVE_FOLLOWUP='backlog')
+    def test_goal_free_followups_use_task_ids_without_fabricating_grouping(self):
+        self.record.goal = None
+        writes = self.prepare()
+        live = writes['tasks/items/LIVE-A.md']
+        self.assertEqual(list(writes), ['tasks/items/A.md', 'tasks/evidence/A.toml',
+                                        'tasks/items/LIVE-A.md'])
+        self.assertIn('id = "LIVE-A"\n', live)
+        self.assertIn('title = "Live qualifications for A"\n', live)
+        self.assertNotIn('goal =', live)
+        self.assertIn('scope = "Owner-authorized live checks accumulated from offline task closures in this task."\n', live)
+        self.assertIn('depends_on = ["A"]\n', live)
+        self.assertIn('acceptance = ["A: Phone check"]\n', live)
+        self.assertIn('exclusions = ["Offline evidence does not count"]\n', live)
+        self.head['tasks/items/LIVE-A.md'] = live
+        self.slot['report']['pending_live'].append('Second check')
+        updated = self.prepare()['tasks/items/LIVE-A.md']
+        self.assertEqual(updated, live.replace('["A: Phone check"]',
+                                              '["A: Phone check", "A: Second check"]'))
+        # An unrelated ungrouped task must not absorb A's pending obligations.
+        self.record.id = 'B'
+        self.head['tasks/items/B.md'] = COMMITTED.replace('"A"', '"B"')
+        other = facade.close_writes(self.repo, 'B', self.slot, self.info, self.checks, self.record)
+        self.assertIn('tasks/items/LIVE-B.md', other)
+        self.assertNotIn('tasks/items/LIVE-A.md', other)
+        self.assertIn('acceptance = ["B: Phone check", "B: Second check"]\n',
+                      other['tasks/items/LIVE-B.md'])
+        self.assertNotIn('goal =', other['tasks/items/LIVE-B.md'])
 
     def test_facades_keep_signatures_identity_and_fresh_four_callable_ports(self):
         leaf = importlib.import_module(LEAF)
