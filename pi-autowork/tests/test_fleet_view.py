@@ -144,7 +144,7 @@ class FleetViewTests(unittest.TestCase):
         runner = fleet_view.Runner(name='repo', state='working', snapshot=snapshot, decisions=2)
         row = fleet_view.runner_rows([runner])[0]
         self.assertEqual(row['Runner'], ('repo', ''))
-        self.assertEqual(row['State'], ('working', 'bold green'))
+        self.assertEqual(row['State'], ('Working', 'bold green'))
         self.assertEqual(row['Active'], ('1', 'green'))
         self.assertEqual(row['Waiting'], ('1', ''))
         self.assertEqual(row['Decision'], ('2', 'yellow'))
