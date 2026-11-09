@@ -246,3 +246,49 @@ paths. Task, attempt, model, contract and source identifiers retain their strict
 safe-token rules. `runtime_native::native_state_repository_identity` exercises a
 real state-store identity through native Octet and rejects mismatched, control,
 oversized and empty IDs without dispatch. No journal identity migration occurs.
+
+## Planning re-entry
+
+`Planner::new(runtime, task_service, state_store)` uses an owned fresh-context
+native planner with the bundled Plan For Me and RESEARCH-PLAN instructions. The
+coordinator first claims its generation in `StateStore`, then supplies a
+`PlanningContext` with a read-only `AgentRequest`, current in-flight task IDs,
+observed prerequisites and secret values that must be rejected from output.
+The request binds the actual snapshot task contract. No model response can
+supply admission, an executable identity or check argv.
+
+`propose(snapshot, failure, context)` journals the child intent, consumes its
+bounded events, requires a successful reaped native outcome, and reads the final
+structured response through Octet's read-only private Session API. The private
+transcript is not public evidence. Failure and response diagnostics expose no
+model prose. A durable input marker prevents another model call on the same
+revision, failed operation, fingerprint and evidence references, including after
+restart. New evidence is required to revisit that input; unresolved child effects
+still require coordinator reconciliation.
+
+`validate_and_apply` checks the current journal generation, source revision,
+contract and exact failure evidence before calling `TaskService`. Existing
+acceptance, required checks, exclusions, write scope, resources and verified
+prerequisites cannot be weakened. Existing dependencies cannot be removed and
+in-flight records cannot change. TaskService separately preserves owner/live
+and closure authority and validates the complete schema-1 store. Sources must
+refer to the coordinator-supplied evidence. New source discoveries therefore
+need new inspected-source evidence before application.
+
+Useful proposals return `PlanOutcome::Pending { edit, snapshot }`. That token is
+publication input for `Coordinator::commit_proposal`; it is never converted to
+a selectable uncommitted snapshot. Pending edits have not been committed or
+integrated. Only an observed matching `SudoRequired` or `CredentialRequired`
+prerequisite returns owner help. External waits and scope refusals remain
+separate. An exhausted search needs a bounded list of alternatives and inspected
+source references; an empty model answer cannot establish quiescence.
+
+```sh
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --offline --manifest-path rust/autowork/Cargo.toml --test planning_reentry
+```
+
+The two tests use disposable repositories and a loopback response through the
+real Octet runtime, plus direct coordinator validation. They prove pending
+publication, immutable gates, stale and unsafe response refusal, observed-only
+help classification and unchanged-evidence suppression. They do not prove
+coordinator publication, integrated task completion or live-provider behavior.
