@@ -12,6 +12,8 @@ the merge-base with origin/main (the selector's own default). Deleted refs and r
 nothing new are skipped. The selection follows the working tree, as the selector does, so
 uncommitted edits are tested too; a change to the check, CI or packaging selects the whole
 suite, and that is the one case a push takes minutes.
+Changed local objects must peel to the checked-out HEAD before checks; HEAD must still
+match afterward. This revision guard does not qualify an immutable candidate tree.
 """
 import os
 from pathlib import Path
@@ -37,22 +39,41 @@ def known(sha):
     return git('cat-file', '-e', f'{sha}^{{commit}}').returncode == 0
 
 
+def changed_refs(lines):
+    """The advertised updates that need checks, excluding deletions and no-ops."""
+    for line in lines:
+        parts = line.split()
+        if len(parts) != 4:
+            continue
+        local_ref, local_sha, _remote_ref, remote_sha = parts
+        if local_sha == ZERO or local_sha == remote_sha:
+            continue  # a deletion, or nothing new
+        yield local_ref, local_sha, remote_sha
+
+
 def pushed_bases(lines, known=None):
     """The distinct bases of the refs being pushed, in order; None stands for the selector's
     default (a ref the remote does not have yet, or a remote sha this clone has not fetched)."""
     known = globals()['known'] if known is None else known
     bases = []
-    for line in lines:
-        parts = line.split()
-        if len(parts) != 4:
-            continue
-        _local_ref, local_sha, _remote_ref, remote_sha = parts
-        if local_sha == ZERO or local_sha == remote_sha:
-            continue  # a deletion, or nothing new
+    for _local_ref, _local_sha, remote_sha in changed_refs(lines):
         base = remote_sha if remote_sha != ZERO and known(remote_sha) else None
         if base not in bases:
             bases.append(base)
     return bases
+
+
+def commit(object_name):
+    """Resolve a commit or peel a tag in the checkout whose files will be checked."""
+    result = git('rev-parse', '--verify', f'{object_name}^{{commit}}')
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def revision_refusal(reason):
+    print(f'pre-push: {reason}; checkout {ROOT}. Nothing was pushed.\n'
+          '  Use a checkout at the advertised commit and retry, or explicitly leave checks to CI\n'
+          '  with KIT_PRE_PUSH=0 git push.', file=sys.stderr, flush=True)
+    return 1
 
 
 HOOK_VARIABLES = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_EDITOR', 'GIT_EXEC_PATH', 'GIT_PREFIX',
@@ -137,9 +158,20 @@ def main(argv=None, stdin=None, run=run_affected, core=run_core):
         print('pre-push: KIT_PRE_PUSH=0, affected tests skipped; CI runs the whole suite', flush=True)
         return 0
     lines = (sys.stdin if stdin is None else stdin).read().splitlines()
-    bases = pushed_bases(lines)
-    if not bases:
+    candidates = list(changed_refs(lines))
+    if not candidates:
         return 0
+    head = commit('HEAD')
+    if not head:
+        return revision_refusal('cannot read checked-out HEAD')
+    for local_ref, local_sha, _remote_sha in candidates:
+        candidate = commit(local_sha)
+        if not candidate:
+            return revision_refusal(f'candidate {local_ref} ({local_sha}) is unavailable or is not a commit')
+        if candidate != head:
+            return revision_refusal(f'candidate {local_ref} ({local_sha}) resolves to {candidate}, '
+                                    f'but checked-out HEAD is {head}')
+    bases = pushed_bases(lines)
     if core():
         print('pre-push: a core contract refused this tree; nothing was pushed. Fix it, or leave this one to CI with\n'
               '  git push --no-verify', file=sys.stderr, flush=True)
@@ -153,6 +185,9 @@ def main(argv=None, stdin=None, run=run_affected, core=run_core):
             if note:
                 print(note, file=sys.stderr, flush=True)
             return code
+    current = commit('HEAD')
+    if current != head:
+        return revision_refusal(f'HEAD changed during checks: expected {head}, observed {current or "unreadable HEAD"}')
     return 0
 
 
