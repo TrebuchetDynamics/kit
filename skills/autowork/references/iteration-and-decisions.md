@@ -175,6 +175,20 @@ not Verified, and writes no verified receipt. Closed records stay in `tasks/item
 nothing is moved to an archive, and an existing `TODO.archive.md` is frozen history.
 Do not wait for a Docs Sync job. Read-only runs skip this write.
 
+## Resolve held or blocked tasks
+
+A held or blocked task goes to [Plan For Me](../../plan-for-me/SKILL.md) in the same
+run, before reporting, and Plan For Me must **fix or skip** it. Fix: choose a
+reversible change within the delegated scope, record it as the planner's call and
+implement it now. Skip: split the blocked acceptance into its own open task naming
+the exact missing input (never waived), then continue with the next ready task in
+scope. Report a blocker again only when it is a genuinely unavailable external input
+or authority (credentials, money, deployment, legal or owner approval), and only
+once; never repeat an unchanged held report. Ask only for
+material missing decisions or authority; never repeat a permission question already
+answered. Preserve actual pending-approval requests; do not bypass them through a
+new tool, session or credential.
+
 ## Partial delivery and the critical path
 
 Before another partial delivery, compare it with the exact acceptance criterion

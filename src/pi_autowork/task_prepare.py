@@ -8,8 +8,8 @@ the store by hand. It detects the repository's state and does only what needs no
 - legacy (TODO.md + goals.json): converts through `autowork migrate`'s transaction, one
   local commit (`--no-commit`: staged, HEAD unmoved);
 - conversion pending (an interrupted or staged conversion): finishes it, or refuses;
-- none: reports the accepted headings a bootstrap may take goals from, and any lone
-  legacy file as `legacy_content` to reconcile; the first `autowork tasks goal` starts the store;
+- none: reports accepted headings for task-first bootstrap and any lone legacy file as
+  `legacy_content` to reconcile; `autowork tasks add` starts the store, with optional goals;
 - invalid: refuses with the store's path:line errors.
 
 It never decides intent: goals, tasks and contract repairs come from accepted documents
@@ -348,8 +348,8 @@ def _prepare(repo, mode, inventory=True):
     if state == 'none':
         report['legacy_content'] = _legacy_files(repo)
         report.update(intent(repo))
-        report['next'] = ('bootstrap: add one goal per accepted outcome with `autowork tasks goal`, then its '
-                          'tasks with `autowork tasks add`' if report['accepted'] else
+        report['next'] = ('bootstrap: add bounded tasks from accepted intent with `autowork tasks add`; '
+                          'goal grouping with `autowork tasks goal` is optional' if report['accepted'] else
                           'no heading is marked Status: Accepted; record accepted intent first, or report the '
                           'missing input; create no executable tasks')
         if report['legacy_content']:

@@ -317,6 +317,20 @@ or chains it after an existing one-line exec hook such as the private-terms chec
 A push with nothing new, a deletion, or `KIT_PRE_PUSH=0` runs nothing; `git push
 --no-verify` skips every hook. The full suite is CI's job.
 
+Before running checks, every changed local ref must resolve to the checked-out
+HEAD commit. Annotated and lightweight tags and multiple refs are accepted when
+they peel to that same commit. A different commit, an unavailable or non-commit
+object, or an unreadable HEAD refuses the push without running checks or moving
+Git refs or files. Use a checkout at the intended commit, or explicitly choose the
+existing CI-only option above. After successful checks, the hook reads HEAD again
+and refuses observed revision drift or an unreadable HEAD. Check failures retain
+their original result.
+
+Checks still run against the current working tree, including same-HEAD dirty files.
+This guard checks revision identity, not an immutable candidate tree: uncommitted
+changes and changes not observable from HEAD remain outside that guarantee. CI
+checks the pushed revision.
+
 A failing affected run is not proof of a red tree on a busy host. Every runner and
 worker test that waits on a window or a check slot can fail while the machine runs
 its own suites: the hook now prints the load average and cpu count when it refuses,

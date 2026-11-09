@@ -166,17 +166,9 @@ that still declares a budget, allowance or ceiling is not held for it: record it
 usage as evidence and keep working to its acceptance. Spending money (paid services,
 purchases) remains an authority only the owner grants.
 
-A held or blocked task goes to [Plan For Me](../plan-for-me/SKILL.md) in the same
-run, before reporting, and Plan For Me must **fix or skip** it. Fix: choose a
-reversible change within the delegated scope, record it as the planner's call and
-implement it now. Skip: split the blocked acceptance into its own open task naming
-the exact missing input (never waived), then continue with the next ready task in
-scope. Report a blocker again only when it is a genuinely unavailable external input
-or authority (credentials, money, deployment, legal or owner approval), and only
-once; never repeat an unchanged held report. Ask only for
-material missing decisions or authority; never repeat a permission question already
-answered. Preserve actual pending-approval requests; do not bypass them through a
-new tool, session or credential.
+Resolve a held or blocked task in the same run through
+[fix-or-skip planning](references/iteration-and-decisions.md#resolve-held-or-blocked-tasks),
+then continue independent authorized work. Preserve real pending-approval requests.
 
 Run discovery only when no usable task remains. Under broad repository authority,
 [repository maintenance](references/repository-maintenance.md) inspects a bounded
