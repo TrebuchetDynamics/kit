@@ -55,18 +55,29 @@ immutable proof-basis inputs at `310a5412fd439dee977792e282a6bb73ee7a0013` and
 `5f2ac81841e1e62c37a6155793b1661795edde45`. Historical manual implementation
 closures and a policy audit do not qualify the full current implementation.
 
-Discovery at `5301209bfe4ecddef331754376fa21590cb19c57` found the shared machine
-owner and existing authority/protocol tests, but no open qualification task.
-This is an observed evidence gap, not proof that the implementation is defective.
-The Rust state/planning/cycle work and Python/Paseo/Rust relocation already have
-accepted tasks; this batch neither duplicates them nor changes their priority.
+The current source at `4fa8f95e9f9ab290a831bf79142951722d8c6c04` has one
+machine owner: `planning.py` generates its console policy with
+`planning_authority.policy_text()`, and `planning_proposals.py` delegates path and
+file checks to that same module. Proposal preview delegates record validation and
+authority transitions to `engine/task_store.py::planner_authority`, whose
+`_Document` parser owns record schema validation. Task closure/status, live grants
+and resources, existing ownership, goal progress and protected owner/evidence/hold
+notes remain protected there.
 
-**Planner's call:** use one offline inspection task to trace both accepted
-requirements through their current owners and existing tests. Reuse the tests
-rather than add another policy layer, rewrite the skills or infer qualification
-from manual closure. Keep goal status partial unless the supported coordinator
-qualification checks actually permit a later transition. Never add an owner waiver
-or prune retained proof inputs to make the goal appear met.
+Both planning entry skills link to
+`skills/shared/RESEARCH-PLAN.md#shared-planning-interface`. The interactive adapter
+retains its interview mode; the autonomous adapter retains repository discovery.
+Both preserve read-only/no-write requests and return an Autowork-owned substep to
+its original coordinator. Static instruction checks establish these links and
+boundaries, not model adherence.
+
+The eight focused modules below pass against that source with CPython 3.12 in the
+prepared checker environment, including the console refusal scenarios. The
+inherited display-only `GIT_PAGER` variable must be unset for this fixture run:
+plan application deliberately refuses inherited `GIT_*` overrides. This changes no
+product guard. Independent acceptance review and a supported coordinator
+qualification receipt remain required; this source trace and passing checks do not
+make the partial goal met. Preserve the immutable proof-basis inputs above.
 
 Acceptance for this remaining slice:
 
@@ -84,9 +95,9 @@ Acceptance for this remaining slice:
   claims in this document. Any failed criterion remains unmet with its exact
   failure; inspection is not permission to repair production code or weaken tests.
 
-Proposed checks (UNRUN in this planning pass):
+Current qualification checks:
 
-- Before relocation: `python3 scripts/check.py tests/test_planning_authority.py pi-autowork/tests/test_planning.py tests/test_workflow_commands.py tests/test_planning_cli_contract.py tests/test_plan_for_me_discovery.py tests/test_task_touches_contract.py tests/test_blockers.py tests/test_skill_standard.py`.
+- Before relocation: `env -u GIT_PAGER python3 scripts/check.py tests/test_planning_authority.py pi-autowork/tests/test_planning.py tests/test_workflow_commands.py tests/test_planning_cli_contract.py tests/test_plan_for_me_discovery.py tests/test_task_touches_contract.py tests/test_blockers.py tests/test_skill_standard.py`.
 - After relocation: use the same command with the first two paths replaced by
   `pi-autowork/tests/runner/test_planning_authority.py` and
   `pi-autowork/tests/runner/test_planning.py`; all six shared test owners stay put.
