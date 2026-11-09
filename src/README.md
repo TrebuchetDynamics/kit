@@ -74,6 +74,18 @@ inspect actual owners. Before re-exec, the updater also probes the candidate's
 public capabilities command; an invalid or incomplete payload leaves the running
 release selected. Existing release pinning and environment contracts are unchanged.
 
+## TUI screen owners
+
+`pi_autowork.tui` owns `FleetApp`, runner selection, the shared read coordinator,
+command execution, pending-deletion overlays and planning navigation. Flat
+`tui_tasks.py` owns task/decision screens and task edit forms; they call the host
+through `self.app` without importing the application. `tui_common.py` owns
+`ReadScreen`, shared text/widget helpers and the refresh interval. Physical read
+scheduling stays in `tui_reads.py`; confirmation stays in `tui_dialogs.py`.
+`tui` reexports the same screen/helper objects for existing callers. Flat screen
+owners participate in the selected release's existing code-stamp scan, while open
+screens and running actions continue to defer reload.
+
 ## Offline qualification and packaging
 
 The npm allowlist includes the scripts/src bootstrap and `src/pi_autowork/`, together with
