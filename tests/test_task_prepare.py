@@ -151,6 +151,29 @@ class BootstrapTests(Repo):
         self.assertTrue(store.tasks[start].runnable)
         self.assertEqual(store.tasks[export].depends_on, (start,))
 
+    def test_optional_goal_bootstrap_guidance(self):
+        self.write('docs/plan.md', PLAN)
+        self.commit('plan')
+        before = self.snapshot()
+        report = self.prepare('--check')
+        self.assertEqual(self.snapshot(), before, 'preparation is read-only')
+        self.assertIn('autowork tasks add', report['next'])
+        self.assertIn('optional', report['next'])
+        self.assertNotIn('add one goal per accepted outcome', report['next'])
+        self.assertFalse((self.repo / 'tasks').exists())
+        out = self.tasks('add', '--title', 'Start the application',
+                         '--scope', 'Answer the health check',
+                         '--acceptance', 'Health check answers',
+                         '--checks', 'python3 -m unittest', '--touches', 'src/',
+                         '--sources', '[plan](docs/plan.md#startup-slice)').stdout
+        task_id = out.split()[-1]
+        self.commit('standalone task')
+        store = TaskStore.at(self.repo, 'HEAD')
+        self.assertEqual(len(store.goals), 0)
+        self.assertIsNone(store.tasks[task_id].goal)
+        self.assertTrue(store.tasks[task_id].runnable)
+        self.assertEqual(self.prepare()['order'], [task_id])
+
     def test_without_accepted_intent_no_queue_is_created(self):
         self.write('README.md', '# Tool\n\nIt might do things.\n')
         self.commit()

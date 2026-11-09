@@ -77,6 +77,19 @@ class PlanForMeDiscoveryContractTests(unittest.TestCase):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
 
+    def test_discovery_allows_ungrouped_tasks(self):
+        text = words(DISCOVERY)
+        self.assertIn('Goal classes describe intent, not mandatory task grouping', text)
+        self.assertIn('A standalone task may be ungrouped', text)
+        self.assertIn('Goal and custom short label are optional', text)
+        self.assertIn('rolling batch shares the same goal', text)
+        self.assertIn('at most eight new tasks', text)
+        self.assertIn('observable acceptance and exact known checks', text)
+        self.assertIn('bounded `touches`', text)
+        self.assertIn('keep it out of runnable scope until the owner accepts it', text)
+        self.assertIn('do not implement, dispatch, restart or schedule', text)
+        self.assertNotIn('each executable task needs an existing or justified goal', text)
+
     def test_read_only_and_coordinator_boundaries_survive_the_default_discovery_route(self):
         text = words(SKILL) + ' ' + words(DISCOVERY)
         for requirement in (
