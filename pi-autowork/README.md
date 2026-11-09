@@ -421,6 +421,24 @@ pane (End/Page Down scroll; **i** returns to the fleet). It retains paths, revis
 source warnings, model/fallback and push settings. Runtime observation failures
 remain visible in the summary; a short viewport prioritizes the main-check result
 over the generic explanation. This changes presentation, not health or admission.
+The fleet table's State uses the semantic label from the same captured verdict as
+selected status: for example, **Waiting on you** when inventory has no active work
+and questions remain, even if raw service health says `working`. `Runner.state`
+and CLI/Paseo schemas retain their existing raw lifecycle meaning.
+`fleet_view.presentation(runner)` projects an already attached snapshot without
+reads into a frozen label, explanation, style, counts and observed activity. Only
+identity-matched active lanes and recorded runner jobs supply that activity;
+independent main checks remain separate receipt evidence with checked/current
+revisions and original start times. Unknown counts remain unavailable, never zero.
+
+The projection groups **acquisition errors** separately from informational **source
+notes** (unmatched execution, unmatched activity, revision and provenance). Its
+counts deduplicate identical messages within each category; every original message
+and explicit affected task ID remains available on the groups for Details consumers.
+The existing overview still counts raw annotations as warnings; grouped rendering
+is available through this projection. Details/Blockers retain their full evidence.
+The projection grants no readiness, scheduling or current-main verification authority.
+
 Below 120 columns the fleet shows Runner, State and Total; selecting a runner shows
 its complete task-count breakdown. Below 100 columns the repository browser stacks
 readiness below the directory tree. Source: `src/pi_autowork/tui.py` (`FleetApp`,

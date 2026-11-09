@@ -536,11 +536,11 @@ def job_text(job):
 Verdict = tuple[str, str]
 
 
-def _service_verdict(runner: Runner) -> Verdict | None:
+def _service_verdict(runner: Runner, *, setup=None) -> Verdict | None:
     """Startup refusals, task-store setup and service lifecycle take precedence."""
     if runner.stop_reason:
         return f'Needs attention — {runner.stop_reason}', 'bold red'
-    setup = runner.setup_label
+    setup = runner.setup_label if setup is None else setup
     if setup:
         return setup, 'bold yellow'
     if runner.state == 'restarting':
@@ -631,7 +631,13 @@ def _blocked_verdict(runner: Runner) -> Verdict:
 
 def verdict(runner: Runner) -> Verdict:
     """(sentence, style): whether this runner is stuck, and why, in one line."""
-    service = _service_verdict(runner)
+    service = (_service_verdict(runner, setup=SETUP_LABELS.get(runner.prepare_state, ''))
+               if runner.snapshot is not None else _service_verdict(runner))
+    return _verdict(runner, service)
+
+
+def _verdict(runner: Runner, service: Verdict | None) -> Verdict:
+    """Shared decision order; presentation supplies only captured setup evidence."""
     observed = runner.observation
     degraded = bool(observed) and observed['task_state'] != 'current'
     detail = health.observation_text(observed) if degraded else ''
@@ -677,6 +683,121 @@ def verdict(runner: Runner) -> Verdict:
     if runner.gate and not runner.lanes:
         return f'Host busy — {runner.gate}', 'bold yellow'
     return _blocked_verdict(runner)
+
+
+@dataclass(frozen=True)
+class DiagnosticGroup:
+    """Unique overview messages and lossless original evidence for one category."""
+    kind: str                       # error or source; source notes are not failures
+    category: str
+    messages: tuple[str, ...]
+    originals: tuple[str, ...]
+    affected_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ObservedActivity:
+    task: str
+    phase: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class MainCheckObservation:
+    """Receipt evidence, separate from workers and current-main acceptance.
+
+    The raw running state is recorded evidence, not a new process-liveness claim.
+    Renderers keep using main_check.line for its process-identity validation.
+    """
+    state: str
+    checked_revision: str | None
+    current_revision: str | None
+    started: float | None
+    execution_started: float | None
+
+    @property
+    def superseded(self):
+        return bool(self.checked_revision and self.current_revision
+                    and self.checked_revision != self.current_revision)
+
+
+@dataclass(frozen=True)
+class RunnerPresentation:
+    """Output only: never scheduling, readiness, liveness or closure authority."""
+    label: str
+    explanation: str
+    style: str
+    counts: tuple | None
+    questions: int
+    activity: tuple[ObservedActivity, ...]
+    diagnostics: tuple[DiagnosticGroup, ...]
+    main_check: MainCheckObservation
+    inventory_freshness: str
+    execution_freshness: str
+    revision: str | None
+    generation: int
+    captured_at: float
+
+    @property
+    def error_count(self):
+        return sum(len(group.messages) for group in self.diagnostics if group.kind == 'error')
+
+    @property
+    def source_note_count(self):
+        return sum(len(group.messages) for group in self.diagnostics if group.kind == 'source')
+
+
+def _diagnostic_groups(snap, acquisition_errors):
+    groups = {}
+    for kind, originals in (('error', (*snap.errors, *acquisition_errors)), ('source', snap.annotations)):
+        for message in originals:
+            if kind == 'error':
+                category = 'acquisition'
+            elif 'unmatched execution observation' in message:
+                category = 'unmatched execution'
+            elif 'unmatched slot activity' in message:
+                category = 'unmatched activity'
+            elif message.startswith('session revision '):
+                category = 'revision'
+            else:
+                category = 'provenance'
+            groups.setdefault((kind, category), []).append(message)
+    result = []
+    for (kind, category), originals in groups.items():
+        # IDs come from the producer's explicit task-prefix convention, not prose.
+        ids = tuple(dict.fromkeys(match[1] for message in originals
+                                  if (match := re.match(r'^([A-Za-z0-9][A-Za-z0-9._-]*): ', message))
+                                  and category in ('unmatched execution', 'unmatched activity')))
+        result.append(DiagnosticGroup(kind, category, tuple(dict.fromkeys(originals)), tuple(originals), ids))
+    return tuple(result)
+
+
+def presentation(runner: Runner) -> RunnerPresentation:
+    """Project an already captured runner without reads, mutation or new authority.
+
+    Capture with snapshot_for/collect before calling. Unknown inventory remains
+    None; unmatched lanes remain diagnostics and cannot become task activity.
+    """
+    snap = runner.snapshot
+    if snap is None:
+        raise ValueError('runner presentation requires a captured task snapshot')
+    sentence, style = verdict(runner)
+    label, _, explanation = sentence.partition(' — ')
+    joined = set(snap.joined_lanes)
+    tasks = {row.task for row in inventory_rows(runner)}
+    activity = tuple(ObservedActivity(lane.task, lane.phase, lane.detail) for lane in runner.lanes
+                     if lane.task in tasks and (lane.task, lane.attempt, lane.phase) in joined
+                     and status(lane)[0] == ACTIVE)
+    if runner.job:
+        activity += (ObservedActivity(runner.job.get('task') or '', 'job', job_text(runner.job)),)
+    check = runner.main_check
+    slot = check.get('check_slot') or {}
+    return RunnerPresentation(
+        label, explanation, style, task_counts(runner), len(runner.questions), activity,
+        _diagnostic_groups(snap, runner.acquisition_errors),
+        MainCheckObservation(check.get('state', ''), check.get('rev'), check.get('main_head'),
+                             check.get('started'), slot.get('started', check.get('started'))),
+        snap.freshness, snap.engine_freshness, snap.revision, snap.generation, snap.captured_at)
 
 
 def maintainer_line(runner, now=None):
@@ -1495,8 +1616,9 @@ def runner_rows(runners):
         vector = task_counts(runner)
         active, mergeable, waiting, blocker, decision, total = (
             (str(n) for n in vector) if vector is not None else ('?',) * 6)
+        shown = presentation(runner)
         rows.append({'Runner': (runner.name, ''),
-                     'State': (f'{runner.state} {duration(runner.minutes)}'.strip(), f'bold {runner.color}'),
+                     'State': (shown.label, shown.style),
                      'Active': (active, 'green'), 'Mergeable': (mergeable, 'cyan'), 'Waiting': (waiting, ''),
                      'Blocker': (blocker, 'yellow' if blocker != '0' else ''),
                      'Decision': (decision, 'yellow' if decision != '0' else ''), 'Total': (total, 'bold'),
