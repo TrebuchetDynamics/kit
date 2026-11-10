@@ -25,7 +25,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 
 from pi_autowork import landing, task_handoff, task_status
 from pi_autowork.engine import task_select  # noqa: E402
@@ -381,8 +380,15 @@ def place_between(ranked, position):
 
 
 def new_id(repo, store, prefix=None):
-    """Next number plus an eight-hex hash; legacy and archived IDs are taken too."""
-    ids = set(store.tasks) | set(store.goals)
+    """Next plain numbered ID; never reuse numbers retained in local Git history."""
+    task_ids, goal_ids = set(store.tasks), set(store.goals)
+    history = _git(repo, 'log', '--all', '--full-history', '-m', '--no-renames',
+                   '--format=', '--name-only', '--diff-filter=A', '-z',
+                   '--', 'tasks/items', 'tasks/goals', raw=True)
+    for path in history.split('\0'):
+        if match := re.fullmatch(r'tasks/(items|goals)/([^/]+)\.md', path):
+            (task_ids if match[1] == 'items' else goal_ids).add(match[2])
+    ids = task_ids | goal_ids
     archive = Path(repo) / 'TODO.archive.md'
     if archive.is_file():
         ids |= set(re.findall(r'\b[A-Za-z][A-Za-z0-9_]*-\d+(?:-(?:[0-9a-f]{8}|[0-9a-f]{2}))?\b', archive.read_text()))
@@ -390,18 +396,14 @@ def new_id(repo, store, prefix=None):
                                      for i in ids) if m]
     if prefix is None:  # the tasks' most common prefix; never a goal's
         own = [m.group(1) for m in (re.fullmatch(r'([A-Za-z][A-Za-z0-9_]*)-\d+(?:-(?:[0-9a-f]{8}|[0-9a-f]{2}))?', t)
-                                    for t in store.tasks) if m]
-        pool = own or [p for p, n in numbered if f'{p}-{n}' not in store.goals]
+                                    for t in (store.tasks or task_ids)) if m]
+        pool = own or [p for p, n in numbered if f'{p}-{n}' not in goal_ids]
         prefix = max(sorted(set(pool)), key=pool.count) if pool else 'T'
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', prefix):
         raise CommandError('invalid prefix: letters, digits or underscores, starting with a letter')
     numbers = [n for p, n in numbered if p == prefix]
     number = str(max([0] + [int(n) for n in numbers]) + 1).zfill(max([3] + [len(n) for n in numbers]))
-    for _ in range(64):
-        digest = hashlib.sha256(f'{prefix}-{number}:{time.time_ns()}:{os.urandom(8).hex()}'.encode()).hexdigest()
-        if (candidate := f'{prefix}-{number}-{digest[:8]}') not in ids:
-            return candidate
-    raise CommandError(f'no unused ID for {prefix}-{number}')
+    return f'{prefix}-{number}'
 
 
 def _task(store, tid):

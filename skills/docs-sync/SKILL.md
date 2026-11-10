@@ -443,7 +443,8 @@ Use title, scope, acceptance and checks for authoring. `add` derives the short l
 bounded touches and actual resources must be resolved before dispatch. Do not create
 extra specifications, plans, goals, TODO.md views or completion reports for routine
 work. Reference existing intent rather than copying contracts. `add` rejects a supplied unknown
-goal and allocates the next ID (`autowork tasks new-id` shows it); it defaults to
+goal and allocates the next plain numbered ID, without a hash suffix
+(`autowork tasks new-id` previews it, not a reservation); it defaults to
 `kind = "implementation"`, `ownership = "worker"` and the bottom of its section, and
 writes the whole contract in one write. It refuses a second task with the same goal
 and title (open or done), naming the existing one: change that record instead.

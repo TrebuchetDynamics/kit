@@ -201,12 +201,13 @@ class PlanningCliContractTests(unittest.TestCase):
 
     def test_identifier_guidance_matches_current_allocation_without_renaming_history(self):
         center = prose(WORKCENTER)
-        self.assertIn('eight-hex-digit', center)
-        self.assertIn('Keep existing IDs unchanged', center)
+        self.assertIn('plain numbered IDs', center)
+        self.assertIn('do not append a hash or random suffix', center)
+        self.assertIn('Keep existing IDs and references intact', center)
         self.assertNotIn('two-hex-digit', center)
         self.assertNotIn('never create two tasks with the same ID', center)
         before = (self.repo / 'tasks/items/T-1.md').read_bytes()
-        self.assertRegex(self.tasks('new-id').stdout.strip(), r'^T-\d+-[0-9a-f]{8}$')
+        self.assertRegex(self.tasks('new-id').stdout.strip(), r'^T-\d+$')
         self.assertEqual((self.repo / 'tasks/items/T-1.md').read_bytes(), before)
 
     def test_all_planning_routes_require_main_persistence_before_completion(self):
