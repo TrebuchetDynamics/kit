@@ -524,7 +524,8 @@ class TuiModelsTests(unittest.TestCase):
     def test_session_choice_filter_and_read_only_modelbar(self):
         self.run_case('session')
 
-    def test_authentication_inside_tui_uses_selected_profile_masks_and_refreshes(self):
+    def test_login_uses_pi_terminal_and_selected_agent_directory(self):
+        """Historical test identity; the current login uses the SDK inside the TUI."""
         self.run_case('login')
 
     def test_model_loading_empty_and_error_status(self):

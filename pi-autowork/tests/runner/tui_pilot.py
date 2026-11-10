@@ -440,7 +440,7 @@ async def immediate_deletion():
                         assert 'T-1' in snap.store.tasks  # deletion has not changed HEAD
                         assert screen.query_one('#tasks').row_count == 0, 'successful delete retained row'
                         assert fleet_view.task_counts(app.current()) == (0, 0, 0, 0, 0, 0)
-                        assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:8]] == ['0'] * 6
+                        assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:]] == ['0']
                         assert app.current().snapshot is snap
                         assert 'deletion pending commit' in str(screen.query_one('#task-provenance').text)
                         assert 'Deletion pending commit' in str(screen.query_one('#task-freshness').render())
@@ -687,12 +687,11 @@ async def main():
             app.current().snapshot = original_snapshot
             app.show_detail()
             runners = app.query_one('#runners')
-            # TOOLSET-289-71 (test_runner_columns): the owner's four headlines.
-            assert [str(c.label) for c in runners.columns.values()] == ['Runner', 'State', 'Active', 'Mergeable',
-                                                                        'Waiting', 'Blocker', 'Decision', 'Total',
-                                                                        'Needs', 'Now']
-            assert [str(c) for c in runners.get_row_at(0)[2:8]] == ['0', '0', '2', '1', '0', '3']
-            assert '1 on dependencies' in str(runners.get_row_at(0)[8]), runners.get_row_at(0)
+            # Project summary is deliberately compact; complete counts stay in Details.
+            assert [str(c.label) for c in runners.columns.values()] == ['Project', 'Status', 'Tasks']
+            assert [str(c) for c in runners.get_row_at(0)[2:]] == ['3']
+            assert fleet_view.task_counts(app.current()) == (0, 0, 2, 1, 0, 3)
+            assert '1 on dependencies' in fleet_view.needs(app.current()), fleet_view.needs(app.current())
             assert 'Tasks      3 open · 0 active · 0 mergeable · 2 waiting · 1 blocker' in detail, detail
             assert 'revision ' + store.rev in detail and 'execution fresh' in detail, detail
             assert 'Push       disabled' in detail, detail  # no saved grant: local only
@@ -775,12 +774,13 @@ async def main():
                 await refresh(app, pilot)
                 shown = str(app.query_one('#detail').render())
                 assert '1 mergeable' not in shown and '2 waiting' in shown, shown
-                assert str(app.query_one('#lanes').get_row_at(0)[1]).startswith('Annotation'), shown
+                assert str(app.query_one('#lanes').get_row_at(0)[1]).startswith('Unconfirmed'), shown
                 observed.snapshot = replace(observed.snapshot, counts=None, rows=(), freshness='unavailable',
                                             errors=('inventory read denied',))
                 await refresh(app, pilot)
                 shown = str(app.query_one('#detail').render())
-                assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:8]] == ['?'] * 6
+                assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:]] == ['?']
+                assert fleet_view.task_counts(app.current()) is None
                 assert 'unknown / unavailable' in shown and 'inventory read denied' in shown, shown
                 observed.snapshot = replace(original_runner.snapshot, captured_at=time.time() - 900, freshness='stale')
                 await refresh(app, pilot)

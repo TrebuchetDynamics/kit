@@ -1049,29 +1049,76 @@ class BlockersScreen(Screen):
          'answer-report': self.action_answer_question, 'back-report': self.action_back}[event.button.id]()
 
 
+class WorkflowGuide(ModalScreen):
+    """Plain-language orientation; opening help performs no runner action."""
+    BINDINGS = [Binding('escape,q', 'close', 'Back')]
+    DEFAULT_CSS = """
+    WorkflowGuide { align: center middle; }
+    WorkflowGuide > Vertical { width: 76; max-width: 100%; height: 90%; border: round $accent; background: $surface; padding: 1 2; }
+    #workflow-copy { height: 1fr; }
+    """
+
+    def compose(self):
+        with Vertical():
+            yield Label(Text('How Autowork works', style='bold'))
+            with VerticalScroll(id='workflow-copy'):
+                yield Static('Model → Project → Tasks → Execution → Checks → Local merge', markup=False)
+                yield Static('\nSET UP\nChoose a provider/model and a project. Tasks is your queue of work. Add bounded tasks there; starting a service does not create a task.', markup=False)
+                yield Static('\nRUN\nPlay starts the service. It chooses tasks whose dependencies and permissions allow execution. In progress means a task is active. Service running alone does not mean tasks are progressing.', markup=False)
+                yield Static('\nREVIEW\nChecks and review must pass before work merges into local main. A failed worker or failed checks needs attention; it is not completed work. An older check does not qualify a newer revision.', markup=False)
+                yield Static('\nWHAT TO DO NEXT\nNeeds attention: open Tasks for questions and Details for failures. Waiting: inspect dependencies or resource limits. Unconfirmed: execution observations are not fresh enough to claim progress.', markup=False)
+                yield Static('\nPUBLISH\nA local merge is not a GitHub push. The runner publishes only when push is explicitly enabled. Read-only mode disables execution controls.', markup=False)
+            yield Button('Back · Esc', id='workflow-back')
+
+    def action_close(self):
+        self.dismiss()
+
+    def on_button_pressed(self, event):
+        if event.button.id == 'workflow-back':
+            event.stop()
+            self.dismiss()
+
+
 class FleetApp(App):
     TITLE = 'autowork'
     # Stacked, each part full width: a side-by-side split left a ~30-column pane on an
     # 80-column terminal, which wrapped the detail and cut the log.
     CSS = '''
     Header { background: $panel; }
+    #workspace-body { height: 1fr; layout: vertical; }
+    #project-context { height: auto; }
+    #work-context { height: 1fr; }
+    #nav-footer { dock: bottom; height: 1; background: $panel; color: $text-muted; }
+    .wide #workspace-body { layout: horizontal; }
+    .wide #project-context { width: 42; height: 1fr; padding-right: 1; }
+    .wide #work-context { width: 1fr; height: 1fr; }
+    .wide #runners, .wide #lanes, .wide #log { border: round $border; }
+    .wide #runners:focus, .wide #lanes:focus, .wide #log:focus { border: round $accent; }
+    .wide #runners, .wide #lanes { min-height: 4; max-height: 35%; }
+    .wide #overview { max-height: 16; }
+    .wide #detail-scroll { height: 1fr; min-height: 6; }
+
     #modelbar { height: 1; padding: 0 1; background: $surface; }
     #empty-state { display: none; height: 1fr; align-horizontal: center; align-vertical: middle; }
     #empty-card { width: 72; max-width: 100%; height: auto; padding: 1 2; border: round $accent; background: $surface; content-align: center middle; }
     #runners, #lanes { background: $surface; }
     #runners, #lanes, #log { border-title-color: $text; border-title-style: bold; }
     #runners { border-top: solid $panel; }
-    #runners { height: auto; min-height: 3; max-height: 25%; }
-    #overview { height: auto; max-height: 6; margin: 1 0; padding: 0 1; background: $surface; }
+    #runners { height: auto; min-height: 3; max-height: 6; }
+    #overview { height: auto; max-height: 6; margin: 0; padding: 0 1; background: $surface; }
     #detail-scroll { display: none; height: 6; border-top: solid $panel; }
     #detail { height: auto; padding: 0 1; }
-    #lanes { height: auto; min-height: 3; max-height: 20%; border-top: solid $panel; }
+    #lanes { height: auto; min-height: 3; max-height: 6; border-top: solid $panel; }
     #log { height: 1fr; min-height: 4; border-top: solid $panel; }
-    .short #runners { max-height: 20%; }
+    .short #runners, .short #lanes { max-height: 3; }
     .short #overview { max-height: 3; margin: 0; }
     .short #detail-scroll { height: 5; }
     '''
     BINDINGS = [
+        Binding('h', 'workflow_help', 'Guide', show=False),
+        Binding('1', 'focus_panel("runners")', 'Projects', show=False),
+        Binding('2', 'focus_panel("lanes")', 'Current work', show=False),
+        Binding('3', 'focus_panel("log")', 'Activity', show=False),
         # One key per action, the first letter of its word, shown highlighted in the detail
         # pane (the footer repeated them, cut short). Enter on a runner opens its log too.
         # show=False: the log, worker and browse screens' footers list their own keys, not
@@ -1144,6 +1191,8 @@ class FleetApp(App):
 
     def check_action(self, action, parameters):
         """View-only (for example served to a browser on a shared network): no control keys."""
+        if action in ('focus_panel', 'workflow_help'):
+            return len(self.screen_stack) == 1
         if action == 'more':
             return len(self.screen_stack) == 1
         if action == 'toggle_details':
@@ -1163,12 +1212,16 @@ class FleetApp(App):
         yield Static(id='modelbar')
         with Vertical(id='empty-state'):
             yield Static(id='empty-card', markup=False)
-        yield DataTable(id='runners', cursor_type='row', zebra_stripes=True)
-        yield Static(id='overview')
-        with VerticalScroll(id='detail-scroll'):
-            yield Static(id='detail')
-        yield DataTable(id='lanes', cursor_type='row', zebra_stripes=True)
-        yield RichLog(id='log', wrap=True, highlight=False, markup=False)
+        with Horizontal(id='workspace-body'):
+            with Vertical(id='project-context'):
+                yield DataTable(id='runners', cursor_type='row', zebra_stripes=True)
+                yield Static(id='overview')
+                with VerticalScroll(id='detail-scroll'):
+                    yield Static(id='detail')
+            with Vertical(id='work-context'):
+                yield DataTable(id='lanes', cursor_type='row', zebra_stripes=True)
+                yield RichLog(id='log', wrap=True, highlight=False, markup=False)
+        yield MenuBar(id='nav-footer')
 
     # One short project list at every width. Full counts and source observations
     # remain in the selected summary and scrollable Details.
@@ -1189,6 +1242,7 @@ class FleetApp(App):
         table.add_columns(*self.RUNNER_COLUMNS, *self.RUNNER_TEXT)
         self.query_one('#lanes', DataTable).add_columns(*self.LANE_COLUMNS, *self.LANE_TEXT)
         self.query_one('#log', RichLog).border_title = '3 · Recent activity · last hour'
+        self.show_navigation()
         self.action_refresh()
         self.refresh_log()
         self.set_interval(REFRESH, self.poll_refresh)
@@ -1196,6 +1250,29 @@ class FleetApp(App):
         self.code = None
         self.reload_if_updated()
         self.set_interval(CODE_CHECK, self.reload_if_updated)
+
+    def show_navigation(self):
+        focused = getattr(self.focused, 'id', None)
+        hint = ('PgUp/PgDn scroll' if focused == 'log' else '↑↓ select · Enter log') if self.size.width >= 80 else ''
+        self.query_one('#nav-footer', MenuBar).show(
+            [('1', 'Projects'), ('2', 'Work'), ('3', 'Activity'), ('h', 'Guide'), ('?', 'More'), ('q', 'Quit')],
+            prefix=hint, click_actions={'1': 'app.focus_panel("runners")', '2': 'app.focus_panel("lanes")',
+                           '3': 'app.focus_panel("log")', 'h': 'app.workflow_help', '?': 'app.more', 'q': 'app.quit'})
+
+    def on_descendant_focus(self, event):
+        if self.is_mounted and len(self.screen_stack) == 1:
+            self.show_navigation()
+
+    def action_workflow_help(self):
+        if len(self.screen_stack) == 1:
+            self.push_screen(WorkflowGuide())
+
+    def action_focus_panel(self, panel):
+        if len(self.screen_stack) != 1 or panel not in ('runners', 'lanes', 'log'):
+            return
+        widget = self.query_one('#' + panel)
+        if widget.display:
+            widget.focus()
 
     async def action_quit(self):
         if hasattr(self, 'planning_hub'):
@@ -1269,6 +1346,7 @@ class FleetApp(App):
 
     def on_resize(self, event):
         self.screen_stack[0].set_class(event.size.height < 22, 'short')
+        self.screen_stack[0].set_class(event.size.width >= 130 and event.size.height >= 26, 'wide')
         self._shown = {}  # the columns fit the new width
         if self.query_one('#runners', DataTable).columns:  # the first resize comes before on_mount
             # App.size may still be the previous viewport during the resize event.
@@ -1291,9 +1369,11 @@ class FleetApp(App):
         named goes first when fewer than ``minimum`` columns would be left for each. Redrawn only
         when something changed, since a clear-and-rewrite every refresh made the panes flicker."""
         limits = limits or {}
+        budget = ((42 if table.id == 'runners' else self.size.width - 42)
+                  if self.screen_stack[0].has_class('wide') and table.id in ('runners', 'lanes') else self.size.width)
         width = lambda column: min(limits.get(column, self.size.width),
                                    max([cell_len(column), *(cell_len(row[column][0]) for row in rows)])) + 2
-        left = self.size.width - sum(width(c) for c in fixed) - 4  # border and scrollbar
+        left = budget - sum(width(c) for c in fixed) - 4  # border and scrollbar
         shown = list(text)
         while shown and left // len(shown) - 2 < minimum:
             shown.pop()
@@ -1386,24 +1466,27 @@ class FleetApp(App):
             screen.refresh_tasks(getattr(screen, 'follow', None))
 
     def render_fleet(self):
+        self.show_navigation()
         table = self.query_one('#runners', DataTable)
         snapshot_errors = self.fleet_snapshot.errors if self.fleet_snapshot else ()
         read_errors = self.__dict__.get('_read_errors', {})
         welcome = (not self.runners and self.fleet_snapshot is not None
                    and not snapshot_errors and not read_errors)
         self.query_one('#empty-state').display = welcome
+        self.query_one('#workspace-body').display = not welcome
         self.query_one('#modelbar').display = not welcome
         for selector in ('#runners', '#overview', '#lanes', '#log'):
             self.query_one(selector).display = not welcome
         keep = self.selected
         # Keep the overview readable at every width; diagnostics live in Details.
         rows = [{'_key': row['Runner'][0], 'Project': row['Runner'],
-                 'Status': row['State'], 'Tasks': row['Total']}
-                for row in fleet_view.runner_rows(self.runners)]
+                 'Status': self.execution_state(runner), 'Tasks': row['Total']}
+                for runner, row in zip(self.runners, fleet_view.runner_rows(self.runners))]
         total_width = max([len('Tasks'), *(cell_len(row['Tasks'][0]) for row in rows)])
-        name_room = min(40, max(8, self.size.width - 20 - total_width - 10))
+        wide = self.screen_stack[0].has_class('wide')
+        name_room = 12 if wide else min(40, max(8, self.size.width - 20 - total_width - 10))
         self.fill(table, rows, self.RUNNER_COLUMNS, (),
-                  limits={'Project': name_room, 'Status': 24})
+                  limits={'Project': name_room, 'Status': 15 if wide else 24})
         names = [r.name for r in self.runners]
         if names:
             row = names.index(keep) if keep in names else 0
@@ -1468,6 +1551,25 @@ class FleetApp(App):
             return 'i', 'Details'
         return 'l', 'Log'
 
+    @staticmethod
+    def execution_state(runner, view=None):
+        """Task progress is distinct from the service/maintenance process being alive."""
+        view = view or fleet_view.presentation(runner)
+        if runner.state in ('paused', 'not running'):
+            return view.label, view.style
+        if view.counts is None:
+            return 'Unavailable', 'yellow'
+        if view.execution_freshness != 'fresh':
+            return ('Unavailable' if view.error_count else 'Unconfirmed'), 'yellow'
+        active, mergeable, waiting, blocker, decision, total = view.counts
+        if active:
+            return 'In progress', 'bold cyan'
+        if blocker or decision or runner.questions:
+            return 'Needs attention', 'bold yellow'
+        if mergeable:
+            return 'Ready to merge', 'cyan'
+        return 'Waiting', 'yellow'
+
     def next_hint(self, runner):
         return ' '.join(self.primary_action(runner))
 
@@ -1499,8 +1601,10 @@ class FleetApp(App):
         view = fleet_view.presentation(runner)
         text = Text()
         def line(value, style=''):
-            text.append(self.fit(value, max(1, self.size.width - 2)) + '\n', style)
-        line(f'{runner.name} · {view.label}' + (f' · Next: {self.next_hint(runner)}' if self.size.height < 22 else ''), view.style)
+            text.append((value if self.screen_stack[0].has_class('wide') else self.fit(value, max(1, self.size.width - 2))) + '\n', style)
+        label, style = self.execution_state(runner, view)
+        context = f' · Next: {self.next_hint(runner)}' if self.size.height < 22 else f' · service {runner.service or "not observed"}'
+        line(f'{runner.name} · {label}' + context, style)
         counts = view.counts
         diagnostics = f'{view.error_count} errors · {view.source_note_count} notes'
         provenance = f'Inventory {view.inventory_freshness} · execution {view.execution_freshness}'
@@ -1508,7 +1612,7 @@ class FleetApp(App):
             count_line = 'Tasks unknown / unavailable'
         else:
             active, mergeable, waiting, blocker, decision, total = counts
-            count_line = f'{total} open · {active} active · {mergeable} mergeable'
+            count_line = f'{total} open · {active} in progress · {mergeable} ready to merge'
         check = self.main_check_text(runner, view)
         why = view.explanation
         if self.size.height < 22:
@@ -1524,7 +1628,7 @@ class FleetApp(App):
             questions = len(self.answerable_questions(runner))
             action = self.next_hint(runner)
             if questions:
-                action += f' — {questions} question(s) need your input'
+                action += f' — {questions} ' + ('question needs' if questions == 1 else 'questions need') + ' your input'
             line('Next: ' + action, 'bold cyan')
             line(count_line, 'yellow' if counts is None else '')
             if counts is not None:
@@ -1560,6 +1664,8 @@ class FleetApp(App):
                            and not self.fleet_snapshot.errors
                            and not self.__dict__.get('_read_errors', {}))
         self.query_one('#modelbar').display = not welcome.display
+        self.query_one('#workspace-body').display = not welcome.display
+        self.query_one('#nav-footer').display = not welcome.display
         self.show_overview(runner)
         if runner is None:
             errors = (*(self.fleet_snapshot.errors if self.fleet_snapshot else ()),
@@ -1711,14 +1817,15 @@ class FleetApp(App):
         self._lane_targets = targets
         table.border_title = (f'2 · Current work · {len(runner.lanes)} observed · Enter log' if runner.lanes
                               else '2 · Current work · no workers observed')
-        compact = self.size.width < 120
+        budget = self.size.width - 42 if self.screen_stack[0].has_class('wide') else self.size.width
+        compact = budget < 120
         for row in rows:
             status, style = row['Status']
             if status.startswith('Annotation · '):
                 row['Status'] = ('Unconfirmed · ' + status.removeprefix('Annotation · ').removesuffix(' (unmatched execution)'), style)
         # One shared width budget: names cannot push state or navigation off screen.
-        name_room = max(12, self.size.width // 2 - 5) if compact else min(48, self.size.width // 3)
-        state_room = max(12, self.size.width - name_room - 8) if compact else 32
+        name_room = max(12, budget // 2 - 5) if compact else min(48, budget // 3)
+        state_room = max(12, budget - name_room - 8) if compact else 32
         if self.fill(table, rows, ('Task', 'Status') if compact else self.LANE_COLUMNS,
                      () if compact else self.LANE_TEXT,
                      limits={'Task': name_room, 'Status': state_room}) and rows:

@@ -221,9 +221,20 @@ async def layout_pilot():
                 table = app.query_one(selector, DataTable)
                 assert table.region.height >= 3, (selector, table.region)
                 assert not table.show_horizontal_scrollbar, (selector, table.max_scroll_x)
-                assert sum(c.get_render_width(table) for c in table.columns.values()) <= width - 2
+                assert sum(c.get_render_width(table) for c in table.columns.values()) <= table.region.width - 2
             log = app.query_one('#log')
             assert log.region.height >= 4 and log.region.bottom <= height, log.region
+            footer = app.query_one('#nav-footer')
+            assert footer.region.height == 1 and footer.region.bottom <= height
+            for key, target in [('1', 'runners'), ('2', 'lanes'), ('3', 'log')]:
+                await pilot.press(key)
+                await pilot.pause()
+                assert app.focused.id == target, (key, app.focused)
+            if width >= 130 and height >= 26:
+                assert log.region.x >= app.query_one('#runners').region.right
+            else:
+                assert log.region.y >= app.query_one('#runners').region.bottom
+
             bar = app.query_one('#menubar')
             painted = '\n'.join(bar.render_line(y).text for y in range(bar.content_size.height))
             assert 'More' in painted and '?' in painted, (width, height, painted)
@@ -252,6 +263,35 @@ async def layout_pilot():
         await pilot.pause()
         painted = '\n'.join(overview.render_line(y).text for y in range(overview.content_size.height))
         assert '1 errors' in painted and '0 notes' in painted and 'Main:' in painted, painted
+        await pilot.press('m')
+        await settle(app, pilot)
+        from textual.widgets import Input
+        field = app.screen.query_one('#filter', Input)
+        field.focus()
+        await pilot.press('h', '1', '2', '3')
+        await pilot.pause()
+        assert field.value == 'h123' and app.focused is field
+        await pilot.press('escape')
+        await pilot.press('h')
+        await pilot.pause()
+        from pi_autowork.tui import WorkflowGuide
+        assert isinstance(app.screen, WorkflowGuide)
+        await pilot.press('escape')
+        assert len(app.screen_stack) == 1
+
+
+async def execution_copy_pilot():
+    from textual.widgets import DataTable
+    async with fixture_app((80, 24)) as (app, pilot):
+        runner = app.current()
+        runner.state = 'working'  # Service maintenance is not task execution.
+        runner.snapshot = replace(runner.snapshot, counts=(0, 0, 0, 1, 0, 1))
+        app.render_fleet()
+        await pilot.pause()
+        assert str(app.query_one('#runners', DataTable).get_row_at(0)[1]) == 'Needs attention'
+        shown = str(app.query_one('#overview').render())
+        assert 'service running' in shown and '0 in progress' in shown, shown
+        assert 'Working' not in shown, shown
 
 
 async def welcome_pilot():
@@ -351,6 +391,9 @@ class TuiRedesignTests(unittest.TestCase):
     def test_compact_and_wide_layout_keep_help_and_journal_visible(self):
         self.run_case('layout')
 
+    def test_service_activity_does_not_claim_task_progress(self):
+        self.run_case('execution')
+
     def test_empty_fleet_has_responsive_guided_welcome(self):
         self.run_case('welcome')
 
@@ -366,6 +409,6 @@ if __name__ == '__main__':
         else:
             asyncio.run({'redraw': redraw_pilot, 'menu': menu_pilot,
                          'layout': layout_pilot, 'welcome': welcome_pilot,
-                         'palette': palette_pilot}[case]())
+                         'palette': palette_pilot, 'execution': execution_copy_pilot}[case]())
     else:
         unittest.main()

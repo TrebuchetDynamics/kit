@@ -769,7 +769,7 @@ class PackageImportTests(unittest.TestCase):
             self.fail(f'pi_autowork import cycle (including deferred imports): {exc}')
         script = ('import importlib,sys; sys.path[:0] = sys.argv[1:4]; '
                   'importlib.import_module(sys.argv[4])')
-        renderers = {'pi_autowork.tui', 'pi_autowork.planning_ui', 'pi_autowork.tui_dialogs', 'pi_autowork.tui_tasks', 'pi_autowork.tui_common'}
+        renderers = {'pi_autowork.tui', 'pi_autowork.planning_ui', 'pi_autowork.tui_dialogs', 'pi_autowork.tui_tasks', 'pi_autowork.tui_common', 'pi_autowork.tui_auth'}
         for name in modules:
             with self.subTest(module=name):
                 python = [sys.executable]
