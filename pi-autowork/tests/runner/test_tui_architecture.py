@@ -81,6 +81,53 @@ asyncio.run(controls_pilot('answers'))
 asyncio.run(controls_pilot('dialogs'))
 ''')
 
+    def test_command_results_keep_ui_effects_and_callback_order(self):
+        self.probe('''from types import SimpleNamespace
+from unittest.mock import patch
+import subprocess
+from pi_autowork import command_results, tui
+class Host:
+    def __init__(self, result):
+        self.result, self.events = result, []
+    def runner_cmd(self, argv, **kwargs):
+        assert argv == action.argv
+        assert kwargs == dict(env={'fixture': 'yes'}, capture_output=True, text=True)
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+    def call_from_thread(self, callback, *args, **kwargs):
+        callback(*args, **kwargs)
+    def notify(self, message, **kwargs):
+        self.events.append(('notify', message, kwargs))
+    def action_completed(self, completed, ok):
+        assert completed is action
+        self.events.append(('refresh', ok))
+action = SimpleNamespace(argv=['autowork', 'tasks', 'decide', 'T-1', '--commit'], label='Answer T-1')
+for raw, outcome in (
+    (subprocess.CompletedProcess(action.argv, 0, 'receipt', ''),
+     command_results.Outcome(True, 'x' * 350, True)),
+    (OSError('unavailable'), command_results.Outcome(False, 'unavailable', False)),
+):
+    host = Host(raw)
+    with patch.object(command_results, 'interpret', return_value=outcome) as interpret:
+        tui.FleetApp.finish_action(host, action, {'fixture': 'yes'},
+            lambda ok, message: host.events.append(('callback', ok, message)))
+    interpret.assert_called_once_with(action.argv, action.label, raw)
+    assert host.events == [
+        ('notify', outcome.message[:300], dict(
+            severity='information' if outcome.ok else 'error',
+            title=f'Answer T-1: {"done" if outcome.ok else "failed"}',
+            timeout=10 if outcome.decision else 3)),
+        ('callback', outcome.ok, outcome.message),
+        ('refresh', outcome.ok),
+    ], host.events
+# A caller without a completion callback still invalidates and refreshes.
+host = Host(subprocess.CompletedProcess(action.argv, 1, '', 'failed'))
+tui.FleetApp.finish_action(host, action, {'fixture': 'yes'})
+assert [event[0] for event in host.events] == ['notify', 'refresh']
+assert host.events[-1] == ('refresh', False)
+''')
+
     def test_screen_modules_participate_in_reload_stamp(self):
         self.probe('''import asyncio, os
 from unittest.mock import patch
