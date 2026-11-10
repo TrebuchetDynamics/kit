@@ -87,7 +87,14 @@ Manual distinct from Verified. Give each executable task its
 reason) so parallel Autowork can run tasks together. Keep Now/Next/Needs decision
 distinct; priority is section, then rank. Only typed fields (`ownership`,
 `resources`, `live`) grant authority; live authorization is the owner's to grant.
-Preserve existing IDs, completed work, holds and priorities; never manufacture work.
+Preserve live IDs, completed implementation, required proof, holds and priorities;
+never manufacture work. Safe pruning of completed task records and unneeded dedicated
+receipts/reports is mandatory within scope on Bootstrap/Maintain. Follow
+[completed-task retention](../../../skills/shared/TODO-WORKCENTER.md#completed-task-retention),
+including actual ownership, integration, dependency and qualification checks.
+Keep only records with a concrete current need; Git history is the archive.
+Audit/read-only deletes nothing. Report cleanup counts and retention reasons,
+not a replacement completed-task ledger.
 
 For any prose containing quotes, backticks, `$` (including `$(...)` and `$VAR`)
 or newlines, write one UTF-8 JSON object with a file-writing tool and use
