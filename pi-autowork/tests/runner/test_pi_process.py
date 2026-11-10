@@ -124,7 +124,10 @@ p = os.getpid()
 s = pathlib.Path('/proc/%d/stat' % p).read_text().rsplit(')', 1)[1].split()[19]
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
 signal.signal(signal.SIGINT, signal.SIG_IGN)
-pathlib.Path(sys.argv[1]).write_text(json.dumps([p, s]))
+target = pathlib.Path(sys.argv[1])
+temporary = target.with_suffix('.tmp')
+temporary.write_text(json.dumps([p, s]))
+os.replace(temporary, target)
 time.sleep(60)
 """
         script = self.root / 'child.py'
@@ -137,7 +140,9 @@ time.sleep(60)
 root = pathlib.Path(sys.argv[1])
 p = subprocess.Popen(['/bin/sh', str(root/'tree.sh'), sys.executable, str(root/'child.py'), str(root)])
 s = pathlib.Path('/proc/%d/stat' % p.pid).read_text().rsplit(')', 1)[1].split()[19]
-(root/'shell.pid').write_text(json.dumps([p.pid, s]))
+temporary = root/'shell.tmp'
+temporary.write_text(json.dumps([p.pid, s]))
+os.replace(temporary, root/'shell.pid')
 while not all((root/name).exists() for name in ['ordinary.pid', 'escaped.pid']):
     time.sleep(.005)
 """ + ('sys.exit(7)\n' if normal_exit else 'time.sleep(60)\n'))
@@ -258,6 +263,24 @@ sys.exit(23)
     def test_normal_exit_cleans_inherited_stdio_and_escaped_descendants(self):
         wrapper = self.launch(self.command(*self.tree(normal_exit=True)),
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        records = self.wait_tree()
+        self.assertEqual(wrapper.communicate(timeout=4), (b'', b''))
+        self.assert_finished(wrapper, 7)
+        self.assert_gone(records)
+
+    def test_tree_records_wait_for_complete_writes_before_normal_exit(self):
+        command = self.tree(normal_exit=True)
+        script = self.root / 'child.py'
+        # Widen the create-before-write window: .pid must still mean ready.
+        slow_write = """write_text = pathlib.Path.write_text
+def slow_write(path, text):
+    write_text(path, '')
+    time.sleep(.05)
+    return write_text(path, text)
+pathlib.Path.write_text = slow_write
+p = os.getpid()"""
+        script.write_text(script.read_text().replace('p = os.getpid()', slow_write, 1))
+        wrapper = self.launch(self.command(*command), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         records = self.wait_tree()
         self.assertEqual(wrapper.communicate(timeout=4), (b'', b''))
         self.assert_finished(wrapper, 7)
