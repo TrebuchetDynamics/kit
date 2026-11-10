@@ -1,4 +1,4 @@
-"""Hot-file admission and cold-overlap ranking at the pure planner seam."""
+"""File-overlap ranking and retry admission at the pure planner seam."""
 from pathlib import Path
 import subprocess
 import sys
@@ -16,7 +16,7 @@ def task(tid, touches, status='open'):
 
 
 class HotFileTests(unittest.TestCase):
-    def test_hot_file_serializes(self):
+    def test_heavily_shared_file_uses_available_workers(self):
         a, b, c, free = [task(tid, path) for tid, path in
                           [('A', 'a.py'), ('B', 'a.py'), ('C', 'a.py'), ('FREE', 'b.py')]]
         for phase in ('dispatching', 'running', 'integrating'):
@@ -26,18 +26,14 @@ class HotFileTests(unittest.TestCase):
                 result = plan(candidates, running, all_tasks=[a, b, c, free],
                               finished={'A'} if phase == 'integrating' else ())
                 self.assertEqual([t['id'] for t in result['dispatch']],
-                                 ['A', 'FREE'] if not running else ['FREE'])
-                self.assertEqual(result['waiting'], [
-                    {'id': tid, 'reason': 'waits for A (shares hot file a.py)', 'blocked_by': ['A']}
-                    for tid in ('B', 'C')])
-        # A noncandidate still contributes to heat; a held task does not own files.
+                                 ['A', 'FREE', 'B', 'C'] if not running else ['FREE', 'B', 'C'])
+                self.assertEqual(result['waiting'], [])
+        # A noncandidate or idle claim must not turn file overlap into a wait.
         c['fields']['Held by'] = 'an interactive session'
         result = plan([b, free], [a], all_tasks=[a, b, c, free])
-        self.assertEqual([t['id'] for t in result['dispatch']], ['FREE'])
-        self.assertEqual(result['waiting'][0]['blocked_by'], ['A'])
-        self.assertEqual(plan([a, b, free], all_tasks=[a, b, c, free])['dispatch'], [a, free])
-        # Real retry admission must count even a decision-held open task, not
-        # just the runnable queue returned by the selector.
+        self.assertEqual(result, {'dispatch': [free, b], 'waiting': []})
+        self.assertEqual(plan([a, b, free], all_tasks=[a, b, c, free])['dispatch'], [a, free, b])
+        # The retry adapter uses the same policy, even beside an unlanded commit.
         import parallel_dispatch as dispatch
         with tempfile.TemporaryDirectory() as folder:
             repo = Path(folder)
@@ -60,9 +56,8 @@ class HotFileTests(unittest.TestCase):
             result = dispatch.retry_plan(repo, [
                 {'task_id': 'A', 'state': 'reported', 'attempt': 1},
                 {'task_id': 'B', 'state': 'held', 'attempt': 1}])
-            self.assertEqual(result['dispatch'], [])
-            self.assertEqual(result['waiting'], [
-                {'id': 'B', 'reason': 'waits for A (shares hot file a.py)', 'blocked_by': ['A']}])
+            self.assertEqual([t['id'] for t in result['dispatch']], ['B'])
+            self.assertEqual(result['waiting'], [])
 
     def test_cold_overlap_keeps_ranking(self):
         a, b, free = task('A', 'a.py, a.py'), task('B', 'a.py'), task('FREE', 'b.py')

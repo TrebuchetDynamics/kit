@@ -234,61 +234,28 @@ class PlanTests(unittest.TestCase):
                 self.assertEqual([w['id'] for w in result['waiting']], ['B', 'C'] if alone else ['B'])
                 self.assertIn(reason, result['waiting'][0]['reason'])
 
-    def test_a_shared_test_module_only_ranks_and_never_serializes(self):
-        """TOOLSET-341-eb82856d: five tasks waited on one for pi-autowork/tests/runner/test_pi_autowork.py alone."""
-        from parallel_plan import plan, test_module
-        for path, expected in (('pi-autowork/tests/runner/test_pi_autowork.py', True), ('pi-autowork/tests/engine/test_parallel_plan.py', True),
-                               ('pkg/tests/helpers.py', True), ('src/thing_test.py', True),
-                               ('pi-autowork/engine/parallel_plan.py', False), ('src/testing.py', False)):
-            with self.subTest(path=path):
-                self.assertEqual(test_module(path), expected)
-        tasks = [task(f'T{i}', f'mod{i}.py, pi-autowork/tests/runner/test_pi_autowork.py') for i in range(1, 4)]
-        result = plan(tasks, all_tasks=tasks)
-        self.assertEqual([t['id'] for t in result['dispatch']], ['T1', 'T2', 'T3'])
-        # The same three tasks sharing a production module still wait for each other.
-        tasks = [task(f'P{i}', f'mod{i}.py, shared/core.py') for i in range(1, 4)]
-        result = plan(tasks, all_tasks=tasks)
-        self.assertEqual([t['id'] for t in result['dispatch']], ['P1'])
-        self.assertEqual({w['reason'] for w in result['waiting']}, {'waits for P1 (shares hot file shared/core.py)'})
-        # Beside a running task that names the test module too.
-        result = plan([task('A', 'a.py, pi-autowork/tests/runner/test_pi_autowork.py')], [task('RUN', 'r.py, pi-autowork/tests/runner/test_pi_autowork.py')],
-                      all_tasks=[task('X', 'x.py, pi-autowork/tests/runner/test_pi_autowork.py')], protected_files=[])
-        self.assertEqual([t['id'] for t in result['dispatch']], ['A'])
-
-    def test_a_hot_file_waits_for_its_owner_while_shared_directories_only_rank(self):
-        """Three unfinished contracts make shared/x.py hot, including the idle claim.
-        A hot file waits; a directory or glob still only ranks
-        (TOOLSET-161-17: wide Touches once held 34 tasks), and an idle claim holds nothing."""
+    def test_shared_source_and_test_files_rank_without_serializing(self):
         from parallel_plan import plan
-        claim = task('CL', 'shared/x.py', status='in_progress')
-        tasks = [task('T1', 'shared/x.py'), task('T2', 'shared/x.py, t2.py'), task('T3', 'free.py'),
-                 task('T4', 'other.py', resources='db'), task('T5', 'more.py', resources='db'),
-                 task('T6', 'shared/')]
-        result = plan(tasks, all_tasks=[claim, *tasks])
-        # T6 shares only a directory with T1: it runs, after the independent work.
-        self.assertEqual([t['id'] for t in result['dispatch']], ['T1', 'T3', 'T4', 'T6'])
+        for path in ('shared/core.py', 'pi-autowork/tests/runner/test_pi_autowork.py'):
+            with self.subTest(path=path):
+                tasks = [task(f'T{i}', f'mod{i}.py, {path}') for i in range(4)]
+                free = task('FREE', 'free.py')
+                result = plan([*tasks, free], all_tasks=tasks)
+                self.assertEqual(result, {'dispatch': [tasks[0], free, *tasks[1:]], 'waiting': []})
+                result = plan([*tasks[1:], free], [tasks[0]], all_tasks=tasks)
+                self.assertEqual(result, {'dispatch': [free, *tasks[1:]], 'waiting': []})
+
+    def test_overlapping_scopes_keep_resource_and_dependency_gates(self):
+        from parallel_plan import plan
+        run = task('RUN', 'shared/x.py', resources='db')
+        tasks = [task('FILE', 'shared/x.py'), task('DIR', 'shared/'),
+                 task('GLOB', 'shared/*.py'), task('DB', 'shared/x.py', resources='db'),
+                 task('DEP', 'shared/x.py', deps='RUN')]
+        result = plan(tasks, [run], all_tasks=[run, *tasks], protected_files=[])
+        self.assertEqual([t['id'] for t in result['dispatch']], ['FILE', 'DIR', 'GLOB'])
         reasons = {w['id']: w['reason'] for w in result['waiting']}
-        self.assertEqual(reasons['T2'], 'waits for T1 (shares hot file shared/x.py)')
-        self.assertIn('shared resource', reasons['T5'])
-        # A directory only ranks, even beside running work.
-        result = plan([task('D', 'lib/d.py'), task('E', 'lib/*.py')], [task('RUN', 'lib/')], protected_files=[])
-        self.assertEqual([t['id'] for t in result['dispatch']], ['D', 'E'])  # a directory only ranks
-        # A waiting higher-priority task holds no files: chained waits on one old commit once left
-        # every worker idle. The free file goes to the higher task first when both can start.
-        h, l, run = task('H', 'run.py, h.py'), task('L', 'h.py'), task('RUN', 'run.py')
-        context = [h, l, run, task('THIRD', 'run.py, h.py')]
-        result = plan([h, l], [run], all_tasks=context)
-        self.assertEqual([t['id'] for t in result['dispatch']], ['L'])
-        result = plan([h, l], all_tasks=context)
-        self.assertEqual([t['id'] for t in result['dispatch']], ['H'])
-        self.assertEqual(result['waiting'][0]['reason'], 'waits for H (shares hot file h.py)')
-        # A serial S is not exclusive (TOOLSET-160-df): independent T3 runs beside it.
-        tasks = [task('T1', 'shared/x.py'), task('S', 'package.json'), task('T3', 'free.py')]
-        result = plan(tasks, all_tasks=[claim, *tasks], protected_files=[])  # shared/ holds no manifest
-        self.assertEqual([t['id'] for t in result['dispatch']], ['T1', 'S', 'T3'])
-        self.assertEqual(result['waiting'], [])
-        result = plan([task('S', 'package.json'), task('T3', 'free.py')], [tasks[0]])
-        self.assertEqual([t['id'] for t in result['dispatch']], ['S', 'T3'])
+        self.assertIn('shared resource', reasons['DB'])
+        self.assertIn('dependency', reasons['DEP'])
 
     def test_transitive_dependencies_include_nonrunnable_contracts(self):
         from parallel_plan import plan
@@ -299,10 +266,8 @@ class PlanTests(unittest.TestCase):
 
     def test_solo_task_drains_pool_and_blocks_lower_priorities(self):
         from parallel_plan import plan
-        live = task('A', 'a.py', resources='live')
-        live['fields'].update({'Live authorization': 'owner approved this run on 2026-10-17',
-                               'Live actor': 'owner', 'Live at': '2026-10-17', 'Live scope': 'live'})
-        for solo in (live, task('A', 'a.py', resources='exclusive')):
+        for solo in (task('A', 'a.py', resources='exclusive'),
+                     task('A', 'a.py', resources='exclusive, device-lab')):
             with self.subTest(solo=solo):
                 tasks = [solo, task('B', 'b.py')]
                 self.assertEqual([t['id'] for t in plan(tasks)['dispatch']], ['A'])
@@ -316,6 +281,27 @@ class PlanTests(unittest.TestCase):
                 tasks = [serial, task('B', 'b.py')]
                 self.assertEqual([t['id'] for t in plan(tasks)['dispatch']], ['A', 'B'])
                 self.assertEqual([t['id'] for t in plan(tasks, [task('RUN', 'run.py')])['dispatch']], ['A', 'B'])
+
+    def test_live_authorization_does_not_make_work_exclusive(self):
+        from parallel_plan import plan
+        live = task('LIVE', 'shared.py', resources='live, device-lab')
+        live['fields'].update({'Live authorization': 'approved', 'Live actor': 'owner',
+                               'Live at': '2026-11-07', 'Live scope': 'live, device-lab'})
+        offline = task('OFFLINE', 'shared.py')
+        # A long wait from an older release must not keep draining unrelated workers.
+        result = plan([live, offline], [task('RUN', 'shared.py')],
+                      drain_after=1800, waited={'LIVE': 7200})
+        self.assertEqual(result, {'dispatch': [live, offline], 'waiting': []})
+        self.assertEqual(plan([offline], [live])['dispatch'], [offline])
+        # A live task still reserves its declared resources, without draining the pool.
+        for resource in ('live', 'device-lab'):
+            result = plan([live, offline], [task('RUN', 'shared.py', resources=resource)],
+                          drain_after=1800, waited={'LIVE': 7200})
+            self.assertEqual(result['dispatch'], [offline])
+            self.assertEqual(result['waiting'], [
+                {'id': 'LIVE', 'reason': 'shared resource with RUN', 'blocked_by': ['RUN']}])
+        live['fields']['Resources'] += ', exclusive'
+        self.assertEqual(plan([live, offline])['dispatch'], [live])
 
     def test_an_exclusive_task_drains_the_pool_only_after_its_grace_period(self):
         """TOOLSET-171-35: 28 independent tasks idled behind one exclusive task."""
