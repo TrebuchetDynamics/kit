@@ -42,7 +42,12 @@ try {
   if (listing) {
     const stored = new Map(providers.map(p => [p.id, readStoredCredential(p.id, join(directory, 'auth.json'))?.type])
       .filter(([, type]) => ['api_key', 'oauth'].includes(type)));
-    emit({ type: 'catalog', providers: providers.map(p => ({
+    const models = runtime.getModels().map(m => ({
+      id: `${m.provider}/${m.id}`,
+      free: m.provider === 'openrouter' && (m.id.endsWith(':free') || m.id === 'openrouter/free') &&
+        ['input', 'output', 'cacheRead', 'cacheWrite'].every(k => typeof m.cost?.[k] === 'number' && m.cost[k] === 0),
+    }));
+    emit({ type: 'catalog', models, providers: providers.map(p => ({
       id: p.id, name: p.name || p.id, state: stored.has(p.id) ? 'stored ' + stored.get(p.id) : 'not stored',
       methods: [p.auth.oauth?.login && 'oauth', p.auth.apiKey?.login && 'api_key'].filter(Boolean),
     })) });

@@ -536,7 +536,13 @@ browse, Enter to select and Escape to return. Loading, no matches and catalog
 failures appear inside the selector. The provider menu includes Pi's configurable
 providers even when no models are available. It distinguishes credentials stored in
 Pi from model availability; stored credentials have not necessarily been validated
-by the provider. Choose **Configure provider** for the selected provider, select
+by the provider. Public SDK model metadata remains browsable before login.
+**Free models** searches explicitly free OpenRouter routes across providers,
+using the catalog's zero input/output/cache prices and `:free`/free-router IDs;
+unknown prices and subscription-only models are not labelled free. Availability
+and provider limits can change. Selecting an unconfigured model opens provider
+configuration; refresh after login and choose the model to use it.
+Choose **Configure provider** for the selected provider, select
 OAuth or API key where supported, then **Connect**. Follow the prompts in the TUI.
 All answers are masked and never prefilled from storage. **Browser** explicitly
 opens the provider's HTTPS OAuth page when required. Escape cancels the connection;

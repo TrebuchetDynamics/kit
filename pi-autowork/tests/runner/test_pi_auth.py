@@ -23,6 +23,7 @@ export class ModelRuntime {
     return new ModelRuntime(options);
   }
   constructor(options) { this.options = options; }
+  getModels() { return [{provider:'openrouter',id:'fixture/model:free',cost:{input:0,output:0,cacheRead:0,cacheWrite:0}}, {provider:'fixture',id:'paid',cost:{input:1,output:2,cacheRead:0,cacheWrite:0}}]; }
   getProviders() { return [{id: 'fixture', name: 'Fixture', auth: {
     oauth: {login(){}}, apiKey: {login(){}}
   }}]; }
@@ -72,6 +73,8 @@ class PiAuthTests(unittest.TestCase):
         return asyncio.run(run()), events, bridge
 
     def test_empty_catalog_advertises_methods_without_creating_profile_state(self):
+        discovered = pi_auth.discovery(str(self.profile))
+        self.assertEqual([m['id'] for m in discovered['models'] if m['free']], ['openrouter/fixture/model:free'])
         providers = pi_auth.catalog(str(self.profile))
         self.assertEqual(providers, [dict(id='fixture', name='Fixture', state='not stored',
                                           methods=['oauth', 'api_key'])])

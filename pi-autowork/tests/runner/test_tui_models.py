@@ -467,6 +467,49 @@ async def providers_pilot(size):
         assert len(app.screen_stack) == 1 and app.new_model == 'nous-local/openai/unique'
 
 
+async def free_models_pilot(size):
+    from textual.widgets import Button, Input
+    from pi_autowork import tui
+    free = 'openrouter/fixture/a:free'
+    other = 'openrouter/fixture/b:free'
+    public = dict(models=[MODELS[0], free, other], usable_models=[MODELS[0]],
+                  free_models=[free, other], providers=[
+                      dict(id='fixture', methods=['api_key'], state='stored api_key'),
+                      dict(id='openrouter', methods=['api_key'], state='not stored')])
+    def empty_authenticated_catalog():
+        raise ValueError('No authenticated models')
+    with patch.object(tui.pi_auth, 'discovery', return_value=dict(providers=public['providers'], models=[dict(id=free, free=True)])):
+        discovered = tui.FleetApp.model_catalog(empty_authenticated_catalog, '/fixture/profile', 'fixture-pi')
+    assert discovered['models'] == [free] and discovered['usable_models'] == []
+    assert discovered['free_models'] == [free] and discovered['model_error'] == ''
+    async with fixture_app(size, loader=lambda: public) as (app, pilot, ready, calls):
+        app.action_pick_model('model')
+        await settle(app, pilot)
+        picker = app.screen
+        visible(picker.query_one('#model-free', Button), size)
+        await pilot.click('#model-free')
+        await pilot.pause()
+        assert picker.shown == [free, other], picker.shown
+        field = picker.query_one('#filter', Input)
+        field.value = 'a:free'
+        field.focus()
+        await pilot.pause()
+        assert picker.shown == [free]
+        with patch.object(picker, 'action_login') as login:
+            await pilot.press('enter')
+            await pilot.pause()
+            login.assert_called_once()
+            assert app.new_model == '', 'Unconfigured model must not be silently selected'
+        public['usable_models'] = [MODELS[0], free]
+        picker.loaded_models(public)
+        field.value = 'a:free'
+        field.focus()
+        await pilot.pause()
+        await pilot.press('enter')
+        await settle(app, pilot)
+        assert app.new_model == free
+
+
 class TuiModelsTests(unittest.TestCase):
     def run_case(self, case):
         self.assertIsNotNone(shutil.which('uv'), 'Model acceptance requires uv and pinned Textual cache')
@@ -474,6 +517,9 @@ class TuiModelsTests(unittest.TestCase):
                                  'python', __file__, '--pilot', case], capture_output=True, text=True, timeout=90)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('MODEL PILOT OK ' + case, result.stdout)
+
+    def test_free_models_can_be_found_before_login_and_selected_after_configuration(self):
+        self.run_case('free')
 
     def test_session_choice_filter_and_read_only_modelbar(self):
         self.run_case('session')
@@ -498,7 +544,7 @@ async def main(case):
     for size in ((80, 24), (60, 18), (120, 32)):
         await {'session': session_pilot, 'login': login_pilot,
                'status': status_pilot, 'start': start_pilot,
-               'existing': existing_pilot, 'providers': providers_pilot}[case](size)
+               'existing': existing_pilot, 'providers': providers_pilot, 'free': free_models_pilot}[case](size)
         print('PASS', case, size)
     print('MODEL PILOT OK', case)
 

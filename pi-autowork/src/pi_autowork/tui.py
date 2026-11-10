@@ -206,7 +206,7 @@ class PickModel(ReadScreen, ModalScreen[str]):
     PickModel > Vertical { width: 80; max-width: 100%; height: 90%; border: thick $accent; background: $surface; padding: 0 2; }
     PickModel OptionList { height: 1fr; min-height: 1; }
     #model-actions { height: 3; }
-    #model-actions Button { width: auto; margin-right: 1; }
+    #model-actions Button { width: auto; min-width: 0; margin-right: 1; }
     #model-status { height: auto; max-height: 3; }
     '''
 
@@ -216,6 +216,7 @@ class PickModel(ReadScreen, ModalScreen[str]):
         self.loader, self.identity, self.agent_dir = loader, identity, agent_dir
         self.identity_valid = identity_valid or (lambda: True)
         self.providers, self.auth_error = {}, ''
+        self.free_only, self.free_models, self.usable_models = False, set(), set()
         self.catalog_loading, self.load_error = bool(loader), ''
         self.provider = ''
 
@@ -231,6 +232,7 @@ class PickModel(ReadScreen, ModalScreen[str]):
             with Horizontal(id='model-actions'):
                 yield Button('Configure provider', id='model-login', disabled=not self.agent_dir)
                 yield Button('Refresh models', id='model-refresh', disabled=self.loader is None)
+                yield Button('Free models', id='model-free')
             yield Label('Choose a provider → Configure provider · Esc back')
 
     def on_mount(self):
@@ -264,13 +266,17 @@ class PickModel(ReadScreen, ModalScreen[str]):
         previous_provider = self.provider
         if isinstance(models, dict):
             self.providers = {p['id']: p for p in models.get('providers', [])}
+            self.free_models = set(models.get('free_models', []))
+            self.usable_models = set(models.get('usable_models', models['models']))
             self.auth_error = models.get('auth_error', '')
             self.load_error = models.get('model_error', '')
             models = models['models']
         self.models = models
+        if not self.providers:
+            self.usable_models = set(models)
         providers = sorted(set(self.providers) | {model.partition('/')[0] for model in models})
         selector = self.query_one('#provider', Select)
-        available = {model.partition('/')[0] for model in models}
+        available = {model.partition('/')[0] for model in self.usable_models}
         selector.set_options([(provider + (' · available' if provider in available else '')
                               + (' · ' + self.providers[provider]['state']
                                  if provider in self.providers else ''), provider)
@@ -297,8 +303,10 @@ class PickModel(ReadScreen, ModalScreen[str]):
             field.focus()
 
     def on_input_changed(self, event):
-        provider_models = [m for m in self.models if m.partition('/')[0] == self.provider]
-        self.shown = [m for m in provider_models if event.value.lower() in m.lower()]
+        provider_models = ([m for m in self.models if m in self.free_models] if self.free_only else
+                           [m for m in self.models if m.partition('/')[0] == self.provider])
+        query = event.value.lower().strip()
+        self.shown = [m for m in provider_models if query in m.lower()]
         options = self.query_one('#models', OptionList)
         options.clear_options()
         options.add_options(self.shown)
@@ -313,6 +321,11 @@ class PickModel(ReadScreen, ModalScreen[str]):
                       if self.shown else 'No matching models. Clear or change your search.')
         else:
             status = 'No Pi models available. Choose a provider and configure login.'
+        if self.free_only:
+            status = (f'{len(self.shown)} free models across providers. Login may be required; limits apply.'
+                      if self.shown else 'No free models match. Clear the search or Refresh models.')
+        elif self.shown and any(m not in self.usable_models for m in self.shown):
+            status = f'{len(self.shown)} catalog models. Select one to configure its provider if needed.'
         if self.auth_error:
             status = self.auth_error
         self.query_one('#model-status', Static).update(status)
@@ -346,7 +359,13 @@ class PickModel(ReadScreen, ModalScreen[str]):
         self.app.push_screen(ProviderAuth(provider, self.agent_dir, identity_valid=self.identity_valid), authenticated)
 
     def on_button_pressed(self, event):
-        if event.button.id == 'model-refresh':
+        if event.button.id == 'model-free':
+            self.free_only = not self.free_only
+            event.button.label = 'All models' if self.free_only else 'Free models'
+            self.query_one('#filter', Input).placeholder = ('Search free models across providers' if self.free_only
+                                                           else 'Search this provider\'s models')
+            self.on_input_changed(self.query_one('#filter', Input))
+        elif event.button.id == 'model-refresh':
             self.refresh_models()
         elif event.button.id == 'model-login':
             event.stop()
@@ -355,7 +374,7 @@ class PickModel(ReadScreen, ModalScreen[str]):
     def on_input_submitted(self, event):
         """Enter in the filter takes the first match."""
         if self.shown:
-            self.dismiss(self.shown[0])
+            self.choose_model(self.shown[0])
 
     def on_key(self, event):
         if event.key == 'down' and self.focused is self.query_one('#filter'):
@@ -364,7 +383,17 @@ class PickModel(ReadScreen, ModalScreen[str]):
     def on_option_list_option_selected(self, event):
         model = str(event.option.prompt)
         if model in self.shown:
-            self.dismiss(model)
+            self.choose_model(model)
+
+    def choose_model(self, model):
+        if self.app.view_only or not self.identity_valid():
+            return
+        if model not in self.usable_models:
+            self.provider = model.partition('/')[0]
+            self.query_one('#provider', Select).value = self.provider
+            self.action_login()
+            return
+        self.dismiss(model)
 
     def action_cancel(self):
         self.dismiss(None)
@@ -1941,8 +1970,11 @@ class FleetApp(App):
             models = []
             model_error = 'Pi model catalog unavailable. Configure a provider or retry Refresh models.'
         try:
-            providers = pi_auth.catalog(agent_dir, pi)
-            return dict(models=models, providers=providers, model_error=model_error)
+            catalog = pi_auth.discovery(agent_dir, pi)
+            public = catalog.get('models', [])
+            return dict(models=sorted(set(models) | {m['id'] for m in public}),
+                        usable_models=models, free_models=[m['id'] for m in public if m.get('free')],
+                        providers=catalog.get('providers', []), model_error='' if public else model_error)
         except pi_auth.AuthError as error:
             return dict(models=models, providers=[], auth_error=str(error), model_error=model_error)
 

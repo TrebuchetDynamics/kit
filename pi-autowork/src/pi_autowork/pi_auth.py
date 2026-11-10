@@ -93,11 +93,15 @@ class Bridge:
                 await self.process.wait()
 
 
-def catalog(agent_dir, pi='pi'):
-    """Read non-secret provider metadata; safe on empty catalogs, no network."""
-    events = []
+def discovery(agent_dir, pi='pi'):
+    """Public model/provider metadata without login, credential resolution or network."""
+    result = {}
     async def receive(event):
         if event.get('type') == 'catalog':
-            events.extend(event.get('providers', []))
+            result.update(providers=event.get('providers', []), models=event.get('models', []))
     asyncio.run(Bridge(agent_dir, pi).run('catalog', receive))
-    return events
+    return result
+
+
+def catalog(agent_dir, pi='pi'):
+    return discovery(agent_dir, pi).get('providers', [])
