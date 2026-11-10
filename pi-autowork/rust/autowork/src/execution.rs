@@ -357,8 +357,16 @@ impl<'a> Coordinator<'a> {
             runtime.executable() == fs::canonicalize(binary)?,
             "runtime/check binary mismatch",
         )?;
-        fs::create_dir_all(state.directory().join("cycle-effects"))?;
-        fs::create_dir_all(state.directory().join("cycle-requests"))?;
+        for name in ["cycle-effects", "cycle-requests"] {
+            let path = state.directory().join(name);
+            if !path.exists() {
+                fs::create_dir(&path)?;
+            }
+            require(
+                fs::symlink_metadata(path)?.file_type().is_dir(),
+                "linked cycle directory refused",
+            )?;
+        }
         Ok(Self {
             repo,
             binary: fs::canonicalize(binary)?,
@@ -626,6 +634,7 @@ impl<'a> Coordinator<'a> {
                     git_text(&self.repo, &["symbolic-ref", "HEAD"])? == effect.branch,
                     "proposal branch drift",
                 )?;
+                self.advance_index(&effect.base, &effect.tree, false)?;
                 git_text(
                     &self.repo,
                     &["update-ref", &effect.branch, &target, &effect.base],
@@ -798,6 +807,12 @@ impl<'a> Coordinator<'a> {
             let before = git_text(&self.repo, &["ls-tree", base, "--", path])?;
             let after = git_text(&self.repo, &["ls-tree", target, "--", path])?;
             let staged = git_text(&self.repo, &["ls-files", "--stage", "--", path])?;
+            require(
+                staged.is_empty()
+                    || (staged.lines().count() == 1
+                        && staged.split_whitespace().nth(2) == Some("0")),
+                "unmerged staged task edit retained; reconcile index",
+            )?;
             let identity = |entry: &str| {
                 entry
                     .split_whitespace()
@@ -837,6 +852,124 @@ impl<'a> Coordinator<'a> {
             )?;
         }
         Ok(())
+    }
+    /// Publication-only entry point. Never selects tasks or reconciles other effects.
+    pub fn publish_pending(
+        &self,
+        token: Option<&str>,
+    ) -> Result<Option<(String, CommittedRevision)>> {
+        if let Some(token) = token {
+            require(
+                crate::task_store::valid_publication_token(token),
+                "malformed publication token",
+            )?;
+        }
+        self.gate()?;
+        require(
+            !self
+                .state
+                .directory()
+                .join(crate::planning::PUBLICATION_INTENT)
+                .exists(),
+            "planner publication requires its owning coordinator",
+        )?;
+        if self.delivery_path().exists() {
+            let delivery: Delivery = serde_json::from_slice(&fs::read(self.delivery_path())?)?;
+            require(delivery.settled, "unresolved delivery retained")?;
+        }
+        let operation = token.map(|t| format!("proposal-{t}"));
+        let mut retained = None;
+        for entry in fs::read_dir(self.state.directory().join("cycle-effects"))? {
+            let path = entry?.path();
+            if path.extension().is_none_or(|e| e != "json") {
+                continue;
+            }
+            let metadata = fs::symlink_metadata(&path)?;
+            require(
+                metadata.file_type().is_file() && metadata.nlink() == 1,
+                "linked publication effect refused",
+            )?;
+            let effect: GitEffect = serde_json::from_slice(&fs::read(&path)?)?;
+            require(
+                path == self.effect_path(&effect.operation),
+                "effect path mismatch",
+            )?;
+            if operation.as_deref() == Some(&effect.operation) {
+                retained = Some(effect);
+            } else {
+                require(effect.settled, "unrelated unresolved Git effect retained")?;
+            }
+        }
+        let unresolved = self
+            .state
+            .reconcile(Default::default())?
+            .reconcile_operation_ids;
+        require(
+            unresolved
+                .iter()
+                .all(|id| retained.is_some() && Some(id) == operation.as_ref()),
+            "unrelated unresolved effect retained",
+        )?;
+        let current = self.service.capture_pending()?;
+        if let Some(effect) = retained {
+            let pending = effect
+                .pending
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("missing publication snapshot"))?;
+            require(
+                !effect.integration
+                    && effect.files.is_empty()
+                    && effect.identity.repo_id == self.state.repo_id()
+                    && effect.identity.contract_hash == pending.token
+                    && effect.identity.role == Role::Planner
+                    && effect.source == pending.base_head
+                    && effect.base == pending.base_head
+                    && effect.branch == pending.branch
+                    && effect.tree == pending.tree
+                    && token == Some(pending.token.as_str())
+                    && pending.computed_token()? == pending.token,
+                "retained publication identity mismatch",
+            )?;
+            require(
+                current.branch == pending.branch
+                    && current.captured_bytes == pending.captured_bytes,
+                "retained publication branch/record drift",
+            )?;
+            if effect.settled {
+                let target = effect
+                    .target
+                    .as_deref()
+                    .ok_or_else(|| std::io::Error::other("missing publication commit"))?;
+                require(
+                    self.is_completed(&effect.operation)?
+                        && current.base_head == target
+                        && current.tree == effect.tree
+                        && git_text(&self.repo, &["rev-parse", &format!("{target}^1")])?
+                            == effect.base
+                        && git_text(&self.repo, &["log", "-1", "--format=%B", target])?
+                            == format!("autowork-next {}", effect.operation),
+                    "settled publication source drift",
+                )?;
+                self.advance_index(&effect.base, target, false)?;
+                return Ok(Some((
+                    pending.token.clone(),
+                    CommittedRevision(target.into()),
+                )));
+            }
+            return Ok(Some((
+                pending.token.clone(),
+                self.commit_proposal(pending.clone())?,
+            )));
+        }
+        if current.tree == git_text(&self.repo, &["rev-parse", "HEAD^{tree}"])? {
+            return Ok(None);
+        }
+        require(
+            token == Some(current.token.as_str()),
+            "missing or stale publication token",
+        )?;
+        let token = current.token.clone();
+        Ok(Some((token, self.commit_proposal(current)?)))
     }
     pub fn commit_proposal(&self, snapshot: PendingSnapshot) -> Result<CommittedRevision> {
         require(
