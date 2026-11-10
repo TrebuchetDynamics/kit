@@ -160,11 +160,15 @@ For explicit read-only, chat-only, no-write or --dry-run requests, write nothing
 return proposed task updates in chat. A planning-only or “do not implement” request
 still saves planning documents and task records; it does not change product code.
 
-Reuse existing task IDs and document owners. New allocation uses an eight-hex-digit
-suffix after the number, such as `TOOLSET-084-a7b8c9d0`, reducing collision risk
-across clones, not guaranteeing uniqueness. `autowork tasks add` allocates one
-(`autowork tasks new-id` prints a candidate, not a reservation). Keep existing IDs unchanged,
-including legacy IDs with shorter suffixes or none; never normalize them. A discovery pass that finds the existing backlog already covers the
+Reuse existing task IDs and document owners. New IDs are plain numbered IDs such
+as `TOOLSET-084`; do not append a hash or random suffix. `autowork tasks add`
+allocates the next number, counting existing, archived and locally committed
+historical IDs (including legacy hashed IDs), so pruning committed tasks does not
+recycle their numbers.
+`autowork tasks new-id` prints a candidate, not a reservation; let `add` allocate
+under its write lock, and reconcile cross-checkout collisions rather than overwrite.
+Keep existing IDs and references intact, especially for live attempts; removing
+legacy suffixes requires a separate safe remapping, not blind normalization. A discovery pass that finds the existing backlog already covers the
 evidenced gaps reports that and changes nothing; a short queue is not permission to
 invent work. A task may stand alone. Add a goal with `autowork tasks goal ID
 --title T --source path#anchor --priority N` only for a meaningful shared outcome.
