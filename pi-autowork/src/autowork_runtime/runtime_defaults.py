@@ -14,18 +14,19 @@ def _plugin_entries(raw):
 
 
 def _report_legacy_entry(raw):
-    """Report a profile carrying both keys once; canonical values still win per key."""
+    """Report legacy settings lookup once, including profiles without a canonical entry."""
     entries = _plugin_entries(raw)
-    if PLUGIN not in entries or LEGACY_PLUGIN not in entries:
+    if LEGACY_PLUGIN not in entries:
         return
     marker = (PLUGIN, LEGACY_PLUGIN)
     if marker in _reported_legacy_entry:
         return
     _reported_legacy_entry.add(marker)
     logger.warning(
-        'Profile carries both plugins.entries.%s and plugins.entries.%s; using %s values '
-        'where present and %s for missing keys.',
-        PLUGIN, LEGACY_PLUGIN, PLUGIN, LEGACY_PLUGIN)
+        'Migrated settings lookup from plugins.entries.%s to plugins.entries.%s; '
+        'using %s values where present and %s for missing keys; '
+        'writes use plugins.entries.%s. The legacy entry is retained.',
+        LEGACY_PLUGIN, PLUGIN, PLUGIN, LEGACY_PLUGIN, PLUGIN)
 
 
 def skills_patch(raw):

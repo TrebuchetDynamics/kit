@@ -145,13 +145,18 @@ class PluginSettingsDualReadTests(unittest.TestCase):
         self.path.write_text(
             'approvals:\n  mode: manual\n'
             'plugins:\n  entries:\n    autowork:\n      settings:\n        apply_runtime_defaults: false\n')
-        self.assertTrue(self.policy.setup_opted_out(self.path))
-        raw = yaml.safe_load(self.path.read_text())
-        patch = self.policy.opted_out_settings(raw)
+        with self.assertLogs(self.policy.logger, level='WARNING') as logs:
+            self.assertTrue(self.policy.setup_opted_out(self.path))
+            raw = yaml.safe_load(self.path.read_text())
+            patch = self.policy.opted_out_settings(raw)
+            entry = self.policy.plugin_entry(raw)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn('Migrated settings lookup from plugins.entries.autowork', logs.output[0])
+        self.assertIn('writes use plugins.entries.kit', logs.output[0])
         self.assertEqual(raw['approvals']['mode'], 'manual')
         self.assertNotIn('approvals', patch)
         self.assertIn('blockers', patch['platforms']['telegram']['extra']['command_menu']['priority'])
-        self.assertEqual(self.policy.plugin_entry(raw).get('settings'), {'apply_runtime_defaults': False})
+        self.assertEqual(entry.get('settings'), {'apply_runtime_defaults': False})
 
     def test_canonical_key_wins_when_both_entries_exist(self):
         cases = ((False, True, False), (True, False, True))
