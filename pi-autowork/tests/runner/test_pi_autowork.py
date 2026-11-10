@@ -1418,20 +1418,46 @@ class EngineTests(Fixture):
     def test_only_the_candidate_the_engine_takes_next_is_started_and_reads_verifying(self):
         """TOOLSET-238-11: after a reload the runner logged "verifying" for 13 candidates and started
         13 engine integrations, all but one refused for priority order."""
+        import parallel_state
+
         self.write_todo(todo([('B', None), ('A', None), ('C', 'A')]))  # B goes first
         self.git(self.repo, 'commit', '-qam', 'B first')
-        self.plan({'verify:A': ['slow_review'], 'verify:B': ['slow_review']})
-        result = self.run_runner('--until-empty', timeout=180)
-        self.assertTrue(self.done('A', 'B', 'C'), result.stdout)
-        events = re.findall(r'\] ([ABC]): (verifying|integrated|failed)', result.stdout)
+        self.plan({'worker:A': ['released'], 'worker:B': ['released'],
+                   'verify:A': ['slow_review'], 'verify:B': ['slow_review']})
+        runner = self.start_runner('--until-empty')
+        try:
+            for task in 'AB':
+                self.wait_for(self.root / f'ready-{task}', timeout=60)
+            common = self.repo / '.git/autowork-execution'
+            slots = [json.loads((common / 'slots' / f'{task}.json').read_text()) for task in 'AB']
+            # Priority orders reported candidates, not a worker that has not finished yet.
+            with (common / 'writer.lock').open('a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                for task in 'AB':
+                    (self.root / f'release-{task}').touch()
+                deadline = time.monotonic() + 60
+                while any(parallel_state.worker_live(slot) for slot in slots):
+                    self.assertLess(time.monotonic(), deadline, 'released workers did not exit')
+                    time.sleep(.05)
+            out, err = runner.communicate(timeout=180)
+        finally:
+            for task in 'AB':
+                (self.root / f'release-{task}').touch()
+            if runner.poll() is None:
+                runner.send_signal(signal.SIGINT)
+                runner.communicate(timeout=60)
+        text = out + err
+        self.assertEqual(runner.returncode, 0, text)
+        self.assertTrue(self.done('A', 'B', 'C'), text)
+        events = re.findall(r'\] ([ABC]): (verifying|integrated|failed)', text)
         reviewing = None
         for task, word in events:  # one review at a time: each "verifying" ends in its own answer
             if word == 'verifying':
-                self.assertIsNone(reviewing, result.stdout)
+                self.assertIsNone(reviewing, text)
                 reviewing = task
             elif task == reviewing:
                 reviewing = None
-        self.assertEqual([t for t, w in events if w == 'verifying'], ['B', 'A', 'C'], result.stdout)
+        self.assertEqual([t for t, w in events if w == 'verifying'], ['B', 'A', 'C'], text)
 
     def test_an_idle_runner_rests_when_only_other_refs_change(self):
         """TOOLSET-185-74: an idle runner started 213 sessions in 40 minutes: ending each empty
@@ -2701,7 +2727,6 @@ fcntl.flock = observed_flock
         root_label = f'A ({description}, holds 1)'
         env = {**self.env, 'PI_AUTOWORK_STALL_AFTER': '2'}
         log = lambda: ''.join(p.read_text() for p in self.state.glob('*/runner.log'))
-        deadline = time.monotonic() + 60
         identity = self.root / 'runner-process.json'
         output_path = self.root / 'runner-output'
         # Reuse the subreaper guard: no undrained pipes, and cleanup also runs on assertion failure.
@@ -2712,15 +2737,15 @@ fcntl.flock = observed_flock
                  'bash', str(RUNNER), '--interval', '1'],
                 cwd=self.repo, env=env, stdout=output, stderr=subprocess.STDOUT)
 
-            def observe(predicate):
+            def observe(predicate, *, deadline):
                 while True:
                     paths = list(self.state.glob('*/status.json'))
                     snapshot = json.loads(paths[0].read_text()) if paths else {}
                     details = f'{snapshot}\n{log()}\n{output_path.read_text()}'
                     self.assertIsNone(runner.poll(), details)
-                    self.assertLess(time.monotonic(), deadline, details)
                     if predicate(snapshot):
                         return snapshot
+                    self.assertLess(time.monotonic(), deadline, details)
                     time.sleep(0.1)
 
             def assert_attribution(snapshot):
@@ -2734,16 +2759,18 @@ fcntl.flock = observed_flock
 
             try:
                 observe(lambda s: any(h['task'] == 'A' and h['cause'] == cause for h in s.get('held', []))
-                        and (self.root / 'ready-B').exists())
+                        and (self.root / 'ready-B').exists(), deadline=time.monotonic() + 60)
+                # Review setup must not consume the later blocked/stalled observation budget.
                 (self.root / 'release-B').touch()  # B can finish even while A holds dependent C.
                 snapshot = observe(lambda s: s.get('state') == state and self.done('B')
-                                   and (owner_only or 'STALLED' in log()))
+                                   and (owner_only or 'STALLED' in log()), deadline=time.monotonic() + 60)
                 if not owner_only:
                     self.assertGreaterEqual(snapshot['updated_at'] - snapshot['since'], 2)
                 assert_attribution(snapshot)
+                deadline = time.monotonic() + 60
                 for _ in range(3):  # observe later interval-spaced updates, not a fixed sleep
                     previous = snapshot['updated_at']
-                    snapshot = observe(lambda s: s.get('updated_at', 0) >= previous + 1)
+                    snapshot = observe(lambda s: s.get('updated_at', 0) >= previous + 1, deadline=deadline)
                     self.assertEqual(snapshot['state'], state, snapshot)
                     assert_attribution(snapshot)
                     self.assertEqual(log().count('STALLED'), 0 if owner_only else 1, log())
