@@ -1709,7 +1709,8 @@ class FleetApp(App):
                          'Quiet': (fleet_view.quiet(lane).removeprefix('quiet '), 'bold yellow'),
                          'Doing': (activity, fleet_view.action_style(activity))})
         self._lane_targets = targets
-        table.border_title = f'2 · Current work · {len(runner.lanes)} observed · Enter log'
+        table.border_title = (f'2 · Current work · {len(runner.lanes)} observed · Enter log' if runner.lanes
+                              else '2 · Current work · no workers observed')
         compact = self.size.width < 120
         for row in rows:
             status, style = row['Status']
@@ -1724,7 +1725,7 @@ class FleetApp(App):
             keys = list(targets)
             fallback = next((i for i, key in enumerate(keys) if targets[key] == selected), 0)
             table.move_cursor(row=keys.index(keep) if keep in keys else fallback)
-        table.display = bool(runner.lanes)
+        table.display = True
 
     def logs(self, runner, lines=200, since=None):
         return fleet_view.logs(runner, lines=lines, journalctl=self.journalctl, since=since, strict=True)
