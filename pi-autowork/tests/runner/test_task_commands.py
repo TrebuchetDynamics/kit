@@ -165,10 +165,10 @@ class TaskCommandTests(unittest.TestCase):
                          ('Second task', 'Now', 'open', 2000))
         self.assertFalse(record['draft'])
         self.assertEqual((record['resources'], record['live']), ([], 'denied'))
-        self.assertRegex(tid, r'^T-011-[0-9a-f]{8}$')
-        self.assertRegex(self.tasks('new-id').stdout.strip(), r'^T-012-[0-9a-f]{8}$')
+        self.assertEqual(tid, 'T-011')
+        self.assertEqual(self.tasks('new-id').stdout.strip(), 'T-012')
         self.assertEqual(legacy_path.read_bytes(), legacy_bytes)
-        # Equal ranks exercise the ID tie-break with both suffix lengths.
+        # Equal ranks exercise the ID tie-break with plain and legacy IDs.
         self.tasks('field', legacy, 'rank', '2000')
         self.assertTrue(json.loads(self.tasks('validate', '--worktree').stdout)['ok'])
         self.commit()
@@ -177,9 +177,19 @@ class TaskCommandTests(unittest.TestCase):
         self.assertEqual([row['id'] for row in rows], ['T-1', legacy, tid])
         self.assertEqual([row['position'] for row in rows], [1, 2, 3])
         (self.repo / 'TODO.archive.md').write_text('- T-020-deadbeef — archived\n')
-        self.assertRegex(self.tasks('new-id').stdout.strip(), r'^T-021-[0-9a-f]{8}$')
+        self.assertEqual(self.tasks('new-id').stdout.strip(), 'T-021')
         self.assertFalse((self.repo / 'TODO.md').exists())
         self.assertFalse((self.repo / 'goals.json').exists())
+
+    def test_plain_id_allocation_preserves_prefix_width_and_legacy_numbers(self):
+        self.add('Plain', '--id', 'WORK-0098')
+        self.add('Legacy', '--id', 'WORK-0099-deadbeef')
+        self.tasks('goal', 'WORK-0100', '--title', 'Reserved goal',
+                   '--source', 'README.md', '--priority', '1')
+        self.assertEqual(self.tasks('new-id').stdout.strip(), 'WORK-0101')
+        self.assertEqual(self.add('Next'), 'WORK-0101')
+        self.assertEqual(self.add('Following'), 'WORK-0102')
+        self.assertEqual(self.tasks('new-id', '--prefix', 'OTHER').stdout.strip(), 'OTHER-001')
 
     def test_add_list_flags_accept_json_arrays_and_repeated_items(self):
         self.add('Other prerequisite', '--id', 'T-2')

@@ -12,6 +12,13 @@ Start with title, scope, acceptance and checks. `autowork tasks add` supplies an
 a short list label (title up to 40 characters), open status, Now/bottom rank,
 implementation kind, worker ownership, empty dependencies/resources/exclusions and
 denied live authority. Override those defaults only when the task needs it.
+New IDs are plain numbered IDs such as `T-001`, without hash suffixes. Allocation
+keeps the prevalent task prefix and number width (at least three digits), and skips
+numbers used by tasks, goals and archived IDs, including legacy hashed IDs.
+`autowork tasks new-id` only previews a candidate; `add` allocates under the task
+write lock. Separate clones can still collide and must reconcile, not overwrite.
+Existing IDs and references remain readable and are not automatically renamed.
+
 A goal is optional: use one for a real multi-task outcome, not every small fix.
 An omitted goal is stored as absent, never as a fabricated default goal. Supplied
 unknown or empty goals are still refused. JSON field input with `"label": "goal"`
