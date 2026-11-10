@@ -119,6 +119,29 @@ def option_text(options):
     return '\n'.join(str(options.get_option_at_index(i).prompt) for i in range(options.option_count))
 
 
+async def progress_pilot():
+    from textual.widgets import Static
+    async with fixture_app((150, 40)) as (app, pilot):
+        runner = app.current()
+        runner.snapshot = replace(runner.snapshot, counts=(1, 0, 1, 1, 0, 3),
+                                  joined_lanes=(('FIX-1-abcdef12', 1, 'running'),))
+        runner.lanes[0].activity = 'Reading source'
+        runner.lanes[0].activity_age = 20
+        app.show_detail()
+        await pilot.pause()
+        summary = app.query_one('#overview', Static).render().plain
+        assert 'Now: Working' in summary and 'Reading source' in summary, summary
+        assert 'none for active work' in summary and 'other tasks need attention' in summary, summary
+        assert 'automatic push disabled' in summary, summary
+        runner.lanes[0].activity_age = 600
+        app.show_detail()
+        summary = app.query_one('#overview', Static).render().plain
+        assert 'Quiet worker' in summary and 'progress not confirmed' in summary, summary
+        runner.push = True
+        app.show_detail()
+        assert 'automatic push enabled' in app.query_one('#overview', Static).render().plain
+
+
 async def menu_pilot():
     from pi_autowork import tui
     from textual.widgets import Input, OptionList
@@ -397,6 +420,9 @@ class TuiRedesignTests(unittest.TestCase):
     def test_empty_fleet_has_responsive_guided_welcome(self):
         self.run_case('welcome')
 
+    def test_progress_card_separates_activity_intervention_and_publication(self):
+        self.run_case('progress')
+
     def test_command_palette_exposes_contextual_autowork_actions(self):
         self.run_case('palette')
 
@@ -408,7 +434,7 @@ if __name__ == '__main__':
             publisher_contract()
         else:
             asyncio.run({'redraw': redraw_pilot, 'menu': menu_pilot,
-                         'layout': layout_pilot, 'welcome': welcome_pilot,
+                         'layout': layout_pilot, 'welcome': welcome_pilot, 'progress': progress_pilot,
                          'palette': palette_pilot, 'execution': execution_copy_pilot}[case]())
     else:
         unittest.main()

@@ -1241,7 +1241,7 @@ class FleetApp(App):
         table.border_title = '1 · Projects — select a project'
         table.add_columns(*self.RUNNER_COLUMNS, *self.RUNNER_TEXT)
         self.query_one('#lanes', DataTable).add_columns(*self.LANE_COLUMNS, *self.LANE_TEXT)
-        self.query_one('#log', RichLog).border_title = '3 · Recent activity · last hour'
+        self.query_one('#log', RichLog).border_title = '3 · Recent activity · Enter full log'
         self.show_navigation()
         self.action_refresh()
         self.refresh_log()
@@ -1604,6 +1604,7 @@ class FleetApp(App):
             text.append((value if self.screen_stack[0].has_class('wide') else self.fit(value, max(1, self.size.width - 2))) + '\n', style)
         label, style = self.execution_state(runner, view)
         context = f' · Next: {self.next_hint(runner)}' if self.size.height < 22 else f' · service {runner.service or "not observed"}'
+        phase, evidence, intervention = fleet_view.progress_summary(runner, view)
         line(f'{runner.name} · {label}' + context, style)
         counts = view.counts
         diagnostics = f'{view.error_count} errors · {view.source_note_count} notes'
@@ -1625,22 +1626,18 @@ class FleetApp(App):
                 line(count_line + ' · ' + provenance, 'dim')
             line('Main: ' + check if check else 'Why: ' + why)
         else:
-            questions = len(self.answerable_questions(runner))
-            action = self.next_hint(runner)
-            if questions:
-                action += f' — {questions} ' + ('question needs' if questions == 1 else 'questions need') + ' your input'
-            line('Next: ' + action, 'bold cyan')
-            line(count_line, 'yellow' if counts is None else '')
-            if counts is not None:
-                line(f'{waiting} waiting · {blocker} blocker · {decision} in Needs decision', 'dim')
-            if check:
-                line('Main: ' + check, 'bold red' if runner.main_check.get('state') in ('red', 'broken') else '')
-            if view.error_count or view.source_note_count or view.inventory_freshness != 'fresh' or view.execution_freshness != 'fresh':
-                line(diagnostics + ' · ' + provenance, 'yellow' if view.error_count else 'dim')
-            elif runner.gate:
-                line('Waiting for resources: ' + runner.gate, 'yellow')
-            elif why and not check:
-                line('Status: ' + ' '.join(why.split()), 'dim')
+            line('Now: ' + phase + ' · ' + count_line, 'bold cyan')
+            if view.execution_freshness != 'fresh' or view.inventory_freshness != 'fresh' or view.error_count:
+                evidence = diagnostics + ' · ' + provenance
+            line(evidence, 'yellow' if phase in ('Quiet worker', 'Unconfirmed') else '')
+            line(intervention, 'dim' if counts and counts[0] else 'bold yellow')
+            line('Main: ' + check if check else 'Main: no check result observed',
+                 'bold red' if runner.main_check.get('state') in ('red', 'broken') else '')
+            line('Publish: ' + ('automatic push enabled' if runner.push else 'local only · automatic push disabled'), 'dim')
+            if self.screen_stack[0].has_class('wide'):
+                line('Next: ' + self.next_hint(runner), 'cyan')
+                if view.error_count or view.source_note_count or view.inventory_freshness != 'fresh' or view.execution_freshness != 'fresh':
+                    line(diagnostics + ' · ' + provenance, 'yellow' if view.error_count else 'dim')
         text.rstrip()
         publish_text(self.query_one('#overview', Static), text)
 
@@ -1854,7 +1851,7 @@ class FleetApp(App):
             log.write(f'{runner.name}: reading journal…')
         runner, journal = read_input(runner), self.journalctl
         return self.read('journal', (runner.name, runner.repo),
-                         lambda: fleet_view.activity_lines(fleet_view.logs(runner, lines=400, journalctl=journal, since='-60min', strict=True)),
+                         lambda: fleet_view.activity_lines(fleet_view.logs(runner, lines=400, journalctl=journal, since='-60min', strict=True), current_session=True),
                          lambda lines: self.show_log(runner.name, lines),
                          lambda error: self.show_log(runner.name, self._journal_lines, str(error)))
 
@@ -2102,7 +2099,10 @@ class FleetApp(App):
         self.starting_repositories.add(ready.repo)
         browser = self.screen
         action = fleet_view.Action('a', f'start {Path(ready.repo).name}', [self.command, 'start', ready.repo],
-                                   confirm=f'Start a pi-autowork service for {ready.repo}?'
+                                   confirm=f'Start a pi-autowork service for {ready.repo}?\n'
+                                   'Flow: queued task → isolated worker → checks → merge into main.\n'
+                                   'Starting does not guarantee a runnable task or a successful model call.\n'
+                                   'Publication follows this repository’s saved push setting; inspect Publish after start.\n'
                                    + (f' Start will safely switch this checkout to local {ready.start_branch} '
                                       'and recheck readiness before starting.' if ready.start_branch else ''))
 

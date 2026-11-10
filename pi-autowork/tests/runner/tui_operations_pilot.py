@@ -99,7 +99,8 @@ async def truth():
             pane = app.query_one('#detail-scroll')
             await pilot.press('end')
             await pilot.pause()
-            assert pane.scroll_y > 0
+            # Tall terminals can display every detail without any overflow.
+            assert abs(pane.scroll_y - pane.max_scroll_y) < 1, (size, pane.scroll_y, pane.max_scroll_y)
             await pilot.press('i')
             # Duplicate display names must dispatch exact IDs, including after reorder.
             for task in IDS:
@@ -142,8 +143,8 @@ async def truth():
                 joined_lanes=tuple((l.task, l.attempt, l.phase) for l in runner.lanes))
             app.render_fleet()
             await pilot.pause()
-            assert 'Working' in painted(app.query_one('#overview'))
-            assert 'Working' in str(app.query_one('#runners', DataTable).get_row_at(0)[1])
+            assert 'In progress' in painted(app.query_one('#overview'))
+            assert 'In progress' in str(app.query_one('#runners', DataTable).get_row_at(0)[1])
             await pilot.press('i')
             assert 'Working' in str(app.query_one('#detail').render())
     print('OPERATIONS OK truth')

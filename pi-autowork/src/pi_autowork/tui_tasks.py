@@ -328,7 +328,7 @@ class TasksScreen(ReadScreen, Screen):
                 Binding('shift+tab', 'step_view(-1)', 'previous view', show=False),
                 *[Binding(str(n + 1), f'show_view("{view}")', view, show=False)
                   for n, view in enumerate(fleet_view.TASK_VIEWS)],
-                *[Binding(key, f'task("{key}")', key, show=False) for key in 'udcas'],
+                *[Binding(key, f'task("{key}")', key, show=False) for key in 'udcasr'],
                 Binding('n', 'new_task', 'New', show=False),
                 Binding('x,delete', 'task("x")', 'Delete', show=False),
                 Binding('g', 'plan("discuss")', 'Discuss', show=False),
@@ -577,6 +577,9 @@ class TasksScreen(ReadScreen, Screen):
             elif row.why and row.why.casefold() not in row.state.casefold():
                 label = 'Activity' if row.bucket == 'Active' else 'Reason'
                 text.append(f'{label}: {row.why}\n')
+        if row and row.kind == 'held':
+            text.append('Recovery: r Retry failed work · c Clear a commit hold. '
+                        'Repeated context overflow: choose another model on the main screen.\n', style='yellow')
         keys = [(a.key, a.label) for a in self.actions(row)]
         if not self.app.view_only:
             keys.append(('n', 'New'))
@@ -599,11 +602,14 @@ class TasksScreen(ReadScreen, Screen):
         essential = ([('enter', 'Open')] if row else [])
         if row and row.kind != 'closed' and not self.app.view_only:
             essential.append(('e', 'e Decide'))
+        if row and row.kind == 'held' and not self.app.view_only:
+            essential.append(('r', 'Retry'))
         if self.pending and not self.app.view_only:
             essential.append(('C', 'Commit'))
         self.query_one('#menubar', MenuBar).show(
             essential + [('B', 'Report'), ('i', 'Info/Help'), ('esc', 'Back')],
             click_actions={'enter': 'screen.open_task', 'e': 'screen.decide',
+                           'r': 'screen.task("r")',
                            'C': 'screen.commit_tasks', 'B': 'screen.report',
                            'i': 'screen.snapshot_info', 'esc': 'app.pop_screen'})
         publish_text(self.query_one('#task-detail', Static), text)
