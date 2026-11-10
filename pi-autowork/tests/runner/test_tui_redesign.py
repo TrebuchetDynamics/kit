@@ -122,6 +122,30 @@ def option_text(options):
     return '\n'.join(str(options.get_option_at_index(i).prompt) for i in range(options.option_count))
 
 
+async def details_layout_pilot():
+    async with fixture_app((180, 45)) as (app, pilot):
+        await pilot.press('i')
+        await pilot.pause()
+        pane = app.query_one('#detail-scroll')
+        sidebar = app.query_one('#project-context')
+        assert pane.region.x >= sidebar.region.right, (pane.region, sidebar.region)
+        assert pane.region.width > 100, pane.region
+        assert pane.region.height > 25, pane.region
+        assert not app.query_one('#log').display and not app.query_one('#lanes').display
+        for _ in range(3):
+            app.render_fleet()
+        await pilot.pause()
+        assert pane.display and pane.region.width > 100
+        await pilot.resize_terminal(60, 18)
+        await pilot.pause()
+        assert pane.region.width >= 58 and pane.region.bottom <= 18, pane.region
+        assert not app.query_one('#overview').display
+        await pilot.press('3')
+        await pilot.pause()
+        assert not pane.display and app.query_one('#log').display
+        assert app.focused.id == 'log'
+
+
 async def progress_pilot():
     from textual.widgets import Static
     async with fixture_app((150, 40)) as (app, pilot):
@@ -426,6 +450,9 @@ class TuiRedesignTests(unittest.TestCase):
     def test_empty_fleet_has_responsive_guided_welcome(self):
         self.run_case('welcome')
 
+    def test_details_use_readable_workspace_and_survive_refresh(self):
+        self.run_case('details')
+
     def test_progress_card_separates_activity_intervention_and_publication(self):
         self.run_case('progress')
 
@@ -440,7 +467,7 @@ if __name__ == '__main__':
             publisher_contract()
         else:
             asyncio.run({'redraw': redraw_pilot, 'menu': menu_pilot,
-                         'layout': layout_pilot, 'welcome': welcome_pilot, 'progress': progress_pilot,
+                         'layout': layout_pilot, 'welcome': welcome_pilot, 'progress': progress_pilot, 'details': details_layout_pilot,
                          'palette': palette_pilot, 'execution': execution_copy_pilot}[case]())
     else:
         unittest.main()

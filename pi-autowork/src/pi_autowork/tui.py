@@ -1127,13 +1127,13 @@ class FleetApp(App):
     #runners { border-top: solid $panel; }
     #runners { height: auto; min-height: 3; max-height: 6; }
     #overview { height: auto; max-height: 6; margin: 0; padding: 0 1; background: $surface; }
-    #detail-scroll { display: none; height: 6; border-top: solid $panel; }
+    #detail-scroll { display: none; height: 1fr; min-height: 4; border: round $accent; }
     #detail { height: auto; padding: 0 1; }
     #lanes { height: auto; min-height: 3; max-height: 6; border-top: solid $panel; }
     #log { height: 1fr; min-height: 4; border-top: solid $panel; }
     .short #runners, .short #lanes { max-height: 3; }
     .short #overview { max-height: 3; margin: 0; }
-    .short #detail-scroll { height: 5; }
+    .short #detail-scroll { height: 1fr; }
     '''
     BINDINGS = [
         Binding('h', 'workflow_help', 'Guide', show=False),
@@ -1237,9 +1237,9 @@ class FleetApp(App):
             with Vertical(id='project-context'):
                 yield DataTable(id='runners', cursor_type='row', zebra_stripes=True)
                 yield Static(id='overview')
+            with Vertical(id='work-context'):
                 with VerticalScroll(id='detail-scroll'):
                     yield Static(id='detail')
-            with Vertical(id='work-context'):
                 yield DataTable(id='lanes', cursor_type='row', zebra_stripes=True)
                 yield RichLog(id='log', wrap=True, highlight=False, markup=False)
         yield MenuBar(id='nav-footer')
@@ -1262,6 +1262,7 @@ class FleetApp(App):
         table.border_title = '1 · Projects — select a project'
         table.add_columns(*self.RUNNER_COLUMNS, *self.RUNNER_TEXT)
         self.query_one('#lanes', DataTable).add_columns(*self.LANE_COLUMNS, *self.LANE_TEXT)
+        self.query_one('#detail-scroll', VerticalScroll).border_title = 'Project details · i back · PgUp/PgDn scroll'
         self.query_one('#log', RichLog).border_title = '3 · Recent activity · Enter full log'
         self.show_navigation()
         self.action_refresh()
@@ -1274,7 +1275,8 @@ class FleetApp(App):
 
     def show_navigation(self):
         focused = getattr(self.focused, 'id', None)
-        hint = ('PgUp/PgDn scroll' if focused == 'log' else '↑↓ select · Enter log') if self.size.width >= 80 else ''
+        hint = ('i Back · PgUp/PgDn scroll' if focused == 'detail-scroll' else
+                'PgUp/PgDn scroll' if focused == 'log' else '↑↓ select · Enter log') if self.size.width >= 80 else ''
         self.query_one('#nav-footer', MenuBar).show(
             [('1', 'Projects'), ('2', 'Work'), ('3', 'Activity'), ('h', 'Guide'), ('?', 'More'), ('q', 'Quit')],
             prefix=hint, click_actions={'1': 'app.focus_panel("runners")', '2': 'app.focus_panel("lanes")',
@@ -1291,6 +1293,8 @@ class FleetApp(App):
     def action_focus_panel(self, panel):
         if len(self.screen_stack) != 1 or panel not in ('runners', 'lanes', 'log'):
             return
+        if self.details_open and panel in ('lanes', 'log'):
+            self.action_toggle_details()
         widget = self.query_one('#' + panel)
         if widget.display:
             widget.focus()
@@ -1684,6 +1688,10 @@ class FleetApp(App):
         self.query_one('#modelbar').display = not welcome.display
         self.query_one('#workspace-body').display = not welcome.display
         self.query_one('#nav-footer').display = not welcome.display
+        wide = self.screen_stack[0].has_class('wide')
+        self.query_one('#overview').display = not welcome.display and (not self.details_open or wide)
+        self.query_one('#detail-scroll').display = self.details_open and runner is not None
+        self.query_one('#log').display = not welcome.display and not self.details_open
         self.show_overview(runner)
         if runner is None:
             errors = (*(self.fleet_snapshot.errors if self.fleet_snapshot else ()),
@@ -1852,7 +1860,7 @@ class FleetApp(App):
             keys = list(targets)
             fallback = next((i for i, key in enumerate(keys) if targets[key] == selected), 0)
             table.move_cursor(row=keys.index(keep) if keep in keys else fallback)
-        table.display = True
+        table.display = not self.details_open
 
     def logs(self, runner, lines=200, since=None):
         return fleet_view.logs(runner, lines=lines, journalctl=self.journalctl, since=since, strict=True)
