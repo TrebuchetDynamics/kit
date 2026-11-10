@@ -1938,7 +1938,7 @@ def task_view(rows, view):
 
 def task_actions(runner, row, *, command, script, agent=None):
     """What the Tasks window can do with one task: re-sort it (its rank is the priority),
-    clear or set aside its hold, answer the owner's questions in an agent, or delete it."""
+    clear or set aside its hold, or delete it. Reports and answers stay in the TUI."""
     repo, name, task = runner.repo, runner.name, row.task
     if task in runner.display_deleted:
         return []
@@ -1960,8 +1960,6 @@ def task_actions(runner, row, *, command, script, agent=None):
                                   'its worktrees stay.'))
         out.append(Action('a', 'Aside', [script, '--repo', repo, '--set-aside', task],
                           confirm=f'Set aside {task}? Its work stays on -set-aside-N branches and it runs fresh.'))
-    if agent and runner.questions:
-        out.append(Action('b', 'Blockers', [command, 'blockers', repo], interactive=True))
     out.append(delete)
     return out
 

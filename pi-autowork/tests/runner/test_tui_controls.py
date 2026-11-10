@@ -183,6 +183,15 @@ async def controls_pilot(case):
                         await pilot.press('t')
                         await settle(app, pilot)
                         task_screen = app.screen
+                        app.agent = ['claude']  # Installed agents must not change report navigation.
+                        for key in ('b', 'B'):
+                            await pilot.press(key)
+                            await app.workers.wait_for_complete()
+                            await settle(app, pilot)
+                            assert isinstance(app.screen, tui.BlockersScreen), (key, type(app.screen).__name__)
+                            await pilot.press('escape')
+                            await settle(app, pilot)
+                            assert app.screen is task_screen
                         bar = task_screen.query_one('#menubar', tui.MenuBar)
                         for y in range(bar.content_size.height):
                             line = bar.render_line(y).text

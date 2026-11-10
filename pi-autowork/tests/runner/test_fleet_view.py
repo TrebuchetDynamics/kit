@@ -689,7 +689,7 @@ class FleetViewTests(unittest.TestCase):
         self.assertEqual(task['d'].argv, ['aw', 'tasks', 'move', 'T-9', 'down', 'india'])
         self.assertEqual(task['c'].argv, ['aw', 'clear-held', 'india', 'T-9'])
         self.assertEqual(task['a'].argv, ['pa.sh', '--repo', '/git/india', '--set-aside', 'T-9'])
-        self.assertEqual(task['b'].argv, ['aw', 'blockers', '/git/india'])
+        self.assertNotIn('b', task)  # Reports stay in the TUI, even with an agent installed.
         for key in ('c', 'a'):
             self.assertTrue(task[key].confirm, key)
         ready = fleet_view.TaskRow('T-1', 'Short', 'Now', 'ready', 'ready')
