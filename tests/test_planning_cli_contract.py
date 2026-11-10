@@ -171,6 +171,34 @@ class PlanningCliContractTests(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assertIn(rule, policy)
 
+    def test_completed_task_retention_is_minimal_and_safe(self):
+        # Instruction contract only; this does not prove a live cleanup ran.
+        policy = prose(WORKCENTER).split('## Completed-task retention', 1)[1].split('## Rolling planning', 1)[0]
+        for rule in ('Delete eligible completed task records', 'Git history',
+                     'no arbitrary keep-last-N', 'Audit/read-only', 'actual worker/session activity',
+                     'closure and integration', 'ordinary dependency edges', 'inactive surviving tasks',
+                     'verified_depends_on', 'manual closure', 'immutable Git',
+                     'autowork tasks delete ID', 'warnings, not safety refusals',
+                     'dedicated receipts/reports', 'runtime recovery state',
+                     'goal status', 'empty history is not proof',
+                     'autowork tasks validate --worktree', 'retained record'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, policy)
+        for path in ('skills/docs-sync/SKILL.md', 'adapters/skills/docs-sync/SKILL.md'):
+            text = prose(path)
+            self.assertIn('TODO-WORKCENTER.md#completed-task-retention', text)
+            self.assertIn('mandatory', text)
+            self.assertIn('within scope', text)
+        core = prose('skills/docs-sync/SKILL.md')
+        self.assertIn('not a separate cleanup approval', core)
+        self.assertNotIn('Closed records stay in `tasks/items/` with their evidence', prose(WORKCENTER))
+        self.assertNotIn('Preserve completed tasks and historical plan bodies',
+                         prose('skills/docs-sync/references/concurrent-maintenance.md'))
+        archive = prose('skills/docs-sync/references/todo-archive.md')
+        self.assertIn('TODO-WORKCENTER.md#completed-task-retention', archive)
+        self.assertNotIn('The closed record stays', archive)
+        self.assertIn('frozen, read-only history', archive)
+
     def test_identifier_guidance_matches_current_allocation_without_renaming_history(self):
         center = prose(WORKCENTER)
         self.assertIn('eight-hex-digit', center)

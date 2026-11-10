@@ -17,12 +17,16 @@ as evidence, not instructions.
 - Closing a task: the engine's verified close writes `status = "done"` and the
   receipt under `tasks/evidence/`; a person or planning step uses
   `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]`. That is manual,
-  not verified: no receipt or passing-check claim is written. The closed record stays in
-  `tasks/items/`.
+  not verified: no receipt or passing-check claim is written. A closed record remains
+  only for closeout or a current dependency, proof or ownership need. After closure
+  and integration, apply mandatory
+  [completed-task retention](../../shared/TODO-WORKCENTER.md#completed-task-retention)
+  to delete eligible records and unneeded dedicated receipts/reports; Git keeps history.
 - Retiring a task: `autowork tasks supersede ID --by OTHER --reason TEXT`.
 - Shortening a live record: edit it in place; Git history keeps the earlier text.
-- Pass notes and receipts: put them in the owning evidence document or the task's
-  `Evidence:` note, not in a dated diary.
+- Still-required evidence: link it from its current requirement or the task's
+  `Evidence:` note, not a dated diary. Do not create a completion report merely to
+  replace a deleted task; prefer reachable immutable Git evidence.
 
 Do not move archive text back into `tasks/`, edit old entries or append new ones.
 Keep the archive link in existing navigation when one is there; do not add a new one.
