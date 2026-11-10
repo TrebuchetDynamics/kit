@@ -525,7 +525,10 @@ The directory tree marks legacy or interrupted conversions **legacy planning**, 
 **needs tasks**; a repository without planning still reads **needs tasks**.
 The headless pilot exercises preparation on disposable repositories, with faked
 service starts and forced service/worker effects; it does not qualify a live service.
-The Tasks window lists open tasks in priority order (section, then rank) with their short title, state and reason.
+The Tasks window lists open tasks in priority order (section, then rank) with their
+short title, state and reason. View counts appear in brackets, separate from the
+number shortcuts; click a view or use its key to filter. A short queue keeps its
+selected-task details immediately below the rows rather than at the screen bottom.
 `1`–`7` (or Tab) show Open, Active, Blocker, Waiting, Questions, Decisions or
 Closed. Decisions is the committed **Needs decision** section: open tasks that wait
 for the owner and never dispatch. Closed history shows **Verified** with the receipt, or **Manual** with the reason
@@ -586,8 +589,10 @@ The task record body is labelled as independently read working-tree content.
 
 The Tasks window shows one short Inventory line with inventory and execution
 freshness. Stale capture age and acquisition warnings remain visible. Press `i`
-(**Info/Help**) for revision, generation, capture age, full diagnostics and all task
-keys. Pending paths and questions are independently observed working data.
+(**Info/Help**) for full selected-task context (including owner guidance), pending
+edit messages, revision, generation, capture age, full diagnostics and all task
+keys. Compact banners/details are bounded so long text cannot push task rows off
+screen; their complete text remains scrollable in Info/Help. Pending paths and questions are independently observed working data.
 A valid empty store has zero counts. Unavailable or invalid inventory shows `?`
 and `unknown / unavailable`, not zero. Failed refreshes can retain last-good
 inventory with its original revision/capture age, visibly stale. Pending-path read
@@ -596,10 +601,15 @@ shows `?` for every view count and an unavailable placeholder rather than a veri
 empty list. The task table uses descriptive names instead of a separate ID column,
 leaving more room for names and status on narrow terminals. IDs remain in the
 selected-task details and the full record; actions still target the exact ID even
-when names match. The selected task shows the next action before its state. Owner-action
-questions show the committed scope and acceptance criteria. Missing instructions
+when names match. State and activity are separate: for example, **Active** in State
+and **Implementing** in Why. Normal-width layouts reserve space for Why; narrow
+layouts keep state and show the full reason in the selected details and Info/Help.
+The selected task names its section explicitly and shows repeated activity only
+once, not as a misleading next action. Owner-action questions show the committed
+scope and acceptance criteria. Missing instructions
 are identified, not replaced with another approval request. The main menu shows
-Open, Decide, Info/Help and Back where applicable. Other keys remain available in
+Open, e Decide, Report, Info/Help and Back where applicable, with clickable commands
+in mouse/browser mode. Other keys remain available in
 Info/Help. In this window, `i` shows or hides the scrollable diagnostics and returns
 focus to the task table when hidden. Page Down/End reads long errors. Verified
 empty keeps zero counts. Stale last-good rows keep their counts and capture age

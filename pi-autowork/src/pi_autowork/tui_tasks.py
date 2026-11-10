@@ -4,6 +4,8 @@ import re
 import subprocess
 import time
 
+from rich.cells import cell_len
+from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -13,7 +15,7 @@ from textual.widgets import Button, DataTable, Header, Input, Label, OptionList,
 
 from pi_autowork import fleet_view, task_status
 from pi_autowork.planning_ui import DecisionPrompt
-from pi_autowork.tui_common import REFRESH, MenuBar, ReadScreen, action_text, read_input
+from pi_autowork.tui_common import REFRESH, MenuBar, ReadScreen, action_text, publish_text, read_input
 from pi_autowork.tui_dialogs import Confirm
 
 
@@ -305,6 +307,15 @@ class CommitEdits(ReadScreen, ModalScreen[dict]):
         self.dismiss(None)
 
 
+def task_list_status(row):
+    """Separate the inventory state from its phase without changing either contract."""
+    state, _, phase = row.state.partition(' · ')
+    why = row.why
+    if phase and phase.casefold() not in why.casefold():
+        why = phase + (' · ' + why if why else '')
+    return state, why
+
+
 class TasksScreen(ReadScreen, Screen):
     """One runner's open tasks in priority (section, then rank) order: filter them, re-sort them, clear or
     set aside a hold, answer the owner's questions, commit those answers. Refreshed like the main screen."""
@@ -325,15 +336,15 @@ class TasksScreen(ReadScreen, Screen):
                 Binding('B', 'report', 'Report', show=False),
                 Binding('i', 'snapshot_info', 'Snapshot info', show=False, priority=True)]
     DEFAULT_CSS = '''
-    #task-views { height: auto; max-height: 3; padding: 0 1; }
-    #task-freshness { height: auto; padding: 0 1; }
-    #task-pending { height: auto; padding: 0 1; }
+    #task-views { height: auto; padding: 0 1; }
+    #task-freshness { height: auto; max-height: 3; padding: 0 1; }
+    #task-pending { height: auto; max-height: 2; padding: 0 1; }
     #task-provenance { display: none; height: 3; border: none; padding: 0 1; }
-    #tasks { height: 1fr; }
-    #task-detail { height: auto; max-height: 7; padding: 0 1; border-top: solid $panel; }
+    #tasks { height: 2fr; min-height: 3; }
+    #task-detail { height: 1fr; min-height: 2; max-height: 7; padding: 0 1; border-top: solid $panel; }
     '''
-    # State and Why are cut to what the terminal has left; Why goes first on a narrow one.
-    FIXED, TEXT = ('#', 'Task'), ('State', 'Why')
+    # Reserve a short state column; longer explanations yield to names on small screens.
+    FIXED, TEXT = ('#', 'Task', 'State'), ('Why',)
 
     def __init__(self, runner_name, view='all', *, repo=None):
         super().__init__()
@@ -450,20 +461,35 @@ class TasksScreen(ReadScreen, Screen):
         info.display = not info.display
         (info if info.display else self.query_one('#tasks', DataTable)).focus()
 
+    def show_views(self, available):
+        """Keep each shortcut, label and count together when the filters wrap."""
+        views = Text()
+        used = 0
+        width = max(1, self.size.width - 2)
+        for number, view in enumerate(fleet_view.TASK_VIEWS):
+            count = len(self.view_rows(view)) if available else '?'
+            label = f'{number + 1} {self.VIEW_NAMES[view]} [{count}]'
+            if number:
+                if used + 2 + cell_len(label) > width:
+                    views.append('\n')
+                    used = 0
+                else:
+                    views.append('  ')
+                    used += 2
+            start = len(views)
+            used += cell_len(label)
+            views.append(label, style='bold reverse' if view == self.view else 'dim')
+            views.stylize(Style(meta={'@click': f'screen.show_view("{view}")'}), start, len(views))
+        publish_text(self.query_one('#task-views', Static), views)
+
     def refresh_tasks(self, follow=None):
         """``follow``: keep the cursor on this task wherever it moved (after a re-sort)."""
         runner = self.runner()
         self.rows = fleet_view.task_rows(runner, include_closed=True) if runner else []
         self.history = fleet_view.closed_task_rows(runner) if runner else []
         snapshot = fleet_view.snapshot_for(runner) if runner else None
-        available = snapshot is not None and snapshot.counts is not None
-        views = Text()
-        for number, view in enumerate(fleet_view.TASK_VIEWS):
-            count = len(self.view_rows(view)) if available else '?'
-            label = f'{number + 1} {self.VIEW_NAMES[view]} {count}'
-            views.append(('  ' if number else '') + label, style='bold reverse' if view == self.view else 'dim')
-        views.append('   tab next view', style='dim')
-        self.query_one('#task-views', Static).update(views)
+        self.show_views(snapshot is not None and snapshot.counts is not None)
+        self.query_one('#task-provenance').styles.height = 2 if self.size.height < 22 else 3
         freshness = Text('Inventory ' + (snapshot.freshness if snapshot else 'unavailable'), style='bold')
         if snapshot:
             freshness.append(f' · execution {snapshot.engine_freshness}',
@@ -478,19 +504,28 @@ class TasksScreen(ReadScreen, Screen):
         if runner and runner.display_recreated:
             freshness.append(f'\nRestored/recreated pending record(s): {len(runner.display_recreated)} (not committed inventory)',
                              style='yellow')
-        self.query_one('#task-freshness', Static).update(freshness)
+        publish_text(self.query_one('#task-freshness', Static), freshness)
         table = self.query_one('#tasks', DataTable)
         previous_row = table.cursor_row
         current = follow or (self.current().task if self.current() else None)
         self.shown = self.view_rows(self.view)
         position = {row.task: number + 1 for number, row in enumerate(self.rows)}
-        cells = [{'#': (str(position[row.task]), 'dim'), 'Task': (row.short, 'bold'),
-                  'State': (row.state, fleet_view.state_style(row)),
-                  'Why': (row.why, 'yellow' if row.question else 'dim')} for row in self.shown]
-        # Names get the space previously spent on opaque IDs; IDs remain in details
-        # and self.shown for selection/actions, including tasks with identical names.
-        name_room = max(1, self.size.width - len(str(max(position.values(), default=0))) - 8)
-        self.app.fill(table, cells, self.FIXED, self.TEXT, minimum=10, limits={'Task': name_room})
+        cells = []
+        for row in self.shown:
+            state, why = task_list_status(row)
+            cells.append({'#': (str(position[row.task]), 'dim'), 'Task': (row.short, 'bold'),
+                          'State': (state, fleet_view.state_style(row)),
+                          'Why': (why, 'yellow' if row.question else 'dim')})
+        state_room = min(14, max([len('State'), *(cell_len(c['State'][0]) for c in cells)]))
+        rank_room = len(str(max(position.values(), default=0)))
+        # At normal widths reserve useful reason text rather than two equally cramped
+        # State/Why columns. Compact layouts keep state and expose full reasons below.
+        why_room = max(18, self.size.width // 4) if self.size.width >= 76 else 0
+        name_room = max(1, self.size.width - rank_room - state_room - why_room - 12)
+        self.app.fill(table, cells, self.FIXED, self.TEXT, minimum=16,
+                      limits={'Task': name_room, 'State': state_room})
+        # A short queue should not strand its selected detail at the terminal bottom.
+        table.styles.max_height = max(3, len(self.shown) + 1)
         tasks = [row.task for row in self.shown]
         target = tasks.index(current) if current in tasks else min(previous_row, len(tasks) - 1)
         if target >= 0 and table.cursor_row != target:
@@ -519,8 +554,9 @@ class TasksScreen(ReadScreen, Screen):
             else:
                 text.append('No task in this view.\n', style='dim')
         else:
-            text.append(row.task, style='bold')
-            text.append(f'  {row.short}\n')
+            text.append(row.short + '\n', style='bold')
+            text.append(f'{row.task} · Section: {row.section} · {row.state}\n',
+                        style=fleet_view.state_style(row) or 'dim')
             runner = self.runner()
             question = next((q for q in runner.questions if q.id == row.task), None) if runner else None
             snapshot = fleet_view.snapshot_for(runner) if runner else None
@@ -535,9 +571,9 @@ class TasksScreen(ReadScreen, Screen):
                 text.append('Approval is not completion. Enter: full task.\n', style='dim')
             elif question:
                 text.append('Next: ' + (question.answer or question.needs) + '\n', style='yellow')
-            elif row.why:
-                text.append(('' if row.kind == 'closed' else 'Next: ') + row.why + '\n')
-            text.append(f'{row.section} · {row.state}\n', style=fleet_view.state_style(row) or 'dim')
+            elif row.why and row.why.casefold() not in row.state.casefold():
+                label = 'Activity' if row.bucket == 'Active' else 'Reason'
+                text.append(f'{label}: {row.why}\n')
         keys = [(a.key, a.label) for a in self.actions(row)]
         if not self.app.view_only:
             keys.append(('n', 'New'))
@@ -546,25 +582,35 @@ class TasksScreen(ReadScreen, Screen):
         controls = ([('enter', 'Open')] if row else []) + keys + [('B', 'Report'), ('i', 'Info/Help'), ('esc', 'Back')]
         runner = self.runner()
         provenance = fleet_view.freshness(runner, detailed=True) if runner else 'Runner unavailable.'
-        if row and row.why:
-            provenance = row.why + '\n\n' + provenance
-        provenance = 'Keys: ' + ' · '.join(f'{key} {label}' for key, label in controls) + '\n\n' + provenance
+        if row:
+            # Compact details may be clipped; Info always keeps the full selected context.
+            provenance = text.plain + '\n' + row.why + '\n\n' + provenance
+        provenance = ('Views: 1–7 · Tab next · Shift+Tab previous\nKeys: '
+                      + ' · '.join(f'{key} {label}' for key, label in controls) + '\n\n' + provenance)
+        pending = self.query_one('#task-pending', Static)
+        if pending.display:
+            provenance = pending.render().plain + '\n\n' + provenance
         info = self.query_one('#task-provenance', TextArea)
         if info.text != provenance:
             info.load_text(provenance)
         essential = ([('enter', 'Open')] if row else [])
         if row and row.kind != 'closed' and not self.app.view_only:
-            essential.append(('e', 'Decide'))
+            essential.append(('e', 'e Decide'))
         if self.pending and not self.app.view_only:
             essential.append(('C', 'Commit'))
         self.query_one('#menubar', MenuBar).show(
             essential + [('B', 'Report'), ('i', 'Info/Help'), ('esc', 'Back')],
-            click_actions={'B': 'screen.report'})
-        self.query_one('#task-detail', Static).update(text)
+            click_actions={'enter': 'screen.open_task', 'e': 'screen.decide',
+                           'C': 'screen.commit_tasks', 'B': 'screen.report',
+                           'i': 'screen.snapshot_info', 'esc': 'app.pop_screen'})
+        publish_text(self.query_one('#task-detail', Static), text)
 
     def on_data_table_row_selected(self, event):
+        self.action_open_task()
+
+    def action_open_task(self):
         row = self.current()
-        if row is not None:
+        if row is not None and self.runner() is not None:
             self.app.push_screen(TaskScreen(self.runner_name, row.task, read_only=self.view == 'closed'))
 
     def action_report(self):
