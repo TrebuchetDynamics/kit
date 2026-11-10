@@ -133,8 +133,10 @@ async def menu_pilot():
             assert widget.region.width > 0 and widget.region.height > 0, widget.region
             assert widget.region.right <= 60 and widget.region.bottom <= 18, widget.region
         labels = option_text(options)
-        for label in ('Log', 'Tasks', 'Stop', 'Restart', 'Details', 'Blockers', 'Browse', 'Quit'):
+        for label in ('Log', 'Tasks', 'Stop', 'Restart', 'Details', 'Browse', 'Quit'):
             assert label in labels, (label, labels)
+        for label in ('Answer', 'Plan', 'Blockers'):
+            assert label not in labels, (label, labels)
         field.value = 'no matching fleet action'
         await pilot.pause()
         assert options.option_count == 0
@@ -160,16 +162,13 @@ async def menu_pilot():
         await settle(app, pilot)
         assert isinstance(app.screen, tui.LogScreen), type(app.screen).__name__
         await pilot.press('escape')
-        # Answer is a navigation action despite sharing the available-actions list.
-        with patch.object(app, 'available', return_value=[fleet_view.Action('a', 'Answer', [])]), \
-             patch.object(app, 'action_answer_question') as answer:
-            await pilot.press('?')
-            await pilot.pause()
-            app.screen.query_one('#action-filter', Input).value = 'answer'
-            await pilot.pause()
-            await pilot.press('enter')
-            await pilot.pause()
-            answer.assert_called_once_with()
+        # Tasks is the only task-management entry from the fleet, including Ctrl+P.
+        commands = {item.title for item in app.get_system_commands(app.screen)}
+        assert 'Open task inventory' in commands
+        assert not {'Plan work', 'Inspect blockers', 'Answer owner question'} & commands
+        await pilot.press('a', 'e', 'b', 'g')
+        await pilot.pause()
+        assert len(app.screen_stack) == 1
         # More delegates to the existing action method, including Stop's consent.
         with patch.object(app, 'execute') as execute:
             await pilot.press('?')
@@ -198,8 +197,8 @@ async def menu_pilot():
         assert isinstance(app.screen, tui.ActionMenu)
         options = app.screen.query_one('#actions', OptionList)
         labels = option_text(options)
-        assert options.option_count == 5, labels
-        for label in ('Log', 'Tasks', 'Details', 'Blockers', 'Quit'):
+        assert options.option_count == 4, labels
+        for label in ('Log', 'Tasks', 'Details', 'Quit'):
             assert label in labels, labels
         for label in ('Pause', 'Play', 'Stop', 'Restart', 'Uninstall', 'Plan', 'Browse', 'Model'):
             assert label not in labels, labels

@@ -322,6 +322,7 @@ class TasksScreen(ReadScreen, Screen):
                 Binding('v', 'plan("investigate")', 'Investigate', show=False),
                 Binding('e', 'decide', 'Decide', show=False),
                 Binding('C', 'commit_tasks', 'Commit', show=False),
+                Binding('B', 'report', 'Report', show=False),
                 Binding('i', 'snapshot_info', 'Snapshot info', show=False, priority=True)]
     DEFAULT_CSS = '''
     #task-views { height: auto; max-height: 3; padding: 0 1; }
@@ -334,10 +335,11 @@ class TasksScreen(ReadScreen, Screen):
     # State and Why are cut to what the terminal has left; Why goes first on a narrow one.
     FIXED, TEXT = ('#', 'Task'), ('State', 'Why')
 
-    def __init__(self, runner_name, view='all'):
+    def __init__(self, runner_name, view='all', *, repo=None):
         super().__init__()
         # opener: the blockers report routes here, so its recorded questions can be answered.
         self.runner_name, self.view, self.rows, self.shown = runner_name, view, [], []
+        self.repo = repo
         self.history = []
         self.pending = None  # None: not read yet; []: nothing to commit
 
@@ -352,6 +354,9 @@ class TasksScreen(ReadScreen, Screen):
         yield Static(id='task-detail')
 
     def on_mount(self):
+        if self.repo is None:
+            runner = next((r for r in self.app.runners if r.name == self.runner_name), None)
+            self.repo = runner.repo if runner else None
         self.title = f'{self.runner_name}: tasks'
         self.query_one('#tasks', DataTable).add_columns(*self.FIXED, *self.TEXT)
         self.refresh_tasks()
@@ -364,7 +369,8 @@ class TasksScreen(ReadScreen, Screen):
             self.call_after_refresh(self.refresh_tasks)  # cached rows only, at the new width
 
     def runner(self):
-        return next((r for r in self.app.runners if r.name == self.runner_name), None)
+        return next((r for r in self.app.runners
+                     if (r.name, r.repo) == (self.runner_name, self.repo)), None)
 
     def view_rows(self, view):
         return self.history if view == 'closed' else fleet_view.task_view(self.rows, view)
@@ -537,7 +543,7 @@ class TasksScreen(ReadScreen, Screen):
             keys.append(('n', 'New'))
             if row:
                 keys = ([('e', 'Decide')] if row.kind != 'closed' else []) + [('g', 'Discuss'), ('v', 'Investigate')] + keys
-        controls = ([('enter', 'Open')] if row else []) + keys + [('i', 'Info/Help'), ('esc', 'Back')]
+        controls = ([('enter', 'Open')] if row else []) + keys + [('B', 'Report'), ('i', 'Info/Help'), ('esc', 'Back')]
         runner = self.runner()
         provenance = fleet_view.freshness(runner, detailed=True) if runner else 'Runner unavailable.'
         if row and row.why:
@@ -551,13 +557,20 @@ class TasksScreen(ReadScreen, Screen):
             essential.append(('e', 'Decide'))
         if self.pending and not self.app.view_only:
             essential.append(('C', 'Commit'))
-        self.query_one('#menubar', MenuBar).show(essential + [('i', 'Info/Help'), ('esc', 'Back')])
+        self.query_one('#menubar', MenuBar).show(
+            essential + [('B', 'Report'), ('i', 'Info/Help'), ('esc', 'Back')],
+            click_actions={'B': 'screen.report'})
         self.query_one('#task-detail', Static).update(text)
 
     def on_data_table_row_selected(self, event):
         row = self.current()
         if row is not None:
             self.app.push_screen(TaskScreen(self.runner_name, row.task, read_only=self.view == 'closed'))
+
+    def action_report(self):
+        runner = self.runner()
+        if runner is not None:
+            self.app.open_blockers(runner)
 
     def action_plan(self, mode):
         runner, row = self.runner(), self.current()

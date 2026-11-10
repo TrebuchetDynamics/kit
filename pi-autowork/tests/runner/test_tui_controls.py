@@ -1,6 +1,7 @@
 """Keyboard, click and compact-dialog contracts; no live services or devices."""
 import argparse
 import asyncio
+from dataclasses import replace
 import os
 import tempfile
 from pathlib import Path
@@ -67,12 +68,13 @@ async def controls_pilot(case):
                 async with run_pilot(app, size=size) as pilot:
                     await settle(app, pilot)
                     if case == 'answers':
-                        await pilot.press('a')
+                        await pilot.press('a', 'e', 'b', 'g')
                         await pilot.pause()
-                        assert isinstance(app.screen, tui.QuestionPicker), 'Advertised Answer mnemonic must open the picker'
-                        options = app.screen.query_one(OptionList)
-                        visible(options, app.screen)
-                        await pilot.press('end', 'enter')
+                        assert len(app.screen_stack) == 1, 'Removed fleet shortcuts must be inert'
+                        await pilot.press('t')
+                        await settle(app, pilot)
+                        assert isinstance(app.screen, tui.TasksScreen)
+                        await pilot.press('6', 'e')
                         await settle(app, pilot)
                         screen = app.screen
                         assert isinstance(screen, tui.DecisionScreen) and screen.task_id == 'T-2'
@@ -87,7 +89,7 @@ async def controls_pilot(case):
                         await pilot.press('ctrl+s')
                         await app.workers.wait_for_complete()
                         await settle(app, pilot)
-                        assert len(app.screen_stack) == 1, 'Portable Save shortcut must complete the answer'
+                        assert isinstance(app.screen, tui.TasksScreen), 'Save must return to the owning Tasks screen'
                         assert 'Use the bounded offline option' in second.read_text()
                         assert 'section = "Now"' in second.read_text(), \
                             'Answering a Needs decision task must move it out of that section'
@@ -100,7 +102,8 @@ async def controls_pilot(case):
                         subprocess.run([command, 'tasks', 'decide', 'T-2',
                                         'Use the bounded offline option; follow-up', str(fixture.repo)],
                                        check=True, capture_output=True, text=True)
-                        await pilot.press('t')
+                        app.screen.refresh_tasks()
+                        app.screen.read_pending()
                         await settle(app, pilot)
                         assert isinstance(app.screen, tui.TasksScreen), type(app.screen).__name__
                         pending = app.screen.query_one('#task-pending', tui.Static)
@@ -131,9 +134,9 @@ async def controls_pilot(case):
                         await pilot.press('escape')
                         await settle(app, pilot)
                         assert len(app.screen_stack) == 1, 'back on the fleet before the picker check'
-                        await pilot.press('e')
-                        assert isinstance(app.screen, tui.QuestionPicker), 'Keep the previous Answer key working'
-                        await pilot.press('escape')
+                        await pilot.press('a', 'e', 'b', 'g')
+                        await pilot.pause()
+                        assert len(app.screen_stack) == 1, 'No duplicate task entry shortcuts'
                         app.view_only = True
                         before = len(calls)
                         await pilot.press('a', 'e')
@@ -177,7 +180,18 @@ async def controls_pilot(case):
                     elif case == 'blockers':
                         # The report lists every recorded question. Before this route it offered
                         # no way to answer them, so an owner reading it was stuck.
-                        await pilot.press('b')
+                        await pilot.press('t')
+                        await settle(app, pilot)
+                        task_screen = app.screen
+                        bar = task_screen.query_one('#menubar', tui.MenuBar)
+                        for y in range(bar.content_size.height):
+                            line = bar.render_line(y).text
+                            if 'Report' in line:
+                                await pilot.click('#menubar', offset=(
+                                    line.index('Report') + bar.styles.padding.left, y))
+                                break
+                        else:
+                            raise AssertionError('Report must be visible and clickable in Tasks')
                         await app.workers.wait_for_complete()
                         await settle(app, pilot)
                         screen = app.screen
@@ -186,13 +200,17 @@ async def controls_pilot(case):
                         await pilot.press('a')
                         await settle(app, pilot)
                         assert isinstance(app.screen, tui.TasksScreen), type(app.screen).__name__
+                        assert app.screen is task_screen and len(app.screen_stack) == 2, \
+                            'Report Answer must reuse its Tasks screen, not nest another one'
                         assert app.screen.view == 'decisions', app.screen.view
                         # Reading the pending-edit state is allowed; changing anything is not.
                         assert not [c for c in calls if c[2] != 'commit' or '--dry-run' not in c], \
                             'opening the decision form must not execute a command'
                         await pilot.press('escape')
                         app.view_only = True
-                        await pilot.press('b')
+                        await pilot.press('t')
+                        await settle(app, pilot)
+                        await pilot.press('B')
                         await app.workers.wait_for_complete()
                         await settle(app, pilot)
                         await pilot.press('a')
@@ -200,12 +218,31 @@ async def controls_pilot(case):
                         assert isinstance(app.screen, tui.TasksScreen), 'view only still navigates'
                         assert not [c for c in calls if c[2] != 'commit' or '--dry-run' not in c], \
                             'view only must not execute a command'
+                        # A same-name replacement must not route a frozen report to another repo.
+                        task_screen = app.screen
+                        await pilot.press('B')
+                        await settle(app, pilot)
+                        report_screen = app.screen
+                        app.runners = [replace(runner, repo=str(fixture.repo / 'replacement'))]
+                        app.view_only = False
+                        before = len(calls)
+                        with patch.object(app, 'notify') as notify:
+                            await pilot.press('a')
+                            await settle(app, pilot)
+                            assert app.screen is report_screen and len(app.screen_stack) == 3
+                            assert notify.called
+                        await pilot.press('escape')
+                        await settle(app, pilot)
+                        assert app.screen is task_screen and task_screen.runner() is None
+                        await pilot.press('e', 'B')
+                        await settle(app, pilot)
+                        assert app.screen is task_screen and len(calls) == before
                     elif case == 'menus':
                         # Mouse mode is opt-in in the real terminal; its advertised menu
                         # must route to the same screen/confirmation as the keyboard.
                         bar = app.query_one('#menubar', tui.MenuBar)
                         for label, expected in [('Log', tui.LogScreen), ('Stop', tui.Confirm),
-                                                ('Answer', tui.QuestionPicker)]:
+                                                ('Tasks', tui.TasksScreen)]:
                             text = bar.render().plain
                             shown_label = 'More' if label == 'Stop' and size[1] < 22 else label
                             # Find its rendered cell after wrapping, rather than assume
@@ -227,7 +264,8 @@ async def controls_pilot(case):
                                 await pilot.pause()
                             assert isinstance(app.screen, expected), (label, type(app.screen).__name__)
                             await pilot.press('escape')
-                        assert not calls, 'Opening screens/declining must not execute control commands'
+                        assert all(c[2] == 'commit' and '--dry-run' in c for c in calls), \
+                            'Opening screens/declining may only read pending edits'
             print('PASS', case, size)
         finally:
             fixture.doCleanups()
