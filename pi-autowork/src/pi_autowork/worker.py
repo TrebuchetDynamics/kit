@@ -148,8 +148,10 @@ def worker(state, worktree, prompt_file, report, limit):
     attempt = Path(report).parent.name
     session = f'pi-autowork-{safe_name(task)}-{attempt}'
     # The engine captures unfinished tool calls before stopping a timed-out worker.
-    Path(report).with_name('session.json').write_text(json.dumps({
-        'directory': str(Path(state).resolve() / 'sessions'), 'id': session}))
+    session_file = Path(report).with_name('session.json')
+    session_record = dict(directory=str(Path(state).resolve() / 'sessions'), id=session, task=task,
+                          baseline=(re.search(r'^Baseline: (\S+)$', prompt, re.M) or [None, ''])[1])
+    session_file.write_text(json.dumps(session_record))
     settings = pi_runtime.Settings(state)
     result = pi_runtime.job(settings, 'worker', task, worktree,
                             f'Follow the instructions in this file exactly: @{prompt_file}',
@@ -168,6 +170,12 @@ def worker(state, worktree, prompt_file, report, limit):
                 'task': task, 'commit': None, 'changed_files': [], 'checks': [], 'changelog': '',
                 'blockers': [f'the worker asked twice instead of implementing: {question}']}))
             return 1
+    if not result['ok']:
+        failure = dict(why=str(result.get('why') or 'runtime_failure')[:100],
+                       error=pi_runtime.redact(str(result.get('error') or ''))[:300])
+        session_file.write_text(json.dumps(dict(session_record, failure=failure)))
+        print(f'pi-autowork: {task}: worker runtime failed ({failure["why"]}): {failure["error"]}',
+              file=sys.stderr)
     return 0 if result['ok'] and Path(report).is_file() else 1
 
 

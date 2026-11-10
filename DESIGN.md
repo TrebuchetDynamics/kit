@@ -46,6 +46,12 @@ Model selection follows provider → search → model → existing change/start 
 Login opens Pi against the same agent directory and refreshes the model catalog on return.
 Browse exposes the current path, Parent/Home, folder navigation, and readiness.
 Escape returns from a secondary screen; opening a menu changes no runner state.
+Tasks is the fleet's task-management entry. Its numbered views use bracketed
+counts and clickable labels. The table separates short state labels from activity
+or wait reasons, reserving reason space at normal widths. Compact tables retain
+state and put full reasons in selected details/Info. Short queues place details
+immediately after their rows, without a large empty gap; activity is not labelled
+as an owner next action. Task IDs remain in details and drive every action.
 
 ## Design principles
 

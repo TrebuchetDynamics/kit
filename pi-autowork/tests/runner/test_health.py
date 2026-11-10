@@ -575,6 +575,24 @@ class HealthTests(unittest.TestCase):
                 self.assertEqual(row['state'], 'unavailable')
                 self.assertIn(source, ' '.join(row['errors']))
 
+    def test_fleet_reads_a_state_directory_once_through_compatibility_symlinks(self):
+        folder = self.state / 'original'
+        folder.mkdir()
+        (folder / 'runner.json').write_text(json.dumps(dict(repo='/repos/kit')))
+        alias = self.state / 'compatibility'
+        alias.symlink_to(folder, target_is_directory=True)
+        other = self.state / 'independent'
+        other.mkdir()
+        (other / 'runner.json').write_text(json.dumps(dict(repo='/repos/kit')))
+        with patch.object(health, 'read_observation', wraps=health.read_observation) as read:
+            rows = health.fleet(self.state, now=1000, service=lambda _: 'active')
+        self.assertEqual(len(rows), 2, 'aliases are one observation; distinct folders stay visible')
+        self.assertEqual({Path(row['state_dir']).resolve() for row in rows}, {folder, other})
+        reads = [call for call in read.call_args_list
+                 if call.args[0].name in ('status.json', 'runner.json')]
+        self.assertEqual(len(reads), 4, 'do not independently read the same runtime twice')
+        self.assertEqual({row['state_dir'] for row in rows}, {str(alias), str(other)})
+
     def test_fleet_flags_dead_and_silent_runners(self):
         def runner(key, repo, pid, updated, state='working', **identity):
             folder = self.state / key
