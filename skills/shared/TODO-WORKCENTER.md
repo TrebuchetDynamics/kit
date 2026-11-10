@@ -295,6 +295,53 @@ without relabelling unmet acceptance as verified. Only the engine's verified clo
 writes `closure = "coordinator_verified"` and its receipt with `status = "done"`
 in one commit; planning never fabricates or edits that receipt.
 
+## Completed-task retention
+
+Keep `tasks/` focused on unfinished work. Delete eligible completed task records
+and their dedicated receipts/reports after real closure and integration; Git history
+is the archive. The target is no unnecessary done records, with no arbitrary keep-last-N
+quota, grace period or replacement completion ledger. This applies to Docs Sync and
+other authorized task-maintenance workflows. Audit/read-only never deletes anything;
+a narrow request cleans only completed work within scope.
+
+Pruning is a separate reconciliation after closeout, not a replacement for it:
+
+1. Read fresh Git/store status and actual worker/session activity for the records
+   and their consumers. Verify closure and integration from source-bound evidence.
+   Never delete an active attempt, rewrite a running contract, discard an unresolved
+   live obligation or treat a done label, task age or empty queue as completion proof.
+   Unknown ownership or missing evidence means retain the affected record, not a
+   blanket halt to unrelated safe cleanup.
+2. Inspect dependencies, goal qualification, source links and receipt consumers.
+   Remove only already-satisfied ordinary dependency edges from inactive surviving tasks,
+   using `autowork tasks field` with a fresh record revision. Do not drop
+   `verified_depends_on` or erase a manual closure that still enforces a qualification
+   or owner-waiver gate. Preserve required proof through immutable Git references or
+   current open requirements before pruning; a prose link cannot replace a typed
+   verification gate. If the current consumer still needs the record/receipt to enforce
+   that gate, retain it until that need ends. Never fabricate qualification or a waiver.
+3. Once safe, use `autowork tasks delete ID` for each eligible record. This command
+   can delete live or referenced tasks: its warnings are warnings, not safety refusals.
+   Perform the checks above before invoking it; do not use successful deletion as
+   evidence of safety. It leaves receipts and dependents untouched.
+4. Remove only dedicated receipts/reports whose consumers and remaining obligations
+   have been reconciled, using scoped file removal after confirming their immutable
+   Git copies are reachable. Never fabricate or rewrite receipts, replace them with
+   a completed-task summary, rewrite Git history, delete worktrees/runtime recovery state,
+   or alter generic archive-import fixtures. Shared specifications, ADRs, release notes
+   and a pre-existing frozen archive are not disposable task reports.
+5. Keep goal status, focus, owner/live gates and unresolved acceptance unchanged;
+   an empty history is not proof that a goal is met. Run
+   `autowork tasks validate --worktree .`, check surviving references and confirm that
+   selection changed only by removing satisfied prerequisites. Re-read status before
+   landing; commit only within existing authority and preserve concurrent changes.
+6. Report cleanup counts and the concrete current reason for each retained record
+   (for example, active consumer, required verification proof or pending qualification).
+   Do not create a completed-task list or archive. Repeat passes with unchanged
+   evidence leave the store unchanged. Runtime closeout may create transient done
+   records; this policy does not bypass runtime checks or make an older installed
+   runner perform automatic garbage collection.
+
 ## Rolling planning
 
 When accepted work is too large for one batch, save the first batch whose content
@@ -405,7 +452,7 @@ scope = "Correct the identified typo without changing the documented behavior."
 | Next | Ordered ready tasks or their explicit prerequisites |
 | Needs decision | Specific unresolved questions and the task they affect |
 | Waiting | Held tasks and external qualification/input, plus local work that can continue |
-| Done | Closed records stay in `tasks/items/` with their evidence |
+| Done | Transient closeout or still-required proof only; prune under [completed-task retention](#completed-task-retention) |
 
 Waiting and Done are presentation categories, not statuses or a second task list.
 Keep goal statuses and dependencies valid. Update only affected records; unchanged

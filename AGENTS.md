@@ -38,8 +38,11 @@ reports, completed-task tables, or `TODO.archive.md`; update current behavior an
 operating instructions instead. Routine completion replies summarize the change and
 checks without listing closed task IDs or task-document paths unless requested.
 
-After real closure and integration, prune completed task records and their dedicated
-receipts/reports through a separate safe reconciliation. Use `autowork tasks` for
+Keep done-task retention to the minimum required by current consumers and safety.
+Docs Sync Bootstrap/Maintain must delete eligible finished records within scope,
+not merely recommend cleanup or retain a recent-history quota. After real closure
+and integration, prune completed task records and their dedicated receipts/reports
+through a separate safe reconciliation. Use `autowork tasks` for
 record edits. Check fresh status and actual ownership first; never remove an active
 attempt, alter a running contract, fabricate completion or discard an unresolved live
 obligation. Remove only already-satisfied ordinary dependency edges from inactive

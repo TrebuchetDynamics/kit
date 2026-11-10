@@ -75,15 +75,20 @@ exists, complete it rather than stopping at a proposal.
    tasks. Store validation proves neither worker dispatch nor product
    qualification; do not record its passing as evidence that a feature is met.
 
-Preserve completed tasks and historical plan bodies during source-study adoption.
+Preserve completed implementation and still-required evidence during source-study
+adoption; do not retain finished task files merely as history. Apply
+[completed-task retention](../../shared/TODO-WORKCENTER.md#completed-task-retention)
+within scope as a separate reconciliation after closure and integration. Historical
+plan bodies with surviving intent or proof consumers remain protected.
 Record research as inspection evidence for the owning goals, not as executed proof
 that the requested product outcome works.
 
 ## Reconcile after workflow updates
 
 Verify that the loaded skill matches the qualified rollout revision; a stale copy or
-a dirty source checkout does not prove the updated rules ran. Keep old receipts as
-history. Apply routine broken-link and stale-source wording repairs in the same
+a dirty source checkout does not prove the updated rules ran. Keep receipts needed
+by current consumers; prune unneeded dedicated task receipts under the shared
+retention rules, with their immutable Git history preserved. Apply routine broken-link and stale-source wording repairs in the same
 batch rather than leaving them as owner decisions. Before reporting, reread every
 receipt-bound input; rerun receipts whose input closure changed. Preserve later
 owner progress; never release another owner's hold to make a check pass.

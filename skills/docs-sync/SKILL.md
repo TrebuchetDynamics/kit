@@ -1,7 +1,7 @@
 ---
 name: docs-sync
 description: "Maintain docs and repository tasks."
-version: 0.15.0
+version: 0.15.1
 license: MIT
 metadata:
   hermes:
@@ -21,7 +21,11 @@ safety and evidence; use `wiki-docs` for raw-source-to-wiki compilation.
 
 Every Bootstrap/Maintain delivers corrected applicable docs and, for every
 evidenced unmet goal or requirement, complete task records in `tasks/`. Findings
-alone are insufficient.
+alone are insufficient. Safe completed-task pruning is mandatory within scope on
+Bootstrap/Maintain; it is part of maintenance, not a separate cleanup approval.
+Apply [completed-task retention](../shared/TODO-WORKCENTER.md#completed-task-retention):
+delete eligible finished records and their unneeded dedicated receipts/reports,
+retaining only those with a concrete current dependency, proof or ownership need.
 
 After a workflow update, verify the installed copies first, then maintain each
 project's tasks with freshly loaded instructions; installation does not rewrite
@@ -48,8 +52,9 @@ task store ([prepare the store first](#prepare-the-store-first)), build every
 applicable core owner, correct supported drift, and run goal-gap analysis. Arguments
 narrow scope. Explicit Audit/read-only scope changes no files, including `tasks/`
 and BLOCKERS.md. Task-addition/brainstorming persistence is narrow Maintain, not
-bootstrap. Preserve IDs, focus, completed work, history, active holds and unrelated
-edits. State mode/scope briefly, then make the authorized changes.
+bootstrap. Preserve live IDs, focus, completed implementation, required proof,
+active holds and unrelated edits; Git preserves past task history, not an ever-growing
+done backlog. State mode/scope briefly, then make the authorized changes.
 
 Decide routine engineering choices within accepted scope, record material reasoning
 in existing task records and reuse accepted decisions; ask only for genuinely missing
@@ -414,6 +419,7 @@ repository. Read first, then write:
 | Reorder | `autowork tasks move ID up\|down`, or `field ID rank N` |
 | Close manually (any task kind, not verified) | `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]` |
 | Retire for a successor | `autowork tasks supersede ID --by OTHER --reason TEXT` |
+| Prune eligible finished work after retention checks | `autowork tasks delete ID` (receipts/dependencies are not removed automatically) |
 | Check the result | `autowork tasks validate --worktree .` |
 | Read the goals | `autowork tasks goals [--worktree]` |
 | Commit only the task edits | `autowork tasks commit [--message TEXT] [--dry-run]` |
@@ -568,6 +574,19 @@ manual-close decision with its reason, or place it in Needs decision with an
 `Owner decision:` note recording the stop. Neither disposition is verified acceptance;
 confirm with `autowork tasks why ID` that it is not selected.
 
+### Prune completed task history
+
+Before the final validation, perform the mandatory
+[completed-task retention pass](../shared/TODO-WORKCENTER.md#completed-task-retention)
+for the maintained scope. Confirm actual closure, integration and inactive ownership;
+reconcile satisfied ordinary dependencies and still-required proof before deleting
+finished records and their dedicated receipts/reports. Do not stop at marking work
+done or recommend cleanup instead of doing an eligible deletion. Audit/read-only
+reports candidates only. A retention blocker keeps only the affected records;
+state its concrete reason without inventing a task-count target or fresh backlog.
+Do not reopen or close tasks merely to make them eligible for deletion. Existing
+manual-close, verified-dependency and goal-qualification gates above remain binding.
+
 ### Simplify execution, not acceptance
 
 To simplify tasks or speed Autowork, give each live record one concrete next action
@@ -649,7 +668,8 @@ Lead with changed / verified / remaining, built from the final diff and retained
 receipts, not a process replay. Distinguish unchanged since this pass's baseline from
 clean against HEAD. Report scope, changed owners, actual checks, gaps and eligible next task. Bootstrap
 includes role/path/outcome coverage; Maintain only affected roles. Include the
-changed `tasks/` paths, task and goal IDs, status counts and the validation result.
+changed open-task/goal owners, cleanup counts, concrete retention reasons and the
+validation result; do not enumerate deleted completed-task IDs unless requested.
 Tasks are not dispatch/delivery proof. Name language/behavior checks not performed.
 For ELI5 or owner-decision summaries, lead with the everyday outcome and the exact
 input needed (a safe test phone, a disposable server, or permission), not a wall of
