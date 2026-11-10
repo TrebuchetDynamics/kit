@@ -44,7 +44,7 @@ def setUpModule():
     subprocess.run(['git', '-C', str(ROOT), 'checkout', '-q', '--detach', head], check=True)
     # Snapshot dependencies together: a merge can change both the engine's CLI
     # and the helpers it calls, not just the runner entry points.
-    paths = ['src', 'scripts/autowork_bootstrap.py', 'pi-autowork/pi_autowork', 'pi-autowork/engine',
+    paths = ['scripts/autowork_bootstrap.py', 'pi-autowork/pi_autowork', 'pi-autowork/engine',
              'pi-autowork/src', 'pi-autowork/scripts', 'pi-autowork/bin',
              'skills/docs-sync/scripts']
     patch = subprocess.run(['git', '-C', str(source), 'diff', '--binary', 'HEAD', '--', *paths],
@@ -4157,8 +4157,6 @@ class SetupTests(Fixture):
         shutil.copytree(ROOT / 'skills', package / 'skills', ignore=shutil.ignore_patterns('__pycache__'))
         shutil.copytree(ROOT / 'adapters', package / 'adapters')
         shutil.copytree(ROOT / 'pi-autowork', package / 'pi-autowork', ignore=shutil.ignore_patterns('__pycache__'))
-        shutil.copytree(ROOT / 'pi-autowork/src', package / 'pi-autowork/src',
-                        ignore=shutil.ignore_patterns('__pycache__'))
         (package / 'scripts').mkdir()
         shutil.copy2(ROOT / 'scripts/autowork_bootstrap.py', package / 'scripts/autowork_bootstrap.py')
         self.git(package, 'init', '-q')
@@ -4189,7 +4187,7 @@ class SetupTests(Fixture):
         """A disposable autowork Pi package whose local origin holds one newer,
         compatible release, so the update check passes and `pi update` applies."""
         package = self.root / 'pi-package'
-        for part in ('skills', 'adapters', 'scripts', 'pi-autowork', 'src'):
+        for part in ('skills', 'adapters', 'scripts', 'pi-autowork'):
             shutil.copytree(ROOT / part, package / part, ignore=shutil.ignore_patterns('__pycache__'))
         shutil.copy2(ROOT / 'scripts/autowork_bootstrap.py', package / 'scripts/autowork_bootstrap.py')
         (package / '.gitignore').write_text('.updated\n')
