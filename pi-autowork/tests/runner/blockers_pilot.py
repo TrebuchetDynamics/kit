@@ -161,7 +161,8 @@ async def main(root):
                     await pilot.press('t')
                     tasks = app.screen
                     assert isinstance(tasks, tui.TasksScreen)
-                    assert any(b.key == 'B' and b.action == 'report' for b in tasks.BINDINGS)
+                    for key in ('b', 'B'):
+                        assert any(b.key == key and b.action == 'report' for b in tasks.BINDINGS), key
                     await pilot.press('B')
                     await app.workers.wait_for_complete()
                     await pilot.pause()

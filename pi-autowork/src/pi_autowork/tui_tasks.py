@@ -335,7 +335,8 @@ class TasksScreen(ReadScreen, Screen):
                 Binding('v', 'plan("investigate")', 'Investigate', show=False),
                 Binding('e', 'decide', 'Decide', show=False),
                 Binding('C', 'commit_tasks', 'Commit', show=False),
-                Binding('b,B', 'report', 'Report', show=False),
+                Binding('b', 'report', 'Report', show=False),
+                Binding('B', 'report', 'Report', show=False),
                 Binding('i', 'snapshot_info', 'Snapshot info', show=False, priority=True)]
     DEFAULT_CSS = '''
     #task-views { height: auto; padding: 0 1; }
