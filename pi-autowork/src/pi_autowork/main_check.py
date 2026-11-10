@@ -569,6 +569,12 @@ def rerun_failures(log, root, receipt, rev, timeout=600, cmd=None, only=None, wo
            if not k.startswith(('PI_AUTOWORK_', 'AUTOWORK_')) and k not in (
                'CONTAINMENT_LINUX_TESTS', 'RUN_CONTROLLER_BRIDGE_LINUX',
                'HERMES_NATIVE_HANDOFF_TEST', 'HERMES_NATIVE_REGISTRATION_TEST')}
+    support_paths = [str(root / 'pi-autowork/tests'), str(root / 'tests'),
+                     str(root / 'pi-autowork'), str(root / 'pi-autowork/src'),
+                     str(root / 'pi-autowork/src/pi_autowork/engine'),
+                     str(root / 'pi-autowork/engine')]
+    existing_pythonpath = env.get('PYTHONPATH')
+    env['PYTHONPATH'] = os.pathsep.join(support_paths + ([existing_pythonpath] if existing_pythonpath else []))
     try:
         entries = [(env.get(f'GIT_CONFIG_KEY_{i}', ''), env.get(f'GIT_CONFIG_VALUE_{i}', ''))
                    for i in range(int(env.get('GIT_CONFIG_COUNT') or 0))]

@@ -2733,15 +2733,16 @@ fcntl.flock = observed_flock
                 fleet = self.run_runner('--fleet', cwd=self.root, timeout=60)
                 self.assertEqual(fleet.returncode, 0, fleet.stderr)
                 self.assertIn(self.repo.name, fleet.stdout)
-                self.assertRegex(fleet.stdout, re.escape(state) + r' for \d+ min; '
+                self.assertRegex(fleet.stdout, r'blocked for \d+ min; '
                                  r'0 running, 0 waiting, 1 stopped by a blocker')
                 # The text fleet summarizes counts; its structured reader retains both kinds of root.
                 row, = health.fleet(self.state)
+                self.assertEqual(row['state'], state)
                 self.assertEqual(row['roots'], snapshot['roots'])
                 self.assertEqual(row['stopped_groups'], snapshot['stopped_groups'])
                 status = self.run_runner('--status')
                 self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
-                self.assertIn(f'Health:     {state} since', status.stdout)
+                self.assertIn('Health:     blocked since', status.stdout)
                 self.assertRegex(status.stdout, r'A\s+failed\s+' + re.escape(snapshot['roots'][0]['reason']))
                 self.assertRegex(status.stdout, r'C\s+pending\s+dependency: A')
             finally:
@@ -3092,7 +3093,7 @@ fcntl.flock = observed_flock
         """Docs Sync's prepare found a dead runner's attempt in flight and recorded the request;
         this runner sets that attempt aside (work kept), converts, and plans from tasks/."""
         self.git(self.repo, 'rm', '-r', '-q', 'tasks')
-        fixtures = ROOT / 'tests/fixtures/task_migrate'
+        fixtures = ROOT / 'pi-autowork/tests/fixtures/task_migrate'
         for name in ('TODO.md', 'TODO.archive.md', 'goals.json'):
             (self.repo / name).write_bytes((fixtures / name).read_bytes())
         self.git(self.repo, 'add', '-A')

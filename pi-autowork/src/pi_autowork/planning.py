@@ -23,8 +23,9 @@ from . import planning_authority, planning_proposals as proposals
 from .planning_proposals import PlanningError
 from .planning_rpc import RPC, RPCError, Cancelled, ShutdownOutcome, private_dir, private_open
 from . import task_commands
+from .layout import LAYOUT
 
-BUNDLE = Path(__file__).resolve().parents[2]
+BUNDLE = LAYOUT.root
 SKILLS = BUNDLE / 'adapters/skills'
 POLICY = '''You are the Autowork planning console, never an implementation agent.
 Read the repository instructions and existing plans, tasks, source and tests with

@@ -346,6 +346,30 @@ class MainCheckTests(unittest.TestCase):
                     self.assertEqual((tests / 'ran').exists(), bool(want))
                     self.assertFalse((root / 'ran').exists())
 
+    def test_relocated_reruns_import_support_from_the_checked_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tests = root / 'pi-autowork/tests'
+            runner, support = tests / 'runner', tests / 'support'
+            runner.mkdir(parents=True)
+            support.mkdir()
+            (support / '__init__.py').write_text('VALUE = "checked tree"\n')
+            (runner / 'test_sample.py').write_text(
+                'import unittest\nfrom support import VALUE\n'
+                'class Sample(unittest.TestCase):\n'
+                '    def test_support(self): self.assertEqual(VALUE, "checked tree")\n')
+            foreign = root / 'foreign'
+            foreign.mkdir()
+            (foreign / 'support.py').write_text('raise AssertionError("wrong tree")\n')
+            log, receipt = root / 'check.log', root / 'reruns.json'
+            log.write_text('CHECK pi-autowork/tests/runner (1 modules)\n'
+                           'FAIL: test_support (test_sample.Sample.test_support)\n'
+                           'Ran 1 test in 0.01s\n\nFAILED (failures=1)\n')
+            with patch.dict(os.environ, PYTHONPATH=str(foreign)):
+                main_check.rerun_failures(log, root, receipt, 'abc123')
+            self.assertEqual(json.loads(receipt.read_text())['flaky'], ['test_sample.Sample.test_support'])
+            self.assertIn('Ran 1 test', receipt.with_suffix('.log').read_text())
+
     def test_red_main_publishes_read_only_evidence_and_keeps_the_last_five_revisions(self):
         from pi_autowork.coordinator import Coordinator
         from pi_autowork.common import git, git_ok
