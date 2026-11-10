@@ -21,18 +21,19 @@ class PlanningDecompositionContractTests(unittest.TestCase):
         self.assertNotIn('gets a first task that extracts', CRAFT)
         self.assertNotIn('longer than about 1500 lines', CRAFT)
 
-    def test_cold_and_test_overlap_rank_without_fake_dependencies(self):
-        for rule in ('Cold files, directories, globs and test modules only rank',
-                     'three or more unfinished tasks',
+    def test_file_overlap_ranks_without_fake_dependencies(self):
+        for rule in ('Ordinary files, directories, globs and test modules only rank',
+                     'Their overlap alone does not hold dispatch',
                      'not merely a shared path or a preferred sequence',
-                     'overlapping tests or cold files do not require extraction or dependency edges'):
+                     'overlapping source files or tests do not require extraction or dependency edges'):
             with self.subTest(rule=rule):
                 self.assertIn(rule, CRAFT)
         self.assertNotIn('Tasks that can run together have disjoint writes', CRAFT)
         self.assertNotIn('a file that unlanded work also names waits', CRAFT)
 
     def test_real_conflicts_and_protected_paths_still_coordinate(self):
-        for rule in ('same hot literal production file wait until the unlanded work lands',
+        for rule in ('only `exclusive` requires running alone',
+                     '`live` still needs authorization but does not drain unrelated workers',
                      'Shared named resources serialize their users',
                      'protected-path tasks serialize with each other, not ordinary tasks',
                      'New manifests, lockfiles, schema/migration and CI files need explicit protected paths',
@@ -41,10 +42,10 @@ class PlanningDecompositionContractTests(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assertIn(rule, CRAFT)
         for rule in ('Preserve existing Dependencies unless prerequisite evidence justifies changing them',
-                     'including held/noncandidate contracts and live slots awaiting integration',
-                     'cold files, directories, globs and test modules only rank',
-                     'A hot-to-cold change removes only the file gate',
-                     'not genuine prerequisites or resource/protected-path admission',
+                     'ordinary files, directories, globs and test modules only rank',
+                     'File overlap does not block dispatch',
+                     'genuine prerequisites and resource/protected-path admission still apply',
+                     'Only an explicit exclusive resource drains the pool',
                      'A held peer alone reserves no files',
                      'Shared named resources and protected-path coordination still apply',
                      'has a live worker (even if held), or whose commit waits to land'):

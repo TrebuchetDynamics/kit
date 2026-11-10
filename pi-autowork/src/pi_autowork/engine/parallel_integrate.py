@@ -1842,7 +1842,8 @@ def draining_ahead(repo, common, task_id):
     for contract in dispatch.contracts(repo):
         if contract['id'] == task_id:
             return ''  # ranked above every draining task: it may run, as ordinary dispatch allows
-        if contract['id'] in streaks:
+        # Older releases drained live work too; history alone cannot reserve the pool.
+        if contract['id'] in streaks and 'exclusive' in plan._resources(contract):
             return f'priority waits for {contract["id"]} (draining, waited {int(streaks[contract["id"]] // 60)}m)'
     return ''
 

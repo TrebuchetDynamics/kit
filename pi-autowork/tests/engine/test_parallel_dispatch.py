@@ -127,6 +127,35 @@ class DispatchTests(unittest.TestCase):
                 return result
         self.fail('workers did not finish')
 
+    def test_colliding_workers_fill_capacity_in_separate_worktrees(self):
+        self.write_todo(*(task(tid, 'shared.txt') for tid in ('A', 'B', 'C', 'D')))
+        release = self.root / 'release-overlap'
+        self.set_spec({tid: {'files': {'shared.txt': tid},
+                            'ready': str(self.root / f'ready-{tid}'), 'release': str(release)}
+                       for tid in ('A', 'B', 'C', 'D')})
+        _, result = self.apply('3', '--max-workers', '3')
+        self.assertEqual([row['task'] for row in result['dispatched']], ['A', 'B', 'C'])
+        for tid in ('A', 'B', 'C'):
+            self.await_file(self.root / f'ready-{tid}')
+        slots = state.slots(self.common)
+        self.assertEqual(len(slots), 3)
+        self.assertTrue(all(state.worker_live(slot) for slot in slots))
+        self.assertEqual(len({slot['worktree'] for slot in slots}), 3)
+        for slot in slots:
+            worktree = Path(slot['worktree'])
+            self.assertTrue(worktree.is_relative_to(self.repo / '.worktrees'))
+            self.assertEqual((worktree / 'shared.txt').read_text(), slot['task_id'])
+        self.assertFalse((self.repo / 'shared.txt').exists())
+        _, again = self.apply('3', '--max-workers', '3')
+        self.assertEqual(again['dispatched'], [])
+        self.assertEqual(len(state.slots(self.common)), 3)
+        release.touch()
+        self.wait_until_idle()
+        # Reported, unlanded commits must not keep the fourth worker out.
+        _, refill = self.apply('3', '--max-workers', '3')
+        self.assertEqual([row['task'] for row in refill['dispatched']], ['D'])
+        self.wait_until_idle()
+
     def test_under_a_gating_runner_the_worker_leaves_the_full_check_to_it(self):
         """TOOLSET-227-a8: workers ran the full suite two or three times before the runner's gate."""
         task = execution.select_all(self.repo, None, None)[0]

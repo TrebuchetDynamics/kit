@@ -218,7 +218,9 @@ class PlanningCliContractTests(unittest.TestCase):
         self.assertIn('consumer', handoff)
         self.assertNotIn('checks the ordered frontier within the named tasks\' goals', handoff)
         center = prose(WORKCENTER)
-        for required in ('hot production', 'test modules', 'cold', 'affected', 'full', 'mandatory checks'):
+        for required in ('Ordinary file, directory and glob overlap', 'not a dispatch gate',
+                         'protected manifest/lock/schema/migration/CI gates still apply',
+                         'affected', 'full', 'mandatory checks'):
             self.assertIn(required, center)
         planner = prose(PLANNER)
         self.assertIn('prepare_api', planner)
