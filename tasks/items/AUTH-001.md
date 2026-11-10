@@ -3,7 +3,7 @@ schema = 1
 id = "AUTH-001"
 title = "Preserve provider text replies and repository-bound TUI authentication identity"
 short = "Preserve TUI auth replies and identity"
-status = "open"
+status = "done"
 section = "Next"
 rank = 25000
 depends_on = []
@@ -15,7 +15,10 @@ scope = "Repair the two bounded incoming-authentication issues identified by ind
 acceptance = ["Verify the actual supported Pi SDK contract for the selected version before changing the bridge. Fixture coverage proves an empty provider text reply can represent a documented default while malformed answers and prohibited command-style API-key values remain refused. Preserve both current and supported-version behavior explicitly; do not infer Pi1.5.0 parity solely from installed1.5.1.", "Capture immutable repository identity with the target and refuse/cancel stale authentication/model callbacks if a same-name runner changes repositories while sharing the same profile. Preserve existing name/profile/view-only/explicit-Connect and explicit-Browser guards, selection safety and no automatic credential/network refresh on viewing a catalog.", "Fake SDK/profile/browser fixtures exercise both fixes without real login, real credential/profile writes or model calls; existing protected API-key/OAuth lifecycle, view-only and literal-output assertions remain intact. Source-bound focused tests and fresh independent review are required before qualified integration.", "Do not expose credentials or authorization URLs in logs/journals, subprocess arguments or untrusted rich markup. Any future headless URL/instruction recovery remains an explicit-user-action capability, not automatic browser launch or authentication."]
 checks = ["Scoped tests for pi_auth bridge and TUI model/authentication fixtures, using pinned dependency inputs and no real provider session", "Fresh independent read-only review of the exact candidate", "docs/task validation, tree/type guard and git diff --check"]
 exclusions = ["No real credentials, OAuth/login, browser/device/model calls, provider/billing edits or live-session qualification. No edits to another writer's checkout, silent SDK/dependency upgrade, service action, forced activation or unsupported active-task mutation. Do not add this implementation to an already-frozen CI-only publisher."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/AUTH-001.toml"
 +++
 - Sources: Fresh read-only reviewer c04b2bf6-5904-4e71-bf87-d478ed3a6c33, exact58f8aa83..b52787a1; incomingAuthfiles. Medium issues: tui_auth.py158-162/pi_auth.mjs77 reject all empty replies including text; tui.py1891-1894 omits repository identity from stale-target checks. InstalledPi1.5.1 Copilotprovider explicitly requests a blank default-host response; exact1.5.0 remains unverified.
 - Safety finding: No new direct credential-to-argv/log exposure found; answers use stdin, helper stderr discarded, errors fixed, explicit action/profile/view-only guards present. Existing changed auth test modules are fixture-isolated by inspection, not live-provider acceptance.
 - First action: Wait for current frozen publication to settle, refresh exact upstream delta and active file ownership, inspect supported SDK/provider contract, then repair in a dedicated canonical .worktrees checkout. Preserve any later incoming fixes; do not apply a stale whole-file overlay. This saved requirement is not implementation or qualification.
+- Pending live: Real provider authentication and real browser/device callback acceptance remain unqualified and excluded from this offline task. Fixture credential persistence is not provider acceptance, entitlement or model-execution evidence.
