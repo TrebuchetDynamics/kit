@@ -4,23 +4,9 @@ Paths use case-sensitive fnmatch globs (stars can cross '/'); a trailing slash
 means the whole directory. Glob intersection uses a finite product of the two
 patterns, not current files, so not-yet-created files are protected too.
 """
-from collections import Counter
 from fnmatch import fnmatchcase
 from functools import lru_cache
 import re
-
-# Open tasks naming one file before it counts as hot.
-HOT_TASKS = 3
-
-
-def test_module(path):
-    """A test module: tasks append test cases to it, so two of them rarely conflict, a conflict
-    is resolved by the merge step, and the full check runs on the result. It ranks like a cold
-    file and never makes tasks wait for each other (TOOLSET-341-eb82856d: five tasks waited on
-    one for tests/test_pi_autowork.py alone while seven of eight workers sat idle)."""
-    name = path.rsplit('/', 1)[-1]
-    return (path.startswith('tests/') or '/tests/' in path
-            or (name.endswith('.py') and (name.startswith('test_') or name.endswith('_test.py'))))
 
 # Reversible built-in serial policy, including nested packages and CI files.
 SERIAL_NAMES = (
@@ -169,14 +155,6 @@ def _hint(task):
         return []
 
 
-def _files(task):
-    """Literal files a task declares (no directory, no glob), counted once per task.
-
-    Only a hot literal file can hold dispatch; wide or missing Touches stay hints.
-    """
-    return {p for p in _hint(task) if not p.endswith('/') and not GLOB.search(p)}
-
-
 def _resources(task):
     """The resource names a Resources line starts with, before its explanation.
 
@@ -234,8 +212,8 @@ SERIAL_REASON = 'serial path; must run alone'
 def _solo(task, protected_files=None):
     # Touches only schedule (TOOLSET-161-17): a task without them runs beside other work.
     touches = _hint(task)
-    if _resources(task) & {'live', 'exclusive'}:
-        return 'live/exclusive resource; must run alone'
+    if 'exclusive' in _resources(task):
+        return 'exclusive resource; must run alone'
     if protected_files is None:
         serial = _shared(touches, SERIAL_PATHS)
     else:
@@ -305,7 +283,7 @@ def plan(tasks, running=(), *, all_tasks=(), parked=(), protected_files=None, dr
     until then it reserves what it declares, like any waiting task (TOOLSET-171-35). None
     drains at once.
     ``finished`` names running contracts whose worker has ended (the commit awaits review or
-    integration): they still own their files, but nothing runs beside them, so the must-run-alone
+    integration): they still reserve resources, but no worker runs, so the must-run-alone
     rule ignores them (one runner idled 54 minutes while an exclusive task waited out a review).
     """
     tasks, running, all_tasks, parked = list(tasks), list(running), list(all_tasks), list(parked)
@@ -326,28 +304,12 @@ def plan(tasks, running=(), *, all_tasks=(), parked=(), protected_files=None, dr
             hints[id(task)] = _hint(task)
         return hints[id(task)]
 
-    file_sets = {}
-
-    def files(task):
-        if id(task) not in file_sets:
-            file_sets[id(task)] = _files(task)
-        return file_sets[id(task)]
-
-    def shared_file(a, b):
-        both = files(a) & files(b) & hot_files
-        return min(both) if both else ''
     # A serial file (manifest, lockfile, CI, migration) conflicts only with other serial
     # work: each worker has its own worktree, so it cannot break a neighbour's build
     # (TOOLSET-160-df). Only an exclusive task runs alone and stops lower dispatch.
     serial = lambda task: solo(task) == SERIAL_REASON
     exclusive = lambda task: '' if serial(task) else solo(task)
     known = {t['id']: t for t in [*all_tasks, *tasks, *running, *parked]}
-    # Count every unfinished contract once, including noncandidates supplied by the
-    # caller and live slots awaiting integration. Repeated paths/inputs add no heat.
-    counts = Counter(path for t in known.values()
-                     if re.split(r'[;.\s]', t.get('fields', {}).get('Status', 'open'))[0] != 'done'
-                     for path in files(t))
-    hot_files = {path for path, count in counts.items() if count >= HOT_TASKS and not test_module(path)}
     active = {t['id']: t for t in running}
     claims = {t['id']: t for t in known.values()
               if t.get('fields', {}).get('Held by') and t['id'] not in active}
@@ -373,10 +335,7 @@ def plan(tasks, running=(), *, all_tasks=(), parked=(), protected_files=None, dr
             return 'dependency: held ' + b['id'] if depends(a, b) else ''
         if depends(a, b) or depends(b, a):
             return 'dependency conflict with ' + b['id']
-        # A hot file both name waits for the other to land. Cold files, directories and globs
-        # only rank (TOOLSET-161-17), and a held task holds none. A waiting task holds no files: it has
-        # no code to conflict with, and its own wait on an old commit held every lower task that
-        # shared a file with it, until no worker ran. Once a file is free it goes first anyway.
+        # Worktrees isolate ordinary file edits; resource and protected-path gates remain.
         if claim or reserved:  # held or waiting task
             other = ('held ' if claim else '') + b['id']
             if resources(a) & resources(b):
@@ -391,13 +350,11 @@ def plan(tasks, running=(), *, all_tasks=(), parked=(), protected_files=None, dr
             return 'serial path shared with ' + b['id']
         if resources(a) & resources(b):
             return 'shared resource with ' + b['id']
-        if file := shared_file(a, b):
-            return f'waits for {b["id"]} (shares hot file {file})'
         return ''
 
     # Backfill: a task may start past a waiting higher-priority one only when it shares
-    # nothing with it (paths, resources, dependencies), so priority still decides every
-    # overlap. An exclusive task (it must run alone) that waits on running or just-dispatched work
+    # no resource or dependency with it, so priority still decides resource contention.
+    # An exclusive task (it must run alone) that waits on running or just-dispatched work
     # stops all lower dispatch, or backfill would keep the pool from draining for it;
     # one waiting only on a claim or another waiting task gains nothing from a stop.
     def first(task, others, **kind):
@@ -435,7 +392,7 @@ def plan(tasks, running=(), *, all_tasks=(), parked=(), protected_files=None, dr
             dispatch.append(task)
             if exclusive(task):
                 stopped = ('priority task ' + tid + ': ' + exclusive(task), tid)
-    # Likely-independent work first: a task whose cold files, directories or globs overlap running
+    # Likely-independent work first: a task whose files, directories or globs overlap running
     # or earlier-chosen work ranks lower for the free slots, but is not held (TOOLSET-161-17).
     chosen, ranked = {path for t in running for path in hint(t)}, []
     for task in dispatch:

@@ -2975,6 +2975,28 @@ Path('untracked.pyo').unlink()
         """A fresh retry started while an exclusive task drained the pool, so it kept waiting."""
         self.retry_blocked_fixture('draining', 'WAITING')
 
+    def test_legacy_live_drain_does_not_block_an_unrelated_retry(self):
+        live = {'id': 'LIVE', 'fields': {'Resources': 'live', 'Touches': 'shared.txt',
+                'Live authorization': 'approved', 'Live actor': 'owner',
+                'Live at': '2026-11-07', 'Live scope': 'live'}}
+        retry = {'id': 'A', 'fields': {'Touches': 'shared.txt'}}
+        peer = {'id': 'PEER', 'fields': {'Resources': 'live'}}
+        with (self.common / 'journal.jsonl').open('a') as stream:
+            for age, reason in ((7200, 'live/exclusive resource; must run alone (beside PEER)'),
+                                (60, 'shared resource with PEER')):
+                stream.write(json.dumps({'timestamp': time.time() - age,
+                    'event': 'dispatch_observed',
+                    'waiting': [{'id': 'LIVE', 'reason': reason}]}) + '\n')
+        self.assertGreater(dispatch.waiting_streaks(self.common)['LIVE'], 7000)
+        planned = dispatch.parallel_plan.plan([live, retry], [peer])
+        self.assertEqual(planned['dispatch'], [retry])
+        with patch.object(dispatch, 'contracts', return_value=[live, retry]), patch.dict(
+                os.environ, PI_AUTOWORK_DRAIN_AFTER='1800'):
+            self.assertEqual(self.module().draining_ahead(self.repo, self.common, 'A'), '')
+            live['fields']['Resources'] = 'live, exclusive'
+            self.assertIn('priority waits for LIVE',
+                          self.module().draining_ahead(self.repo, self.common, 'A'))
+
     def test_a_retry_ahead_of_the_draining_task_still_runs(self):
         self.retry_blocked_fixture('draining-below', 'RETRIED')
 

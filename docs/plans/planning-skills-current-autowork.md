@@ -25,7 +25,8 @@ format, mandatory experiment or acceptance ceremony is introduced.
   into supported `--expect` updates. On refusal reread and reapply only attributable
   changes, never blind-retry a stale full snapshot. Operation-local locking alone
   does not protect the earlier read.
-- Hot production files, cold overlap and test files have distinct scheduler effects.
+- Ordinary source and test overlap ranks work without blocking dispatch; protected
+  paths and shared resources still gate admission.
   Shared paths alone are not logical dependencies. Use actual cohesion, conflict cost
   and testability, not a blanket large-file extraction requirement.
 - Prefer existing public test seams and the worker's focused per-behavior test budget.
