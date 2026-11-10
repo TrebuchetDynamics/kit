@@ -26,6 +26,8 @@ import uuid
 
 from pi_autowork import fleet_view, portal, tui_reads, blockers_report, command_results  # noqa: E402
 from pi_autowork.planning_ui import PlanScreen, DecisionPrompt, QuestionPicker  # noqa: E402
+from pi_autowork import pi_auth
+from pi_autowork.tui_auth import ProviderAuth
 from pi_autowork.tui_dialogs import Confirm  # noqa: E402
 from pi_autowork.tui_common import (  # noqa: E402
     REFRESH, MenuBar, ReadScreen, action_text, hotkeys, publish_text, read_input)
@@ -208,10 +210,12 @@ class PickModel(ReadScreen, ModalScreen[str]):
     #model-status { height: auto; max-height: 3; }
     '''
 
-    def __init__(self, title, models, current, loader=None, identity=None, login=None):
+    def __init__(self, title, models, current, loader=None, identity=None, agent_dir=None, identity_valid=None):
         super().__init__()
         self.title_text, self.models, self.current = title, models, current
-        self.loader, self.identity, self.login = loader, identity, login
+        self.loader, self.identity, self.agent_dir = loader, identity, agent_dir
+        self.identity_valid = identity_valid or (lambda: True)
+        self.providers, self.auth_error = {}, ''
         self.catalog_loading, self.load_error = bool(loader), ''
         self.provider = ''
 
@@ -225,9 +229,9 @@ class PickModel(ReadScreen, ModalScreen[str]):
             yield OptionList(id='models')
             yield Static('Loading Pi models…' if self.loader else '', id='model-status', markup=False)
             with Horizontal(id='model-actions'):
-                yield Button('Login in Pi', id='model-login', disabled=self.login is None)
+                yield Button('Configure provider', id='model-login', disabled=not self.agent_dir)
                 yield Button('Refresh models', id='model-refresh', disabled=self.loader is None)
-            yield Label('To see another provider: Login in Pi → /login · Esc back')
+            yield Label('Choose a provider → Configure provider · Esc back')
 
     def on_mount(self):
         self.shown = []
@@ -246,17 +250,35 @@ class PickModel(ReadScreen, ModalScreen[str]):
         self.provider = ''
         self.query_one('#models', OptionList).clear_options()
         self.query_one('#model-status', Static).update(
-            f'Cannot load Pi models: {error}\nUse Login in Pi and refresh the list.')
+            f'Cannot load Pi models: {error}\nRetry Refresh models or Configure provider.')
 
     def loaded_models(self, models):
+        if not self.identity_valid():
+            self.catalog_loading = False
+            self.load_error = 'Pi profile or runner changed. Close and reopen the model picker.'
+            self.models, self.shown = [], []
+            self.query_one('#models', OptionList).clear_options()
+            self.query_one('#model-status', Static).update(self.load_error)
+            return
         self.catalog_loading, self.load_error = False, ''
+        previous_provider = self.provider
+        if isinstance(models, dict):
+            self.providers = {p['id']: p for p in models.get('providers', [])}
+            self.auth_error = models.get('auth_error', '')
+            self.load_error = models.get('model_error', '')
+            models = models['models']
         self.models = models
-        providers = sorted({model.partition('/')[0] for model in models})
+        providers = sorted(set(self.providers) | {model.partition('/')[0] for model in models})
         selector = self.query_one('#provider', Select)
-        selector.set_options([(provider, provider) for provider in providers])
+        available = {model.partition('/')[0] for model in models}
+        selector.set_options([(provider + (' · available' if provider in available else '')
+                              + (' · ' + self.providers[provider]['state']
+                                 if provider in self.providers else ''), provider)
+                             for provider in providers])
         selector.disabled = not providers
         current_provider = self.current.partition('/')[0]
-        self.provider = (current_provider if current_provider in providers else
+        self.provider = (previous_provider if previous_provider in providers else
+                         current_provider if current_provider in providers else
                          providers[0] if len(providers) == 1 else '')
         selector.value = self.provider or Select.NULL
         self.on_input_changed(self.query_one('#filter', Input))
@@ -283,14 +305,16 @@ class PickModel(ReadScreen, ModalScreen[str]):
         if self.catalog_loading:
             status = 'Loading Pi models…'
         elif self.load_error:
-            status = f'Cannot load Pi models: {self.load_error}\nUse Login in Pi and refresh the list.'
+            status = f'Cannot load Pi models: {self.load_error}\nRetry Refresh models or Configure provider.'
         elif self.models and not self.provider:
-            status = 'Choose a provider. Missing one? Login in Pi, then refresh.'
+            status = 'Choose a provider, or Configure provider to connect.'
         elif self.models:
             status = (f'{len(self.shown)} of {len(provider_models)} Pi models · {self.provider}'
                       if self.shown else 'No matching models. Clear or change your search.')
         else:
-            status = 'No Pi models available. Login in Pi, then refresh.'
+            status = 'No Pi models available. Choose a provider and configure login.'
+        if self.auth_error:
+            status = self.auth_error
         self.query_one('#model-status', Static).update(status)
 
     def refresh_models(self):
@@ -304,22 +328,27 @@ class PickModel(ReadScreen, ModalScreen[str]):
         self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
 
     def action_login(self):
-        if not self.login or not self.is_current:
+        if not self.agent_dir or not self.is_current or not self.identity_valid() or self.app.view_only:
+            return
+        provider = self.providers.get(self.provider)
+        if not provider:
+            self.query_one('#model-status', Static).update(
+                self.auth_error or 'Choose a configurable provider first. Refresh to load providers.')
+            return
+        if not provider['methods']:
+            self.query_one('#model-status', Static).update(
+                'This provider uses ambient configuration. Configure it through Pi settings or environment.')
             return
         self.invalidate_read()
-        self.query_one('#model-status', Static).update(
-            'In Pi, run /login and exit Pi to refresh this list.')
-        try:
-            self.login()
-        except OSError as error:
-            self.load_failed(error)
-            return
-        self.refresh_models()
+        def authenticated(success):
+            if success and self.is_mounted and self.is_current and self.identity_valid() and not self.app.view_only:
+                self.refresh_models()
+        self.app.push_screen(ProviderAuth(provider, self.agent_dir, identity_valid=self.identity_valid), authenticated)
 
     def on_button_pressed(self, event):
         if event.button.id == 'model-refresh':
             self.refresh_models()
-        elif event.button.id == 'model-login' and self.login:
+        elif event.button.id == 'model-login':
             event.stop()
             self.action_login()
 
@@ -1035,8 +1064,8 @@ class FleetApp(App):
     def get_system_commands(self, screen):
         yield from super().get_system_commands(screen)
         if isinstance(screen, PickModel):
-            if screen.login:
-                yield SystemCommand('Login in Pi', 'Sign in to a Pi provider, then refresh models',
+            if screen.agent_dir and not self.view_only:
+                yield SystemCommand('Configure Pi provider', 'Authenticate with OAuth or API key in this TUI',
                                     screen.action_login)
             if screen.loader:
                 yield SystemCommand('Refresh Pi models', 'Reload providers and models from Pi',
@@ -1858,36 +1887,40 @@ class FleetApp(App):
             return
         settings_path = Path(self.env_dir) / f'{runner.name}.env'
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
+        agent_dir = portal.service_agent_dir(fleet_view.read_env(settings_path))
+        def valid():
+            selected = self.current()
+            return (selected is not None and selected.name == runner.name and
+                    portal.service_agent_dir(fleet_view.read_env(settings_path)) == agent_dir)
         default_models = list_models is fleet_view.models
         def load():
             if default_models:
-                settings = fleet_view.read_env(settings_path)
-                return list_models(pi=pi, agent_dir=portal.service_agent_dir(settings))
+                return self.model_catalog(lambda: list_models(pi=pi, agent_dir=agent_dir), agent_dir, pi)
             return list_models()
         current = runner.model if which == 'model' else runner.fallback
         title = f'{runner.name}: {"model" if which == "model" else "fallback model"}'
 
         def chosen(model):
-            if not model or model == current:
+            if not model or model == current or self.view_only or not valid():
                 return
             argv = [self.command, 'model', runner.name] + ([model] if which == 'model' else ['--fallback', model])
             action = fleet_view.Action('m', f'{which} {model}', argv,
                                        confirm=f'Set {runner.name}\'s {which} to {model}'
                                                + ('? Its service restarts; workers resume on the same attempt.'
                                                   if runner.service == 'running' else '?'))
-            self.push_screen(Confirm(action.confirm), lambda yes: yes and self.execute(action))
-        self.push_screen(PickModel(title, [], current, loader=load, identity=(runner.name, str(settings_path)),
-                                   login=lambda: self.login_to_pi(portal.service_agent_dir(
-                                       fleet_view.read_env(settings_path)))), chosen)
+            self.push_screen(Confirm(action.confirm),
+                             lambda yes: yes and valid() and not self.view_only and self.execute(action))
+        self.push_screen(PickModel(title, [], current, loader=load, identity=(runner.name, str(settings_path), agent_dir),
+                                   agent_dir=agent_dir, identity_valid=valid), chosen)
 
     def pick_new_model(self, on_chosen=None):
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
         agent_dir = self.new_model_agent_dir
         def load():
-            return (list_models(pi=pi, agent_dir=agent_dir)
+            return (self.model_catalog(lambda: list_models(pi=pi, agent_dir=agent_dir), agent_dir, pi)
                     if list_models is fleet_view.models else list_models())
         def chosen(model):
-            if model and not self.view_only:
+            if model and not self.view_only and self.new_model_agent_dir == agent_dir:
                 self.new_model = model
                 self.show_detail()
                 if on_chosen:
@@ -1896,14 +1929,22 @@ class FleetApp(App):
                 on_chosen(None)
         self.push_screen(PickModel('Choose a Pi model for a new runner', [], self.new_model,
                                    loader=load, identity=('new-runner', agent_dir),
-                                   login=lambda: self.login_to_pi(agent_dir)), chosen)
+                                   agent_dir=agent_dir, identity_valid=lambda: self.new_model_agent_dir == agent_dir), chosen)
 
-    def login_to_pi(self, agent_dir):
-        """Open Pi's own login UI against the same profile the model list uses."""
-        pi = os.environ.get('AUTOWORK_PI', 'pi')
-        env = dict(os.environ, PI_CODING_AGENT_DIR=agent_dir)
-        with self.suspend():
-            return self.runner_cmd([pi, '--no-session'], cwd=str(Path.home()), env=env).returncode
+    @staticmethod
+    def model_catalog(load_models, agent_dir, pi):
+        # A failed/empty available-model list must not hide configurable providers.
+        model_error = ''
+        try:
+            models = load_models()
+        except Exception:
+            models = []
+            model_error = 'Pi model catalog unavailable. Configure a provider or retry Refresh models.'
+        try:
+            providers = pi_auth.catalog(agent_dir, pi)
+            return dict(models=models, providers=providers, model_error=model_error)
+        except pi_auth.AuthError as error:
+            return dict(models=models, providers=[], auth_error=str(error), model_error=model_error)
 
     def action_browse(self):
         self.push_screen(BrowseScreen(str(self.browse_root) if self.browse_root else None, self.start_repository))

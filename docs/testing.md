@@ -591,3 +591,16 @@ scope and owner/live gates, not a reason to recreate completed-task reports:
 
 Keep current task and goal requirements authoritative. Never convert an unrun
 qualification to passed because its earlier implementation record was pruned.
+
+## Pi provider setup in the TUI
+
+`python3 scripts/check.py pi-autowork/tests/runner/test_pi_auth.py pi-autowork/tests/runner/test_tui_models.py pi-autowork/tests/runner/test_tui_reads.py pi-autowork/tests/runner/test_tui_controls.py`
+runs the focused offline provider bridge and TUI checks. The bridge fixtures use the
+Pi 1.5.0 public SDK interaction shape in disposable profiles. They cover provider
+catalogs with no stored credentials, OAuth/API-key success, invalid fixture keys,
+missing providers/helpers, cancellation, secret-safe errors and subprocess cleanup.
+Pinned Textual 8.2.8 pilots cover 60×18, 80×24 and 120×32 terminals, masked input,
+explicit browser actions, automatic refresh and unchanged model/start confirmations.
+These checks use no live account login, credential migration, model or service call.
+Real provider acceptance and browser callback behavior require separate user-run
+qualification. Storing an API key is not evidence that the provider accepts it.

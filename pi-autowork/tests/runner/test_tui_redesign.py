@@ -321,7 +321,7 @@ async def palette_pilot():
         await settle(app, pilot)
         assert isinstance(app.screen, tui.PickModel), type(app.screen).__name__
         model_commands = {command.title for command in app.get_system_commands(app.screen)}
-        assert {'Login in Pi', 'Refresh Pi models'} <= model_commands, model_commands
+        assert {'Configure Pi provider', 'Refresh Pi models'} <= model_commands, model_commands
         await pilot.press('escape')
         app.view_only = True
         read_only = {command.title for command in app.get_system_commands(app.screen)}

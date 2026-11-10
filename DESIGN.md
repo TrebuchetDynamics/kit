@@ -47,7 +47,12 @@ all original observations), and main-check revisions with original start age. Ct
 opens Textual's searchable command palette with fleet actions, Pi model controls,
 and the built-in theme switcher, scoped to the active screen and access mode.
 Model selection follows provider → search → model → existing change/start confirmation.
-Login opens Pi against the same agent directory and refreshes the model catalog on return.
+Configure provider hosts Pi SDK OAuth/API-key interaction inside the TUI, including
+masked answers, explicit Browser action, progress/errors and Escape cancellation.
+Providers remain selectable with an empty authenticated model catalog. Pi persists
+credentials in the captured runner/session profile; successful setup refreshes models.
+A changed profile/runner or read-only mode cancels setup and rejects stale callbacks.
+Opening the picker changes no credential state and launches no login or browser.
 Browse exposes the current path, Parent/Home, folder navigation, and readiness.
 Escape returns from a secondary screen; opening a menu changes no runner state.
 Activity shows a journal summary. Full-screen Log defaults to Summary and labels
