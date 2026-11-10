@@ -26,6 +26,10 @@ without writing files.
 planning repairs first, then genuine owner questions, easiest first; replanning
 happens here before the next question.
 
+Save the planning batch on canonical `main` under
+[main-branch persistence](../../../skills/shared/PLAN-HANDOFF.md#main-branch-persistence)
+before reporting planning complete; a branch-only save remains pending.
+
 Use the [single-pass handoff](../../../skills/shared/PLAN-HANDOFF.md#one-planning-pass-one-handoff):
 resume accepted decisions and existing task IDs, investigate only missing evidence,
 persist one affected batch, and reuse input-bound checks. Save accepted decisions and

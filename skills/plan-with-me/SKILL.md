@@ -108,6 +108,10 @@ highest-value question and leave it pending; do not fabricate replies or poll.
 
 ## Save answers and finish the plan
 
+Save the planning batch on canonical `main` under
+[main-branch persistence](../shared/PLAN-HANDOFF.md#main-branch-persistence)
+before reporting planning complete; a branch-only save remains pending.
+
 Follow the shared protocol's save and validate steps. During an ongoing interview,
 save material explicit answers in the existing owner when useful for continuity;
 resolved terms go to the glossary owner as they settle. Keep unanswered issues and
