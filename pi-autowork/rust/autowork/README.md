@@ -2,7 +2,7 @@
 
 This Linux Rust candidate provides an owned-agent runtime, durable journal and
 serialized local delivery coordinator, not the installed Python runner.
-`version`, `capabilities`, `tasks` inspection and `status` work without a model.
+`version`, `capabilities`, `tasks` inspection/publication and `status` work without a model.
 `run` requires explicit model
 routes and an isolated repository. It does not install a service, import global
 authentication, push, deploy or replace an existing runner.
@@ -63,8 +63,9 @@ autowork-next tasks show TASK-ID --repo /path/to/repo --rev COMMIT
 autowork-next tasks why TASK-ID --repo /path/to/repo --rev COMMIT
 ```
 
-`capabilities` advertises `contracts.task_inspection = 1` and only these four task
-verbs. Mutation verbs and `--worktree` are unsupported. Each command resolves
+`capabilities` advertises `contracts.task_inspection = 1` for these four inspection
+verbs, plus the separate `commit` subset described below. Task-authoring verbs
+(such as `field`) and `--worktree` are unsupported. Each inspection command resolves
 `--rev` once (default `HEAD`); dirty and staged records cannot affect the result.
 No task lock, proof commit, index update or ref write occurs. List/goals return
 arrays; show/why return objects. Record rows expose exact typed frontmatter,
@@ -405,6 +406,68 @@ existing writer or against a production repository.
   under the canonical checkout's `.worktrees/` and are retained for inspection.
 
 ### Checks, review and local publication
+
+#### Preview and publish pending records (generation 1)
+
+Use only a disposable offline repository with no other Python or Rust writer.
+The caller must establish exclusive ownership. This command does not import legacy
+ownership, establish service liveness or qualify an installed-runner handoff.
+
+```sh
+autowork-next tasks commit --dry-run --repo /absolute/disposable-repository
+autowork-next tasks commit --repo /absolute/disposable-repository --expect-token TOKEN
+```
+
+`capabilities` advertises `contracts.task_publication = 1`. Preview validates one
+stable set of working task/goal records against HEAD's existing receipt evidence.
+It includes added, changed and deleted records under `tasks/items/` and
+`tasks/goals/`, not pending receipt edits or unrelated staged/dirty files.
+It holds the task lock and refuses interrupted Python or Rust task transactions
+without recovery. A temporary index and object database use repository objects as
+read-only alternates. Cleanup leaves repository objects, index and refs unchanged.
+Preview does not open `StateStore`, claim a writer epoch, run hooks or call agents.
+The task lock file can be created as part of ordinary lock coordination.
+
+Preview JSON contains `state` (`clean` or `pending_commit`), `base_head`, full
+`branch` ref, `tree`, `token`, sorted `files` and the exact binary-capable `diff`.
+External diff and text conversion are disabled. Diffs over 256 KiB are refused,
+not truncated. A clean preview has empty files/diff and a null token. A pending
+token binds the original HEAD, branch, tree and all captured record bytes, just
+like `PendingSnapshot`. Its temporary tree is not a durable or selectable revision.
+Invalid/linked records, detached HEAD, unstable inputs and `--rev` other than
+literal `HEAD` refuse without changing record bytes. No working-tree selection
+interface is supplied.
+
+Explicit publication needs the matching 64-character lowercase SHA-256 token for
+nonempty edits. It re-captures records and uses `Coordinator::commit_proposal`, the
+private state writer lock, pause/stop gates, source/branch/record/index checks,
+ordinary owned Git hooks and compare-and-swap branch publication. Commit messages
+remain fixed. Unrelated staged blobs and working bytes are preserved. No model
+routes, credentials, task selection or agent execution are involved. An empty edit
+set without a matching retained operation returns `state: clean`, `commit: null`.
+A successful result returns `state: committed`, the local `commit`, the reviewed
+`token`, `publication: local_only`, and false execution/closure evaluation flags.
+It does not supply task acceptance, receipts, goal proof, integration or live authority.
+
+After interruption, supply the **original** token again. Recovery locates only its
+retained publication and original snapshot, including when HEAD already advanced.
+A verified settled operation returns the same commit without another hook call.
+Other unresolved effects, task journals, active writer ownership and conflicting
+external bytes refuse safely. Failed or uncertain started hooks are never replayed.
+Retain the private journal, owned publication workspace and effect evidence for
+reconciliation. This command never invokes general coordinator recovery to clear
+an unrelated operation. Do not delete evidence or journals to force a retry.
+
+The three `cli.rs` cases `pending_publication_preview_is_exact`,
+`pending_publication_commits_only_reviewed_records` and
+`pending_publication_recovers_without_dispatch` exercise this subset with disposable
+repositories, staged/dirty sentinels and hooks. Existing task-store/cycle guards
+cover shared validation and Git effects. These offline checks do not qualify live
+providers, service operation, Python-writer takeover or installed consumption.
+The [Python task-store contract](../../task-store.md#writing-and-autowork-tasks)
+is unchanged. Native task authoring and broader command parity remain unsupported.
+
+#### Delivery checks and review
 
 The frozen `CheckRegistry` admits only `git-diff-check` and, with explicit
 `--fixture-checks`/`enable_fixture_checks`, the same built binary's `fixture-pass`

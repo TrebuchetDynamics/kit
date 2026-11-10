@@ -56,6 +56,7 @@ impl Repo {
             NEXT_REPO.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&root).unwrap();
+        fs::create_dir(root.join("scratch")).unwrap();
         let repo = Self(root);
         repo.git(&["init", "-q", "-b", "main"]);
         repo.git(&["config", "user.name", "Fixture"]);
@@ -93,6 +94,7 @@ impl Repo {
     fn cli(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_autowork-next"))
             .env_clear()
+            .env("TMPDIR", self.0.join("scratch"))
             .env("PATH", "/usr/bin:/bin")
             .args(args)
             .arg("--repo")
@@ -199,7 +201,7 @@ fn task_inspection_is_pinned_and_selection_only() {
     assert_eq!(capabilities["contracts"]["task_inspection"], 1);
     assert_eq!(
         capabilities["commands"]["tasks"],
-        json!(["list", "goals", "show", "why"])
+        json!(["list", "goals", "show", "why", "commit"])
     );
     assert_eq!(
         before,
@@ -214,6 +216,508 @@ fn task_inspection_is_pinned_and_selection_only() {
         "dirty invalid bytes"
     );
     assert!(!repo.0.join(".git/autowork-rust").exists());
+}
+
+#[test]
+fn pending_publication_preview_is_exact() {
+    let repo = Repo::new();
+    repo.write_task("T-2", TASK.replace("T-1", "T-2"));
+    fs::write(
+        repo.0.join("tasks/goals/G-2.md"),
+        include_str!("fixtures/task_store/tasks/goals/G-1.md")
+            .replace("G-1", "G-2")
+            .replace("focus = true", "focus = false"),
+    )
+    .unwrap();
+    repo.commit();
+    fs::remove_file(repo.0.join("tasks/items/T-2.md")).unwrap();
+    fs::remove_file(repo.0.join("tasks/goals/G-2.md")).unwrap();
+    repo.write_task("T-3", format!("{}\0", TASK.replace("T-1", "T-3")));
+    repo.write_task("T-1", TASK.replace("Read tasks", "Reviewed tasks"));
+    fs::write(
+        repo.0.join("tasks/goals/G-3.md"),
+        include_str!("fixtures/task_store/tasks/goals/G-1.md")
+            .replace("G-1", "G-3")
+            .replace("focus = true", "focus = false"),
+    )
+    .unwrap();
+    fs::write(repo.0.join("staged"), "staged sentinel").unwrap();
+    repo.git(&["add", "staged"]);
+    fs::write(repo.0.join("staged"), "dirty sentinel").unwrap();
+    let script = repo.0.join(".git/hooks/post-index-change");
+    fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nprintf unexpected >> '{}'\nexit 1\n",
+            repo.0.join("unexpected-hook").display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    repo.git(&["config", "diff.external", script.to_str().unwrap()]);
+    repo.git(&["config", "diff.preview.textconv", script.to_str().unwrap()]);
+    fs::write(repo.0.join(".git/info/attributes"), "*.md diff=preview\n").unwrap();
+    let order = repo.0.join(".git/diff-order");
+    fs::write(&order, "tasks/items/*\ntasks/goals/*\n").unwrap();
+    repo.git(&["config", "diff.orderFile", order.to_str().unwrap()]);
+    let records = || {
+        ["tasks/items", "tasks/goals"]
+            .into_iter()
+            .flat_map(|dir| fs::read_dir(repo.0.join(dir)).unwrap())
+            .map(|entry| {
+                let path = entry.unwrap().path();
+                let bytes = fs::read(&path).unwrap();
+                (path, bytes)
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let original_records = records();
+    let store = StateStore::open(repo.0.join(".git")).unwrap();
+    let sql = Connection::open(repo.database()).unwrap();
+    let before = (
+        fs::read(repo.0.join(".git/index")).unwrap(),
+        repo.git(&["show-ref"]),
+        repo.git(&[
+            "cat-file",
+            "--batch-all-objects",
+            "--batch-check=%(objectname)",
+        ]),
+        journal_image(&sql),
+    );
+    let preview = repo.json(&["tasks", "commit", "--dry-run"]);
+    assert_eq!(preview["state"], "pending_commit");
+    assert_eq!(preview["base_head"], repo.git(&["rev-parse", "HEAD"]));
+    assert_eq!(preview["branch"], "refs/heads/main");
+    assert_eq!(
+        preview["files"],
+        json!([
+            "tasks/goals/G-2.md",
+            "tasks/goals/G-3.md",
+            "tasks/items/T-1.md",
+            "tasks/items/T-2.md",
+            "tasks/items/T-3.md"
+        ])
+    );
+    assert!(
+        preview["diff"]
+            .as_str()
+            .unwrap()
+            .contains("+title = \"Reviewed tasks\"")
+    );
+    assert!(!preview["diff"].as_str().unwrap().contains("sentinel"));
+    assert!(
+        preview["diff"]
+            .as_str()
+            .unwrap()
+            .contains("GIT binary patch")
+    );
+    assert_eq!(preview, repo.json(&["tasks", "commit", "--dry-run"]));
+    assert_eq!(
+        before,
+        (
+            fs::read(repo.0.join(".git/index")).unwrap(),
+            repo.git(&["show-ref"]),
+            repo.git(&[
+                "cat-file",
+                "--batch-all-objects",
+                "--batch-check=%(objectname)"
+            ]),
+            journal_image(&sql)
+        )
+    );
+    assert_eq!(original_records, records());
+    assert!(
+        fs::read_dir(repo.0.join("scratch"))
+            .unwrap()
+            .next()
+            .is_none()
+    );
+    assert!(!repo.0.join("unexpected-hook").exists());
+    let captured = autowork_next::task_store::TaskService::new(&repo.0)
+        .unwrap()
+        .capture_pending()
+        .unwrap();
+    assert_eq!(preview["tree"], captured.tree);
+    assert_eq!(preview["token"], captured.token);
+    assert_eq!(
+        preview["diff"],
+        format!(
+            "{}\n",
+            repo.git(&[
+                "diff",
+                "--binary",
+                "--full-index",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-renames",
+                "--no-color",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+                &captured.base_head,
+                &captured.tree,
+                "--"
+            ])
+        )
+    );
+    assert!(!repo.0.join("unexpected-hook").exists());
+    assert_eq!(
+        fs::read_to_string(repo.0.join("staged")).unwrap(),
+        "dirty sentinel"
+    );
+    assert!(
+        !repo
+            .cli(&["tasks", "commit", "--dry-run", "--rev", "HEAD~1"])
+            .status
+            .success()
+    );
+    for journal in [
+        "autowork-tasks.transaction",
+        "autowork-rust-tasks.transaction",
+    ] {
+        let path = repo.0.join(".git").join(journal);
+        fs::write(&path, "retained").unwrap();
+        assert!(!repo.cli(&["tasks", "commit", "--dry-run"]).status.success());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "retained");
+        fs::remove_file(path).unwrap();
+    }
+    repo.write_task("T-1", "invalid");
+    assert!(!repo.cli(&["tasks", "commit", "--dry-run"]).status.success());
+    fs::remove_file(repo.0.join("tasks/items/T-1.md")).unwrap();
+    std::os::unix::fs::symlink(
+        repo.0.join("tasks/items/T-3.md"),
+        repo.0.join("tasks/items/T-1.md"),
+    )
+    .unwrap();
+    assert!(!repo.cli(&["tasks", "commit", "--dry-run"]).status.success());
+    fs::remove_file(repo.0.join("tasks/items/T-1.md")).unwrap();
+    repo.write_task(
+        "T-1",
+        format!("{TASK}\n{}", "large preview\n".repeat(24000)),
+    );
+    assert!(!repo.cli(&["tasks", "commit", "--dry-run"]).status.success());
+    repo.write_task("T-1", TASK);
+    repo.git(&["checkout", "--detach", "-q"]);
+    assert!(!repo.cli(&["tasks", "commit", "--dry-run"]).status.success());
+    assert!(
+        fs::read_dir(repo.0.join("scratch"))
+            .unwrap()
+            .next()
+            .is_none()
+    );
+    drop(store);
+    let clean = Repo::new();
+    let preview = clean.json(&["tasks", "commit", "--dry-run"]);
+    assert_eq!(preview["state"], "clean");
+    assert_eq!(preview["files"], json!([]));
+    assert_eq!(preview["diff"], "");
+    assert!(preview["token"].is_null());
+    assert!(!clean.database().exists());
+}
+
+fn preview_token(repo: &Repo) -> String {
+    repo.json(&["tasks", "commit", "--dry-run"])["token"]
+        .as_str()
+        .unwrap()
+        .into()
+}
+fn publish(repo: &Repo, token: &str) -> Output {
+    repo.cli(&["tasks", "commit", "--expect-token", token])
+}
+fn hook(repo: &Repo, body: &str) {
+    let path = repo.0.join(".git/hooks/pre-commit");
+    fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\nprintf 'hook\\n' >> '{}'\n{body}",
+            repo.0.join("hook-calls").display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[test]
+fn pending_publication_commits_only_reviewed_records() {
+    let repo = Repo::new();
+    let clean = repo.json(&["tasks", "commit"]);
+    assert_eq!(clean["state"], "clean");
+    assert!(clean["commit"].is_null());
+    assert_eq!(
+        output_json(&["capabilities"])["contracts"]["task_publication"],
+        1
+    );
+    repo.write_task("T-2", TASK.replace("T-1", "T-2"));
+    repo.commit();
+    fs::remove_file(repo.0.join("tasks/items/T-2.md")).unwrap();
+    repo.write_task("T-3", TASK.replace("T-1", "T-3"));
+    let reviewed = TASK.replace("Read tasks", "Reviewed tasks");
+    repo.write_task("T-1", &reviewed);
+    fs::write(
+        repo.0.join("tasks/goals/G-1.md"),
+        include_str!("fixtures/task_store/tasks/goals/G-1.md")
+            .replace("Goal notes.", "Reviewed goal."),
+    )
+    .unwrap();
+    fs::write(repo.0.join("sentinel"), "staged").unwrap();
+    repo.git(&["add", "sentinel"]);
+    fs::write(repo.0.join("sentinel"), "dirty").unwrap();
+    let staged = repo.git(&["ls-files", "--stage", "--", "sentinel"]);
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    let token = preview_token(&repo);
+    assert!(!repo.cli(&["tasks", "commit"]).status.success());
+    for bad in ["../../escape", &"0".repeat(64), ""] {
+        assert!(!publish(&repo, bad).status.success());
+    }
+    repo.write_task("T-1", TASK.replace("Read tasks", "Drift"));
+    assert!(!publish(&repo, &token).status.success());
+    repo.write_task("T-1", &reviewed);
+    repo.git(&["symbolic-ref", "HEAD", "refs/heads/other"]);
+    repo.git(&["update-ref", "refs/heads/other", &base]);
+    assert!(!publish(&repo, &token).status.success());
+    repo.git(&["symbolic-ref", "HEAD", "refs/heads/main"]);
+    let oid = repo.git(&["rev-parse", "HEAD:tasks/items/T-1.md"]);
+    let mut index = Command::new("/usr/bin/git")
+        .arg("-C")
+        .arg(&repo.0)
+        .args(["update-index", "--index-info"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    index.stdin.take().unwrap().write_all(format!("0 {}\ttasks/items/T-1.md\n100644 {oid} 1\ttasks/items/T-1.md\n100644 {oid} 2\ttasks/items/T-1.md\n100644 {oid} 3\ttasks/items/T-1.md\n", "0".repeat(oid.len())).as_bytes()).unwrap();
+    assert!(index.wait().unwrap().success());
+    let conflicted = fs::read(repo.0.join(".git/index")).unwrap();
+    assert!(!publish(&repo, &token).status.success());
+    assert_eq!(fs::read(repo.0.join(".git/index")).unwrap(), conflicted);
+    repo.git(&["reset", "-q", "HEAD", "--", "tasks/items/T-1.md"]);
+    repo.write_task("T-1", TASK.replace("Read tasks", "Staged conflict"));
+    repo.git(&["add", "tasks/items/T-1.md"]);
+    repo.write_task("T-1", &reviewed);
+    assert!(!publish(&repo, &token).status.success());
+    repo.git(&["reset", "-q", "HEAD", "--", "tasks/items/T-1.md"]);
+    // The same retained intent can now resume; no hook had started on the index conflict.
+    for marker in ["pause", "stop"] {
+        let path = repo.0.join(".git/autowork-rust").join(marker);
+        fs::write(&path, "gate").unwrap();
+        assert!(!publish(&repo, &token).status.success());
+        fs::remove_file(path).unwrap();
+    }
+    let writer = StateStore::open(repo.0.join(".git")).unwrap();
+    assert!(!publish(&repo, &token).status.success());
+    drop(writer);
+    let state = StateStore::open(repo.0.join(".git")).unwrap();
+    let identity = journal_run(&state, 1);
+    journal_note(&state, identity.clone());
+    let mut intent = state.events().unwrap().last().unwrap().1.clone();
+    intent.key = "unrelated-child-intent".into();
+    intent.kind = RecordKind::Intent(autowork_next::state::EffectKind::Child);
+    intent.event.operation_id = "unrelated-child".into();
+    intent.event.event = RuntimeEventKind::Accepted;
+    intent.event.status = RuntimeStatus::Running;
+    state.transition(1, intent).unwrap();
+    drop(state);
+    assert!(!publish(&repo, &token).status.success());
+    let state = StateStore::open(repo.0.join(".git")).unwrap();
+    state
+        .reconcile(autowork_next::state::Observations {
+            effects: vec![autowork_next::state::EffectObservation {
+                identity,
+                operation_id: "unrelated-child".into(),
+                source_revision: "source-commit".into(),
+                outcome: autowork_next::state::EffectOutcome::Absent,
+                evidence_ref: "fixture-no-child".into(),
+            }],
+        })
+        .unwrap();
+    drop(state);
+    assert_eq!(repo.git(&["rev-parse", "HEAD"]), base);
+    hook(&repo, "exit 0\n");
+    let preview = repo.json(&["tasks", "commit", "--dry-run"]);
+    let result = repo.json(&["tasks", "commit", "--expect-token", &token]);
+    assert_eq!(result["state"], "committed");
+    assert_eq!(result["token"], token);
+    assert_eq!(result["publication"], "local_only");
+    assert_eq!(result["execution_evaluated"], false);
+    assert_eq!(result["closure_evaluated"], false);
+    assert_eq!(result["commit"], repo.git(&["rev-parse", "HEAD"]));
+    assert_eq!(repo.git(&["rev-parse", "HEAD^{tree}"]), preview["tree"]);
+    assert_eq!(
+        repo.git(&["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"]),
+        "tasks/goals/G-1.md\ntasks/items/T-1.md\ntasks/items/T-2.md\ntasks/items/T-3.md"
+    );
+    assert_eq!(repo.git(&["ls-files", "--stage", "--", "sentinel"]), staged);
+    assert_eq!(
+        fs::read_to_string(repo.0.join("sentinel")).unwrap(),
+        "dirty"
+    );
+    assert_eq!(
+        fs::read_to_string(repo.0.join("hook-calls")).unwrap(),
+        "hook\n"
+    );
+    assert_eq!(repo.json(&["tasks", "commit"])["state"], "clean");
+    assert!(!repo.0.join("tasks/evidence").exists());
+    let store = StateStore::open(repo.0.join(".git")).unwrap();
+    assert!(
+        store
+            .events()
+            .unwrap()
+            .iter()
+            .filter(|(_, t)| t.event.operation_id != "unrelated-child")
+            .all(|(_, t)| !matches!(
+                t.kind,
+                RecordKind::Intent(autowork_next::state::EffectKind::Child)
+            ))
+    );
+    drop(store);
+    // Advancing the source with unchanged records still invalidates the token.
+    let drift = Repo::new();
+    drift.write_task("T-1", &reviewed);
+    let token = preview_token(&drift);
+    drift.git(&["commit", "--allow-empty", "-qm", "source drift"]);
+    assert!(!publish(&drift, &token).status.success());
+}
+
+fn interrupt_publication(repo: &Repo, fault: autowork_next::execution::FaultPoint) {
+    use autowork_next::{execution::*, runtime::Runtime, task_store::TaskService};
+    let state = StateStore::open(repo.0.join(".git")).unwrap();
+    let binary = PathBuf::from(env!("CARGO_BIN_EXE_autowork-next"));
+    let runtime = Runtime::new(
+        binary.clone(),
+        state.directory().into(),
+        Default::default(),
+        std::time::Duration::from_secs(10),
+    )
+    .unwrap();
+    let service = TaskService::new(&repo.0).unwrap();
+    let mut coordinator = Coordinator::new(
+        &repo.0,
+        &binary,
+        &runtime,
+        &service,
+        &state,
+        RunOptions {
+            worker_model: String::new(),
+            reviewer_model: String::new(),
+            planner_model: String::new(),
+            max_tasks: None,
+            allow_commit: true,
+            control: Control::default(),
+            prerequisites: vec![],
+        },
+    )
+    .unwrap();
+    coordinator.inject_fault(fault);
+    assert!(
+        coordinator
+            .publish_pending(Some(&preview_token(repo)))
+            .is_err()
+    );
+}
+
+#[test]
+fn pending_publication_recovers_without_dispatch() {
+    use autowork_next::execution::FaultPoint;
+    for (fault, advance_ref) in [
+        (FaultPoint::BeforeProposalCommit, false),
+        (FaultPoint::AfterProposalCommit, false),
+        (FaultPoint::AfterProposalCommit, true),
+    ] {
+        let repo = Repo::new();
+        repo.write_task("T-1", TASK.replace("Read tasks", "Reviewed tasks"));
+        let token = preview_token(&repo);
+        let base = repo.git(&["rev-parse", "HEAD"]);
+        hook(&repo, "exit 0\n");
+        interrupt_publication(&repo, fault);
+        let path = repo.0.join(format!(
+            ".git/autowork-rust/cycle-effects/proposal-{token}.json"
+        ));
+        let effect: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let calls = fs::read_to_string(repo.0.join("hook-calls")).unwrap_or_default();
+        let mut unrelated = effect.clone();
+        unrelated["operation"] = json!("unrelated");
+        let other = path.with_file_name("unrelated.json");
+        fs::write(&other, serde_json::to_vec(&unrelated).unwrap()).unwrap();
+        assert!(!publish(&repo, &token).status.success());
+        fs::remove_file(other).unwrap();
+        repo.write_task("T-1", TASK.replace("Read tasks", "External conflict"));
+        let retained = fs::read(&path).unwrap();
+        assert!(!publish(&repo, &token).status.success());
+        assert_eq!(fs::read(&path).unwrap(), retained);
+        assert_eq!(
+            fs::read_to_string(repo.0.join("hook-calls")).unwrap_or_default(),
+            calls
+        );
+        repo.write_task("T-1", TASK.replace("Read tasks", "Reviewed tasks"));
+        if advance_ref {
+            repo.git(&[
+                "update-ref",
+                "refs/heads/main",
+                effect["target"].as_str().unwrap(),
+                &base,
+            ]);
+        }
+        let result = repo.json(&["tasks", "commit", "--expect-token", &token]);
+        assert_eq!(result["state"], "committed");
+        fs::copy(
+            repo.0.join(".git/hooks/pre-commit"),
+            repo.0.join(".git/hooks/post-index-change"),
+        )
+        .unwrap();
+        assert_eq!(
+            result,
+            repo.json(&["tasks", "commit", "--expect-token", &token])
+        );
+        assert_eq!(repo.git(&["rev-list", "--count", "HEAD"]), "2");
+        assert_eq!(
+            fs::read_to_string(repo.0.join("hook-calls")).unwrap(),
+            "hook\n"
+        );
+        let store = StateStore::open(repo.0.join(".git")).unwrap();
+        assert!(
+            store
+                .events()
+                .unwrap()
+                .iter()
+                .all(|(_, t)| t.identity.role == Role::Planner
+                    && !matches!(
+                        t.kind,
+                        RecordKind::Intent(autowork_next::state::EffectKind::Child)
+                    ))
+        );
+    }
+    for (body, uncertain) in [
+        ("exit 1\n", false),
+        ("kill -KILL \"$PPID\"\n", false),
+        (
+            "printf 'changed\\n' > tasks/items/T-1.md\n/usr/bin/git add tasks/items/T-1.md\n",
+            false,
+        ),
+        ("exit 1\n", true),
+    ] {
+        let repo = Repo::new();
+        repo.write_task("T-1", TASK.replace("Read tasks", "Reviewed tasks"));
+        let token = preview_token(&repo);
+        let base = repo.git(&["rev-parse", "HEAD"]);
+        hook(&repo, body);
+        assert!(!publish(&repo, &token).status.success());
+        let path = repo.0.join(format!(
+            ".git/autowork-rust/cycle-effects/proposal-{token}.json"
+        ));
+        if uncertain {
+            // Simulate interruption before the owned invocation outcome was durable.
+            let mut effect: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            effect["commit"]["finished"] = json!(false);
+            effect["commit"]["owner"] = Value::Null;
+            fs::write(&path, serde_json::to_vec(&effect).unwrap()).unwrap();
+        }
+        let retained = fs::read(&path).unwrap();
+        assert!(!publish(&repo, &token).status.success());
+        assert_eq!(fs::read(&path).unwrap(), retained);
+        assert_eq!(repo.git(&["rev-parse", "HEAD"]), base);
+        assert_eq!(
+            fs::read_to_string(repo.0.join("hook-calls")).unwrap(),
+            "hook\n"
+        );
+    }
 }
 
 fn journal_run(store: &StateStore, generation: u64) -> RunIdentity {

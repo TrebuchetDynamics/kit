@@ -22,7 +22,7 @@ enum Command {
     Version,
     /// Report implemented commands and versioned wire contracts as JSON.
     Capabilities,
-    /// Inspect committed tasks only (no mutations or working-tree reads).
+    /// Inspect committed tasks or explicitly preview/publish pending records.
     Tasks {
         #[arg(long, global = true)]
         repo: Option<std::path::PathBuf>,
@@ -68,8 +68,19 @@ enum Command {
 enum TaskCommand {
     List,
     Goals,
-    Show { id: String },
-    Why { id: String },
+    Show {
+        id: String,
+    },
+    Why {
+        id: String,
+    },
+    /// Preview exact pending task/goal records, or publish a reviewed token locally.
+    Commit {
+        #[arg(long, conflicts_with = "expect_token")]
+        dry_run: bool,
+        #[arg(long)]
+        expect_token: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -111,7 +122,7 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     "version": "available",
                     "capabilities": "available",
                     "run": "explicit-local-cycle",
-                    "tasks": ["list", "goals", "show", "why"],
+                    "tasks": ["list", "goals", "show", "why", "commit"],
                     "status": "journal-projection-only",
                     "internal-agent": "owned-only"
                 },
@@ -121,6 +132,7 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     "agent_result": CONTRACT_VERSION,
                     "runtime_event": CONTRACT_VERSION,
                     "task_inspection": 1,
+                    "task_publication": 1,
                     "status": 1,
                     "roles": runtime::ROLES,
                     "max_request_bytes": runtime::MAX_REQUEST_BYTES,
@@ -133,6 +145,77 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         Command::Tasks { repo, rev, command } => {
             use autowork_next::task_store::{Record, Scope, TaskStore};
             let repo = repo.ok_or_else(|| io::Error::other("tasks requires --repo PATH"))?;
+            if let TaskCommand::Commit {
+                dry_run,
+                expect_token,
+            } = command
+            {
+                use autowork_next::{execution::*, state::StateStore, task_store::TaskService};
+                if rev != "HEAD" {
+                    return Err(io::Error::other("tasks commit requires --rev HEAD").into());
+                }
+                if expect_token
+                    .as_deref()
+                    .is_some_and(|t| !autowork_next::task_store::valid_publication_token(t))
+                {
+                    return Err(io::Error::other("malformed publication token").into());
+                }
+                let repo = std::fs::canonicalize(repo)?;
+                let service = TaskService::new(&repo)?;
+                if dry_run {
+                    println!("{}", serde_json::to_string(&service.preview_pending()?)?);
+                    return Ok(());
+                }
+                let common = std::process::Command::new("/usr/bin/git")
+                    .env_clear()
+                    .env("PATH", "/usr/bin:/bin")
+                    .args(["--no-replace-objects", "-C"])
+                    .arg(&repo)
+                    .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+                    .output()?;
+                if !common.status.success() {
+                    return Err(io::Error::other("Git repository required").into());
+                }
+                let common = String::from_utf8(common.stdout)?;
+                let state = StateStore::open(
+                    common
+                        .strip_suffix('\n')
+                        .ok_or_else(|| io::Error::other("invalid Git directory"))?,
+                )?;
+                let binary = std::env::current_exe()?;
+                // No routes and no dispatch: this runtime only satisfies the shared constructor.
+                let runtime = runtime::Runtime::new(
+                    binary.clone(),
+                    state.directory().to_owned(),
+                    Default::default(),
+                    std::time::Duration::from_secs(120),
+                )?;
+                let coordinator = Coordinator::new(
+                    &repo,
+                    &binary,
+                    &runtime,
+                    &service,
+                    &state,
+                    RunOptions {
+                        worker_model: String::new(),
+                        reviewer_model: String::new(),
+                        planner_model: String::new(),
+                        max_tasks: None,
+                        allow_commit: true,
+                        control: Control::default(),
+                        prerequisites: vec![],
+                    },
+                )?;
+                let result = match coordinator.publish_pending(expect_token.as_deref())? {
+                    Some((token, revision)) => json!({"state":"committed", "commit":revision.0,
+                        "token":token, "publication":"local_only", "execution_evaluated":false,
+                        "closure_evaluated":false}),
+                    None => json!({"state":"clean", "commit":null, "token":null,
+                        "publication":"local_only", "execution_evaluated":false, "closure_evaluated":false}),
+                };
+                println!("{result}");
+                return Ok(());
+            }
             let snapshot = TaskStore::read_at(&repo, &rev)
                 .map_err(|_| io::Error::other("committed task snapshot unavailable"))?;
             let source = json!({"only": true, "admission_evaluated": false,
