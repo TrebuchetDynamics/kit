@@ -474,6 +474,79 @@ class TaskCommandTests(unittest.TestCase):
         self.assertEqual(self.git('show', '--name-only', '--format=', 'HEAD').split(),
                          ['tasks/items/T-1.md'])
 
+    def test_decide_detached_save_is_explicit_and_pending(self):
+        name = 'tasks/items/T-1.md'
+        path = self.repo / name
+        self.tasks('decide', 'T-1', 'Existing direction')
+        self.tasks('hold', 'T-1', '--by', 'fixture hold')
+        self.commit()
+        self.git('checkout', '--detach', '-q')
+        original = commands.cmd_show(self.repo, 'T-1', worktree=True)
+        self.assertFalse(original['display']['pending'])
+        head, refs = self.git('rev-parse', 'HEAD'), self.git('show-ref')
+        flags = ('--commit', '--save-if-detached')
+        real_run = commands._git_run
+        def broken_ref(repo, *args, **kwargs):
+            if args[:1] == ('symbolic-ref',):
+                return subprocess.CompletedProcess(args, 128, '', 'ref unavailable')
+            return real_run(repo, *args, **kwargs)
+        before = path.read_bytes()
+        with patch.object(commands, '_git_run', side_effect=broken_ref):
+            with self.assertRaisesRegex(commands.CommandError, 'ref unavailable'):
+                commands.cmd_decide(self.repo, 'T-1', 'Not saved', commit=True, save_if_detached=True)
+        self.assertEqual(path.read_bytes(), before)
+        clean = json.loads(self.tasks('decide', 'T-1', 'Existing direction',
+                                      '--section', original['section'], *flags).stdout)
+        self.assertEqual((clean['lifecycle']['state'], clean['files'], clean['commit']), ('clean', [], None))
+        other = self.repo / 'tasks/goals/G-1.md'
+        other.write_text(other.read_text() + '\n- Other editor: preserve goal\n')
+        path.write_text(path.read_text() + '\n- Other editor: preserve note\n')
+        (self.repo / 'staged.txt').write_text('preserve staged\n')
+        self.git('add', 'staged.txt')
+        index = (self.repo / '.git/index').read_bytes()
+        before, other_before = path.read_bytes(), other.read_bytes()
+        revision = commands.cmd_show(self.repo, 'T-1', worktree=True)['record_revision']
+        refused = self.tasks('decide', 'T-1', 'New direction', '--commit', ok=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('detached HEAD', refused.stderr)
+        self.assertIn('--save-if-detached', refused.stderr)
+        self.assertEqual(path.read_bytes(), before)
+        result = json.loads(self.tasks('decide', 'T-1', 'New direction', '--section', 'Next',
+                                       '--expect', revision, *flags).stdout)
+        self.assertEqual((result['lifecycle']['state'], result['commit']), ('pending_commit', None))
+        self.assertFalse(result['dry_run'])
+        self.assertEqual(result['files'], ['tasks/goals/G-1.md', name])
+        saved = commands.cmd_show(self.repo, 'T-1', worktree=True)
+        self.assertTrue(saved['display']['pending'])
+        self.assertIn(f'Owner decision: {date.today().isoformat()}: New direction', saved['notes'])
+        self.assertEqual(saved['section'], 'Next')
+        for key in ('ownership', 'live', 'closure', 'status', 'contract_hash'):
+            self.assertEqual(saved[key], original[key])
+        self.assertIn('Other editor: preserve note', saved['notes'])
+        self.assertIn('Held by: fixture hold', saved['notes'])
+        saved_bytes = path.read_bytes()
+        again = json.loads(self.tasks('decide', 'T-1', 'New direction', '--section', 'Next', *flags).stdout)
+        self.assertEqual(again['lifecycle']['state'], 'pending_commit')
+        self.assertEqual(path.read_bytes(), saved_bytes)
+        stale = self.tasks('decide', 'T-1', 'Stale answer', '--expect', revision, *flags, ok=False)
+        self.assertNotEqual(stale.returncode, 0)
+        self.assertEqual(path.read_bytes(), saved_bytes)
+        self.assertEqual(other.read_bytes(), other_before)
+        self.assertEqual((self.repo / '.git/index').read_bytes(), index)
+        self.assertEqual((self.git('rev-parse', 'HEAD'), self.git('show-ref')), (head, refs))
+        self.assertEqual(self.git('rev-parse', '--symbolic-full-name', 'HEAD').strip(), 'HEAD')
+        # An unchanged committed answer must still disclose unrelated pending edits.
+        pending = json.loads(self.tasks('decide', 'T-1', 'Existing direction',
+                                        '--section', original['section'], *flags).stdout)
+        self.assertEqual((pending['lifecycle']['state'], pending['commit']), ('pending_commit', None))
+        self.assertIn('tasks/goals/G-1.md', pending['files'])
+        before = path.read_bytes()
+        self.git('checkout', '-qb', 'named-non-main')
+        refused = self.tasks('decide', 'T-1', 'Not saved', *flags, ok=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('main or master', refused.stderr)
+        self.assertEqual(path.read_bytes(), before)
+
     def test_decide_commit_recovers_a_previously_saved_answer(self):
         self.tasks('decide', 'T-1', 'Old local answer')
         self.tasks('decide', 'T-1', 'Use the offline option', '--commit')
@@ -485,7 +558,7 @@ class TaskCommandTests(unittest.TestCase):
         hook = self.repo / '.git/hooks/pre-commit'
         hook.write_text('#!/bin/sh\necho blocked-by-test >&2\nexit 1\n')
         hook.chmod(0o755)
-        refused = self.tasks('decide', 'T-1', 'Keep my answer', '--commit', ok=False)
+        refused = self.tasks('decide', 'T-1', 'Keep my answer', '--commit', '--save-if-detached', ok=False)
         self.assertNotEqual(refused.returncode, 0)
         self.assertIn('pending commit', refused.stderr)
         self.assertIn('blocked-by-test', refused.stderr)

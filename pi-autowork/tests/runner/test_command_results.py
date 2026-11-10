@@ -55,6 +55,27 @@ class CommandResultsTests(unittest.TestCase):
                 outcome = self.interpret(argv, stdout=json.dumps({'lifecycle': lifecycle}))
                 self.assertEqual(outcome, command_results.Outcome(True, lifecycle['message'], True))
 
+    def test_detached_save_receipts_require_decide_opt_in_and_saved_paths(self):
+        decide = ['tasks', 'decide', 'T-1', '--commit']
+        field = ['tasks', 'field', 'T-1', 'Owner decision', 'answer', '--commit']
+        for state, files in (('pending_commit', ['tasks/items/T-1.md']), ('clean', [])):
+            receipt = dict(lifecycle=task_status.edit_lifecycle(state), files=files, commit=None)
+            for argv, expected in ((decide, False), (decide + ['--save-if-detached'], True),
+                                   (field + ['--save-if-detached'], False)):
+                with self.subTest(state=state, argv=argv):
+                    outcome = self.interpret(argv, stdout=json.dumps(receipt))
+                    self.assertEqual(outcome.ok, expected)
+                    if expected:
+                        self.assertEqual(outcome.message, task_status.edit_lifecycle(state)['message'])
+                        self.assertNotIn('committed locally', outcome.message)
+            for invalid in ({**receipt, 'commit': 'invented'}, {**receipt, 'files': None},
+                            {**receipt, 'files': [] if files else ['tasks/items/T-1.md']},
+                            {**receipt, 'files': ['not-a-task']},
+                            {**receipt, 'lifecycle': {'state': state}}):
+                with self.subTest(invalid=invalid):
+                    self.assertFalse(self.interpret(decide + ['--save-if-detached'],
+                                                    stdout=json.dumps(invalid)).ok)
+
     def test_invalid_receipts_keep_draft_and_refuse_success(self):
         for receipt in ('not json', '{}', 'null', '[]',
                         '{"lifecycle": null}', '{"lifecycle": {"state": "committed"}}',

@@ -27,9 +27,20 @@ def interpret(argv, label, result):
         if '--commit' in argv:
             try:
                 receipt = json.loads(result.stdout)
-                if receipt['lifecycle']['state'] != 'committed':
-                    raise ValueError('answer commit not confirmed')
+                state = receipt['lifecycle']['state']
                 message = receipt['lifecycle']['message']
+                if not isinstance(message, str) or not message:
+                    raise ValueError('answer lifecycle message unavailable')
+                if state != 'committed':
+                    if not (argv[1:3] == ['tasks', 'decide'] and '--save-if-detached' in argv
+                            and state in ('pending_commit', 'clean') and receipt['commit'] is None
+                            and isinstance(receipt['files'], list)
+                            and bool(receipt['files']) == (state == 'pending_commit')
+                            and all(isinstance(path, str) and path.startswith('tasks/')
+                                    and all(part not in ('', '.', '..') for part in path.split('/'))
+                                    for path in receipt['files'])):
+                        raise ValueError('answer commit not confirmed')
+                    message = task_status.edit_lifecycle(state)['message']
             except (ValueError, KeyError, TypeError):
                 ok, message = False, 'Answer commit not confirmed; inspect tasks handoff before retrying. Draft kept.'
         else:

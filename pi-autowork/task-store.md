@@ -304,11 +304,24 @@ and does not remove holds or grant live/completion authority. `--commit` explici
 saves and commits only the answer and requested section against HEAD on main/master,
 using normal Git hooks. Other task edits, unrelated notes and unrelated staged edits
 are preserved; a staged target or an uncommitted contract requires separate review.
-A commit failure retains the saved answer and reports pending/unconfirmed handoff.
+`decide --commit --save-if-detached` explicitly opts into a local save on detached
+HEAD. It uses the same revision-checked writer and whole-store validation, without
+switching branches, creating a detached commit, or changing refs/index. Its receipt
+has `commit: null`, pending `files`, and `lifecycle.state: "pending_commit"`; the
+pending diff also discloses existing task edits. If the answer/section already
+matches committed bytes, no new pending delta is invented: the state is `clean`
+when no task edits remain, otherwise genuine existing pending edits are reported.
+The opt-in requires `--commit`, applies only to `decide`, and does not relax
+staged-target, contract, live-worker or Git drift guards. Plain `--commit` refuses
+detached HEAD before writing; named non-main branches still refuse with the opt-in.
+Other Git/ref failures are errors, never a detached-save fallback.
+A commit failure retains the saved answer and reports pending/unconfirmed handoff
+as failure, not successful detached saving. Neither local-save nor commit success
+proves runner acceptance.
 `field ID 'Blocker resolution' TEXT --commit` provides the same scoped handoff for
 quick-hold answers (also available for the `Owner decision` note, not typed fields).
 Without `--commit`, CLI writes remain local-only. In the TUI, **e Decide**
-opens this form and Save uses `--commit`; [the planning console](../docs/planning-console.md) separately
+opens this form and Save uses `--commit --save-if-detached`; [the planning console](../docs/planning-console.md) separately
 supports AI discussion and explicit proposal review/apply.
 
 `handoff [target]` is the [shared decision recovery report](decision-handoff.md).

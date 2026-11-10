@@ -48,10 +48,14 @@ class CommandError(Exception):
     """A refusal with its message; nothing was written."""
 
 
-def _git(repo, *args, env=None, raw=False):
+def _git_run(repo, *args, env=None):
     clean = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
-    result = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True,
-                            env={**clean, **(env or {})}, timeout=60)
+    return subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True,
+                          env={**clean, **(env or {})}, timeout=60)
+
+
+def _git(repo, *args, env=None, raw=False):
+    result = _git_run(repo, *args, env=env)
     if result.returncode:
         raise CommandError(f'git {args[0]} failed: {result.stderr.strip()}')
     return result.stdout if raw else result.stdout.strip()
@@ -451,8 +455,11 @@ def cmd_show(repo, tid, rev='HEAD', worktree=False):
     t = _task(store, tid)
     from pi_autowork.task_snapshot import task_display
     blocked = task_select.blocking(store, t)
+    display = task_display(t, store)
+    if worktree:
+        display['pending'] = t.path in TaskStore.pending(repo)
     return dict(id=t.id, title=t.title, short=t.short, status=t.status, goal=t.goal, section=t.section,
-                rank=t.rank, display=task_display(t, store), depends_on=list(t.depends_on),
+                rank=t.rank, display=display, depends_on=list(t.depends_on),
                 verified_depends_on=list(t.verified_depends_on),
                 closure=t.closure_info, presentation=task_status.task(t, blocked.code if blocked else None), touches=list(t.touches), resources=list(t.resources),
                 kind=t.kind.value, ownership=t.ownership.value, live=t.live.value, scope=t.scope,
@@ -882,16 +889,28 @@ def cmd_place(repo, tid, section, decision=None):
     _set(repo, tid, {'section': section, 'rank': bottom_rank(store, section, without=tid)}, note)
 
 
-def _commit_answer(repo, tid, note, section=None):
+def _commit_answer(repo, tid, note, section=None, *, save_if_detached=False):
     """Save an answer and commit only its delta against HEAD; retain all other edits.
 
     A staged target or a draft contract needs separate review. Other tasks and even
     unrelated notes in this record are neither staged nor silently committed.
     """
     head = _git(repo, 'rev-parse', 'HEAD')
-    branch = _git(repo, 'symbolic-ref', '--quiet', '--short', 'HEAD')
-    if branch not in ('main', 'master'):
+    symbolic = _git_run(repo, 'symbolic-ref', '--quiet', '--short', 'HEAD')
+    if symbolic.returncode not in (0, 1):
+        raise CommandError(f'git symbolic-ref failed: {symbolic.stderr.strip()}; nothing written')
+    detached = symbolic.returncode == 1
+    branch = symbolic.stdout.strip()
+    if detached and not save_if_detached:
+        raise CommandError('answer --commit requires main or master; detached HEAD: '
+                           'use decide --commit --save-if-detached to save locally pending commit; nothing written')
+    if not detached and branch not in ('main', 'master'):
         raise CommandError('answer --commit requires main or master checked out; nothing written')
+    if detached:
+        git_dir = Path(_git(repo, 'rev-parse', '--absolute-git-dir'))
+        index = (git_dir / 'index').read_bytes()
+        if any((git_dir / name).exists() for name in ('index.lock', 'HEAD.lock')):
+            raise CommandError('Git HEAD or index is locked; nothing written')
     reason = landing.checkout_operation(repo, read_git=_git)
     if reason:
         raise CommandError('cannot commit an answer while ' + reason)
@@ -911,13 +930,24 @@ def _commit_answer(repo, tid, note, section=None):
             raise CommandError('section is Now, Next or Needs decision')
         if section != committed.section or section != current.section:
             _unheld(repo, tid)
-        changes = dict(section=section, rank=bottom_rank(store, section, without=tid))
+            changes = dict(section=section, rank=bottom_rank(store, section, without=tid))
     text = _git(repo, 'show', f'{head}:{name}', raw=True)
     if changes:
         text = task_store.edit(text, changes)
     text = task_store.set_note(text, *note)
     _set(repo, tid, changes, note)
     try:
+        if detached:
+            # Preview the real saved store, including pre-existing edits, without publishing.
+            result = _commit_snapshot(repo, dry_run=True, expected_head=head, expected_branch='HEAD')
+            if (_git(repo, 'rev-parse', 'HEAD') != head
+                    or _git(repo, 'rev-parse', '--symbolic-full-name', 'HEAD') != 'HEAD'
+                    or (git_dir / 'index').read_bytes() != index
+                    or any((git_dir / lock).exists() for lock in ('index.lock', 'HEAD.lock'))
+                    or landing.checkout_operation(repo, read_git=_git)):
+                raise CommandError('repository HEAD, branch or index changed; inspect the saved answer')
+            result['dry_run'] = False
+            return result
         result = _commit_snapshot(repo, f'tasks: answer {tid}', records={name: text},
                                   expected_head=head, expected_branch=f'refs/heads/{branch}')
     except (CommandError, StoreError, WriteError, OSError, subprocess.SubprocessError) as exc:
@@ -929,8 +959,10 @@ def _commit_answer(repo, tid, note, section=None):
 
 
 @_serialized
-def cmd_decide(repo, tid, decision, section=None, *, commit=False):
+def cmd_decide(repo, tid, decision, section=None, *, commit=False, save_if_detached=False):
     """Record owner direction, optionally moving an open task; no completion/authority inference."""
+    if save_if_detached and not commit:
+        raise CommandError('--save-if-detached requires --commit')
     decision = ' '.join(decision.split())
     if not decision:
         raise CommandError('decide needs a nonempty decision')
@@ -939,7 +971,8 @@ def cmd_decide(repo, tid, decision, section=None, *, commit=False):
     if not re.match(r'^\d{4}-\d{2}-\d{2}\b', decision):
         decision = f'{date.today().isoformat()}: {decision}'
     if commit:
-        return _commit_answer(repo, tid, ('Owner decision', decision), section)
+        return _commit_answer(repo, tid, ('Owner decision', decision), section,
+                              save_if_detached=save_if_detached)
     if section is not None:
         cmd_place(repo, tid, section, decision=decision)
     else:
@@ -1120,6 +1153,8 @@ def add_parser(sub):
     p.add_argument('task'); p.add_argument('decision'); p.add_argument('repo', nargs='?', default='.')
     p.add_argument('--section', choices=('Now', 'Next', 'Needs decision'), help='optionally move the open task')
     p.add_argument('--commit', action='store_true', help='save and commit only this answer and requested section, not other edits')
+    p.add_argument('--save-if-detached', action='store_true',
+                   help='with --commit, save locally pending commit on detached HEAD; never switch branches')
     p = verbs.add_parser('move')
     p.add_argument('task'); p.add_argument('direction', choices=('up', 'down'))
     p.add_argument('repo', nargs='?', default='.')
@@ -1308,7 +1343,8 @@ def _run(args, repo):
         cmd_place(repo, args.task, args.section, args.decision)
         out = f'ok {args.task} -> {args.section}'
     elif verb == 'decide':
-        result = cmd_decide(repo, args.task, args.decision, args.section, commit=args.commit)
+        result = cmd_decide(repo, args.task, args.decision, args.section, commit=args.commit,
+                            save_if_detached=args.save_if_detached)
         out = result if args.commit else f'ok {args.task} decision recorded (not committed)'
     elif verb == 'move':
         changes = cmd_move(repo, args.task, args.direction)

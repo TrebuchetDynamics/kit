@@ -10,12 +10,21 @@ The result includes the complete pending `tasks/` diff, `pending_revision`, exis
 the same handoff object, so hosts do not need their own decision-state inference.
 Capabilities advertise `handoff` as a task verb. No new execution action is granted.
 
-The TUI's **Save answer** now uses `tasks decide --commit` (and scoped answer-note
-`field --commit` for a quick-hold resolution). It saves and commits only that answer
-and its requested section, not unrelated work. Normal CLI writes without `--commit`
-remain local-only. A failed commit retains the local answer and reports failure;
-use this report for old pending answers or uncertain commit outcomes. A successful
-commit still does not prove runner acceptance or grant live authority.
+The TUI's **Save answer** uses `tasks decide --commit --save-if-detached` (quick-hold
+resolution still uses scoped answer-note `field --commit`, with no detached opt-in).
+On main/master it commits only the answer and requested section, not unrelated work.
+On detached HEAD it saves locally and reports `pending_commit` with saved paths and
+`commit: null`, without switching branches or changing refs/index. Reopening shows
+the saved answer and pending feedback. If the answer/section matches committed bytes,
+no new pending delta or commit is claimed; existing pending edits remain disclosed,
+or `clean` is returned when none remain. Plain `--commit` and named non-main
+branches still refuse detached/unsupported branch saves respectively.
+
+Normal CLI writes without `--commit` remain local-only. Detached pending success is
+not a fallback for hook failures or Git/ref/index uncertainty. A failed commit
+retains the local answer and reports failure; use this report before retrying old
+pending answers or uncertain commit outcomes. Neither successful saving nor a local
+commit proves runner acceptance or grants live authority.
 
 Scoped answer commits reserve the real Git index and HEAD, run the repository's
 hooks with the original branch name and effective configuration in an isolated
