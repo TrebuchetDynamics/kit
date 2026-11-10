@@ -1261,6 +1261,41 @@ def log_lines(text):
             for line, style, count, _, _, first, last in out]
 
 
+def activity_lines(text):
+    """Dashboard-only memory-wait ranges. Full Log/Raw retain every original sample."""
+    pattern = re.compile(r'^(\[\d\d:\d\d\]) No task can start now: (.+)resource gate: (\d+) MB available, need (\d+) MB for one more worker$')
+    projected, pending = [], None
+    def flush():
+        nonlocal pending
+        if pending is None:
+            return
+        if pending['count'] == 1:
+            projected.append(pending['raw'])
+        else:
+            projected.append(f"{pending['first']} Waiting for memory: {pending['latest']} MB available / {pending['need']} MB required"
+                             f" · {pending['count']} updates ({pending['low']}–{pending['high']} MB), last {pending['last']}"
+                             f" · {pending['context'].rstrip(': ')} · full samples in Log")
+        pending = None
+    for line in text.splitlines():
+        match = pattern.match(line)
+        if not match:
+            flush()
+            projected.append(line)
+            continue
+        stamp, context, available, required = match.groups()
+        amount = int(available)
+        if pending and (pending['context'], pending['need']) == (context, required):
+            pending.update(latest=amount, last=stamp, count=pending['count'] + 1,
+                           low=min(pending['low'], amount), high=max(pending['high'], amount))
+        else:
+            flush()
+            pending = dict(first=stamp, last=stamp, context=context, need=required, latest=amount,
+                           low=amount, high=amount, count=1, raw=line)
+    flush()
+    return [(line, 'yellow' if 'Waiting for memory:' in line else style)
+            for line, style in log_lines('\n'.join(projected))]
+
+
 def quiet_log(text):
     """log_lines without styles."""
     return '\n'.join(line for line, _ in log_lines(text))

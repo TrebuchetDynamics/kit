@@ -1062,13 +1062,13 @@ class FleetApp(App):
     #runners, #lanes, #log { border-title-color: $text; border-title-style: bold; }
     #runners { border-top: solid $panel; }
     #runners { height: auto; min-height: 3; max-height: 25%; }
-    #overview { height: auto; max-height: 6; padding: 0 1; background: $surface; }
+    #overview { height: auto; max-height: 6; margin: 1 0; padding: 0 1; background: $surface; }
     #detail-scroll { display: none; height: 6; border-top: solid $panel; }
     #detail { height: auto; padding: 0 1; }
     #lanes { height: auto; min-height: 3; max-height: 20%; border-top: solid $panel; }
     #log { height: 1fr; min-height: 4; border-top: solid $panel; }
     .short #runners { max-height: 20%; }
-    .short #overview { max-height: 3; }
+    .short #overview { max-height: 3; margin: 0; }
     .short #detail-scroll { height: 5; }
     '''
     BINDINGS = [
@@ -1170,13 +1170,13 @@ class FleetApp(App):
         yield DataTable(id='lanes', cursor_type='row', zebra_stripes=True)
         yield RichLog(id='log', wrap=True, highlight=False, markup=False)
 
-    # Wide terminals show each count; narrow ones keep Runner/State/Total and put
-    # the breakdown in the selected summary. Needs and Now share spare width.
+    # One short project list at every width. Full counts and source observations
+    # remain in the selected summary and scrollable Details.
     # Every open task is in one count bucket. Decision is Needs-decision membership,
     # not necessarily an unanswered owner question.
-    RUNNER_COLUMNS = ('Runner', 'State', 'Active', 'Mergeable', 'Waiting', 'Blocker', 'Decision', 'Total')
-    RUNNER_TEXT = ('Needs', 'Now')
-    LANE_COLUMNS = ('Task', 'Status', 'Try', 'For', 'Quiet')
+    RUNNER_COLUMNS = ('Project', 'Status', 'Tasks')
+    RUNNER_TEXT = ()
+    LANE_COLUMNS = ('Task', 'Status')
     LANE_TEXT = ('Doing',)
     STATUS_STYLE = {fleet_view.ACTIVE: 'bold green', fleet_view.MERGEABLE: 'bold cyan',
                     fleet_view.WAITING: 'bold yellow', fleet_view.BLOCKER: 'bold red'}
@@ -1185,10 +1185,10 @@ class FleetApp(App):
         self.reads = tui_reads.ReadCoordinator()
         self.reader = self.reads.owner(self.read_done)
         table = self.query_one('#runners', DataTable)
-        table.border_title = 'Runners'
+        table.border_title = '1 · Projects — select a project'
         table.add_columns(*self.RUNNER_COLUMNS, *self.RUNNER_TEXT)
         self.query_one('#lanes', DataTable).add_columns(*self.LANE_COLUMNS, *self.LANE_TEXT)
-        self.query_one('#log', RichLog).border_title = 'Activity · last hour'
+        self.query_one('#log', RichLog).border_title = '3 · Recent activity · last hour'
         self.action_refresh()
         self.refresh_log()
         self.set_interval(REFRESH, self.poll_refresh)
@@ -1396,17 +1396,14 @@ class FleetApp(App):
         for selector in ('#runners', '#overview', '#lanes', '#log'):
             self.query_one(selector).display = not welcome
         keep = self.selected
-        # At narrow widths the selected summary carries the full count breakdown.
-        # Bound identity/state cells, rather than letting a long name widen every row.
-        compact = self.size.width < 120
-        rows = fleet_view.runner_rows(self.runners)
-        total_width = max([len('Total'), *(cell_len(row['Total'][0]) for row in rows)])
-        # State + Total + three cell paddings + scrollbar/slack share one budget.
-        name_room = min(32, max(8, self.size.width - 20 - total_width - 10))
-        self.fill(table, rows,
-                  ('Runner', 'State', 'Total') if compact else self.RUNNER_COLUMNS,
-                  () if compact else self.RUNNER_TEXT,
-                  limits={'Runner': name_room, 'State': 20})
+        # Keep the overview readable at every width; diagnostics live in Details.
+        rows = [{'_key': row['Runner'][0], 'Project': row['Runner'],
+                 'Status': row['State'], 'Tasks': row['Total']}
+                for row in fleet_view.runner_rows(self.runners)]
+        total_width = max([len('Tasks'), *(cell_len(row['Tasks'][0]) for row in rows)])
+        name_room = min(40, max(8, self.size.width - 20 - total_width - 10))
+        self.fill(table, rows, self.RUNNER_COLUMNS, (),
+                  limits={'Project': name_room, 'Status': 24})
         names = [r.name for r in self.runners]
         if names:
             row = names.index(keep) if keep in names else 0
@@ -1503,7 +1500,7 @@ class FleetApp(App):
         text = Text()
         def line(value, style=''):
             text.append(self.fit(value, max(1, self.size.width - 2)) + '\n', style)
-        line(f'{runner.name} · {view.label} · Next: {self.next_hint(runner)}', view.style)
+        line(f'{runner.name} · {view.label}' + (f' · Next: {self.next_hint(runner)}' if self.size.height < 22 else ''), view.style)
         counts = view.counts
         diagnostics = f'{view.error_count} errors · {view.source_note_count} notes'
         provenance = f'Inventory {view.inventory_freshness} · execution {view.execution_freshness}'
@@ -1524,13 +1521,22 @@ class FleetApp(App):
                 line(count_line + ' · ' + provenance, 'dim')
             line('Main: ' + check if check else 'Why: ' + why)
         else:
+            questions = len(self.answerable_questions(runner))
+            action = self.next_hint(runner)
+            if questions:
+                action += f' — {questions} question(s) need your input'
+            line('Next: ' + action, 'bold cyan')
             line(count_line, 'yellow' if counts is None else '')
             if counts is not None:
-                line(f'{waiting} waiting · {blocker} blocker · {decision} in Needs decision')
-            line(diagnostics + ' · ' + provenance, 'yellow' if view.error_count else 'dim')
-            line('Why: ' + ' '.join(why.split()))
+                line(f'{waiting} waiting · {blocker} blocker · {decision} in Needs decision', 'dim')
             if check:
                 line('Main: ' + check, 'bold red' if runner.main_check.get('state') in ('red', 'broken') else '')
+            if view.error_count or view.source_note_count or view.inventory_freshness != 'fresh' or view.execution_freshness != 'fresh':
+                line(diagnostics + ' · ' + provenance, 'yellow' if view.error_count else 'dim')
+            elif runner.gate:
+                line('Waiting for resources: ' + runner.gate, 'yellow')
+            elif why and not check:
+                line('Status: ' + ' '.join(why.split()), 'dim')
         text.rstrip()
         publish_text(self.query_one('#overview', Static), text)
 
@@ -1628,7 +1634,8 @@ class FleetApp(App):
             detail_row(text, 'Task', f'{self.task_name(runner, row.task)} · {row.task}')
             detail_row(text, 'State', row.state + ' · ' + row.why)
         for lane in runner.lanes:
-            detail_row(text, 'Observation', f'{lane.task} · {fleet_view.lane_status(runner, lane)[0]} · {doing(lane)}')
+            detail_row(text, 'Observation', f'{lane.task} · {fleet_view.lane_status(runner, lane)[0]} · {doing(lane)}'
+                       f' · attempt {lane.attempt} · {fleet_view.duration(lane.minutes)} elapsed · {fleet_view.quiet(lane)}')
         if runner.triage_failures:
             detail_row(text, 'Recovery', fleet_view.recovery_detail(runner), 'bold yellow')
         if runner.preparation is not None:
@@ -1702,12 +1709,12 @@ class FleetApp(App):
                          'Quiet': (fleet_view.quiet(lane).removeprefix('quiet '), 'bold yellow'),
                          'Doing': (activity, fleet_view.action_style(activity))})
         self._lane_targets = targets
-        table.border_title = f'Workers · {len(runner.lanes)} observed · i Details / Enter log'
+        table.border_title = f'2 · Current work · {len(runner.lanes)} observed · Enter log'
         compact = self.size.width < 120
         for row in rows:
             status, style = row['Status']
-            if compact and status.startswith('Annotation · '):
-                row['Status'] = ('Unmatched · ' + status.removeprefix('Annotation · ').removesuffix(' (unmatched execution)'), style)
+            if status.startswith('Annotation · '):
+                row['Status'] = ('Unconfirmed · ' + status.removeprefix('Annotation · ').removesuffix(' (unmatched execution)'), style)
         # One shared width budget: names cannot push state or navigation off screen.
         name_room = max(12, self.size.width // 2 - 5) if compact else min(48, self.size.width // 3)
         state_room = max(12, self.size.width - name_room - 8) if compact else 32
@@ -1739,7 +1746,7 @@ class FleetApp(App):
             log.write(f'{runner.name}: reading journal…')
         runner, journal = read_input(runner), self.journalctl
         return self.read('journal', (runner.name, runner.repo),
-                         lambda: fleet_view.log_lines(fleet_view.logs(runner, lines=400, journalctl=journal, since='-60min', strict=True)),
+                         lambda: fleet_view.activity_lines(fleet_view.logs(runner, lines=400, journalctl=journal, since='-60min', strict=True)),
                          lambda lines: self.show_log(runner.name, lines),
                          lambda error: self.show_log(runner.name, self._journal_lines, str(error)))
 

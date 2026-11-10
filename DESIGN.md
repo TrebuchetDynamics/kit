@@ -39,7 +39,13 @@ Terminals may be small, remote, keyboard-only, or configured for native text cop
 ## Information architecture
 
 The fleet remains a full-width stack: commands, model, runners, selected summary,
-worker observations, and activity. The fleet menu shows the useful Next action,
+worker observations, and activity. Number the three navigation regions: Projects,
+Current work and Recent activity. The project table keeps only Project/Status/Tasks
+at every width. The selected summary separates the next useful action from task
+counts; omit zero-error/freshness boilerplate when observations are healthy. Keep
+resource waits visible. Worker rows retain task/state/activity, with unjoined
+observations labelled Unconfirmed. Attempts, elapsed/quiet time and all original
+source status text remain in scrollable Details. The fleet menu shows the useful Next action,
 Log, Tasks, Details and More, without duplicates. More exposes secondary actions
 and shortcuts at every size; direct keys remain available. Details holds complete
 task names/IDs, phases and wait reasons, source errors and grouped notes (including
@@ -58,7 +64,11 @@ Escape returns from a secondary screen; opening a menu changes no runner state.
 Activity shows a journal summary. Full-screen Log defaults to Summary and labels
 its local **v Raw / v Summary** control. Raw exposes every original line in the
 captured excerpt, including startup settings and suppressed pending lines. It does
-not promise all historical logs. Keyboard and menu clicks use the same screen-local
+not promise all historical logs. The dashboard alone groups consecutive memory
+waits with identical task/reason context and required memory into one range:
+latest/minimum/maximum available MB, update count and original first/last stamps.
+Different task contexts, thresholds, failures and intervening events break groups.
+Full-screen Summary and Raw retain the original individual memory samples. Keyboard and menu clicks use the same screen-local
 action; Escape/q returns. Adjacent identical recognized events fold with a count
 and original first/last timestamps. Changed failure details, task/revision/target
 identity and unknown multiline diagnostics remain ordered. Missing outcomes stay

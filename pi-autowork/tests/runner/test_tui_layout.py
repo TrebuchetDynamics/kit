@@ -112,7 +112,7 @@ async def layout_pilot():
                             assert table.region.bottom <= height, (selector, table.region)
                         workers = app.query_one('#lanes', DataTable)
                         assert str(workers.get_row_at(0)[0]) == 'EXAMPLE-400-a1b2c3d4'
-                        assert 'unmatched' in str(workers.get_row_at(0)[1]).lower()
+                        assert 'unconfirmed' in str(workers.get_row_at(0)[1]).lower()
                         assert app.current().name == 'example-data-pipeline'
                         assert app.query_one('#log').region.height >= 4
                 # A full fleet and many annotations still leave a visible journal,
