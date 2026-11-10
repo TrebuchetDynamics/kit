@@ -4348,8 +4348,7 @@ class SetupTests(Fixture):
         self.assertIn(f'Toolset:    {selected} at ', result.stdout)
 
     def installed_package(self):
-        """A disposable autowork Pi package whose local origin holds one newer,
-        compatible release, so the update check passes and `pi update` applies."""
+        """A disposable installed Pi package with a local origin, ready for publish()."""
         package = self.root / 'pi-package'
         for part in ('skills', 'adapters', 'scripts', 'pi-autowork'):
             shutil.copytree(ROOT / part, package / part, ignore=shutil.ignore_patterns('__pycache__'))
@@ -4361,9 +4360,10 @@ class SetupTests(Fixture):
         self.origin = self.root / 'origin.git'
         self.git(self.root, 'clone', '-q', '--bare', str(package), str(self.origin))
         self.git(package, 'remote', 'add', 'origin', str(self.origin))
-        self.publish(lambda tree: (tree / 'RELEASE').write_text('2\n'), 'release 2')
-        # Discovery/update must use this fixture, never a host Pi binary or list override.
-        for key in ('FAKE_PI_LIST', 'FAKE_PI_UPDATE'):
+        # Discovery must not inherit a parent's checkout override or immutable release pin.
+        for key in ('PI_AUTOWORK_TOOLSET', 'PI_AUTOWORK_PACKAGE', 'PI_AUTOWORK_PACKAGE_INSTALLED',
+                    'PI_AUTOWORK_COMPONENT', 'PI_AUTOWORK_SCRIPT', 'PI_AUTOWORK_RESELECT',
+                    'PI_AUTOWORK_NEXT_REVISION', 'FAKE_PI_LIST', 'FAKE_PI_UPDATE'):
             self.env.pop(key, None)
         self.env.update(PI_BIN=str(self.bin / 'pi'), FAKE_PI_TOOLSET=str(package),
                         PI_AUTOWORK_UPDATE_INTERVAL='1', FAKE_PI_SOURCE='git:github.com/TrebuchetDynamics/kit')
@@ -4378,9 +4378,18 @@ class SetupTests(Fixture):
         self.git(tree, 'commit', '-qm', message)
         self.git(tree, 'push', '-q', 'origin', 'HEAD:main')
 
+    def hold_update(self):
+        """Keep fake Pi at a checkpoint before it installs the real fetched candidate."""
+        fake = self.bin / 'pi'
+        fake.write_text(fake.read_text().replace("    note({'update': args[1:]})",
+            "    note({'update': args[1:]})\n"
+            "    open(os.environ['FAKE_PI_ROOT'] + '/update-ready', 'w').close()\n"
+            "    while not os.path.exists(os.environ['FAKE_PI_ROOT'] + '/release-update'): time.sleep(0.05)"))
+
     def run_until(self, script, text, timeout=60):
         self.update_output = self.root / 'update-output'
         self.update_identity = self.root / 'update-process.json'
+        self.update_started = time.monotonic()
         # Reuse the subreaper used by the idle fixture; file output cannot fill an undrained pipe.
         with self.update_output.open('w') as output:
             runner = subprocess.Popen(
@@ -4423,7 +4432,9 @@ class SetupTests(Fixture):
                             (b'PI_AUTOWORK_PACKAGE', b'PI_BIN=', b'FAKE_PI_', b'PI_AUTOWORK_UPDATE_INTERVAL='))])
                     except OSError:
                         pass
-                self.fail(f'{description} never observed; guard={runner.poll()}; load={os.getloadavg()}\n'
+                self.retain_evidence()
+                self.fail(f'{description} never observed after {time.monotonic() - self.update_started:.3f}s; '
+                          f'guard={runner.poll()}; load={os.getloadavg()}\n'
                           f'--- runner.log ---\n{log[-4000:]}\n{diagnostics}\n'
                           f'--- output ---\n{self.update_output.read_text()[-4000:]}')
             time.sleep(0.05)
@@ -4441,20 +4452,58 @@ class SetupTests(Fixture):
         return self.update_output.read_text()
 
     def test_an_idle_runner_updates_its_toolset_and_restarts_on_the_new_code(self):
+        started, stages = time.monotonic(), {}
+        # Deterministic isolation regression: inherited pins must not bypass package discovery.
+        self.env.update(PI_BIN='/bin/false', FAKE_PI_LIST='User packages:\n',
+                        PI_AUTOWORK_TOOLSET=str(ROOT), PI_AUTOWORK_PACKAGE=str(ROOT),
+                        PI_AUTOWORK_PACKAGE_INSTALLED='0', PI_AUTOWORK_COMPONENT=str(ROOT / 'pi-autowork'),
+                        PI_AUTOWORK_SCRIPT=str(RUNNER), PI_AUTOWORK_RESELECT='1',
+                        PI_AUTOWORK_NEXT_REVISION='not-a-revision')
         package = self.installed_package()
         before = self.git(package, 'rev-parse', '--short', 'HEAD')
-        runner = self.run_until(package / 'pi-autowork/bin/pi-autowork.sh', 'restarting on it')
-        deadline = time.monotonic() + 30
-        while next(self.state.glob('*/runner.log')).read_text().count('Started (PID') < 2:
-            self.assertLess(time.monotonic(), deadline, 'the runner did not start again')
-            time.sleep(0.2)
-        while not self.done('A', 'B', 'C'):  # the restarted runner carries on with the queue
-            self.assertLess(time.monotonic(), deadline + 60, 'the restarted runner did not finish the queue')
-            time.sleep(0.2)
+        self.hold_update()
+        self.plan({'worker:A': ['released']})
+        self.write_todo(todo([]))
+        self.git(self.repo, 'commit', '-qm', 'start idle before publishing the update')
+        runner = self.run_until(package / 'pi-autowork/bin/pi-autowork.sh', 'Queue empty; checking again')
+        owned = json.loads(self.update_identity.read_text())
+        env = dict(entry.split(b'=', 1) for entry in Path(f'/proc/{owned["pi_pid"]}/environ').read_bytes().split(b'\0')
+                   if b'=' in entry)
+        self.assertEqual(env[b'PI_AUTOWORK_PACKAGE'], os.fsencode(package))
+        self.assertEqual(env[b'PI_AUTOWORK_PACKAGE_INSTALLED'], b'1')
+        initial = json.loads(next(self.state.glob('*/runner.json')).read_text())
+        self.assertEqual(initial['toolset_rev'], before)
+        stages['installed package ready'] = round(time.monotonic() - started, 3)
+        # Publish only after discovery and the original runner's idle checkpoint.
+        self.publish(lambda tree: (tree / 'RELEASE').write_text('2\n'), 'release 2')
+        candidate = self.git(self.origin, 'rev-parse', '--short', 'main')
+        self.observe_update(runner, lambda _: (self.root / 'update-ready').exists(), 'Pi update held')
+        stages['update held'] = round(time.monotonic() - started, 3)
+        # Reuse the broken-release barrier: work in flight prevents another one-second
+        # maintenance probe from racing consumption/activation of the first update.
+        self.write_todo(todo([('A', None), ('B', None), ('C', 'A')]))
+        self.git(self.repo, 'commit', '-qm', 'queue work while the update is held', retry_index_lock=True)
+        self.observe_update(runner, lambda _: (self.root / 'ready-A').exists(), 'old-code worker ready')
+        stages['worker held'] = round(time.monotonic() - started, 3)
+        (self.root / 'release-update').touch()
+        self.observe_update(runner, lambda log: f'Toolset updated to {candidate}; restarting on it' in log,
+                            'qualified update to the published revision')
+        stages['update'] = round(time.monotonic() - started, 3)
+        self.observe_update(runner, lambda log: log.count('Started (PID') >= 2,
+                            'second startup after exec', timeout=30)
+        stages['restart'] = round(time.monotonic() - started, 3)
+        (self.root / 'release-A').touch()
+        # Bound each done-and-merged milestone, not the sum of earlier tasks under load.
+        for task in 'ABC':
+            self.observe_update(runner, lambda log: f'{task}: done' in log and self.done(task),
+                                f'{task} done and merged after restart')
+            stages[task] = round(time.monotonic() - started, 3)
+        self.assertTrue(self.done('A', 'B', 'C'))
         out = self.interrupt_update_runner(runner)
         self.assertEqual(runner.returncode, 130, out)
         after = self.git(package, 'rev-parse', '--short', 'HEAD')
         self.assertIn(f'Toolset updated to {after}; restarting on it', out)
+        self.assertEqual(after, candidate)
         self.assertNotEqual(before, after)
         starts = re.findall(r'^\[(\d{2}:\d{2})\] Started \(PID (\d+)\)\. Stop with Ctrl\+C\.$',
                             out, re.MULTILINE)
@@ -4463,6 +4512,8 @@ class SetupTests(Fixture):
                          {str(json.loads(self.update_identity.read_text())['pi_pid'])}, out)  # exec keeps the PID
         updates = [json.loads(l) for l in self.log.read_text().splitlines() if '"update"' in l]
         self.assertEqual(updates[0]['update'], ['git:github.com/TrebuchetDynamics/kit'])
+        print(f'IDLE_UPDATE_STAGES {stages}; load={os.getloadavg()}; '
+              f'python={sys.executable} {sys.version}', flush=True)
 
     def test_a_release_that_cannot_read_current_state_is_never_installed(self):
         package = self.installed_package()
@@ -4492,11 +4543,7 @@ class SetupTests(Fixture):
             (tree / 'pi-autowork/bin/pi-autowork.sh').read_text() + '\nif then fi\n'), 'broken release')
         # Hold the real Pi update until A is in flight: otherwise the one-second update
         # cadence can launch another maintenance job before activation observes the first.
-        fake = self.bin / 'pi'
-        fake.write_text(fake.read_text().replace("    note({'update': args[1:]})",
-            "    note({'update': args[1:]})\n"
-            "    open(os.environ['FAKE_PI_ROOT'] + '/update-ready', 'w').close()\n"
-            "    while not os.path.exists(os.environ['FAKE_PI_ROOT'] + '/release-update'): time.sleep(0.05)"))
+        self.hold_update()
         self.plan({'worker:A': ['released']})
         self.write_todo(todo([]))
         self.git(self.repo, 'commit', '-qm', 'start with an idle update checkpoint')
