@@ -1,12 +1,15 @@
 """Captured runner presentation: no new inventory or execution authority."""
+import contextlib
+import io
 from dataclasses import FrozenInstanceError, replace
+from types import SimpleNamespace
 from pathlib import Path
 import sys
 import unittest
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from pi_autowork import fleet_view as view, task_snapshot
+from pi_autowork import command, fleet_view as view, task_snapshot
 
 
 class RunnerPresentationTests(unittest.TestCase):
@@ -19,14 +22,14 @@ class RunnerPresentationTests(unittest.TestCase):
 
     def test_same_capture_has_one_runner_label(self):
         runner = self.runner()
-        cases = [(runner, 'Waiting on you'),
+        cases = [(runner, 'Blocked'),
                  (replace(runner, state='paused'), 'Paused'),
                  (replace(runner, state='not running'), 'Not running'),
                  (replace(runner, questions=[]), 'Idle'),
                  (replace(runner, snapshot=replace(runner.snapshot, counts=None, freshness='unavailable')),
                   'Task inventory unavailable'),
                  (replace(runner, snapshot=replace(runner.snapshot, freshness='stale')),
-                  'Waiting on you'),
+                  'Blocked'),
                  (replace(runner, job={'role': 'maintainer'}), 'Working')]
         row = task_snapshot.TaskRow('T-1', 'Task', 'Next', 'Active · Verifying', 'working', bucket='Active')
         review = replace(runner, lanes=[view.Lane('T-1', 'verifying')],
@@ -49,6 +52,65 @@ class RunnerPresentationTests(unittest.TestCase):
         with self.assertRaises(FrozenInstanceError):
             view.presentation(runner).label = 'invented'
 
+    def test_blocked_reason_not_age_distinguishes_owner_repair_and_capacity(self):
+        runner = self.runner()
+        owner = view.presentation(runner)
+        self.assertIn('Needs your action:', owner.explanation)
+        for state, minutes in (('blocked', 1), ('stalled', 480)):
+            row = task_snapshot.TaskRow('T-1', 'Task', 'Next', 'Blocker · Agent repair',
+                                        'held', bucket='Blocker')
+            captured = replace(runner, state=state, minutes=minutes, questions=[],
+                               snapshot=replace(runner.snapshot, rows=(row,), counts=(0, 0, 0, 1, 0, 1)))
+            shown = view.presentation(captured)
+            self.assertEqual(shown.label, 'Blocked')
+            self.assertIn('Needs repair:', shown.explanation)
+            self.assertEqual(captured.state, state)
+        mixed = replace(captured, questions=runner.questions)
+        self.assertIn('needs your action:', view.presentation(mixed).explanation)
+        self.assertIn('Needs repair:', view.presentation(mixed).explanation)
+        capacity = replace(runner, questions=[], state=view.health.HOST_WAIT,
+                           gate='memory below the required threshold',
+                           snapshot=replace(runner.snapshot, counts=(0, 0, 1, 0, 0, 1)))
+        shown = view.presentation(capacity)
+        self.assertEqual(shown.label, 'Blocked')
+        self.assertIn('Waiting for capacity: memory', shown.explanation)
+        self.assertEqual(view.summary([captured, mixed]), [('blocked', 2)])
+        self.assertEqual(view.state_label(runner), 'blocked')
+        owner_row = replace(row, state='Blocker · Needs you', question=True)
+        owner_hold = replace(runner, snapshot=replace(runner.snapshot, rows=(owner_row,),
+                                                      counts=(0, 0, 0, 1, 0, 1)))
+        shown = view.presentation(owner_hold)
+        self.assertIn('Needs your action:', shown.explanation)
+        self.assertNotIn('Needs repair:', shown.explanation)
+        root = dict(id='T-2', kind='held', cause='validation', blocks=1,
+                    resolution_owner='AGENT_REPAIR')
+        dependency = replace(row, state='Blocker', why='dependency cycle')
+        mixed_dependency = replace(owner_hold, repair_roots=[root],
+                                   snapshot=replace(owner_hold.snapshot, rows=(dependency,)))
+        self.assertIn('Needs repair:', view.presentation(mixed_dependency).explanation)
+        legacy = replace(runner, snapshot=None, state='stalled',
+                         held=[('T-2', 'validation')],
+                         waiting_groups=[dict(label='owner action', count=1)])
+        self.assertIn('Needs repair:', view.verdict(legacy)[0])
+        self.assertIn('needs your action:', view.verdict(legacy)[0])
+        self.assertNotIn('repair_roots', command.runner_json(mixed_dependency))
+
+    def test_cli_uses_captured_state_and_keeps_raw_json(self):
+        runner = self.runner()
+        for long in (False, True):
+            output = io.StringIO()
+            with mock.patch.object(command, 'runners', return_value=[runner]), \
+                    contextlib.redirect_stdout(output):
+                self.assertEqual(command.cmd_ls(SimpleNamespace(json=False, long=long), None), 0)
+            text = output.getvalue()
+            self.assertIn('1 blocked', text)
+            self.assertIn('Blocked — Needs your action:', text)
+            self.assertNotIn('1 working', text)
+            self.assertEqual(command.runner_json(runner)['state'], 'working')
+        self.assertEqual(view.health.display_state('stalled'), 'blocked')
+        self.assertEqual(view.health.display_state(view.health.HOST_WAIT), 'blocked')
+        self.assertEqual(view.health.display_state('not cycling'), 'not cycling')
+
     def test_diagnostics_preserve_evidence_without_warning_inflation(self):
         runner = self.runner(acquisition_errors=['pending: read failed', 'pending: read failed'])
         annotations = ('T-9: unmatched execution observation (integrated)',) * 2 + (
@@ -67,7 +129,7 @@ class RunnerPresentationTests(unittest.TestCase):
         self.assertCountEqual([message for g in notes for message in g.originals], annotations)
         self.assertEqual({task for g in notes for task in g.affected_ids}, {'T-9', 'T-10'})
         self.assertEqual((result.counts[0], result.counts[1], result.activity), (0, 0, ()))
-        self.assertEqual(result.label, 'Waiting on you')
+        self.assertEqual(result.label, 'Blocked')
         runner.acquisition_errors.append('later mutation')
         self.assertEqual(result.error_count, 2)
 
@@ -77,7 +139,7 @@ class RunnerPresentationTests(unittest.TestCase):
         with mock.patch.object(Path, 'is_dir', side_effect=AssertionError('filesystem read')), \
                 mock.patch.object(view.task_prepare, 'prepare', side_effect=AssertionError('setup probe')), \
                 mock.patch.object(view.main_check, 'alive', side_effect=AssertionError('process read')):
-            self.assertEqual(view.presentation(runner).label, 'Waiting on you')
+            self.assertEqual(view.presentation(runner).label, 'Blocked')
             runner.prepare_state = 'invalid'
             self.assertEqual(view.presentation(runner).label, 'Task store needs repair')
         with self.assertRaisesRegex(ValueError, 'captured task snapshot'):
@@ -98,7 +160,7 @@ class RunnerPresentationTests(unittest.TestCase):
         self.assertIn('(10m)', original_line)
         self.assertIn('superseded by main', original_line)
         self.assertNotIn('passed', original_line)
-        self.assertEqual((result.label, result.counts[0], result.activity), ('Waiting on you', 0, ()))
+        self.assertEqual((result.label, result.counts[0], result.activity), ('Blocked', 0, ()))
         receipt['check_slot']['started'] = 999
         self.assertEqual(check.execution_started, 120)
         self.assertEqual(result.captured_at, 100)

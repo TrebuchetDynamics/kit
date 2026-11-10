@@ -178,7 +178,7 @@ class FleetViewTests(unittest.TestCase):
         self.assertEqual(fleet_view.blockers(india), [('outside Now/Next', 'TASK-036 (19)')])  # moving work is not a blocker
         self.assertEqual((sierra.service, sierra.running, sierra.held), ('running', 1, [('TASK-023', 'blocker')]))
         self.assertEqual(fleet_view.blockers(sierra), [('blocker', 'TASK-023 blocker (2)')])
-        self.assertEqual(fleet_view.summary(found.values()), [('working', 1), ('stalled', 1)])
+        self.assertEqual(fleet_view.summary(found.values()), [('unavailable', 2)])
 
     def test_ls_json_matches_the_pre_refactor_recorded_fleet(self):
         """Keep legacy merging stable except unknown counts and additive provenance."""
@@ -320,7 +320,7 @@ class FleetViewTests(unittest.TestCase):
         runner = self.collect('pi-autowork@decision.service loaded active running x')['decision']
         self.assertEqual(runner.decisions, 1)
         self.assertEqual(runner.state, 'waiting on you')
-        self.assertEqual(fleet_view.summary([runner]), [('waiting on you', 1)])
+        self.assertEqual(fleet_view.summary([runner]), [('blocked', 1)])
         self.assertIn('Needs decision', fleet_view.verdict(runner)[0])
         self.assertIn(runner, fleet_view.attention([runner]))
 
@@ -1088,12 +1088,12 @@ class FleetViewTests(unittest.TestCase):
              'Working — 1 of 1 worker busy; 15 commits waiting'),
             (R('a', state='working', running=1, lanes=[L('T1', 'implementing'), L('M', 'integrated')]),
              'Working — 1 worker busy; 1 mergeable'),
-            (R('a', state='blocked', held=[('T-2', 'conflict')]), 'Blocker — T-2: Conflict · Agent repair'),
+            (R('a', state='blocked', held=[('T-2', 'conflict')]), 'Blocked — Needs repair: T-2: Conflict · Agent repair'),
             (R('a', state='working', running=1, lanes=[L('T1', 'implementing')], gate='load average 27 >= 24 CPUs',
                questions=[Q('X', 'quick', 4, 'answer it')]),
              'Working — 1 worker busy; no more start: load average 27 >= 24 CPUs; 1 question for you'),
             (R('a', state='stalled', minutes=42, questions=[Q('TOOLSET-157-cd', 'quick', 4, 'widen Touches')]),
-             'Waiting on you — 1 question, easiest TOOLSET-157-cd (unblocks 4): widen Touches'),
+             'Blocked — Needs your action: 1 question, easiest TOOLSET-157-cd (unblocks 4): widen Touches'),
             (R('a', state='stalled', minutes=42, roots=[root]),
              "Waiting — TASK-140 (held: changed another task's files; offered again once they are free, holds 23)"),
             (R('a', state='blocked', waiting=2,
@@ -1107,15 +1107,15 @@ class FleetViewTests(unittest.TestCase):
              'Waiting — 1 on dependencies'),
             (R('a', state='blocked', roots=[{'id': 'D', 'kind': 'outside', 'deferred': True, 'blocks': 2}]),
              'Waiting — D (deferred by owner, holds 2)'),
-            (R('a', state='blocked', minutes=3, blocker='no usable model: quota'), 'Stuck 3m — no usable model: quota'),
+            (R('a', state='blocked', minutes=3, blocker='no usable model: quota'), 'Blocked — Needs repair: no usable model: quota'),
             (R('a', state='blocked', gate='memory 2900 MB available, need 6000 MB'),
-             'Host busy — memory 2900 MB available, need 6000 MB'),
+             'Blocked — Waiting for capacity: memory 2900 MB available, need 6000 MB'),
             (R('a', state='restarting', restarting='onto 0c41776'), 'Restarting onto 0c41776'),
             (R('a', state='restarting', restarting='service'), 'Restarting'),
             (R('a', state='paused'), 'Paused — p resumes it'),
             (R('a', state='not running'), 'Not running — p starts its service'),
             (R('a', state='idle', questions=[Q('T-1', 'decision', 1, 'choose a target')]),
-             'Waiting on you — 1 question, easiest T-1 (unblocks 1): choose a target'),
+             'Blocked — Needs your action: 1 question, easiest T-1 (unblocks 1): choose a target'),
             (R('a', state='idle'), 'Idle — nothing left to run in Now/Next'),
             (R('a', state='working', minutes=5, job={'role': 'maintainer', 'task': 'DOCS-MAINTAINER'}),
              'Working — DOCS-MAINTAINER repairing task docs (5m)'),

@@ -56,13 +56,13 @@ class FleetRecoveryTests(unittest.TestCase):
                        dict(self.marker, phase='in_flight'), dict(self.marker, attempts=True)):
             with self.subTest(marker=marker):
                 runner = self.project(marker)
-                self.assertIn('Waiting on you', fleet_view.verdict(runner)[0])
+                self.assertIn('Blocked — Needs your action:', fleet_view.verdict(runner)[0])
 
     def test_reason_fingerprint_normalizes_whitespace_but_not_changed_input(self):
         self.row['held'][0]['reason'] = '  ' + self.reason.replace(' ', '\n\t') + ' '
         self.assertIn('triage', fleet_view.verdict(self.project(self.marker))[0].lower())
         self.row['held'][0]['reason'] = 'An unrelated new incident'
-        self.assertIn('Waiting on you', fleet_view.verdict(self.project(self.marker))[0])
+        self.assertIn('Blocked — Needs your action:', fleet_view.verdict(self.project(self.marker))[0])
 
     def test_recovery_observation_errors_are_visible_without_erasing_questions(self):
         (self.root / 'triage.json').write_text('invalid json')

@@ -181,7 +181,7 @@ class HealthTests(unittest.TestCase):
         text = 'waiting for the host (load 27.16 on 24 CPUs)'
         self.assertIn(text, health.render([row], now=now))
         view = fleet_view.Runner(name='repo', state=row['state'], waiting_groups=row['waiting_groups'])
-        self.assertEqual(fleet_view.verdict(view), (text, 'bold yellow'))
+        self.assertEqual(fleet_view.verdict(view), ('Blocked — Waiting for capacity: ' + text, 'bold yellow'))
         self.assertEqual(view.color, 'yellow')
         # A host wait must not hide a different reason, an integration hold or a runner failure.
         for other in ('resource gate: 1000 MB available, need 3000 MB for one more worker',

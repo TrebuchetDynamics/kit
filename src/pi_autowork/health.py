@@ -563,6 +563,11 @@ def fleet(state_root, *, now=None, service=_service):
     return rows
 
 
+def display_state(state):
+    """Human label only; raw status codes and the stall alert clock stay compatible."""
+    return 'blocked' if state in ('blocked', 'stalled', 'waiting on you', HOST_WAIT) else state
+
+
 def render(rows, *, now=None):
     now = time.time() if now is None else now
     if not rows:
@@ -570,8 +575,8 @@ def render(rows, *, now=None):
     lines = []
     for row in rows:
         since = f" for {int((now - row['since']) // 60)} min" if row.get('since') else ''
-        word = (row['waiting_groups'][0]['label']
-                if row['state'] == HOST_WAIT and row.get('waiting_groups') else row['state'])
+        word = ('blocked — Waiting for capacity: ' + row['waiting_groups'][0]['label']
+                if row['state'] == HOST_WAIT and row.get('waiting_groups') else display_state(row['state']))
         lines.append(f"{row['name']:<24} service {row['service']:<9} {word}{since}; "
                      f"{row['workers'] if row['workers'] is not None else '?'} running, "
                      f"{row['waiting'] if row['waiting'] is not None else '?'} waiting"

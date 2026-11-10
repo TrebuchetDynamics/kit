@@ -1334,7 +1334,7 @@ class FleetApp(App):
             self.sub_title = 'discovery unavailable: ' + ' · '.join(errors)
         elif attention:
             labels = ', '.join(
-                f'{r.name} {r.state}' if r.state in fleet_view.ATTENTION_STATES else f'{r.name} (questions)'
+                f'{r.name} {fleet_view.state_label(r)}'
                 for r in attention[:3])
             more = f' +{len(attention) - 3}' if len(attention) > 3 else ''
             self.sub_title = (f'{len(self.runners)} runners · {len(attention)} need attention: '

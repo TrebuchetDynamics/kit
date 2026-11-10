@@ -669,7 +669,9 @@ async def main():
             assert app.query_one('#runners').row_count == 1
             detail = str(app.query_one('#detail').render())
             # TOOLSET-166-b4: the verdict first, then why tasks wait, grouped.
-            assert detail.lstrip().startswith('india  Blocker — 1: T-9 Blocker · Agent repair'), detail
+            assert detail.lstrip().startswith('india  Blocked — Needs repair: 1: T-9 Blocker · Agent repair'), detail
+            assert 'india blocked' in app.sub_title, app.sub_title
+            assert 'stalled' not in app.sub_title and 'waiting on you' not in app.sub_title, app.sub_title
             assert 'on you' not in detail and 'Model      gpt-6.1-sol' in detail, detail
             assert 'Waiting    2: 1 on dependencies · 1 wait for TASK-036 (overlapping files)' in detail, detail
             # Needs-decision membership is not a count of unanswered owner questions.
@@ -1192,7 +1194,7 @@ async def main():
         async with run_pilot(narrow, size=(80, 30)) as pilot:   # an 80-column terminal: wrapped, not cut
             await refresh(narrow, pilot)
             words = ' '.join(str(narrow.query_one('#detail').render()).split())
-            assert 'Blocker — 1: T-9 Blocker · Agent repair' in words and 'on you' not in words, words
+            assert 'Blocked — Needs repair: 1: T-9 Blocker · Agent repair' in words and 'on you' not in words, words
             assert 'Waiting 2: 1 on dependencies · 1 wait for TASK-036 (overlapping files)' in words, words
             # Every count stays on screen: the text columns shrink instead (they scrolled off before).
             table = narrow.query_one('#runners')

@@ -494,7 +494,7 @@ def paint(text, color, enabled):
 
 
 DISPLAY_ONLY_RUNNER_FIELDS = ('snapshot', 'preparation', 'question_provenance', 'acquisition_errors',
-                             'display_deleted', 'display_recreated', 'triage_failures')
+                             'display_deleted', 'display_recreated', 'triage_failures', 'repair_roots')
 
 
 def runner_json(runner):
@@ -530,15 +530,25 @@ def cmd_ls(args, paths):
     print(f'autowork runners: {len(found)} ({summary})')
     name_w = max(len(r.name) for r in found)
     for r in found:
-        label = f'{r.state} {fleet_view.duration(r.minutes)}'.strip()
-        counts = (f'{r.running if r.running is not None else "?"} running, '
-                  f'{r.waiting if r.waiting is not None else "?"} waiting'
-                  + (f', {len(r.held)} held' if r.held else ''))
+        shown_state = fleet_view.state_label(r)
+        label = f'{shown_state} {fleet_view.duration(r.minutes)}'.strip()
+        explanation, _ = fleet_view.verdict(r)
+        vector = fleet_view.task_counts(r) if r.snapshot is not None else None
+        running, waiting, held = ((vector[0], vector[2], vector[3]) if vector is not None else
+                                  ((None, None, 0) if r.snapshot is not None else
+                                   (r.running, r.waiting, len(r.held))))
+        if r.observation and r.observation['task_state'] != 'current':
+            running, waiting, held = None, None, 0
+        counts = (f'{running if running is not None else "?"} running, '
+                  f'{waiting if waiting is not None else "?"} waiting'
+                  + (f', {held} held' if held else ''))
         observation = (health.observation_text(r.observation)
                        if r.observation and r.observation['task_state'] != 'current' else '')
         if not args.long:
             row = fit(f'  {r.name:<{name_w}}  {r.mode or "-":<8}  {label:<14}  {counts}')
             print(row.replace(f'{label:<14}', paint(f'{label:<14}', r.color, color), 1))
+            if shown_state == 'blocked':
+                print(fit('    ' + explanation))
             if observation:
                 print('    ' + observation)
             if r.toolset_problem:
@@ -546,6 +556,8 @@ def cmd_ls(args, paths):
             continue
         print(f'\n{r.name}  {r.mode or "-"}  {paint(label, r.color, color)}')
         print(fit(f'  {counts}  {r.repo}'))
+        if shown_state == 'blocked':
+            print(fit('  ' + explanation))
         if observation:
             print('  ' + observation)
         if r.model:

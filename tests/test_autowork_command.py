@@ -960,8 +960,9 @@ class AutoworkCommandTests(unittest.TestCase):
                                                         'updated_at': now, 'active_workers': 1, 'waiting': 4,
                                                         'snapshot_at': now, 'task_source': source}))
         brief = self.aw('ls').stdout
-        self.assertIn('autowork runners: 1 (1 working)', brief)
-        self.assertRegex(brief, r'india\s+service\s+working [45]m\s+1 running, 4 waiting')
+        # Raw activity has no matching tasks in this empty committed inventory.
+        self.assertIn('autowork runners: 1 (1 idle)', brief)
+        self.assertRegex(brief, r'india\s+service\s+idle [45]m\s+0 running, 0 waiting')
         self.assertIn('model openai-codex/gpt-6.1-sol', self.aw('ls', '--long').stdout)
         listed = json.loads(self.aw('ls', '--json').stdout)['runners']
         self.assertEqual([(r['name'], r['state'], r['running'], r['waiting']) for r in listed],

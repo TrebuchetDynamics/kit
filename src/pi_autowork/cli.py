@@ -602,7 +602,7 @@ def status_view(repo, base, toolset, state):
     try:
         since = (record.get('status_unavailable_since', record['since'])
                  if record['state'] == 'unavailable' else record['since'])
-        line = f"Health:     {record['state']} since {datetime.fromtimestamp(int(since)):%Y-%m-%d %H:%M}"
+        line = f"Health:     {health.display_state(record['state'])} since {datetime.fromtimestamp(int(since)):%Y-%m-%d %H:%M}"
         roots = [r for r in record.get('roots') or [] if health.needs_person(r)][:3]
         if roots:
             line += '; blocked by ' + '; '.join(

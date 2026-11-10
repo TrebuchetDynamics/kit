@@ -126,6 +126,7 @@ class Runner:
     stopped_groups: list = field(default_factory=list)  # [{label, count, tasks}] by what stops them
     held: list = field(default_factory=list)
     roots: list = field(default_factory=list)
+    repair_roots: list = field(default_factory=list)  # captured display-only technical evidence
     state_dir: str = ''       # this runner's pi-autowork state directory
     lanes: list = field(default_factory=list)
     enabled: bool = False     # its service starts at login; paused also needs `autowork pause`'s marker
@@ -591,32 +592,41 @@ def recovery_detail(runner: Runner) -> str:
 
 
 def _recovery_verdict(runner: Runner) -> Verdict:
-    return ('Technical recovery needed — automatic triage unavailable; '
+    return ('Blocked — Needs repair: automatic triage unavailable; '
             f'{len(runner.questions)} recorded questions retained; i Details / b Blockers', 'bold yellow')
 
 
 def _question_verdict(runner: Runner) -> Verdict:
     first = runner.questions[0]
-    return (f'Waiting on you — {_question_count(runner)}, easiest {first.id} (unblocks {first.unblocks}): {first.needs}',
+    return (f'Blocked — Needs your action: {_question_count(runner)}, easiest {first.id} (unblocks {first.unblocks}): {first.needs}',
             'bold yellow')
 
 
 def _held_verdict(runner: Runner, head: str) -> Verdict:
     if not runner.held:
         return head, 'bold yellow'
-    task, cause = (blocking(runner.held) or runner.held)[0]
+    asked_ids = {q.id for q in runner.questions}
+    held = blocking(runner.held) or runner.held
+    task, cause = next((item for item in held if item[0] not in asked_ids), held[0])
     if cause in WAIT_CAUSES:
         return f"Waiting — {task}: {health.CAUSES.get(cause, cause)}", 'bold yellow'
     asked = any(q.id == task for q in runner.questions)
-    return f'Blocker — {task}: {blocker_detail(cause, asked)}', 'bold yellow'
+    reason = 'Needs your action' if asked else 'Needs repair'
+    return f'Blocked — {reason}: {task}: {blocker_detail(cause, asked)}', 'bold yellow'
 
 
 def _blocked_verdict(runner: Runner) -> Verdict:
     """Health's runner blocker, waiting groups, dependency roots and legacy holds."""
     age = duration(runner.minutes)
-    head = ('Stuck ' + age).strip() if runner.state in ('stalled', 'blocked', 'not cycling') else runner.state
+    head = ('Not cycling ' + age).strip() if runner.state == 'not cycling' else 'Blocked'
     if runner.blocker:
-        return f'{head} — {runner.blocker}', 'bold red'
+        return f'{head} — Needs repair: {runner.blocker}', 'bold red'
+    asked = {q.id for q in runner.questions}
+    technical = [root for root in runner.repair_roots if health.requires_action(root)]
+    if runner.state != 'not cycling' and technical:
+        return 'Blocked — Needs repair: ' + health.describe(technical[0]), 'bold yellow'
+    if runner.state != 'not cycling' and any(task not in asked for task, _ in blocking(runner.held)):
+        return _held_verdict(runner, head)
     if runner.state != 'not cycling' and runner.waiting_groups:
         return f'Waiting — {waiting_line(runner)}', 'bold yellow'
     if runner.roots:
@@ -656,32 +666,50 @@ def _verdict(runner: Runner, service: Verdict | None) -> Verdict:
             return _working_verdict(runner)
         if runner.triage_failures:
             return _recovery_verdict(runner)
+        if counts[3]:
+            details = blocker_parts(runner)
+            repair = any(health.requires_action(root) and not health.needs_person(root)
+                         for root in (*runner.roots, *runner.repair_roots)) or any(
+                             'Agent repair' in row.state or 'Planning repair' in row.state
+                             for row in inventory_rows(runner) if row.bucket == BLOCKER)
+            blocked_rows = [row for row in inventory_rows(runner) if row.bucket == BLOCKER]
+            if not repair and blocked_rows and all(row.question or 'Needs you' in row.state
+                                                   for row in blocked_rows) and runner.questions:
+                return _question_verdict(runner)
+            detail = 'Blocked — ' + ('Needs repair: ' if repair else '') + details
+            if runner.questions:
+                detail += '; needs your action: ' + _question_count(runner)
+            return detail, 'bold yellow'
         if runner.questions:
             return _question_verdict(runner)
-        if counts[3]:
-            return 'Blocker — ' + blocker_parts(runner), 'bold yellow'
         if counts[2]:
+            if runner.state == health.HOST_WAIT or runner.gate:
+                return ('Blocked — Waiting for capacity: ' + (runner.gate or waiting_line(runner))), 'bold yellow'
             return 'Waiting — ' + waiting_line(runner), 'bold yellow'
         if counts[4]:
             count = counts[4]
-            return f'{count} task{"s" if count != 1 else ""} in Needs decision', 'bold yellow'
+            return f'Blocked — Needs your action: {count} task{"s" if count != 1 else ""} in Needs decision', 'bold yellow'
         return 'Idle — nothing left to run in Now/Next', 'bold green'
     if runner.state == 'working':
         return _working_verdict(runner)
     if runner.triage_failures:
         return _recovery_verdict(runner)
     if runner.questions:
+        asked = {q.id for q in runner.questions}
+        if runner.repair_roots or any(task not in asked for task, _ in blocking(runner.held)) or runner.blocker:
+            text, style = _blocked_verdict(runner)
+            return text + '; needs your action: ' + _question_count(runner), style
         return _question_verdict(runner)
     if runner.decisions:
         count = runner.decisions
-        return f'{count} task{"s" if count != 1 else ""} in Needs decision', 'bold yellow'
+        return f'Blocked — Needs your action: {count} task{"s" if count != 1 else ""} in Needs decision', 'bold yellow'
     if runner.state == 'idle':
         return 'Idle — nothing left to run in Now/Next', 'bold green'
     if runner.state == health.HOST_WAIT:
         text = runner.waiting_groups[0]['label'] if runner.waiting_groups else health.HOST_WAIT
-        return text, 'bold yellow'
+        return f'Blocked — Waiting for capacity: {text}', 'bold yellow'
     if runner.gate and not runner.lanes:
-        return f'Host busy — {runner.gate}', 'bold yellow'
+        return f'Blocked — Waiting for capacity: {runner.gate}', 'bold yellow'
     return _blocked_verdict(runner)
 
 
@@ -1350,6 +1378,8 @@ def _health_runner(found: dict[str, Runner], row: dict, now: float, proc='/proc'
                        stopped=row.get('stopped', 0), stopped_groups=row.get('stopped_groups') or [],
                        held=[(h.get('task', '?'), h.get('cause')) for h in row.get('held', [])],
                        roots=[r for r in row.get('roots', []) if health.needs_person(r)],
+                       repair_roots=[r for r in row.get('roots', [])
+                                     if health.requires_action(r) and not health.needs_person(r)],
                        waiting_groups=row.get('waiting_groups') or [], blocker=row.get('blocker') or '',
                        stop_reason=row.get('stop_reason') or '', max_workers=row.get('max_workers'),
                        maintainer=row.get('maintainer') or {}, main_check=check, job=job,
@@ -1639,10 +1669,21 @@ def attention(runners):
     return tuple(r for r in runners if r.state in ATTENTION_STATES or r.questions)
 
 
+def state_label(runner):
+    """Human fleet label; use the captured verdict when inventory is available."""
+    if runner.snapshot is not None:
+        label = verdict(runner)[0].partition(' — ')[0].lower()
+        if 'unavailable' in label or 'stale' in label or 'task state unknown' in label:
+            return 'unavailable'
+        return label
+    return health.display_state(runner.state)
+
+
 def summary(runners):
     counts = {}
     for runner in runners:
-        counts[runner.state] = counts.get(runner.state, 0) + 1
+        state = state_label(runner)
+        counts[state] = counts.get(state, 0) + 1
     order = ['working', 'idle', 'waiting on you', 'restarting', 'paused', health.HOST_WAIT, 'blocked', 'stalled', 'not running', 'not cycling',
              'starting', 'unknown']
     return [(state, counts[state]) for state in order + sorted(set(counts) - set(order)) if state in counts]
@@ -1737,7 +1778,8 @@ def _invalidate_runtime(runner, error):
         runner.state = 'unavailable'
     runner.blocker, runner.minutes, runner.job = error, None, None
     runner.running = runner.waiting = runner.stopped = runner.max_workers = None
-    runner.held, runner.roots, runner.waiting_groups, runner.stopped_groups = [], [], [], []
+    runner.held, runner.roots, runner.repair_roots = [], [], []
+    runner.waiting_groups, runner.stopped_groups = [], []
     runner.maintainer = {}
     runner.observation = dict(runner.observation or health.observation({}), task_state='unavailable', error=error)
 
