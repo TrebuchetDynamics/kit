@@ -118,23 +118,15 @@ class AsyncMaintenanceTests(unittest.TestCase):
         self.assertEqual(maintenance.read(owner, 'publication')['published'][0], self.source)
 
     def test_publication_budget_includes_pre_push_checks_in_both_modes(self):
-        with patch.object(maintenance, 'start') as launch:
-            self.assertEqual(self.owner.push(), 'pending')
-        launch.assert_called_once()
-        self.assertEqual(launch.call_args.args[4], 3600)
-        self.assertTrue(launch.call_args.kwargs['publish'])
+        self.assertEqual(self.owner.push(), 'pending')
+        budget = maintenance.read(self.owner, 'publication')['job']['limit']
+        self.assertEqual(budget, 3600)
+        self.until(lambda: maintenance.read(self.owner, 'publication').get('phase') == 'done')
         self.owner.async_maintenance = False
-        run = subprocess.run
-        pushes = []
-
-        def capture(argv, **kwargs):
-            if 'push' in argv:
-                pushes.append(kwargs['timeout'])
-            return run(argv, **kwargs)
-
-        with patch.object(coordinator.subprocess, 'run', side_effect=capture):
+        with patch.object(coordinator.subprocess, 'run', wraps=subprocess.run) as run:
             self.assertEqual(self.owner.push(), 'published')
-        self.assertEqual(pushes, [3600])
+        pushes = [call.kwargs['timeout'] for call in run.call_args_list if 'push' in call.args[0]]
+        self.assertEqual(pushes, [budget])
         self.assertEqual(self.git(self.remote, 'rev-parse', 'main'), self.source)
 
     def test_fetch_completion_waits_for_review_answer_before_any_session_mutation(self):
