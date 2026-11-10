@@ -893,12 +893,25 @@ class Coordinator:
 
     REVIEW_CAP = 4 * 3600
 
+    def recorded_review_limit(self, task):
+        """Recover an existing retry budget without changing its attempt or retry allowance."""
+        common = (getattr(self, 'cfg', None) or {}).get('git_common')
+        if not task or not common:
+            return 0
+        try:
+            slot = json.loads((Path(common) / 'autowork-execution/slots' / (task + '.json')).read_text())
+            prior = re.search(r'\.t(\d+)$', str(slot.get('reverified') or '')) if isinstance(slot, dict) else None
+            return min(self.REVIEW_CAP, int(prior[1])) if prior else 0
+        except (OSError, ValueError, TypeError):
+            return 0
+
     def review_limit(self, task=None):
         """Seconds a review may take (TOOLSET-196-fb): PI_AUTOWORK_VERIFY_TIMEOUT, or twice the
         longest of this repository's last five reviews if longer, capped at four hours; a task
-        reverified after running out of time gets the limit it was given."""
+        reverified after running out of time keeps at least its recorded limit across reloads."""
+        recorded = self.recorded_review_limit(task)
         if task and task in self.timeout_limits:
-            return self.timeout_limits[task]
+            return min(self.REVIEW_CAP, max(self.timeout_limits[task], recorded))
         try:
             recent = json.loads((self.state / 'review_times.json').read_text())[-5:]
         except (OSError, ValueError):
@@ -908,7 +921,7 @@ class Coordinator:
             given = float(self.verify_timeout)
         except (TypeError, ValueError):  # a misconfigured limit must not stop the run loop
             given = 1800.0
-        return int(min(self.REVIEW_CAP, max(given, 2 * longest)))
+        return int(min(self.REVIEW_CAP, max(given, 2 * longest, recorded)))
 
     def note_review_time(self, seconds):
         path = self.state / 'review_times.json'
@@ -2506,12 +2519,7 @@ class Coordinator:
         dispatch = dispatch_module(self.toolset)
         if dispatch.resource_gate(0, float(self.min_free_mb), self.integ):
             return  # a host/check-only worker hold waits for a quieter host too
-        try:
-            slot = json.loads((Path(self.cfg['git_common']) / 'autowork-execution/slots' / (task + '.json')).read_text())
-            prior = re.search(r'\.t(\d+)$', str(slot.get('reverified') or ''))
-            durable_limit = min(self.REVIEW_CAP, int(prior[1])) if prior else 0
-        except (OSError, ValueError, TypeError):
-            durable_limit = 0
+        durable_limit = self.recorded_review_limit(task)
         given = max(self.timeout_limits.get(task) or self.review_limit(), durable_limit)
         if given >= self.REVIEW_CAP and (durable_limit >= self.REVIEW_CAP or self.seen.get('timeout-capped-' + task)):
             return

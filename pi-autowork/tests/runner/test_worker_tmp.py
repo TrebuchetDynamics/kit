@@ -825,6 +825,50 @@ class ReviewLimitTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(self.limit(value), 1800)
 
+    def test_a_reload_restores_the_recorded_task_budget_for_both_review_processes(self):
+        from unittest.mock import Mock
+        from pi_autowork import coordinator
+
+        owner = coordinator.Coordinator.__new__(coordinator.Coordinator)
+        root = Path(self.temp.name)
+        owner.state, owner.timeout_limits, owner.verify_timeout = root / 'state', {}, '1800'
+        (owner.state / 'runs').mkdir(parents=True)
+        common = root / 'common'
+        slots = common / 'autowork-execution/slots'
+        slots.mkdir(parents=True)
+        owner.cfg = {'git_common': str(common)}
+        slot = slots / 'A.json'
+        slot.write_text(json.dumps({'reverified': 'reviewer.t7200'}))
+        self.assertEqual(owner.review_limit('A'), 7200)
+        self.assertEqual(owner.review_limit('B'), 1800)
+        self.assertEqual(owner.review_limit(), 1800)
+        owner.verify_timeout = '10800'
+        self.assertEqual(owner.review_limit('A'), 10800)
+        owner.verify_timeout = '1800'
+        owner.timeout_limits['A'] = 3600
+        self.assertEqual(owner.review_limit('A'), 7200)
+        owner.timeout_limits.clear()
+        slot.write_text(json.dumps({'reverified': 'reviewer.t999999'}))
+        self.assertEqual(owner.review_limit('A'), owner.REVIEW_CAP)
+        for bad in ('invalid json', '[]', '{"reverified": "reviewer"}'):
+            with self.subTest(record=bad):
+                slot.write_text(bad)
+                self.assertEqual(owner.review_limit('A'), 1800)
+        slot.unlink()
+        self.assertEqual(owner.review_limit('A'), 1800)
+        slot.write_text(json.dumps({'reverified': 'reviewer.t7200'}))
+        owner.engine_path, owner.integ, owner.base = 'fixture-engine', self.temp.name, 'main'
+        owner.process_script = 'fixture-runner'
+        owner.batch_chain = lambda: []
+        owner.reviewer_version = lambda: 'reviewer'
+        owner.restart_status = lambda: None
+        with patch.object(coordinator.subprocess, 'Popen', return_value=Mock()) as launch, \
+                patch.object(coordinator, 'git', return_value='base'):
+            owner.start_integration('A')
+        argv = launch.call_args.args[0]
+        self.assertEqual(argv[argv.index('--timeout') + 1], '7200')
+        self.assertEqual(launch.call_args.kwargs['env']['PI_AUTOWORK_VERIFY_TIMEOUT'], '7200')
+
     def test_the_settings_read_keeps_the_default_for_a_name_set_to_nothing(self):
         from pi_autowork.coordinator import Coordinator
         cfg = dict(repo=self.temp.name, base='main', toolset=self.temp.name, toolset_rev='revision',
