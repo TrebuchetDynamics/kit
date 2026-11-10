@@ -1,13 +1,13 @@
 +++
 schema = 1
 id = "TOOLSET-478-9a8d7ece"
-title = "Rust round-two plan follows first-batch evidence"
-short = "Rust round-two plan"
+title = "Plan the next Rust batch from landed offline evidence"
+short = "Plan Rust from landed offline evidence"
 status = "open"
 goal = "RUST-OCTET"
 section = "Next"
 rank = 14000
-depends_on = ["TOOLSET-472-48c78e95", "TOOLSET-473-afef55de", "TOOLSET-474-6b517117", "TOOLSET-475-66aacc5f", "TOOLSET-476-fb27960d", "TOOLSET-477-e5de6356", "TOOLSET-481-33040cb9"]
+depends_on = ["TOOLSET-472-48c78e95", "TOOLSET-473-afef55de", "TOOLSET-474-6b517117", "TOOLSET-475-66aacc5f", "TOOLSET-476-fb27960d"]
 touches = ["docs/plans/rust-octet-autowork.md", "docs/project.md"]
 resources = []
 kind = "plan"
@@ -17,9 +17,10 @@ acceptance = ["Given the six closed building tasks, their actual source-bound re
 checks = ["autowork tasks validate --worktree ."]
 exclusions = ["No production code, tests, fixtures, manifests, source pin edits, model calls, installer/service changes, live qualification or publication in this planning task.", "Do not change an old live owner or active contract without reconciling actual identity and work."]
 +++
-- Sources: docs/plans/rust-octet-autowork.md#remaining-goal-outcomes-and-next-rounds; skills/shared/TODO-WORKCENTER.md#rolling-planning
+- Sources: docs/plans/rust-octet-autowork.md#remaining-goal-outcomes-and-next-rounds; skills/shared/TODO-WORKCENTER.md#rolling-planning; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/items/TOOLSET-477-e5de6356.md; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/evidence/TOOLSET-477-e5de6356.toml; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/items/TOOLSET-481-33040cb9.md; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/evidence/TOOLSET-481-33040cb9.toml
 - Plan round: 1 of 10
 - Planner calls: New system replans routine decisions automatically. This record follows the existing runner's bounded rolling-plan contract while that runner remains canonical.
 - Queue disposition: Open in Next, no planning-only hold; waits on all six original building tasks and TOOLSET-481-33040cb9, the accepted mechanical crate relocation. Round two uses pi-autowork/rust/autowork after that prerequisite; first-batch contracts, seven IDs, native acceptance and live-denied gates are preserved. An already-authorized runner may continue after integration; this saved plan starts none.
 - Next action: Wait for all six original Rust builders and TOOLSET-481-33040cb9, then read their actual reports and source-bound checks. Use the relocated pi-autowork/rust/autowork owner and reconcile remaining outcomes in docs/plans/rust-octet-autowork.md.
 - Execution: Map implemented evidence and unmet outcomes before selecting the next known batch. Save at most eight tasks, including the closing successor when warranted, through autowork tasks. Preserve this task's Plan round: 1 of 10; a successor is round 2 of 10. Run the read-only builder check, validate once, and read back the saved plan and records. Close only this planning activity with real attribution, not the implementation or live-qualification goals.
+- Description: The first batch is closed and mechanical relocation has landed; the earlier wait instructions identify required evidence, not new implementation. Read the retained building records and immutable cycle/relocation inputs in Sources against pi-autowork/rust/autowork before selecting round two. Pruning satisfied ordinary edges does not waive any source-bound evidence or qualify manual closures, the installed service or live models.

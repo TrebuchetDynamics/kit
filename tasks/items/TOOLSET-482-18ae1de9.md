@@ -7,7 +7,7 @@ status = "open"
 goal = "CODE-HEALTH-2026-10"
 section = "Next"
 rank = 17000
-depends_on = ["TOOLSET-479-7f124d5c", "TOOLSET-480-9166695b", "TOOLSET-481-33040cb9"]
+depends_on = ["TOOLSET-479-7f124d5c", "TOOLSET-480-9166695b"]
 touches = ["pi-autowork/tests/", "pi-autowork/docs/", "pi-autowork/README.md", "pi-autowork/integrations/paseo/", "pi-autowork/rust/autowork/tests/", "tests/test_check.py", "tests/test_affected_tests.py", "tests/test_portable_package.py", "tests/test_paseo_plugin_root.py", "tests/test_readme_links.py", "tests/src_fixture.py", "scripts/check.py", "scripts/affected_tests.py", "scripts/typecheck.py", "package.json", "paseo-plugin.json", "README.md", "docs/project.md", "docs/installation.md", "docs/testing.md", "docs/reference.md", "docs/roles.json", "docs/plans/pi-autowork-component-layout.md"]
 resources = ["autowork-python-layout", "paseo-plugin-package", "rust-autowork-crate", "kit-check-inventory"]
 kind = "implementation"
@@ -18,9 +18,10 @@ checks = ["python3 scripts/affected_tests.py --run --base <captured-task-base>",
 exclusions = ["No live model calls, production/device operations, runtime or system installation, service start/stop/reload, push, deployment, state migration, credential changes or worker interruption. Isolated locked test-environment preparation is allowed only under existing execution authority and the plan's offline setup limits; missing cached inputs stay an explicit setup blocker.", "No feature redesign, correctness-issue scope expansion, dependency upgrades, removal of tests, weakened assertions or modification of another active task contract."]
 +++
 
-- Sources: docs/plans/pi-autowork-component-layout.md#one-product-root-contract
+- Sources: docs/plans/pi-autowork-component-layout.md#one-product-root-contract; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/items/TOOLSET-481-33040cb9.md; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/evidence/TOOLSET-481-33040cb9.toml
 - Planner calls: Preserve selected-release and host compatibility; one product source owner, no new runtime framework. See the accepted fixed map and acceptance oracles.
 - Queue disposition: Accepted and open, no planning-only hold. Selection is not admission, ownership or dispatch.
 - Checks status: Proposed and UNRUN. Inspect command side effects; retain source-bound results and independent review. Planning did not install dependencies.
 - Next action: After the Python, Paseo and Rust moves land, extend the existing ownership/package tests with the exact shared-file and host-entry exceptions from docs/plans/pi-autowork-component-layout.md. Do not replace the existing oracles with a second registry.
 - Execution: Compare baseline and final file/test inventories across all three languages. Check archive closure, production/test separation, current links and documented commands. Repair only migration-attributable placement or verification gaps. Run the declared affected and focused checks, reusing receipts only for matching source/tool/config inputs. Report offline source/package proof separately from installation, running-release and live-model qualification.
+- Description: Rust relocation is integrated at 7729dbf5880f7569112ecba9c7ca534723fe1b35. Python and Paseo relocation remain prerequisites. The immutable Rust contract and receipt in Sources preserve the path-only offline proof; reuse requires matching source/tool/config inputs and does not qualify installation or live execution.

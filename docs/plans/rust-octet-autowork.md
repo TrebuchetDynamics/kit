@@ -1,6 +1,6 @@
 # Rust Autowork with Octet
 
-Status: Accepted product direction, 2026-11-07. Technical choices below are planner calls under delegated decision authority. Planning only: no Rust code, migration, runner start, installation or deployment has occurred.
+Status: Accepted product direction, 2026-11-07. Technical choices below are planner calls under delegated decision authority. Offline first-batch source and the mechanical crate relocation have landed. This does not qualify the complete replacement, installed handoff or live execution.
 
 ## Accepted direction
 
@@ -77,7 +77,7 @@ Runtime event schema 1 carries `repo_id`, `operation_id`, `task_id`, `attempt_id
 
 ## First implementation batch
 
-All new checks named below are proposed and UNRUN. The batch proves one offline end-to-end autonomous path before building fleet/UI/cutover features. It does not deliver the complete replacement.
+This is the original first-batch contract map, not a completion ledger. Its checks were proposed and UNRUN at planning handoff. Next-round planning must reconcile the landed source with retained records and immutable source-bound evidence below. The batch targets one offline end-to-end autonomous path before fleet/UI/cutover features, not the complete replacement.
 
 <!-- task-map:start -->
 | Task | Outcome | Depends on |
@@ -113,7 +113,7 @@ These outcomes remain part of the goal; later rounds turn them into concrete imp
 6. Versioned migration/import previews for task repositories, configuration and old runtime receipts. Preserve original bytes, paused jobs, active/unmerged worktrees and secrets. Source-backed offline fixtures precede separately authorized disposable live qualification.
 7. Release/install rollback and Python/Pi runtime retirement only after the accepted outcomes and migration checks pass. No promise of native model execution, live delivery or speed gain from source checks alone.
 
-The closing planning task depends on every building task and the accepted crate-relocation task from the [one-product-root batch](pi-autowork-component-layout.md#one-product-root-contract), carries `Plan round: 1 of 10`, and reads their actual reports and remaining goal proof. Its seven original task IDs, six building contracts, native acceptance and live-denied gates remain unchanged; only the closing planner gains the real relocation prerequisite. Future paths use `pi-autowork/rust/autowork/` after that prerequisite passes. Save at most eight tasks per round and no speculative code tasks. Existing rolling-planning defaults cap one automatic planning chain at ten rounds; reaching that bound is not goal completion. The general runtime's future replanning follows the accepted authority and real evidence rather than turning the bound into a safety bypass.
+The closing planning task carries `Plan round: 1 of 10` and must read the six building tasks' actual reports, the accepted crate-relocation proof from the [one-product-root batch](pi-autowork-component-layout.md#one-product-root-contract), and remaining goal proof. Retained records and the immutable Git inputs below preserve those requirements when satisfied ordinary dependency edges are pruned. Manual closure is not verified qualification. Preserve the original six building contracts, native acceptance and live-denied gates. Round two uses the landed `pi-autowork/rust/autowork/` owner. Save at most eight tasks per round and no speculative code tasks. Existing rolling-planning defaults cap one automatic planning chain at ten rounds; reaching that bound is not goal completion. The general runtime's future replanning follows the accepted authority and real evidence rather than turning the bound into a safety bypass.
 
 ## Verification and builder handoff
 
@@ -121,13 +121,14 @@ First selection-ready outcome: the Rust foundation. Subsequent runtime, store an
 
 Pre-mortem: (1) a stale planner changes a different attempt: bind revision, contract and generation; (2) an agent or Git crash is mistaken for success: reconcile retained intent/effects and source-bound checks; (3) rewrite cutover discards old state or dual-starts a writer: require preview, preserved backup and exclusive handoff. Tests must prove each affected seam.
 
-Builder review found three fixable gaps: durable task-proposal publication, trusted native edit authority, and fixed-argv check admission. Their resolutions are specified above and assigned to foundation/runtime/store/planning/coordinator contracts; they are not deferred owner questions. Native source/build compatibility and all new behavior checks remain unrun. A fresh read-only builder inspected the saved task contracts and this document before handoff; its first run timed out, then resumed to return the concrete findings. A separate fresh read-only follow-up confirmed all three gaps closed at contract level; no remaining blocker was found within that follow-up scope. This is not implementation or runtime qualification. Missing external live evidence remains explicit, not an offline test substitute. This plan does not start the current runner or the Rust candidate. Branch-local saved records do not change the canonical consumer until integrated through its existing policy.
+Builder review found three fixable gaps: durable task-proposal publication, trusted native edit authority, and fixed-argv check admission. Their resolutions are specified above and assigned to foundation/runtime/store/planning/coordinator contracts; they are not deferred owner questions. Native source/build compatibility and new behavior checks were unrun at that planning handoff; current qualification must come from source-bound results, not this historical builder review. A fresh read-only builder inspected the saved task contracts and this document before handoff; its first run timed out, then resumed to return the concrete findings. A separate fresh read-only follow-up confirmed all three gaps closed at contract level; no remaining blocker was found within that follow-up scope. This is not implementation or runtime qualification. Missing external live evidence remains explicit, not an offline test substitute. This plan does not start the current runner or the Rust candidate. Branch-local saved records do not change the canonical consumer until integrated through its existing policy.
 
 ## Sources
 
 - Owner conversation, 2026-11-06/07: Rust project, Octet engine, better design from the start, delegated planning decisions, routine sudo/credential owner help.
 - [Current Autowork components](../project.md#current-components), [task store](../../pi-autowork/task-store.md), and [old language strategy](2026-11-05-language-strategy.md).
-- Current source: `src/pi_autowork/coordinator.py`, `pi_runtime.py`, `pi_rpc.py`, `pi_process.py`, `planning.py`, `planning_authority.py`, `landing.py`, `task_commands.py`, and `engine/task_store.py`.
+- Current Python source: `pi-autowork/src/pi_autowork/` owns `coordinator.py`, `pi_runtime.py`, `pi_rpc.py`, `pi_process.py`, `planning.py`, `planning_authority.py`, `landing.py`, `task_commands.py`, and `engine/task_store.py`.
+- Required next-round historical inputs remain reachable at `d521a3ff5d1100526a4a590e6a34d9d62afef1c2`: use `git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/items/TOOLSET-477-e5de6356.md` and `git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/evidence/TOOLSET-477-e5de6356.toml` for the offline cycle contract and receipt. Use `git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/items/TOOLSET-481-33040cb9.md` and `git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/evidence/TOOLSET-481-33040cb9.toml` for the mechanical relocation contract and receipt. These inputs retain their original source bindings, not fresh checks or live qualification.
 - [Octet Rust agent API at the pinned source](https://github.com/skaft-software/octet/blob/4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee/crates/octet-agent/src/lib.rs): public embedding, native sessions and cancellation.
 - [Octet native-host limits](https://github.com/skaft-software/octet/blob/4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee/docs/sdk.md#headless-safety-and-cancellation): no unattended writable native host and no in-band abort.
 - [Octet effect broker](https://github.com/skaft-software/octet/blob/4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee/crates/octet-agent/src/effect.rs) and [ephemeral confirmation API](https://github.com/skaft-software/octet/blob/4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee/crates/octet-agent/src/tool.rs).
