@@ -412,6 +412,32 @@ async def layout_pilot():
         assert len(app.screen_stack) == 1
 
 
+async def mixed_freshness_pilot():
+    from textual.widgets import DataTable
+    async with fixture_app((150, 40)) as (app, pilot):
+        runner = app.current()
+        for counts, fresh_label in (((1, 0, 0, 0, 0, 1), 'In progress'),
+                                    ((0, 1, 0, 0, 0, 1), 'Ready to merge')):
+            for freshness in ('fresh', 'stale'):
+                runner.snapshot = replace(runner.snapshot, counts=counts,
+                                          freshness=freshness, engine_freshness='fresh')
+                app.render_fleet()
+                await pilot.pause()
+                label = str(app.query_one('#runners', DataTable).get_row_at(0)[1])
+                summary = app.query_one('#overview').render().plain
+                assert label == (fresh_label if freshness == 'fresh' else 'Unconfirmed'), (label, summary)
+                assert f'fixture · {label}' in summary, summary
+                assert f'1 open · {counts[0]} in progress · {counts[1]} ready to merge' in summary, summary
+                if freshness == 'stale':
+                    assert 'Now: Unconfirmed' in summary and 'Last observed:' in summary, summary
+                    assert 'Inventory stale · execution fresh' in summary, summary
+                    await pilot.resize_terminal(60, 18)
+                    await pilot.pause()
+                    compact = app.query_one('#overview').render().plain
+                    assert 'fixture · Unconfirmed' in compact and 'Inventory stale' in compact, compact
+                    await pilot.resize_terminal(150, 40)
+
+
 async def execution_copy_pilot():
     from textual.widgets import DataTable
     async with fixture_app((80, 24)) as (app, pilot):
@@ -424,6 +450,22 @@ async def execution_copy_pilot():
         shown = str(app.query_one('#overview').render())
         assert 'service running' in shown and '0 in progress' in shown, shown
         assert 'Working' not in shown, shown
+        for state, refusal, expected in (
+                ('running', 'Live authorization denied [fixture]', 'Needs attention'),
+                ('running', '', 'Waiting'), ('paused', '', 'Paused'),
+                ('not running', '', 'Not running'), ('running', '', 'Unavailable')):
+            runner.state, runner.stop_reason = state, refusal
+            runner.snapshot = replace(runner.snapshot, counts=None if expected == 'Unavailable' else (0, 0, 0, 0, 0, 0))
+            for size in ((150, 40), (60, 18)):
+                await pilot.resize_terminal(*size)
+                app.render_fleet()
+                await pilot.pause()
+                label = str(app.query_one('#runners', DataTable).get_row_at(0)[1])
+                shown = app.query_one('#overview').render().plain
+                assert label == expected and f'fixture · {expected}' in shown, (label, shown)
+                if refusal:
+                    assert refusal in shown and 'Waiting' not in shown, shown
+                    assert ('service running' if size[1] >= 22 else 'Why:') in shown, shown
 
 
 async def welcome_pilot():
@@ -526,6 +568,9 @@ class TuiRedesignTests(unittest.TestCase):
     def test_service_activity_does_not_claim_task_progress(self):
         self.run_case('execution')
 
+    def test_progress_requires_fresh_inventory_and_qualifies_retained_counts(self):
+        self.run_case('freshness')
+
     def test_empty_fleet_has_responsive_guided_welcome(self):
         self.run_case('welcome')
 
@@ -553,6 +598,7 @@ if __name__ == '__main__':
         else:
             asyncio.run({'redraw': redraw_pilot, 'menu': menu_pilot,
                          'layout': layout_pilot, 'welcome': welcome_pilot, 'progress': progress_pilot, 'details': details_layout_pilot, 'tasks': task_workspace_pilot, 'surfaces': reading_surfaces_pilot,
-                         'palette': palette_pilot, 'execution': execution_copy_pilot}[case]())
+                         'palette': palette_pilot, 'execution': execution_copy_pilot,
+                         'freshness': mixed_freshness_pilot}[case]())
     else:
         unittest.main()

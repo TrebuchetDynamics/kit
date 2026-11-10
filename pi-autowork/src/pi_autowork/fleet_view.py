@@ -491,10 +491,13 @@ def progress_summary(runner, view=None):
     Unmatched or stale lanes remain in Details but cannot describe current progress.
     """
     view = view or presentation(runner)
+    if runner.stop_reason:
+        return 'Needs attention', runner.stop_reason, 'Your action: inspect Details'
     if runner.state in ('paused', 'not running'):
         return 'Stopped', 'Start the runner to execute tasks', 'Your action: start with Play'
-    if view.counts is None or view.execution_freshness != 'fresh':
-        return 'Unconfirmed', 'Fresh execution evidence unavailable', 'Your action: inspect Details'
+    if (view.counts is None or view.inventory_freshness != 'fresh'
+            or view.execution_freshness != 'fresh'):
+        return 'Unconfirmed', 'Fresh task inventory or execution evidence unavailable', 'Your action: inspect Details'
     active, mergeable, waiting, blocker, decision, total = view.counts
     joined = set(runner.snapshot.joined_lanes) if runner.snapshot else set()
     lanes = [lane for lane in runner.lanes if (lane.task, lane.attempt, lane.phase) in joined]

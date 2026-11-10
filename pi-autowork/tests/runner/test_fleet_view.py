@@ -47,7 +47,8 @@ class FleetViewTests(unittest.TestCase):
         runner = fleet_view.Runner('fixture', state='running', snapshot=snap,
             lanes=[fleet_view.Lane('TASK-1', 'running', attempt=2,
                                    activity='Reading source', activity_age=18)])
-        view = SimpleNamespace(counts=(1, 0, 1, 1, 0, 3), execution_freshness='fresh')
+        view = SimpleNamespace(counts=(1, 0, 1, 1, 0, 3),
+                               inventory_freshness='fresh', execution_freshness='fresh')
         with mock.patch.object(subprocess, 'run', side_effect=AssertionError('No I/O')):
             phase, evidence, action = fleet_view.progress_summary(runner, view)
             self.assertEqual(phase, 'Working')
@@ -66,7 +67,8 @@ class FleetViewTests(unittest.TestCase):
     def test_progress_summary_distinguishes_blocked_and_idle_work(self):
         from types import SimpleNamespace
         runner = fleet_view.Runner('fixture', state='running')
-        view = SimpleNamespace(counts=(0, 0, 1, 1, 0, 2), execution_freshness='fresh')
+        view = SimpleNamespace(counts=(0, 0, 1, 1, 0, 2),
+                               inventory_freshness='fresh', execution_freshness='fresh')
         self.assertEqual(fleet_view.progress_summary(runner, view)[0], 'Needs attention')
         view.counts = (0, 0, 1, 0, 0, 1)
         self.assertEqual(fleet_view.progress_summary(runner, view)[0], 'Waiting')
