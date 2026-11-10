@@ -311,8 +311,8 @@ autowork start                # this repository: install the service if needed a
 autowork status india         # one repository's tasks, workers and what blocks them
 ```
 
-- **Parallel where safe.** Overlapping file scopes, shared resources and dependencies
-  limit admission. An empty queue waits without a model call rather than inventing work.
+- **Parallel in separate worktrees.** Ordinary file overlap ranks work but does not
+  block workers. Dependencies, shared resources and protected paths still limit admission. An empty queue waits without a model call rather than inventing work.
 - **Evidence before closure.** Worker commits and reports are claims; project checks and
   a separate review gate integration and closure.
 - **Local delivery is automatic, push is opt-in.** Each closed task merges into

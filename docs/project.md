@@ -716,13 +716,13 @@ not repository authority. Sequential mode remains supported.
 - **Coordinator ownership:** task/goal bookkeeping, completion receipts and changelog
   are coordinator-owned. Worker changes to protected authority/checks or bookkeeping
   hold integration; base authority cannot be enlarged from a candidate branch.
-- **Independence:** concurrent tasks have no direct/transitive dependency, declare
-  disjoint `touches`, share no resource token and have neither `live` nor `exclusive`.
+- **Concurrency:** concurrent tasks have no direct/transitive dependency or shared
+  resource token. Ordinary `touches` overlap ranks work but does not block dispatch,
+  regardless of task count. Workers use separate worktrees and integration resolves
+  conflicts. Only `exclusive` requires running alone; `live` still needs authorization.
   Manifests, lockfiles, migration/schema folders and CI workflows are serial paths.
-  Missing touches is solo. Actual baseline-to-commit paths must stay in declared
-  scope and not overlap running/already integrated work; otherwise hold and retry
-  alone. A sequential in-progress task without a slot counts as running scope;
-  unknown scope blocks parallel backfill.
+  Missing touches is no scheduling hint, not a reason to run alone. Undeclared
+  protected paths still hold integration. Claims retain dependency and resource gates.
 - **Priority:** backfill independent work only without conflicting with waiting work.
   A truly solo waiting task drains the pool instead of starving. The accepted
   [progress/independent-workers plan](plans/2026-10-16-pi-autowork-coordinator.md#useful-progress-and-independent-workers)
