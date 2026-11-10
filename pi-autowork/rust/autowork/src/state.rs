@@ -171,6 +171,196 @@ impl Owner {
     }
 }
 
+/// Fixed diagnostics: never forward SQLite, filesystem or private payload text.
+#[derive(Debug)]
+pub enum InspectionError {
+    UnsafeSource,
+    UnsupportedSchema,
+    ForeignJournal,
+    CorruptJournal,
+    Busy,
+}
+impl InspectionError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::UnsafeSource => "unsafe_source",
+            Self::UnsupportedSchema => "unsupported_schema",
+            Self::ForeignJournal => "foreign_journal",
+            Self::CorruptJournal => "corrupt_journal",
+            Self::Busy => "busy",
+        }
+    }
+}
+impl std::fmt::Display for InspectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "journal inspection unavailable: {}; state retained",
+            self.code()
+        )
+    }
+}
+impl std::error::Error for InspectionError {}
+impl From<rusqlite::Error> for InspectionError {
+    fn from(error: rusqlite::Error) -> Self {
+        match error.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked) => {
+                Self::Busy
+            }
+            _ => Self::CorruptJournal,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct StatusRepository {
+    device: u64,
+    inode: u64,
+}
+#[derive(Serialize)]
+pub struct StatusProjection {
+    task_id: String,
+    attempt_id: String,
+    generation: u64,
+    role: crate::runtime::Role,
+    contract_hash: String,
+    source_revision: String,
+    status: DurableStatus,
+    event_id: i64,
+}
+#[derive(Serialize)]
+pub struct JournalStatus {
+    schema_version: u32,
+    source: &'static str,
+    repository: StatusRepository,
+    journal_state: &'static str,
+    journal_schema: Option<i64>,
+    event_high_water_mark: Option<i64>,
+    projections: Vec<StatusProjection>,
+}
+
+/// A short read transaction, not a StateStore and never a writer lease.
+/// Ordinary SQLite WAL coordination may create/change its own private sidecars.
+pub fn read_status(common_dir: &Path) -> std::result::Result<JournalStatus, InspectionError> {
+    let repository = Repository::inspect(common_dir).map_err(|_| InspectionError::UnsafeSource)?;
+    require_local(&repository.common_dir).map_err(|_| InspectionError::UnsafeSource)?;
+    let mut status = JournalStatus {
+        schema_version: 1,
+        source: "runtime-journal",
+        repository: StatusRepository {
+            device: repository.device,
+            inode: repository.inode,
+        },
+        journal_state: "absent",
+        journal_schema: None,
+        event_high_water_mark: None,
+        projections: vec![],
+    };
+    let directory = repository.common_dir.join("autowork-rust");
+    let exists = |path: &Path, directory: bool| -> std::result::Result<bool, InspectionError> {
+        match fs::symlink_metadata(path) {
+            Ok(_) => {
+                private_path(path, directory)
+                    .and_then(|_| require_local(path))
+                    .map_err(|_| InspectionError::UnsafeSource)?;
+                Ok(true)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(_) => Err(InspectionError::UnsafeSource),
+        }
+    };
+    if !exists(&directory, true)? {
+        return Ok(status);
+    }
+    for name in [
+        "writer.lock",
+        "journal.sqlite3-wal",
+        "journal.sqlite3-shm",
+        "journal.sqlite3-journal",
+    ] {
+        exists(&directory.join(name), false)?;
+    }
+    let database = directory.join("journal.sqlite3");
+    if !exists(&database, false)? {
+        return Ok(status);
+    }
+    let mut connection = Connection::open_with_flags(
+        &database,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+    )?;
+    connection.busy_timeout(std::time::Duration::from_millis(200))?;
+    connection.pragma_update(None, "query_only", true)?;
+    let tx = connection.transaction()?;
+    let version: i64 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    if version != SCHEMA_VERSION {
+        return Err(InspectionError::UnsupportedSchema);
+    }
+    let (count, retained, epoch): (i64, String, i64) =
+        tx.query_row("SELECT count(*),repository,epoch FROM metadata", [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?;
+    if count != 1 || epoch < 1 {
+        return Err(InspectionError::CorruptJournal);
+    }
+    let retained: Repository =
+        serde_json::from_str(&retained).map_err(|_| InspectionError::CorruptJournal)?;
+    if retained != repository {
+        return Err(InspectionError::ForeignJournal);
+    }
+    let repo_id =
+        serde_json::to_string(&repository).map_err(|_| InspectionError::CorruptJournal)?;
+    let high_water: i64 =
+        tx.query_row("SELECT coalesce(max(id),0) FROM events", [], |r| r.get(0))?;
+    {
+        let mut statement = tx.prepare(
+            "SELECT task,generation,identity,source,status,event_id,
+                EXISTS(SELECT 1 FROM events WHERE id=r.event_id)
+             FROM runs r WHERE generation=(SELECT max(generation) FROM runs WHERE task=r.task)
+             ORDER BY task",
+        )?;
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            let task: String = row.get(0)?;
+            let generation: i64 = row.get(1)?;
+            let identity: String = row.get(2)?;
+            let source: String = row.get(3)?;
+            let durable: String = row.get(4)?;
+            let event_id: i64 = row.get(5)?;
+            let event_exists: bool = row.get(6)?;
+            let identity: RunIdentity =
+                serde_json::from_str(&identity).map_err(|_| InspectionError::CorruptJournal)?;
+            let durable: DurableStatus =
+                serde_json::from_str(&durable).map_err(|_| InspectionError::CorruptJournal)?;
+            validate_identity(&identity, &repo_id, &source)
+                .map_err(|_| InspectionError::CorruptJournal)?;
+            if identity.task_id != task
+                || generation <= 0
+                || identity.generation != generation as u64
+                || event_id <= 0
+                || event_id > high_water
+                || !event_exists
+            {
+                return Err(InspectionError::CorruptJournal);
+            }
+            status.projections.push(StatusProjection {
+                task_id: identity.task_id,
+                attempt_id: identity.attempt_id,
+                generation: identity.generation,
+                role: identity.role,
+                contract_hash: identity.contract_hash,
+                source_revision: source,
+                status: durable,
+                event_id,
+            });
+        }
+    }
+    tx.commit()?;
+    status.journal_state = "present";
+    status.journal_schema = Some(version);
+    status.event_high_water_mark = Some(high_water);
+    Ok(status)
+}
+
 pub struct StateStore {
     connection: Mutex<Connection>,
     // Drop the connection before releasing the cooperative repository lock.

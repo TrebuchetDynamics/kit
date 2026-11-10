@@ -22,6 +22,20 @@ enum Command {
     Version,
     /// Report implemented commands and versioned wire contracts as JSON.
     Capabilities,
+    /// Inspect committed tasks only (no mutations or working-tree reads).
+    Tasks {
+        #[arg(long, global = true)]
+        repo: Option<std::path::PathBuf>,
+        #[arg(long, global = true, default_value = "HEAD")]
+        rev: String,
+        #[command(subcommand)]
+        command: TaskCommand,
+    },
+    /// Read the private journal projection without claiming writer ownership.
+    Status {
+        #[arg(long)]
+        repo: std::path::PathBuf,
+    },
     /// Run serialized local deliveries with explicit model routes (no service or push).
     Run {
         #[arg(long)]
@@ -50,15 +64,27 @@ enum Command {
     InternalAgent,
 }
 
+#[derive(Subcommand)]
+enum TaskCommand {
+    List,
+    Goals,
+    Show { id: String },
+    Why { id: String },
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     match dispatch(Cli::parse().command).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!(
-                "{}",
+            let diagnostic = if let Some(error) =
+                error.downcast_ref::<autowork_next::state::InspectionError>()
+            {
+                json!({"status": "unavailable", "code": error.code(), "error": error.to_string()})
+            } else {
                 json!({"status": "unavailable", "error": error.to_string()})
-            );
+            };
+            eprintln!("{diagnostic}");
             ExitCode::FAILURE
         }
     }
@@ -85,6 +111,8 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     "version": "available",
                     "capabilities": "available",
                     "run": "explicit-local-cycle",
+                    "tasks": ["list", "goals", "show", "why"],
+                    "status": "journal-projection-only",
                     "internal-agent": "owned-only"
                 },
                 "unknown_commands": "unsupported",
@@ -92,6 +120,8 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     "agent_request": CONTRACT_VERSION,
                     "agent_result": CONTRACT_VERSION,
                     "runtime_event": CONTRACT_VERSION,
+                    "task_inspection": 1,
+                    "status": 1,
                     "roles": runtime::ROLES,
                     "max_request_bytes": runtime::MAX_REQUEST_BYTES,
                     "max_event_bytes": runtime::MAX_EVENT_BYTES
@@ -100,6 +130,96 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 "installed_runner": "unchanged"
             })
         ),
+        Command::Tasks { repo, rev, command } => {
+            use autowork_next::task_store::{Record, Scope, TaskStore};
+            let repo = repo.ok_or_else(|| io::Error::other("tasks requires --repo PATH"))?;
+            let snapshot = TaskStore::read_at(&repo, &rev)
+                .map_err(|_| io::Error::other("committed task snapshot unavailable"))?;
+            let source = json!({"only": true, "admission_evaluated": false,
+                "runtime_evaluated": false, "source": "committed", "ref": rev,
+                "revision": snapshot.revision(), "revision_ephemeral": false});
+            let record_json = |record: &Record| -> Result<serde_json::Value, serde_json::Error> {
+                let mut value = serde_json::to_value(record.fields())?;
+                value.as_object_mut().unwrap().extend(json!({
+                    "path": record.path, "body": record.body,
+                    "snapshot": {"source": "committed", "ref": rev,
+                        "revision": snapshot.revision(), "revision_ephemeral": false},
+                    "record_revision": record.record_revision, "contract_hash": record.contract_hash,
+                    "missing_fields": record.missing_fields, "receipt_valid": record.receipt_valid
+                }).as_object().unwrap().clone());
+                Ok(value)
+            };
+            let value = match command {
+                TaskCommand::Goals => serde_json::Value::Array(
+                    snapshot
+                        .goals()
+                        .values()
+                        .map(record_json)
+                        .collect::<Result<_, _>>()?,
+                ),
+                TaskCommand::Show { id } => record_json(
+                    snapshot
+                        .tasks()
+                        .get(&id)
+                        .ok_or_else(|| io::Error::other("unknown task ID"))?,
+                )?,
+                command => {
+                    let selection = snapshot
+                        .select(&Scope::default())
+                        .map_err(|_| io::Error::other("task selection unavailable"))?;
+                    let explanation = |id: &str| {
+                        let position = selection
+                            .task_ids
+                            .iter()
+                            .position(|t| t == id)
+                            .map(|p| p + 1);
+                        json!({"id": id, "position": position,
+                            "blocked_by": selection.blocked.get(id).map(|r| r.code.as_str()),
+                            "eligible": position.is_some(), "first": position == Some(1),
+                            "reasons": snapshot.selection_reasons(&selection, id), "selection": source})
+                    };
+                    match command {
+                        TaskCommand::Why { id } => explanation(&id),
+                        TaskCommand::List => serde_json::Value::Array(
+                            snapshot
+                                .tasks()
+                                .values()
+                                .map(|record| {
+                                    let mut row = record_json(record)?;
+                                    row.as_object_mut().unwrap().extend(
+                                        explanation(&record.id).as_object().unwrap().clone(),
+                                    );
+                                    Ok(row)
+                                })
+                                .collect::<Result<_, serde_json::Error>>()?,
+                        ),
+                        _ => unreachable!(),
+                    }
+                }
+            };
+            println!("{}", serde_json::to_string(&value)?);
+        }
+        Command::Status { repo } => {
+            use autowork_next::state::{InspectionError, read_status};
+            let common = std::process::Command::new("/usr/bin/git")
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .args(["--no-replace-objects", "-C"])
+                .arg(repo)
+                .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+                .output()
+                .map_err(|_| InspectionError::UnsafeSource)?;
+            if !common.status.success() {
+                return Err(InspectionError::UnsafeSource.into());
+            }
+            let common =
+                String::from_utf8(common.stdout).map_err(|_| InspectionError::UnsafeSource)?;
+            let common = common
+                .strip_suffix('\n')
+                .ok_or(InspectionError::UnsafeSource)?;
+            let status = read_status(std::path::Path::new(common))?;
+            println!("{}", serde_json::to_string(&status)?);
+        }
         Command::Run {
             repo,
             models,

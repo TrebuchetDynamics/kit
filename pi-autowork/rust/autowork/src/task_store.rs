@@ -46,6 +46,10 @@ pub struct Record {
     fields: toml::Table,
 }
 impl Record {
+    /// Exact typed frontmatter, without authoring defaults or normalization.
+    pub fn fields(&self) -> &toml::Table {
+        &self.fields
+    }
     pub fn field(&self, key: &str) -> Option<&toml::Value> {
         self.fields.get(key)
     }
@@ -115,7 +119,7 @@ pub struct Snapshot {
     tasks: BTreeMap<String, Record>,
     goals: BTreeMap<String, Record>,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Reason {
     pub code: String,
     pub detail: String,
@@ -834,26 +838,70 @@ impl Snapshot {
                 selected.push(task);
             }
         }
-        selected.sort_by_key(|t| {
-            let g = self.goals.get(t.string("goal"));
-            (
-                !g.is_some_and(Record::focus),
-                if t.string("section") == "Now" { 0 } else { 1 },
-                t.number("rank"),
-                g.map_or(100, |g| g.number("priority")),
-                match g.map_or("unmet", |g| g.string("status")) {
-                    "unverified" => 0,
-                    "partial" => 1,
-                    "unmet" => 2,
-                    _ => 3,
-                },
-                &t.id,
-            )
-        });
+        selected.sort_by_key(|t| self.selection_key(t));
         Ok(Selection {
             task_ids: selected.into_iter().map(|t| t.id.clone()).collect(),
             blocked,
         })
+    }
+    fn selection_key<'a>(&self, task: &'a Record) -> (bool, i64, i64, i64, i64, &'a str) {
+        let goal = self.goals.get(task.string("goal"));
+        (
+            !goal.is_some_and(Record::focus),
+            if task.string("section") == "Now" {
+                0
+            } else {
+                1
+            },
+            task.number("rank"),
+            goal.map_or(100, |g| g.number("priority")),
+            match goal.map_or("unmet", |g| g.string("status")) {
+                "unverified" => 0,
+                "partial" => 1,
+                "unmet" => 2,
+                _ => 3,
+            },
+            &task.id,
+        )
+    }
+    /// Explain an order already evaluated once for this snapshot and local date.
+    pub fn selection_reasons(&self, selection: &Selection, id: &str) -> Vec<Reason> {
+        if let Some(reason) = selection.blocked.get(id) {
+            return vec![reason.clone()];
+        }
+        let Some(position) = selection.task_ids.iter().position(|t| t == id) else {
+            return vec![Reason {
+                code: "UNKNOWN_TASK".into(),
+                detail: id.into(),
+            }];
+        };
+        let mut reasons = vec![Reason {
+            code: "POSITION".into(),
+            detail: (position + 1).to_string(),
+        }];
+        if position > 0 {
+            let ahead = &self.tasks[&selection.task_ids[position - 1]];
+            let a = self.selection_key(ahead);
+            let b = self.selection_key(&self.tasks[id]);
+            let rule = if a.0 != b.0 {
+                "FOCUS"
+            } else if a.1 != b.1 {
+                "SECTION"
+            } else if a.2 != b.2 {
+                "RANK"
+            } else if a.3 != b.3 {
+                "GOAL_PRIORITY"
+            } else if a.4 != b.4 {
+                "GOAL_STATUS"
+            } else {
+                "TASK_ID"
+            };
+            reasons.push(Reason {
+                code: format!("AFTER_{rule}"),
+                detail: ahead.id.clone(),
+            });
+        }
+        reasons
     }
     fn blocking(&self, task: &Record, today: &str) -> Option<Reason> {
         let reason = |code: &str, detail: &str| {
