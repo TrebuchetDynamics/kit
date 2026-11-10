@@ -469,7 +469,7 @@ fn private_json(path: &Path, value: &impl Serialize) -> Result<()> {
     io_result(file.sync_all())
 }
 
-fn birth_ticks(pid: u32) -> Result<u64> {
+pub(crate) fn birth_ticks(pid: u32) -> Result<u64> {
     let stat = io_result(std::fs::read_to_string(format!("/proc/{pid}/stat")))?;
     stat.rsplit_once(") ")
         .and_then(|(_, fields)| fields.split_whitespace().nth(19))
@@ -496,6 +496,44 @@ impl Runtime {
             timeout,
             runs: Mutex::new(BTreeMap::new()),
         })
+    }
+
+    pub(crate) fn executable(&self) -> &Path {
+        &self.executable
+    }
+
+    /// Read only owned, reaped, identity-bound terminal evidence; never signal/adopt a PID.
+    pub(crate) fn retained_outcomes(&self) -> Result<Vec<(OwnedProcess, RuntimeEvent)>> {
+        let mut outcomes = Vec::new();
+        for entry in io_result(std::fs::read_dir(&self.evidence_root))? {
+            let path = io_result(entry)?.path();
+            if !path.is_dir() || !path.join("outcome.json").is_file() {
+                continue;
+            }
+            let owner: OwnedProcess =
+                serde_json::from_slice(&io_result(std::fs::read(path.join("owner.json")))?)
+                    .map_err(|_| Unavailable("retained native owner"))?;
+            let outcome: RuntimeEvent =
+                serde_json::from_slice(&io_result(std::fs::read(path.join("outcome.json")))?)
+                    .map_err(|_| Unavailable("retained native outcome"))?;
+            if owner.evidence_dir != path
+                || birth_ticks(owner.pid).ok() == Some(owner.birth_ticks)
+                || outcome.event != RuntimeEventKind::Outcome
+                || outcome.repo_id != owner.identity.repo_id
+                || outcome.task_id != owner.identity.task_id
+                || outcome.attempt_id != owner.identity.attempt_id
+                || outcome.generation != owner.identity.generation
+                || outcome.contract_hash != owner.identity.contract_hash
+                || outcome.role != owner.identity.role
+            {
+                continue;
+            }
+            outcome
+                .to_json_line()
+                .map_err(|_| Unavailable("retained native event"))?;
+            outcomes.push((owner, outcome));
+        }
+        Ok(outcomes)
     }
 
     pub fn owned_process(&self, identity: &RunIdentity) -> Option<OwnedProcess> {

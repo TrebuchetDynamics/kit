@@ -1,9 +1,10 @@
 # Native-Octet Autowork candidate
 
-This Linux Rust component provides an owned-agent runtime and durable journal,
-not the installed Python runner. `version` and `capabilities` work without a model. The coordinator
-`run` command remains unavailable. This component does not install a service,
-import global authentication, or replace an existing runner.
+This Linux Rust candidate provides an owned-agent runtime, durable journal and
+serialized local delivery coordinator, not the installed Python runner.
+`version` and `capabilities` work without a model. `run` requires explicit model
+routes and an isolated repository. It does not install a service, import global
+authentication, push, deploy or replace an existing runner.
 
 See the [accepted design](../../docs/plans/rust-octet-autowork.md),
 [dependency pin and build prerequisites](../../docs/dependencies.md#rust-autowork-candidate),
@@ -20,12 +21,15 @@ RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.
 RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test cli
 RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test task_store
 RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test state_recovery
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test autonomous_cycle
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --tests
 ```
 
 The native tests use a local OpenAI Chat-compatible HTTP fixture through the real
-Octet `Agent`. They need no live provider or credentials. They use ports within
-`AUTOWORK_PORT_BASE` through `AUTOWORK_PORT_BASE+7` when that variable is set.
-Otherwise, the operating system assigns local ports. Test files use `TMPDIR`.
+Octet `Agent`. They need no live provider or credentials. Runtime tests use
+`AUTOWORK_PORT_BASE` through `AUTOWORK_PORT_BASE+7`, and planning tests use `+8`,
+when that variable is set. Otherwise, the operating system assigns local ports.
+Test files use `TMPDIR`.
 
 | Native test | Offline evidence |
 | --- | --- |
@@ -33,8 +37,10 @@ Otherwise, the operating system assigns local ports. Test files use `TMPDIR`.
 | `cancel_and_stale_run_are_not_success` | Reject mismatched and consumed generations. Revoke stale authority. Cancel, timeout, receiver drop and owner drop reap only the owned child. Retain session and uncertainty records. Late responses cannot settle another attempt. |
 | `reject_scope_and_redact_secret` | Deny undeclared, protected, external, symlink and hard-link targets. Keep fixture credentials out of retained evidence and projected events, including provider-error diagnostics. |
 
-These checks do not qualify a live provider, task completion, integration,
-publication, deployment, devices or sustained service operation.
+These runtime checks do not qualify task delivery. The coordinator checks below
+exercise local integration and task-proposal publication in disposable repositories.
+Neither set qualifies a live provider, deployment, devices, migration or sustained
+service operation.
 
 ## Revision-bound task store
 
@@ -205,9 +211,8 @@ owner drop also revoke the run. Cancellation uses the owned stdin control pipe
 and native `RunControl::abort`, with a bounded grace period before killing the
 owned `Child` handle. It never signals an unrelated PID or process group.
 
-The coordinator remains responsible for repository scheduling, durable generation
-admission across restarts, role instructions, checks, independent review and
-closure. `CheckOperationSpec` entries remain coordinator data. They do not install
+The coordinator owns repository scheduling, durable generation admission across
+restarts, role instructions, checks, independent review and closure. `CheckOperationSpec` entries remain coordinator data. They do not install
 model-callable tools. This runtime executes no check strings or model-authored
 argv. Fixed-argv check execution belongs to the coordinator's separate boundary.
 
@@ -291,4 +296,104 @@ The two tests use disposable repositories and a loopback response through the
 real Octet runtime, plus direct coordinator validation. They prove pending
 publication, immutable gates, stale and unsafe response refusal, observed-only
 help classification and unchanged-evidence suppression. They do not prove
-coordinator publication, integrated task completion or live-provider behavior.
+coordinator publication or integrated task completion; those have separate cycle
+checks below. No test here proves live-provider behavior.
+
+## Serialized offline delivery cycle
+
+[`execution.rs`](src/execution.rs) supplies `Coordinator::run_until_quiescent` and
+`commit_proposal`. The CLI uses those same services:
+
+```text
+autowork-next run --repo /absolute/disposable-repository --models /private/routes.json \
+  --worker-model worker --reviewer-model reviewer --planner-model planner --one-task
+```
+
+The routes file is a JSON object mapping those explicit references to the
+`ModelRoute` fields above. Configure the intended provider before running; the
+command does not discover credentials or silently choose a model. Offline tests
+use loopback fixtures, not a live provider. Do not run this candidate alongside an
+existing writer or against a production repository.
+
+- `--task ID` restricts scope and is repeatable. `--one-task` admits at most one
+  task attempt, including a failed attempt, rather than counting only successes.
+- `--no-commit` leaves pending edits unselected and dispatches no agents. An empty
+  routes object is sufficient for this non-executing mode.
+- The caller's `Control::pause/stop`, or a `pause`/`stop` marker in the private
+  `autowork-rust` state directory, prevents further dispatch/publication. Native
+  worker/reviewer/planner cancellation revokes only the owned child. Planning
+  checks the control again before applying edits. Per-task paused/refused journal
+  states remain admission gates.
+- Selection does not grant authority. Only complete worker-owned runnable tasks
+  enter execution; live resources are unsupported in this slice, even when
+  authorized elsewhere. `touches` must name exact normalized relative files, not
+  directories or globs. Candidate and fresh read-only reviewer worktrees live
+  under the canonical checkout's `.worktrees/` and are retained for inspection.
+
+### Checks, review and local publication
+
+The frozen `CheckRegistry` admits only `git-diff-check` and, with explicit
+`--fixture-checks`/`enable_fixture_checks`, the same built binary's `fixture-pass`
+and `fixture-fail` operations for disposable repositories. A spec binds the
+absolute executable/hash, implementation ID, accepted base revision, fixed argv,
+workspace, complete sanitized environment, timeout, output cap and receipt ID.
+Task/planner strings name operation IDs only. Unknown operations, shell text and
+executable/source/specification drift are refused. Git content filters are not
+admitted in this slice; attribute inspection rejects them before checkout/staging
+or check execution, and Git fsmonitor execution is disabled. Ordinary publication
+hooks remain explicit owned Git effects, not model-callable check operations.
+Unsupported mandatory checks remain unmet; fixture success is never substituted
+for an arbitrary build/test
+command or live qualification.
+
+The coordinator captures an exact candidate tree, runs every required operation,
+and supplies the independent reviewer with bound receipts and a bounded exact
+base/candidate diff, including deletions. A native successful outcome alone is
+not approval: the review response must explicitly approve the same candidate,
+tree and contract. Integration is serialized, has that exact tree and a two-parent
+commit, and refuses target drift or overlapping user changes. Only then can a
+coordinator-authored task closure and receipt be locally committed. Candidate and
+integration commits use literal Git plumbing; task publication/closure retains
+ordinary commit hooks in a detached workspace with a private index. A hook-changed
+tree/parent/message is rejected **before** canonical branch publication. Canonical
+publication uses compare-and-swap; unrelated staged blobs and working bytes stay.
+Nothing is pushed or deployed.
+
+### Restart and quiescence
+
+Private state retains planner publication input before apply, exact pending
+snapshots, Git intent/completion records, check/review receipts, native request
+identities and owned Git invocation state. Restart reconciles task undo journals,
+matching reaped native outcomes and actual Git effects before selection. A known
+successful worker can resume its retained candidate without another worker call;
+its original frozen registry must still match. A started hook invocation is never
+automatically replayed after a failure or uncertain interruption. Keep the owned
+workspaces, journal and evidence; do not delete intent files to force a retry.
+Unmatched/live/uncertain effects stay open rather than becoming acceptance.
+Settled delivery records no longer require completed task records to survive
+later pruning or reopening.
+
+Planner application is not selection. Only the exact validated pending tree can
+become a tasks-only local commit bound to its captured HEAD/branch. Recovery
+compares original and proposed bytes, refusing intervening task edits; unrelated
+pending task edits report `pending_edits`, not a selectable ephemeral tree.
+Failed checks/review retain required acceptance and send bounded coordinator
+failure data to planning. Unchanged planning evidence suppresses another call.
+
+The JSON summary separates completed IDs, pending IDs, evidence references and
+`completed`, `pending`, `pending_edits`, `task_limit`, `paused`, `stopped`,
+`no_commit`, `uncertain`, `waiting_external`, `waiting_sudo`,
+`waiting_credential` or `refused_scope`. Only coordinator-observed matching sudo
+or credential prerequisites can produce owner help. The CLI supplies no such
+observations; model prose alone cannot request credentials or sudo.
+
+`autonomous_cycle.rs` contains three composite offline acceptance cases:
+`finish_multiple_tasks_and_replan`, `recover_git_effects_without_false_closure`
+and `respect_limits_and_explain_quiescence`. They use native Octet fixtures,
+fixed authored checks and disposable repositories to cover multi-task delivery,
+exact planner publication, recovery boundaries, hook failures, evidence binding,
+authority/limits and unrelated staged/dirty preservation. Their ports use
+`AUTOWORK_PORT_BASE+20` through `+99` when configured, preferring `+20` through
+`+32` and skipping occupied/TIME_WAIT ports without touching other processes.
+These are not general shell,
+live-model, device, service, migration or replacement qualification.

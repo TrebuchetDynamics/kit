@@ -114,7 +114,11 @@ fn proposal(revision: &str) -> PlanProposal {
     }
 }
 fn fixture(response: String) -> (String, std::thread::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = std::env::var("AUTOWORK_PORT_BASE")
+        .ok()
+        .map(|base| base.parse::<u16>().unwrap() + 8)
+        .unwrap_or(0);
+    let listener = TcpListener::bind(("127.0.0.1", port)).unwrap();
     let url = format!("http://{}/", listener.local_addr().unwrap());
     let thread = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
