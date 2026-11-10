@@ -6,6 +6,8 @@ license: MIT
 
 # APK Get
 
+For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
+
 Build the repository's existing Android application as a release APK containing
 only `arm64-v8a` native libraries, then upload it using the host's installed
 `s3upload`.

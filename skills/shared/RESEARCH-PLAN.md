@@ -57,6 +57,12 @@ For every writable planning route, complete
 handoff. A branch-only save is pending, not completed planning. Explicit no-write
 and no-commit restrictions still take precedence.
 
+For task persistence, load the [task CLI policy](TODO-WORKCENTER.md#task-cli-policy).
+If tooling is unavailable, continue permitted planning/document work and show complete
+proposed task changes inline as **UNSAVED** with the missing input and retry command.
+Allowed reasoning stays in existing document owners, never a second runnable queue.
+Do not claim planning complete while required task persistence remains unsaved.
+
 ## Shared planning interface
 
 Plan With Me and Plan For Me are two adapters over one sequence. The mode changes

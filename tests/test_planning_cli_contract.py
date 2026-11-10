@@ -17,6 +17,15 @@ HANDOFF = 'skills/shared/PLAN-HANDOFF.md'
 INTERACTIVE = ('skills/plan-with-me/SKILL.md', 'adapters/skills/plan-with-me/SKILL.md')
 AUTONOMOUS = (PLANNER, 'adapters/skills/plan-for-me/SKILL.md')
 SPECIAL_CASES = 'skills/plan-with-me/references/special-cases.md'
+# Deliberate public-entrypoint inventory: shallow globs exclude immutable upstream trees.
+FIRST_PARTY_SKILLS = '''
+apk-get ask-kit autonomous-codebase-improver autoresearch autowork
+beautify-github-readme blockers bug-harvest docs-sync git-commit-push goal
+grilling grill-with-docs impeccable improve-codebase-architecture lgtm pending
+plan-for-me plan-with-me ponytail ponytail-audit ponytail-debt ponytail-gain
+ponytail-help ponytail-review push responsive-screenshots split-folder
+test-optimizer ui-taste unblock unused-code work writing-for-agents
+'''.split()
 TASK_WRITING_LINKS = (
     *((path, ('../../../skills/shared/' if path.startswith('adapters/') else '../shared/')
        + 'RESEARCH-PLAN.md') for path in (*INTERACTIVE, *AUTONOMOUS)),
@@ -57,6 +66,100 @@ class PlanningCliContractTests(unittest.TestCase):
 
     def show(self):
         return json.loads(self.tasks('show', 'T-1', '--worktree').stdout)
+
+    def test_all_first_party_skills_reach_task_cli_policy(self):
+        # Instruction delivery only, not proof of model adherence or write authority.
+        for base, extra in (('skills', 'grill-me'), ('adapters/skills', 'graphify')):
+            expected = {f'{base}/{name}/SKILL.md' for name in (*FIRST_PARTY_SKILLS, extra)}
+            self.assertEqual({str(p.relative_to(ROOT)) for p in (ROOT / base).glob('*/SKILL.md')},
+                             expected)
+            for path in sorted(expected):
+                contract = '../COMMON.md' if base.startswith('adapters') else '../shared/COMMON-CONTRACT.md'
+                policy = ('../../../skills/shared/' if base.startswith('adapters') else '../shared/') + 'TODO-WORKCENTER.md#task-cli-policy'
+                # A reference list or a graph-state-only link does not load the policy.
+                links = '|'.join(re.escape(link) for link in (contract, policy))
+                with self.subTest(entrypoint=path):
+                    self.assertRegex((ROOT / path).read_text(),
+                                     r'(?si)\b(?:Read|Load|Follow|Apply)\b(?:(?!\n\n).)*?\]\((?:' + links + r')\)')
+        for path, prefix in (('skills/shared/COMMON-CONTRACT.md', ''),
+                             ('adapters/skills/COMMON.md', '../../skills/shared/')):
+            self.assertIn(f'load the [task CLI policy]({prefix}TODO-WORKCENTER.md#task-cli-policy)',
+                          prose(path))
+
+    def test_task_cli_fallback_preserves_store_guards(self):
+        policy = prose(WORKCENTER).split('## Task CLI policy', 1)[1].split('## The records', 1)[0]
+        for rule in ('autowork capabilities', 'prepare_api >= 4', '`tasks`', '`prepare`',
+                     'required verbs', 'executable', 'toolset', 'release',
+                     'only the PATH wrapper', 'trusted loaded Kit root',
+                     'pi-autowork/pi_autowork/command.py', 'available compatible Python',
+                     'absolute quoted paths', 'explicit consumer repository',
+                     'Never search arbitrary checkouts', 'download', 'PATH mutation',
+                     'foreign release', 'absent or incompatible', 'TOOLCHAIN_MISMATCH',
+                     'UNSAVED', 'complete proposed task changes inline', 'exact missing input',
+                     'retry command', 'not tool absence', 'lock', 'validation', 'ownership',
+                     'conversion', 'reread', 'reconcile', 'unresolved guard refusal',
+                     'Do not hand-edit', 'TODO.md', 'goals.json', 'second queue',
+                     'saved, committed, delivered or executed'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, policy)
+        for path in ('skills/shared/RESEARCH-PLAN.md', HANDOFF,
+                     'skills/docs-sync/SKILL.md', 'adapters/skills/docs-sync/SKILL.md'):
+            with self.subTest(owner=path):
+                self.assertIn('TODO-WORKCENTER.md#task-cli-policy', prose(path))
+        self.assertIn('--json', prose(WORKCENTER))
+        self.assertIn('--expect REV', prose(WORKCENTER))
+
+    def test_absolute_python_entrypoint_targets_consumer_from_unrelated_cwd(self):
+        def run(*args, consumer_cwd=False):
+            argv = [sys.executable, str(COMMAND), *args]
+            if consumer_cwd:
+                # field --json cannot disambiguate a repository from optional label/value.
+                argv = ['sh', '-c', f'cd {shlex.quote(str(self.repo))} && {shlex.join(argv)}']
+            result = subprocess.run(argv, cwd=self.repo.parent,
+                                    capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout
+
+        caps = json.loads(run('capabilities'))
+        self.assertGreaterEqual(caps['prepare_api'], 4)
+        self.assertIn('tasks', caps['commands'])
+        self.assertTrue({'prepare', 'add', 'field', 'show', 'validate'} <= set(caps['tasks']))
+        for key in ('executable', 'toolset', 'release'):
+            self.assertIn(key, caps)
+        task_json = self.repo.parent / 'task.json'
+        task_json.write_text(json.dumps(dict(title='Add an offline invoice export', scope='Export invoices',
+                                            acceptance=['Export readable'], checks=['true'], touches=['docs/'])))
+        tid = run('tasks', 'add', str(self.repo), '--json', str(task_json)).split()[-1]
+        shown = json.loads(run('tasks', 'show', tid, str(self.repo), '--worktree'))
+        field_json = self.repo.parent / 'field.json'
+        literal = '`literal` $(not-a-command) $VAR "quoted" café\nsecond line'
+        field_json.write_text(json.dumps({'label': 'scope', 'value': literal}), encoding='utf-8')
+        run('tasks', 'field', tid, '--json', str(field_json),
+            '--expect', shown['record_revision'], consumer_cwd=True)
+        final = json.loads(run('tasks', 'show', tid, str(self.repo), '--worktree'))
+        self.assertEqual(final['scope'], literal)
+        run('tasks', 'validate', '--worktree', str(self.repo))
+        self.assertFalse((self.repo.parent / 'tasks').exists())
+
+    def test_shared_task_cli_policy_keeps_deletion_and_document_boundaries(self):
+        center = prose(WORKCENTER)
+        for command in ('add', 'field', 'place', 'move', 'goal', 'delete'):
+            self.assertIn(f'autowork tasks {command}', center)
+        policy = center.split('## Task CLI policy', 1)[1].split('## The records', 1)[0]
+        for rule in ('task operations only', 'no new task-producing role', 'read-only',
+                     'questions-only', 'audit', 'worker/coordinator', 'existing document owners',
+                     'shared plan decisions', 'not a runnable alternate queue',
+                     '#completed-task-retention', 'fresh ownership and dependency checks',
+                     'warnings, not safety refusals'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, policy)
+        for path in ('skills/shared/RESEARCH-PLAN.md', HANDOFF):
+            text = prose(path)
+            self.assertIn('document owners', text)
+            self.assertIn('UNSAVED', text)
+        readme_skill = prose('skills/beautify-github-readme/SKILL.md')
+        self.assertIn('autowork tasks place', readme_skill)
+        self.assertNotIn('moving whole TODO blocks', readme_skill)
 
     def test_documented_planning_close_forms_are_manual(self):
         original = (self.repo / 'tasks/items/T-1.md').read_bytes()

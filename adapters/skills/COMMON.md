@@ -32,6 +32,9 @@ Never change host permissions, memory configuration, model credentials or approv
 policy to make a workflow run. A skill cannot promise unattended execution after
 the current host session ends.
 
+For task operations, load the [task CLI policy](../../skills/shared/TODO-WORKCENTER.md#task-cli-policy),
+including its unavailable-tool fallback; this does not widen workflow authority.
+
 Follow [task holds](../../skills/shared/TODO-WORKCENTER.md#task-holds-require-an-explicit-user-request):
 leave tasks active by default. Only an explicit user request permits a skill to add
 or renew a task hold. Planning-only session scope does not pause the queue.

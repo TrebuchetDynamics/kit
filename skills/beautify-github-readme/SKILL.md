@@ -7,6 +7,8 @@ license: MIT
 
 # Beautify GitHub README
 
+For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
+
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
@@ -103,11 +105,11 @@ inside `upstream/`, except its README audit: run this skill's
    install does not silently opt the reader out. State which side effects the
    opt-out does not cover.
 4. **Validate examples against the authoring contract.** Include required fields
-   such as goal/payoff, accepted source and ownership, or label the example shortened
+   such as title, scope, acceptance and checks, or label the example shortened
    and link the complete format. Align scope, acceptance, check paths and reported
    changed files. Label task/report examples illustrative, never execution receipts.
-   Explain reprioritization through the user-facing workflow, such as moving whole
-   TODO blocks and running Docs Sync; keep internal helper paths, revision guards
+   Explain reprioritization through `autowork tasks place` and `move`, not manual
+   TODO-block edits; keep internal helper paths, revision guards
    and migration commands in references rather than implying scripts are on PATH.
 5. **Describe authority and activation precisely.** Explain whether an empty queue
    permits discovery, task recording and implementation in the same invocation

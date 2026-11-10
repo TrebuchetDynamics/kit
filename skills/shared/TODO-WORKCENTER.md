@@ -7,7 +7,7 @@ Plans and research receipts support these records; they must not become separate
 invisible backlogs. `BLOCKERS.md` holds owner questions and `CHANGELOG.md` the
 release notes. A `TODO.archive.md` that exists is frozen, read-only history.
 
-Every edit goes through `autowork tasks` (see [Edit records](#edit-records)). It
+Every task/goal record edit goes through `autowork tasks` (see [Edit records](#edit-records)). It
 writes only the working tree, never commits, and validates the whole store before
 keeping a write. Its operation-local conflict check protects the CLI's own read;
 carry `record_revision` to `--expect REV` to protect an earlier planning read across
@@ -18,6 +18,68 @@ delegation. Old cards are not leases: inspect real process/workspace activity,
 preserve useful candidates and source-bound checks, and keep required independent
 review, explicit allocations and publication limits. Native task-state transitions
 are not prerequisites for selection, recovery, review or integration.
+
+## Task CLI policy
+
+For task operations only, use `autowork tasks` within the current workflow's
+existing authority. This grants no new task-producing role: read-only,
+questions-only and audit stay nonmutating; worker/coordinator boundaries, active
+contracts, holds, live gates and commit/publication limits remain unchanged.
+Unrelated file edits do not need the task CLI. Keep shared plan decisions and
+permitted reasoning in their existing document owners, not a runnable alternate queue.
+
+1. **Available CLI.** Run `autowork capabilities` before task operations. Require a
+   successful handshake with `tasks` in `commands`, `prepare` and the required verbs
+   for the intended operations in `tasks`, and `prepare_api >= 4`. Check its
+   `executable`, `toolset` and `release` against the loaded skill/toolchain. Use the
+   [Docs Sync prepare flow](../docs-sync/SKILL.md#prepare-the-store-first) on the
+   actual consumer, retaining every outcome and authority limit (read-only uses
+   `--check`). Reuse verified capability/prepare results only while inputs are unchanged.
+2. **Missing wrapper only.** If only the PATH wrapper is unavailable, resolve the
+   trusted loaded Kit root from the actual loaded skill path or explicit host
+   installation metadata. Verify its existing `pi-autowork/pi_autowork/command.py`
+   and use an available compatible Python interpreter to run that same CLI.
+   Use absolute quoted paths and an explicit consumer repository, never the skill
+   directory or an implicit current directory. For example, replace these paths
+   with the verified interpreter, loaded Kit root and intended repository:
+
+   ```sh
+   "/absolute/python3" "/trusted/kit/pi-autowork/pi_autowork/command.py" capabilities
+   "/absolute/python3" "/trusted/kit/pi-autowork/pi_autowork/command.py" tasks show ID "/absolute/consumer" --worktree
+   cd "/absolute/consumer" && "/absolute/python3" "/trusted/kit/pi-autowork/pi_autowork/command.py" tasks field ID --json "/absolute/field.json" --expect REV
+   ```
+
+   Require the same capability handshake before any task operation. Supply the
+   repository argument explicitly for add, prepare, show and validate. For
+   `field --json`, explicitly change to the consumer directory with `cd` as above:
+   its optional label/value positionals cannot carry a repository with JSON.
+   Use the existing [literal JSON and revision guards](#edit-records).
+   This replaces invocation only, not the tool or its guards. Never search arbitrary
+   checkouts, download or automatically install tools, silently substitute a
+   foreign release, or use PATH mutation to make this work. An incompatible wrapper
+   is not a missing wrapper: do not switch toolchains to evade a failed handshake.
+3. **Unavailable toolchain.** If the CLI entrypoint or runtime is absent or incompatible,
+   or required capabilities are missing, report `TOOLCHAIN_MISMATCH`, the exact missing
+   input and retry command for the intended consumer. Continue permitted discussion
+   and document work. Show complete proposed task changes inline, marked **UNSAVED**:
+   include proposed new records (IDs provisional until allocated), field deltas,
+   ordering, goal changes and deletions as applicable, with literal JSON/CLI inputs
+   sufficient to retry after a fresh read. Do not hand-edit task Markdown/TOML,
+   TODO.md or goals.json, create a second queue or fallback tracker, or claim these
+   changes were saved, committed, delivered or executed. Existing document owners
+   may retain allowed reasoning, never an alternate executable backlog.
+4. **Refusal is not absence.** A stale revision is not tool absence: reread and
+   reconcile the latest record through the normal CLI, then reapply only the
+   still-authorized delta with its `record_revision`. An unresolved guard refusal
+   (lock, validation, ownership or conversion) must be reported, not bypassed with
+   another invocation, direct files, force or a fallback queue. Preserve existing
+   prepare outcomes and report unsaved changes honestly; the fallback grants no
+   installation, conversion-force, execution or delivery authority.
+
+Use [Edit records](#edit-records) for add, field, place/move and goal operations.
+For delete, follow [completed-task retention](#completed-task-retention), including
+fresh ownership and dependency checks before deletion: delete diagnostics are
+warnings, not safety refusals. A successful command alone does not establish safety.
 
 ## The records
 
@@ -248,6 +310,7 @@ reservations.
 | `autowork tasks hold ID --by WHO [--until YYYY-MM-DD]`, `release ID` | Apply an explicitly user-requested task pause, or release a reconciled hold under the policy above. |
 | `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]` | Manual close of any task kind; optional evidence is a reference, not verified acceptance. |
 | `autowork tasks supersede ID --by OTHER --reason TEXT` | Replace a task. |
+| `autowork tasks delete ID` | Delete a task record only after the [ownership/dependency and retention checks](#completed-task-retention); warnings are not safety refusals. Receipts and dependents are unchanged. |
 | `autowork tasks goal ID [--title --source --priority --status --focus/--no-focus --depends-on --evidence]` | Add or change a goal; `--status met` needs evidence and all non-superseded owned tasks done and qualified. |
 | `autowork tasks goals [--worktree]` | Read every goal record, in priority order. |
 | `autowork tasks commit [--message TEXT] [--dry-run]` | Commit the working tree's `tasks/` edits and nothing else; `--dry-run` shows the paths and their diff. |

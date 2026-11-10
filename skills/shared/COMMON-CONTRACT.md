@@ -28,6 +28,9 @@ may implement, test and commit locally. Loading a supporting skill adds no autho
 Installation, publication, third-party contact and destructive actions require their
 own authorization; specific no-write/no-commit restrictions always take precedence.
 
+For task operations, load the [task CLI policy](TODO-WORKCENTER.md#task-cli-policy),
+including its unavailable-tool fallback; this does not widen workflow authority.
+
 Follow [task holds](TODO-WORKCENTER.md#task-holds-require-an-explicit-user-request):
 leave tasks active by default. Only an explicit user request permits a skill to add
 or renew a task hold. Session scope does not pause the queue; existing safety gates

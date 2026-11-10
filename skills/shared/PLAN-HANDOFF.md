@@ -14,6 +14,11 @@ When a separate plan is justified, its accepted section names its status
 Planning saves accepted work as complete records in `tasks/` through `autowork tasks`
 ([work center](TODO-WORKCENTER.md)); a goal without tasks is not an executable task.
 
+Load the [task CLI policy](TODO-WORKCENTER.md#task-cli-policy) for all task operations
+and unavailable-tool behavior. Complete inline **UNSAVED** proposals are not a saved
+handoff; report the exact missing input and retry command, keeping permitted shared
+reasoning in existing document owners without creating an alternate queue.
+
 ## Main-branch persistence
 
 Every writable planning route saves its affected plan documents, tasks and goals
