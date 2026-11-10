@@ -133,7 +133,8 @@ elif message.startswith('You triage a blocker'):
     role, task = 'triage', re.search(r'The worker of task (\S+) ', message)[1]
 else:
     role, task = 'worker', field('Task')
-key = ('discovery' if message.startswith('You are discovering independent maintenance work') else
+key = ('post-completion' if 'after these verified tasks closed and landed:' in message else
+       'discovery' if message.startswith('You are discovering independent maintenance work') else
        role if role in ('merge', 'maintainer') else f'{role}:{task}')
 with open(os.environ['FAKE_PI_PLAN'], 'r+') as stream:
     fcntl.flock(stream, fcntl.LOCK_EX)
@@ -288,6 +289,11 @@ elif role == 'maintainer':
             stream.write('\nStill missing ledger proof.\n')
         git('add', 'BLOCKERS.md')
         git('commit', '-qm', 'docs(tasks): incomplete ledger repair')
+    elif behavior == 'post_completion_cleanup':
+        git('rm', '-q', 'tasks/items/A.md', 'tasks/evidence/A.toml')
+        edit_task('B', {'title': 'Clarified pending feature', 'short': 'Pending feature'})
+        edit_task('C', {'depends_on': []})  # A is a satisfied ordinary prerequisite, not a verified gate.
+        git('commit', '-qm', 'docs(tasks): reconcile completed and pending work')
     elif behavior == 'code':  # oversteps: edits product code
         open('A.txt', 'w').write('maintainer wrote code\n')
         git('add', 'A.txt'); git('commit', '-qm', 'not allowed')
@@ -760,7 +766,7 @@ class EngineTests(Fixture):
             self.assertEqual(task_queue.stale_closures(self.repo), [])
             self.assertTrue((self.repo / f'tasks/evidence/{task}.toml').is_file())
         roles = {r['role'] for r in self.records()}
-        self.assertEqual(roles, {'worker', 'verify'})
+        self.assertEqual(roles, {'worker', 'verify', 'maintainer'})
 
     def test_once_runs_one_task(self):
         result = self.run_runner('--once')
@@ -770,6 +776,24 @@ class EngineTests(Fixture):
         self.assertEqual((self.repo / 'B.txt').read_text(), '')
         self.assertEqual(self.closed(), {'A'})
         self.assertFalse((self.repo / '.gitattributes').exists())  # the store needs no merge drivers
+
+    def test_once_runs_post_close_docs_sync_and_lands_safe_cleanup(self):
+        self.plan({'post-completion': ['post_completion_cleanup']})
+        result = self.run_runner('--once')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual([r['task'] for r in self.runs('worker')], ['A'])
+        jobs = self.runs('maintainer')
+        self.assertEqual(len(jobs), 1, result.stdout)
+        self.assertIn('/skill:docs-sync', jobs[0]['message'])
+        self.assertNotIn('A', task_queue.store(self.repo).tasks, result.stdout + result.stderr)
+        self.assertFalse((self.repo / 'tasks/evidence/A.toml').exists())
+        self.assertEqual(self.record('B').title, 'Clarified pending feature')
+        self.assertEqual(self.record('B').status, 'open')
+        slot = json.loads((self.repo / '.git/autowork-execution/slots/A.json').read_text())
+        self.assertEqual(slot['state'], 'closed')
+        self.assertEqual(self.record('C').depends_on, ())
+        self.assertIn('DOCS-MAINTAINER: merged; changed A, B, C', result.stdout)
+        self.assertEqual(self.git(self.repo, 'status', '--porcelain'), '')
 
     def test_rejected_close_reports_hook_output_and_retries_without_redispatch(self):
         hook = self.repo / '.git/hooks/pre-commit'
@@ -1028,7 +1052,8 @@ class EngineTests(Fixture):
         result = self.run_runner('--until-empty')
         self.assertIn('DOCS-MAINTAINER: repairing the task docs of A', result.stdout)
         self.assertIn('DOCS-MAINTAINER: merged; changed A', result.stdout)
-        self.assertEqual(len(self.runs('maintainer')), 1)
+        repairs = [run for run in self.runs('maintainer') if '/skill:docs-sync' not in run['message']]
+        self.assertEqual(len(repairs), 1)
         self.assertTrue(self.done('A', 'B', 'C'), result.stdout)
         self.assertIn('restate A with the Checks line', self.git(self.repo, 'log', '--format=%s'))
 
@@ -1040,7 +1065,8 @@ class EngineTests(Fixture):
         self.assertFalse((self.repo / 'A.txt').exists() and 'maintainer wrote code' in (self.repo / 'A.txt').read_text())
         again = self.run_runner('--until-empty')  # the same trigger set: no second model call
         self.assertNotIn('DOCS-MAINTAINER: repairing', again.stdout)
-        self.assertEqual(len(self.runs('maintainer')), 1)
+        repairs = [run for run in self.runs('maintainer') if '/skill:docs-sync' not in run['message']]
+        self.assertEqual(len(repairs), 1)
 
     def main_record(self):
         found = list(self.state.glob('*/main_check.json'))
@@ -1219,7 +1245,8 @@ class EngineTests(Fixture):
         self.assertIn('DOCS-MAINTAINER: repairing the task docs of MAIN', log())
         self.assertIn('Main is green again at', log())
         maintenance = [run for run in self.runs('maintainer')
-                       if not run['message'].startswith('You are discovering independent maintenance work')]
+                       if not run['message'].startswith('You are discovering independent maintenance work')
+                       and '/skill:docs-sync' not in run['message']]
         self.assertEqual(sum(run['run'] == 'repair_main' for run in maintenance), 1, log())
         bundles = [re.search(r'; evidence bundle: ([^\n]+)', run['message'])[1] for run in maintenance]
         self.assertEqual(len(bundles), len(set(bundles)), log())  # at most one refresh per checked revision
