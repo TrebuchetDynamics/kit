@@ -2696,6 +2696,14 @@ class Coordinator:
         if discovery and (self.mode != 'continuous' or self.draining
                           or time.monotonic() < self.pause_until or self.reexec_due()):
             return False
+        if discovery and (env_file := os.environ.get('PI_AUTOWORK_ENV_FILE')):
+            markers = (service.stop_marker(env_file),
+                       fleet_view.paused_marker(Path(env_file).parent, Path(env_file).stem))
+            try:
+                if any(marker.exists() for marker in markers):
+                    return False  # An active unit does not revoke saved owner stop intent.
+            except OSError:
+                return False  # Unknown pause intent cannot authorize autonomous discovery.
         if (overlap or completion) and self.reexec_due():
             # A due reload already holds new reviews and batches and waits for a re-cut beside the
             # loop: one started then kept integration idle for its whole Pi job. Reload first.

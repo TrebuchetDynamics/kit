@@ -1,5 +1,6 @@
 """Continuous queue exhaustion discovers work without rewriting blocked contracts."""
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -265,6 +266,29 @@ class RepositoryWorkTests(unittest.TestCase):
                 owner.pause_until = float('inf') if gate == 'pause' else 0
                 owner.reexec_due = lambda: gate == 'reload'
                 self.assertFalse(owner.maintain(discovery=True))
+
+    def test_discovery_preserves_saved_service_pause_stop_and_unreadable_markers(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env_file = Path(folder) / 'fixture.env'
+            owner = Coordinator.__new__(Coordinator)
+            owner.stop = owner.draining = False
+            owner.integ, owner.mode, owner.pause_until = '/session', 'continuous', 0
+            owner.maintainer_job = None
+            owner.reexec_due = lambda: False
+            owner.validate_ledger = Mock(side_effect=AssertionError('paused discovery reached task reads'))
+            with patch.dict(os.environ, PI_AUTOWORK_ENV_FILE=str(env_file)):
+                for name in ('fixture.paused', 'fixture.env.stopped'):
+                    marker = Path(folder) / name
+                    marker.write_text('explicit owner stop')
+                    self.assertFalse(owner.maintain(discovery=True))
+                    self.assertEqual(marker.read_text(), 'explicit owner stop')
+                    marker.unlink()
+                with patch('pi_autowork.coordinator.fleet_view.paused_marker') as paused:
+                    paused.return_value.exists.side_effect = PermissionError('unknown pause intent')
+                    self.assertFalse(owner.maintain(discovery=True))
+                owner.validate_ledger.assert_not_called()
+                with self.assertRaisesRegex(AssertionError, 'paused discovery reached task reads'):
+                    owner.maintain(discovery=True)  # An unmarked service still reaches normal admission.
 
     def test_prompt_keeps_authority_and_evidence_boundaries_and_rotates_search_seam(self):
         with tempfile.TemporaryDirectory() as state:
