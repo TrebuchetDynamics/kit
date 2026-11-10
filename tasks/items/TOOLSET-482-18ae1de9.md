@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-482-18ae1de9"
 title = "Autowork source layout and archives match the component map"
 short = "Component layout and archives"
-status = "open"
+status = "done"
 goal = "CODE-HEALTH-2026-10"
 section = "Next"
 rank = 17000
@@ -16,6 +16,11 @@ scope = "Implement task D of the accepted one-product-root contract after Python
 acceptance = ["Moved test_src_entrypoints/test_src_bootstrap plus test_paseo_plugin_root prove all canonical product source/tests/tools/fixtures live under pi-autowork; root src, integrations/paseo and rust/autowork have no retained product implementations. Exact retained outside files are shared Kit owners or verified minimal adapters/required identical Paseo entries, not a broad name-based exemption.", "test_check/test_affected_tests and source-bound inventory comparison prove every baseline product test has a moved or documented extracted counterpart; all checker suites/shards/manual exclusions and existing Rust/Paseo target inventories remain reachable. Production source/adapters cannot import product test helpers; fake benchmark and manual evidence tooling stay explicitly non-production.", "test_portable_package/native closure tests and plugin-load packaging prove complete isolated archives without host checkout fallback, no accidental native-only/test/cache/state payload in Pi distribution, unchanged root resources and supported entrypoint behavior.", "Docs Sync check plus current README/runbook commands point to actual owners; source-only affected checks and independent review pass. No push/install/running release/live/model completion is inferred from these results."]
 checks = ["python3 scripts/affected_tests.py --run --base <captured-task-base>", "python3 scripts/check.py pi-autowork/tests/native/test_src_bootstrap.py pi-autowork/tests/native/test_src_native.py pi-autowork/tests/runner/test_src_entrypoints.py tests/test_check.py tests/test_affected_tests.py tests/test_portable_package.py tests/test_paseo_plugin_root.py (reuse exact-tree selected results)", "python3 skills/docs-sync/scripts/docs.py check .", "node --test tests/portable_pi.test.mjs", "Reuse matching post-move locked Rust and Paseo receipts only when source/tool/config hashes remain unchanged; otherwise rerun the affected offline check, not live qualification"]
 exclusions = ["No live model calls, production/device operations, runtime or system installation, service start/stop/reload, push, deployment, state migration, credential changes or worker interruption. Isolated locked test-environment preparation is allowed only under existing execution authority and the plan's offline setup limits; missing cached inputs stay an explicit setup blocker.", "No feature redesign, correctness-issue scope expansion, dependency upgrades, removal of tests, weakened assertions or modification of another active task contract."]
+closure = "manual"
+closure_actor = "interactive-codex"
+closure_timestamp = "2026-11-10T18:22:09.318666+00:00"
+closure_reason = "Combined Python/Paseo/Rust owners audited against component map. Ownership/staging/archive oracles and docs updated; all 91 baseline product test modules have mapped owners. Independent layout review found no remaining gaps. Affected suite plus repaired-environment failed-module rerun passed; no installed/live qualification claimed."
+closure_evidence = "fc637cac; /tmp/kit-pending-affected.log; /tmp/kit-pending-retry.log; /tmp/kit-paseo-final.log"
 +++
 
 - Sources: docs/plans/pi-autowork-component-layout.md#one-product-root-contract; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/items/TOOLSET-481-33040cb9.md; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/evidence/TOOLSET-481-33040cb9.toml
