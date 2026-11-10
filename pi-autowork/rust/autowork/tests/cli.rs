@@ -38,6 +38,73 @@ fn output_json(args: &[&str]) -> Value {
 }
 
 #[test]
+fn crate_has_one_product_owner() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = manifest_dir
+        .ancestors()
+        .find(|path| path.join(".git").exists())
+        .unwrap();
+    let owner = root.join("pi-autowork/rust/autowork");
+    assert_eq!(manifest_dir, owner);
+    for retired in ["Cargo.toml", "src", "tests"] {
+        assert!(!root.join("rust/autowork").join(retired).exists());
+    }
+
+    let output = Command::new(env!("CARGO"))
+        .args([
+            "metadata",
+            "--locked",
+            "--offline",
+            "--no-deps",
+            "--format-version",
+            "1",
+            "--manifest-path",
+        ])
+        .arg(owner.join("Cargo.toml"))
+        .current_dir(std::env::temp_dir())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    let metadata: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let packages = metadata["packages"].as_array().unwrap();
+    assert_eq!(packages.len(), 1);
+    assert_eq!(metadata["workspace_members"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        packages[0]["manifest_path"],
+        owner.join("Cargo.toml").to_str().unwrap()
+    );
+    let targets: std::collections::BTreeSet<_> = packages[0]["targets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|target| {
+            assert!(std::path::Path::new(target["src_path"].as_str().unwrap()).starts_with(&owner));
+            (
+                target["name"].as_str().unwrap(),
+                target["kind"][0].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        targets,
+        std::collections::BTreeSet::from([
+            ("autowork_next", "lib"),
+            ("autowork-next", "bin"),
+            ("autonomous_cycle", "test"),
+            ("cli", "test"),
+            ("planning_reentry", "test"),
+            ("runtime_native", "test"),
+            ("state_recovery", "test"),
+            ("task_store", "test"),
+        ])
+    );
+    for module in ["execution", "planning", "runtime", "state", "task_store"] {
+        assert!(owner.join(format!("src/{module}.rs")).is_file());
+        assert!(include_str!("../src/lib.rs").contains(&format!("pub mod {module};")));
+    }
+}
+
+#[test]
 fn bootstrap_without_pi() {
     let version = output_json(&["version"]);
     assert_eq!(version["application"], "autowork-next");

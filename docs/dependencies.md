@@ -63,12 +63,13 @@ versions. Native scans remain enabled; blocked imports mean incomplete setup.
 
 ## Rust Autowork candidate
 
-The separate [`rust/autowork/Cargo.toml`](../rust/autowork/Cargo.toml) builds
+The separate [`pi-autowork/rust/autowork/Cargo.toml`](../pi-autowork/rust/autowork/Cargo.toml) builds
 `autowork-next`. It does not replace or install over the Python `autowork` runner.
 The accepted design is in [Rust Autowork with Octet](plans/rust-octet-autowork.md).
-Only `version` and `capabilities` are available. `run`, owned agents, task storage,
-state, planning and execution remain unavailable stubs, not successful operations.
-Unknown commands are rejected. No model call is needed for the bootstrap checks.
+`version` and `capabilities` need no model call. The crate's
+[guide](../pi-autowork/rust/autowork/README.md) describes its explicit isolated
+`run` route and offline authority/recovery fixtures. Unknown commands are rejected;
+this candidate is not a service cutover or live-provider qualification.
 
 Both public libraries, `octet-agent` and `octet-ai` 0.10.0, are Git dependencies at
 [`4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee`](https://github.com/skaft-software/octet/tree/4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee).
@@ -76,11 +77,11 @@ There is no dependency on Octet's private application crate and no upstream patc
 This source pin is independent of the mutable stable binary installer above.
 Octet is MIT-licensed, copyright 2026 Achuthan Mukundan and Skaft Software
 contributors. Its full license is retained in
-[`THIRD_PARTY_NOTICES.md`](../rust/autowork/THIRD_PARTY_NOTICES.md).
+[`THIRD_PARTY_NOTICES.md`](../pi-autowork/rust/autowork/THIRD_PARTY_NOTICES.md).
 Retain that notice when distributing linked binaries. Other dependencies retain
 their respective licenses; this is not a complete transitive license inventory.
 
-[`Cargo.lock`](../rust/autowork/Cargo.lock) records the complete resolved dependency
+[`Cargo.lock`](../pi-autowork/rust/autowork/Cargo.lock) records the complete resolved dependency
 graph, Git source identity and registry checksums. The initial direct resolutions
 are Tokio 1.54.1, serde 1.0.229, serde_json 1.0.154, clap 4.6.7, fs2 0.4.3,
 toml 1.2.1+spec-1.1.0, toml_edit 0.25.19+spec-1.1.0 and rusqlite 0.40.2.
@@ -91,14 +92,14 @@ licenses, then repeat the locked checks. Do not substitute a floating Octet bran
 Build prerequisites are Linux, Rust/Cargo 1.95.0, Git, a C compiler and linker.
 Native dependencies include bundled SQLite and zstd. Initial resolution needs
 GitHub and crates.io access, or a previously populated Cargo cache.
-[`rust-toolchain.toml`](../rust/autowork/rust-toolchain.toml) pins 1.95.0 when invoked
+[`rust-toolchain.toml`](../pi-autowork/rust/autowork/rust-toolchain.toml) pins 1.95.0 when invoked
 inside the crate. From the repository root, select it explicitly:
 
 ```sh
-RUSTUP_TOOLCHAIN=1.95.0 cargo build --locked --manifest-path rust/autowork/Cargo.toml
-RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test cli
-./rust/autowork/target/debug/autowork-next version
-./rust/autowork/target/debug/autowork-next capabilities
+RUSTUP_TOOLCHAIN=1.95.0 cargo build --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml --test cli
+./pi-autowork/rust/autowork/target/debug/autowork-next version
+./pi-autowork/rust/autowork/target/debug/autowork-next capabilities
 ```
 
 The binary paths above assume Cargo's default target directory. If

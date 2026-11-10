@@ -1,5 +1,30 @@
 # Verification and compatibility
 
+## Rust candidate offline checks
+
+The separate native-Octet crate is owned by `pi-autowork/rust/autowork/`.
+Use Rust/Cargo 1.95.0 with the already-populated locked cache described in
+[dependencies](dependencies.md#rust-autowork-candidate):
+
+```sh
+export RUSTUP_TOOLCHAIN=1.95.0
+cargo metadata --locked --offline --no-deps --format-version 1 --manifest-path pi-autowork/rust/autowork/Cargo.toml
+cargo check --locked --offline --manifest-path pi-autowork/rust/autowork/Cargo.toml
+cargo test --locked --offline --manifest-path pi-autowork/rust/autowork/Cargo.toml
+```
+
+Repeat these commands from an unrelated disposable working directory using the
+absolute manifest path. `cli::crate_has_one_product_owner` checks Cargo's sole
+manifest owner, the `autowork-next` binary, integration-test targets, internal
+module ownership and absence of the retired root implementation. Preserve all
+existing test names, fixtures, lock bytes and the pinned Octet revision when moving
+the crate. The shared Python checker does not execute Cargo; run these checks
+separately. The [crate guide](../pi-autowork/rust/autowork/README.md) describes the
+bounded offline/fake-agent authority and recovery fixtures and their port ranges.
+Historical task-store, state, planning and fake-runtime reports still describe
+their original source revisions, not fresh checks of this layout. Neither those
+reports nor relocation checks qualify live models, devices or the Python service.
+
 ## Read-only fleet blocker report
 
 `python3 -m unittest discover -s pi-autowork/tests -p test_blockers_report.py`
