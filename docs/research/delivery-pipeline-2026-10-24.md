@@ -17,6 +17,44 @@ conservative full-cohort metrics. Distinguish eligible review-tail time from tot
 wait time; current spare capacity cannot prove capacity at historical dispatch.
 Comparable quality and check coverage are required for performance claims.
 
+## Interrupted disposable delivery qualification
+
+Apply the [standing grant](../autonomy.md#record-approval-once-then-execute) to a
+named disposable repository and configured provider/model before any model call.
+Record the model-spend scope, initial task/attempt identity and local-main revision.
+Use a remote-free target, an isolated agent profile with only the selected model's
+credentials, and an explicit `PI_AUTOWORK_PUSH=0` in both the calling environment
+and saved service settings. Keep production credentials and ambient runner settings
+out of the trial. Confirm the model catalog with the service's actual Node/Pi PATH.
+
+Start only the trial with `PI_AUTOWORK_PUSH=0 autowork start <disposable-repo>`.
+Keep normal validation and independent model review enabled. Use a unique service
+instance and private settings/state; do not rewrite the shared service template or
+restart unrelated services. Capture admission, implementation and review evidence.
+
+For the post-fast-forward recovery path, a disposable Git `post-merge` hook can
+hold the session after its validated candidate lands but before the engine records
+`integrated`. Confirm the slot is still `integrating`, its candidate equals session
+HEAD, and its saved check receipt passes for that exact task/attempt and candidate.
+Interrupt only that trial's process group or service cgroup, release the hook, then
+start the same trial again. Do not edit receipts, replace the candidate, or change
+the task contract to make recovery pass. The existing engine
+[`recover_integration`](../../pi-autowork/src/pi_autowork/engine/parallel_integrate.py)
+requires exact candidate, contract, branch, tree and passing-receipt evidence.
+
+Compare attempt IDs, worker/candidate commits, receipt hashes, dispatch and closure
+transitions, and separate worker/reviewer invocations across the restart. Verify both
+commits with `git merge-base --is-ancestor <commit> main` in the disposable repository;
+a closed slot alone does not prove main delivery. Stop and disable the trial afterward,
+remove its copied model credentials, and retain private recovery evidence. Publish only
+sanitized observations, timestamps, counts and missing data in the execution receipt,
+not prompts, tokens, credentials or a completed-task archive in this repository.
+
+An interruption during integration qualifies only that recovery path. It does not
+exercise interruption of a running worker, establish real-repository reliability,
+or qualify the [30-day evaluation](../evaluation.md#30-day-evaluation). Keep missing
+billing and owner-attention data unknown; a passing fixture supplies neither.
+
 ## Implementation constraints
 
 Retain existing runtime, scorecard, maintainer and integration ownership; add no
