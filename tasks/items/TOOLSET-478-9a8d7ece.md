@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-478-9a8d7ece"
 title = "Plan the next Rust batch from landed offline evidence"
 short = "Plan Rust from landed offline evidence"
-status = "open"
+status = "done"
 goal = "RUST-OCTET"
 section = "Next"
 rank = 14000
@@ -16,6 +16,11 @@ scope = "Continue goal RUST-OCTET from docs/plans/rust-octet-autowork.md after e
 acceptance = ["Given the six closed building tasks, their actual source-bound results are mapped to this plan's remaining goal outcomes; unresolved acceptance remains open and no offline fixture is called live model/migration qualification.", "The next bounded batch records selected interfaces, authority boundaries, exact proposed checks, touches and real dependencies for each selected outcome, passes a fresh read-only builder check, and has one closing planning task when building work is added and the existing round limit permits it.", "autowork tasks validate --worktree . passes and saved records/plan are read back; close this planning activity manually with real attribution, never as verified implementation."]
 checks = ["autowork tasks validate --worktree ."]
 exclusions = ["No production code, tests, fixtures, manifests, source pin edits, model calls, installer/service changes, live qualification or publication in this planning task.", "Do not change an old live owner or active contract without reconciling actual identity and work."]
+closure = "manual"
+closure_actor = "DOCS-MAINTAINER"
+closure_timestamp = "2026-11-10T18:01:14.596665+00:00"
+closure_reason = "Read landed first-batch reports, retained planner report, immutable cycle/relocation contracts and current Rust source; saved one bounded native inspection task and round-2 successor after fresh read-only builder found no material gaps. This closes planning only, not implementation or goal qualification."
+closure_evidence = "docs/plans/rust-octet-autowork.md#next-implementation-frontier"
 +++
 - Sources: docs/plans/rust-octet-autowork.md#remaining-goal-outcomes-and-next-rounds; skills/shared/TODO-WORKCENTER.md#rolling-planning; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/items/TOOLSET-477-e5de6356.md; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/evidence/TOOLSET-477-e5de6356.toml; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/items/TOOLSET-481-33040cb9.md; git show d521a3ff5d1100526a4a590e6a34d9d62afef1c2:tasks/evidence/TOOLSET-481-33040cb9.toml
 - Plan round: 1 of 10
