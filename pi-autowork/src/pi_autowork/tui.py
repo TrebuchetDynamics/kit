@@ -35,6 +35,7 @@ from pi_autowork.tui_tasks import (  # noqa: E402
     CommitEdits, DecisionScreen, NewTask, PickSection, TaskScreen, TasksScreen,
     TextPrompt, pending_edits)
 
+from rich.style import Style
 from rich.text import Text  # noqa: E402  (installed with textual)
 from rich.cells import cell_len, set_cell_size  # noqa: E402
 from textual.app import App, ComposeResult, SystemCommand  # noqa: E402
@@ -73,10 +74,32 @@ class ActionMenu(ModalScreen[str]):
         super().__init__()
         self.actions, self.shown = tuple(actions), list(actions)
 
+    DESCRIPTIONS = {
+        'l': 'View activity, worker output and the complete history.',
+        't': 'See pending work, understand blockers and retry failed attempts.',
+        'i': 'Inspect project status, checks and exact diagnostic evidence.',
+        'm': 'Choose a provider and model; connect your account if needed.',
+        'f': 'Choose the model to use when the primary model is unavailable.',
+        'p': 'Start or pause work for the selected project.',
+        's': 'Stop the service; unfinished work is preserved for the next start.',
+        'r': 'Reload the runner configuration; this does not retry failed tasks.',
+        'n': 'Browse folders and start Autowork on another project.',
+        'u': 'Remove this stopped service; repository and worktrees stay.',
+        'q': 'Close this interface. Running services continue in the background.',
+    }
+
+    @classmethod
+    def option_text(cls, key, label):
+        text = Text()
+        text.append('[' + key + '] ', style='bold cyan')
+        text.append(label + '\n', style='bold')
+        text.append('    ' + cls.DESCRIPTIONS.get(key, 'Open this action.'), style='dim')
+        return text
+
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Label(Text('Actions and shortcuts', style='bold'))
-            yield Input(placeholder='Search actions, e.g. model, pause or tasks', id='action-filter')
+            yield Label(Text('What would you like to do?', style='bold'))
+            yield Input(placeholder='Search: tasks, model, stop…', id='action-filter')
             yield OptionList(id='actions')
             yield Static('', id='action-status', markup=False)
             yield Label('↓ browse · Enter select · Esc back')
@@ -92,12 +115,10 @@ class ActionMenu(ModalScreen[str]):
         options = self.query_one('#actions', OptionList)
         options.clear_options()
         for key, label in self.shown:
-            text = Text(f'{key:>3}  {label}')
-            text.stylize('bold cyan', 0, 3)
-            options.add_option(text)
+            options.add_option(self.option_text(key, label))
         options.highlighted = 0 if self.shown else None
         self.query_one('#action-status', Static).update(
-            f'{len(self.shown)} actions' if self.shown else 'No matching actions. Change your search.')
+            f'{len(self.shown)} options · select one to continue' if self.shown else 'No matching actions. Change your search.')
 
     def on_input_submitted(self, event):
         if self.shown:
@@ -111,7 +132,7 @@ class ActionMenu(ModalScreen[str]):
     def on_option_list_option_selected(self, event):
         if 0 <= event.option_index < len(self.shown):
             key, label = self.shown[event.option_index]
-            if str(event.option.prompt) == f'{key:>3}  {label}':
+            if str(event.option.prompt) == self.option_text(key, label).plain:
                 self.dismiss(key)
 
     def action_cancel(self):
@@ -1649,7 +1670,7 @@ class FleetApp(App):
         clicks = {key: 'app.' + binding.action for binding in self.BINDINGS for key in binding.key.split(',')}
         modelbar = Text(no_wrap=True, overflow='ellipsis')
         if not self.view_only:
-            hotkeys(modelbar, [('m', 'Choose model')], {'m': 'app.pick_model("model")'})
+            modelbar.append('[m] Choose model', style=Style(bold=True, color='cyan', meta={'@click': 'app.pick_model("model")'}))
             modelbar.append(' · ')
         else:
             modelbar.append('Model (read only) · ', style='dim')
@@ -1704,9 +1725,11 @@ class FleetApp(App):
             return
         primary = self.primary_action(runner)
         routes = [primary, ('l', 'Log'), ('t', 'Tasks'),
-                  ('i', 'Summary' if self.details_open else 'Details'), ('?', 'More')]
+                  ('i', 'Summary' if self.details_open else 'Details'), ('?', 'More actions')]
+        if self.size.width >= 100:
+            routes.append(('h', 'Guide'))
         menubar.show(list(dict(routes).items()), prefix='view only' if self.view_only else '',
-                     click_actions=clicks)
+                     click_actions=clicks, explicit_keys=True)
         text = Text()
         view = fleet_view.presentation(runner)
         text.append(f'{runner.name}  ', style='bold')

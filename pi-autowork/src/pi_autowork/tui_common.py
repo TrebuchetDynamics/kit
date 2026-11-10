@@ -52,11 +52,21 @@ class MenuBar(Static):
     """A screen's keys under its title, wrapping rather than hiding narrow-screen actions."""
     DEFAULT_CSS = 'MenuBar { dock: top; height: auto; max-height: 3; background: $boost; padding: 0 1; }'
 
-    def show(self, keys, prefix='', click_actions=None):
+    def show(self, keys, prefix='', click_actions=None, *, explicit_keys=False):
         text = Text(overflow='fold')
         if prefix:
             text.append(prefix + '  ', style='dim')
-        hotkeys(text, keys, click_actions)
+        if explicit_keys:
+            for index, (key, label) in enumerate(keys):
+                if index:
+                    text.append('  │  ', style='dim')
+                start = len(text)
+                text.append('[' + key + ']', style='bold cyan')
+                text.append(' ' + label, style='bold')
+                if click_actions and key in click_actions:
+                    text.stylize(Style(meta={'@click': click_actions[key]}), start, len(text))
+        else:
+            hotkeys(text, keys, click_actions)
         publish_text(self, text)
 
 
