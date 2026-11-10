@@ -510,7 +510,14 @@ actions. The palette includes provider/model selection on the fleet and provider
 and refresh while the model picker is open. Read-only mode omits actions that
 change runner or repository state.
 
-The fleet separates **Runners**, **Workers** and **Activity** with labelled rules.
+The fleet has three numbered regions: **Projects**, **Current work** and
+**Recent activity**. The project list shows Project, Status and Tasks at every
+width. The selected summary identifies the next useful action; detailed counts,
+source status, attempts and elapsed/quiet times remain under **i Details**.
+Unconfirmed worker observations retain that label and never count as verified
+active tasks. Repeated memory waits in the dashboard show their latest value,
+range, number of updates and first/last timestamps. Full-screen **Log**, including
+Summary and Raw modes, keeps the individual original samples.
 Below 22 terminal rows, the selected summary uses three lines and keeps the main
 check visible. The activity journal retains at least four rows and one worker row
 remains selectable at 60×18. Abbreviated names, phases or evidence have a visible
