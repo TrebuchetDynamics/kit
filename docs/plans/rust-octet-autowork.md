@@ -172,24 +172,28 @@ and dependencies. New behavior checks remain proposed until implementation;
 planning never qualifies native execution, migration or live delivery.
 
 
-## Round-three entry criteria
+## Round-three batch: committed task queries
 
-RUST-PLAN-03 remains pending until RUST-STATUS-01 and RUST-TASKS-01
-are integrated with source-bound results and review. Current CLI source provides
-version, capabilities and explicit run commands; it does not yet expose the
-accepted status or task-mutation commands. No round-three implementation batch
-is selected from these missing results.
+Plan round 3 of 10. Versioned status and ordinary pending task commands are now
+available under the [Rust CLI contract](../../pi-autowork/rust/autowork/README.md#read-only-status-and-pending-task-commands).
+Their integrated source is `85c5dcd5`; the locked offline CLI/task-store/recovery
+checks pass 14 cases, with independent code review. Tests cover ready/blocked
+committed tasks, absent/corrupt/active journal reads, persisted uncertainty,
+unchanged state bytes, typed validation, protected grants, stale input and chained
+pending edits. This is source/fixture proof, not installed or live qualification.
 
-At re-entry, read the integrated revisions and actual CLI/task-store/state-recovery
-test results for both tasks. Check status reads against absent/corrupt state and
-pending task bytes without creating or reconciling state. Check ordinary task
-mutations against stale revisions, unknown notes and protected authority, including
-explicit refusal of Owner decision changes through the planner seam. Keep
-pending-edit capture distinct from committed selection and publication.
+Choose one bounded next implementation: `tasks --repo PATH list` and
+`tasks --repo PATH show ID`, optionally pinned with `--rev COMMIT`. Consume
+TaskStore::read_at and committed Record/Snapshot metadata without invoking task
+mutation, capture_pending, StateStore::open or runtime reconciliation. Return
+versioned JSON with the pinned revision, task identity and original record bytes;
+missing IDs and invalid revisions fail explicitly. Pending edits remain excluded.
+RUST-READS-02 owns the exact scope and fixtures; RUST-PLAN-04 follows its actual
+integration and evidence in round 4 of 10.
 
-Map failures and remaining outcomes before selecting at most eight bounded tasks.
-Do not preselect service, provider, installer, migration or retirement work from
-assumed parity. Preserve unresolved LANG-003 ownership and live gates. Obtain a
-fresh read-only builder review of the resulting batch, validate the saved records
-with `autowork tasks validate --worktree .`, and read them back before closing
-this planning activity. These entry criteria do not satisfy its dependencies.
+The current status reader deliberately reports an active writer or uncheckpointed
+WAL unavailable; it does not claim live journal freshness. Trusted human decision
+writes, production provider/auth, general shell, service/TUI/Paseo wiring,
+installation, migration and runtime retirement remain open goal outcomes. No
+LANG-003 owner or contract changes. Select later work from measured results rather
+than widening authority or treating these offline commands as live cutover proof.
