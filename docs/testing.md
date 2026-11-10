@@ -21,7 +21,7 @@ sequence or that an installed TUI loaded the new source.
 
 ## Open task inventory and closed history
 
-`python3 scripts/check.py pi-autowork/tests/test_task_history.py` uses a real
+`python3 scripts/check.py pi-autowork/tests/runner/test_task_history.py` uses a real
 committed store for open, legacy and explicit manual records; checks annotation
 separation, unchanged task bytes and verified versus unverified labels; and runs a
 pinned offline Textual pilot at 80/120 by 24 columns, normal/view-only. It checks
@@ -36,17 +36,17 @@ renderer dependency is not a rendered pass; remote-host adoption stays unqualifi
 
 ## Parallel offline acceptance
 
-`python3 -m unittest pi-autowork/engine/test_parallel_e2e.py` exercises the
+`python3 -m unittest pi-autowork/tests/engine/test_parallel_e2e.py` exercises the
 real coordinator CLI and disposable Git worktrees with fake local workers. It
 checks A/B overlap, C starting only after A closes, merged-tree validation,
 cleanup, golden status text/JSON, journal metrics and capacity changes on refill.
-`python3 scripts/bench_parallel.py` compares that pipeline with one and two slots;
+`python3 pi-autowork/scripts/bench_parallel.py` compares that pipeline with one and two slots;
 its overhead is elapsed time minus the controlled sleep critical path, including
 process startup, Git, validation and waits, not isolated coordinator CPU time.
 Neither test nor benchmark qualifies model-worker throughput or live hosts.
 Integration regressions additionally refuse changed checked/archived contracts
 and enforce retry-worker deadlines before returning WAITING.
-`python3 -m unittest pi-autowork/engine/test_parallel_compat.py` compares
+`python3 -m unittest pi-autowork/tests/engine/test_parallel_compat.py` compares
 sequential `owner_cycle.py` output, byte for byte, with a snapshot captured before
 any parallel code, and checks that a Claude Code coordinator without
 `--worker-command` or a missing worker CLI returns `SEQUENTIAL_FALLBACK` without
@@ -88,7 +88,7 @@ this uv environment. Confirm preparation without network access:
 
 ```sh
 uv run --offline --no-project --with textual==8.2.8 python3 -c 'import textual; print(textual.__version__)'
-python3 scripts/check.py tests/test_task_prepare.py tests/test_check.py pi-autowork/tests/test_blockers_report.py pi-autowork/tests/test_fleet_view.py pi-autowork/tests/test_planning_ui.py pi-autowork/tests/test_task_history.py pi-autowork/tests/test_tui_controls.py pi-autowork/tests/test_tui_layout.py pi-autowork/tests/test_tui_mouse.py
+python3 scripts/check.py pi-autowork/tests/runner/test_task_prepare.py tests/test_check.py pi-autowork/tests/runner/test_blockers_report.py pi-autowork/tests/runner/test_fleet_view.py pi-autowork/tests/runner/test_planning_ui.py pi-autowork/tests/runner/test_task_history.py pi-autowork/tests/runner/test_tui_controls.py pi-autowork/tests/runner/test_tui_layout.py pi-autowork/tests/runner/test_tui_mouse.py
 ```
 
 An unavailable pinned cache produces explicit dependency skips, not rendered
@@ -110,7 +110,7 @@ installed adoption or rendered behavior.
 Repository-status chat coverage runs through the normal offline entry point:
 
 ```sh
-python3 scripts/check.py tests/test_bundle.py tests/test_bundle_repo_status.py tests/test_autowork_command.py tests/test_workflow_commands.py pi-autowork/tests/test_release.py pi-autowork/tests/test_fleet_view.py
+python3 scripts/check.py tests/test_bundle.py tests/test_bundle_repo_status.py pi-autowork/tests/runner/test_autowork_command.py tests/test_workflow_commands.py pi-autowork/tests/runner/test_release.py pi-autowork/tests/runner/test_fleet_view.py
 ```
 
 It exercises the public maintenance dispatcher with real disposable
@@ -262,12 +262,12 @@ a 1000-task store reads and orders in about half a second (`test_task_select.py`
 peak memory instead of asserting a wall clock).
 
 Offline task-store regressions cover pinned reads and whole-store refusal
-(`pi-autowork/engine/test_task_store.py`), selection order and reasons
-(`test_task_select.py`), the `autowork tasks` writer (`tests/test_task_commands.py`),
-conversion (`tests/test_task_migrate.py`), preparation/bootstrap/recovery and
-read-only diagnostics (`tests/test_task_prepare.py`), admission and closure by contract hash
+(`pi-autowork/tests/engine/test_task_store.py`), selection order and reasons
+(`test_task_select.py`), the `autowork tasks` writer (`pi-autowork/tests/runner/test_task_commands.py`),
+conversion (`pi-autowork/tests/runner/test_task_migrate.py`), preparation/bootstrap/recovery and
+read-only diagnostics (`pi-autowork/tests/runner/test_task_prepare.py`), admission and closure by contract hash
 (`test_parallel_dispatch.py`, `test_parallel_integrate.py`) and the runner's reopening of
-a close a merge left under another contract (`pi-autowork/tests/test_task_reopen.py`).
+a close a merge left under another contract (`pi-autowork/tests/runner/test_task_reopen.py`).
 
 `tests/integration_plugin.py` additionally checks the actual Hermes manifest
 reader, native install security scan, loader, bundled skill reader, Telegram menu, CLI queue, gateway routing,
@@ -338,9 +338,9 @@ so the failure can be attributed instead of bypassed. Run one failing module alo
 before you treat the tree as broken; a second failure there is the tree's.
 
 The offline suite runs in GitHub Actions as two jobs: `fast` runs every module except
-`tests/test_pi_autowork.py` (`scripts/check.py --exclude tests/test_pi_autowork.py`),
+`pi-autowork/tests/runner/test_pi_autowork.py` (`scripts/check.py --exclude pi-autowork/tests/runner/test_pi_autowork.py`),
 and `runner` runs that module alone on three machines
-(`scripts/check.py tests/test_pi_autowork.py --shard I/3`), because its tests each start
+(`scripts/check.py pi-autowork/tests/runner/test_pi_autowork.py --shard I/3`), because its tests each start
 a real runner over a Git fixture and were three quarters of a 17-minute single job.
 CI byte-compiles only `__init__.py`, not the four files above. Live Telegram delivery and model
 execution require your configured Hermes installation.
@@ -449,9 +449,9 @@ receipt and activation/transport evidence before making those live claims.
 ## Task store checks
 
 ```sh
-python3 scripts/check.py pi-autowork/engine/test_task_store.py pi-autowork/engine/test_task_select.py \
-  tests/test_task_commands.py tests/test_task_migrate.py tests/test_task_prepare.py \
-  tests/test_task_store_qualification.py
+python3 scripts/check.py pi-autowork/tests/engine/test_task_store.py pi-autowork/tests/engine/test_task_select.py \
+  pi-autowork/tests/runner/test_task_commands.py pi-autowork/tests/runner/test_task_migrate.py pi-autowork/tests/runner/test_task_prepare.py \
+  pi-autowork/tests/runner/test_task_store_qualification.py
 ```
 
 The fixtures use real disposable Git repositories: a malformed or conflicting record

@@ -17,8 +17,8 @@
   },
   "files": [
     "scripts/autowork_bootstrap.py",
-    "src/autowork_bootstrap.py",
-    "src/pi_autowork/",
+    "pi-autowork/src/autowork_bootstrap.py",
+    "pi-autowork/src/pi_autowork/",
     "adapters/",
     "skills/",
     "scripts/pi-autowork.sh",

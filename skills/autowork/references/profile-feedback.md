@@ -45,14 +45,14 @@ back through at most twelve regular files for two readable responses. Preserve
 each response's actual filename rank: older evidence must never be relabeled as
 the latest file. Report uninspected older history when the lookback is exhausted.
 
-Use the shared executable `scripts/profile-consult.py`, independent of optional
+Use the shared executable `pi-autowork/scripts/profile-consult.py`, independent of optional
 cron tool schemas. Run it with the default root, a NEW private
 maintenance output directory, and a file containing the auditor's local default
 self-assessment. It dynamically uses native `hermes profile list`; it never
 queries default recursively. Example from shared-source root:
 
 ```
-python scripts/profile-consult.py --root "$HOME/.hermes" \
+python pi-autowork/scripts/profile-consult.py --root "$HOME/.hermes" \
   --output "$HOME/.hermes/maintenance/profile-audit/RUN/direct" \
   --self-assessment-file "$HOME/.hermes/maintenance/profile-audit/RUN/self.txt" \
   --seconds 65 --reuse-within-seconds 3600

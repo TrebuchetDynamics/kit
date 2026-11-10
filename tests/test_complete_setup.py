@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from src_fixture import copy_sources
+from support.src_fixture import copy_sources
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -61,7 +61,7 @@ sys.exit(5 if os.environ.get('VERIFY_FAIL')==sys.argv[2] else 0)
     def test_missing_declared_source_payload_refuses_before_any_stage(self):
         copy_sources(self.repo)
         for name in ('plugin.yaml', 'plugins/defaults.json', 'plugins/PLUGINS.md',
-                     'scripts/preflight_config.py'):
+                     'pi-autowork/src/autowork_runtime/install/preflight_config.py'):
             target = self.repo / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / name, target)
@@ -71,8 +71,8 @@ sys.exit(5 if os.environ.get('VERIFY_FAIL')==sys.argv[2] else 0)
         spec = importlib.util.spec_from_file_location('copied_preflight', self.repo / 'scripts/setup_preflight.py')
         pre = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(pre)
-        payload = ['scripts/autowork_bootstrap.py', 'src/autowork_bootstrap.py',
-                   *['src/autowork_runtime/install/' + name for name in (
+        payload = ['scripts/autowork_bootstrap.py', 'pi-autowork/src/autowork_bootstrap.py',
+                   *['pi-autowork/src/autowork_runtime/install/' + name for name in (
                        'install_skills.py', 'setup_bundle.py', 'setup_preflight.py',
                        'setup_runtime.py', 'install_graphify.py')]]
         before = sorted(self.home.rglob('*'))

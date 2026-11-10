@@ -43,7 +43,7 @@ class PlanningCliContractTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.repo = Path(tmp.name) / 'repo'
-        shutil.copytree(ROOT / 'pi-autowork/engine/fixtures/task_store', self.repo)
+        shutil.copytree(ROOT / 'pi-autowork/tests/fixtures/engine/fixtures/task_store', self.repo)
         for args in (('init', '-q'), ('add', '-A'), ('commit', '-qm', 'fixture')):
             subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=Fixture',
                             '-c', 'user.email=fixture@example.invalid', *args],

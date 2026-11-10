@@ -244,7 +244,7 @@ class RuntimeFactsTests(unittest.TestCase):
                     errors = pre.runtime_check(ROOT, home, [('default', home)], True)
                 self.assertEqual(errors, ['invalid config'] if code == 1 else [])
                 self.assertEqual(run.call_args_list[0].args[0], [
-                    str(executable), '-B', str(ROOT / 'scripts/preflight_config.py'),
+                    str(executable), '-B', str(ROOT / 'pi-autowork/src/autowork_runtime/install/preflight_config.py'),
                     '--core', str(config)])
                 self.assertEqual(run.call_count, 2 if code == 3 else 1)
                 if code == 3:
@@ -284,7 +284,7 @@ class ConfigProbeTests(unittest.TestCase):
             import ruamel.yaml
         except ImportError:
             self.skipTest('Run with Hermes managed Python to exercise strict YAML parser')
-        spec = importlib.util.spec_from_file_location('config_probe', ROOT / 'scripts/preflight_config.py')
+        spec = importlib.util.spec_from_file_location('config_probe', ROOT / 'pi-autowork/src/autowork_runtime/install/preflight_config.py')
         self.probe = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.probe)
 

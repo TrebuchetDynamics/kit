@@ -422,8 +422,12 @@ source warnings, model/fallback and push settings. Runtime observation failures
 remain visible in the summary; a short viewport prioritizes the main-check result
 over the generic explanation. This changes presentation, not health or admission.
 The fleet table's State uses the semantic label from the same captured verdict as
-selected status: for example, **Waiting on you** when inventory has no active work
-and questions remain, even if raw service health says `working`. `Runner.state`
+selected status: **Blocked** when inventory has no active work and action is needed,
+even if raw service health says `working`. The explanation names **Needs your action**,
+**Needs repair**, or **Waiting for capacity**; mixed repair/owner cases retain both.
+Normal dependency waits remain **Waiting**. Elapsed time is context, not a new state:
+`autowork ls` and status render old `stalled`/`waiting on you` observations as `blocked`.
+The 30-minute stall alert and its clock remain internal compatibility behavior. `Runner.state`
 and CLI/Paseo schemas retain their existing raw lifecycle meaning.
 `fleet_view.presentation(runner)` projects an already attached snapshot without
 reads into a frozen label, explanation, style, counts and observed activity. Only

@@ -82,7 +82,7 @@ class RepositoryStatusTests(unittest.TestCase):
         with patch.dict('os.environ', {k: 'older-reader' for k in keys}):
             output = self.bundle.maintenance_reply('status Example')
         actual = json.loads(output.splitlines()[1])
-        self.assertEqual(actual, {'PI_AUTOWORK_SCRIPT': str(self.root / 'scripts/pi-autowork.sh'),
+        self.assertEqual(actual, {'PI_AUTOWORK_SCRIPT': str(self.root / 'pi-autowork/bin/pi-autowork.sh'),
                                  'PI_AUTOWORK_COMPONENT': str(self.root / 'pi-autowork'),
                                  'PI_AUTOWORK_TOOLSET': str(self.root),
                                  'PI_AUTOWORK_PACKAGE': str(self.root), 'PI_AUTOWORK_RESELECT': ''})

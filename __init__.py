@@ -6,4 +6,4 @@ _spec = _importlib_util.spec_from_file_location(
     __name__ + '._bootstrap', _Path(__file__).resolve().parent / 'scripts/autowork_bootstrap.py')
 _bootstrap = _importlib_util.module_from_spec(_spec)
 _spec.loader.exec_module(_bootstrap)
-_bootstrap.execute(globals(), 'src/autowork_runtime/plugin.py')
+_bootstrap.execute(globals(), 'pi-autowork/src/autowork_runtime/plugin.py')
