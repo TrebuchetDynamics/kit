@@ -301,7 +301,7 @@ def _auxiliary_failed(path, records, task, key, failure, *, retryable=True):
     previous = previous if isinstance(previous, dict) and previous.get('key') == key else {}
     attempts = previous.get('attempts', 0) + (previous.get('phase') != 'in_flight')
     records[task] = dict(key=key, attempts=attempts, phase='failed',
-                         retry_at=time.time() + min(600, 60 * (2 ** max(0, attempts - 1))), failure=failure,
+                         retry_at=time.time() + min(600, 60 * (2 ** min(4, max(0, attempts - 1)))), failure=failure,
                          replay_blocked=not retryable)
     health.write_status(path, records)
     LOG.say(f'{task}: technical {failure}; recovery attempt {attempts}/3, not a completed owner verdict')
@@ -2769,10 +2769,12 @@ class Coordinator:
             receipt=history.get('items', {}).get(maintainer.item_key(item)),
             recovery=recovery.get(maintainer.item_key(item))) for item in found}
         if discovery:
-            # Constant identity: neither another round nor a restart may replay an
-            # uncertain provider. Successful collection resets only this technical budget.
-            incidents = {'repository-work': 'repository-work-v1'}
-            if not _auxiliary_ready(recovery.get('repository-work'), incidents['repository-work']):
+            # Keep uncertainty fenced across rounds/restarts. Only settled safe failures
+            # may continue past the burst budget, under discovery's persisted cooldown.
+            incidents = {'repository-work': repository_work.RECOVERY_KEY}
+            marker = recovery.get('repository-work')
+            if (not _auxiliary_ready(marker, incidents['repository-work'])
+                    and not repository_work.retry_ready(self.state, marker)):
                 return False
         else:
             found = maintainer.pending(self.state, found, entries=before, reasons=reasons, eligible=lambda item:
