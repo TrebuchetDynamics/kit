@@ -1163,6 +1163,7 @@ impl TaskCliRepo {
         Command::new(env!("CARGO_BIN_EXE_autowork-next"))
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
+            .env("TMPDIR", std::env::temp_dir())
             .args(args)
             .output()
             .unwrap()
@@ -1552,6 +1553,241 @@ fn task_queries_pin_commits_and_preserve_pending_and_runtime_bytes() {
     assert_eq!(std::fs::read(record).unwrap(), pending);
     assert_eq!(repo.git(&["status", "--porcelain"]), before);
     assert!(!repo.0.join(".git/autowork-tasks.lock").exists());
+    assert!(!repo.0.join(".git/autowork-rust").exists());
+}
+
+#[test]
+fn goal_queries_preserve_committed_content_types_and_revision_isolation() {
+    let repo = TaskCliRepo::new();
+    let path = repo.0.to_str().unwrap();
+    let record = repo.0.join("tasks/goals/G-1.md");
+    let original = std::fs::read_to_string(&record).unwrap();
+    let first = repo.git(&["rev-parse", "HEAD"]);
+    let committed = original.replace("Task store", "Committed goal");
+    std::fs::write(&record, &committed).unwrap();
+    repo.git(&["add", "tasks"]);
+    repo.git(&["commit", "-qm", "goal update"]);
+    let second = repo.git(&["rev-parse", "HEAD"]);
+    std::fs::write(&record, b"invalid pending goal bytes").unwrap();
+    let before = repo.git(&["status", "--porcelain"]);
+    let list = repo.value(&["goals", "--repo", path, "list"]);
+    assert_eq!(list["revision"], second);
+    assert_eq!(list["source"], "committed");
+    let row = &list["goals"][0];
+    assert_eq!(row["content"], committed);
+    assert_eq!(row["priority"], 1);
+    assert_eq!(row["focus"], true);
+    assert_eq!(row["source"], "docs/design.md#task-store");
+    assert_eq!(
+        repo.value(&["goals", "show", "G-1", "--repo", path])["goal"],
+        *row
+    );
+    assert_eq!(
+        repo.value(&["goals", "--repo", path, "list", "--rev", &first])["goals"][0]["content"],
+        original
+    );
+    let old = repo.value(&["goals", "--repo", path, "--rev", &first, "show", "G-1"]);
+    assert_eq!(old["revision"], first);
+    assert_eq!(old["goal"]["content"], original);
+    for args in [
+        vec!["goals", "--repo", path, "show", "UNKNOWN"],
+        vec!["goals", "--repo", path, "list", "--rev", "missing-commit"],
+        vec![
+            "goals", "--repo", path, "--rev", "HEAD", "list", "--rev", &first,
+        ],
+        vec!["--format", "inspection-v1", "goals", "--repo", path, "list"],
+    ] {
+        assert!(!repo.run(&args).status.success(), "{args:?}");
+    }
+    let poisoned = Command::new(env!("CARGO_BIN_EXE_autowork-next"))
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("GIT_DIR", "/nonexistent/foreign-git")
+        .env("GIT_INDEX_FILE", repo.0.join("foreign-index"))
+        .args(["goals", "--repo", path, "show", "G-1"])
+        .output()
+        .unwrap();
+    assert!(poisoned.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&poisoned.stdout).unwrap()["goal"],
+        *row
+    );
+    assert!(!repo.0.join("foreign-index").exists());
+    assert_eq!(
+        std::fs::read(record).unwrap(),
+        b"invalid pending goal bytes"
+    );
+    assert_eq!(repo.git(&["status", "--porcelain"]), before);
+    assert!(!repo.0.join(".git/autowork-tasks.lock").exists());
+    assert!(!repo.0.join(".git/autowork-rust").exists());
+}
+
+#[test]
+fn goal_pending_edits_validate_types_preserve_notes_and_refuse_authority() {
+    use autowork_next::task_store::TaskStore;
+    let repo = TaskCliRepo::new();
+    let path = repo.0.to_str().unwrap();
+    let snapshot = TaskStore::read_at(&repo.0, "HEAD").unwrap();
+    let base = snapshot.revision();
+    let record = repo.0.join("tasks/goals/G-1.md");
+    let task = repo.0.join("tasks/items/T-1.md");
+    std::fs::write(
+        &task,
+        std::fs::read_to_string(&task)
+            .unwrap()
+            .replace("Read tasks", "Pending task"),
+    )
+    .unwrap();
+    let task_bytes = std::fs::read(&task).unwrap();
+    let original = std::fs::read_to_string(&record).unwrap();
+    let notes = "- Unknown label: keep `literal` notes.\n- Owner decision: existing only\n";
+    std::fs::write(&record, format!("{original}{notes}")).unwrap();
+    let digest = |file: &std::path::Path| {
+        let out = Command::new("sha256sum").arg(file).output().unwrap();
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .to_owned()
+    };
+    let run = |base: &str, args: &[&str]| {
+        let mut command = vec!["goals", "--repo", path, "--expected-revision", base];
+        command.extend(args);
+        repo.run(&command)
+    };
+    let field = |base: &str, hash: &str, key: &str, value: &str| {
+        run(
+            base,
+            &["field", "G-1", "--record-revision", hash, key, value],
+        )
+    };
+    let input = repo.0.join("proposal.md");
+    let add_args = ["add", "G-2", "--record", input.to_str().unwrap()];
+    let first_hash = digest(&record);
+    let mut hash = first_hash.clone();
+    for (key, value) in [
+        ("title", "\"Pending goal\""),
+        ("source", "\"docs/new.md#goal\""),
+        ("priority", "7"),
+        ("focus", "false"),
+        ("depends_on", "[]"),
+    ] {
+        let out = field(base, &hash, key, value);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let result: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(result["status"], "pending");
+        assert_eq!(result["base_revision"], base);
+        assert_eq!(result["selectable"], false);
+        assert_eq!(result["publication"], "not-committed");
+        assert_eq!(result["paths"], json!(["tasks/goals/G-1.md"]));
+        hash = result["record_revisions"]["tasks/goals/G-1.md"]
+            .as_str()
+            .unwrap()
+            .into();
+        assert_eq!(hash, digest(&record));
+    }
+    let pending = std::fs::read_to_string(&record).unwrap();
+    assert!(pending.ends_with(notes));
+    assert!(pending.contains("title = \"Pending goal\""));
+    assert!(pending.contains("priority = 7"));
+    assert!(pending.contains("focus = false"));
+    for (key, value) in [
+        ("priority", "\"high\""),
+        ("focus", "1"),
+        ("source", "[]"),
+        ("title", "false"),
+        ("depends_on", "[1]"),
+        ("depends_on", "[\"UNKNOWN\"]"),
+        ("status", "\"met\""),
+        ("closure", "\"manual\""),
+        ("owner_qualification", "\"yes\""),
+        ("live", "\"authorized\""),
+        ("ownership", "\"owner\""),
+        ("Owner decision", "\"new\""),
+    ] {
+        assert!(
+            !field(base, &hash, key, value).status.success(),
+            "{key}={value}"
+        );
+        assert_eq!(std::fs::read_to_string(&record).unwrap(), pending);
+    }
+    assert!(
+        !field("stale", &hash, "title", "\"Stale base\"")
+            .status
+            .success()
+    );
+    assert!(
+        !field(base, &first_hash, "title", "\"Stale record\"")
+            .status
+            .success()
+    );
+    let new = original
+        .replace("G-1", "G-2")
+        .replace("focus = true", "focus = false");
+    for bad in [
+        new.replace("unmet", "met"),
+        new.replace("unmet", "partial"),
+        new.replace("unmet", "unverified"),
+        new.replace("priority = 1", "priority = true"),
+        new.replace("schema = 1", "schema = 1\nlive = \"authorized\""),
+        format!("{new}- Owner decision: invented\n"),
+    ] {
+        std::fs::write(&input, bad).unwrap();
+        assert!(!run(base, &add_args).status.success());
+        assert!(!repo.0.join("tasks/goals/G-2.md").exists());
+    }
+    std::fs::write(&input, &new).unwrap();
+    let out = run(base, &add_args);
+    assert!(out.status.success());
+    let added: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        added["record_revisions"]["tasks/goals/G-2.md"],
+        digest(&repo.0.join("tasks/goals/G-2.md"))
+    );
+    assert!(!run(base, &add_args).status.success());
+    let out = run(
+        base,
+        &[
+            "field",
+            "G-2",
+            "--record-revision",
+            added["record_revisions"]["tasks/goals/G-2.md"]
+                .as_str()
+                .unwrap(),
+            "depends_on",
+            "[\"G-1\"]",
+        ],
+    );
+    assert!(out.status.success());
+    let linked: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        linked["record_revisions"]["tasks/goals/G-2.md"],
+        digest(&repo.0.join("tasks/goals/G-2.md"))
+    );
+    assert!(
+        std::fs::read_to_string(repo.0.join("tasks/goals/G-2.md"))
+            .unwrap()
+            .contains("depends_on = [\"G-1\"]")
+    );
+    assert_eq!(std::fs::read_to_string(&record).unwrap(), pending);
+    assert_eq!(std::fs::read(task).unwrap(), task_bytes);
+    assert_eq!(repo.git(&["rev-parse", "HEAD"]), base);
+    assert_eq!(
+        repo.value(&["goals", "--repo", path, "list"])["goals"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        repo.value(&["goals", "--repo", path, "show", "G-1"])["goal"]["content"],
+        original
+    );
     assert!(!repo.0.join(".git/autowork-rust").exists());
 }
 

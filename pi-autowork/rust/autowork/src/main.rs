@@ -47,6 +47,17 @@ enum Command {
         #[command(subcommand)]
         command: TaskCommand,
     },
+    /// Read committed goals or prepare ordinary pending goal metadata edits.
+    Goals {
+        #[arg(long, global = true)]
+        repo: Option<std::path::PathBuf>,
+        #[arg(long, global = true)]
+        rev: Option<String>,
+        #[arg(long)]
+        expected_revision: Option<String>,
+        #[command(subcommand)]
+        command: GoalCommand,
+    },
     /// Read committed tasks and the existing journal without runtime side effects.
     Status {
         #[arg(long)]
@@ -125,6 +136,26 @@ enum TaskCommand {
     Preview,
 }
 
+#[derive(Subcommand)]
+enum GoalCommand {
+    List,
+    Show {
+        id: String,
+    },
+    Add {
+        id: String,
+        #[arg(long)]
+        record: std::path::PathBuf,
+    },
+    Field {
+        id: String,
+        #[arg(long)]
+        record_revision: String,
+        key: String,
+        value: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     // clap lets a global option repeat across subcommand levels and keeps the last value;
@@ -184,6 +215,11 @@ async fn dispatch(command: Command, format: Format) -> Result<(), Box<dyn std::e
                     } else {
                         json!("committed-queries-and-pending-ordinary-edits")
                     },
+                    "goals": if format == Format::PublicV1 {
+                        json!(["list", "show", "add", "field"])
+                    } else {
+                        json!("unsupported")
+                    },
                     "status": if format == Format::InspectionV1 {
                         "journal-projection-only"
                     } else {
@@ -198,6 +234,7 @@ async fn dispatch(command: Command, format: Format) -> Result<(), Box<dyn std::e
                     "public-v1": {
                         "status": "committed tasks plus persisted runs of every generation",
                         "tasks": ["list", "show", "add", "field", "place", "preview"],
+                        "goals": ["list", "show", "add", "field"],
                         // Pending edits check only this runtime's task lock; another
                         // runtime's active owner is not detected.
                         "pending_edits": "unqualified-on-active-repositories"
@@ -257,7 +294,8 @@ async fn dispatch(command: Command, format: Format) -> Result<(), Box<dyn std::e
                         &repo,
                         rev.as_deref().unwrap_or("HEAD"),
                         expected_revision,
-                        command
+                        command,
+                        false
                     )?
                 );
                 return Ok(());
@@ -391,6 +429,41 @@ async fn dispatch(command: Command, format: Format) -> Result<(), Box<dyn std::e
                 }
             };
             println!("{}", serde_json::to_string(&value)?);
+        }
+        Command::Goals {
+            repo,
+            rev,
+            expected_revision,
+            command,
+        } => {
+            if format != Format::PublicV1 {
+                return Err(io::Error::other("goals requires public-v1; omit --format").into());
+            }
+            let repo = repo.ok_or_else(|| io::Error::other("goals requires --repo PATH"))?;
+            let action = match command {
+                GoalCommand::List => TaskCommand::List,
+                GoalCommand::Show { id } => TaskCommand::Show { id },
+                GoalCommand::Add { id, record } => TaskCommand::Add { id, record },
+                GoalCommand::Field {
+                    id,
+                    record_revision,
+                    key,
+                    value,
+                } => TaskCommand::Field {
+                    id,
+                    record_revision,
+                    key,
+                    value,
+                },
+            };
+            let rev = rev.as_deref().unwrap_or("HEAD");
+            if !matches!(action, TaskCommand::List | TaskCommand::Show { .. }) && rev != "HEAD" {
+                return Err(io::Error::other("pending edits require --rev HEAD").into());
+            }
+            println!(
+                "{}",
+                task_command(&repo, rev, expected_revision, action, true)?
+            );
         }
         Command::Status { repo, json: _ } => {
             if format == Format::PublicV1 {
@@ -545,14 +618,15 @@ fn task_command(
     rev: &str,
     expected: Option<String>,
     action: TaskCommand,
+    goal: bool,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     use autowork_next::{
         planning::{FailureEvidence, PlanDisposition, PlanProposal, RecordChange},
         task_store::{TaskService, TaskStore},
     };
     match &action {
-        TaskCommand::List => return task_query(repo, rev, None),
-        TaskCommand::Show { id } => return task_query(repo, rev, Some(id)),
+        TaskCommand::List => return task_query(repo, rev, None, goal),
+        TaskCommand::Show { id } => return task_query(repo, rev, Some(id), goal),
         _ => (),
     }
     let service = TaskService::new(repo)?;
@@ -581,6 +655,7 @@ fn task_command(
                 &record_revision,
                 &key,
                 serde_json::from_str(&value)?,
+                goal,
             )?;
             (id, record_revision, bytes)
         }
@@ -592,7 +667,14 @@ fn task_command(
             if !["Now", "Next", "Needs decision"].contains(&section.as_str()) {
                 return Err(io::Error::other("invalid section").into());
             }
-            let bytes = edit_record(&service, &id, &record_revision, "section", json!(section))?;
+            let bytes = edit_record(
+                &service,
+                &id,
+                &record_revision,
+                "section",
+                json!(section),
+                false,
+            )?;
             (id, record_revision, bytes)
         }
         _ => unreachable!(),
@@ -615,7 +697,7 @@ fn task_command(
             },
             disposition: PlanDisposition::RepairCurrent,
             record_changes: vec![RecordChange {
-                path: format!("tasks/items/{id}.md").into(),
+                path: format!("tasks/{}/{id}.md", if goal { "goals" } else { "items" }).into(),
                 expected_revision: record_revision,
                 proposed_bytes: bytes,
             }],
@@ -634,25 +716,33 @@ fn edit_record(
     record_revision: &str,
     key: &str,
     value: serde_json::Value,
+    goal: bool,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    if ![
-        "title",
-        "short",
-        "scope",
-        "acceptance",
-        "checks",
-        "exclusions",
-        "touches",
-        "resources",
-        "depends_on",
-        "rank",
-        "section",
-    ]
-    .contains(&key)
-    {
-        return Err(io::Error::other("unsupported or protected task field").into());
+    let allowed: &[&str] = if goal {
+        &["title", "source", "priority", "focus", "depends_on"]
+    } else {
+        &[
+            "title",
+            "short",
+            "scope",
+            "acceptance",
+            "checks",
+            "exclusions",
+            "touches",
+            "resources",
+            "depends_on",
+            "rank",
+            "section",
+        ]
+    };
+    if !allowed.contains(&key) {
+        return Err(io::Error::other("unsupported or protected record field").into());
     }
-    let bytes = service.record_for_edit(id, record_revision)?;
+    let bytes = if goal {
+        service.goal_record_for_edit(id, record_revision)?
+    } else {
+        service.record_for_edit(id, record_revision)?
+    };
     let source = std::str::from_utf8(&bytes)?;
     let (header, notes) = source
         .strip_prefix("+++\n")
@@ -668,10 +758,19 @@ fn task_query(
     repo: &std::path::Path,
     revision: &str,
     id: Option<&str>,
+    goal: bool,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let snapshot = autowork_next::task_store::TaskStore::read_at(repo, revision)?;
     let describe = |task: &autowork_next::task_store::Record| -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         let bytes = snapshot.records().get(&task.path).ok_or_else(|| io::Error::other("record missing from snapshot"))?;
+        if goal {
+            let mut row = serde_json::to_value(task.fields())?;
+            row.as_object_mut().unwrap().extend(json!({
+                "path": task.path, "record_revision": task.record_revision,
+                "contract_hash": task.contract_hash, "content": std::str::from_utf8(bytes)?
+            }).as_object().unwrap().clone());
+            return Ok(row);
+        }
         Ok(json!({"id": task.id, "title": task.title, "record_revision": task.record_revision,
             "contract_hash": task.contract_hash, "status": task.string("status"), "section": task.string("section"),
             "kind": task.string("kind"), "ownership": task.string("ownership"), "live": task.string("live"),
@@ -682,15 +781,22 @@ fn task_query(
             "missing_fields": task.missing_fields, "content": std::str::from_utf8(bytes)?}))
     };
     let mut result = json!({"schema_version": 1, "application": "autowork-next", "revision": snapshot.revision(), "source": "committed"});
-    if let Some(id) = id {
-        let task = snapshot
-            .tasks()
-            .get(id)
-            .ok_or_else(|| io::Error::other("unknown task ID"))?;
-        result["task"] = describe(task)?;
+    let records = if goal {
+        snapshot.goals()
     } else {
-        result["tasks"] = snapshot
-            .tasks()
+        snapshot.tasks()
+    };
+    if let Some(id) = id {
+        let record = records.get(id).ok_or_else(|| {
+            io::Error::other(if goal {
+                "unknown goal ID"
+            } else {
+                "unknown task ID"
+            })
+        })?;
+        result[if goal { "goal" } else { "task" }] = describe(record)?;
+    } else {
+        result[if goal { "goals" } else { "tasks" }] = records
             .values()
             .map(describe)
             .collect::<Result<Vec<_>, _>>()?

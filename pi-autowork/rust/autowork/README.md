@@ -45,25 +45,25 @@ service operation.
 
 ## Wire formats
 
-One global `--format` option selects the wire contract of `status`, `tasks` and
-`capabilities`. It may appear before or after the subcommand.
+One global `--format` option selects the wire contract of `status`, `tasks`, `goals`
+and `capabilities`. It may appear before or after the subcommand.
 
-| Format | Selected by | `status` | `tasks` |
-| --- | --- | --- | --- |
-| `public-v1` | default | committed tasks plus persisted runs of every generation, from a quiescent journal | `list`, `show`, `add`, `field`, `place`, `preview` |
-| `inspection-v1` | `--format inspection-v1` | typed latest-generation journal projection, read beside a writer | `list`, `goals`, `show`, `why`, `commit` |
+| Format | Selected by | `status` | `tasks` | `goals` |
+| --- | --- | --- | --- | --- |
+| `public-v1` | default | committed tasks plus persisted runs of every generation, from a quiescent journal | `list`, `show`, `add`, `field`, `place`, `preview` | `list`, `show`, `add`, `field` |
+| `inspection-v1` | `--format inspection-v1` | typed latest-generation journal projection, read beside a writer | `list`, `goals`, `show`, `why`, `commit` | unsupported |
 
 A command outside the selected format is refused, never answered in the other
 format's shape. `capabilities` lists both under `formats`. `--repo` and `--rev` are
-accepted before or after the `tasks` subcommand; `--rev` given twice is refused, and
-a pending edit accepts only `--rev HEAD`. `status --json` is a compatibility marker:
-output is always JSON and the flag selects nothing.
+accepted before or after the `tasks` or `goals` subcommand; `--rev` given twice is
+refused, and a pending edit accepts only `--rev HEAD`. `status --json` is a
+compatibility marker: output is always JSON and the flag selects nothing.
 
 The `public-v1` pending edits take only this runtime's task lock. They do not detect
 another runtime's active owner, so `capabilities` reports them as
 `unqualified-on-active-repositories`: use them in a repository no runner is working.
 
-## Read-only status and pending task commands (`public-v1`)
+## Read-only status and pending task/goal commands (`public-v1`)
 
 `autowork-next status --repo /path/to/repo --json` returns schema version 1,
 committed task counts, dependency readiness and persisted journal observations.
@@ -96,6 +96,37 @@ use those hashes and preserve earlier pending edits. They remain uncommitted and
 unselectable until the existing coordinator publishes the validated snapshot.
 Protected fields, Owner decision changes and `--decision` are refused by this
 ordinary planning seam; no command grants live execution or publication.
+
+### Goal commands
+
+`goals --repo /path/to/repo list` and `goals --repo /path/to/repo show ID` use
+committed snapshots only, with `--rev COMMIT` (default `HEAD`). The schema-versioned
+response contains `goals` or `goal`, the resolved `revision` and `source: "committed"`.
+Each row preserves all typed goal frontmatter, including its own `source`, integer
+`priority`, boolean `focus` and optional `depends_on`, plus exact `content`, `path`,
+`record_revision` and `contract_hash`. Pending bytes and Git environment redirection
+cannot affect these reads. Unknown IDs/revisions fail without creating state.
+
+`goals --repo /path/to/repo --expected-revision COMMIT` accepts:
+
+- `add ID --record /path/to/goal.md`: validate a schema-1 goal with a new ID and
+  `status = "unmet"`. Existing destinations and invented authority notes are refused.
+- `field ID --record-revision SHA256 priority '2'`: edit only `title`, `source`,
+  `priority`, `focus` or `depends_on`, using JSON values of the schema's types.
+
+These writes reuse the task service's full-HEAD base check, exact working-record
+SHA-256 check and apply-time compare-and-swap. They preserve current notes and
+other pending task/goal edits. Use the returned `base_revision` and
+`record_revisions` for sequential edits; `tasks preview` captures their shared
+pending identity. Nothing commits automatically or becomes selectable. Goal
+status/progress, closure, qualification and owner/live authority are not writable;
+existing protected notes remain unchanged. The pending-edit active-owner limitation
+above also applies to goals.
+
+Offline CLI and task-store fixtures cover committed goal reads, historical pins,
+typed edits, pending identity, note preservation, stale base/record refusal and
+protected goal progress/authority. They do not qualify concurrent runtimes or live
+execution.
 
 ## Revision-bound task store
 
@@ -147,8 +178,10 @@ legacy waiver prose alone qualifies nothing. Selection does not evaluate runtime
 pauses, leases, resources or caller authority. The coordinator must retain those
 admission gates and protect active contracts before applying a proposal.
 
-`TaskService::new(repo_root)` binds writes to one checkout. `apply(base, proposal)`
-requires the full HEAD commit in both base fields, plus each changed record's
+`TaskService::new(repo_root)` binds writes to one checkout. `record_for_edit` and
+`goal_record_for_edit` read exact current working-record bytes under the task lock
+with an expected digest; `apply` rechecks that digest before writing.
+`apply(base, proposal)` requires the full HEAD commit in both base fields, plus each changed record's
 SHA-256 revision (an empty string means a new path). It validates the whole proposed
 store before writing, compares inputs again, and preserves the proposed bytes
 without normalization. Planner changes cannot alter existing ownership, closure,

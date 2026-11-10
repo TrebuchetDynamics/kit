@@ -1086,18 +1086,26 @@ impl TaskService {
     }
     /// Read exact current bytes under the task lock; apply rechecks the same digest.
     pub fn record_for_edit(&self, id: &str, expected_digest: &str) -> Result<Vec<u8>> {
-        if id.is_empty()
-            || !id
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        {
-            return refuse("invalid task ID");
+        self.record_in_for_edit("items", id, expected_digest)
+    }
+    /// Goal metadata edits use current working bytes, never a committed reconstruction.
+    pub fn goal_record_for_edit(&self, id: &str, expected_digest: &str) -> Result<Vec<u8>> {
+        self.record_in_for_edit("goals", id, expected_digest)
+    }
+    fn record_in_for_edit(
+        &self,
+        directory: &str,
+        id: &str,
+        expected_digest: &str,
+    ) -> Result<Vec<u8>> {
+        if !valid_id(id) {
+            return refuse("invalid record ID");
         }
         let _lock = self.lock()?;
         let records = self.working_records()?;
         let bytes = records
-            .get(&format!("tasks/items/{id}.md"))
-            .ok_or_else(|| StoreError("unknown task".into()))?;
+            .get(&format!("tasks/{directory}/{id}.md"))
+            .ok_or_else(|| StoreError("unknown record".into()))?;
         if digest(bytes)? != expected_digest {
             return refuse("stale expected record revision");
         }
