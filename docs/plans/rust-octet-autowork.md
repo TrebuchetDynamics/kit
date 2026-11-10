@@ -117,11 +117,12 @@ The closing planning task carries `Plan round: 1 of 10` and must read the six bu
 
 ## Next implementation frontier
 
-Planner call for TOOLSET-478-9a8d7ece: deliver one cohesive read-only inspection
-surface before selecting UI, service or migration implementations. The goal remains
-unmet. The owner requested the Rust redesign and delegated engineering choices;
-this sequencing and the interfaces below are planner decisions, not new owner
-requirements. No execution, installation or live authorization changes here.
+Planner call for TOOLSET-504, round 2 of 10: expose exact pending-edit preview
+and explicit local publication without agent execution. Committed task inspection
+and journal status are available. The goal remains unmet. The owner requested the
+Rust redesign and delegated engineering choices; this slice and its interfaces are
+planner decisions, not new owner requirements. No execution, installation or live
+authorization changes here.
 
 ### Evidence and remaining proof
 
@@ -149,22 +150,33 @@ report at `slot-data/TOOLSET-481-33040cb9/attempt-1/report.json` reports 18 pass
 offline tests from both working directories, unchanged lock bytes and original test
 inventory. Those results do not become fresh checks of this planning input.
 
-The current source provides `TaskStore::read_at` and selection, and journal
-transitions/projections. However, `main.rs::Command` has no public task-inspection
-or status command. `StateStore::open` takes the exclusive writer lock and increments
-`metadata.epoch`. It cannot be reused as a monitoring reader. This is the concrete
-next gap, not a request for an unavailable coordinator receipt.
+At planning input `31c626e72cdffb697145e90441a4a62859262e22`, `main.rs` exposes
+committed `tasks list/goals/show/why` and read-only `status`, with generation-1
+contracts. TOOLSET-503's actual report at
+`slot-data/TOOLSET-503/attempt-1/report.json` binds these changes to
+`d80812ea9601872525758ff3bd549eeb9af03da7`. It reports 12 passing CLI, task-store
+and recovery tests plus rustfmt. Its closure is coordinator-verified, but these
+checks prove only the reported offline inspection behavior, not current PID
+liveness, runtime admission, installed ownership or live qualification.
+
+The current `TaskService::capture_pending` validates records and captures an exact
+`PendingSnapshot`, but writes loose Git objects and requires a named branch.
+`Coordinator::commit_proposal` already publishes that tree through retained Git
+effects, ordinary hooks and compare-and-swap. Neither operation has a public task
+publication command. Exposing this seam, with isolated preview objects and explicit
+token-bound publication, is the next gap. Reusing `run_until_quiescent` would also
+recover deliveries and dispatch work; it is not a publication-only entry point.
 
 Remaining outcomes retain these boundaries:
 
 - General shell/check execution, additional provider/auth adapters and steering
   remain unqualified. The fixed-operation registry and fixture cancellation do
   not establish a general execution boundary or live provider behavior.
-- Task reads are the selected slice of command compatibility. Task/goal mutations,
-  pending-commit CLI, history presentation and additional closure/recovery parity
-  remain for later source-backed batches. Existing exact-tree publication remains
-  required, not deferred or replaced.
-- Read-only journal status is the selected prerequisite surface for later Rust UI
+- Committed task reads are implemented. Pending-commit CLI is the selected next
+  slice. Task/goal authoring, history presentation and additional closure/recovery
+  parity remain for later source-backed batches. Existing exact-tree publication
+  remains required, not deferred or replaced.
+- Read-only journal status provides an inspection surface for later Rust UI
   and versioned Paseo integration. It does not implement either client, services,
   multi-repository scheduling or installed ownership handoff.
 - Migration/import previews, live qualification, installer/rollback and Python/Pi
@@ -222,40 +234,119 @@ reader coordination, but do not use `immutable=1` against a changing journal or
 promise byte-identical sidecars. See [SQLite WAL concurrency and read-only rules](https://www3.sqlite.org/wal.html).
 No application-authored writes or logical database changes are allowed by status.
 
+### Selected pending-publication contract
+
+One cohesive task owns `main.rs`, `task_store.rs`, `execution.rs`, `tests/cli.rs`
+and the component README. No dependency, lockfile, journal schema or upstream
+change is needed. Keep the inspection contract above, including unsupported task
+authoring verbs and working-tree selection. Add `commit` to the advertised task
+verbs and `contracts.task_publication = 1`; keep `task_inspection = 1` and
+`status = 1`. This is a native subset, not full Python command parity.
+
+Planner choices and alternatives:
+
+- Reuse `PendingSnapshot` and `commit_proposal`, not a second Git publication
+  engine. Keep the existing fixed commit message; do not add a message option.
+- Preview first, then require its exact token for a nonempty publication. Do not
+  silently commit the latest mutable records or use a preview token as authority.
+- Keep preview separate from the state writer. A service-first rollout or full
+  authoring-command port adds ownership and recovery work not needed for this seam.
+  General shell execution remains a separate unqualified authority boundary.
+
+`autowork-next tasks commit --dry-run --repo PATH` validates one stable working
+record set against HEAD's existing receipt evidence. It includes added, changed
+and deleted records under `tasks/items/` and `tasks/goals/`, not receipt edits or
+unrelated files. Use the task lock and refuse interrupted Python or Rust task
+transactions without restoring them. Do not open `StateStore`, claim an epoch,
+reconcile effects, run hooks or dispatch agents. Git tree/diff construction uses a
+temporary index and object database with repository objects as read-only alternates,
+per `pi-autowork/task-store.md#writing-and-autowork-tasks`. Cleanup must not add loose
+objects to the repository. Ordinary task-lock coordination is allowed; do not claim
+that the lock file cannot be created.
+
+Preview returns JSON with `state` (`clean` or `pending_commit`), `base_head`,
+`branch`, `tree`, `token`, sorted `files` and the exact `diff`. For a pending set,
+use the same token identity as `PendingSnapshot`: base HEAD, branch, tree and all
+captured record bytes. The temporary tree need not remain readable after preview;
+the token is not a selectable revision. The full binary-capable diff disables
+external diff/text conversion and covers only changed records. Refuse, never
+truncate, a diff over 256 KiB. This is the planner's preview bound, matching the
+existing review-diff scale. A clean preview has empty files/diff and no publication
+token. Invalid or linked records, detached HEAD, non-HEAD `--rev`, unstable inputs
+and unresolved task transactions fail with retained bytes. No `--worktree` option
+or ephemeral selection API is added.
+
+`autowork-next tasks commit --repo PATH --expect-token TOKEN` publishes only the
+reviewed set. With no pending edits and no retained matching operation, report
+`clean` without a commit. A nonempty publication requires a well-formed matching
+token before starting a new effect. Re-capture under the existing task lock and
+retain source/branch/record/index checks. Use the existing private state writer
+lock, pause/stop gates, owned Git hooks, exact-tree checks and compare-and-swap.
+No model configuration, credential lookup or agent dispatch is needed. An inert
+runtime with no routes can satisfy the existing coordinator constructor; a narrow
+publication API may instead remove that constructor coupling without changing the
+execution contract. This is a worker-reversible internal detail, not permission
+to weaken any gate. Result JSON identifies the local commit and preview token;
+it does not claim execution, task closure, installed consumption or goal proof.
+
+Restart must use the supplied token to locate only its retained publication effect
+and original `PendingSnapshot`, not a newly captured token after HEAD has advanced.
+Validate token syntax before path lookup and bind retained input to this repository,
+branch, tree and source. A settled operation returns its verified recorded commit
+without another commit or hook call. An interrupted operation uses the existing
+publication settlement rules. Failed or uncertain started hooks are not replayed.
+Refuse unrelated unresolved effects, task journals, active writer ownership and
+conflicting external bytes; do not invoke broad delivery/planner recovery or task
+selection to make this command succeed. Preserve all retained recovery evidence.
+
+This native command is qualified only on disposable offline repositories. Do not
+run it beside a Python writer. It neither imports legacy ownership nor proves an
+idle service or installed handoff. Those remain separate goal outcomes under the
+existing gates. Publication validates existing closure evidence; it cannot fabricate
+receipts, qualify manual closure or supply live authority.
+
 ### Checks and continuation
 
-Extend `tests/cli.rs` with offline disposable-repository tests for pinned task reads,
-selection-only JSON, concurrent writer/status reads, missing/unsafe journals and
-sanitized failures. Retain the existing empty-PATH bootstrap, immutable pin and
-crate-owner inventory assertions. Reuse current task-store and state-recovery
-fixtures; new behavior needs assertions, not copied baseline suites. Run the
-focused CLI, task-store and state-recovery targets on Rust 1.95.0 with the locked
-manifest. These new checks are proposed and UNRUN during planning. Bounded defects
-in those paths which prevent these checks may be repaired in the building task;
-no live setup or unavailable external input is required.
+Extend the existing `tests/cli.rs` fixtures with
+`pending_publication_preview_is_exact`,
+`pending_publication_commits_only_reviewed_records` and
+`pending_publication_recovers_without_dispatch`. Reuse current task-store and cycle
+guards rather than copying suites. Verify preview object/index/ref invariance,
+exact token/drift refusal, no agent calls, same-token restart, hook non-replay and
+retained conflicts. Use deterministic fixture coordination, not timing sleeps.
+Re-baseline the exact task-verb array at `tests/cli.rs:201-203` only to add `commit`;
+retain unsupported `field`/`--worktree`, bootstrap, engine pin, crate inventory,
+status privacy and selection-only meaning. Run CLI, task-store and autonomous-cycle
+targets plus rustfmt with Rust 1.95.0 and the locked manifest. New checks are
+proposed and UNRUN. Bounded defects in the declared paths which stop these checks
+may be repaired; no unavailable receipt, model or live setup is a prerequisite.
 
-The saved frontier is TOOLSET-503 in Next, behind existing owner priorities, plus
-TOOLSET-504, the single successor of kind plan with `Plan round: 2 of 10` depending
-on TOOLSET-503. The successor
-must read its actual report, current source and remaining goal proof before
-choosing the next batch, with at most eight new tasks including any later successor.
-The already-authorized coordinator can continue the chain after integration. To
-stop it, move that planning task to Needs decision. This planning pass starts no
-runner. Expected execution is one implementation merge and its normal independent
-review, separate from this planning commit. No new owner-only question is needed
-for the selected offline slice.
+Pre-mortem: preview changes repository objects (assert object inventory and scratch
+cleanup); a changed record is committed after review (compare the exact token and
+source again); restart repeats a hook or dispatches a worker (same-token recovery
+and negative agent-call assertions). The on-disk task and journal schemas stay the
+same, and offline local publication never supplies acceptance or ownership proof.
 
-A fresh read-only builder checked the saved TOOLSET-503/504 contracts against
-`main.rs`, `state.rs`, the CLI tests and the normative selection contract. It found
-nothing important left: the reader avoids the writer lock/epoch, the native subset
-is explicit, and the successor dependency and round are correct. This is contract
-review, not execution evidence. TOOLSET-503 is dependency-ready; TOOLSET-504 waits
-for its actual result. Canonical integration and runtime admission belong to the
-invoking coordinator, not this isolated planning checkout.
+The saved frontier is TOOLSET-505 in Next, behind existing owner priorities, plus
+TOOLSET-506, the single open successor of kind plan. Its `Plan round: 3 of 10`
+depends on every new building task: TOOLSET-505. It must read the actual report,
+current source and remaining goal proof before choosing another batch, within the
+eight-task cap. No owner-only missing input is needed for this offline slice.
+The authorized coordinator continues the chain after integration. To stop it, move
+TOOLSET-506 to Needs decision. This planning pass starts no runner. Expected
+execution is one implementation merge and its normal independent review, separate
+from this planning commit. Canonical integration and runtime admission belong to
+the invoking coordinator, not this isolated planning checkout.
+
+A fresh read-only builder inspected the saved TOOLSET-505/506 records, this contract,
+current implementation and normative docs. It found nothing important left. Its
+review confirmed the preview bound, token/recovery seam, declared writes and
+round/dependency structure. This is a contract check, not implementation or live
+qualification; the proposed Rust checks remain unrun.
 
 ## Verification and builder handoff
 
-First selection-ready outcome: the Rust foundation. Subsequent runtime, store and journal implementations can proceed independently after foundation. Planning depends on their real APIs; the coordinator depends on all of them. Run only focused task checks plus repository-required landing/main gates. Include exact manifest/lock paths in the foundation's protected `touches`.
+First selection-ready outcome for the current batch: TOOLSET-505's offline pending-publication CLI. TOOLSET-506 waits for its actual implementation evidence. There is one cohesive building task, not parallel writers of a shared command registry. Run focused task checks plus repository-required landing/main gates; a focused pass is not a fresh full-main or live result.
 
 Pre-mortem: (1) a stale planner changes a different attempt: bind revision, contract and generation; (2) an agent or Git crash is mistaken for success: reconcile retained intent/effects and source-bound checks; (3) rewrite cutover discards old state or dual-starts a writer: require preview, preserved backup and exclusive handoff. Tests must prove each affected seam.
 
