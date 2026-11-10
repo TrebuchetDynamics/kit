@@ -1656,7 +1656,7 @@ class Coordinator:
         env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_CONFIG_')}
         argv = ['git', '-C', str(self.repo), 'push', '--quiet', remote, f'{source}:refs/heads/{branch}']
         try:
-            result = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=300)
+            result = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=maintenance.PUSH_TIMEOUT)
         except (OSError, subprocess.TimeoutExpired) as exc:
             return self.push_unknown(remote, branch, source, f'{type(exc).__name__}: {exc}')
         if result.returncode == 0:

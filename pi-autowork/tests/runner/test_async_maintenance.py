@@ -117,6 +117,26 @@ class AsyncMaintenanceTests(unittest.TestCase):
         self.assertNotEqual(self.git(self.repo, 'rev-parse', 'HEAD'), self.source)
         self.assertEqual(maintenance.read(owner, 'publication')['published'][0], self.source)
 
+    def test_publication_budget_includes_pre_push_checks_in_both_modes(self):
+        with patch.object(maintenance, 'start') as launch:
+            self.assertEqual(self.owner.push(), 'pending')
+        launch.assert_called_once()
+        self.assertEqual(launch.call_args.args[4], 3600)
+        self.assertTrue(launch.call_args.kwargs['publish'])
+        self.owner.async_maintenance = False
+        run = subprocess.run
+        pushes = []
+
+        def capture(argv, **kwargs):
+            if 'push' in argv:
+                pushes.append(kwargs['timeout'])
+            return run(argv, **kwargs)
+
+        with patch.object(coordinator.subprocess, 'run', side_effect=capture):
+            self.assertEqual(self.owner.push(), 'published')
+        self.assertEqual(pushes, [3600])
+        self.assertEqual(self.git(self.remote, 'rev-parse', 'main'), self.source)
+
     def test_fetch_completion_waits_for_review_answer_before_any_session_mutation(self):
         self.owner.integ = str(self.repo)
         self.owner.integration = {'unconsumed': True}
