@@ -230,3 +230,105 @@ checks are UNRUN in this planning pass. Physical terminal/SSH/browser appearance
 installed-release behavior remain unqualified; no live acceptance or deployment is
 inferred from offline fixtures. No speculative rolling successor is needed: this
 request has a fully defined three-task frontier. Stop after saving and validating it.
+
+### Truthful activity and journal
+
+Status: Accepted. The owner accepted the recommendation to improve reporting and
+logging first, not change retry or recovery behavior. This refines the existing
+fleet UI task and adds only the missing journal work; no replacement execution,
+service operation or task completion is authorized by this planning occurrence.
+
+The operator must be able to tell what is happening, what is waiting, and whether
+a displayed problem needs action. The supplied capture shows unreadable worker
+cells (`TOOL`, `Unmatc`), 174 undifferentiated warnings, mixed check/publication/
+merge events, and startup configuration in the Activity pane. These are qualitative
+examples, not a measured number of current failures or proof that retries failed.
+
+Evidence at `d14e9126`: `fleet_view.presentation` already groups acquisition errors
+and source notes; `tui.py::show_overview` still adds annotation cardinality to its
+warning total. `show_lanes` still displays raw IDs and relies on `fill` auto-sized
+columns. `fleet_view.log_lines` skips a task line whenever its first phase word
+matches the previous one (`last.get(name) == word`), even when the failure detail
+changed. Its adjacent-repeat count retains only the first timestamp. `LogScreen`
+uses the same filtered projection as Activity and has no original-output mode.
+These observations justify presentation fixes, not a new scheduler or event store.
+
+Selected behavior and boundaries:
+
+- Refine `TOOLSET-487-2938d3f0`, not a duplicate UI task. Reuse the captured
+  presentation, committed task titles/short names, and exact task IDs as identity.
+  At 80x24 keep a meaningful task name, phase and reason visible; at 60x18 use a
+  compact summary with an explicit route to the full identity/reason rather than
+  single-word fragments. Preserve the existing below-22-row contract: at most
+  three selected-summary rows, at least four journal rows and one selectable
+  worker row. Test those widget rectangles in terminal cells. Wide layouts remain
+  120x32 and 160x48. Unmatched lanes must be labelled as source observations, not
+  silently joined to active tasks. Separate real errors from grouped source notes;
+  every original message and affected ID stays accessible in Details.
+- Keep journal command/window bounds, runner selection and raw output unchanged.
+  Permit journal-local error propagation: `logs` currently calls `_lines` without
+  `strict=True`, turning timeout/nonzero exit into empty output. Distinguish those
+  failures from a successful empty read through the existing reader error path.
+  Add an opt-in `logs(..., strict=False)` keyword: keep default string/empty-on-error
+  compatibility for existing callers; only the Activity and Log TUI capture paths
+  opt into strict errors. Use the existing `_lines(..., strict=True)` mechanism,
+  without changing CLI behavior, unrelated discovery queries or adding a reader.
+  Test timeout, OS error, nonzero exit and successful-empty at the subprocess seam.
+  Preserve
+  the existing `log_lines(text) -> list[(str, style)]` and `quiet_log(text) -> str`
+  consumer shapes. Improve the pure display projection: task phase/failure events,
+  main checks and publication outcomes remain distinct. Group recognized operations
+  only by explicit task identity or operation family plus revision and explicit
+  target when present. Ambiguous/missing operation identity retains separate lines;
+  do not infer attempts, causal links, success or current state from nearby lines. An excerpt
+  without the start or outcome says that evidence is absent. Unknown and multiline
+  diagnostic text remains ordered and readable.
+- Fold identical repeated messages only within the same recognized operation,
+  with a count and original first/last timestamps. A changed reason, revision,
+  retry outcome, task, or restart boundary must not disappear merely because the
+  phase word matches. Preserve source order across midnight and excerpts; missing
+  timestamps are unknown, not fabricated. A timeout or unconfirmed publication is
+  not a successful push; integration/closure is not publication, and a historical
+  red check is not the current main verdict.
+- Activity is the concise view. Full-screen Log defaults to the same summary and
+  offers a labelled `v Raw` / `v Summary` toggle over its cached acquired text.
+  Raw means the original journal text in that capture, including folded/filtered
+  lines, not Pi transcripts or a promise of complete historical logs. This is a
+  local read-only action in `LogScreen`, with the same keyboard and MenuBar click
+  route; it cannot fall through to fleet actions. Preserve Escape/q, selection,
+  scroll/follow position, stale/error provenance, and obsolete-result rejection.
+  Toggling or resizing must not acquire more data or run a service command.
+- Retain acquisition limits: Activity requests `lines=400, since='-60min'`,
+  full-screen Log requests 1000 lines, and journal reads retain their 20-second
+  timeout and existing four-reader coordination. No new persistence, backend,
+  dependency, event bus, production logging format, or change to the CLI journal
+  command. Summary hiding of startup configuration is reversible through Raw;
+  unknown text is retained rather than guessed away.
+
+`TOOLSET-487-2938d3f0` and `TOOLSET-490-3c7f4627` (journal summary and original
+capture view) are product-independent. The journal work changes `fleet_view`'s display projection and the existing log views in `tui`;
+487 changes fleet/worker/diagnostic layout. Their shared `tui.py` and README may
+conflict and their existing `autowork-python-layout` resource serializes admission
+with the unfinished source relocation. This is not a dependency edge. Preserve
+485/486 prerequisites and all live attempts. Do not add another closing planning
+or speculative recovery task: both requested reporting outcomes are known now.
+
+Implementation owners must update `DESIGN.md` and `pi-autowork/README.md` for actual
+visible behavior. Preserve `test_fleet_view.py::test_the_log_reads_as_events` and
+`::test_an_update_restart_is_one_line_and_repeats_are_counted`, rebasing only the
+intentional folding/time-span output; pending suppression and restart provenance
+remain guarded. Add one focused `test_activity_log.py` / `activity_log_pilot.py`
+seam instead of extending the giant general-purpose pilot. Reuse the existing
+scoped pinned Textual environment; missing dependencies/skipped pilots are unmet
+acceptance, not successful rendering.
+
+Pre-mortem: same-phase dedup hides a new failure (changed-detail/interleaved-revision
+fixture); a summary falsely implies publication/current-main success (timeout,
+missing-end and superseded-check fixtures); raw toggle or resize loses evidence,
+scroll or runner identity under blocked reads (event-barrier viewport pilot).
+All scheduling, authority, live gates, journal retention, task counts and existing
+reader/confirmation/deletion safeguards remain unchanged. Proposed implementation
+checks are UNRUN; planning validates only saved records/docs. Physical terminal,
+SSH/browser and installed-release qualification remain separate and unverified.
+Expected remaining delivery is two implementation integrations and two independent
+reviews, not extra planning or a claim that either feature has shipped.
