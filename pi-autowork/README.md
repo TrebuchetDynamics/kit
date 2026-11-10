@@ -632,6 +632,19 @@ when deletion is committed or the record is restored. A recreation absent from H
 is disclosed as a pending record, never added to committed inventory. External CLI
 edits retain the normal observation cadence; the TUI never commits deletions.
 
+Non-interactive command results are interpreted by `command_results.interpret`
+without Textual: generic output uses the last line (including stderr warnings),
+execution exceptions and nonzero exits are failures, and answers without `--commit`
+remain pending. A committed answer requires a committed lifecycle receipt; an
+invalid receipt reports failure and keeps the draft. This is command feedback,
+not runner acceptance or authority to mutate or commit tasks.
+
+`FleetApp` still owns command execution and terminal suspension. After interpreting
+a non-interactive result, it posts the notification (at most 300 characters), calls
+any completion callback with the full message, then updates and refreshes the view.
+`tests/runner/test_command_results.py` covers headless interpretation, and
+`tests/runner/test_tui_architecture.py` covers delegation and callback ordering.
+
 The TUI runs `collect_for_tui` off the event loop and publishes its `FleetSnapshot`
 envelope atomically, including acquisition errors. Its labelled preparation diagnostics can be
 reused for less than 30 seconds, invalidated by observed revision, dirty-file,
