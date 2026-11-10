@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-499"
 title = "Harden the runner reload fixture against suite-only timing failures"
 short = "Runner reload fixture hardening"
-status = "open"
+status = "done"
 goal = "RELIABILITY-2026-10"
 section = "Next"
 rank = 24000
@@ -16,6 +16,8 @@ scope = "Harden test_pi_autowork.EngineTests.test_a_reload_keeps_the_runner_and_
 acceptance = ["Characterize the historical full-run failure versus isolated success using the named evidence and current fixture. Record isolation, resource-load and fixture-timing observations, distinguish demonstrated causes from hypotheses, and explain how the test-only change addresses the observed failure.", "Preserve every original assertion: A is running when reload is requested and survives it; the runner retains its PID and matching process start_time with reloads=1; A/B/C finish while the runner stays alive; no Stopping log appears; A runs exactly once; A uses gpt-6.1-sol and the later B uses the newly configured gpt-6-luna; SIGINT exits and is reaped. Keep real Git, fake workers and settings reload. No skip, retry-to-green wrapper, removed/weakened assertion or arbitrary sleep/deadline inflation.", "Exercise representative contention or deterministic test-owned ordering with bounded phase observations and actionable failure diagnostics. Ensure assertion failures also clean up the fixture runner and its worker process tree safely, without touching unrelated processes. Repeated isolated runs and the affected module pass with source-bound command, interpreter, timing and result evidence. Run the full offline check and report actual results and skips separately from installed/live qualification."]
 checks = ["Run python3 scripts/check.py pi-autowork/tests/runner/test_pi_autowork.py -k test_a_reload_keeps_the_runner_and_its_worker_and_applies_new_settings at least three times using the checker-provisioned environment; record interpreter, timings and results, plus the contention or deterministic-ordering experiment.", "python3 scripts/check.py pi-autowork/tests/runner/test_pi_autowork.py", "python3 scripts/check.py"]
 exclusions = ["No product-code repair, new runtime dependency, test removal, weakened acceptance, task/goal edits, runtime-state edits, live/model calls, service operations, installation, publication or interruption of another worker. All processes and state exercised here must belong to disposable offline fixtures."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-499.toml"
 +++
 - Sources: DOCS-MAINTAINER MAIN (flaky test) instruction; docs/testing.md#verify; docs/project.md#reliability-bug-harvest-2026-10-15; pi-autowork/tests/runner/test_pi_autowork.py
 - Evidence: Read in place <git-common-dir>/autowork-execution/main-evidence/0804709d48c4e96aba5fd4d84a09707af3f2f893: main_check.json, main-check.log, main-check.exit, main-check-reruns.log and flaky_history.json. Resolve git rev-parse --git-common-dir from linked worktrees; this names the canonical repository .git/autowork-execution bundle, not a worktree copy. Both JSON histories retain the target test on 01c99fbf98df24710729c00742a162a4c45d9b19, 2a7a4cb6918c56c8a2898392a5faef1fa379fd2c and 857c757f577b5d2553f4504f78e4290adcce05e0; the supplied instruction records full-run failures followed by isolated passes on all three. The supplied bundle itself is green/PASS at 0804709d48c4e96aba5fd4d84a09707af3f2f893, exit 0, six offline directories passed, no current flaky reruns and an empty rerun log. Do not copy runtime evidence into Git or worktrees.
