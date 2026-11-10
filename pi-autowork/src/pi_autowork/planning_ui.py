@@ -283,7 +283,7 @@ class PlanScreen(Screen):
         self._operation(load, done)
 
     def on_select_changed(self, event):
-        if event.select.id != 'plan-session' or event.value is Select.BLANK or self.planner is None:
+        if event.select.id != 'plan-session' or event.select.is_blank() or self.planner is None:
             return
         sid = str(event.value)
         if sid == self.session_id:
@@ -436,7 +436,7 @@ class PlanScreen(Screen):
         elif key == 'plan-new':
             if not self.readonly and not self._busy:
                 self.session_id, self.preview, self._history = None, None, ''
-                self.query_one('#plan-session', Select).value = Select.BLANK
+                self.query_one('#plan-session', Select).clear()
                 self.query_one('#plan-chat', TextArea).load_text('New session. Optional objective below; Send starts discovery.')
                 for pane in ('history', 'proposal', 'roadmap'):
                     self.query_one('#plan-' + pane, TextArea).load_text('No session selected.')
