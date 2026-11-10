@@ -68,6 +68,17 @@ enum Command {
 
 #[derive(Subcommand)]
 enum TaskCommand {
+    /// List tasks from one immutable committed snapshot.
+    List {
+        #[arg(long, default_value = "HEAD")]
+        rev: String,
+    },
+    /// Show one task with exact committed record content.
+    Show {
+        id: String,
+        #[arg(long, default_value = "HEAD")]
+        rev: String,
+    },
     Add {
         id: String,
         #[arg(long)]
@@ -131,7 +142,7 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     "capabilities": "available",
                     "run": "explicit-local-cycle",
                     "status": "read-only-json-v1",
-                    "tasks": "pending-ordinary-edits",
+                    "tasks": "committed-queries-and-pending-ordinary-edits",
                     "internal-agent": "owned-only"
                 },
                 "unknown_commands": "unsupported",
@@ -302,6 +313,11 @@ fn task_command(
         planning::{FailureEvidence, PlanDisposition, PlanProposal, RecordChange},
         task_store::{TaskService, TaskStore},
     };
+    match &action {
+        TaskCommand::List { rev } => return task_query(repo, rev, None),
+        TaskCommand::Show { id, rev } => return task_query(repo, rev, Some(id)),
+        _ => (),
+    }
     let service = TaskService::new(repo)?;
     if matches!(action, TaskCommand::Preview) {
         return Ok(
@@ -342,7 +358,9 @@ fn task_command(
             let bytes = edit_record(&service, &id, &record_revision, "section", json!(section))?;
             (id, record_revision, bytes)
         }
-        TaskCommand::Preview => unreachable!(),
+        TaskCommand::Preview | TaskCommand::List { .. } | TaskCommand::Show { .. } => {
+            unreachable!()
+        }
     };
     if id.is_empty()
         || !id
@@ -409,4 +427,39 @@ fn edit_record(
     let mut fields: toml::Table = toml::from_str(header)?;
     fields.insert(key.into(), toml::Value::try_from(value)?);
     Ok(format!("+++\n{}+++{}", toml::to_string(&fields)?, notes).into_bytes())
+}
+
+fn task_query(
+    repo: &std::path::Path,
+    revision: &str,
+    id: Option<&str>,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let snapshot = autowork_next::task_store::TaskStore::read_at(repo, revision)?;
+    let describe = |task: &autowork_next::task_store::Record| -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        let bytes = snapshot.records().get(&task.path).ok_or_else(|| io::Error::other("record missing from snapshot"))?;
+        Ok(json!({"id": task.id, "title": task.title, "record_revision": task.record_revision,
+            "contract_hash": task.contract_hash, "status": task.string("status"), "section": task.string("section"),
+            "kind": task.string("kind"), "ownership": task.string("ownership"), "live": task.string("live"),
+            "goal": task.string("goal"), "scope": task.string("scope"), "acceptance": task.strings("acceptance"),
+            "checks": task.strings("checks"), "depends_on": task.strings("depends_on"),
+            "verified_depends_on": task.strings("verified_depends_on"), "touches": task.strings("touches"),
+            "resources": task.strings("resources"), "exclusions": task.strings("exclusions"),
+            "missing_fields": task.missing_fields, "content": std::str::from_utf8(bytes)?}))
+    };
+    let mut result = json!({"schema_version": 1, "application": "autowork-next", "revision": snapshot.revision(), "source": "committed"});
+    if let Some(id) = id {
+        let task = snapshot
+            .tasks()
+            .get(id)
+            .ok_or_else(|| io::Error::other("unknown task ID"))?;
+        result["task"] = describe(task)?;
+    } else {
+        result["tasks"] = snapshot
+            .tasks()
+            .values()
+            .map(describe)
+            .collect::<Result<Vec<_>, _>>()?
+            .into();
+    }
+    Ok(result)
 }

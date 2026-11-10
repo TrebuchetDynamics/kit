@@ -51,6 +51,14 @@ create no state, migrations or reconciliation effects. A quiescent journal is
 read under its existing lock through immutable SQLite access; this is an observed
 snapshot, not model or service qualification.
 
+`tasks --repo /path/to/repo list` and `tasks --repo /path/to/repo show ID`
+return schema-versioned JSON from committed records only. Add `--rev COMMIT`
+after `list` or `show ID` to pin an older snapshot. Responses include the full
+resolved commit, typed task metadata and exact original record content. Unknown
+IDs and invalid revisions fail explicitly. These reads ignore pending edits and
+create no task locks or runtime state; Git environment overrides cannot redirect
+them to another repository.
+
 `tasks --repo /path/to/repo --expected-revision COMMIT` accepts:
 
 - `add ID --record /path/to/record.md`: validate a complete task record through the

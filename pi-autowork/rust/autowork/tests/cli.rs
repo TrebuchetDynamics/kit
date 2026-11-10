@@ -601,3 +601,69 @@ fn status_reports_dependency_blocks_and_mutations_validate_types_and_grants() {
     );
     assert!(!repo.0.join("tasks/items/T-3.md").exists());
 }
+
+#[test]
+fn task_queries_pin_commits_and_preserve_pending_and_runtime_bytes() {
+    let repo = TaskCliRepo::new();
+    let path = repo.0.to_str().unwrap();
+    let record = repo.0.join("tasks/items/T-1.md");
+    let original = std::fs::read_to_string(&record).unwrap();
+    let first = repo.git(&["rev-parse", "HEAD"]);
+    std::fs::write(&record, original.replace("Read tasks", "Committed update")).unwrap();
+    repo.git(&["add", "tasks"]);
+    repo.git(&["commit", "-qm", "second snapshot"]);
+    let second = repo.git(&["rev-parse", "HEAD"]);
+    let committed = std::fs::read_to_string(&record).unwrap();
+    std::fs::write(
+        &record,
+        committed.replace("Committed update", "Pending update"),
+    )
+    .unwrap();
+    let pending = std::fs::read(&record).unwrap();
+    let before = repo.git(&["status", "--porcelain"]);
+    for _ in 0..2 {
+        let list = repo.value(&["tasks", "--repo", path, "list"]);
+        assert_eq!(list["schema_version"], 1);
+        assert_eq!(list["revision"], second);
+        assert_eq!(list["tasks"][0]["title"], "Committed update");
+        assert_eq!(list["tasks"][0]["content"], committed);
+        let historical = repo.value(&["tasks", "--repo", path, "show", "T-1", "--rev", &first]);
+        assert_eq!(historical["revision"], first);
+        assert_eq!(historical["task"]["content"], original);
+        let old_list = repo.value(&["tasks", "--repo", path, "list", "--rev", &first]);
+        assert_eq!(old_list["tasks"][0]["title"], "Read tasks");
+        assert_eq!(
+            repo.value(&["tasks", "--repo", path, "show", "T-1"])["task"]["content"],
+            committed
+        );
+    }
+    for args in [
+        vec!["tasks", "--repo", path, "show", "unknown"],
+        vec!["tasks", "--repo", path, "list", "--rev", "missing-commit"],
+        vec!["tasks", "--repo", path, "show", "T-1", "--rev", "--help"],
+    ] {
+        assert!(!repo.run(&args).status.success());
+    }
+    let poisoned = Command::new(env!("CARGO_BIN_EXE_autowork-next"))
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("GIT_DIR", "/nonexistent/foreign-git")
+        .env("GIT_INDEX_FILE", repo.0.join("foreign-index"))
+        .args(["tasks", "--repo", path, "show", "T-1"])
+        .output()
+        .unwrap();
+    assert!(
+        poisoned.status.success(),
+        "{}",
+        String::from_utf8_lossy(&poisoned.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&poisoned.stdout).unwrap()["revision"],
+        second
+    );
+    assert!(!repo.0.join("foreign-index").exists());
+    assert_eq!(std::fs::read(record).unwrap(), pending);
+    assert_eq!(repo.git(&["status", "--porcelain"]), before);
+    assert!(!repo.0.join(".git/autowork-tasks.lock").exists());
+    assert!(!repo.0.join(".git/autowork-rust").exists());
+}
