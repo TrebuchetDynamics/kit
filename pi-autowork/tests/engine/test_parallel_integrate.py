@@ -13,7 +13,11 @@ import unittest
 from unittest.mock import patch
 import unittest.mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path[:0] = [str(Path(__file__).resolve().parent),
+                str(Path(__file__).resolve().parents[3] / 'tests'),
+                str(Path(__file__).resolve().parents[1]),
+                str(Path(__file__).resolve().parents[2]),
+                str(Path(__file__).resolve().parents[2] / 'engine')]
 from support.offline_fixtures import fixture_runtime_root
 import parallel_dispatch as dispatch
 from pi_autowork.engine import provenance
@@ -2447,7 +2451,7 @@ finally:
     def test_integration_discards_only_ignored_bytecode_before_the_vendor_check(self):
         source = Path(__file__).resolve().parents[3]
         sys.path.insert(0, str(source / 'tests'))
-        from support.src_fixture import copy_sources
+        from src_fixture import copy_sources
         copy_sources(self.repo, source=source)
         skill = self.repo / 'skills/autowork'
         skill.mkdir(parents=True)

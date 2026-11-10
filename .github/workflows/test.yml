@@ -20,7 +20,7 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install -r requirements-test.txt
       - name: Offline suites without the runner integration module
-        run: python scripts/check.py --exclude tests/test_pi_autowork.py
+        run: python scripts/check.py --exclude pi-autowork/tests/runner/test_pi_autowork.py
       - name: Plugin syntax
         run: python -m py_compile __init__.py
       - uses: actions/setup-node@v4
@@ -46,4 +46,4 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install -r requirements-test.txt
       - name: Runner integration module, shard ${{ matrix.shard }} of 3
-        run: python scripts/check.py tests/test_pi_autowork.py --shard ${{ matrix.shard }}/3
+        run: python scripts/check.py pi-autowork/tests/runner/test_pi_autowork.py --shard ${{ matrix.shard }}/3

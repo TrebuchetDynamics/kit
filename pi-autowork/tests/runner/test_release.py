@@ -1,5 +1,12 @@
 """A toolset update goes only to a release that reads current state, preferably fleet-idle."""
 import json
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path[:0] = [str(_Path(__file__).resolve().parent),
+                 str(_Path(__file__).resolve().parents[3] / 'tests'),
+                 str(_Path(__file__).resolve().parents[1]),
+                 str(_Path(__file__).resolve().parents[2]),
+                 str(_Path(__file__).resolve().parents[2] / 'engine')]
 import os
 from pathlib import Path
 import select
@@ -16,7 +23,7 @@ from pi_autowork import release  # noqa: E402
 from pi_autowork.supervision import maintenance  # noqa: E402
 from pi_autowork.processes import start_time  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tests'))
-from support.src_fixture import copy_sources  # noqa: E402
+from src_fixture import copy_sources  # noqa: E402
 
 STATE = 'pi-autowork/engine/parallel_state.py'
 

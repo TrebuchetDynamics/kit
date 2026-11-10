@@ -55,6 +55,10 @@ class AffectedTestsTests(unittest.TestCase):
             'tests/test_public.py': 'import pi_autowork.command\n',
             'tests/test_path.py': 'ENTRY = "pi-autowork/pi_autowork/command.py"\n',
             'tests/test_other.py': 'import unrelated.owner\n',
+            **{f'pi-autowork/tests/{suite}/test_public.py': 'import pi_autowork.command\n'
+               for suite in ('runner', 'engine', 'native')},
+            'pi-autowork/tests/support/store_fixture.py': 'import pi_autowork.command\n',
+            'tests/test_support.py': 'import store_fixture\n',
         }
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -69,6 +73,30 @@ class AffectedTestsTests(unittest.TestCase):
                 self.assertIn('pi-autowork/src/pi_autowork/__init__.py', graph['tests/test_public.py'])
                 self.assertNotIn('unrelated/owner.py', graph['pi-autowork/src/pi_autowork/engine/consumer.py'])
                 self.assertNotIn('pi-autowork/src/pi_autowork/engine/owner.py', graph['tests/test_other.py'])
+            # Real direct-child inventory; no discovery plugin or flattened test stem.
+            checker = affected_tests.check_module()
+            with patch.object(affected_tests, 'ROOT', root), \
+                    patch.object(affected_tests, 'check_module', return_value=checker), \
+                    patch.object(affected_tests, 'repository_files', return_value=list(files)):
+                owner = 'pi-autowork/src/pi_autowork/engine/owner.py'
+                expected = {'tests/test_public.py', 'tests/test_path.py', 'tests/test_support.py',
+                            *(f'pi-autowork/tests/{suite}/test_public.py'
+                              for suite in ('runner', 'engine', 'native'))}
+                selected, _, full = affected_tests.select([owner], conservative=True)
+                self.assertFalse(full)
+                self.assertEqual(set(selected), expected)
+                all_tests = {p.relative_to(root).as_posix() for p in checker.discover_tests(root)}
+                for changed in ('pi-autowork/src/pi_autowork/__init__.py', 'missing.py'):
+                    selected, _, full = affected_tests.select([changed], conservative=True)
+                    self.assertTrue(full)
+                    self.assertEqual(set(selected), all_tests)
+                (root / owner).rename(root / owner.replace('owner.py', 'renamed.py'))
+                for changed in (owner, owner.replace('owner.py', 'renamed.py')):
+                    if (root / changed).exists():
+                        (root / changed).unlink()
+                    selected, _, full = affected_tests.select([changed], conservative=True)
+                    self.assertTrue(full)
+                    self.assertEqual(set(selected), all_tests)
 
     def test_an_unmapped_document_selects_nothing_but_unmapped_code_selects_the_whole_suite(self):
         """A changelog line cost the whole suite before every push; code with no mapped test still does."""

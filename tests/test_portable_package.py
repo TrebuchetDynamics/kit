@@ -25,6 +25,65 @@ class PortablePackageTests(unittest.TestCase):
         marketplace = json.loads((ROOT / '.agents/plugins/marketplace.json').read_text())
         self.assertEqual(marketplace['plugins'][0]['source'], {'source': 'local', 'path': '.'})
 
+    def test_archive_runs_fake_inference_without_checkout_sources(self):
+        import os
+        import shutil
+        import subprocess
+        import sys
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix='portable inference ') as temporary:
+            base = Path(temporary)
+            source, foreign = base / 'source', base / 'foreign'
+            source.mkdir()
+            foreign.mkdir()
+            manifest = json.loads((ROOT / 'package.json').read_text())
+            for entry in ('package.json', *manifest['files']):
+                path = ROOT / entry
+                if entry.startswith('!') or not path.exists():
+                    continue
+                target = source / entry
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if path.is_dir():
+                    shutil.copytree(path, target, ignore=shutil.ignore_patterns('node_modules', '__pycache__'))
+                else:
+                    shutil.copy2(path, target)
+            packed = subprocess.run(['npm', 'pack', '--ignore-scripts', '--offline', '--json'],
+                                    cwd=source, check=True, capture_output=True, text=True)
+            archive = source / json.loads(packed.stdout)[0]['filename']
+            subprocess.run(['tar', '-xzf', str(archive), '-C', str(base)], check=True)
+            installed = base / 'package'
+            self.assertFalse((installed / 'pi-autowork/src/autowork_runtime').exists())
+            self.assertFalse((installed / 'pi-autowork/scripts/profile-consult.py').exists())
+            poison = foreign / 'pi_autowork'
+            poison.mkdir()
+            (poison / '__init__.py').write_text('raise AssertionError("foreign package")\n')
+            (foreign / 'task_store.py').write_text('raise AssertionError("foreign engine")\n')
+            fake = foreign / 'fake-pi'
+            fake.write_text('#!/usr/bin/env python3\nimport json\n'
+                            'print(json.dumps({"type":"message_end","message":{"role":"assistant",'
+                            '"stopReason":"stop","content":[{"type":"text","text":"offline reply"}]}}))\n'
+                            'print(json.dumps({"type":"agent_settled","aborted":False}))\n')
+            fake.chmod(0o755)
+            code = '''import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / 'scripts'))
+import autowork_bootstrap as bootstrap
+runtime = bootstrap.load(root, 'pi_autowork.pi_runtime')
+engine = bootstrap.load(root, 'pi_autowork.engine.task_store')
+import task_store
+assert task_store is engine
+assert Path(runtime.__file__).is_relative_to(root / 'pi-autowork/src')
+settings = runtime.Settings(Path.cwd() / 'state', {'PI_BIN': sys.argv[2], 'PI_AUTOWORK_TRANSPORT': 'json'})
+result = runtime.run_pi(settings, Path.cwd(), 'fixture', 'fixture', 'fixture/model', 10, [])
+assert result['rc'] == 0 and result['settled'] and result['text'] == 'offline reply', result
+'''
+            result = subprocess.run([sys.executable, '-B', '-c', code, str(installed), str(fake)],
+                                    cwd=foreign, env=dict(os.environ, PYTHONPATH=str(foreign)),
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_portable_skills_and_references_are_self_contained(self):
         folder = ROOT / 'adapters/skills'
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}

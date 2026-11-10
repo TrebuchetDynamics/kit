@@ -331,7 +331,7 @@ proves runner acceptance.
 `field ID 'Blocker resolution' TEXT --commit` provides the same scoped handoff for
 quick-hold answers (also available for the `Owner decision` note, not typed fields).
 Without `--commit`, CLI writes remain local-only. In the TUI, **e Decide**
-opens this form and Save uses `--commit --save-if-detached`; [the planning console](../docs/planning-console.md) separately
+opens this form and Save uses `--commit --save-if-detached`; [the planning console](docs/planning-console.md) separately
 supports AI discussion and explicit proposal review/apply.
 
 `handoff [target]` is the [shared decision recovery report](decision-handoff.md).

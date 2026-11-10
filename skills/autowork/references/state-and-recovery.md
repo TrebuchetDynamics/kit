@@ -146,7 +146,8 @@ Run through `terminal` with explicit `--root <default-home> --state-dir
  default=/absolute/audit-workspace` (put each flag/value on the same shell command).
 Named relative workspaces need their own evidenced launch context, not that default.
 
-For native cron, copy the shipped `scripts/profile-audit-cron.py` into only the
+For native cron, copy the standalone `pi-autowork/scripts/profile-audit-cron.py` payload
+(not the old `scripts/` compatibility entry) into only the
 maintenance owner's `<default-home>/scripts/` and set that existing job's `script`
 field to the copied filename. Native script path confinement rejects symlinks into
 the plugin source. The thin launcher resolves the installed shared helper and sends

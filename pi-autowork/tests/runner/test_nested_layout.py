@@ -1,5 +1,12 @@
 """An invalid selected source release must not replace a running coordinator."""
 from pathlib import Path
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path[:0] = [str(_Path(__file__).resolve().parent),
+                 str(_Path(__file__).resolve().parents[3] / 'tests'),
+                 str(_Path(__file__).resolve().parents[1]),
+                 str(_Path(__file__).resolve().parents[2]),
+                 str(_Path(__file__).resolve().parents[2] / 'engine')]
 import sys
 import tempfile
 import unittest
@@ -8,7 +15,7 @@ from unittest.mock import patch
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]),
                 str(Path(__file__).resolve().parents[3] / 'tests')]
 from pi_autowork import coordinator
-from support.src_fixture import copy_sources
+from src_fixture import copy_sources
 
 
 class NestedLayoutTests(unittest.TestCase):

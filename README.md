@@ -319,7 +319,7 @@ autowork status india         # one repository's tasks, workers and what blocks 
   `main`/`master`. Publishing needs an explicit `PI_AUTOWORK_PUSH=1` grant; workers never
   push. What cannot land is reported as `Merge pending`.
 - **Configure checks and limits before unattended use.** The runner defaults to the
-  SDK-backed Pi RPC transport; see [RPC setup](docs/pi-rpc.md).
+  SDK-backed Pi RPC transport; see [RPC setup](pi-autowork/docs/pi-rpc.md).
 
 Deeper material, including every command, model fallback, service controls and recovery:
 the [runner guide](pi-autowork/README.md) and

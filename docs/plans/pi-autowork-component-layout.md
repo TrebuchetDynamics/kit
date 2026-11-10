@@ -37,9 +37,11 @@ This improves locality. It does not by itself deepen modules, remove task-state 
 
 ### Fixed mapping and compatibility boundary
 
-All paths below are repository-relative. Destination directories are proposed, not present-tense delivery claims.
+All paths below are repository-relative and fix the accepted origin/destination map.
+The [source-layout guide](../../pi-autowork/docs/source-layout.md) owns the current
+Python layout. Paseo and Rust relocation keep their separate prerequisite gates.
 
-| Current owner | Destination or retained boundary |
+| Planning-baseline owner | Destination or retained boundary |
 | --- | --- |
 | `src/pi_autowork/**`, `src/autowork_runtime/**`, `src/autowork_bootstrap.py` | Same suffix under `pi-autowork/src/`; include every native install/update subtree. |
 | `pi-autowork/pi_autowork/**`, production `pi-autowork/engine/*` | Stay as public adapters; actual `checkout_lock.py`, `worktree_paths.py` and `agent_commit.sh` stay standalone in engine. |

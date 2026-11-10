@@ -1,4 +1,11 @@
 """Selected-release screen ownership and host routes, using pinned rendered Textual."""
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path[:0] = [str(_Path(__file__).resolve().parent),
+                 str(_Path(__file__).resolve().parents[3] / 'tests'),
+                 str(_Path(__file__).resolve().parents[1]),
+                 str(_Path(__file__).resolve().parents[2]),
+                 str(_Path(__file__).resolve().parents[2] / 'engine')]
 import os
 from pathlib import Path
 import subprocess
@@ -8,7 +15,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tests'))
-from support.src_fixture import copy_sources
+from src_fixture import copy_sources
 
 
 class TuiArchitectureTests(unittest.TestCase):

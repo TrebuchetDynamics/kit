@@ -1,4 +1,11 @@
 """Release-local compatibility boundaries, exercised only in private source copies."""
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path[:0] = [str(_Path(__file__).resolve().parent),
+                 str(_Path(__file__).resolve().parents[3] / 'tests'),
+                 str(_Path(__file__).resolve().parents[1]),
+                 str(_Path(__file__).resolve().parents[2]),
+                 str(_Path(__file__).resolve().parents[2] / 'engine')]
 import os
 from pathlib import Path
 import subprocess
@@ -6,7 +13,7 @@ import sys
 import tempfile
 import unittest
 
-from support.src_fixture import copy_sources
+from src_fixture import copy_sources
 
 
 class SrcBootstrapTests(unittest.TestCase):
@@ -30,6 +37,7 @@ class SrcBootstrapTests(unittest.TestCase):
         self.assertFalse(list(self.root.rglob('__pycache__')))
 
     def test_layout_is_frozen_bounded_and_reports_actual_owners(self):
+        self.assertFalse((Path(__file__).resolve().parents[3] / 'src').exists())
         self.write('pi-autowork/src/pi_autowork/nested/owner.py', 'VALUE = 1\n')
         self.write('pi-autowork/src/pi_autowork/test_ignored.py', 'raise RuntimeError\n')
         self.write('pi-autowork/src/pi_autowork/fixtures/ignored.py', 'raise RuntimeError\n')
