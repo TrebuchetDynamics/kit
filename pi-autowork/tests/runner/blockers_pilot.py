@@ -9,7 +9,7 @@ import threading
 import time
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from pi_autowork import tui, fleet_view, blockers_report
 from textual.widgets import TextArea, Button
 from textual.drivers.web_driver import WebDriver
@@ -33,7 +33,7 @@ async def report_actions():
              patch.object(blockers_report, 'build', return_value=full) as build, \
              patch.object(app, 'notify') as notify:
             async with app.run_test(size=(80, 30)) as pilot:
-                await pilot.press('b')
+                await pilot.press('t', 'B')
                 await app.workers.wait_for_complete()
                 await pilot.pause()
                 screen = app.screen
@@ -135,6 +135,12 @@ async def report_actions():
 
 
 async def main():
+    # Tasks reads pending edits on entry; report fixtures must not spawn a CLI.
+    with patch('pi_autowork.tui_tasks.pending_edits', return_value={'files': []}):
+        await report_checks()
+
+
+async def report_checks():
     await report_actions()
     for width in (80, 120):
         for view_only in (False, True):
@@ -151,8 +157,8 @@ async def main():
                  patch.object(app, 'copy_to_clipboard') as copy:
                 async with app.run_test(size=(width, 30)) as pilot:
                     await pilot.pause()
-                    assert any(b.key == 'b' and b.action == 'show_blockers' for b in app.BINDINGS)
-                    await pilot.press('b')
+                    assert not any('b' in b.key.split(',') for b in app.BINDINGS)
+                    await pilot.press('t', 'B')
                     await app.workers.wait_for_complete()
                     await pilot.pause()
                     assert isinstance(app.screen, tui.BlockersScreen)
@@ -192,9 +198,9 @@ async def main():
                     assert isinstance(app.screen, tui.BlockersScreen)
                     await pilot.press('escape')
                     await pilot.pause()
-                    assert len(app.screen_stack) == 1
-                    bar = app.query_one('#menubar', tui.MenuBar)
-                    x = bar.render().plain.index('Blockers') + 2
+                    assert isinstance(app.screen, tui.TasksScreen) and len(app.screen_stack) == 2
+                    bar = app.screen.query_one('#menubar', tui.MenuBar)
+                    x = bar.render().plain.index('Report') + bar.styles.padding.left
                     await pilot.click('#menubar', offset=(x, 0))
                     await app.workers.wait_for_complete()
                     assert isinstance(app.screen, tui.BlockersScreen), 'click must open the same read-only report'
@@ -204,23 +210,35 @@ async def main():
                     await app.workers.wait_for_complete()
                     assert build.call_count == 4
                     await pilot.click('#back-report')
+                    assert isinstance(app.screen, tui.TasksScreen) and len(app.screen_stack) == 2
+                    await pilot.press('escape')
                     assert len(app.screen_stack) == 1
             print('PASS', width, 'view_only=' + str(view_only), 'keyboard, mouse, copy, literal text, no controls')
 
-    # Plan is independent of execution readiness; b remains a read-only report.
-    runner = fleet_view.Runner('setup', repo=str(Path(__file__).parent), prepare_state='none')
-    app = tui.FleetApp(command='aw', script='pa', state_root='/missing', env_dir='/missing', agent='agent')
-    with patch.object(fleet_view, 'collect_for_tui', return_value=collected([runner])), \
-         patch.object(app, 'logs', return_value=''), patch.object(app, 'open_plan') as plan, \
-         patch.object(app, 'execute') as execute:
-        async with app.run_test(size=(80, 24)) as pilot:
-            await pilot.press('g')
-            plan.assert_called_once_with(runner.repo)
-            runner.prepare_state = 'converted'
-            await pilot.press('g')
-            assert plan.call_count == 2
-            execute.assert_not_called()
-    print('PASS planning on g for prepared and unprepared repositories')
+    # Browser Plan is independent of execution readiness; fleet g is intentionally inert.
+    with tempfile.TemporaryDirectory() as folder:
+        runner = fleet_view.Runner('setup', repo=folder, prepare_state='none')
+        ready = fleet_view.Readiness(folder, repo=folder, problems=['tasks'])
+        app = tui.FleetApp(command='aw', script='pa', state_root=folder, env_dir='/missing',
+                           agent='agent', browse_root=folder)
+        with patch.object(fleet_view, 'collect_for_tui', return_value=collected([runner])), \
+             patch.object(fleet_view, 'readiness', return_value=ready), \
+             patch.object(app, 'logs', return_value=''), patch.object(app, 'open_plan') as plan, \
+             patch.object(app, 'execute') as execute:
+            async with app.run_test(size=(80, 24)) as pilot:
+                await pilot.press('g')
+                plan.assert_not_called()
+                await pilot.press('n')
+                assert isinstance(app.screen, tui.BrowseScreen)
+                app.screen.chosen = ready
+                await pilot.press('g')
+                plan.assert_called_once_with(runner.repo)
+                ready.ready, ready.problems = True, []
+                runner.prepare_state = 'converted'
+                await pilot.press('g')
+                assert plan.call_count == 2
+                execute.assert_not_called()
+    print('PASS browser planning on g for prepared and unprepared repositories')
 
     # Deterministic barrier: acknowledge Escape and another open while the reader is stalled.
     started, release = threading.Event(), threading.Event()
@@ -237,14 +255,14 @@ async def main():
          patch.object(app, 'logs', return_value=''), patch.object(blockers_report, 'build', side_effect=slow):
         try:
             async with app.run_test(size=(80, 24)) as pilot:
-                await pilot.press('b')
+                await pilot.press('t', 'B')
                 assert await asyncio.to_thread(started.wait, 3)
-                await pilot.press('escape')
+                await pilot.press('escape', 'escape')
                 assert len(app.screen_stack) == 1, 'input must work before the reader returns'
                 app.selected = 'two'
                 app.show_detail()
-                await pilot.press('b')
-                assert len(app.screen_stack) == 2
+                await pilot.press('t', 'B')
+                assert len(app.screen_stack) == 3
                 assert calls == ['one'], 'close/reopen must not create overlapping physical readers'
                 release.set()
                 await app.workers.wait_for_complete()
@@ -260,7 +278,7 @@ async def main():
     with patch.object(fleet_view, 'collect_for_tui', return_value=collected([])), patch.object(app, 'logs', return_value=''), \
          patch.object(blockers_report, 'build') as build:
         async with app.run_test(size=(80, 24)) as pilot:
-            await pilot.press('b')
+            await pilot.press('b', 't', 'B')
             assert len(app.screen_stack) == 1
             build.assert_not_called()
     print('PASS empty fleet does not open or read a report')
