@@ -148,7 +148,10 @@ def git(repo, *args):
     result = subprocess.run(['git', '-C', str(repo), *args], env=env,
                             capture_output=True, text=True, timeout=10)
     if result.returncode:
-        raise ValueError('consumer must be an existing Git workspace')
+        # Say which command failed and why: one opaque message for every failure hid a
+        # detached worker worktree behind "consumer must be an existing Git workspace".
+        detail = ' '.join((result.stderr or result.stdout or '').split())[:200]
+        raise ValueError(f'git {" ".join(args)} failed' + (f': {detail}' if detail else ''))
     return result.stdout.strip()
 
 

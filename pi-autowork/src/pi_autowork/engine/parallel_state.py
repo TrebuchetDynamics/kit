@@ -884,9 +884,19 @@ def reconcile(repo, owner_pid):
                     autowork_run.report_wait(data / 'worker-checks', data / 'report.json')
                 except (OSError, ValueError):
                     pass  # preserve missing/malformed reports for the usual reconciliation
-                root = workspace(common, slot['worktree'], slot['branch'], slot['baseline'])
-                head = execution.git(root, 'rev-parse', 'HEAD')
-                dirty = bool(execution.git(root, 'status', '--porcelain', '--untracked-files=all'))
+                try:
+                    root = workspace(common, slot['worktree'], slot['branch'], slot['baseline'])
+                    head = execution.git(root, 'rev-parse', 'HEAD')
+                    dirty = bool(execution.git(root, 'status', '--porcelain', '--untracked-files=all'))
+                except ValueError as error:
+                    # One dead worker's worktree can no longer be validated (detached HEAD, a
+                    # lost branch, a moved path). Holding just that slot keeps the queue
+                    # reconciling; letting it raise left the slot 'running' with no worker and
+                    # every later slot unvisited until a restart.
+                    slot = change(common, slot, 'held', {
+                        'reason': f'worker worktree cannot be validated: {error}', 'cause': 'crash'})
+                    result.append(slot)
+                    continue
                 if old_blocker and (head != slot['baseline'] or not dirty):
                     result.append(slot)
                     continue  # only a dirty, uncommitted candidate can resume an old blocker
