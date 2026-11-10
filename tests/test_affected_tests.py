@@ -14,6 +14,38 @@ SELF = 'tests/test_affected_tests.py'  # names the paths below, so it is selecte
 
 
 class AffectedTestsTests(unittest.TestCase):
+    def test_extensionless_binary_is_not_decoded_as_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'build').mkdir()
+            (root / 'bin').mkdir()
+            (root / 'tests').mkdir()
+            binary = root / 'build/program'
+            binary.write_bytes(b'\x7fELF\0' + b'x' * 10000)
+            (root / 'bin/tool').write_text('#!/bin/sh\necho fixture\n')
+            (root / 'tests/test_tool.py').write_text('TOOL = "bin/tool"\n')
+            files = ['build/program', 'bin/tool', 'tests/test_tool.py']
+            original = Path.read_text
+            def guarded(path, *args, **kwargs):
+                self.assertNotEqual(path, binary, 'binary reached full text decoding')
+                return original(path, *args, **kwargs)
+            with patch.object(affected_tests, 'ROOT', root), \
+                 patch.object(affected_tests, 'git', side_effect=['\n'.join(files[1:]), files[0]]), \
+                 patch.object(Path, 'read_text', guarded):
+                admitted = affected_tests.repository_files()
+                self.assertNotIn('build/program', admitted)
+                graph = affected_tests.dependency_graph(files, tests=['tests/test_tool.py'])
+                self.assertNotIn('build/program', graph)
+                self.assertIn('bin/tool', graph['tests/test_tool.py'])
+
+    def test_deleted_source_remains_a_dependency_target(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'test_deleted.py').write_text('import deleted_module\n')
+            with patch.object(affected_tests, 'ROOT', root):
+                graph = affected_tests.dependency_graph(['deleted_module.py', 'test_deleted.py'])
+                self.assertIn('deleted_module.py', graph['test_deleted.py'])
+
     def test_a_document_selects_only_the_tests_that_read_it(self):
         tests, reasons, full = affected_tests.select(['docs/project.md'])
         self.assertFalse(full)

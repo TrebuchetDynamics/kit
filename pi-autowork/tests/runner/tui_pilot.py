@@ -440,7 +440,7 @@ async def immediate_deletion():
                         assert 'T-1' in snap.store.tasks  # deletion has not changed HEAD
                         assert screen.query_one('#tasks').row_count == 0, 'successful delete retained row'
                         assert fleet_view.task_counts(app.current()) == (0, 0, 0, 0, 0, 0)
-                        assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:8]] == ['0'] * 6
+                        assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:]] == ['0']
                         assert app.current().snapshot is snap
                         assert 'deletion pending commit' in str(screen.query_one('#task-provenance').text)
                         assert 'Deletion pending commit' in str(screen.query_one('#task-freshness').render())
@@ -687,12 +687,11 @@ async def main():
             app.current().snapshot = original_snapshot
             app.show_detail()
             runners = app.query_one('#runners')
-            # TOOLSET-289-71 (test_runner_columns): the owner's four headlines.
-            assert [str(c.label) for c in runners.columns.values()] == ['Runner', 'State', 'Active', 'Mergeable',
-                                                                        'Waiting', 'Blocker', 'Decision', 'Total',
-                                                                        'Needs', 'Now']
-            assert [str(c) for c in runners.get_row_at(0)[2:8]] == ['0', '0', '2', '1', '0', '3']
-            assert '1 on dependencies' in str(runners.get_row_at(0)[8]), runners.get_row_at(0)
+            # Project summary is deliberately compact; complete counts stay in Details.
+            assert [str(c.label) for c in runners.columns.values()] == ['Project', 'Status', 'Tasks']
+            assert [str(c) for c in runners.get_row_at(0)[2:]] == ['3']
+            assert fleet_view.task_counts(app.current()) == (0, 0, 2, 1, 0, 3)
+            assert '1 on dependencies' in fleet_view.needs(app.current()), fleet_view.needs(app.current())
             assert 'Tasks      3 open · 0 active · 0 mergeable · 2 waiting · 1 blocker' in detail, detail
             assert 'revision ' + store.rev in detail and 'execution fresh' in detail, detail
             assert 'Push       disabled' in detail, detail  # no saved grant: local only
@@ -775,12 +774,13 @@ async def main():
                 await refresh(app, pilot)
                 shown = str(app.query_one('#detail').render())
                 assert '1 mergeable' not in shown and '2 waiting' in shown, shown
-                assert str(app.query_one('#lanes').get_row_at(0)[1]).startswith('Annotation'), shown
+                assert str(app.query_one('#lanes').get_row_at(0)[1]).startswith('Unconfirmed'), shown
                 observed.snapshot = replace(observed.snapshot, counts=None, rows=(), freshness='unavailable',
                                             errors=('inventory read denied',))
                 await refresh(app, pilot)
                 shown = str(app.query_one('#detail').render())
-                assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:8]] == ['?'] * 6
+                assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:]] == ['?']
+                assert fleet_view.task_counts(app.current()) is None
                 assert 'unknown / unavailable' in shown and 'inventory read denied' in shown, shown
                 observed.snapshot = replace(original_runner.snapshot, captured_at=time.time() - 900, freshness='stale')
                 await refresh(app, pilot)
@@ -802,9 +802,9 @@ async def main():
             menubar = app.query_one('#menubar')
             assert menubar.region.y < app.query_one('#runners').region.y, 'the menu bar is above the runners'
             hints = menubar.render()
-            assert str(hints).rstrip() == 'Details  Log  Tasks  ? More', str(hints)
-            marked = {str(hints)[span.start:span.end] for span in hints.spans if 'underline' in str(span.style)}
-            assert marked == set('iLT?'), marked
+            assert str(hints).rstrip() == '[i] Details  │  [l] Log  │  [t] Tasks  │  [?] More actions  │  [h] Guide', str(hints)
+            marked = {str(hints)[span.start:span.end] for span in hints.spans if 'cyan' in str(span.style)}
+            assert marked == {'[i]', '[l]', '[t]', '[?]', '[h]'}, marked
             log = '\n'.join(line.text for line in app.query_one('#log').lines)
             assert 'TASK-036: waiting' in log and 'pending —' not in log, log
             agent = base / 'agent'
@@ -819,9 +819,9 @@ async def main():
                 for view_only in (False, True):
                     app.view_only = view_only
                     for service, state_name, menu in (
-                            ('running', 'stalled', 'Details  Log  Tasks  ? More'),
-                            ('stopped', 'not running', 'Play  Log  Tasks  Details  ? More'),
-                            ('stopped', 'paused', 'Play  Log  Tasks  Details  ? More'),
+                            ('running', 'stalled', '[i] Details  │  [l] Log  │  [t] Tasks  │  [?] More actions'),
+                            ('stopped', 'not running', '[p] Play  │  [l] Log  │  [t] Tasks  │  [i] Details  │  [?] More actions'),
+                            ('stopped', 'paused', '[p] Play  │  [l] Log  │  [t] Tasks  │  [i] Details  │  [?] More actions'),
                             ('', '', 'Model  n Browse  ctrl+p Commands  ? Help  Quit')):
                         selected = replace(runner, service=service, state=state_name) if service else None
                         envelope = fleet_view.FleetSnapshot((selected,) if selected else (),
@@ -829,9 +829,11 @@ async def main():
                         async with patched_reads(app, mock.patch.object(fleet_view, 'collect_for_tui', return_value=envelope),
                                 mock.patch.object(portal, 'probe', side_effect=AssertionError('fleet key probed Portal'))):
                             await refresh(app, pilot)
-                            expected = (('view only  Details  Log  Tasks  ? More' if service == 'running' else
-                                         'view only  Log  Tasks  Details  ? More') if selected else
+                            expected = (('view only  [i] Details  │  [l] Log  │  [t] Tasks  │  [?] More actions' if service == 'running' else
+                                         'view only  [l] Log  │  [t] Tasks  │  [i] Details  │  [?] More actions') if selected else
                                         'ctrl+p Commands  ? Help  Quit') if view_only else menu
+                            if selected and width >= 100:
+                                expected += '  │  [h] Guide'
                             assert str(menubar.render()).strip() == expected, menubar.render()
                             painted = ' '.join(menubar.render_line(y).text for y in range(menubar.content_size.height))
                             assert ' '.join(painted.split()) == ' '.join(expected.split()), painted
@@ -938,16 +940,29 @@ async def main():
             assert isinstance(app.screen, TasksScreen), app.screen
             assert app.reader.applied['fleet'] > generation, read_state(app)
             tasks = app.screen.query_one('#tasks')
-            assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['Ship it', 'Held task', 'Waits']
+            assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['Ship the thing', 'Held task', 'Waits']
             assert [row.task for row in app.screen.shown] == ['TASK-034', 'T-9', 'TASK-040']
             await pilot.press('3')                      # the Held view
             await pilot.pause()
             assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['Held task'], tasks.row_count
             assert app.screen.current().task == 'T-9'
             keys = str(app.screen.query_one('#menubar').render())
-            assert keys.rstrip().endswith('enter Open  e Decide  B Report  Info/Help  esc Back'), keys
+            assert all(label in keys for label in ('[enter] Open', '[e] Decide', '[r] Retry', '[B] Report', '[i] Info/Help', '[esc] Back')), keys
             assert 'Up' in app.screen.query_one('#task-provenance').text
             assert 'Delete' in app.screen.query_one('#task-provenance').text
+            before_retry = len(calls)
+            await pilot.press('r')                      # retry asks first; cancelling executes nothing
+            await pilot.pause()
+            assert isinstance(app.screen, Confirm), app.screen
+            await pilot.press('n')
+            await pilot.pause()
+            assert len(calls) == before_retry
+            await pilot.press('r')
+            await pilot.pause()
+            await pilot.press('y')
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert calls[-1] == ['aw', 'retry', 'india', 'T-9'], calls
             await pilot.press('x')                      # delete asks first; decline here
             await pilot.pause()
             assert isinstance(app.screen, Confirm), app.screen
@@ -968,7 +983,10 @@ async def main():
             await pilot.pause()
             assert isinstance(app.screen, TaskScreen), app.screen
             body = str(app.screen.query_one('#task-body').render())
-            assert 'the worker asked for a key' in body and 'title = "Held task"' in body, body
+            assert 'the worker asked for a key' in body and 'title = "Held task"' not in body, body
+            await pilot.press('i')
+            await pilot.pause()
+            assert 'title = "Held task"' in str(app.screen.query_one('#task-body').render())
             await pilot.press('w')                      # write a decision: typed, then Enter
             await pilot.pause()
             await pilot.press(*'use fallback for other models')

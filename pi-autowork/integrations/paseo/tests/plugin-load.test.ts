@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 import { URL, fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, mkdtemp, cp, readFile, rm, mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import process from 'node:process';
 import { fixture, cleanupFixtures } from './fixture';
 
@@ -22,6 +24,35 @@ describe('official Paseo 0.13 compatibility', () => {
     expect(bundles.clientBundle).toContain('autowork');
     expect(bundles.serverBundle).toContain('autowork.fleet');
     expect(bundles.clientBundle).not.toContain('node:child_process');
+  }, 30000);
+
+  it('compiles Git-root staging and an isolated offline package archive', async () => {
+    const temporary = await mkdtemp(path.join(tmpdir(), 'paseo package closure '));
+    const { compilePlugin } = await official('compiler');
+    try {
+      const repo = path.resolve(root, '../../..');
+      const staged = path.join(temporary, 'staged');
+      const manifest = JSON.parse(await readFile(path.join(repo, 'paseo-plugin.json'), 'utf8'));
+      await cp(root, path.join(staged, 'pi-autowork/integrations/paseo'), {
+        recursive: true, filter: source => !source.split(path.sep).includes('node_modules'),
+      });
+      for (const [command, ...args] of manifest.build) execFileSync(command, args, { cwd: staged });
+      const stagedBundles = await compilePlugin({ client: path.join(staged, 'index.client.tsx'), server: path.join(staged, 'index.server.ts') });
+      expect(stagedBundles.serverBundle).toContain('autowork.fleet');
+      const source = path.join(staged, 'pi-autowork/integrations/paseo');
+      const packed = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--offline', '--json'], { cwd: source, encoding: 'utf8' }));
+      const extracted = path.join(temporary, 'extracted');
+      await mkdir(extracted);
+      execFileSync('tar', ['-xzf', path.join(source, packed[0].filename), '-C', extracted]);
+      await rm(staged, { recursive: true });
+      const owner = path.join(extracted, 'package');
+      const bundles = await compilePlugin({ client: path.join(owner, 'index.client.tsx'), server: path.join(owner, 'index.server.ts') });
+      expect(bundles.clientBundle).toContain('autowork');
+      expect(bundles.serverBundle).toContain('autowork.fleet');
+      expect(packed[0].files.some((file: { path: string }) => file.path.startsWith('tests/'))).toBe(false);
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
   }, 30000);
 
   it('loads the actual server in an isolated runtime, validates RPC, stops and reloads cleanly', async () => {

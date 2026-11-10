@@ -27,6 +27,54 @@ PILOT = Path(__file__).with_name('tui_pilot.py')
 
 
 class FleetViewTests(unittest.TestCase):
+    def test_dashboard_prefers_latest_run_but_full_log_keeps_history(self):
+        history = ('[12:00] Started (PID 100). Stop with Ctrl+C.\n'
+                   '[12:01] OLD: failed\n'
+                   '[13:00] Started (PID 200). Stop with Ctrl+C.\n'
+                   '[13:01] NEW: running — worker started')
+        dashboard = str(fleet_view.activity_lines(history, current_session=True))
+        self.assertNotIn('OLD', dashboard)
+        self.assertIn('NEW', dashboard)
+        self.assertIn('OLD', str(fleet_view.log_lines(history)))
+        self.assertIn('OLD', str(fleet_view.activity_lines('[12:01] OLD: failed', current_session=True)))
+
+    def test_progress_summary_requires_fresh_matched_activity(self):
+        from types import SimpleNamespace
+        from dataclasses import replace
+        from pi_autowork import task_snapshot
+        snap = task_snapshot.TaskSnapshot('/fixture', '/fixture/.git', 'a' * 40,
+            1, time.time(), joined_lanes=(('TASK-1', 2, 'running'),))
+        runner = fleet_view.Runner('fixture', state='running', snapshot=snap,
+            lanes=[fleet_view.Lane('TASK-1', 'running', attempt=2,
+                                   activity='Reading source', activity_age=18)])
+        view = SimpleNamespace(counts=(1, 0, 1, 1, 0, 3), execution_freshness='fresh')
+        with mock.patch.object(subprocess, 'run', side_effect=AssertionError('No I/O')):
+            phase, evidence, action = fleet_view.progress_summary(runner, view)
+            self.assertEqual(phase, 'Working')
+            self.assertIn('Reading source', evidence)
+            self.assertIn('none for active work', action)
+            self.assertIn('other tasks need attention', action)
+            runner.lanes[0].activity_age = 600
+            self.assertEqual(fleet_view.progress_summary(runner, view)[0], 'Quiet worker')
+            runner.snapshot = replace(snap, joined_lanes=())
+            self.assertNotIn('Reading source', fleet_view.progress_summary(runner, view)[1])
+            view.execution_freshness = 'stale'
+            self.assertEqual(fleet_view.progress_summary(runner, view)[0], 'Unconfirmed')
+            runner.state = 'not running'
+            self.assertEqual(fleet_view.progress_summary(runner, view)[0], 'Stopped')
+
+    def test_progress_summary_distinguishes_blocked_and_idle_work(self):
+        from types import SimpleNamespace
+        runner = fleet_view.Runner('fixture', state='running')
+        view = SimpleNamespace(counts=(0, 0, 1, 1, 0, 2), execution_freshness='fresh')
+        self.assertEqual(fleet_view.progress_summary(runner, view)[0], 'Needs attention')
+        view.counts = (0, 0, 1, 0, 0, 1)
+        self.assertEqual(fleet_view.progress_summary(runner, view)[0], 'Waiting')
+        runner.gate = 'Memory: 5000 MB available / 6000 MB required'
+        self.assertEqual(fleet_view.progress_summary(runner, view)[0], 'Waiting for resources')
+        view.counts = None
+        self.assertEqual(fleet_view.progress_summary(runner, view)[0], 'Unconfirmed')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -688,9 +736,11 @@ class FleetViewTests(unittest.TestCase):
         self.assertEqual(task['u'].argv, ['aw', 'tasks', 'move', 'T-9', 'up', 'india'])
         self.assertEqual(task['d'].argv, ['aw', 'tasks', 'move', 'T-9', 'down', 'india'])
         self.assertEqual(task['c'].argv, ['aw', 'clear-held', 'india', 'T-9'])
+        self.assertEqual(task['r'].argv, ['aw', 'retry', 'india', 'T-9'])
+        self.assertIn('Earlier work is preserved', task['r'].confirm)
         self.assertEqual(task['a'].argv, ['pa.sh', '--repo', '/git/india', '--set-aside', 'T-9'])
         self.assertNotIn('b', task)  # Reports stay in the TUI, even with an agent installed.
-        for key in ('c', 'a'):
+        for key in ('c', 'a', 'r'):
             self.assertTrue(task[key].confirm, key)
         ready = fleet_view.TaskRow('T-1', 'Short', 'Now', 'ready', 'ready')
         self.assertEqual(sorted(a.key for a in fleet_view.task_actions(india, ready, command='aw', script='pa.sh')),

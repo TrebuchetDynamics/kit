@@ -484,6 +484,49 @@ def lane_status(runner, lane):
     return ' · '.join(status(lane)), ''
 
 
+def progress_summary(runner, view=None):
+    """Bounded display evidence; never infer progress from process liveness alone.
+
+    With a supplied capture this projection performs no filesystem or model calls.
+    Unmatched or stale lanes remain in Details but cannot describe current progress.
+    """
+    view = view or presentation(runner)
+    if runner.state in ('paused', 'not running'):
+        return 'Stopped', 'Start the runner to execute tasks', 'Your action: start with Play'
+    if view.counts is None or view.execution_freshness != 'fresh':
+        return 'Unconfirmed', 'Fresh execution evidence unavailable', 'Your action: inspect Details'
+    active, mergeable, waiting, blocker, decision, total = view.counts
+    joined = set(runner.snapshot.joined_lanes) if runner.snapshot else set()
+    lanes = [lane for lane in runner.lanes if (lane.task, lane.attempt, lane.phase) in joined]
+    if active:
+        phase = 'Working'
+        evidence = 'Worker active; no recent action observed yet'
+        if lanes:
+            lane = min(lanes, key=lambda row: row.activity_age if row.activity_age is not None else float('inf'))
+            phase = {'verifying': 'Reviewing', 'integrating': 'Integrating',
+                     'batch check': 'Checking', 'waiting for a check slot': 'Waiting for checks',
+                     'waiting to integrate': 'Waiting to integrate'}.get(lane.phase, 'Working')
+            if lane.activity:
+                age = ago(max(0, lane.activity_age)) if lane.activity_age is not None else 'time unknown'
+                evidence = 'Last action: ' + fit_line(doing(lane), 100) + ' · ' + age
+                if lane.activity_age is not None and lane.activity_age >= QUIET_AFTER:
+                    phase = 'Quiet worker'
+                    evidence += '; progress not confirmed'
+            else:
+                evidence = 'Worker active; no action observed yet · Enter worker log'
+        action = 'Your action: none for active work'
+        if blocker or decision or runner.questions:
+            action += '; other tasks need attention → Tasks'
+        return phase, evidence, action
+    if mergeable:
+        return 'Ready to merge', 'Verified candidate awaiting integration', 'Your action: inspect Details'
+    if runner.gate:
+        return 'Waiting for resources', fit_line(runner.gate, 120), 'Your action: inspect Details'
+    if blocker or decision or runner.questions:
+        return 'Needs attention', 'No task executing · open Tasks for the exact cause', 'Your action: Tasks → select a blocked task'
+    return 'Waiting', f'{waiting} waiting · {total} open tasks', 'Your action: Tasks → inspect dependencies or add work'
+
+
 def quiet(lane):
     """'quiet 12m' when the worker's last action is QUIET_AFTER seconds or older, else ''."""
     if (lane.activity_age is None or lane.activity_age < QUIET_AFTER
@@ -1261,6 +1304,47 @@ def log_lines(text):
             for line, style, count, _, _, first, last in out]
 
 
+def activity_lines(text, *, current_session=False):
+    """Dashboard projection; full Log/Raw retain earlier runs and every sample."""
+    if current_session:
+        lines = text.splitlines()
+        starts = [i for i, line in enumerate(lines)
+                  if re.match(r'^\[\d\d:\d\d\] Started \(PID \d+\)\.', line)]
+        if starts:
+            text = '\n'.join(lines[starts[-1]:])
+    pattern = re.compile(r'^(\[\d\d:\d\d\]) No task can start now: (.+)resource gate: (\d+) MB available, need (\d+) MB for one more worker$')
+    projected, pending = [], None
+    def flush():
+        nonlocal pending
+        if pending is None:
+            return
+        if pending['count'] == 1:
+            projected.append(pending['raw'])
+        else:
+            projected.append(f"{pending['first']} Waiting for memory: {pending['latest']} MB available / {pending['need']} MB required"
+                             f" · {pending['count']} updates ({pending['low']}–{pending['high']} MB), last {pending['last']}"
+                             f" · {pending['context'].rstrip(': ')} · full samples in Log")
+        pending = None
+    for line in text.splitlines():
+        match = pattern.match(line)
+        if not match:
+            flush()
+            projected.append(line)
+            continue
+        stamp, context, available, required = match.groups()
+        amount = int(available)
+        if pending and (pending['context'], pending['need']) == (context, required):
+            pending.update(latest=amount, last=stamp, count=pending['count'] + 1,
+                           low=min(pending['low'], amount), high=max(pending['high'], amount))
+        else:
+            flush()
+            pending = dict(first=stamp, last=stamp, context=context, need=required, latest=amount,
+                           low=amount, high=amount, count=1, raw=line)
+    flush()
+    return [(line, 'yellow' if 'Waiting for memory:' in line else style)
+            for line, style in log_lines('\n'.join(projected))]
+
+
 def quiet_log(text):
     """log_lines without styles."""
     return '\n'.join(line for line, _ in log_lines(text))
@@ -1955,6 +2039,10 @@ def task_actions(runner, row, *, command, script, agent=None):
            Action('d', 'Down', [command, 'tasks', 'move', task, 'down', name]),
            Action('s', 'Section', [], interactive=True)]  # the TUI asks which: Now, Next or Needs decision
     if row.kind == 'held':
+        out.append(Action('r', 'Retry', [command, 'retry', name, task],
+                          confirm=f'Retry {task} with a fresh attempt? Earlier work is preserved. '
+                                  'Only failed attempts without a commit are eligible; the command checks this. '
+                                  'If context overflow repeats, change the model from the main screen first.'))
         out.append(Action('c', 'Clear', [command, 'clear-held', name, task],
                           confirm=f'Clear the hold on {task}? Its commit goes back to integration; '
                                   'its worktrees stay.'))

@@ -56,10 +56,20 @@ def check_module():
     return SimpleNamespace(**runpy.run_path(str(ROOT / 'scripts/check.py')))
 
 
+def text_input(path):
+    """Reject binary inputs with a bounded read, including extensionless outputs."""
+    try:
+        with (ROOT / path).open('rb') as stream:
+            return b'\0' not in stream.read(4096)
+    except OSError:
+        # Missing/deleted paths remain dependency targets, even without source bytes.
+        return True
+
+
 def repository_files():
     listed = (git('ls-files') or '').split('\n') + (git('ls-files', '--others', '--exclude-standard') or '').split('\n')
     # Extensionless scripts too (tmux/tx): tests name them by path.
-    return sorted({p for p in listed if p and (p.endswith(TEXT) or '.' not in Path(p).name) and (ROOT / p).is_file()})
+    return sorted({p for p in listed if p and (p.endswith(TEXT) or '.' not in Path(p).name) and (ROOT / p).is_file() and text_input(p)})
 
 
 def module_name(path):
@@ -119,6 +129,7 @@ def dependency_graph(files, tests=(), *, conservative=False):
     file is read, it does not run what it mentions (CHANGELOG.md and TODO.archive.md name
     hundreds of files, and through them every change reached 107 of 120 test modules).
     Conservative landing selection also retains named test-file dependencies."""
+    files = [path for path in files if text_input(path)]
     tests = set(tests)
     stems, basenames, modules = {}, {}, {}
     for path in files:

@@ -48,7 +48,7 @@ backends can still use the explicit goal/list-label options.
 
 ## Install, only after reviewing trusted code
 
-Source lives in the public [kit repository](https://github.com/TrebuchetDynamics/kit) under `integrations/paseo/`. No registry release is available.
+Source lives in the public [kit repository](https://github.com/TrebuchetDynamics/kit) under `pi-autowork/integrations/paseo/`. No registry release is available.
 
 **Select the daemon host first.** Run the commands on that machine. If plugins are globally disabled, enable them only after consenting to Paseo's trust warning.
 
@@ -57,10 +57,10 @@ Source lives in the public [kit repository](https://github.com/TrebuchetDynamics
 From the kit checkout:
 
 ```sh
-cd /absolute/path/to/kit/integrations/paseo
+cd /absolute/path/to/kit/pi-autowork/integrations/paseo
 npm ci --ignore-scripts
 npm run check
-paseo plugin install /absolute/path/to/kit/integrations/paseo
+paseo plugin install /absolute/path/to/kit/pi-autowork/integrations/paseo
 paseo plugin ls
 ```
 
@@ -75,8 +75,8 @@ this directory's `client/`, `server/`, `shared/` and entry files into the staged
 checkout: Paseo compiles only those three directories, and it checks for the entry
 files before it runs `build`, so the root keeps copies of them. `tests/test_paseo_plugin_root.py`
 pins both the build commands and the entry copies. A GitHub *folder* URL
-(`.../tree/main/integrations/paseo`) is not a Git URL and `plugin add` rejects it;
-use the `git:owner/repo` form, or `git:TrebuchetDynamics/kit:integrations/paseo`.
+(`.../tree/main/pi-autowork/integrations/paseo`) is not a Git URL and `plugin add` rejects it;
+use the `git:owner/repo` form, or `git:TrebuchetDynamics/kit:pi-autowork/integrations/paseo`.
 
 For a first read-only check:
 

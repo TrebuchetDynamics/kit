@@ -1,4 +1,15 @@
 """Pure display vocabulary shared by committed snapshots and legacy CLI lanes."""
+import re
+
+
+def provider_limit_notice(reason):
+    """Sanitized display only; never changes failure ownership or retry admission."""
+    text = str(reason or '')
+    if re.search(r'\b429\b', text) and 'free-models-per-day' in text.casefold():
+        return 'Daily free-model quota exhausted (HTTP 429); wait for reset or choose another configured provider'
+    return ''
+
+
 ACTIVE, MERGEABLE, WAITING, BLOCKER = 'Active', 'Mergeable', 'Waiting', 'Blocker'
 IN_FLIGHT = ('dispatched', 'running', 'reported', 'integrating', 'integrated')
 PHASES = {'dispatched': 'starting', 'running': 'implementing', 'reported': 'implemented',

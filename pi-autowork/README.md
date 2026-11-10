@@ -506,11 +506,28 @@ available) and Quit live in More at every size and retain their direct shortcuts
 Model also remains directly clickable on the model bar. More rechecks the selected
 repository identity before dispatch and uses the existing confirmation flow.
 Press **Ctrl+P** to search fleet commands, switch themes, or find screen-specific
-actions. The palette includes provider/model selection on the fleet and Pi login
+actions. The palette includes provider/model selection on the fleet and provider configuration
 and refresh while the model picker is open. Read-only mode omits actions that
 change runner or repository state.
 
-The fleet separates **Runners**, **Workers** and **Activity** with labelled rules.
+The fleet uses a two-pane workspace on terminals at least 130 columns and 26
+rows: project/context on the left, current work/activity on the right. Smaller
+terminals keep a vertical stack. Borders identify panels and highlight keyboard
+focus; the fixed footer shows **1 Projects**, **2 Work**, **3 Activity**, Help and
+Quit. Press **h Guide** for the setup/execution/review/publication flow and how to
+interpret waiting, attention and unconfirmed states. Task progress is separate
+from the service being alive. The number keys move focus only on the fleet screen; arrows select and
+Enter opens the selected log. Resizing does not acquire new state or dispatch an
+action.
+
+The fleet has three numbered regions: **Projects**, **Current work** and
+**Recent activity**. The project list shows Project, Status and Tasks at every
+width. The selected summary identifies the next useful action; detailed counts,
+source status, attempts and elapsed/quiet times remain under **i Details**.
+Unconfirmed worker observations retain that label and never count as verified
+active tasks. Repeated memory waits in the dashboard show their latest value,
+range, number of updates and first/last timestamps. Full-screen **Log**, including
+Summary and Raw modes, keeps the individual original samples.
 Below 22 terminal rows, the selected summary uses three lines and keeps the main
 check visible. The activity journal retains at least four rows and one worker row
 remains selectable at 60×18. Abbreviated names, phases or evidence have a visible
@@ -528,16 +545,76 @@ from the current browser directory, and `~` opens your home directory.
 paths leave the current directory unchanged and show an error. Browsing changes
 neither the process working directory nor a runner's repository.
 
+The project summary separates **Now**, the **last observed action**, **Your action**,
+**Main** checks, and **Publish**. An active worker is not proof of code changes.
+A worker with no observed action says so; after five minutes without an observed
+action it is labelled **Quiet worker**, without claiming a hang. Other blocked
+tasks can need attention while active work continues. Unmatched/stale observations
+cannot supply current progress. Small terminals retain the compact summary and
+Details route.
+
+A recorded OpenRouter daily free-model quota failure (HTTP 429 with
+`free-models-per-day`) is displayed as **Daily free-model quota exhausted**.
+Wait for the provider's reset or choose another configured provider before
+retrying. The diagnostic is display-only: failure ownership, retry admission,
+credentials and model selection keep their existing guards.
+
+In **Tasks**, select held work and press **r Retry** to request a fresh failed
+attempt, preserving previous work. Confirmation explains eligibility; the CLI
+refuses attempts it cannot safely retry. **c Clear** returns a held commit to
+integration instead. If context overflow repeats, return to **Choose model** and
+select a suitable alternative before retrying. Restarting a service preserves its
+attempts and is not a replacement for Retry.
+
+The dashboard journal prefers the latest runner start found in its last-hour
+window. Full Log retains earlier runs; if no start is captured, the dashboard
+keeps the available window rather than guessing a session boundary.
+
 A visible **Choose model** row shows the selected service's model. Press `m` (or
 click it with `autowork tui --mouse`) to choose a **Provider**, then search that
 provider's models. With multiple providers, select one before choosing a model;
 the current provider or the only available provider is preselected. Use Down to
 browse, Enter to select and Escape to return. Loading, no matches and catalog
-failures appear inside the selector. Providers come from Pi's available model
-catalog. If a provider is missing or no models are available, open `pi`, run
-`/login`, then reopen the selector. The picker also has **Login in Pi** and
-**Refresh models** buttons: Login opens Pi against the same agent directory, and
-the catalog refreshes when you return.
+failures appear inside the selector. The provider menu includes Pi's configurable
+providers even when no models are available. It distinguishes credentials stored in
+Pi from model availability; stored credentials have not necessarily been validated
+by the provider. Public SDK model metadata remains browsable before login.
+**Free models** searches explicitly free OpenRouter routes across providers,
+using the catalog's zero input/output/cache prices and `:free`/free-router IDs;
+unknown prices and subscription-only models are not labelled free. Availability
+and provider limits can change. Selecting an unconfigured model opens provider
+configuration; refresh after login and choose the model to use it.
+Choose **Configure provider** for the selected provider, select
+OAuth or API key where supported, then **Connect**. Follow the prompts in the TUI.
+All answers are masked and never prefilled from storage. **Browser** explicitly
+opens the provider's HTTPS OAuth page when required. Escape cancels the connection;
+progress and failures stay in the dialog. Pi owns credential persistence in the
+selected runner's `PI_CODING_AGENT_DIR` (the session's profile for a new runner).
+Successful setup refreshes models automatically; **Refresh models** retries manually.
+API-key setup stores the key using Pi's SDK; it does not prove that a provider will
+accept the key or execute a model. Providers without interactive setup require their
+normal Pi environment/settings configuration. Opening the picker starts no login,
+model call, service or browser. Changing runner/profile or entering read-only mode
+cancels an active dialog and discards stale model callbacks.
+
+Provider setup uses the official **Pi SDK 1.5.0** and Node.js **22.19 or newer**.
+A native Pi binary alone does not contain the importable SDK. For Pi 1.5.0, prepare
+an isolated, matching SDK explicitly (no credentials or runner changes):
+
+```sh
+npm install --prefix "${XDG_DATA_HOME:-$HOME/.local/share}/kit/pi-auth-sdk/1.5.0" \
+  --ignore-scripts --no-audit --no-fund --save-exact @earendil-works/pi-coding-agent@1.5.0
+```
+
+The TUI discovers this versioned location automatically, or an existing matching
+npm Pi installation next to its executable. `AUTOWORK_PI_SDK` explicitly selects
+the package directory containing `package.json` and `dist/index.js`; an invalid
+explicit path fails without silently choosing another SDK. Missing/incompatible
+helpers produce setup guidance; the TUI never installs packages automatically.
+No second credential store is introduced. The bridge uses the tagged public
+[`ModelRuntime` SDK](https://github.com/earendil-works/pi/blob/v1.5.0/packages/coding-agent/src/core/model-runtime.ts)
+and [`AuthInteraction` contract](https://github.com/earendil-works/pi/blob/v1.5.0/packages/ai/src/auth/types.ts).
+
 
 Before starting a new service, choose its model in the TUI. You can select it from
 the fleet before browsing, or Play asks for it before the start confirmation.
@@ -570,10 +647,16 @@ The directory tree marks legacy or interrupted conversions **legacy planning**, 
 **needs tasks**; a repository without planning still reads **needs tasks**.
 The headless pilot exercises preparation on disposable repositories, with faked
 service starts and forced service/worker effects; it does not qualify a live service.
-The Tasks window lists open tasks in priority order (section, then rank) with their
-short title, state and reason. View counts appear in brackets, separate from the
-number shortcuts; click a view or use its key to filter. A short queue keeps its
-selected-task details immediately below the rows rather than at the screen bottom.
+The Tasks window shows a queue and a selected-task reading panel. Wide terminals
+(120×26 and larger) place them side by side; smaller terminals stack them. The
+panel explains **What is happening** and **What you can do**. **Space** focuses it
+for scrolling; **Enter** opens the complete task. Full committed titles are used
+where space permits. **i Info/Help** replaces the reading panel with technical
+context without changing the selected task. On short terminals, the current filter
+and count remain visible with Tab / 1–7 hints; other terminals show all filters.
+In a task's complete view, scope and acceptance are readable first; **i Technical
+record** explicitly reveals the raw working-tree fields and source provenance.
+
 `1`–`7` (or Tab) show Open, Active, Blocker, Waiting, Questions, Decisions or
 Closed. Decisions is the committed **Needs decision** section: open tasks that wait
 for the owner and never dispatch. Closed history shows **Verified** with the receipt, or **Manual** with the reason

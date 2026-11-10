@@ -43,6 +43,60 @@ exercise local integration and task-proposal publication in disposable repositor
 Neither set qualifies a live provider, deployment, devices, migration or sustained
 service operation.
 
+## Wire formats
+
+One global `--format` option selects the wire contract of `status`, `tasks` and
+`capabilities`. It may appear before or after the subcommand.
+
+| Format | Selected by | `status` | `tasks` |
+| --- | --- | --- | --- |
+| `public-v1` | default | committed tasks plus persisted runs of every generation, from a quiescent journal | `list`, `show`, `add`, `field`, `place`, `preview` |
+| `inspection-v1` | `--format inspection-v1` | typed latest-generation journal projection, read beside a writer | `list`, `goals`, `show`, `why`, `commit` |
+
+A command outside the selected format is refused, never answered in the other
+format's shape. `capabilities` lists both under `formats`. `--repo` and `--rev` are
+accepted before or after the `tasks` subcommand; `--rev` given twice is refused, and
+a pending edit accepts only `--rev HEAD`. `status --json` is a compatibility marker:
+output is always JSON and the flag selects nothing.
+
+The `public-v1` pending edits take only this runtime's task lock. They do not detect
+another runtime's active owner, so `capabilities` reports them as
+`unqualified-on-active-repositories`: use them in a repository no runner is working.
+
+## Read-only status and pending task commands (`public-v1`)
+
+`autowork-next status --repo /path/to/repo --json` returns schema version 1,
+committed task counts, dependency readiness and persisted journal observations.
+Absent, corrupt, foreign or actively written journals report unavailable. Reads
+create no state, migrations or reconciliation effects. A quiescent journal is
+read under its existing lock through immutable SQLite access; this is an observed
+snapshot, not model or service qualification. The immutable read requires a
+write-ahead log that is provably absent or an empty regular file: a permission or
+I/O error on it reports unavailable.
+
+`tasks --repo /path/to/repo list` and `tasks --repo /path/to/repo show ID`
+return schema-versioned JSON from committed records only. Add `--rev COMMIT`
+after `list` or `show ID` to pin an older snapshot. Responses include the full
+resolved commit, typed task metadata and exact original record content. Unknown
+IDs and invalid revisions fail explicitly. These reads ignore pending edits and
+create no task locks or runtime state; Git environment overrides cannot redirect
+them to another repository.
+
+`tasks --repo /path/to/repo --expected-revision COMMIT` accepts:
+
+- `add ID --record /path/to/record.md`: validate a complete task record through the
+  existing task service. A new ID needs an absent destination.
+- `field ID --record-revision SHA256 title '"New title"'`: JSON values and an exact
+  working-record revision prevent stale edits. Existing unknown notes survive.
+- `place ID --record-revision SHA256 Next`: change the scheduling section.
+
+`tasks --repo /path/to/repo preview` captures the pending-edit identity. Mutation
+results include their base revision and resulting record hashes. Follow-up edits
+use those hashes and preserve earlier pending edits. They remain uncommitted and
+unselectable until the existing coordinator publishes the validated snapshot.
+Protected fields, Owner decision changes and `--decision` are refused by this
+ordinary planning seam; no command grants live execution or publication.
+
 ## Revision-bound task store
 
 [`task_store.rs`](src/task_store.rs) implements the current
@@ -54,13 +108,13 @@ expose immutable views. Record revisions hash exact bytes; contract hashes retai
 the current canonical JSON rules. Free Markdown notes and historical IDs are not
 rewritten. Missing task fields remain drafts; malformed records refuse the store.
 
-### Committed inspection CLI (generation 1)
+### Committed inspection CLI (generation 1, `inspection-v1`)
 
 ```sh
-autowork-next tasks list --repo /path/to/repo
-autowork-next tasks goals --repo /path/to/repo --rev HEAD
-autowork-next tasks show TASK-ID --repo /path/to/repo --rev COMMIT
-autowork-next tasks why TASK-ID --repo /path/to/repo --rev COMMIT
+autowork-next --format inspection-v1 tasks list --repo /path/to/repo
+autowork-next --format inspection-v1 tasks goals --repo /path/to/repo --rev HEAD
+autowork-next --format inspection-v1 tasks show TASK-ID --repo /path/to/repo --rev COMMIT
+autowork-next --format inspection-v1 tasks why TASK-ID --repo /path/to/repo --rev COMMIT
 ```
 
 `capabilities` advertises `contracts.task_inspection = 1` for these four inspection
@@ -169,10 +223,10 @@ Events, per-generation projections and effect records commit in one transaction.
 `events()` returns ordered journal records; `projection(task, generation)` returns
 the corresponding last event and durable status.
 
-### Journal inspection CLI (generation 1)
+### Journal inspection CLI (generation 1, `inspection-v1`)
 
 ```sh
-autowork-next status --repo /path/to/repo
+autowork-next --format inspection-v1 status --repo /path/to/repo
 ```
 
 `capabilities` advertises `contracts.status = 1`. `read_status(common_dir)` uses a
@@ -414,8 +468,8 @@ The caller must establish exclusive ownership. This command does not import lega
 ownership, establish service liveness or qualify an installed-runner handoff.
 
 ```sh
-autowork-next tasks commit --dry-run --repo /absolute/disposable-repository
-autowork-next tasks commit --repo /absolute/disposable-repository --expect-token TOKEN
+autowork-next --format inspection-v1 tasks commit --dry-run --repo /absolute/disposable-repository
+autowork-next --format inspection-v1 tasks commit --repo /absolute/disposable-repository --expect-token TOKEN
 ```
 
 `capabilities` advertises `contracts.task_publication = 1`. Preview validates one

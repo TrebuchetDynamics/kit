@@ -26,13 +26,16 @@ import uuid
 
 from pi_autowork import fleet_view, portal, tui_reads, blockers_report, command_results  # noqa: E402
 from pi_autowork.planning_ui import PlanScreen, DecisionPrompt, QuestionPicker  # noqa: E402
+from pi_autowork import pi_auth
+from pi_autowork.tui_auth import ProviderAuth
 from pi_autowork.tui_dialogs import Confirm  # noqa: E402
 from pi_autowork.tui_common import (  # noqa: E402
-    REFRESH, MenuBar, ReadScreen, action_text, hotkeys, publish_text, read_input)
+    REFRESH, MenuBar, ViewHeader, ReadScreen, action_text, hotkeys, publish_text, read_input)
 from pi_autowork.tui_tasks import (  # noqa: E402
     CommitEdits, DecisionScreen, NewTask, PickSection, TaskScreen, TasksScreen,
     TextPrompt, pending_edits)
 
+from rich.style import Style
 from rich.text import Text  # noqa: E402  (installed with textual)
 from rich.cells import cell_len, set_cell_size  # noqa: E402
 from textual.app import App, ComposeResult, SystemCommand  # noqa: E402
@@ -62,7 +65,7 @@ class ActionMenu(ModalScreen[str]):
     BINDINGS = [Binding('escape', 'cancel', 'Back')]
     DEFAULT_CSS = '''
     ActionMenu { align: center middle; }
-    ActionMenu > Vertical { width: 72; max-width: 100%; height: 80%; border: thick $accent; background: $surface; padding: 0 2; }
+    ActionMenu > Vertical { width: 72; max-width: 100%; height: 80%; border: round $accent; background: $surface; padding: 0 2; }
     #actions { height: 1fr; min-height: 1; }
     #action-status { height: 1; }
     '''
@@ -71,10 +74,32 @@ class ActionMenu(ModalScreen[str]):
         super().__init__()
         self.actions, self.shown = tuple(actions), list(actions)
 
+    DESCRIPTIONS = {
+        'l': 'View activity, worker output and the complete history.',
+        't': 'See pending work, understand blockers and retry failed attempts.',
+        'i': 'Inspect project status, checks and exact diagnostic evidence.',
+        'm': 'Choose a provider and model; connect your account if needed.',
+        'f': 'Choose the model to use when the primary model is unavailable.',
+        'p': 'Start or pause work for the selected project.',
+        's': 'Stop the service; unfinished work is preserved for the next start.',
+        'r': 'Reload the runner configuration; this does not retry failed tasks.',
+        'n': 'Browse folders and start Autowork on another project.',
+        'u': 'Remove this stopped service; repository and worktrees stay.',
+        'q': 'Close this interface. Running services continue in the background.',
+    }
+
+    @classmethod
+    def option_text(cls, key, label):
+        text = Text()
+        text.append('[' + key + '] ', style='bold cyan')
+        text.append(label + '\n', style='bold')
+        text.append('    ' + cls.DESCRIPTIONS.get(key, 'Open this action.'), style='dim')
+        return text
+
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Label(Text('Actions and shortcuts', style='bold'))
-            yield Input(placeholder='Search actions, e.g. model, pause or tasks', id='action-filter')
+            yield Label(Text('What would you like to do?', style='bold'))
+            yield Input(placeholder='Search: tasks, model, stop…', id='action-filter')
             yield OptionList(id='actions')
             yield Static('', id='action-status', markup=False)
             yield Label('↓ browse · Enter select · Esc back')
@@ -90,12 +115,10 @@ class ActionMenu(ModalScreen[str]):
         options = self.query_one('#actions', OptionList)
         options.clear_options()
         for key, label in self.shown:
-            text = Text(f'{key:>3}  {label}')
-            text.stylize('bold cyan', 0, 3)
-            options.add_option(text)
+            options.add_option(self.option_text(key, label))
         options.highlighted = 0 if self.shown else None
         self.query_one('#action-status', Static).update(
-            f'{len(self.shown)} actions' if self.shown else 'No matching actions. Change your search.')
+            f'{len(self.shown)} options · select one to continue' if self.shown else 'No matching actions. Change your search.')
 
     def on_input_submitted(self, event):
         if self.shown:
@@ -109,7 +132,7 @@ class ActionMenu(ModalScreen[str]):
     def on_option_list_option_selected(self, event):
         if 0 <= event.option_index < len(self.shown):
             key, label = self.shown[event.option_index]
-            if str(event.option.prompt) == f'{key:>3}  {label}':
+            if str(event.option.prompt) == self.option_text(key, label).plain:
                 self.dismiss(key)
 
     def action_cancel(self):
@@ -143,7 +166,7 @@ class PortalSetup(ModalScreen[dict]):
     BINDINGS = [Binding('escape', 'cancel', 'cancel')]
     DEFAULT_CSS = '''
     PortalSetup { align: center middle; }
-    PortalSetup > Vertical { width: 86; max-width: 100%; height: auto; max-height: 95%; border: thick $accent; background: $surface; padding: 1 2; }
+    PortalSetup > Vertical { width: 86; max-width: 100%; height: auto; max-height: 95%; border: round $accent; background: $surface; padding: 1 2; }
     #portal-fields { height: 1fr; }
     PortalSetup Input { margin-bottom: 1; }
     PortalSetup Horizontal { height: auto; align-horizontal: right; }
@@ -201,33 +224,37 @@ class PickModel(ReadScreen, ModalScreen[str]):
     BINDINGS = [Binding('escape', 'cancel', 'cancel')]
     DEFAULT_CSS = '''
     PickModel { align: center middle; }
-    PickModel > Vertical { width: 80; max-width: 100%; height: 90%; border: thick $accent; background: $surface; padding: 0 2; }
+    PickModel > Vertical { width: 80; max-width: 100%; height: 90%; border: round $accent; background: $surface; padding: 0 2; }
     PickModel OptionList { height: 1fr; min-height: 1; }
     #model-actions { height: 3; }
-    #model-actions Button { width: auto; margin-right: 1; }
+    #model-actions Button { width: auto; min-width: 0; margin-right: 1; }
     #model-status { height: auto; max-height: 3; }
     '''
 
-    def __init__(self, title, models, current, loader=None, identity=None, login=None):
+    def __init__(self, title, models, current, loader=None, identity=None, agent_dir=None, identity_valid=None):
         super().__init__()
         self.title_text, self.models, self.current = title, models, current
-        self.loader, self.identity, self.login = loader, identity, login
+        self.loader, self.identity, self.agent_dir = loader, identity, agent_dir
+        self.identity_valid = identity_valid or (lambda: True)
+        self.providers, self.auth_error = {}, ''
+        self.free_only, self.free_models, self.usable_models = False, set(), set()
         self.catalog_loading, self.load_error = bool(loader), ''
         self.provider = ''
 
     def compose(self) -> ComposeResult:
         from textual.widgets import Input
         with Vertical():
-            yield Label(Text(self.title_text, style='bold'))
+            yield ViewHeader(self.title_text, '1 Choose provider   2 Search or filter free models   3 Select a model')
             yield Label(Text(f'Current: {self.current}' if self.current else 'Choose a model available through Pi.'))
             yield Select([], prompt='1. Choose a Pi provider', id='provider', disabled=True)
             yield Input(placeholder='2. Search this provider\'s models', id='filter')
             yield OptionList(id='models')
             yield Static('Loading Pi models…' if self.loader else '', id='model-status', markup=False)
             with Horizontal(id='model-actions'):
-                yield Button('Login in Pi', id='model-login', disabled=self.login is None)
+                yield Button('Configure provider', id='model-login', disabled=not self.agent_dir)
                 yield Button('Refresh models', id='model-refresh', disabled=self.loader is None)
-            yield Label('To see another provider: Login in Pi → /login · Esc back')
+                yield Button('Free models', id='model-free')
+            yield Label('Choose a provider → Configure provider · Esc back')
 
     def on_mount(self):
         self.shown = []
@@ -246,17 +273,39 @@ class PickModel(ReadScreen, ModalScreen[str]):
         self.provider = ''
         self.query_one('#models', OptionList).clear_options()
         self.query_one('#model-status', Static).update(
-            f'Cannot load Pi models: {error}\nUse Login in Pi and refresh the list.')
+            f'Cannot load Pi models: {error}\nRetry Refresh models or Configure provider.')
 
     def loaded_models(self, models):
+        if not self.identity_valid():
+            self.catalog_loading = False
+            self.load_error = 'Pi profile or runner changed. Close and reopen the model picker.'
+            self.models, self.shown = [], []
+            self.query_one('#models', OptionList).clear_options()
+            self.query_one('#model-status', Static).update(self.load_error)
+            return
         self.catalog_loading, self.load_error = False, ''
+        previous_provider = self.provider
+        if isinstance(models, dict):
+            self.providers = {p['id']: p for p in models.get('providers', [])}
+            self.free_models = set(models.get('free_models', []))
+            self.usable_models = set(models.get('usable_models', models['models']))
+            self.auth_error = models.get('auth_error', '')
+            self.load_error = models.get('model_error', '')
+            models = models['models']
         self.models = models
-        providers = sorted({model.partition('/')[0] for model in models})
+        if not self.providers:
+            self.usable_models = set(models)
+        providers = sorted(set(self.providers) | {model.partition('/')[0] for model in models})
         selector = self.query_one('#provider', Select)
-        selector.set_options([(provider, provider) for provider in providers])
+        available = {model.partition('/')[0] for model in self.usable_models}
+        selector.set_options([(provider + (' · available' if provider in available else '')
+                              + (' · ' + self.providers[provider]['state']
+                                 if provider in self.providers else ''), provider)
+                             for provider in providers])
         selector.disabled = not providers
         current_provider = self.current.partition('/')[0]
-        self.provider = (current_provider if current_provider in providers else
+        self.provider = (previous_provider if previous_provider in providers else
+                         current_provider if current_provider in providers else
                          providers[0] if len(providers) == 1 else '')
         selector.value = self.provider or Select.NULL
         self.on_input_changed(self.query_one('#filter', Input))
@@ -275,22 +324,31 @@ class PickModel(ReadScreen, ModalScreen[str]):
             field.focus()
 
     def on_input_changed(self, event):
-        provider_models = [m for m in self.models if m.partition('/')[0] == self.provider]
-        self.shown = [m for m in provider_models if event.value.lower() in m.lower()]
+        provider_models = ([m for m in self.models if m in self.free_models] if self.free_only else
+                           [m for m in self.models if m.partition('/')[0] == self.provider])
+        query = event.value.lower().strip()
+        self.shown = [m for m in provider_models if query in m.lower()]
         options = self.query_one('#models', OptionList)
         options.clear_options()
         options.add_options(self.shown)
         if self.catalog_loading:
             status = 'Loading Pi models…'
         elif self.load_error:
-            status = f'Cannot load Pi models: {self.load_error}\nUse Login in Pi and refresh the list.'
+            status = f'Cannot load Pi models: {self.load_error}\nRetry Refresh models or Configure provider.'
         elif self.models and not self.provider:
-            status = 'Choose a provider. Missing one? Login in Pi, then refresh.'
+            status = 'Choose a provider, or Configure provider to connect.'
         elif self.models:
             status = (f'{len(self.shown)} of {len(provider_models)} Pi models · {self.provider}'
                       if self.shown else 'No matching models. Clear or change your search.')
         else:
-            status = 'No Pi models available. Login in Pi, then refresh.'
+            status = 'No Pi models available. Choose a provider and configure login.'
+        if self.free_only:
+            status = (f'{len(self.shown)} free models across providers. Login may be required; limits apply.'
+                      if self.shown else 'No free models match. Clear the search or Refresh models.')
+        elif self.shown and any(m not in self.usable_models for m in self.shown):
+            status = f'{len(self.shown)} catalog models. Select one to configure its provider if needed.'
+        if self.auth_error:
+            status = self.auth_error
         self.query_one('#model-status', Static).update(status)
 
     def refresh_models(self):
@@ -304,29 +362,40 @@ class PickModel(ReadScreen, ModalScreen[str]):
         self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
 
     def action_login(self):
-        if not self.login or not self.is_current:
+        if not self.agent_dir or not self.is_current or not self.identity_valid() or self.app.view_only:
+            return
+        provider = self.providers.get(self.provider)
+        if not provider:
+            self.query_one('#model-status', Static).update(
+                self.auth_error or 'Choose a configurable provider first. Refresh to load providers.')
+            return
+        if not provider['methods']:
+            self.query_one('#model-status', Static).update(
+                'This provider uses ambient configuration. Configure it through Pi settings or environment.')
             return
         self.invalidate_read()
-        self.query_one('#model-status', Static).update(
-            'In Pi, run /login and exit Pi to refresh this list.')
-        try:
-            self.login()
-        except OSError as error:
-            self.load_failed(error)
-            return
-        self.refresh_models()
+        def authenticated(success):
+            if success and self.is_mounted and self.is_current and self.identity_valid() and not self.app.view_only:
+                self.refresh_models()
+        self.app.push_screen(ProviderAuth(provider, self.agent_dir, identity_valid=self.identity_valid), authenticated)
 
     def on_button_pressed(self, event):
-        if event.button.id == 'model-refresh':
+        if event.button.id == 'model-free':
+            self.free_only = not self.free_only
+            event.button.label = 'All models' if self.free_only else 'Free models'
+            self.query_one('#filter', Input).placeholder = ('Search free models across providers' if self.free_only
+                                                           else 'Search this provider\'s models')
+            self.on_input_changed(self.query_one('#filter', Input))
+        elif event.button.id == 'model-refresh':
             self.refresh_models()
-        elif event.button.id == 'model-login' and self.login:
+        elif event.button.id == 'model-login':
             event.stop()
             self.action_login()
 
     def on_input_submitted(self, event):
         """Enter in the filter takes the first match."""
         if self.shown:
-            self.dismiss(self.shown[0])
+            self.choose_model(self.shown[0])
 
     def on_key(self, event):
         if event.key == 'down' and self.focused is self.query_one('#filter'):
@@ -335,7 +404,17 @@ class PickModel(ReadScreen, ModalScreen[str]):
     def on_option_list_option_selected(self, event):
         model = str(event.option.prompt)
         if model in self.shown:
-            self.dismiss(model)
+            self.choose_model(model)
+
+    def choose_model(self, model):
+        if self.app.view_only or not self.identity_valid():
+            return
+        if model not in self.usable_models:
+            self.provider = model.partition('/')[0]
+            self.query_one('#provider', Select).value = self.provider
+            self.action_login()
+            return
+        self.dismiss(model)
 
     def action_cancel(self):
         self.dismiss(None)
@@ -344,7 +423,7 @@ class PickModel(ReadScreen, ModalScreen[str]):
 class LogScreen(ReadScreen, Screen):
     """A bounded journal capture; Raw/Summary changes presentation, never acquisition."""
     BINDINGS = [Binding('escape,q', 'back', 'back'), Binding('v', 'toggle_view', 'Raw/Summary')]
-    DEFAULT_CSS = '#journal-status { height: auto; max-height: 3; }'
+    DEFAULT_CSS = '#journal-status { height: auto; max-height: 3; padding: 0 1; } #full-log { border: round $panel; }'
 
     def __init__(self, runner, logs):
         super().__init__()
@@ -354,12 +433,14 @@ class LogScreen(ReadScreen, Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
+        yield ViewHeader(f'Activity log · {self.runner.name}', 'Follow events here. Summary groups repeats; Raw keeps every original line.')
         yield MenuBar(id='menubar')
         yield Static('Reading journal…', id='journal-status', markup=False)
         yield RichLog(id='full-log', wrap=True, highlight=False, markup=False)
 
     def on_mount(self):
         self.title = f'{self.runner.name}: log'
+        self.query_one('#full-log').border_title = 'Activity · PgUp/PgDn scroll'
         self.show_mode()
         self.refresh_log()
         self.set_interval(LOG_REFRESH, self.refresh_log)
@@ -382,7 +463,7 @@ class LogScreen(ReadScreen, Screen):
         self.query_one('#menubar', MenuBar).show(
             [('v', 'Summary' if self.raw else 'Raw'), ('esc', 'Back')],
             prefix='Raw' if self.raw else 'Summary',
-            click_actions={'v': 'screen.toggle_view', 'esc': 'screen.back'})
+            click_actions={'v': 'screen.toggle_view', 'esc': 'screen.back'}, explicit_keys=True)
 
     def log_failed(self, error):
         self.journal_error = str(error)
@@ -421,6 +502,7 @@ class WorkerScreen(ReadScreen, Screen):
     bottom so the view keeps its place while you scroll back; refreshed. Each action is colored by
     its kind and kept to one line; w shows long ones whole."""
     BINDINGS = [Binding('escape,q', 'app.pop_screen', 'back'), Binding('w', 'toggle_wrap', 'wrap')]
+    DEFAULT_CSS = '#worker-actions { border: round $panel; }'
 
     def __init__(self, runner, task):
         super().__init__()
@@ -431,6 +513,7 @@ class WorkerScreen(ReadScreen, Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
+        yield ViewHeader(f'Worker · {self.task_id}', 'Read the worker’s observed actions. No output does not prove progress.')
         yield MenuBar(id='menubar')
         yield RichLog(id='worker-actions', wrap=True, highlight=False, markup=False)
 
@@ -446,7 +529,8 @@ class WorkerScreen(ReadScreen, Screen):
 
     def on_mount(self):
         self.title = f'{self.runner.name}: {self.task_id}'
-        self.query_one('#menubar', MenuBar).show([('w', 'Wrap'), ('esc', 'Back')])
+        self.query_one('#worker-actions').border_title = 'Observed actions · w expand lines'
+        self.query_one('#menubar', MenuBar).show([('w', 'Expand lines'), ('esc', 'Back')], explicit_keys=True)
         self.refresh_actions()
         self.set_interval(LOG_REFRESH, self.refresh_actions)
 
@@ -579,7 +663,8 @@ class BrowseScreen(ReadScreen, Screen):
     #browse-status { height: auto; max-height: 2; padding: 0 1; }
     #browser-body { height: 1fr; }
     #tree, #info-scroll { width: 1fr; }
-    #info-scroll { border-left: solid $panel; }
+    #info-scroll { border: round $panel; }
+    #tree { border: round $panel; }
     #info { height: auto; padding: 0 1; }
     BrowseScreen.compact #browser-body { layout: vertical; }
     BrowseScreen.compact #tree, BrowseScreen.compact #info-scroll { width: 100%; height: 1fr; }
@@ -598,6 +683,7 @@ class BrowseScreen(ReadScreen, Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
+        yield ViewHeader('Choose a project', '1 Open a folder   2 Review readiness   3 Start work')
         yield MenuBar(id='menubar')
         with Horizontal(id='browser-location'):
             yield Input(value=str(self.root or Path.home()), placeholder='Directory path · Enter to open', id='browse-path')
@@ -612,7 +698,7 @@ class BrowseScreen(ReadScreen, Screen):
     def on_mount(self):
         self.set_class(self.size.width < 100, 'compact')
         self.title = f'start a runner: {self.root or Path.home()}'
-        self.query_one('#menubar', MenuBar).show([('p', 'Play'), ('g', 'Plan'), ('ctrl+l', 'Path'), ('esc', 'Back')])
+        self.query_one('#menubar', MenuBar).show([('p', 'Start'), ('g', 'Plan'), ('ctrl+l', 'Path'), ('esc', 'Back')], explicit_keys=True)
         self.query_one('#tree', RepoTree).focus()
         if self.root is None:
             home = Path.home()
@@ -884,7 +970,7 @@ class BlockersScreen(Screen):
     BlockersScreen #report-state { height: auto; padding: 0 1; }
     BlockersScreen TextArea { height: 1fr; }
     BlockersScreen Horizontal { height: 3; }
-    BlockersScreen Button { margin-right: 1; min-width: 8; width: auto; padding: 0; }
+    BlockersScreen Button { margin-right: 0; min-width: 7; width: 1fr; height: 3; padding: 0; }
     '''
 
     def __init__(self, runner):
@@ -894,20 +980,21 @@ class BlockersScreen(Screen):
         self.diagnostics = self.exporting = False
 
     def compose(self):
+        yield ViewHeader(f'Attention report · {self.runner.name}', 'Read what is blocked. Answer a task, copy the report or inspect evidence.')
         yield MenuBar(id='report-menu')
         yield Static(Text(f'{self.runner.name} — read only; loading…'), id='report-state')
         yield TextArea(read_only=True, show_cursor=False, id='blockers-text')
         with Horizontal():
-            yield Button('Answer (a)', id='answer-report', variant='primary')
-            yield Button('Copy (c)', id='copy-report', disabled=True)
-            yield Button('Details (d)', id='details-report', disabled=True)
-            yield Button('Export (e)', id='export-report', disabled=True)
-            yield Button('Refresh (r)', id='refresh-report')
-            yield Button('Back (Esc)', id='back-report')
+            yield Button('Answer', id='answer-report', variant='primary')
+            yield Button('Copy', id='copy-report', disabled=True)
+            yield Button('Details', id='details-report', disabled=True)
+            yield Button('Export', id='export-report', disabled=True)
+            yield Button('Refresh', id='refresh-report')
+            yield Button('Back', id='back-report')
 
     def on_mount(self):
         self.query_one(MenuBar).show([('a', 'Answer'), ('escape', 'Back'), ('c', 'Copy'), ('d', 'Details'),
-                                      ('e', 'Export'), ('r', 'Refresh')], prefix='Blockers')
+                                      ('e', 'Export'), ('r', 'Refresh')], prefix='Blockers', explicit_keys=True)
         self.action_refresh_report()
 
     def action_refresh_report(self):
@@ -925,7 +1012,7 @@ class BlockersScreen(Screen):
         self.report_text = (blockers_report.summary(text)
                             if not self.diagnostics and blockers_report.DIAGNOSTICS in text else text)
         self.query_one(TextArea).load_text(self.report_text)
-        self.query_one('#details-report', Button).label = 'Summary (d)' if self.diagnostics else 'Details (d)'
+        self.query_one('#details-report', Button).label = 'Summary' if self.diagnostics else 'Details'
         self.query_one('#report-state', Static).update(Text(
             f'{self.runner.name} — read only report; {"full diagnostics" if self.diagnostics else "summary"}. '
             'Copy/export uses this view. Answer (a) opens these questions in Tasks.'))
@@ -991,29 +1078,76 @@ class BlockersScreen(Screen):
          'answer-report': self.action_answer_question, 'back-report': self.action_back}[event.button.id]()
 
 
+class WorkflowGuide(ModalScreen):
+    """Plain-language orientation; opening help performs no runner action."""
+    BINDINGS = [Binding('escape,q', 'close', 'Back')]
+    DEFAULT_CSS = """
+    WorkflowGuide { align: center middle; }
+    WorkflowGuide > Vertical { width: 76; max-width: 100%; height: 90%; border: round $accent; background: $surface; padding: 1 2; }
+    #workflow-copy { height: 1fr; }
+    """
+
+    def compose(self):
+        with Vertical():
+            yield ViewHeader('How Autowork works', 'Start with a task. Follow its progress. Act only when the task needs you.')
+            with VerticalScroll(id='workflow-copy'):
+                yield Static('Model → Project → Tasks → Execution → Checks → Local merge', markup=False)
+                yield Static('\nSET UP\nChoose a provider/model and a project. Tasks is your queue of work. Add bounded tasks there; starting a service does not create a task.', markup=False)
+                yield Static('\nRUN\nPlay starts the service. It chooses tasks whose dependencies and permissions allow execution. In progress means a task is active. Service running alone does not mean tasks are progressing.', markup=False)
+                yield Static('\nREVIEW\nChecks and review must pass before work merges into local main. A failed worker or failed checks needs attention; it is not completed work. An older check does not qualify a newer revision.', markup=False)
+                yield Static('\nWHAT TO DO NEXT\nNeeds attention: open Tasks for questions and Details for failures. Waiting: inspect dependencies or resource limits. Unconfirmed: execution observations are not fresh enough to claim progress.', markup=False)
+                yield Static('\nPUBLISH\nA local merge is not a GitHub push. The runner publishes only when push is explicitly enabled. Read-only mode disables execution controls.', markup=False)
+            yield Button('Back · Esc', id='workflow-back')
+
+    def action_close(self):
+        self.dismiss()
+
+    def on_button_pressed(self, event):
+        if event.button.id == 'workflow-back':
+            event.stop()
+            self.dismiss()
+
+
 class FleetApp(App):
     TITLE = 'autowork'
     # Stacked, each part full width: a side-by-side split left a ~30-column pane on an
     # 80-column terminal, which wrapped the detail and cut the log.
     CSS = '''
     Header { background: $panel; }
+    #workspace-body { height: 1fr; layout: vertical; }
+    #project-context { height: auto; }
+    #work-context { height: 1fr; }
+    #nav-footer { dock: bottom; height: 1; background: $panel; color: $text-muted; }
+    .wide #workspace-body { layout: horizontal; }
+    .wide #project-context { width: 42; height: 1fr; padding-right: 1; }
+    .wide #work-context { width: 1fr; height: 1fr; }
+    .wide #runners, .wide #lanes, .wide #log { border: round $border; }
+    .wide #runners:focus, .wide #lanes:focus, .wide #log:focus { border: round $accent; }
+    .wide #runners, .wide #lanes { min-height: 4; max-height: 35%; }
+    .wide #overview { max-height: 16; }
+    .wide #detail-scroll { height: 1fr; min-height: 6; }
+
     #modelbar { height: 1; padding: 0 1; background: $surface; }
     #empty-state { display: none; height: 1fr; align-horizontal: center; align-vertical: middle; }
     #empty-card { width: 72; max-width: 100%; height: auto; padding: 1 2; border: round $accent; background: $surface; content-align: center middle; }
     #runners, #lanes { background: $surface; }
     #runners, #lanes, #log { border-title-color: $text; border-title-style: bold; }
     #runners { border-top: solid $panel; }
-    #runners { height: auto; min-height: 3; max-height: 25%; }
-    #overview { height: auto; max-height: 6; padding: 0 1; background: $surface; }
-    #detail-scroll { display: none; height: 6; border-top: solid $panel; }
+    #runners { height: auto; min-height: 3; max-height: 6; }
+    #overview { height: auto; max-height: 6; margin: 0; padding: 0 1; background: $surface; }
+    #detail-scroll { display: none; height: 1fr; min-height: 4; border: round $accent; }
     #detail { height: auto; padding: 0 1; }
-    #lanes { height: auto; min-height: 3; max-height: 20%; border-top: solid $panel; }
+    #lanes { height: auto; min-height: 3; max-height: 6; border-top: solid $panel; }
     #log { height: 1fr; min-height: 4; border-top: solid $panel; }
-    .short #runners { max-height: 20%; }
-    .short #overview { max-height: 3; }
-    .short #detail-scroll { height: 5; }
+    .short #runners, .short #lanes { max-height: 3; }
+    .short #overview { max-height: 3; margin: 0; }
+    .short #detail-scroll { height: 1fr; }
     '''
     BINDINGS = [
+        Binding('h', 'workflow_help', 'Guide', show=False),
+        Binding('1', 'focus_panel("runners")', 'Projects', show=False),
+        Binding('2', 'focus_panel("lanes")', 'Current work', show=False),
+        Binding('3', 'focus_panel("log")', 'Activity', show=False),
         # One key per action, the first letter of its word, shown highlighted in the detail
         # pane (the footer repeated them, cut short). Enter on a runner opens its log too.
         # show=False: the log, worker and browse screens' footers list their own keys, not
@@ -1035,8 +1169,8 @@ class FleetApp(App):
     def get_system_commands(self, screen):
         yield from super().get_system_commands(screen)
         if isinstance(screen, PickModel):
-            if screen.login:
-                yield SystemCommand('Login in Pi', 'Sign in to a Pi provider, then refresh models',
+            if screen.agent_dir and not self.view_only:
+                yield SystemCommand('Configure Pi provider', 'Authenticate with OAuth or API key in this TUI',
                                     screen.action_login)
             if screen.loader:
                 yield SystemCommand('Refresh Pi models', 'Reload providers and models from Pi',
@@ -1086,6 +1220,8 @@ class FleetApp(App):
 
     def check_action(self, action, parameters):
         """View-only (for example served to a browser on a shared network): no control keys."""
+        if action in ('focus_panel', 'workflow_help'):
+            return len(self.screen_stack) == 1
         if action == 'more':
             return len(self.screen_stack) == 1
         if action == 'toggle_details':
@@ -1105,20 +1241,24 @@ class FleetApp(App):
         yield Static(id='modelbar')
         with Vertical(id='empty-state'):
             yield Static(id='empty-card', markup=False)
-        yield DataTable(id='runners', cursor_type='row', zebra_stripes=True)
-        yield Static(id='overview')
-        with VerticalScroll(id='detail-scroll'):
-            yield Static(id='detail')
-        yield DataTable(id='lanes', cursor_type='row', zebra_stripes=True)
-        yield RichLog(id='log', wrap=True, highlight=False, markup=False)
+        with Horizontal(id='workspace-body'):
+            with Vertical(id='project-context'):
+                yield DataTable(id='runners', cursor_type='row', zebra_stripes=True)
+                yield Static(id='overview')
+            with Vertical(id='work-context'):
+                with VerticalScroll(id='detail-scroll'):
+                    yield Static(id='detail')
+                yield DataTable(id='lanes', cursor_type='row', zebra_stripes=True)
+                yield RichLog(id='log', wrap=True, highlight=False, markup=False)
+        yield MenuBar(id='nav-footer')
 
-    # Wide terminals show each count; narrow ones keep Runner/State/Total and put
-    # the breakdown in the selected summary. Needs and Now share spare width.
+    # One short project list at every width. Full counts and source observations
+    # remain in the selected summary and scrollable Details.
     # Every open task is in one count bucket. Decision is Needs-decision membership,
     # not necessarily an unanswered owner question.
-    RUNNER_COLUMNS = ('Runner', 'State', 'Active', 'Mergeable', 'Waiting', 'Blocker', 'Decision', 'Total')
-    RUNNER_TEXT = ('Needs', 'Now')
-    LANE_COLUMNS = ('Task', 'Status', 'Try', 'For', 'Quiet')
+    RUNNER_COLUMNS = ('Project', 'Status', 'Tasks')
+    RUNNER_TEXT = ()
+    LANE_COLUMNS = ('Task', 'Status')
     LANE_TEXT = ('Doing',)
     STATUS_STYLE = {fleet_view.ACTIVE: 'bold green', fleet_view.MERGEABLE: 'bold cyan',
                     fleet_view.WAITING: 'bold yellow', fleet_view.BLOCKER: 'bold red'}
@@ -1127,10 +1267,12 @@ class FleetApp(App):
         self.reads = tui_reads.ReadCoordinator()
         self.reader = self.reads.owner(self.read_done)
         table = self.query_one('#runners', DataTable)
-        table.border_title = 'Runners'
+        table.border_title = '1 · Projects — select a project'
         table.add_columns(*self.RUNNER_COLUMNS, *self.RUNNER_TEXT)
         self.query_one('#lanes', DataTable).add_columns(*self.LANE_COLUMNS, *self.LANE_TEXT)
-        self.query_one('#log', RichLog).border_title = 'Activity · last hour'
+        self.query_one('#detail-scroll', VerticalScroll).border_title = 'Project details · i back · PgUp/PgDn scroll'
+        self.query_one('#log', RichLog).border_title = '3 · Recent activity · Enter full log'
+        self.show_navigation()
         self.action_refresh()
         self.refresh_log()
         self.set_interval(REFRESH, self.poll_refresh)
@@ -1138,6 +1280,32 @@ class FleetApp(App):
         self.code = None
         self.reload_if_updated()
         self.set_interval(CODE_CHECK, self.reload_if_updated)
+
+    def show_navigation(self):
+        focused = getattr(self.focused, 'id', None)
+        hint = ('i Back · PgUp/PgDn scroll' if focused == 'detail-scroll' else
+                'PgUp/PgDn scroll' if focused == 'log' else '↑↓ select · Enter log') if self.size.width >= 80 else ''
+        self.query_one('#nav-footer', MenuBar).show(
+            [('1', 'Projects'), ('2', 'Work'), ('3', 'Activity'), ('h', 'Guide'), ('?', 'More'), ('q', 'Quit')],
+            prefix=hint, click_actions={'1': 'app.focus_panel("runners")', '2': 'app.focus_panel("lanes")',
+                           '3': 'app.focus_panel("log")', 'h': 'app.workflow_help', '?': 'app.more', 'q': 'app.quit'})
+
+    def on_descendant_focus(self, event):
+        if self.is_mounted and len(self.screen_stack) == 1:
+            self.show_navigation()
+
+    def action_workflow_help(self):
+        if len(self.screen_stack) == 1:
+            self.push_screen(WorkflowGuide())
+
+    def action_focus_panel(self, panel):
+        if len(self.screen_stack) != 1 or panel not in ('runners', 'lanes', 'log'):
+            return
+        if self.details_open and panel in ('lanes', 'log'):
+            self.action_toggle_details()
+        widget = self.query_one('#' + panel)
+        if widget.display:
+            widget.focus()
 
     async def action_quit(self):
         if hasattr(self, 'planning_hub'):
@@ -1211,6 +1379,7 @@ class FleetApp(App):
 
     def on_resize(self, event):
         self.screen_stack[0].set_class(event.size.height < 22, 'short')
+        self.screen_stack[0].set_class(event.size.width >= 130 and event.size.height >= 26, 'wide')
         self._shown = {}  # the columns fit the new width
         if self.query_one('#runners', DataTable).columns:  # the first resize comes before on_mount
             # App.size may still be the previous viewport during the resize event.
@@ -1227,15 +1396,17 @@ class FleetApp(App):
         words = cut.rsplit(' ', 1)[0]
         return (words if len(words) > room * 2 // 3 else cut).rstrip(' ,;:·') + '…'
 
-    def fill(self, table, rows, fixed, text, minimum=16, limits=None):
+    def fill(self, table, rows, fixed, text, minimum=16, limits=None, budget=None):
         """Show ``rows`` ({column: (text, style)}) in ``table``. The fixed columns always show,
         whole; the text columns share what the terminal has left, each cut to fit, and the last
         named goes first when fewer than ``minimum`` columns would be left for each. Redrawn only
         when something changed, since a clear-and-rewrite every refresh made the panes flicker."""
         limits = limits or {}
+        budget = budget or ((42 if table.id == 'runners' else self.size.width - 42)
+                  if self.screen_stack[0].has_class('wide') and table.id in ('runners', 'lanes') else self.size.width)
         width = lambda column: min(limits.get(column, self.size.width),
                                    max([cell_len(column), *(cell_len(row[column][0]) for row in rows)])) + 2
-        left = self.size.width - sum(width(c) for c in fixed) - 4  # border and scrollbar
+        left = budget - sum(width(c) for c in fixed) - 4  # border and scrollbar
         shown = list(text)
         while shown and left // len(shown) - 2 < minimum:
             shown.pop()
@@ -1328,27 +1499,27 @@ class FleetApp(App):
             screen.refresh_tasks(getattr(screen, 'follow', None))
 
     def render_fleet(self):
+        self.show_navigation()
         table = self.query_one('#runners', DataTable)
         snapshot_errors = self.fleet_snapshot.errors if self.fleet_snapshot else ()
         read_errors = self.__dict__.get('_read_errors', {})
         welcome = (not self.runners and self.fleet_snapshot is not None
                    and not snapshot_errors and not read_errors)
         self.query_one('#empty-state').display = welcome
+        self.query_one('#workspace-body').display = not welcome
         self.query_one('#modelbar').display = not welcome
         for selector in ('#runners', '#overview', '#lanes', '#log'):
             self.query_one(selector).display = not welcome
         keep = self.selected
-        # At narrow widths the selected summary carries the full count breakdown.
-        # Bound identity/state cells, rather than letting a long name widen every row.
-        compact = self.size.width < 120
-        rows = fleet_view.runner_rows(self.runners)
-        total_width = max([len('Total'), *(cell_len(row['Total'][0]) for row in rows)])
-        # State + Total + three cell paddings + scrollbar/slack share one budget.
-        name_room = min(32, max(8, self.size.width - 20 - total_width - 10))
-        self.fill(table, rows,
-                  ('Runner', 'State', 'Total') if compact else self.RUNNER_COLUMNS,
-                  () if compact else self.RUNNER_TEXT,
-                  limits={'Runner': name_room, 'State': 20})
+        # Keep the overview readable at every width; diagnostics live in Details.
+        rows = [{'_key': row['Runner'][0], 'Project': row['Runner'],
+                 'Status': self.execution_state(runner), 'Tasks': row['Total']}
+                for runner, row in zip(self.runners, fleet_view.runner_rows(self.runners))]
+        total_width = max([len('Tasks'), *(cell_len(row['Tasks'][0]) for row in rows)])
+        wide = self.screen_stack[0].has_class('wide')
+        name_room = 12 if wide else min(40, max(8, self.size.width - 20 - total_width - 10))
+        self.fill(table, rows, self.RUNNER_COLUMNS, (),
+                  limits={'Project': name_room, 'Status': 15 if wide else 24})
         names = [r.name for r in self.runners]
         if names:
             row = names.index(keep) if keep in names else 0
@@ -1413,6 +1584,25 @@ class FleetApp(App):
             return 'i', 'Details'
         return 'l', 'Log'
 
+    @staticmethod
+    def execution_state(runner, view=None):
+        """Task progress is distinct from the service/maintenance process being alive."""
+        view = view or fleet_view.presentation(runner)
+        if runner.state in ('paused', 'not running'):
+            return view.label, view.style
+        if view.counts is None:
+            return 'Unavailable', 'yellow'
+        if view.execution_freshness != 'fresh':
+            return ('Unavailable' if view.error_count else 'Unconfirmed'), 'yellow'
+        active, mergeable, waiting, blocker, decision, total = view.counts
+        if active:
+            return 'In progress', 'bold cyan'
+        if blocker or decision or runner.questions:
+            return 'Needs attention', 'bold yellow'
+        if mergeable:
+            return 'Ready to merge', 'cyan'
+        return 'Waiting', 'yellow'
+
     def next_hint(self, runner):
         return ' '.join(self.primary_action(runner))
 
@@ -1444,8 +1634,11 @@ class FleetApp(App):
         view = fleet_view.presentation(runner)
         text = Text()
         def line(value, style=''):
-            text.append(self.fit(value, max(1, self.size.width - 2)) + '\n', style)
-        line(f'{runner.name} · {view.label} · Next: {self.next_hint(runner)}', view.style)
+            text.append((value if self.screen_stack[0].has_class('wide') else self.fit(value, max(1, self.size.width - 2))) + '\n', style)
+        label, style = self.execution_state(runner, view)
+        context = f' · Next: {self.next_hint(runner)}' if self.size.height < 22 else f' · service {runner.service or "not observed"}'
+        phase, evidence, intervention = fleet_view.progress_summary(runner, view)
+        line(f'{runner.name} · {label}' + context, style)
         counts = view.counts
         diagnostics = f'{view.error_count} errors · {view.source_note_count} notes'
         provenance = f'Inventory {view.inventory_freshness} · execution {view.execution_freshness}'
@@ -1453,7 +1646,7 @@ class FleetApp(App):
             count_line = 'Tasks unknown / unavailable'
         else:
             active, mergeable, waiting, blocker, decision, total = counts
-            count_line = f'{total} open · {active} active · {mergeable} mergeable'
+            count_line = f'{total} open · {active} in progress · {mergeable} ready to merge'
         check = self.main_check_text(runner, view)
         why = view.explanation
         if self.size.height < 22:
@@ -1466,13 +1659,18 @@ class FleetApp(App):
                 line(count_line + ' · ' + provenance, 'dim')
             line('Main: ' + check if check else 'Why: ' + why)
         else:
-            line(count_line, 'yellow' if counts is None else '')
-            if counts is not None:
-                line(f'{waiting} waiting · {blocker} blocker · {decision} in Needs decision')
-            line(diagnostics + ' · ' + provenance, 'yellow' if view.error_count else 'dim')
-            line('Why: ' + ' '.join(why.split()))
-            if check:
-                line('Main: ' + check, 'bold red' if runner.main_check.get('state') in ('red', 'broken') else '')
+            line('Now: ' + phase + ' · ' + count_line, 'bold cyan')
+            if view.execution_freshness != 'fresh' or view.inventory_freshness != 'fresh' or view.error_count:
+                evidence = diagnostics + ' · ' + provenance
+            line(evidence, 'yellow' if phase in ('Quiet worker', 'Unconfirmed') else '')
+            line(intervention, 'dim' if counts and counts[0] else 'bold yellow')
+            line('Main: ' + check if check else 'Main: no check result observed',
+                 'bold red' if runner.main_check.get('state') in ('red', 'broken') else '')
+            line('Publish: ' + ('automatic push enabled' if runner.push else 'local only · automatic push disabled'), 'dim')
+            if self.screen_stack[0].has_class('wide'):
+                line('Next: ' + self.next_hint(runner), 'cyan')
+                if view.error_count or view.source_note_count or view.inventory_freshness != 'fresh' or view.execution_freshness != 'fresh':
+                    line(diagnostics + ' · ' + provenance, 'yellow' if view.error_count else 'dim')
         text.rstrip()
         publish_text(self.query_one('#overview', Static), text)
 
@@ -1484,7 +1682,7 @@ class FleetApp(App):
         clicks = {key: 'app.' + binding.action for binding in self.BINDINGS for key in binding.key.split(',')}
         modelbar = Text(no_wrap=True, overflow='ellipsis')
         if not self.view_only:
-            hotkeys(modelbar, [('m', 'Choose model')], {'m': 'app.pick_model("model")'})
+            modelbar.append('[m] Choose model', style=Style(bold=True, color='cyan', meta={'@click': 'app.pick_model("model")'}))
             modelbar.append(' · ')
         else:
             modelbar.append('Model (read only) · ', style='dim')
@@ -1496,6 +1694,12 @@ class FleetApp(App):
                            and not self.fleet_snapshot.errors
                            and not self.__dict__.get('_read_errors', {}))
         self.query_one('#modelbar').display = not welcome.display
+        self.query_one('#workspace-body').display = not welcome.display
+        self.query_one('#nav-footer').display = not welcome.display
+        wide = self.screen_stack[0].has_class('wide')
+        self.query_one('#overview').display = not welcome.display and (not self.details_open or wide)
+        self.query_one('#detail-scroll').display = self.details_open and runner is not None
+        self.query_one('#log').display = not welcome.display and not self.details_open
         self.show_overview(runner)
         if runner is None:
             errors = (*(self.fleet_snapshot.errors if self.fleet_snapshot else ()),
@@ -1537,9 +1741,11 @@ class FleetApp(App):
             return
         primary = self.primary_action(runner)
         routes = [primary, ('l', 'Log'), ('t', 'Tasks'),
-                  ('i', 'Summary' if self.details_open else 'Details'), ('?', 'More')]
+                  ('i', 'Summary' if self.details_open else 'Details'), ('?', 'More actions')]
+        if self.size.width >= 100:
+            routes.append(('h', 'Guide'))
         menubar.show(list(dict(routes).items()), prefix='view only' if self.view_only else '',
-                     click_actions=clicks)
+                     click_actions=clicks, explicit_keys=True)
         text = Text()
         view = fleet_view.presentation(runner)
         text.append(f'{runner.name}  ', style='bold')
@@ -1570,7 +1776,8 @@ class FleetApp(App):
             detail_row(text, 'Task', f'{self.task_name(runner, row.task)} · {row.task}')
             detail_row(text, 'State', row.state + ' · ' + row.why)
         for lane in runner.lanes:
-            detail_row(text, 'Observation', f'{lane.task} · {fleet_view.lane_status(runner, lane)[0]} · {doing(lane)}')
+            detail_row(text, 'Observation', f'{lane.task} · {fleet_view.lane_status(runner, lane)[0]} · {doing(lane)}'
+                       f' · attempt {lane.attempt} · {fleet_view.duration(lane.minutes)} elapsed · {fleet_view.quiet(lane)}')
         if runner.triage_failures:
             detail_row(text, 'Recovery', fleet_view.recovery_detail(runner), 'bold yellow')
         if runner.preparation is not None:
@@ -1644,22 +1851,24 @@ class FleetApp(App):
                          'Quiet': (fleet_view.quiet(lane).removeprefix('quiet '), 'bold yellow'),
                          'Doing': (activity, fleet_view.action_style(activity))})
         self._lane_targets = targets
-        table.border_title = f'Workers · {len(runner.lanes)} observed · i Details / Enter log'
-        compact = self.size.width < 120
+        table.border_title = (f'2 · Current work · {len(runner.lanes)} observed · Enter log' if runner.lanes
+                              else '2 · Current work · no workers observed')
+        budget = self.size.width - 42 if self.screen_stack[0].has_class('wide') else self.size.width
+        compact = budget < 120
         for row in rows:
             status, style = row['Status']
-            if compact and status.startswith('Annotation · '):
-                row['Status'] = ('Unmatched · ' + status.removeprefix('Annotation · ').removesuffix(' (unmatched execution)'), style)
+            if status.startswith('Annotation · '):
+                row['Status'] = ('Unconfirmed · ' + status.removeprefix('Annotation · ').removesuffix(' (unmatched execution)'), style)
         # One shared width budget: names cannot push state or navigation off screen.
-        name_room = max(12, self.size.width // 2 - 5) if compact else min(48, self.size.width // 3)
-        state_room = max(12, self.size.width - name_room - 8) if compact else 32
+        name_room = max(12, budget // 2 - 5) if compact else min(48, budget // 3)
+        state_room = max(12, budget - name_room - 8) if compact else 32
         if self.fill(table, rows, ('Task', 'Status') if compact else self.LANE_COLUMNS,
                      () if compact else self.LANE_TEXT,
                      limits={'Task': name_room, 'Status': state_room}) and rows:
             keys = list(targets)
             fallback = next((i for i, key in enumerate(keys) if targets[key] == selected), 0)
             table.move_cursor(row=keys.index(keep) if keep in keys else fallback)
-        table.display = bool(runner.lanes)
+        table.display = not self.details_open
 
     def logs(self, runner, lines=200, since=None):
         return fleet_view.logs(runner, lines=lines, journalctl=self.journalctl, since=since, strict=True)
@@ -1681,7 +1890,7 @@ class FleetApp(App):
             log.write(f'{runner.name}: reading journal…')
         runner, journal = read_input(runner), self.journalctl
         return self.read('journal', (runner.name, runner.repo),
-                         lambda: fleet_view.log_lines(fleet_view.logs(runner, lines=400, journalctl=journal, since='-60min', strict=True)),
+                         lambda: fleet_view.activity_lines(fleet_view.logs(runner, lines=400, journalctl=journal, since='-60min', strict=True), current_session=True),
                          lambda lines: self.show_log(runner.name, lines),
                          lambda error: self.show_log(runner.name, self._journal_lines, str(error)))
 
@@ -1858,36 +2067,40 @@ class FleetApp(App):
             return
         settings_path = Path(self.env_dir) / f'{runner.name}.env'
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
+        agent_dir = portal.service_agent_dir(fleet_view.read_env(settings_path))
+        def valid():
+            selected = self.current()
+            return (selected is not None and selected.name == runner.name and
+                    portal.service_agent_dir(fleet_view.read_env(settings_path)) == agent_dir)
         default_models = list_models is fleet_view.models
         def load():
             if default_models:
-                settings = fleet_view.read_env(settings_path)
-                return list_models(pi=pi, agent_dir=portal.service_agent_dir(settings))
+                return self.model_catalog(lambda: list_models(pi=pi, agent_dir=agent_dir), agent_dir, pi)
             return list_models()
         current = runner.model if which == 'model' else runner.fallback
         title = f'{runner.name}: {"model" if which == "model" else "fallback model"}'
 
         def chosen(model):
-            if not model or model == current:
+            if not model or model == current or self.view_only or not valid():
                 return
             argv = [self.command, 'model', runner.name] + ([model] if which == 'model' else ['--fallback', model])
             action = fleet_view.Action('m', f'{which} {model}', argv,
                                        confirm=f'Set {runner.name}\'s {which} to {model}'
                                                + ('? Its service restarts; workers resume on the same attempt.'
                                                   if runner.service == 'running' else '?'))
-            self.push_screen(Confirm(action.confirm), lambda yes: yes and self.execute(action))
-        self.push_screen(PickModel(title, [], current, loader=load, identity=(runner.name, str(settings_path)),
-                                   login=lambda: self.login_to_pi(portal.service_agent_dir(
-                                       fleet_view.read_env(settings_path)))), chosen)
+            self.push_screen(Confirm(action.confirm),
+                             lambda yes: yes and valid() and not self.view_only and self.execute(action))
+        self.push_screen(PickModel(title, [], current, loader=load, identity=(runner.name, str(settings_path), agent_dir),
+                                   agent_dir=agent_dir, identity_valid=valid), chosen)
 
     def pick_new_model(self, on_chosen=None):
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
         agent_dir = self.new_model_agent_dir
         def load():
-            return (list_models(pi=pi, agent_dir=agent_dir)
+            return (self.model_catalog(lambda: list_models(pi=pi, agent_dir=agent_dir), agent_dir, pi)
                     if list_models is fleet_view.models else list_models())
         def chosen(model):
-            if model and not self.view_only:
+            if model and not self.view_only and self.new_model_agent_dir == agent_dir:
                 self.new_model = model
                 self.show_detail()
                 if on_chosen:
@@ -1896,14 +2109,25 @@ class FleetApp(App):
                 on_chosen(None)
         self.push_screen(PickModel('Choose a Pi model for a new runner', [], self.new_model,
                                    loader=load, identity=('new-runner', agent_dir),
-                                   login=lambda: self.login_to_pi(agent_dir)), chosen)
+                                   agent_dir=agent_dir, identity_valid=lambda: self.new_model_agent_dir == agent_dir), chosen)
 
-    def login_to_pi(self, agent_dir):
-        """Open Pi's own login UI against the same profile the model list uses."""
-        pi = os.environ.get('AUTOWORK_PI', 'pi')
-        env = dict(os.environ, PI_CODING_AGENT_DIR=agent_dir)
-        with self.suspend():
-            return self.runner_cmd([pi, '--no-session'], cwd=str(Path.home()), env=env).returncode
+    @staticmethod
+    def model_catalog(load_models, agent_dir, pi):
+        # A failed/empty available-model list must not hide configurable providers.
+        model_error = ''
+        try:
+            models = load_models()
+        except Exception:
+            models = []
+            model_error = 'Pi model catalog unavailable. Configure a provider or retry Refresh models.'
+        try:
+            catalog = pi_auth.discovery(agent_dir, pi)
+            public = catalog.get('models', [])
+            return dict(models=sorted(set(models) | {m['id'] for m in public}),
+                        usable_models=models, free_models=[m['id'] for m in public if m.get('free')],
+                        providers=catalog.get('providers', []), model_error='' if public else model_error)
+        except pi_auth.AuthError as error:
+            return dict(models=models, providers=[], auth_error=str(error), model_error=model_error)
 
     def action_browse(self):
         self.push_screen(BrowseScreen(str(self.browse_root) if self.browse_root else None, self.start_repository))
@@ -1914,7 +2138,10 @@ class FleetApp(App):
         self.starting_repositories.add(ready.repo)
         browser = self.screen
         action = fleet_view.Action('a', f'start {Path(ready.repo).name}', [self.command, 'start', ready.repo],
-                                   confirm=f'Start a pi-autowork service for {ready.repo}?'
+                                   confirm=f'Start a pi-autowork service for {ready.repo}?\n'
+                                   'Flow: queued task → isolated worker → checks → merge into main.\n'
+                                   'Starting does not guarantee a runnable task or a successful model call.\n'
+                                   'Publication follows this repository’s saved push setting; inspect Publish after start.\n'
                                    + (f' Start will safely switch this checkout to local {ready.start_branch} '
                                       'and recheck readiness before starting.' if ready.start_branch else ''))
 

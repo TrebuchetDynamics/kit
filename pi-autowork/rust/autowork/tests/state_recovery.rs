@@ -412,3 +412,27 @@ fn fence_foreign_owner_and_schema() {
     );
     assert!(backup.exists());
 }
+
+#[test]
+fn readonly_projection_preserves_uncertain_state() {
+    let repo = Repo::new();
+    let store = StateStore::open(repo.common()).unwrap();
+    let run = identity(&store, 1);
+    store.claim(0, run.clone(), "source-commit").unwrap();
+    let mut event = transition(&run, RecordKind::Note);
+    event.status = DurableStatus::Uncertain;
+    store.transition(1, event).unwrap();
+    drop(store);
+    let before = fs::read(repo.database()).unwrap();
+    let observed = autowork_next::state::read_persisted_runs(repo.common()).unwrap();
+    assert_eq!(observed["runs"][0]["status"], "uncertain");
+    assert_eq!(fs::read(repo.database()).unwrap(), before);
+    // A WAL that is not a provably empty regular file never permits the immutable read.
+    let wal = repo.database().with_file_name("journal.sqlite3-wal");
+    let _ = fs::remove_file(&wal);
+    fs::create_dir(&wal).unwrap();
+    assert!(autowork_next::state::read_persisted_runs(repo.common()).is_err());
+    fs::remove_dir(&wal).unwrap();
+    assert!(autowork_next::state::read_persisted_runs(repo.common()).is_ok());
+    assert_eq!(fs::read(repo.database()).unwrap(), before);
+}

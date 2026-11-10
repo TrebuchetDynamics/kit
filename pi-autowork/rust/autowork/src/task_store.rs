@@ -984,6 +984,7 @@ impl Snapshot {
 
 #[derive(Clone, Debug)]
 pub struct PendingEdit {
+    pub record_revisions: BTreeMap<String, String>,
     pub expected_revision: String,
     pub paths: Vec<PathBuf>,
 }
@@ -1083,6 +1084,25 @@ impl TaskService {
             git_dir,
         })
     }
+    /// Read exact current bytes under the task lock; apply rechecks the same digest.
+    pub fn record_for_edit(&self, id: &str, expected_digest: &str) -> Result<Vec<u8>> {
+        if id.is_empty()
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return refuse("invalid task ID");
+        }
+        let _lock = self.lock()?;
+        let records = self.working_records()?;
+        let bytes = records
+            .get(&format!("tasks/items/{id}.md"))
+            .ok_or_else(|| StoreError("unknown task".into()))?;
+        if digest(bytes)? != expected_digest {
+            return refuse("stale expected record revision");
+        }
+        Ok(bytes.clone())
+    }
     pub fn recover(&self) -> Result<()> {
         let lock = self.lock()?;
         self.undo(&lock)
@@ -1162,7 +1182,12 @@ impl TaskService {
         }
         fs::remove_file(&journal)?;
         sync_dir(&lock.git_dir)?;
+        let record_revisions = edits
+            .iter()
+            .map(|edit| Ok((edit.path.clone(), digest(&edit.after)?)))
+            .collect::<Result<BTreeMap<_, _>>>()?;
         Ok(PendingEdit {
+            record_revisions,
             expected_revision: base.revision,
             paths: paths.into_iter().map(PathBuf::from).collect(),
         })

@@ -33,7 +33,7 @@
     "README.md",
     "docs/cross-host.md",
     "tmux/",
-    "integrations/paseo/",
+    "pi-autowork/integrations/paseo/",
     "!**/node_modules"
   ],
   "pi": {

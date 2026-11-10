@@ -48,15 +48,47 @@ def publish_text(widget, text):
     return True
 
 
+class ViewHeader(Static):
+    """Consistent orientation for reading screens, compact on small terminals."""
+    DEFAULT_CSS = 'ViewHeader { height: auto; max-height: 2; padding: 0 1; background: $surface; }'
+
+    def __init__(self, title, purpose, **kwargs):
+        super().__init__(**kwargs)
+        self.heading, self.purpose = title, purpose
+
+    def on_mount(self):
+        self.show_heading()
+
+    def on_resize(self):
+        if self.is_mounted:
+            self.show_heading()
+
+    def show_heading(self):
+        text = Text(self.heading, style='bold cyan')
+        if self.screen.size.height >= 24:
+            text.append('\n' + self.purpose, style='dim')
+        publish_text(self, text)
+
+
 class MenuBar(Static):
     """A screen's keys under its title, wrapping rather than hiding narrow-screen actions."""
     DEFAULT_CSS = 'MenuBar { dock: top; height: auto; max-height: 3; background: $boost; padding: 0 1; }'
 
-    def show(self, keys, prefix='', click_actions=None):
+    def show(self, keys, prefix='', click_actions=None, *, explicit_keys=False):
         text = Text(overflow='fold')
         if prefix:
             text.append(prefix + '  ', style='dim')
-        hotkeys(text, keys, click_actions)
+        if explicit_keys:
+            for index, (key, label) in enumerate(keys):
+                if index:
+                    text.append('  │  ', style='dim')
+                start = len(text)
+                text.append('[' + key + ']', style='bold cyan')
+                text.append(' ' + label, style='bold')
+                if click_actions and key in click_actions:
+                    text.stylize(Style(meta={'@click': click_actions[key]}), start, len(text))
+        else:
+            hotkeys(text, keys, click_actions)
         publish_text(self, text)
 
 

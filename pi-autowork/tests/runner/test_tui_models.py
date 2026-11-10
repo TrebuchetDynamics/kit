@@ -83,14 +83,13 @@ async def session_pilot(size):
             visible(picker.query_one(selector), size)
         assert not picker.query_one('#model-login').disabled
         assert not picker.query_one('#model-refresh').disabled
-        with patch.object(app, 'login_to_pi', return_value=0) as login:
-            await pilot.click('#model-login')
-            await settle(app, pilot)
-            login.assert_called_once_with(app.new_model_agent_dir)
-        assert loads == [True, True], 'Returning from Pi login must refresh the catalog'
+        await pilot.click('#model-login')
+        await settle(app, pilot)
+        assert app.screen is picker and loads == [True]
+        assert 'provider' in text(picker.query_one('#model-status')).lower()
         await pilot.click('#model-refresh')
         await settle(app, pilot)
-        assert loads == [True, True, True], 'The manual refresh must reload the Pi catalog'
+        assert loads == [True, True], 'Manual refresh must reload the Pi catalog'
         status = text(picker.query_one('#model-status')).lower()
         assert '2' in status and ('model' in status or 'match' in status), status
         await pilot.press('z', 'z', 'z')
@@ -122,7 +121,7 @@ async def session_pilot(size):
         await pilot.press('m')
         app.action_pick_model('model')
         await pilot.pause()
-        assert len(app.screen_stack) == 1 and len(loads) == 4
+        assert len(app.screen_stack) == 1 and len(loads) == 3
     # A read-only empty fleet still explains model choice without enabling it.
     async with fixture_app(size, view_only=True) as (app, pilot, ready, calls):
         visible(app.query_one('#modelbar'), size)
@@ -132,19 +131,118 @@ async def session_pilot(size):
 
 
 async def login_pilot(size):
-    from contextlib import nullcontext
-    from pi_autowork import tui
-    async with fixture_app(size) as (app, pilot, ready, calls):
-        runner_cmd = Mock(return_value=subprocess.CompletedProcess([], 0))
-        app.runner_cmd = runner_cmd
-        with patch.dict(os.environ, {'AUTOWORK_PI': 'fixture-pi'}), \
-             patch.object(app, 'suspend', return_value=nullcontext()):
-            assert app.login_to_pi('/tmp/pi-agent') == 0
-        argv = runner_cmd.call_args.args[0]
-        kwargs = runner_cmd.call_args.kwargs
-        assert argv == ['fixture-pi', '--no-session']
-        assert kwargs['cwd'] == str(Path.home())
-        assert kwargs['env']['PI_CODING_AGENT_DIR'] == '/tmp/pi-agent'
+    from pi_autowork import tui, tui_auth
+    from textual.widgets import Input, Select, Button
+    provider = dict(id='fixture', name='Fixture', state='not stored', methods=['oauth', 'api_key'])
+    loads = []
+    def catalog():
+        loads.append(True)
+        return dict(models=MODELS[:] if len(loads) > 1 else [], providers=[provider])
+    active = []
+    class FakeBridge:
+        def __init__(self, agent_dir):
+            self.agent_dir = agent_dir
+            self.answer_event = asyncio.Event()
+            self.answers = []
+            active.append(self)
+        async def run(self, operation, receive, chosen, method):
+            self.operation, self.chosen, self.method = operation, chosen, method
+            await receive(dict(type='progress'))
+            await receive(dict(type='info', message='Provider prerequisite: authenticate first', links=[dict(label='Setup guide', url='https://example.com/setup')]))
+            if method == 'oauth':
+                await receive(dict(type='url', url='https://example.com/authorize?state=private'))
+            await receive(dict(type='prompt', kind='secret', message='Enter fixture credential'))
+            await self.answer_event.wait()
+            if self.answers[-1] == 'invalid-fixture-secret':
+                await receive(dict(type='error', message='invalid-fixture-secret must never display'))
+                return
+            await receive(dict(type='success'))
+        async def answer(self, value):
+            self.answers.append(value)
+            self.answer_event.set()
+    async with fixture_app(size, loader=catalog) as (app, pilot, ready, calls):
+        with patch.object(tui_auth.pi_auth, 'Bridge', FakeBridge):
+            # Constructor defaults are bound at definition time; replace the screen factory.
+            original = tui.ProviderAuth
+            with patch.object(tui, 'ProviderAuth', side_effect=lambda p, d, **kw: original(p, d, FakeBridge, **kw)):
+                app.action_pick_model('model')
+                await settle(app, pilot)
+                picker = app.screen
+                assert picker.models == [] and picker.query_one('#provider', Select).value == 'fixture'
+                await pilot.click('#model-login')
+                await settle(app, pilot)
+                screen = app.screen
+                for selector in ('#auth-method', '#auth-status', '#auth-connect', '#auth-cancel'):
+                    visible(screen.query_one(selector), size)
+                screen.query_one('#auth-method', Select).focus()
+                await pilot.press('enter', 'end', 'enter', 'tab', 'enter')
+                await settle(app, pilot)
+                assert active[-1].agent_dir == app.new_model_agent_dir
+                assert 'Provider prerequisite' in text(screen.query_one('#auth-guidance'))
+                assert 'https://example.com/setup' in text(screen.query_one('#auth-guidance'))
+                field = screen.query_one('#auth-answer', Input)
+                visible(field, size)
+                visible(screen.query_one('#auth-status'), size)
+                assert field.password and field.value == ''
+                await pilot.press(*'fixture-secret-value')
+                await pilot.pause()
+                assert 'fixture-secret-value' not in str(field.render())
+                await pilot.press('enter')
+                await settle(app, pilot)
+                assert app.screen is picker and len(loads) == 2
+                assert picker.models == MODELS and app.new_model == ''
+                assert active[-1].answers == ['fixture-secret-value']
+
+                # OAuth requires an explicit browser action; Escape preserves model/profile.
+                app.new_model = 'fixture/alpha'
+                await pilot.click('#model-login')
+                await settle(app, pilot)
+                screen = app.screen
+                screen.query_one('#auth-method', Select).value = 'oauth'
+                with patch.object(tui_auth.webbrowser, 'open', return_value=True) as browser:
+                    await pilot.click('#auth-connect')
+                    await settle(app, pilot)
+                    assert not browser.called
+                    assert not screen.query_one('#auth-browser', Button).disabled
+                    await pilot.click('#auth-browser')
+                    await settle(app, pilot)
+                    browser.assert_called_once_with('https://example.com/authorize?state=private')
+                await pilot.press('escape')
+                await settle(app, pilot)
+                assert app.screen is picker and app.new_model == 'fixture/alpha' and len(loads) == 2
+                assert active[-1].answer_event.is_set() is False
+                assert active[-1].answers == []
+
+                await pilot.click('#model-login')
+                await settle(app, pilot)
+                screen = app.screen
+                screen.query_one('#auth-method', Select).value = 'api_key'
+                await pilot.click('#auth-connect')
+                await settle(app, pilot)
+                screen.query_one('#auth-answer', Input).value = 'invalid-fixture-secret'
+                await pilot.press('enter')
+                await settle(app, pilot)
+                visible(screen.query_one('#auth-status'), size)
+                shown = text(screen.query_one('#auth-status')).lower()
+                assert 'failed' in shown and 'invalid-fixture-secret' not in shown
+                assert screen.query_one('#auth-answer', Input).value == ''
+                await pilot.press('escape')
+                assert app.screen is picker
+                # Profile switching cancels an in-flight login; stale success cannot refresh.
+                await pilot.click('#model-login')
+                await settle(app, pilot)
+                screen = app.screen
+                screen.query_one('#auth-method', Select).value = 'api_key'
+                await pilot.click('#auth-connect')
+                await settle(app, pilot)
+                before = len(loads)
+                app.new_model_agent_dir = '/tmp/different-fixture-profile'
+                await screen.receive(dict(type='success'))
+                await settle(app, pilot)
+                assert app.screen is picker and len(loads) == before
+                assert app.new_model == 'fixture/alpha'
+                await pilot.press('escape')
+                assert app.new_model == 'fixture/alpha'
 
 
 async def status_pilot(size):
@@ -369,6 +467,49 @@ async def providers_pilot(size):
         assert len(app.screen_stack) == 1 and app.new_model == 'nous-local/openai/unique'
 
 
+async def free_models_pilot(size):
+    from textual.widgets import Button, Input
+    from pi_autowork import tui
+    free = 'openrouter/fixture/a:free'
+    other = 'openrouter/fixture/b:free'
+    public = dict(models=[MODELS[0], free, other], usable_models=[MODELS[0]],
+                  free_models=[free, other], providers=[
+                      dict(id='fixture', methods=['api_key'], state='stored api_key'),
+                      dict(id='openrouter', methods=['api_key'], state='not stored')])
+    def empty_authenticated_catalog():
+        raise ValueError('No authenticated models')
+    with patch.object(tui.pi_auth, 'discovery', return_value=dict(providers=public['providers'], models=[dict(id=free, free=True)])):
+        discovered = tui.FleetApp.model_catalog(empty_authenticated_catalog, '/fixture/profile', 'fixture-pi')
+    assert discovered['models'] == [free] and discovered['usable_models'] == []
+    assert discovered['free_models'] == [free] and discovered['model_error'] == ''
+    async with fixture_app(size, loader=lambda: public) as (app, pilot, ready, calls):
+        app.action_pick_model('model')
+        await settle(app, pilot)
+        picker = app.screen
+        visible(picker.query_one('#model-free', Button), size)
+        await pilot.click('#model-free')
+        await pilot.pause()
+        assert picker.shown == [free, other], picker.shown
+        field = picker.query_one('#filter', Input)
+        field.value = 'a:free'
+        field.focus()
+        await pilot.pause()
+        assert picker.shown == [free]
+        with patch.object(picker, 'action_login') as login:
+            await pilot.press('enter')
+            await pilot.pause()
+            login.assert_called_once()
+            assert app.new_model == '', 'Unconfigured model must not be silently selected'
+        public['usable_models'] = [MODELS[0], free]
+        picker.loaded_models(public)
+        field.value = 'a:free'
+        field.focus()
+        await pilot.pause()
+        await pilot.press('enter')
+        await settle(app, pilot)
+        assert app.new_model == free
+
+
 class TuiModelsTests(unittest.TestCase):
     def run_case(self, case):
         self.assertIsNotNone(shutil.which('uv'), 'Model acceptance requires uv and pinned Textual cache')
@@ -377,10 +518,14 @@ class TuiModelsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('MODEL PILOT OK ' + case, result.stdout)
 
+    def test_free_models_can_be_found_before_login_and_selected_after_configuration(self):
+        self.run_case('free')
+
     def test_session_choice_filter_and_read_only_modelbar(self):
         self.run_case('session')
 
     def test_login_uses_pi_terminal_and_selected_agent_directory(self):
+        """Historical test identity; the current login uses the SDK inside the TUI."""
         self.run_case('login')
 
     def test_model_loading_empty_and_error_status(self):
@@ -397,10 +542,10 @@ class TuiModelsTests(unittest.TestCase):
 
 
 async def main(case):
-    for size in ((80, 24), (60, 18)):
+    for size in ((80, 24), (60, 18), (120, 32)):
         await {'session': session_pilot, 'login': login_pilot,
                'status': status_pilot, 'start': start_pilot,
-               'existing': existing_pilot, 'providers': providers_pilot}[case](size)
+               'existing': existing_pilot, 'providers': providers_pilot, 'free': free_models_pilot}[case](size)
         print('PASS', case, size)
     print('MODEL PILOT OK', case)
 
