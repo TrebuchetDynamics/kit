@@ -1588,11 +1588,11 @@ class FleetApp(App):
     def execution_state(runner, view=None):
         """Task progress is distinct from the service/maintenance process being alive."""
         view = view or fleet_view.presentation(runner)
-        if runner.state in ('paused', 'not running'):
+        if runner.stop_reason or runner.state in ('paused', 'not running'):
             return view.label, view.style
         if view.counts is None:
             return 'Unavailable', 'yellow'
-        if view.execution_freshness != 'fresh':
+        if view.inventory_freshness != 'fresh' or view.execution_freshness != 'fresh':
             return ('Unavailable' if view.error_count else 'Unconfirmed'), 'yellow'
         active, mergeable, waiting, blocker, decision, total = view.counts
         if active:
@@ -1647,6 +1647,8 @@ class FleetApp(App):
         else:
             active, mergeable, waiting, blocker, decision, total = counts
             count_line = f'{total} open · {active} in progress · {mergeable} ready to merge'
+            if view.inventory_freshness != 'fresh' or view.execution_freshness != 'fresh':
+                count_line = 'Last observed: ' + count_line
         check = self.main_check_text(runner, view)
         why = view.explanation
         if self.size.height < 22:
