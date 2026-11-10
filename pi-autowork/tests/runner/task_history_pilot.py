@@ -48,12 +48,12 @@ async def main():
                         assert screen.VIEW_NAMES['all'] == 'Open'
                         assert [r.task for r in screen.shown] == ['T-1']
                         tabs = screen.query_one('#task-views', Static)
-                        assert '1 Open 1' in tabs.render().plain
-                        assert '6 Decisions 0' in tabs.render().plain
-                        assert '7 Closed 2' in tabs.render().plain
+                        assert '1 Open [1]' in tabs.render().plain
+                        assert '6 Decisions [0]' in tabs.render().plain
+                        assert '7 Closed [2]' in tabs.render().plain
                         rendered = ''.join(tabs.render_line(i).text for i in range(tabs.size.height))
-                        assert 'Closed 2' in rendered, 'closed tab must remain visible at narrow width'
-                        assert screen.query_one('#tasks', DataTable).size.height >= 4, 'diagnostics hid the task rows'
+                        assert 'Closed [2]' in rendered, 'closed tab must remain visible at narrow width'
+                        assert screen.query_one('#tasks', DataTable).size.height >= 3, 'diagnostics hid the task rows'
                         info = screen.query_one('#task-provenance', TextArea)
                         assert 'TASK-19:' in info.text, 'full diagnostics must remain available'
                         assert info.size.height <= 3

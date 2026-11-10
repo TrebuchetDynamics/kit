@@ -191,7 +191,7 @@ async def task_names_pilot():
                 await settle(app, pilot)
                 screen = app.screen
                 table = screen.query_one('#tasks', DataTable)
-                for width, height in ((60, 24), (40, 18), (120, 30), (60, 24)):
+                for width, height in ((80, 40), (60, 24), (40, 18), (120, 30), (60, 24)):
                     await pilot.resize_terminal(width, height)
                     await pilot.pause()
                     assert [str(c.label) for c in table.columns.values()][:2] == ['#', 'Task']
@@ -200,9 +200,25 @@ async def task_names_pilot():
                     assert sum(c.get_render_width(table) for c in table.columns.values()) <= width - 2
                     painted = '\n'.join(table.render_line(y).text for y in range(table.content_size.height))
                     assert 'TOOLSET-' not in painted, painted
-                    if width >= 60:
+                    if width >= 100:
                         assert str(table.get_row_at(0)[1]) == name
                         assert name in painted, painted
+                    if width >= 60:
+                        assert str(table.get_row_at(0)[2]) == 'Waiting'
+                    if width >= 80:
+                        assert 'Why' in [str(c.label) for c in table.columns.values()]
+                        assert table.columns[list(table.columns)[-1]].get_render_width(table) >= 18
+                    views = screen.query_one('#task-views').render().plain
+                    assert '1 Open [16]' in views and '7 Closed [0]' in views, views
+                    filters = screen.query_one('#task-views')
+                    painted_filters = ''.join(filters.render_line(y).text for y in range(filters.content_size.height))
+                    assert 'Closed [0]' in painted_filters, painted_filters
+                    detail = screen.query_one('#task-detail')
+                    assert detail.region.y == table.region.bottom
+                    assert table.region.height >= 3 and detail.region.bottom <= height, (table.region, detail.region)
+                    if height == 40:
+                        assert table.region.height == len(rows) + 1, table.region
+                    assert name in detail.render().plain
                     # Identical names must not merge rows or redirect selection/actions.
                     table.move_cursor(row=1)
                     await pilot.pause()
@@ -210,7 +226,65 @@ async def task_names_pilot():
                     screen.refresh_tasks()
                     assert screen.current().task == rows[1].task
                     assert rows[1].task in str(screen.query_one('#task-detail').render())
-                await pilot.press('enter')
+                # Long identities, owner instructions and stale warnings must not push
+                # details below a compact viewport, even with scrollable Info open.
+                owner = fleet_view.Question(rows[1].task, 'input', 0, 'Perform the recorded task.',
+                                            'Approval already saved.', 'owner_action')
+                runner.snapshot = replace(snap, rows=rows[:3], freshness='stale',
+                                          errors=('inventory read denied: ' + 'long diagnostic ' * 20,))
+                runner.questions = [owner]
+                await pilot.resize_terminal(40, 18)
+                screen.loaded_pending({'files': ['tasks/items/TASK.md'],
+                                       'lifecycle': {'message': 'Pending answer needs an explicit commit. ' * 5}})
+                screen.refresh_tasks()
+                await pilot.pause()
+                for show_info in (False, True):
+                    if show_info:
+                        await pilot.press('i')
+                        await pilot.pause()
+                    detail = screen.query_one('#task-detail')
+                    assert detail.region.bottom <= 18 and detail.region.height >= 2, detail.region
+                    assert table.region.height >= 3
+                info = screen.query_one('#task-provenance')
+                assert rows[1].task in info.text and name in info.text
+                assert 'Pending answer needs an explicit commit. ' * 5 in info.text
+                # Reach the safety text through the actual scrollable, painted Info surface.
+                await pilot.press('ctrl+home')
+                for _ in range(30):
+                    painted_info = ' '.join(info.render_line(y).text for y in range(info.content_size.height))
+                    if 'Approval is not completion' in painted_info:
+                        break
+                    await pilot.press('down')
+                else:
+                    raise AssertionError('Owner safety guidance must be reachable in Info')
+                await pilot.press('i')
+                runner.snapshot, runner.questions = snap, []
+                screen.loaded_pending({'files': []})
+                await pilot.resize_terminal(60, 24)
+                screen.refresh_tasks()
+                await pilot.pause()
+                # Activity is not a next action; avoid repeating a worker phase in details.
+                active = fleet_view.TaskRow(rows[1].task, name, 'Next',
+                                           'Active · Implementing', 'working', 'Implementing', bucket='Active')
+                screen.shown[1] = active
+                screen.show_task()
+                detail = screen.query_one('#task-detail').render().plain
+                assert detail.count('Implementing') == 1 and 'Next: Implementing' not in detail, detail
+                # Filter labels are clickable, including a verified empty view.
+                views = screen.query_one('#task-views')
+                for y in range(views.content_size.height):
+                    line = views.render_line(y).text
+                    if 'Closed' in line:
+                        await pilot.click('#task-views', offset=(line.index('Closed') + views.styles.padding.left, y))
+                        break
+                await pilot.pause()
+                assert screen.view == 'closed' and table.row_count == 0
+                await pilot.press('1', 'down')
+                await pilot.pause()
+                assert screen.current().task == rows[1].task
+                # The displayed Open command shares the Enter route.
+                bar = screen.query_one('#menubar')
+                await pilot.click('#menubar', offset=(bar.render_line(0).text.index('Open') + bar.styles.padding.left, 0))
                 await pilot.pause()
                 assert isinstance(app.screen, tui.TaskScreen)
                 assert app.screen.task_id == rows[1].task

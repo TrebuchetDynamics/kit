@@ -291,9 +291,9 @@ async def task_inventory_viewport(app, pilot):
             counts = painted(screen.query_one('#task-views'))
             for label in ('Open', 'Active', 'Blocker', 'Waiting', 'Questions', 'Decisions', 'Closed'):
                 if state == 'unavailable':
-                    assert label + ' ?' in counts and label + ' 0' not in counts, counts
+                    assert label + ' [?]' in counts and label + ' [0]' not in counts, counts
                 elif state == 'empty':
-                    assert label + ' 0' in counts, counts
+                    assert label + ' [0]' in counts, counts
             if state == 'unavailable':
                 detail = painted(screen.query_one('#task-detail'))
                 assert 'unavailable' in detail.lower() and 'No task in this view' not in detail, detail
@@ -305,7 +305,7 @@ async def task_inventory_viewport(app, pilot):
                 assert 'No task in this view' in painted(screen.query_one('#task-detail'))
             else:
                 assert snapshot.revision not in visible and '15m ago' in visible, visible
-                assert 'Open 3' in counts and table.row_count == 3, counts
+                assert 'Open [3]' in counts and table.row_count == 3, counts
                 await pilot.press('i', 'end')  # keyboard users must reach the rest of a long acquisition error
                 await pilot.pause()
                 assert screen.query_one('#task-provenance').scroll_y > 0
@@ -943,7 +943,7 @@ async def main():
             assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['Held task'], tasks.row_count
             assert app.screen.current().task == 'T-9'
             keys = str(app.screen.query_one('#menubar').render())
-            assert keys.rstrip().endswith('enter Open  Decide  B Report  Info/Help  esc Back'), keys
+            assert keys.rstrip().endswith('enter Open  e Decide  B Report  Info/Help  esc Back'), keys
             assert 'Up' in app.screen.query_one('#task-provenance').text
             assert 'Delete' in app.screen.query_one('#task-provenance').text
             await pilot.press('x')                      # delete asks first; decline here
