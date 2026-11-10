@@ -115,6 +115,15 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual({e['attempt_id'] for e in events}, {'fixture'})
         self.assertNotIn('secret123', json.dumps(events))
 
+    def test_exhausted_provider_failure_returns_its_redacted_diagnostic(self):
+        self.set_plan(['rate_limit', 'rate_limit', 'rate_limit'])
+        result = self.job(PI_AUTOWORK_NO_FALLBACK='1')
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['why'], 'provider_failure')
+        self.assertIn('429 rate limit exceeded', result['error'])
+        self.assertNotIn('secret123', result['error'])
+        self.assertLessEqual(len(result['error']), 300)
+
     def test_crashes_are_retried_then_given_up(self):
         self.set_plan(['crash', 'crash', 'crash'])
         result = self.job(PI_AUTOWORK_NO_FALLBACK='1')

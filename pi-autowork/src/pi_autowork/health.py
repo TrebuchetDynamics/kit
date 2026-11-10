@@ -512,8 +512,15 @@ def observation_text(value, *, now=None):
 def fleet(state_root, *, now=None, service=_service):
     """Rows for every runner state directory that has a status or runner record."""
     now = time.time() if now is None else now
-    rows = []
+    rows, seen = [], set()
     for folder in sorted(Path(state_root).glob('*/')):
+        try:
+            identity = folder.resolve()
+        except (OSError, RuntimeError):
+            identity = folder  # Keep unreadable observations available for diagnostics.
+        if identity in seen:
+            continue
+        seen.add(identity)
         status, errors = read_observation(folder / 'status.json')
         runner, problems = read_observation(folder / 'runner.json')
         alive = not problems and running(runner)

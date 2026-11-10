@@ -235,7 +235,7 @@ def job(s, role, task, directory, message, session, limit, extra):
         if chosen is None:
             record(s, role, task, 'no_model', s.primary, reason, {'error': reason or 'no model ready'},
                    directory=directory)
-            return dict(ok=False, text='', notes=notes, why='no_model')
+            return dict(ok=False, text='', notes=notes, why='no_model', error=redact(reason or 'no model ready')[:300])
         telemetry.model_run(directory, role, task, chosen, 'selected')
         run = run_pi(s, directory, message + note, session, chosen, limit, extra, role=role, task=task)
         kind = run.get('failure_kind')
@@ -243,7 +243,7 @@ def job(s, role, task, directory, message, session, limit, extra):
         # must not dispose of scratch while owned descendants may remain.
         if kind == 'cleanup_unproven' or (kind and not run.get('retry_safe', False)):
             record(s, role, task, kind, chosen, reason, run, directory=directory)
-            return dict(ok=False, text='', notes=notes, why=kind)
+            return dict(ok=False, text='', notes=notes, why=kind, error=redact(str(run.get('error') or ''))[:300])
         if STOP:
             record(s, role, task, 'interrupted', chosen, reason, run, directory=directory)
             return dict(ok=False, text='', notes=notes, why='interrupted')
@@ -255,7 +255,8 @@ def job(s, role, task, directory, message, session, limit, extra):
             attempt += 1
             record(s, role, task, kind + '_failure', chosen, reason, run, directory=directory)
             if attempt > s.max_retries:
-                return dict(ok=False, text='', notes=notes, why=kind + '_failure')
+                return dict(ok=False, text='', notes=notes, why=kind + '_failure',
+                            error=redact(str(run.get('error') or ''))[:300])
             if kind == 'provider' and chosen == s.primary and s.fallback_enabled:
                 cool_primary(s, run['error'] or 'provider failure')
             else:
