@@ -206,3 +206,8 @@ than invented SSH latency or flaky wall-clock performance assertions.
 
 No design-critical questions block this bounded redesign. Live SSH transport and
 assistive-technology qualification remain separate from offline terminal evidence.
+
+Project Details replaces the work/activity area with a wide scrollable reading
+view. It never renders long diagnostic prose in the project sidebar. On small
+terminals it uses the remaining full-width workspace and hides the summary.
+Refresh preserves this mode; i returns, and 2/3 return directly to work/activity.
