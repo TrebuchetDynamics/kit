@@ -708,6 +708,25 @@ def recover_reports(common, current):
     return result
 
 
+def worker_runtime_failure(common, slot):
+    """Explanatory terminal diagnostics only; never a report, hold cause or retry grant."""
+    data = common / 'slot-data' / slot['task_id'] / f'attempt-{slot.get("data_attempt", slot["attempt"])}'
+    try:
+        session = execution.read(data / 'session.json')
+    except (ValueError, OSError):
+        return ''
+    if (not isinstance(session, dict) or session.get('task') != slot['task_id']
+            or session.get('baseline') != slot['baseline']):
+        return ''
+    failure = session.get('failure')
+    if not isinstance(failure, dict) or not isinstance(failure.get('why'), str):
+        return ''
+    why = ' '.join(failure['why'].split())[:100]
+    error = failure.get('error')
+    detail = ' '.join(error.split())[:300] if isinstance(error, str) else ''
+    return f'; worker runtime failed ({why})' + (f': {detail}' if detail else '') if why else ''
+
+
 def report_blockers(common, slot):
     """Blockers from this attempt's report.json, or None without a valid report."""
     data = common / 'slot-data' / slot['task_id'] / f'attempt-{slot.get("data_attempt", slot["attempt"])}'
@@ -918,6 +937,8 @@ def reconcile(repo, owner_pid):
                         reason = f'stopped by a runner restart; resumes on attempt {slot["attempt"]}'
                         if dirty:
                             reason += ' with uncommitted changes'
+                    elif not dirty:
+                        reason += worker_runtime_failure(common, slot)
                     updates = {'reason': reason}
             if target != slot['state']:
                 slot = change(common, slot, target, updates)

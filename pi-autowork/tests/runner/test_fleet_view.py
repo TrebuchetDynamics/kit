@@ -585,6 +585,34 @@ class FleetViewTests(unittest.TestCase):
         self.assertTrue(marker.exists())
         self.assertIn('status.json', ' '.join(paused.snapshot.errors))
 
+    def test_state_aliases_do_not_warn_but_independent_duplicate_histories_do(self):
+        repo = self.base / 'good'
+        repo.mkdir()
+        store_fixture.write_todo(repo, '- [ ] A — Alpha\n')
+        (self.env / 'good.env').write_text(f'PI_AUTOWORK_REPO={repo}\n')
+        self.runner_state(str(repo), state='working', active_workers=2)
+        source = self.state / 'good'
+        original = {p.name: p.read_bytes() for p in source.iterdir()}
+        units = 'pi-autowork@good.service loaded active running fixture\n'
+        for name in ('a-alias', 'z-alias'):
+            with self.subTest(alias=name):
+                alias = self.state / name
+                alias.symlink_to(source, target_is_directory=True)
+                cli = self.collect(units)['good']
+                tui = fleet_view.collect_for_tui(self.state, self.env, systemctl=self.systemctl, generation=1)
+                for runner in (cli, tui.runners[0]):
+                    self.assertEqual((runner.state, runner.running), ('working', 2))
+                    self.assertNotIn('duplicate runtime identity', ' '.join(runner.snapshot.errors))
+                self.assertNotIn('duplicate runtime identity', ' '.join(tui.errors))
+                alias.unlink()
+        history = self.state / 'z-history'
+        history.mkdir()
+        for name, content in original.items():
+            (history / name).write_bytes(content)
+        result = self.collect(units)['good']
+        self.assertIn('duplicate runtime identity', ' '.join(result.snapshot.errors))
+        self.assertEqual({p.name: p.read_bytes() for p in source.iterdir()}, original)
+
     def test_unknown_runtime_identity_is_diagnosed_without_guessing(self):
         self.runner_state('/git/unknown', state='working')
         (self.env / 'unknown.env').write_text('PI_AUTOWORK_REPO=/git/registered\n')

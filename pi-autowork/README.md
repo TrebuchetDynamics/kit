@@ -581,7 +581,9 @@ from the committed section. Stopped dependency waits are Blocker. Uncommitted
 records and planning-branch records do not enlarge this inventory.
 
 Runtime observations must name the same repository and compatible current/admitted
-contracts. Missing legacy identity, duplicate/orphan observations and mismatched or
+contracts. Compatibility symlinks to the same state directory are read once; distinct
+historical directories still receive duplicate-identity diagnostics.
+Missing legacy identity, duplicate/orphan observations and mismatched or
 stale slot activity are annotations, not additional tasks or evidence of Active or
 Mergeable work. Session/canonical revision divergence is disclosed. Questions for
 closed or noninventory IDs remain visible as annotations in the Questions view.
@@ -836,6 +838,13 @@ worker then started. The prompt text, instruction text, environment
 and credentials are not stored. This file is evidence, not a grant: admission,
 authorization, integration and closure never import or read it, so a recorded
 profile cannot widen what an attempt may do.
+
+A failed worker runtime keeps its bounded, redacted failure in the attempt's existing
+`session.json` and worker log, not a fabricated task report. When no commit or changes
+remain, reconciliation appends matching task/baseline diagnostics to the empty-worker
+reason. This does not change its hold cause, retry budget or acceptance; malformed,
+foreign and earlier-attempt metadata supplies no diagnosis. Retained commits and explicit
+restart reasons take precedence over runtime failure text.
 
 ## Nous Portal setup (opt-in)
 

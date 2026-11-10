@@ -118,6 +118,39 @@ class StateTests(unittest.TestCase):
         self.assertEqual(next(s for s in first if s['task_id'] == 'CLEAN')['reason'],
                          'dead worker without a commit or changes')
 
+    def test_empty_worker_keeps_matching_runtime_failure_as_diagnostics_only(self):
+        self.claim()
+        for task in ('MATCH', 'FOREIGN', 'STALE', 'MALFORMED', 'COMMIT', 'PAUSED'):
+            slot = self.slot(task)
+            data = self.common / 'slot-data' / task / 'attempt-1'
+            data.mkdir(parents=True)
+            meta = dict(task=task, baseline=self.base,
+                        failure=dict(why='provider_failure', error='402 insufficient credits'))
+            if task == 'FOREIGN':
+                meta['task'] = 'other'
+            elif task == 'STALE':
+                meta['baseline'] = 'old'
+            elif task == 'MALFORMED':
+                meta['failure'] = ['not a diagnostic']
+            elif task == 'COMMIT':
+                (Path(slot['worktree']) / 'file').write_text('work')
+                self.git('commit', '-qam', 'work', repo=slot['worktree'])
+            elif task == 'PAUSED':
+                state.transition(self.repo, self.owner, task, 'running', paused=True)
+            (data / 'session.json').write_text(json.dumps(meta))
+        rows = {s['task_id']: s for s in state.reconcile(self.repo, self.owner)}
+        self.assertEqual(rows['MATCH']['state'], 'released')
+        self.assertEqual(rows['MATCH']['reason'], state.EMPTY + '; worker runtime failed '
+                         '(provider_failure): 402 insufficient credits')
+        for task in ('FOREIGN', 'STALE', 'MALFORMED'):
+            self.assertEqual(rows[task]['reason'], state.EMPTY)
+        self.assertEqual(rows['COMMIT']['state'], 'reported')
+        self.assertNotIn('402', rows['PAUSED']['reason'])
+        state.transition(self.repo, self.owner, 'MATCH', 'dispatched')
+        rows = {s['task_id']: s for s in state.reconcile(self.repo, self.owner)}
+        self.assertEqual((rows['MATCH']['state'], rows['MATCH']['cause']), ('held', 'empty'))
+        self.assertNotIn('provider_failure', rows['MATCH']['reason'], 'attempt 1 does not diagnose attempt 2')
+
     def test_paused_workers_are_reaped_with_a_restart_reason_and_resume_the_same_attempt(self):
         self.claim()
         for attempt in (1, 2):

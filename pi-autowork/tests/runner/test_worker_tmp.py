@@ -1766,6 +1766,8 @@ class HeadlessApprovalTests(unittest.TestCase):
         def job(settings, role, task, directory, message, session, limit, extra):
             calls.append((message, session))
             reply = replies[len(calls) - 1]
+            if isinstance(reply, dict):
+                return reply
             if reply == 'work':
                 (tree / 'done.txt').write_text('done\n')
                 git('add', 'done.txt')
@@ -1792,6 +1794,24 @@ class HeadlessApprovalTests(unittest.TestCase):
         self.assertEqual((code, len(calls)), (1, 2))
         self.assertEqual(json.loads(report.read_text())['blockers'],
                          ['the worker asked twice instead of implementing: Which option do you prefer?'])
+
+    def test_failed_runtime_keeps_diagnostics_without_fabricating_a_worker_report(self):
+        from pi_autowork import worker
+        import io
+        error = '402 insufficient credits (sk-secret123456789)'
+        failure = dict(ok=False, text='', why='provider_failure', error=error)
+        output = io.StringIO()
+        with patch.object(worker.sys, 'stderr', output):
+            code, calls, report = self.run_worker([failure])
+        self.assertEqual((code, len(calls)), (1, 1))
+        self.assertFalse(report.exists())
+        session = json.loads(report.with_name('session.json').read_text())
+        self.assertEqual(session['task'], 'T-1')
+        self.assertTrue(session['baseline'])
+        self.assertEqual(session['failure']['why'], 'provider_failure')
+        self.assertIn('402 insufficient credits', session['failure']['error'])
+        self.assertIn('provider_failure', output.getvalue())
+        self.assertNotIn('secret123', json.dumps(session) + output.getvalue())
 
     def test_a_finished_worker_or_a_plain_ending_is_not_resumed(self):
         self.assertEqual(len(self.run_worker(['work'])[1]), 1)
