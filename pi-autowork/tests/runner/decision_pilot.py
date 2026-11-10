@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from test_task_history import TaskHistoryTests
 from pi_autowork import fleet_view, task_snapshot, tui
-from textual.widgets import Button, OptionList, Select, Static, TextArea
+from textual.widgets import Button, DataTable, Select, Static, TextArea
 
 
 async def main():
@@ -31,11 +31,12 @@ async def main():
             started, release = threading.Event(), threading.Event()
             show_started, show_release = threading.Event(), threading.Event()
             release.set()
-            command = str(Path(__file__).resolve().parents[1] / 'bin/autowork')
+            command = str(Path(__file__).resolve().parents[2] / 'bin/autowork')
 
             def run(argv, **kwargs):
                 assert argv[:2] == [command, 'tasks'], argv
-                assert argv[2] in ('show', 'decide'), argv
+                assert argv[2] in ('show', 'decide', 'commit'), argv
+                assert argv[2] != 'commit' or '--dry-run' in argv, argv
                 calls.append(argv)
                 if argv[2] == 'show':
                     show_started.set()
@@ -56,14 +57,14 @@ async def main():
             with patch.object(app, 'logs', return_value=''):
                 async with app.run_test(size=(width, 30)) as pilot:
                     try:
-                        await pilot.press('e')
+                        await pilot.press('t', 'e')
                         assert await asyncio.to_thread(show_started.wait, 3)
                         # A previously started action can complete while this modal loads.
                         app.action_completed()
                     finally:
                         show_release.set()
                     await pilot.pause(.3)
-                    assert isinstance(app.screen, tui.DecisionPrompt), 'Fleet e must open the only question directly'
+                    assert isinstance(app.screen, tui.DecisionPrompt), 'Tasks e must open the selected question'
                     screen = app.screen
                     for _ in range(100):
                         if not screen.query_one('#decision-save', Button).disabled:
@@ -215,23 +216,20 @@ async def main():
                     assert 'Another approval is not required' not in context
                     await pilot.press('escape')
                     assert record.read_bytes() == before_owner_read
-                    # Several questions use a keyboard picker; unrelated historic annotations stay read-only.
+                    # The selected task, not duplicate or historic annotations, owns the decision form.
                     runner.questions = [fleet_view.Question('MAIN', 'decision', 0, 'No editable task'),
                                         *runner.questions, fleet_view.Question('T-1', 'input', 0, 'Duplicate')]
                     await pilot.press('e')
                     await pilot.pause(.3)
-                    assert isinstance(app.screen, tui.DecisionPrompt), 'Duplicate IDs must not add picker rows'
+                    assert isinstance(app.screen, tui.DecisionPrompt), 'Duplicate questions must not change task routing'
                     await pilot.press('escape')
                     # A stale inventory may still offer a task deleted since its capture.
                     runner.questions.append(fleet_view.Question('T-2', 'decision', 1, 'Another question'))
                     second.unlink()
+                    assert isinstance(app.screen, tui.TasksScreen)
+                    app.screen.query_one('#tasks', DataTable).move_cursor(row=1)
                     await pilot.press('e')
-                    await pilot.pause()
-                    # Picker includes questions even if task vanished; actual opening must fail closed.
-                    assert isinstance(app.screen, tui.QuestionPicker)
-                    options = app.screen.query_one(OptionList)
-                    options.highlighted = 1
-                    await pilot.press('enter')
+                    # Snapshot rows can outlive a record; actual opening must fail closed.
                     await pilot.pause(.4)
                     assert isinstance(app.screen, tui.DecisionPrompt)
                     assert app.screen.query_one('#decision-save', Button).disabled
@@ -240,8 +238,8 @@ async def main():
                     before = len(calls)
                     await pilot.press('e')
                     await pilot.pause()
-                    assert not isinstance(app.screen, (tui.DecisionPrompt, tui.QuestionPicker)) and len(calls) == before
-            print('PASS decisions', width, 'context, keyboard, stale edit, scoped answer commit, picker, view-only')
+                    assert isinstance(app.screen, tui.TasksScreen) and len(calls) == before
+            print('PASS decisions', width, 'context, keyboard, stale edit, scoped answer commit, task routing, view-only')
         finally:
             fixture.doCleanups()
 

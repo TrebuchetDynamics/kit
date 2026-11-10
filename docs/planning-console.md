@@ -19,10 +19,9 @@ working on the same repository. Opening the console does not start a model;
 
 ## TUI
 
-- **g Plan** from the fleet opens the selected project's workspace, even for an
-  unprepared project. With no runner, it starts at the current directory; enter
-  another Git repository path and press **Load**. The directory browser also has
-  **g Plan**, independent of Play/Prepare.
+- **t Tasks** is the fleet's task-management entry. The directory browser has
+  **g Plan** for any repository, independent of Play/Prepare; enter another Git
+  repository path in the planning console and press **Load** to switch projects.
 - From a task list/detail, **g Discuss** scopes the new conversation to that task;
   **v Investigate** asks for source-backed blocker investigation. Neither grants
   execution/live authority. Closed history may be discussed, but not reopened by
@@ -84,12 +83,12 @@ back to it when RPC planning fails.
 
 ## Record a decision without AI
 
-From the fleet screen, select a runner and press **e Answer** (also shown in the
-menu when an editable task question exists). One question opens directly; several
-open a picker navigated with **↑/↓**, **Enter**, and **Esc**. Questions about missing
-or closed records remain read-only in **b Blockers**, not new editable tasks.
+From the fleet screen, select a runner and press **t Tasks**. Use the **Decisions**
+or **Questions** view to find the task, then **e Decide** to open its editor.
+Questions about missing or closed records remain read-only in **B Report** inside
+Tasks, not new editable tasks.
 
-From an open task list/detail, **e Decide** opens the same editor. It shows the
+From an open task list/detail, **e Decide** opens the editor. It shows the
 question, the runner's suggested answer, dependent task IDs from the committed
 snapshot, and the current working record's scope, section, ownership and live
 permission. A suggestion is context only: it is never filled in as your answer.

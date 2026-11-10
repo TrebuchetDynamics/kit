@@ -989,16 +989,13 @@ class FleetApp(App):
         Binding('r', 'run("r")', 'Restart', show=False),
         Binding('m', 'pick_model("model")', 'Model', show=False),
         Binding('t', 'run("t")', 'Tasks', show=False),
-        Binding('a,e', 'answer_question', 'Answer', show=False),
-        Binding('b', 'show_blockers', 'Blockers', show=False),
         Binding('i', 'toggle_details', 'Details', show=False),
-        Binding('g', 'run("g")', 'Plan', show=False),
         Binding('u', 'run("u")', 'Uninstall', show=False),
         Binding('n', 'browse', 'Browse', show=False),
         Binding('?', 'more', 'More', show=False),
         Binding('q', 'quit', 'Quit', show=False),
     ]
-    CONTROL = {'run', 'browse', 'pick_model', 'answer_question', 'more'}
+    CONTROL = {'run', 'browse', 'pick_model', 'more'}
 
     def get_system_commands(self, screen):
         yield from super().get_system_commands(screen)
@@ -1021,16 +1018,10 @@ class FleetApp(App):
             yield SystemCommand('Choose provider and model', 'Select a Pi model for a runner',
                                 lambda: self.action_pick_model('model'))
             yield SystemCommand('Browse repositories', 'Find and prepare a repository', self.action_browse)
-            yield SystemCommand('Plan work', 'Open planning for the selected repository or current directory',
-                                lambda: self.action_run('g'))
         if runner is not None:
             yield SystemCommand('Open activity log', 'Read recent runner output', lambda: self.action_run('l'))
             yield SystemCommand('Open task inventory', 'Inspect the runner task queue', lambda: self.action_run('t'))
-            yield SystemCommand('Inspect blockers', 'Read the runner blockers report', self.action_show_blockers)
             yield SystemCommand('Toggle runner details', 'Show or hide runner details', self.action_toggle_details)
-            if not self.view_only and self.answerable_questions(runner):
-                yield SystemCommand('Answer owner question', 'Choose and record an answer',
-                                    self.action_answer_question)
 
     def __init__(self, *, command, script, state_root, env_dir, systemctl='systemctl',
                  journalctl='journalctl', agent=None, runner_cmd=subprocess.run, view_only=False, browse_root=None,
@@ -1062,7 +1053,7 @@ class FleetApp(App):
         """View-only (for example served to a browser on a shared network): no control keys."""
         if action == 'more':
             return len(self.screen_stack) == 1
-        if action in ('show_blockers', 'toggle_details'):
+        if action == 'toggle_details':
             return len(self.screen_stack) == 1 and self.current() is not None
         if self.view_only and action in self.CONTROL and parameters not in (('l',), ('t',)):  # read-only views
             return False
@@ -1372,18 +1363,18 @@ class FleetApp(App):
     def next_hint(self, runner):
         """The one or two actions most likely to move this runner now."""
         if self.answerable_questions(runner):
-            return 'a Answer · b Blockers'
+            return 't Tasks'
         if runner.state in ('paused', 'not running'):
             return 'p Play · l Log'
         if runner.state == 'waiting on you':
-            return 't Tasks · b Blockers'
+            return 't Tasks'
         if runner.state in ('blocked', 'stalled', 'unavailable', 'not cycling'):
             return 'l Log · i Details'
         if runner.lanes:
             return 'l Log · t Tasks'
         if runner.questions:
-            return 'b Blockers'
-        return 'l Log · t Tasks · g Plan'
+            return 't Tasks'
+        return 'l Log · t Tasks'
 
     def show_overview(self, runner):
         """Six bounded lines; full evidence stays in the scrollable Details pane."""
@@ -1437,7 +1428,7 @@ class FleetApp(App):
         check = fleet_view.main_check.line(runner.main_check)
         check_style = 'bold red' if runner.main_check.get('state') in ('red', 'broken') else ''
         if runner.questions:
-            actions = 'a Answer · b Blockers' if self.answerable_questions(runner) else 'b Blockers (read only)'
+            actions = 't Tasks'
             line(f'{len(runner.questions)} recorded questions · {actions}', 'yellow')
         elif 'unavailable' in headline.lower():
             line('Observation unavailable · i Details · l Log', 'yellow')
@@ -1505,21 +1496,21 @@ class FleetApp(App):
             publish_text(self.query_one('#overview', Static), Text(message))
             self.query_one('#lanes', DataTable).display = False
             menubar.show([('ctrl+p', 'Commands'), ('?', 'Help'), ('q', 'Quit')] if self.view_only else
-                         [('g', 'Plan'), ('m', 'Model'), ('n', 'Browse'), ('ctrl+p', 'Commands'),
+                         [('m', 'Model'), ('n', 'Browse'), ('ctrl+p', 'Commands'),
                           ('?', 'Help'), ('q', 'Quit')],
                          click_actions=clicks)
             return
         # The keys go in the menu bar at the top, like a GUI app's menu; the pane holds the facts.
         if self.view_only:
-            menubar.show([('l', 'Log'), ('i', 'Summary' if self.details_open else 'Details'),
-                          ('b', 'Blockers'), ('ctrl+p', 'Commands'), ('?', 'More'), ('q', 'Quit')], prefix='view only',
+            menubar.show([('l', 'Log'), ('t', 'Tasks'), ('i', 'Summary' if self.details_open else 'Details'),
+                          ('ctrl+p', 'Commands'), ('?', 'More'), ('q', 'Quit')], prefix='view only',
                          click_actions=clicks)
         else:
             primary = [(a.key, a.label) for a in self.available(runner)]
             if self.size.height < 22 or self.size.width < 80:
-                primary = [(key, label) for key, label in primary if key in ('a', 'l', 'p', 't')]
+                primary = [(key, label) for key, label in primary if key in ('l', 'p', 't')]
             else:
-                primary += [('i', 'Summary' if self.details_open else 'Details'), ('b', 'Blockers')]
+                primary += [('i', 'Summary' if self.details_open else 'Details')]
             menubar.show(primary + [('ctrl+p', 'Commands'), ('?', 'More'), ('n', 'Browse'), ('q', 'Quit')],
                          click_actions=clicks)
         text = Text()
@@ -1550,7 +1541,7 @@ class FleetApp(App):
         if runner.questions:  # what the owner can answer, easiest first (BLOCKERS.md)
             count = len(runner.questions)
             detail_row(text, 'Questions', fleet_view.question_summary(runner)
-                + '  (b shows the read-only report)', 'bold yellow')
+                + '  (t Tasks opens questions and reports)', 'bold yellow')
             for q in runner.questions[:QUESTIONS_SHOWN]:
                 text.append(' ' * 12)
                 text.append(q.id, style='bold')
@@ -1648,11 +1639,11 @@ class FleetApp(App):
         runner = self.current()
         identity = (runner.name, runner.repo) if runner else None
         if self.view_only:
-            actions = ([('l', 'Log'), ('t', 'Tasks'), ('i', 'Details'), ('b', 'Blockers')] if runner else [])
+            actions = ([('l', 'Log'), ('t', 'Tasks'), ('i', 'Details')] if runner else [])
         else:
             actions = ([(action.key, action.label) for action in self.available(runner)]
-                       + [('i', 'Summary' if self.details_open else 'Details'), ('b', 'Blockers')]
-                       if runner else [('g', 'Plan'), ('m', 'Choose provider and model')])
+                       + [('i', 'Summary' if self.details_open else 'Details')]
+                       if runner else [('m', 'Choose provider and model')])
             if not any(key == 'm' for key, label in actions):
                 actions += [('m', 'Choose provider and model')]
             actions += [('n', 'Browse repositories')]
@@ -1666,16 +1657,15 @@ class FleetApp(App):
             if key not in ('n', 'q') and ((current.name, current.repo) if current else None) != identity:
                 self.notify('Runner selection changed. Reopen More for the current runner.', severity='warning')
                 return
-            action = {'m': 'pick_model("model")', 'a': 'answer_question', 'i': 'toggle_details', 'b': 'show_blockers',
+            action = {'m': 'pick_model("model")', 'i': 'toggle_details',
                       'n': 'browse', 'q': 'quit'}.get(key, f'run("{key}")')
             await self.run_action(action)
         self.push_screen(ActionMenu(actions), chosen)
 
     def available(self, runner):
-        answers = [fleet_view.Action('a', 'Answer', [])] if self.answerable_questions(runner) else []
-        return answers + [action for action in fleet_view.actions(
+        return [action for action in fleet_view.actions(
             runner, command=self.command, script=self.script, agent=self.agent)
-            if action.key not in ('f', 'b')] + [fleet_view.Action('g', 'Plan', [])]
+            if action.key not in ('a', 'b', 'e', 'f', 'g')]
 
     def answerable_questions(self, runner):
         editable = {row.task for row in fleet_view.inventory_rows(runner)}
@@ -1685,18 +1675,6 @@ class FleetApp(App):
                 found.setdefault(question.id, question)
         return list(found.values())
 
-    def action_answer_question(self):
-        runner = self.current()
-        if self.view_only or runner is None or len(self.screen_stack) != 1:
-            return
-        questions = self.answerable_questions(runner)
-        if not questions:
-            self.notify('No editable task question. Use Blockers (b) to inspect other questions.', severity='warning')
-        elif len(questions) == 1:
-            self.decide_task(runner, questions[0].id)
-        else:
-            self.push_screen(QuestionPicker(questions), lambda task: task and self.decide_task(runner, task))
-
     def open_plan(self, repo, task=None, mode='plan'):
         if not self.view_only:
             self.push_screen(PlanScreen(repo, task=task, mode=mode))
@@ -1704,9 +1682,16 @@ class FleetApp(App):
     def open_tasks(self, runner, view='all'):
         """One owner for opening a runner's tasks, so the read-only blockers report can route
         to the decision form instead of leaving every recorded question unreachable."""
+        if not any((r.name, r.repo) == (runner.name, runner.repo) for r in self.runners):
+            self.notify('Runner repository changed. Reopen Tasks for the current repository.', severity='warning')
+            return
         if isinstance(self.screen, BlockersScreen):
             self.pop_screen()
-        self.push_screen(TasksScreen(runner.name, view))
+            if (isinstance(self.screen, TasksScreen)
+                    and (self.screen.runner_name, self.screen.repo) == (runner.name, runner.repo)):
+                self.screen.action_show_view(view)
+                return
+        self.push_screen(TasksScreen(runner.name, view, repo=runner.repo))
 
     def decide_task(self, runner, task):
         current = next((r for r in self.runners if (r.name, r.repo) == (runner.name, runner.repo)), None)
@@ -1725,10 +1710,9 @@ class FleetApp(App):
             event.prevent_default()
             self.notify(f'Report download failed: {event.exception}', severity='error')
 
-    def action_show_blockers(self):
-        runner = self.current()
-        if runner is not None and len(self.screen_stack) == 1:
-            self.push_screen(BlockersScreen(runner))
+    def open_blockers(self, runner):
+        """Open a read-only report for the task screen's captured runner."""
+        self.push_screen(BlockersScreen(runner))
 
     def request_blockers(self, screen):
         # One app-owned physical read survives closing a screen. New requests coalesce;
@@ -1767,9 +1751,6 @@ class FleetApp(App):
 
     def action_run(self, key):
         runner = self.current()
-        if key == 'g':
-            self.open_plan(runner.repo if runner else str(Path.cwd()))
-            return
         if runner is None:
             if key == 'p':
                 self.action_browse()

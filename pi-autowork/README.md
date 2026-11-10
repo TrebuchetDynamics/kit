@@ -155,7 +155,7 @@ Source: `src/pi_autowork/hermes_observers.py`, `cli.py`, and `service.py`.
 
 ## Blockers report
 
-Select a runner and press **b** or click **Blockers** in mouse/browser mode.
+Select a runner, open **t Tasks**, then press **B Report** (or click **Report**).
 The read-only summary separates runtime/source health from recorded decisions,
 required inputs, and dependency waits. Decisions precede other task holds; it links
 planning questions to their committed decision task while retaining who raised
@@ -211,16 +211,18 @@ refresh does not change the exported capture. Source: `src/pi_autowork/tui.py:Bl
 **r** explicitly refreshes; **Esc** returns. Opening, refreshing and copying run no
 agent, runner command or task mutation; only explicit Export writes a report copy.
 Native terminal drag selection remains available.
-**g Plan** opens the embedded planning console for any repository, not only setup.
+The directory browser's **g Plan** opens the embedded planning console for any
+repository; Tasks offers **g Discuss** and **v Investigate** for a selected task.
 Interactive repair is still
 the separate `autowork blockers [dir]` command, not this report.
 
 ## The autowork command
 
-Select a runner and press **a Answer** (**e** remains an alias). Multiple editable
-questions open a keyboard picker; **Enter** opens the selected record. **Ctrl+S**
-or **Ctrl+Enter** saves an answer locally with a revision check; **Esc** cancels.
-Saving is not a commit, hold release, technical-recovery retry or live permission.
+Select a runner and press **t Tasks**, select a task (use **Decisions** or
+**Questions** to filter), then **e Decide**. **Ctrl+S** or **Ctrl+Enter** saves and
+commits the answer with a revision check; **Esc** cancels. A refused commit leaves
+the answer pending and shows why. An answer commit is not a hold release,
+technical-recovery retry or live permission.
 Small dialogs keep action buttons visible while their contents scroll. In opt-in
 `--mouse`/browser mode, fleet menu clicks use the same guarded actions as keys;
 normal terminal mode still permits native text selection.
@@ -451,9 +453,12 @@ readiness below the directory tree. Source: `src/pi_autowork/tui.py` (`FleetApp`
 Keys are highlighted in the top menu, which wraps on narrow terminals:
 `l` (or Enter) **L**og, `p` **P**lay/**P**ause (starts a stopped service, resumes a
 paused one, pauses a running one), `s` **S**top, `r` **R**estart, `m` **M**odel
-(from Pi's list, type to filter), `t` **T**asks, `g` **Plan**, `u` **U**ninstall the
+(from Pi's list, type to filter), `t` **T**asks, `u` **U**ninstall the
 service, `n` **Browse**: browse directories (from `~/git`, `AUTOWORK_BROWSE_ROOT`), see which
 repositories are ready or what they need, and `p` there plays one; `q` **Q**uit.
+**Tasks** is the only task-management entry on the fleet screen; answering,
+planning and blocker inspection live inside task views (or the directory browser
+for repository-wide planning), not separate fleet hotkeys or palette entries.
 Press **? More** to search all available actions and see their shortcuts. Choosing
 an action uses the same command and confirmation as its direct key. Read-only
 views list only read-only actions. Compact terminals show the primary actions in

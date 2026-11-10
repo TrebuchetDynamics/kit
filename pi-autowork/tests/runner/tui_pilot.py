@@ -753,14 +753,17 @@ async def main():
             # Blockers must accept a real immutable committed snapshot, while detaching
             # mutable runner data for its background report read.
             source = app.current()
-            await pilot.press('b')
+            await pilot.press('t')
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press('B')
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert isinstance(app.screen, BlockersScreen)
             assert app.screen.runner is not source and app.screen.runner.snapshot is source.snapshot
             report = app.screen.query_one('#blockers-text').text
             assert 'Repository: ' + source.repo in report and 'T-9' in report, report
-            await pilot.press('escape')
+            await pilot.press('escape', 'escape')
             assert len(app.screen_stack) == 1
             # Raw orphan activity is visible, but cannot contradict committed counts
             # in the verdict or label an unmatched slot as verified/Mergeable.
@@ -799,9 +802,9 @@ async def main():
             menubar = app.query_one('#menubar')
             assert menubar.region.y < app.query_one('#runners').region.y, 'the menu bar is above the runners'
             hints = menubar.render()
-            assert str(hints).rstrip().endswith('Log  Pause  Stop  Restart  Model  Tasks  g Plan  Details  Blockers  ctrl+p Commands  ? More  n Browse  Quit'), str(hints)
+            assert str(hints).rstrip().endswith('Log  Pause  Stop  Restart  Model  Tasks  Details  ctrl+p Commands  ? More  n Browse  Quit'), str(hints)
             marked = {str(hints)[span.start:span.end] for span in hints.spans if 'underline' in str(span.style)}
-            assert marked == set('LPSRMTBQgin?') | {'ctrl+p'}, marked
+            assert marked == set('LPSRMTQin?') | {'ctrl+p'}, marked
             log = '\n'.join(line.text for line in app.query_one('#log').lines)
             assert 'TASK-036: waiting' in log and 'pending —' not in log, log
             agent = base / 'agent'
@@ -816,17 +819,17 @@ async def main():
                 for view_only in (False, True):
                     app.view_only = view_only
                     for service, state_name, menu in (
-                            ('running', 'stalled', 'Log  Pause  Stop  Restart  Model  Tasks  g Plan  Details  Blockers  ctrl+p Commands  ? More  n Browse  Quit'),
-                            ('stopped', 'not running', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  ctrl+p Commands  ? More  n Browse  Quit'),
-                            ('stopped', 'paused', 'Log  Play  Model  Tasks  Uninstall  g Plan  Details  Blockers  ctrl+p Commands  ? More  n Browse  Quit'),
-                            ('', '', 'g Plan  Model  n Browse  ctrl+p Commands  ? Help  Quit')):
+                            ('running', 'stalled', 'Log  Pause  Stop  Restart  Model  Tasks  Details  ctrl+p Commands  ? More  n Browse  Quit'),
+                            ('stopped', 'not running', 'Log  Play  Model  Tasks  Uninstall  Details  ctrl+p Commands  ? More  n Browse  Quit'),
+                            ('stopped', 'paused', 'Log  Play  Model  Tasks  Uninstall  Details  ctrl+p Commands  ? More  n Browse  Quit'),
+                            ('', '', 'Model  n Browse  ctrl+p Commands  ? Help  Quit')):
                         selected = replace(runner, service=service, state=state_name) if service else None
                         envelope = fleet_view.FleetSnapshot((selected,) if selected else (),
                             (fleet_view.snapshot_for(selected),) if selected else (), 1, time.time())
                         async with patched_reads(app, mock.patch.object(fleet_view, 'collect_for_tui', return_value=envelope),
                                 mock.patch.object(portal, 'probe', side_effect=AssertionError('fleet key probed Portal'))):
                             await refresh(app, pilot)
-                            expected = ('view only  Log  Details  Blockers  ctrl+p Commands  ? More  Quit' if selected else 'ctrl+p Commands  ? Help  Quit') if view_only else menu
+                            expected = ('view only  Log  Tasks  Details  ctrl+p Commands  ? More  Quit' if selected else 'ctrl+p Commands  ? Help  Quit') if view_only else menu
                             assert str(menubar.render()).strip() == expected, menubar.render()
                             painted = ' '.join(menubar.render_line(y).text for y in range(menubar.content_size.height))
                             assert ' '.join(painted.split()) == ' '.join(expected.split()), painted
@@ -940,7 +943,7 @@ async def main():
             assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['Held task'], tasks.row_count
             assert app.screen.current().task == 'T-9'
             keys = str(app.screen.query_one('#menubar').render())
-            assert keys.rstrip().endswith('enter Open  Decide  Info/Help  esc Back'), keys
+            assert keys.rstrip().endswith('enter Open  Decide  B Report  Info/Help  esc Back'), keys
             assert 'Up' in app.screen.query_one('#task-provenance').text
             assert 'Delete' in app.screen.query_one('#task-provenance').text
             await pilot.press('x')                      # delete asks first; decline here
