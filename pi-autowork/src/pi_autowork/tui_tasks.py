@@ -515,7 +515,7 @@ class TasksScreen(ReadScreen, Screen):
         cells = []
         for row in self.shown:
             state, why = task_list_status(row)
-            cells.append({'#': (str(position[row.task]), 'dim'), 'Task': (row.short, 'bold'),
+            cells.append({'_key': row.task, '#': (str(position[row.task]), 'dim'), 'Task': (row.short, 'bold'),
                           'State': (state, fleet_view.state_style(row)),
                           'Why': (why, 'yellow' if row.question else 'dim')})
         state_room = min(14, max([len('State'), *(cell_len(c['State'][0]) for c in cells)]))

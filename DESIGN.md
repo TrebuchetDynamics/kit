@@ -7,8 +7,9 @@ The runtime and task contracts in `docs/plans/tui-responsiveness.md` take preced
 over presentation choices. This brief covers the fleet, action menu, provider/model
 picker, and repository browser. It does not redesign the Paseo plugin or Rust UI.
 
-Evidence: `src/pi_autowork/tui.py`, `tui_reads.py`, `pi-autowork/README.md`, and
-the fixture pilots in `pi-autowork/tests/test_tui_*.py` and `tui_pilot.py`.
+Evidence: `pi-autowork/src/pi_autowork/tui.py`, `tui_reads.py`,
+`pi-autowork/README.md`, and the fixture pilots in `pi-autowork/tests/runner/`,
+including the bounded `tui_operations_pilot.py`.
 Existing terminal captures show crowded commands and weak section separation.
 
 ## Brand
@@ -38,8 +39,11 @@ Terminals may be small, remote, keyboard-only, or configured for native text cop
 ## Information architecture
 
 The fleet remains a full-width stack: commands, model, runners, selected summary,
-worker observations, and activity. Details holds long diagnostics. The More menu
-exposes secondary actions and shortcuts; direct keys remain available. Ctrl+P
+worker observations, and activity. The fleet menu shows the useful Next action,
+Log, Tasks, Details and More, without duplicates. More exposes secondary actions
+and shortcuts at every size; direct keys remain available. Details holds complete
+task names/IDs, phases and wait reasons, source errors and grouped notes (including
+all original observations), and main-check revisions with original start age. Ctrl+P
 opens Textual's searchable command palette with fleet actions, Pi model controls,
 and the built-in theme switcher, scoped to the active screen and access mode.
 Model selection follows provider → search → model → existing change/start confirmation.
@@ -51,7 +55,11 @@ counts and clickable labels. The table separates short state labels from activit
 or wait reasons, reserving reason space at normal widths. Compact tables retain
 state and put full reasons in selected details/Info. Short queues place details
 immediately after their rows, without a large empty gap; activity is not labelled
-as an owner next action. Task IDs remain in details and drive every action.
+as an owner next action. Task IDs remain in details and drive every action. Matched
+worker rows use committed descriptive names, never titles as keys. Duplicate names
+preserve exact repository/task
+identity and selection across refresh/reorder. Unmatched lanes remain explicit source
+observations and cannot increase active-task counts.
 
 ## Design principles
 
@@ -91,6 +99,9 @@ assistive-technology qualification from fixture pilots.
 At heights below 22 rows or widths below 80 columns, use an action-first compact
 menu. Short-height summaries use at most three rows and prioritize the main-check
 result when present. Keep at least four journal rows and one selectable worker row.
+At 60×18 and 80×24, bounded task/state cells keep the Details route visible for full
+identity and reasons. Errors and source notes are separate counts, not a warning wall.
+Unknown inventory is unavailable, never zero; superseded checks never qualify current main.
 At 80×24 preserve the stacked hierarchy; at 150×45 show wider columns and more rows.
 Resize uses cached observations and performs no filesystem or service acquisition.
 
