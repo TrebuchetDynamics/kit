@@ -31,25 +31,25 @@ class TextualDependencyTests(unittest.TestCase):
 '''
         legacy = 'error: textual==8.2.8 is not available in the offline cache'
         cases = [
-            ('tests/test_task_prepare.py', 'PackageImportTests',
-             'test_every_module_imports_in_isolation_and_all_import_edges_are_acyclic', 3),
-            ('pi-autowork/tests/test_blockers_report.py', 'BlockersPilotTests',
+            ('pi-autowork/tests/runner/test_task_prepare.py', 'PackageImportTests',
+             'test_every_module_imports_in_isolation_and_all_import_edges_are_acyclic', 5),
+            ('pi-autowork/tests/runner/test_blockers_report.py', 'BlockersPilotTests',
              'test_pinned_textual_report_interactions', 1),
-            ('pi-autowork/tests/test_fleet_view.py', 'FleetViewTests',
+            ('pi-autowork/tests/runner/test_fleet_view.py', 'FleetViewTests',
              'test_the_tui_drives_the_same_actions_headless', 1),
-            ('pi-autowork/tests/test_planning_ui.py', 'PlanningUiTests',
+            ('pi-autowork/tests/runner/test_planning_ui.py', 'PlanningUiTests',
              'test_fleet_answers_preserve_authority_and_stale_edits', 1),
-            ('pi-autowork/tests/test_planning_ui.py', 'PlanningUiTests',
+            ('pi-autowork/tests/runner/test_planning_ui.py', 'PlanningUiTests',
              'test_planning_chat_navigation_preview_and_apply', 1),
-            ('pi-autowork/tests/test_task_history.py', 'TaskHistoryPilotTests',
+            ('pi-autowork/tests/runner/test_task_history.py', 'TaskHistoryPilotTests',
              'test_pinned_textual_open_and_closed_navigation', 1),
-            *[('pi-autowork/tests/test_tui_controls.py', 'TuiControlsTests', name, 1)
+            *[('pi-autowork/tests/runner/test_tui_controls.py', 'TuiControlsTests', name, 1)
               for name in ('test_answer_mnemonic_portable_save_and_small_screen',
                            'test_compact_forms_and_long_confirmations_keep_controls_visible',
                            'test_fleet_menu_clicks_match_keyboard_without_running_commands')],
-            ('pi-autowork/tests/test_tui_layout.py', 'TuiLayoutTests',
+            ('pi-autowork/tests/runner/test_tui_layout.py', 'TuiLayoutTests',
              'test_responsive_layout_preserves_evidence_and_read_only_controls', 1),
-            *[('pi-autowork/tests/test_tui_mouse.py', 'MouseSelectionTests', name, 1)
+            *[('pi-autowork/tests/runner/test_tui_mouse.py', 'MouseSelectionTests', name, 1)
               for name in ('test_click_mode_is_opt_in_and_preserved_for_the_browser',
                            'test_terminal_defaults_to_native_drag_selection')],
         ]
@@ -62,7 +62,7 @@ class TextualDependencyTests(unittest.TestCase):
                      (2, 'error: invalid option --offline for textual', 'fail'),
                      (1, missing.replace('textual was not found', 'other was not found'), 'fail'),
                      (1, missing.replace('8.2.8', '9.0.0'), 'fail')]
-        with mock.patch.object(sys, 'path', [str(ROOT / 'pi-autowork/tests'), *sys.path]), \
+        with mock.patch.object(sys, 'path', [str(ROOT / 'pi-autowork/tests/runner'), str(ROOT / 'pi-autowork/tests'), str(ROOT / 'pi-autowork/src'), str(ROOT / 'pi-autowork'), *sys.path]), \
                 mock.patch('shutil.which', return_value='uv'):
             for path, cls, method, skip_count in cases:
                 spec = importlib.util.spec_from_file_location('fixture_' + Path(path).stem, ROOT / path)
@@ -108,7 +108,7 @@ class OfflineCheckTests(unittest.TestCase):
     def test_listing_is_import_free_and_uses_owned_directories(self):
         sentinel = "raise RuntimeError('unsafe import must never run')\n"
         self.write('tests/test_unit.py', sentinel)
-        self.write('pi-autowork/engine/test_task_execution.py', sentinel)
+        self.write('pi-autowork/tests/engine/test_task_execution.py', sentinel)
         self.write('vendor/examples/test_external.py', sentinel)
         self.write('skills/autowork/references/vendor/test_external.py', sentinel)
         self.write('tests/integration_bundle.py', sentinel)
@@ -116,7 +116,7 @@ class OfflineCheckTests(unittest.TestCase):
         result = self.run_check('--list')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('RUN tests/test_unit.py', result.stdout)
-        self.assertIn('RUN pi-autowork/engine/test_task_execution.py', result.stdout)
+        self.assertIn('RUN pi-autowork/tests/engine/test_task_execution.py', result.stdout)
         self.assertIn('EXCLUDE tests/integration_bundle.py [integration]', result.stdout)
         self.assertIn('EXCLUDE tests/integration_plugin.py [integration]', result.stdout)
         self.assertNotIn('test_external.py', result.stdout)
@@ -192,7 +192,7 @@ class OfflineCheckTests(unittest.TestCase):
         self.write('tests/test_one.py', 'import unittest\n')
         self.write('tests/test_two.py', 'import unittest\n')
         self.affected_repo()
-        for path in ('unknown.dat', 'src/pi_autowork/__init__.py', 'tests/conftest.py', 'pyproject.toml',
+        for path in ('unknown.dat', 'pi-autowork/src/pi_autowork/__init__.py', 'tests/conftest.py', 'pyproject.toml',
                      '.github/workflows/ci.yml', 'scripts/check.py'):
             with self.subTest(path=path):
                 base = self.git('rev-parse', 'HEAD')
@@ -229,20 +229,20 @@ class OfflineCheckTests(unittest.TestCase):
                 self.assertEqual(selection['tests'], ['tests/test_new.py', 'tests/test_old.py'])
 
     def test_source_guard_inspects_owners_not_just_public_shims(self):
-        from src_fixture import copy_sources
+        from support.src_fixture import copy_sources
         copy_sources(self.root)
         self.write('tests/test_one.py', 'import unittest\nclass One(unittest.TestCase):\n    def test_one(self): pass\n')
-        self.write('scripts/bundle.py', "bootstrap.execute(globals(), 'src/autowork_runtime/bundle.py')\n")
-        owner = self.write('src/autowork_runtime/bundle.py', 'def broken(:\n')
+        self.write('scripts/bundle.py', "bootstrap.execute(globals(), 'pi-autowork/src/autowork_runtime/bundle.py')\n")
+        owner = self.write('pi-autowork/src/autowork_runtime/bundle.py', 'def broken(:\n')
         result = self.run_check('tests/test_one.py')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('src/autowork_runtime/bundle.py', result.stdout)
+        self.assertIn('pi-autowork/src/autowork_runtime/bundle.py', result.stdout)
         owner.unlink()
         result = self.run_check('tests/test_one.py')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('missing selected-release source', result.stdout)
-        self.write('src/autowork_runtime/bundle.py', 'VALUE = 1\n')
-        bad = self.write('src/pi_autowork/consumer.py', 'import task_store\n')
+        self.write('pi-autowork/src/autowork_runtime/bundle.py', 'VALUE = 1\n')
+        bad = self.write('pi-autowork/src/pi_autowork/consumer.py', 'import task_store\n')
         result = self.run_check('tests/test_one.py')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('unqualified engine import', result.stdout)
@@ -322,7 +322,7 @@ class Check(unittest.TestCase):
 
     def test_a_broken_tree_fails_before_any_test_runs(self):
         """Conflict markers twice reached main in Python modules; the tree guard runs first."""
-        from src_fixture import copy_sources
+        from support.src_fixture import copy_sources
         copy_sources(self.root)
         guard = ROOT / 'scripts/tree_guard.py'
         self.assertTrue(guard.is_file(), 'missing tree guard')
@@ -476,10 +476,10 @@ class Check(unittest.TestCase):
         body = ''.join(f'''    def test_{n}(self):
         Path('ran-{n}').write_text(str(os.getpid()))
 ''' for n in range(24))
-        module = self.write('tests/test_pi_autowork.py', 'import os, unittest\nfrom pathlib import Path\n'
+        module = self.write('pi-autowork/tests/runner/test_pi_autowork.py', 'import os, unittest\nfrom pathlib import Path\n'
                             'class Runner(unittest.TestCase):\n' + body)
         self.write('skills/docs-sync/scripts/test_unselected.py', "raise RuntimeError('not selected')\n")
-        for paths in (['tests/test_pi_autowork.py'], ['tests'], [str(module), 'tests']):
+        for paths in (['pi-autowork/tests/runner/test_pi_autowork.py'], ['pi-autowork/tests'], [str(module), 'pi-autowork/tests']):
             with self.subTest(paths=paths):
                 for marker in module.parent.glob('ran-*'):
                     marker.unlink()
@@ -492,18 +492,18 @@ class Check(unittest.TestCase):
                 self.assertNotIn('not selected', result.stdout)
         for marker in module.parent.glob('ran-*'):
             marker.unlink()
-        filtered = self.run_check('tests/test_pi_autowork.py', '-k', 'test_23')
+        filtered = self.run_check('pi-autowork/tests/runner/test_pi_autowork.py', '-k', 'test_23')
         self.assertEqual(filtered.returncode, 0, filtered.stdout + filtered.stderr)
         self.assertEqual([p.name for p in module.parent.glob('ran-*')], ['ran-23'])
         self.assertIn('Ran 1 test', filtered.stdout)
         module.write_text(module.read_text() + '    def test_failure(self): self.fail("shard failure")\n')
-        failed = self.run_check('tests/test_pi_autowork.py')
+        failed = self.run_check('pi-autowork/tests/runner/test_pi_autowork.py')
         self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
         self.assertIn('shard failure', failed.stdout)
         for path in ('tests/missing.py', 'vendor', '../outside',
                      'tests/integration_bundle.py'):
             with self.subTest(invalid=path):
-                result = self.run_check('tests/test_pi_autowork.py', path)
+                result = self.run_check('pi-autowork/tests/runner/test_pi_autowork.py', path)
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertNotIn('CHECK', result.stdout)
 
@@ -511,14 +511,14 @@ class Check(unittest.TestCase):
         body = ''.join(f'''    def test_{n}(self):
         Path('ran-{n}').write_text(str(os.getpid()))
 ''' for n in range(24))
-        split = self.write('tests/test_pi_autowork.py', 'import os, unittest\nfrom pathlib import Path\n'
+        split = self.write('pi-autowork/tests/runner/test_pi_autowork.py', 'import os, unittest\nfrom pathlib import Path\n'
                            'class Runner(unittest.TestCase):\n' + body)
-        self.write('tests/test_other.py', 'import unittest\nfrom pathlib import Path\n'
+        self.write('pi-autowork/tests/runner/test_other.py', 'import unittest\nfrom pathlib import Path\n'
                    'class Other(unittest.TestCase):\n'
                    "    def test_a(self): Path('ran-other-a').write_text('')\n"
                    "    def test_b(self): Path('ran-other-b').write_text('')\n")
         # Tests the inventory cannot list without importing run whole, on the first shard only.
-        self.write('tests/test_dynamic.py', 'import unittest\nfrom pathlib import Path\n'
+        self.write('pi-autowork/tests/runner/test_dynamic.py', 'import unittest\nfrom pathlib import Path\n'
                    'def load_tests(loader, tests, pattern):\n'
                    "    return unittest.TestSuite([unittest.FunctionTestCase(lambda: Path('ran-dynamic').write_text(''))])\n")
         folder = split.parent
@@ -526,7 +526,7 @@ class Check(unittest.TestCase):
         for shard in ('1/3', '2/3', '3/3'):
             for marker in folder.glob('ran-*'):
                 marker.unlink()
-            result = self.run_check('tests', '--shard', shard)
+            result = self.run_check('pi-autowork/tests', '--shard', shard)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn(f'Shard {shard[0]} of 3', result.stdout)
             seen[shard] = {p.name for p in folder.glob('ran-*')}
@@ -536,13 +536,13 @@ class Check(unittest.TestCase):
         self.assertEqual(sorted(len(names & {f'ran-{n}' for n in range(24)}) for names in seen.values()), [8, 8, 8])
         for marker in folder.glob('ran-*'):
             marker.unlink()
-        result = self.run_check('tests', '--exclude', 'tests/test_pi_autowork.py', '--exclude', 'tests/test_dynamic.py')
+        result = self.run_check('pi-autowork/tests', '--exclude', 'pi-autowork/tests/runner/test_pi_autowork.py', '--exclude', 'pi-autowork/tests/runner/test_dynamic.py')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual({p.name for p in folder.glob('ran-*')}, {'ran-other-a', 'ran-other-b'})
         self.assertIn('Offline inventory: 1 modules', result.stdout)
         for invalid in (('--exclude', 'tests/missing.py'), ('--exclude', '../outside'), ('--shard', '4/3'), ('--shard', 'x')):
             with self.subTest(invalid=invalid):
-                result = self.run_check('tests', *invalid)
+                result = self.run_check('pi-autowork/tests', *invalid)
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertNotIn('CHECK', result.stdout)
 

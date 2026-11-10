@@ -9,7 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 COMMAND = ROOT / 'pi-autowork/pi_autowork/command.py'
-FIXTURE = ROOT / 'pi-autowork/engine/fixtures/task_store'
+FIXTURE = ROOT / 'pi-autowork/tests/fixtures/engine/fixtures/task_store'
 PROTOCOL = ROOT / 'skills/shared/RESEARCH-PLAN.md'
 
 

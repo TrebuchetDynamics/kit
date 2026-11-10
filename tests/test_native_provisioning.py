@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from src_fixture import copy_sources
+from support.src_fixture import copy_sources
 
 
 class ProvisioningTests(unittest.TestCase):

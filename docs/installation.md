@@ -3,7 +3,7 @@
 Source: [setup orchestrator](../scripts/setup_bundle.py), [source installer](../install-plugins.sh),
 [profile defaults](../scripts/runtime_defaults.py), [native skill provisioning](../scripts/install_skills.py).
 
-The native setup bodies live in [`src/autowork_runtime/install/`](../src/autowork_runtime/install/).
+The native setup bodies live in [`pi-autowork/src/autowork_runtime/install/`](../pi-autowork/src/autowork_runtime/install/).
 Their Python entrypoints live in `scripts/`, including `scripts/setup_bundle.py`
 and `scripts/install-graphify.py`. Only `__init__.py` stays at the repository root:
 Hermes requires that adapter beside `plugin.yaml` to load the plugin.
@@ -357,8 +357,8 @@ schedules, enabled states, delivery and model settings.
 From the source checkout, preview and migrate each existing profile's private state:
 
 ```sh
-python3 scripts/migrate-autowork.py --home /path/to/profile-home
-python3 scripts/migrate-autowork.py --home /path/to/profile-home --apply
+python3 pi-autowork/scripts/migrate-autowork.py --home /path/to/profile-home
+python3 pi-autowork/scripts/migrate-autowork.py --home /path/to/profile-home --apply
 ```
 
 The migration refuses conflicting stores and held owner/handoff locks. It moves
@@ -739,7 +739,7 @@ original-task recovery.
 
 ## Scheduled self-repair
 
-Updated Autowork cron instructions use `scripts/heal-owner-cron.py` for bounded
+Updated Autowork cron instructions use `pi-autowork/scripts/heal-owner-cron.py` for bounded
 repair of their own managed prompt/skill wiring. See [cron self-repair](../skills/autowork/references/cron-autoheal.md)
 for the exact-profile/job command, private receipts and startup limitations. Existing
 saved prompts are not updated merely by installing source: refresh their managed

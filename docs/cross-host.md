@@ -756,7 +756,7 @@ aborted and retried; terminal red/broken evidence stays held until an explicit
 recheck, command/policy change or a new main revision. Changing command/timeout
 requires fresh evidence. Restart does not erase the gate or task/check history.
 
-Offline fixtures in `pi-autowork/tests/test_post_merge_barrier.py` exercise these
+Offline fixtures in `pi-autowork/tests/runner/test_post_merge_barrier.py` exercise these
 boundaries with real Git refs and supervised fixture commands. They do not prove
 an installed consumer's activation, touched-project coverage, <=15-minute runtime,
 model execution, device operation or live acceptance; those remain consumer checks.

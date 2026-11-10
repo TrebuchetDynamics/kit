@@ -24,7 +24,7 @@ class ScheduledProgressTests(unittest.TestCase):
 
     def test_direct_feedback_preserves_owner_authority_and_paused_jobs(self):
         policy = (ROOT / 'skills/autowork/references/profile-feedback.md').read_text()
-        for phrase in ('scripts/profile-consult.py', 'Fresh named consultations',
+        for phrase in ('pi-autowork/scripts/profile-consult.py', 'Fresh named consultations',
                        'replied, failed, or not reached', 'queries default recursively',
                        '--toolsets session_search', '--run-budget SECONDS',
                        'No resume, yolo, accept-hooks, ignore-rules',
