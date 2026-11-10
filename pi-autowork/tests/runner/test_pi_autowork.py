@@ -326,7 +326,8 @@ elif behavior == 'complete':
     work(); finish(text='done')
 elif behavior == 'released':  # finish only at the scheduling boundary chosen by the test
     root = os.environ['FAKE_PI_ROOT']
-    open(os.path.join(root, 'ready-' + task), 'w').close()
+    with open(os.path.join(root, 'ready-' + task), 'w') as ready:
+        ready.write(str(os.getpid()))
     deadline = time.monotonic() + 90
     while not os.path.exists(os.path.join(root, 'release-' + task)):
         if time.monotonic() > deadline:
@@ -2355,39 +2356,106 @@ fcntl.flock = observed_flock
 
     def test_a_reload_keeps_the_runner_and_its_worker_and_applies_new_settings(self):
         """TOOLSET-174-1d: `autowork restart` paused every worker; one cost a 10-minute run."""
-        self.plan({'worker:A': ['slow']})
+        self.plan({'worker:A': ['released']})
         settings = self.root / 'india.env'
         settings.write_text('PI_AUTOWORK_COOLDOWN=0\n')
         self.env['PI_AUTOWORK_ENV_FILE'] = str(settings)
         self.env['FAKE_PI_CATALOG'] = 'openai-codex gpt-6.1-sol;openai-codex gpt-6-luna;openrouter deepseek/deepseek-v4.1-flash'
-        runner = self.start_runner('--workers', '1', '--interval', '1')
         log = lambda: ''.join(p.read_text() for p in self.state.glob('*/runner.log'))
-        self.wait_for(self.root / 'busy-A')
-        worker = int((self.root / 'busy-A').read_text())
-        settings.write_text('PI_AUTOWORK_PRIMARY=openai-codex/gpt-6-luna\n')  # as `autowork model` writes it
-        runner.send_signal(signal.SIGHUP)
-        deadline = time.monotonic() + 60
-        while 'Reloading' not in log():
-            self.assertLess(time.monotonic(), deadline, log())
-            time.sleep(0.2)
-        os.kill(worker, 0)  # the worker runs on
-        while not list(self.state.glob('*/runner.json')):  # written again by the re-executed runner
-            self.assertLess(time.monotonic(), deadline, log())
-            time.sleep(0.2)
-        record = json.loads(next(self.state.glob('*/runner.json')).read_text())
-        self.assertEqual((record['pid'], record['reloads']), (runner.pid, 1))
-        ticks = Path(f'/proc/{runner.pid}/stat').read_text().rsplit(')', 1)[1].split()[19]
-        self.assertEqual(record.get('start_time'), ticks)
-        while not self.done('A', 'B', 'C'):
-            self.assertLess(time.monotonic(), deadline, log())
-            self.assertIsNone(runner.poll(), log())
-            time.sleep(0.5)
-        self.assertNotIn('Stopping', log())
-        runner.send_signal(signal.SIGINT)
-        runner.communicate(timeout=60)
-        workers = {r['task']: r['model'] for r in self.runs('worker')}
-        self.assertEqual([r['task'] for r in self.runs('worker')].count('A'), 1, log())
-        self.assertEqual((workers['A'], workers['B']), ('gpt-6.1-sol', 'gpt-6-luna'))
+        identity, output_path = self.root / 'runner-process.json', self.root / 'runner-output'
+        started, stages = time.monotonic(), {}
+
+        def record():
+            try:
+                return json.loads(next(self.state.glob('*/runner.json')).read_text())
+            except (StopIteration, FileNotFoundError, json.JSONDecodeError):
+                return {}  # publication is removed/re-written during re-exec
+
+        # Reuse the subreaper and file output: assertion failures must not orphan
+        # workers in their own sessions, or leave a runner blocked on full pipes.
+        with output_path.open('w') as output:
+            guard = subprocess.Popen(
+                [sys.executable, str(ROOT / 'pi-autowork/pi_autowork/pi_process.py'),
+                 '--identity', str(identity), '--deadline', str(30 + 60 + 3 * 60 + 60), '--',
+                 'bash', str(RUNNER), '--workers', '1', '--interval', '1'],
+                cwd=self.repo, env=self.env, stdout=output, stderr=subprocess.STDOUT)
+            runner_fd = None
+
+            def wait(stage, predicate, timeout=60):
+                deadline = time.monotonic() + timeout
+                while True:
+                    details = (f'{stage}; stages={stages}; load={os.getloadavg()}; record={record()}\n'
+                               f'{log()}\n{output_path.read_text()}')
+                    self.assertIsNone(guard.poll(), details)
+                    if value := predicate():
+                        stages[stage] = round(time.monotonic() - started, 3)
+                        return value
+                    self.assertLess(time.monotonic(), deadline, details)
+                    time.sleep(0.1)
+
+            try:
+                ready = self.root / 'ready-A'
+                wait('A held', lambda: ready.exists() and ready.read_text(), timeout=30)
+                worker = int(ready.read_text())
+                worker_stat = Path(f'/proc/{worker}/stat')
+                worker_ticks = worker_stat.read_text().rsplit(')', 1)[1].split()[19]
+                before = record()
+                owned = json.loads(identity.read_text())
+                self.assertEqual((before['pid'], before['reloads']), (owned['pi_pid'], 0))
+                runner_pid = before['pid']
+                runner_fd = os.pidfd_open(runner_pid)
+                ticks = Path(f'/proc/{runner_pid}/stat').read_text().rsplit(')', 1)[1].split()[19]
+                self.assertEqual(before['start_time'], ticks)
+                self.assertEqual(owned['pi_start_time'], ticks)
+                os.kill(worker, 0)
+                self.assertFalse(self.done('A'))
+                settings.write_text('PI_AUTOWORK_PRIMARY=openai-codex/gpt-6-luna\n')
+                signal.pidfd_send_signal(runner_fd, signal.SIGHUP)
+                # A cannot finish before reload observation, even on a loaded host.
+                # File existence alone could observe the old reloads=0 publication.
+                after = wait('reload published with A held', lambda: (current := record())
+                             and current.get('reloads') == 1 and 'Reloading' in log() and current)
+                self.assertEqual((after['pid'], after['reloads']), (runner_pid, 1))
+                ticks = Path(f'/proc/{runner_pid}/stat').read_text().rsplit(')', 1)[1].split()[19]
+                self.assertEqual(after['start_time'], ticks)
+                self.assertEqual(after['start_time'], before['start_time'])
+                os.kill(worker, 0)
+                self.assertEqual(worker_stat.read_text().rsplit(')', 1)[1].split()[19], worker_ticks)
+                self.assertFalse(self.done('A'))
+                self.assertEqual([r['task'] for r in self.runs('worker')], ['A'])
+                (self.root / 'release-A').touch()
+                # Reload/setup must not spend a later task's integration budget.
+                # Keep the old 60 s bound per observed task, not a larger shared cap.
+                for task in 'ABC':
+                    wait(f'{task} done', lambda: self.done(task))
+                    signal.pidfd_send_signal(runner_fd, 0)
+                self.assertNotIn('Stopping', log())
+                signal.pidfd_send_signal(runner_fd, signal.SIGINT)
+                guard.wait(timeout=60)  # includes reaping the runner and its worker tree
+                self.assertEqual(guard.returncode, 130, output_path.read_text())
+                workers = {r['task']: r['model'] for r in self.runs('worker')}
+                self.assertEqual([r['task'] for r in self.runs('worker')].count('A'), 1, log())
+                self.assertEqual((workers['A'], workers['B']), ('gpt-6.1-sol', 'gpt-6-luna'))
+            except BaseException:
+                self.retain_evidence()
+                raise
+            finally:
+                if runner_fd is not None:
+                    os.close(runner_fd)
+                if guard.poll() is None:
+                    guard.terminate()
+                try:
+                    guard.wait(timeout=10)
+                finally:
+                    if guard.poll() is None:
+                        guard.kill()
+                        guard.wait()
+                print(f'RELOAD_STAGES {stages}; load={os.getloadavg()}; '
+                      f'python={sys.executable} {sys.version}', flush=True)
+                self.assertTrue(identity.is_file(), output_path.read_text())
+                receipt = json.loads(identity.read_text())
+                self.assertEqual(receipt['pid'], guard.pid)
+                self.assertTrue(receipt['cleanup_complete'], output_path.read_text())
 
     def test_a_deliberate_stop_is_terminal_for_an_automatic_restart(self):
         """A stop marker left by `autowork stop` refuses the restart before any dispatch."""
