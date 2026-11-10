@@ -2,7 +2,8 @@
 
 This Linux Rust candidate provides an owned-agent runtime, durable journal and
 serialized local delivery coordinator, not the installed Python runner.
-`version` and `capabilities` work without a model. `run` requires explicit model
+`version`, `capabilities`, `tasks` inspection and `status` work without a model.
+`run` requires explicit model
 routes and an isolated repository. It does not install a service, import global
 authentication, push, deploy or replace an existing runner.
 
@@ -52,6 +53,33 @@ records and evidence. `Snapshot::revision()`, `records()`, `tasks()` and `goals(
 expose immutable views. Record revisions hash exact bytes; contract hashes retain
 the current canonical JSON rules. Free Markdown notes and historical IDs are not
 rewritten. Missing task fields remain drafts; malformed records refuse the store.
+
+### Committed inspection CLI (generation 1)
+
+```sh
+autowork-next tasks list --repo /path/to/repo
+autowork-next tasks goals --repo /path/to/repo --rev HEAD
+autowork-next tasks show TASK-ID --repo /path/to/repo --rev COMMIT
+autowork-next tasks why TASK-ID --repo /path/to/repo --rev COMMIT
+```
+
+`capabilities` advertises `contracts.task_inspection = 1` and only these four task
+verbs. Mutation verbs and `--worktree` are unsupported. Each command resolves
+`--rev` once (default `HEAD`); dirty and staged records cannot affect the result.
+No task lock, proof commit, index update or ref write occurs. List/goals return
+arrays; show/why return objects. Record rows expose exact typed frontmatter,
+`body`, `record_revision`, `contract_hash`, `missing_fields`, `receipt_valid`,
+`path` and a separate `snapshot` object with committed `source`, `ref`, `revision`
+and `revision_ephemeral: false`. A goal's frontmatter `source` remains unchanged.
+An unknown show ID fails; unknown why IDs return an `UNKNOWN_TASK` reason.
+
+List rows and why objects add `position`, `blocked_by`, `eligible`, `first`,
+`reasons` and the [selection-only source metadata](../../task-store.md#selection).
+`POSITION` and `AFTER_*` reasons describe the existing selector's order; blocked
+rows retain its hold, draft and dependency reasons. These outputs do not evaluate
+admission or runtime availability. An owner-only or unauthorized live task may be
+selectable without permission to dispatch it. No Python command parity, task
+closure, goal qualification or live ownership is implied.
 
 `Snapshot::select(&Scope)` orders eligible IDs by focus, section, rank, goal
 priority, goal status and ID. An empty scope includes all tasks, including planning
@@ -139,6 +167,52 @@ content is refused. Use distinct keys for individual runtime stream records.
 Events, per-generation projections and effect records commit in one transaction.
 `events()` returns ordered journal records; `projection(task, generation)` returns
 the corresponding last event and durable status.
+
+### Journal inspection CLI (generation 1)
+
+```sh
+autowork-next status --repo /path/to/repo
+```
+
+`capabilities` advertises `contracts.status = 1`. `read_status(common_dir)` uses a
+separate SQLite read-only connection, never `StateStore::open`. It validates the
+same private-path, local-filesystem and common-directory identity boundaries,
+and reads schema 1, metadata, latest per-task generations and the event high-water
+mark in one short transaction. The transaction ends before JSON rendering. It
+never takes `writer.lock`, advances the owner epoch, claims work, reconciles,
+checkpoints, migrates or creates an application directory/database.
+
+The JSON allowlist is `schema_version: 1`, `source: "runtime-journal"`,
+`repository` (common-directory device/inode, without its private path),
+`journal_state`, `journal_schema`, `event_high_water_mark` and `projections`.
+Each projection contains only `task_id`, `attempt_id`, `generation`, `role`,
+`contract_hash`, `source_revision`, durable `status` and `event_id`. Raw events,
+owner/process records, sessions, evidence references, environment, model text,
+credential values and resolved secret paths are not returned.
+
+A missing journal returns `journal_state: "absent"`, null journal schema/high-water
+mark and an empty projection array without creating state. It does not mean idle,
+stopped or complete. Unsafe paths, incompatible schemas, foreign identity,
+corruption and SQLite lock contention fail with nonzero exit and a bounded JSON
+stderr object: `status: "unavailable"`, a fixed `code` (`unsafe_source`,
+`unsupported_schema`, `foreign_journal`, `corrupt_journal` or `busy`) and a
+secret-free `error`. SQLite busy handling waits at most 200 ms per contended
+operation; no fallback turns failure into an empty success. Retained state is not
+reset or repaired.
+
+Ordinary SQLite read-only WAL coordination can create/change WAL shared-memory
+sidecars. Status allows that coordination; it does not use `immutable=1` or claim
+byte-identical sidecars. It makes no application-authored or logical journal
+writes. Runtime projections do not establish current PID liveness, a live lease,
+idle-service state, verified task acceptance or task closure. Git inspection and
+journal inspection have independent source identities, not a cross-store atomic
+snapshot. Clients must check the advertised API generations.
+
+`cli::task_inspection_is_pinned_and_selection_only`,
+`cli::status_reads_without_writer_claim` and
+`cli::inspection_refuses_unsafe_sources` exercise these public seams with committed
+disposable repositories, a coordinated writer, private payload markers and
+SQLite-managed locks. They require no model, service or installed-runner handoff.
 
 Before a child or Git mutation, commit `RecordKind::Intent(Child | Git)` with its
 stable `RuntimeEvent.operation_id`. Only then perform the external effect. Record
