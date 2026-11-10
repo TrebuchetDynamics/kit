@@ -140,6 +140,16 @@ Label the existing runner, worker, and journal separators without adding rows.
 Keep provider/model and browse controls in their established locations.
 Shared text publication compares full Rich Text, including styles and click spans.
 
+## Action navigation
+
+Fleet and Tasks menus show explicit bracketed shortcuts beside each label,
+with separators between actions. Model selection uses the same visible shortcut
+convention. The fleet exposes More actions and, when there is room, Guide.
+More actions keeps search and keyboard selection while adding a short description
+under every option. Descriptions distinguish closing the interface from stopping
+the service, and restarting a service from retrying a failed task. Descriptive
+rows keep the existing action identity, confirmation and read-only guards.
+
 ## Accessibility
 
 Keep all operations keyboard-accessible and focus visible. More lists readable

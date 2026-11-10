@@ -802,9 +802,9 @@ async def main():
             menubar = app.query_one('#menubar')
             assert menubar.region.y < app.query_one('#runners').region.y, 'the menu bar is above the runners'
             hints = menubar.render()
-            assert str(hints).rstrip() == 'Details  Log  Tasks  ? More', str(hints)
-            marked = {str(hints)[span.start:span.end] for span in hints.spans if 'underline' in str(span.style)}
-            assert marked == set('iLT?'), marked
+            assert str(hints).rstrip() == '[i] Details  │  [l] Log  │  [t] Tasks  │  [?] More actions  │  [h] Guide', str(hints)
+            marked = {str(hints)[span.start:span.end] for span in hints.spans if 'cyan' in str(span.style)}
+            assert marked == {'[i]', '[l]', '[t]', '[?]', '[h]'}, marked
             log = '\n'.join(line.text for line in app.query_one('#log').lines)
             assert 'TASK-036: waiting' in log and 'pending —' not in log, log
             agent = base / 'agent'
@@ -819,9 +819,9 @@ async def main():
                 for view_only in (False, True):
                     app.view_only = view_only
                     for service, state_name, menu in (
-                            ('running', 'stalled', 'Details  Log  Tasks  ? More'),
-                            ('stopped', 'not running', 'Play  Log  Tasks  Details  ? More'),
-                            ('stopped', 'paused', 'Play  Log  Tasks  Details  ? More'),
+                            ('running', 'stalled', '[i] Details  │  [l] Log  │  [t] Tasks  │  [?] More actions'),
+                            ('stopped', 'not running', '[p] Play  │  [l] Log  │  [t] Tasks  │  [i] Details  │  [?] More actions'),
+                            ('stopped', 'paused', '[p] Play  │  [l] Log  │  [t] Tasks  │  [i] Details  │  [?] More actions'),
                             ('', '', 'Model  n Browse  ctrl+p Commands  ? Help  Quit')):
                         selected = replace(runner, service=service, state=state_name) if service else None
                         envelope = fleet_view.FleetSnapshot((selected,) if selected else (),
@@ -829,9 +829,11 @@ async def main():
                         async with patched_reads(app, mock.patch.object(fleet_view, 'collect_for_tui', return_value=envelope),
                                 mock.patch.object(portal, 'probe', side_effect=AssertionError('fleet key probed Portal'))):
                             await refresh(app, pilot)
-                            expected = (('view only  Details  Log  Tasks  ? More' if service == 'running' else
-                                         'view only  Log  Tasks  Details  ? More') if selected else
+                            expected = (('view only  [i] Details  │  [l] Log  │  [t] Tasks  │  [?] More actions' if service == 'running' else
+                                         'view only  [l] Log  │  [t] Tasks  │  [i] Details  │  [?] More actions') if selected else
                                         'ctrl+p Commands  ? Help  Quit') if view_only else menu
+                            if selected and width >= 100:
+                                expected += '  │  [h] Guide'
                             assert str(menubar.render()).strip() == expected, menubar.render()
                             painted = ' '.join(menubar.render_line(y).text for y in range(menubar.content_size.height))
                             assert ' '.join(painted.split()) == ' '.join(expected.split()), painted
@@ -945,7 +947,7 @@ async def main():
             assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['Held task'], tasks.row_count
             assert app.screen.current().task == 'T-9'
             keys = str(app.screen.query_one('#menubar').render())
-            assert keys.rstrip().endswith('enter Open  e Decide  Retry  B Report  Info/Help  esc Back'), keys
+            assert all(label in keys for label in ('[enter] Open', '[e] Decide', '[r] Retry', '[B] Report', '[i] Info/Help', '[esc] Back')), keys
             assert 'Up' in app.screen.query_one('#task-provenance').text
             assert 'Delete' in app.screen.query_one('#task-provenance').text
             before_retry = len(calls)

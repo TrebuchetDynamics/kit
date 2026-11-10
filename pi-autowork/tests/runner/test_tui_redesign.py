@@ -80,6 +80,9 @@ def publisher_contract():
         assert update.call_count == 1, 'MenuBar must use the same rich-text publisher'
         bar.show([('l', 'Log')], click_actions={'l': 'app.run("l")'})
         assert update.call_count == 2, 'Click metadata is part of the rendered value'
+        bar.show([('t', 'Tasks'), ('?', 'More actions')], explicit_keys=True)
+        assert '[t] Tasks' in update.call_args.args[0].plain
+        assert '[?] More actions' in update.call_args.args[0].plain
 
 
 async def redraw_pilot():
@@ -157,6 +160,9 @@ async def menu_pilot():
             assert widget.region.width > 0 and widget.region.height > 0, widget.region
             assert widget.region.right <= 60 and widget.region.bottom <= 18, widget.region
         labels = option_text(options)
+        assert 'Running services continue in the background' in labels, labels
+        assert 'does not retry failed tasks' in labels, labels
+        assert '[t] Tasks' in labels, labels
         for label in ('Log', 'Tasks', 'Stop', 'Restart', 'Details', 'Browse', 'Quit'):
             assert label in labels, (label, labels)
         for label in ('Answer', 'Plan', 'Blockers'):

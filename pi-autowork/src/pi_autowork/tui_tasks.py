@@ -601,7 +601,7 @@ class TasksScreen(ReadScreen, Screen):
             info.load_text(provenance)
         essential = ([('enter', 'Open')] if row else [])
         if row and row.kind != 'closed' and not self.app.view_only:
-            essential.append(('e', 'e Decide'))
+            essential.append(('e', 'Decide'))
         if row and row.kind == 'held' and not self.app.view_only:
             essential.append(('r', 'Retry'))
         if self.pending and not self.app.view_only:
@@ -611,7 +611,7 @@ class TasksScreen(ReadScreen, Screen):
             click_actions={'enter': 'screen.open_task', 'e': 'screen.decide',
                            'r': 'screen.task("r")',
                            'C': 'screen.commit_tasks', 'B': 'screen.report',
-                           'i': 'screen.snapshot_info', 'esc': 'app.pop_screen'})
+                           'i': 'screen.snapshot_info', 'esc': 'app.pop_screen'}, explicit_keys=True)
         publish_text(self.query_one('#task-detail', Static), text)
 
     def on_data_table_row_selected(self, event):
