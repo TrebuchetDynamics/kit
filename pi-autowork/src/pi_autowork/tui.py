@@ -2065,12 +2065,13 @@ class FleetApp(App):
             if which == 'model':
                 self.pick_new_model()
             return
-        settings_path = Path(self.env_dir) / f'{runner.name}.env'
+        name, repo = runner.name, runner.repo
+        settings_path = Path(self.env_dir) / f'{name}.env'
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
         agent_dir = portal.service_agent_dir(fleet_view.read_env(settings_path))
         def valid():
             selected = self.current()
-            return (selected is not None and selected.name == runner.name and
+            return (selected is not None and (selected.name, selected.repo) == (name, repo) and
                     portal.service_agent_dir(fleet_view.read_env(settings_path)) == agent_dir)
         default_models = list_models is fleet_view.models
         def load():
@@ -2083,14 +2084,14 @@ class FleetApp(App):
         def chosen(model):
             if not model or model == current or self.view_only or not valid():
                 return
-            argv = [self.command, 'model', runner.name] + ([model] if which == 'model' else ['--fallback', model])
+            argv = [self.command, 'model', name] + ([model] if which == 'model' else ['--fallback', model])
             action = fleet_view.Action('m', f'{which} {model}', argv,
                                        confirm=f'Set {runner.name}\'s {which} to {model}'
                                                + ('? Its service restarts; workers resume on the same attempt.'
                                                   if runner.service == 'running' else '?'))
             self.push_screen(Confirm(action.confirm),
                              lambda yes: yes and valid() and not self.view_only and self.execute(action))
-        self.push_screen(PickModel(title, [], current, loader=load, identity=(runner.name, str(settings_path), agent_dir),
+        self.push_screen(PickModel(title, [], current, loader=load, identity=(name, repo, str(settings_path), agent_dir),
                                    agent_dir=agent_dir, identity_valid=valid), chosen)
 
     def pick_new_model(self, on_chosen=None):

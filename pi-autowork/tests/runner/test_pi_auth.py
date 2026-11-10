@@ -103,6 +103,33 @@ class PiAuthTests(unittest.TestCase):
             self.assertFalse((self.profile / 'auth.json').exists())
             self.assertNotEqual(bridge.process.returncode, 0)
 
+    def test_text_defaults_preserve_strings_but_other_empty_or_malformed_answers_fail(self):
+        # Blank-host source: https://github.com/earendil-works/pi/blob/v1.5.0/packages/ai/src/auth/oauth/github-copilot.ts
+        # Installed 1.5.1 has the same blank-host prompt; SDK selection stays pinned to 1.5.0.
+        for kind, answer, accepted in (
+                ('text', '', True), ('text', ' \t', True), ('text', ' fixture-host ', True),
+                ('text', None, False), ('text', 0, False), ('text', {}, False),
+                ('secret', '', False), ('secret', ' \t', False),
+                ('manual_code', '', False), ('select', '', False)):
+            with self.subTest(kind=kind, answer=answer):
+                prompt = f"type:'{kind}', message:'Host (blank for github.com)'"
+                if kind == 'select':
+                    prompt += ", options:[{id:'fixture',label:'Fixture'}]"
+                source = SDK.replace("type:'secret', message:'Fixture key'", prompt)
+                if accepted:
+                    source = source.replace("    if (key === 'bad-secret')",
+                        f"    if (key !== {json.dumps(answer)}) throw Error('changed reply');\n"
+                        "    if ((key.trim() || 'github.com') !== "
+                        f"{json.dumps(answer.strip() or 'github.com')}) throw Error('default');\n"
+                        "    if (key === 'bad-secret')")
+                (self.sdk / 'dist/index.js').write_text(source)
+                (self.profile / 'auth.json').unlink(missing_ok=True)
+                error, events, bridge = self.run_login(answer, 'oauth')
+                self.assertIn(kind, [e.get('kind') for e in events if e['type'] == 'prompt'])
+                self.assertEqual(error is None, accepted)
+                self.assertEqual(dict(type='success') in events, accepted)
+                self.assertEqual((self.profile / 'auth.json').exists(), accepted)
+
     def test_cancel_reaps_helper_and_never_completes_authentication(self):
         async def run():
             prompted = asyncio.Event()
