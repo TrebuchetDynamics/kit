@@ -2,25 +2,25 @@ name: Paseo plugin
 on:
   push:
     paths:
-      - 'integrations/paseo/**'
+      - 'pi-autowork/integrations/paseo/**'
       - '.github/workflows/paseo.yml'
   pull_request:
     paths:
-      - 'integrations/paseo/**'
+      - 'pi-autowork/integrations/paseo/**'
       - '.github/workflows/paseo.yml'
 jobs:
   paseo:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: integrations/paseo
+        working-directory: pi-autowork/integrations/paseo
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: integrations/paseo/package-lock.json
+          cache-dependency-path: pi-autowork/integrations/paseo/package-lock.json
       - name: Git identity
         run: git config --global user.name CI && git config --global user.email ci@example.invalid
       - run: npm ci --ignore-scripts

@@ -536,20 +536,20 @@ scheduling or executing a live repair.
 
 ## Paseo plugin checks
 
-The Paseo plugin in `integrations/paseo/` has its own Node 24+ dependency tree and CI
+The Paseo plugin in `pi-autowork/integrations/paseo/` has its own Node 24+ dependency tree and CI
 job (`.github/workflows/paseo.yml`). From the repository root:
 
 ```sh
-npm --prefix integrations/paseo ci --ignore-scripts
-npm --prefix integrations/paseo run check
-npm --prefix integrations/paseo run package:check
+npm --prefix pi-autowork/integrations/paseo ci --ignore-scripts
+npm --prefix pi-autowork/integrations/paseo run check
+npm --prefix pi-autowork/integrations/paseo run package:check
 ```
 
 These run the strict native-client and server TypeScript checks, the offline fixtures,
 the pinned Paseo 0.15 compiler and an isolated plugin runtime. `python3 scripts/check.py`
 runs the same `npm run check` when the dependencies are installed and reports a skip
 reason otherwise. None of this installs into or reloads a user daemon. See the
-[plugin qualification record](../integrations/paseo/docs/qualification.md); physical
+[plugin qualification record](../pi-autowork/integrations/paseo/docs/qualification.md); physical
 Android and desktop clients, provider planning and real service controls remain
 separate live acceptance.
 
@@ -591,3 +591,16 @@ scope and owner/live gates, not a reason to recreate completed-task reports:
 
 Keep current task and goal requirements authoritative. Never convert an unrun
 qualification to passed because its earlier implementation record was pruned.
+
+## Pi provider setup in the TUI
+
+`python3 scripts/check.py pi-autowork/tests/runner/test_pi_auth.py pi-autowork/tests/runner/test_tui_models.py pi-autowork/tests/runner/test_tui_reads.py pi-autowork/tests/runner/test_tui_controls.py`
+runs the focused offline provider bridge and TUI checks. The bridge fixtures use the
+Pi 1.5.0 public SDK interaction shape in disposable profiles. They cover provider
+catalogs with no stored credentials, OAuth/API-key success, invalid fixture keys,
+missing providers/helpers, cancellation, secret-safe errors and subprocess cleanup.
+Pinned Textual 8.2.8 pilots cover 60×18, 80×24 and 120×32 terminals, masked input,
+explicit browser actions, automatic refresh and unchanged model/start confirmations.
+These checks use no live account login, credential migration, model or service call.
+Real provider acceptance and browser callback behavior require separate user-run
+qualification. Storing an API key is not evidence that the provider accepts it.

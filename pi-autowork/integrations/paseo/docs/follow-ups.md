@@ -30,7 +30,7 @@ Acceptance: representative large queues/logs, virtualized task rows or bounded p
 
 **Dependency:** qualification evidence and explicit remote publication authority.
 
-Acceptance: the source now lives in the public kit repository under `integrations/paseo/`; a registry entry still needs real approved interface screenshots/registry media, a reviewed artifact with reproducible package contents, and a test of each newer Paseo minor before widening the manifest range. Paseo 0.14.0 and the 0.15.0 app are tested and the range is `>=0.13.0 <0.16.0`; 0.16 remains untested. No registry entry was created by this build.
+Acceptance: the source now lives in the public kit repository under `pi-autowork/integrations/paseo/`; a registry entry still needs real approved interface screenshots/registry media, a reviewed artifact with reproducible package contents, and a test of each newer Paseo minor before widening the manifest range. Paseo 0.14.0 and the 0.15.0 app are tested and the range is `>=0.13.0 <0.16.0`; 0.16 remains untested. No registry entry was created by this build.
 
 ## 6. Reconcile retained planning sessions across plugin generations
 

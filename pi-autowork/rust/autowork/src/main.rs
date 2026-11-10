@@ -2,7 +2,7 @@ use std::io::{self, BufRead, Read};
 use std::process::ExitCode;
 
 use autowork_next::{CONTRACT_VERSION, ENGINE, ENGINE_REVISION, runtime};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
 
 #[derive(Parser)]
@@ -12,8 +12,20 @@ use serde_json::json;
     about = "Native-Octet Autowork candidate (explicit local cycles)"
 )]
 struct Cli {
+    /// Wire contract: `public-v1` is the published query/status/pending-edit surface;
+    /// `inspection-v1` is the typed inspection and local publication surface.
+    #[arg(long, global = true, value_enum, default_value = "public-v1")]
+    format: Format,
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Format {
+    #[value(name = "public-v1")]
+    PublicV1,
+    #[value(name = "inspection-v1")]
+    InspectionV1,
 }
 
 #[derive(Subcommand)]
@@ -26,15 +38,22 @@ enum Command {
     Tasks {
         #[arg(long, global = true)]
         repo: Option<std::path::PathBuf>,
-        #[arg(long, global = true, default_value = "HEAD")]
-        rev: String,
+        /// Committed revision to read; either before or after the subcommand, once.
+        #[arg(long, global = true)]
+        rev: Option<String>,
+        /// Required base revision for public-v1 pending edits.
+        #[arg(long)]
+        expected_revision: Option<String>,
         #[command(subcommand)]
         command: TaskCommand,
     },
-    /// Read the private journal projection without claiming writer ownership.
+    /// Read committed tasks and the existing journal without runtime side effects.
     Status {
         #[arg(long)]
         repo: std::path::PathBuf,
+        /// JSON is the only output; the flag is a compatibility marker, not a selector.
+        #[arg(long)]
+        json: bool,
     },
     /// Run serialized local deliveries with explicit model routes (no service or push).
     Run {
@@ -81,11 +100,49 @@ enum TaskCommand {
         #[arg(long)]
         expect_token: Option<String>,
     },
+    /// public-v1: write one new pending record (never committed or selectable).
+    Add {
+        id: String,
+        #[arg(long)]
+        record: std::path::PathBuf,
+    },
+    /// public-v1: edit one ordinary field of a pending record.
+    Field {
+        id: String,
+        #[arg(long)]
+        record_revision: String,
+        key: String,
+        value: String,
+    },
+    /// public-v1: move a pending record to another section.
+    Place {
+        id: String,
+        #[arg(long)]
+        record_revision: String,
+        section: String,
+    },
+    /// public-v1: show the pending records without publishing them.
+    Preview,
 }
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    match dispatch(Cli::parse().command).await {
+    // clap lets a global option repeat across subcommand levels and keeps the last value;
+    // two revisions are contradictory input, never a silent choice.
+    let revisions = std::env::args_os()
+        .skip(1)
+        .take_while(|arg| arg != "--")
+        .filter(|arg| arg == "--rev" || arg.to_string_lossy().starts_with("--rev="))
+        .count();
+    if revisions > 1 {
+        eprintln!(
+            "{}",
+            json!({"status": "unavailable", "error": "--rev may be given only once"})
+        );
+        return ExitCode::FAILURE;
+    }
+    let cli = Cli::parse();
+    match dispatch(cli.command, cli.format).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             let diagnostic = if let Some(error) =
@@ -101,7 +158,7 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
+async fn dispatch(command: Command, format: Format) -> Result<(), Box<dyn std::error::Error>> {
     match command {
         Command::Version => println!(
             "{}",
@@ -122,11 +179,34 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     "version": "available",
                     "capabilities": "available",
                     "run": "explicit-local-cycle",
-                    "tasks": ["list", "goals", "show", "why", "commit"],
-                    "status": "journal-projection-only",
+                    "tasks": if format == Format::InspectionV1 {
+                        json!(["list", "goals", "show", "why", "commit"])
+                    } else {
+                        json!("committed-queries-and-pending-ordinary-edits")
+                    },
+                    "status": if format == Format::InspectionV1 {
+                        "journal-projection-only"
+                    } else {
+                        "read-only-json-v1"
+                    },
                     "internal-agent": "owned-only"
                 },
                 "unknown_commands": "unsupported",
+                "formats": {
+                    "selected": if format == Format::InspectionV1 { "inspection-v1" } else { "public-v1" },
+                    "default": "public-v1",
+                    "public-v1": {
+                        "status": "committed tasks plus persisted runs of every generation",
+                        "tasks": ["list", "show", "add", "field", "place", "preview"],
+                        // Pending edits check only this runtime's task lock; another
+                        // runtime's active owner is not detected.
+                        "pending_edits": "unqualified-on-active-repositories"
+                    },
+                    "inspection-v1": {
+                        "status": "latest-generation journal projection",
+                        "tasks": ["list", "goals", "show", "why", "commit"]
+                    }
+                },
                 "contracts": {
                     "agent_request": CONTRACT_VERSION,
                     "agent_result": CONTRACT_VERSION,
@@ -142,9 +222,53 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 "installed_runner": "unchanged"
             })
         ),
-        Command::Tasks { repo, rev, command } => {
+        Command::Tasks {
+            repo,
+            rev,
+            expected_revision,
+            command,
+        } => {
             use autowork_next::task_store::{Record, Scope, TaskStore};
             let repo = repo.ok_or_else(|| io::Error::other("tasks requires --repo PATH"))?;
+            let inspection_only = matches!(
+                command,
+                TaskCommand::Goals | TaskCommand::Why { .. } | TaskCommand::Commit { .. }
+            );
+            let public_only = matches!(
+                command,
+                TaskCommand::Add { .. }
+                    | TaskCommand::Field { .. }
+                    | TaskCommand::Place { .. }
+                    | TaskCommand::Preview
+            );
+            if format == Format::PublicV1 {
+                if inspection_only {
+                    return Err(io::Error::other(
+                        "this tasks command requires --format inspection-v1",
+                    )
+                    .into());
+                }
+                if public_only && rev.as_deref().is_some_and(|rev| rev != "HEAD") {
+                    return Err(io::Error::other("pending edits require --rev HEAD").into());
+                }
+                println!(
+                    "{}",
+                    task_command(
+                        &repo,
+                        rev.as_deref().unwrap_or("HEAD"),
+                        expected_revision,
+                        command
+                    )?
+                );
+                return Ok(());
+            }
+            if public_only || expected_revision.is_some() {
+                return Err(io::Error::other(
+                    "pending edits are public-v1 commands; omit --format",
+                )
+                .into());
+            }
+            let rev = rev.unwrap_or_else(|| "HEAD".into());
             if let TaskCommand::Commit {
                 dry_run,
                 expect_token,
@@ -166,22 +290,8 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     println!("{}", serde_json::to_string(&service.preview_pending()?)?);
                     return Ok(());
                 }
-                let common = std::process::Command::new("/usr/bin/git")
-                    .env_clear()
-                    .env("PATH", "/usr/bin:/bin")
-                    .args(["--no-replace-objects", "-C"])
-                    .arg(&repo)
-                    .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-                    .output()?;
-                if !common.status.success() {
-                    return Err(io::Error::other("Git repository required").into());
-                }
-                let common = String::from_utf8(common.stdout)?;
-                let state = StateStore::open(
-                    common
-                        .strip_suffix('\n')
-                        .ok_or_else(|| io::Error::other("invalid Git directory"))?,
-                )?;
+                let common = git_common(&repo)?;
+                let state = StateStore::open(&common)?;
                 let binary = std::env::current_exe()?;
                 // No routes and no dispatch: this runtime only satisfies the shared constructor.
                 let runtime = runtime::Runtime::new(
@@ -282,25 +392,14 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             };
             println!("{}", serde_json::to_string(&value)?);
         }
-        Command::Status { repo } => {
-            use autowork_next::state::{InspectionError, read_status};
-            let common = std::process::Command::new("/usr/bin/git")
-                .env_clear()
-                .env("PATH", "/usr/bin:/bin")
-                .args(["--no-replace-objects", "-C"])
-                .arg(repo)
-                .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-                .output()
-                .map_err(|_| InspectionError::UnsafeSource)?;
-            if !common.status.success() {
-                return Err(InspectionError::UnsafeSource.into());
+        Command::Status { repo, json: _ } => {
+            if format == Format::PublicV1 {
+                println!("{}", status(&repo)?);
+                return Ok(());
             }
-            let common =
-                String::from_utf8(common.stdout).map_err(|_| InspectionError::UnsafeSource)?;
-            let common = common
-                .strip_suffix('\n')
-                .ok_or(InspectionError::UnsafeSource)?;
-            let status = read_status(std::path::Path::new(common))?;
+            use autowork_next::state::{InspectionError, read_status};
+            let common = git_common(&repo).map_err(|_| InspectionError::UnsafeSource)?;
+            let status = read_status(std::path::Path::new(&common))?;
             println!("{}", serde_json::to_string(&status)?);
         }
         Command::Run {
@@ -321,17 +420,8 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             };
             use std::os::unix::fs::DirBuilderExt;
             let repo = std::fs::canonicalize(repo)?;
-            let common = std::process::Command::new("/usr/bin/git")
-                .env_clear()
-                .env("PATH", "/usr/bin:/bin")
-                .args(["--no-replace-objects", "-C"])
-                .arg(&repo)
-                .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-                .output()?;
-            if !common.status.success() {
-                return Err(io::Error::other("Git repository required").into());
-            }
-            let state = StateStore::open(String::from_utf8(common.stdout)?.trim())?;
+            let common = git_common(&repo)?;
+            let state = StateStore::open(&common)?;
             let evidence = state.directory().join("native-cycle");
             if !evidence.exists() {
                 std::fs::DirBuilder::new().mode(0o700).create(&evidence)?;
@@ -408,4 +498,203 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+/// Git's absolute common directory. Only Git's own trailing newline is removed:
+/// trailing whitespace can be part of a path.
+fn git_common(repo: &std::path::Path) -> Result<String, Box<dyn std::error::Error>> {
+    let result = std::process::Command::new("/usr/bin/git")
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .args(["--no-replace-objects", "-C"])
+        .arg(repo)
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .output()?;
+    if !result.status.success() {
+        return Err(io::Error::other("Git repository required").into());
+    }
+    Ok(String::from_utf8(result.stdout)?
+        .strip_suffix('\n')
+        .ok_or_else(|| io::Error::other("invalid Git directory"))?
+        .to_owned())
+}
+
+fn status(repo: &std::path::Path) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    use autowork_next::task_store::{Scope, TaskStore};
+    let repo = std::fs::canonicalize(repo)?;
+    let snapshot = TaskStore::read_at(&repo, "HEAD")?;
+    let selection = snapshot.select(&Scope { task_ids: vec![] })?;
+    let tasks: Vec<_> = snapshot.tasks().values().map(|task| json!({
+        "id": task.id, "title": task.title, "status": task.string("status"),
+        "ready": selection.task_ids.contains(&task.id),
+        "blocked": selection.blocked.get(&task.id).map(|reason| json!({"code": reason.code, "detail": reason.detail}))
+    })).collect();
+    let journal = match autowork_next::state::read_persisted_runs(git_common(&repo)?) {
+        Ok(value) => value,
+        Err(_) => json!({"status": "unavailable", "reason": "journal absent, invalid or changing"}),
+    };
+    Ok(
+        json!({"schema_version": 1, "application": "autowork-next", "version": env!("CARGO_PKG_VERSION"),
+        "revision": snapshot.revision(), "task_count": tasks.len(), "tasks": tasks, "journal": journal,
+        "qualification": "observed-only"}),
+    )
+}
+
+fn task_command(
+    repo: &std::path::Path,
+    rev: &str,
+    expected: Option<String>,
+    action: TaskCommand,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    use autowork_next::{
+        planning::{FailureEvidence, PlanDisposition, PlanProposal, RecordChange},
+        task_store::{TaskService, TaskStore},
+    };
+    match &action {
+        TaskCommand::List => return task_query(repo, rev, None),
+        TaskCommand::Show { id } => return task_query(repo, rev, Some(id)),
+        _ => (),
+    }
+    let service = TaskService::new(repo)?;
+    if matches!(action, TaskCommand::Preview) {
+        return Ok(
+            json!({"status": "pending", "snapshot": service.capture_pending()?, "selectable": false}),
+        );
+    }
+    let expected = expected
+        .ok_or_else(|| io::Error::other("--expected-revision is required for mutations"))?;
+    let snapshot = TaskStore::read_at(repo, "HEAD")?;
+    if snapshot.revision() != expected {
+        return Err(io::Error::other("stale expected revision").into());
+    }
+    let (id, record_revision, bytes) = match action {
+        TaskCommand::Add { id, record } => (id, String::new(), std::fs::read(record)?),
+        TaskCommand::Field {
+            id,
+            record_revision,
+            key,
+            value,
+        } => {
+            let bytes = edit_record(
+                &service,
+                &id,
+                &record_revision,
+                &key,
+                serde_json::from_str(&value)?,
+            )?;
+            (id, record_revision, bytes)
+        }
+        TaskCommand::Place {
+            id,
+            record_revision,
+            section,
+        } => {
+            if !["Now", "Next", "Needs decision"].contains(&section.as_str()) {
+                return Err(io::Error::other("invalid section").into());
+            }
+            let bytes = edit_record(&service, &id, &record_revision, "section", json!(section))?;
+            (id, record_revision, bytes)
+        }
+        _ => unreachable!(),
+    };
+    if id.is_empty()
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err(io::Error::other("invalid task ID").into());
+    }
+    let pending = service.apply(
+        &expected,
+        &PlanProposal {
+            expected_revision: expected.clone(),
+            failed_operation: FailureEvidence {
+                operation_id: "cli-task-edit".into(),
+                fingerprint: expected.clone(),
+                evidence_refs: vec![],
+            },
+            disposition: PlanDisposition::RepairCurrent,
+            record_changes: vec![RecordChange {
+                path: format!("tasks/items/{id}.md").into(),
+                expected_revision: record_revision,
+                proposed_bytes: bytes,
+            }],
+            reason: "Explicit pending task edit; no publication authority".into(),
+            sources: vec![],
+        },
+    )?;
+    Ok(
+        json!({"status": "pending", "paths": pending.paths, "base_revision": pending.expected_revision, "record_revisions": pending.record_revisions, "selectable": false, "publication": "not-committed"}),
+    )
+}
+
+fn edit_record(
+    service: &autowork_next::task_store::TaskService,
+    id: &str,
+    record_revision: &str,
+    key: &str,
+    value: serde_json::Value,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    if ![
+        "title",
+        "short",
+        "scope",
+        "acceptance",
+        "checks",
+        "exclusions",
+        "touches",
+        "resources",
+        "depends_on",
+        "rank",
+        "section",
+    ]
+    .contains(&key)
+    {
+        return Err(io::Error::other("unsupported or protected task field").into());
+    }
+    let bytes = service.record_for_edit(id, record_revision)?;
+    let source = std::str::from_utf8(&bytes)?;
+    let (header, notes) = source
+        .strip_prefix("+++\n")
+        .or_else(|| source.strip_prefix("+++\r\n"))
+        .and_then(|s| s.split_once("\n+++"))
+        .ok_or_else(|| io::Error::other("invalid task header"))?;
+    let mut fields: toml::Table = toml::from_str(header)?;
+    fields.insert(key.into(), toml::Value::try_from(value)?);
+    Ok(format!("+++\n{}+++{}", toml::to_string(&fields)?, notes).into_bytes())
+}
+
+fn task_query(
+    repo: &std::path::Path,
+    revision: &str,
+    id: Option<&str>,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let snapshot = autowork_next::task_store::TaskStore::read_at(repo, revision)?;
+    let describe = |task: &autowork_next::task_store::Record| -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        let bytes = snapshot.records().get(&task.path).ok_or_else(|| io::Error::other("record missing from snapshot"))?;
+        Ok(json!({"id": task.id, "title": task.title, "record_revision": task.record_revision,
+            "contract_hash": task.contract_hash, "status": task.string("status"), "section": task.string("section"),
+            "kind": task.string("kind"), "ownership": task.string("ownership"), "live": task.string("live"),
+            "goal": task.string("goal"), "scope": task.string("scope"), "acceptance": task.strings("acceptance"),
+            "checks": task.strings("checks"), "depends_on": task.strings("depends_on"),
+            "verified_depends_on": task.strings("verified_depends_on"), "touches": task.strings("touches"),
+            "resources": task.strings("resources"), "exclusions": task.strings("exclusions"),
+            "missing_fields": task.missing_fields, "content": std::str::from_utf8(bytes)?}))
+    };
+    let mut result = json!({"schema_version": 1, "application": "autowork-next", "revision": snapshot.revision(), "source": "committed"});
+    if let Some(id) = id {
+        let task = snapshot
+            .tasks()
+            .get(id)
+            .ok_or_else(|| io::Error::other("unknown task ID"))?;
+        result["task"] = describe(task)?;
+    } else {
+        result["tasks"] = snapshot
+            .tasks()
+            .values()
+            .map(describe)
+            .collect::<Result<Vec<_>, _>>()?
+            .into();
+    }
+    Ok(result)
 }

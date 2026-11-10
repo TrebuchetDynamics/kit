@@ -122,3 +122,22 @@ resolves qualified/relative imports, package initializers and old-entry-to-sourc
 edges. The command-line selector falls back to the full inventory for unresolved,
 deleted, initializer or global inputs rather than silently losing coverage.
 These offline oracles do not qualify installed profiles, live models or jobs.
+
+## Paseo and Rust component owners
+
+`pi-autowork/integrations/paseo/` owns the complete independent Paseo package,
+including its TypeScript sources, tests, assets, documentation and lockfile.
+The root `paseo-plugin.json` stages that owner's client/server/shared directories
+for Git-root installation. The required root `index.client.tsx` and
+`index.server.ts` are byte-identical copies checked before build; edit their
+component owners and synchronize the copies. The package keeps its existing
+API generation and operator policy. Its dedicated CI uses the component lockfile.
+
+`pi-autowork/rust/autowork/` owns the Rust crate, tests and locked dependency
+pin. The retired `src/`, `integrations/paseo/` and `rust/autowork/` roots contain
+no product implementation. Shared Kit registration, skills, installers, check
+scripts and package-boundary tests retain their root ownership as specified in
+the [component map](../../docs/plans/pi-autowork-component-layout.md).
+The portable Pi archive keeps its explicit allowlist; ownership under this
+component does not authorize shipping native code, test helpers or Rust artifacts.
+Offline package checks do not install a plugin or qualify a running release.

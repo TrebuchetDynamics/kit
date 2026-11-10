@@ -14,6 +14,24 @@ from pi_autowork import fleet_view
 
 
 class ActivityLogTests(unittest.TestCase):
+    def test_dashboard_groups_only_same_memory_wait_and_retains_failure_and_raw(self):
+        before = '[13:20] RUST-1: failed — worker exited'
+        waits = [f'[{stamp}] No task can start now: OWNER-1: requires owner action; RUST-1: resource gate: {memory} MB available, need 6000 MB for one more worker'
+                 for stamp, memory in [('13:20', 5079), ('13:21', 4451), ('13:22', 4500)]]
+        source = '\n'.join([before, *waits])
+        rows = fleet_view.activity_lines(source)
+        self.assertEqual(len(rows), 2)
+        self.assertIn('worker exited', rows[0][0])
+        self.assertIn('4500 MB available / 6000 MB required', rows[1][0])
+        self.assertIn('3 updates (4451–5079 MB)', rows[1][0])
+        self.assertIn('last [13:22]', rows[1][0])
+        self.assertIn('OWNER-1: requires owner action', rows[1][0])
+        self.assertEqual(len(fleet_view.log_lines(source)), 4)
+        changed = waits[-1].replace('RUST-1:', 'RUST-2:')
+        self.assertEqual(len(fleet_view.activity_lines('\n'.join([*waits, changed]))), 2)
+        interrupted = '\n'.join([waits[0], before, waits[1]])
+        self.assertEqual(len(fleet_view.activity_lines(interrupted)), 3)
+
     def test_summary_preserves_distinct_outcomes(self):
         source = [
             '[23:58] TASK-1: failed — first detail',

@@ -61,6 +61,12 @@ async def main():
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert screen.query_one('#plan-chat', TextArea).size.height >= 3
+            # New is safe with an empty session list, including repeated clicks.
+            for _ in range(2):
+                await pilot.click('#plan-new')
+                await pilot.pause()
+                assert screen.query_one('#plan-session', Select).is_blank()
+                assert screen.session_id is None and screen.preview is None
             screen.query_one('#plan-input', TextArea).load_text('Improve reliability')
             await pilot.click('#plan-send')
             await app.workers.wait_for_complete()
@@ -98,6 +104,25 @@ async def main():
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert planner.applied == [('session-1', 'review-123')]
+            # Clearing the current session must neither load a fake session nor write a new one.
+            known = list(planner.sessions())
+            await pilot.click('#plan-new')
+            await pilot.pause()
+            assert screen.query_one('#plan-session', Select).is_blank()
+            assert screen.session_id is None and screen.preview is None
+            assert planner.sessions() == known and len(planner.sent) == 1
+            screen.query_one('#plan-session', Select).value = 'session-1'
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert screen.session_id == 'session-1'
+            app.view_only = True
+            screen.controls()
+            await pilot.click('#plan-new')
+            await pilot.pause()
+            assert screen.session_id == 'session-1'
+            app.view_only = False
+            screen.controls()
             # A failed project switch must not leave old apply authority behind a new name.
             await pilot.click('#plan-review')
             await app.workers.wait_for_complete()

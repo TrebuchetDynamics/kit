@@ -17,6 +17,22 @@ from pi_autowork import command, fleet_view, task_snapshot
 
 
 class TaskSnapshotTests(unittest.TestCase):
+    def test_daily_provider_quota_is_explained_without_changing_task_authority(self):
+        from pi_autowork import task_status
+        store = task_queue.store(self.repo)
+        record = store.tasks['A']
+        observation = dict(state='held', cause='empty', reason=(
+            'worker runtime failed (provider_failure): 429: {"message":"Rate limit exceeded: '
+            'free-models-per-day", "private":"do-not-display"}'))
+        row = task_snapshot.task_row(record, store, observation=observation)
+        self.assertEqual(row.bucket, 'Blocker')
+        self.assertIn('quota exhausted', row.why)
+        self.assertNotIn('do-not-display', row.why)
+        self.assertFalse(row.question)
+        self.assertEqual(record.status, 'open')
+        self.assertEqual(task_status.provider_limit_notice('429 server busy'), '')
+        self.assertEqual(task_status.provider_limit_notice('free-models-per-day without an HTTP code'), '')
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

@@ -80,6 +80,9 @@ def publisher_contract():
         assert update.call_count == 1, 'MenuBar must use the same rich-text publisher'
         bar.show([('l', 'Log')], click_actions={'l': 'app.run("l")'})
         assert update.call_count == 2, 'Click metadata is part of the rendered value'
+        bar.show([('t', 'Tasks'), ('?', 'More actions')], explicit_keys=True)
+        assert '[t] Tasks' in update.call_args.args[0].plain
+        assert '[?] More actions' in update.call_args.args[0].plain
 
 
 async def redraw_pilot():
@@ -119,6 +122,132 @@ def option_text(options):
     return '\n'.join(str(options.get_option_at_index(i).prompt) for i in range(options.option_count))
 
 
+async def reading_surfaces_pilot():
+    from pi_autowork import tui, planning_ui
+    from textual.widgets import Button
+    from pi_autowork.tui_common import ViewHeader
+    for size in ((60, 18), (140, 40)):
+        async with fixture_app(size) as (app, pilot):
+            runner = app.current()
+            with patch.object(fleet_view, 'action_log', return_value=[]), \
+                 patch.object(app, 'request_blockers'), \
+                 patch.object(planning_ui.PlanScreen, '_load_project'), \
+                 patch.object(planning_ui.PlanScreen, 'poll_turn'):
+                cases = [
+                    (lambda: tui.LogScreen(runner, lambda *_: 'sample event'), '#full-log'),
+                    (lambda: tui.WorkerScreen(runner, 'TASK-1'), '#worker-actions'),
+                    (lambda: tui.BrowseScreen(runner.repo, lambda _: None), '#tree'),
+                    (lambda: tui.BlockersScreen(runner), '#blockers-text'),
+                    (lambda: planning_ui.PlanScreen(runner.repo), '#plan-controls'),
+                ]
+                for factory, content in cases:
+                    screen = factory()
+                    await app.push_screen(screen)
+                    await settle(app, pilot)
+                    header = screen.query_one(ViewHeader)
+                    assert header.region.height >= 1 and header.region.bottom <= size[1], (type(screen).__name__, header.region)
+                    region = screen.query_one(content).region
+                    assert region.height >= 2 and region.bottom <= size[1], (type(screen).__name__, size, region)
+                    for button in screen.query(Button):
+                        assert button.region.right <= size[0] and button.region.bottom <= size[1], (type(screen).__name__, button.id, button.region)
+                    app.pop_screen()
+                    await pilot.pause()
+
+
+async def task_workspace_pilot():
+    from types import SimpleNamespace
+    from pi_autowork import tui, tui_tasks
+    from textual.widgets import DataTable
+    rows = (task_snapshot.TaskRow('TASK-1', 'Short label', 'Now', 'Blocker · No result', 'held',
+                                 'No result · Agent repair', bucket='Blocker'),)
+    record = SimpleNamespace(title='A full descriptive task title that is not shortened in the reading panel',
+                             scope='Implement the requested outcome.', acceptance=('A meaningful check passes.',))
+    async with fixture_app((180, 45)) as (app, pilot):
+        runner = app.current()
+        runner.snapshot = replace(runner.snapshot, rows=rows, counts=(0, 0, 0, 1, 0, 1),
+                                  store=SimpleNamespace(tasks={'TASK-1': record}))
+        with patch.object(tui_tasks, 'pending_edits', return_value={'files': []}), \
+             patch.object(fleet_view, 'task_entry', return_value='RAW SOURCE RECORD'), \
+             patch.object(fleet_view, 'recent_actions', return_value=[]):
+            await app.push_screen(tui.TasksScreen(runner.name))
+            await settle(app, pilot)
+            screen = app.screen
+            queue, selected = screen.query_one('#task-list'), screen.query_one('#task-selection')
+            assert selected.region.x >= queue.region.right
+            body = screen.query_one('#task-detail').render().plain
+            assert record.title in body and 'What is happening' in body and 'What you can do' in body
+            assert 'previous attempt ended without a usable result' in body
+            owner_row = replace(rows[0], why='owner action required; perform the check outside the runner')
+            assert not {'r', 'c', 'a'} & {action.key for action in screen.actions(owner_row)}
+            quota_row = replace(rows[0], why='Daily free-model quota exhausted (HTTP 429)')
+            happened, next_step = tui_tasks.task_guidance(quota_row)
+            assert 'daily free-model quota' in happened and 'Retry only after that' in next_step
+            await pilot.press('space')
+            assert app.focused is selected
+            await pilot.resize_terminal(60, 18)
+            await pilot.pause()
+            assert selected.region.bottom <= 18 and queue.region.width >= 58, (queue.region, selected.region)
+            screen.query_one('#tasks', DataTable).focus()
+            await pilot.press('enter')
+            await settle(app, pilot)
+            assert isinstance(app.screen, tui.TaskScreen)
+            text = app.screen.query_one('#task-body').render().plain
+            assert 'Work requested' in text and record.scope in text
+            assert 'RAW SOURCE RECORD' not in text
+            await pilot.press('i')
+            await pilot.pause()
+            assert 'RAW SOURCE RECORD' in app.screen.query_one('#task-body').render().plain
+            await pilot.press('i')
+            assert 'RAW SOURCE RECORD' not in app.screen.query_one('#task-body').render().plain
+
+
+async def details_layout_pilot():
+    async with fixture_app((180, 45)) as (app, pilot):
+        await pilot.press('i')
+        await pilot.pause()
+        pane = app.query_one('#detail-scroll')
+        sidebar = app.query_one('#project-context')
+        assert pane.region.x >= sidebar.region.right, (pane.region, sidebar.region)
+        assert pane.region.width > 100, pane.region
+        assert pane.region.height > 25, pane.region
+        assert not app.query_one('#log').display and not app.query_one('#lanes').display
+        for _ in range(3):
+            app.render_fleet()
+        await pilot.pause()
+        assert pane.display and pane.region.width > 100
+        await pilot.resize_terminal(60, 18)
+        await pilot.pause()
+        assert pane.region.width >= 58 and pane.region.bottom <= 18, pane.region
+        assert not app.query_one('#overview').display
+        await pilot.press('3')
+        await pilot.pause()
+        assert not pane.display and app.query_one('#log').display
+        assert app.focused.id == 'log'
+
+
+async def progress_pilot():
+    from textual.widgets import Static
+    async with fixture_app((150, 40)) as (app, pilot):
+        runner = app.current()
+        runner.snapshot = replace(runner.snapshot, counts=(1, 0, 1, 1, 0, 3),
+                                  joined_lanes=(('FIX-1-abcdef12', 1, 'running'),))
+        runner.lanes[0].activity = 'Reading source'
+        runner.lanes[0].activity_age = 20
+        app.show_detail()
+        await pilot.pause()
+        summary = app.query_one('#overview', Static).render().plain
+        assert 'Now: Working' in summary and 'Reading source' in summary, summary
+        assert 'none for active work' in summary and 'other tasks need attention' in summary, summary
+        assert 'automatic push disabled' in summary, summary
+        runner.lanes[0].activity_age = 600
+        app.show_detail()
+        summary = app.query_one('#overview', Static).render().plain
+        assert 'Quiet worker' in summary and 'progress not confirmed' in summary, summary
+        runner.push = True
+        app.show_detail()
+        assert 'automatic push enabled' in app.query_one('#overview', Static).render().plain
+
+
 async def menu_pilot():
     from pi_autowork import tui
     from textual.widgets import Input, OptionList
@@ -134,6 +263,9 @@ async def menu_pilot():
             assert widget.region.width > 0 and widget.region.height > 0, widget.region
             assert widget.region.right <= 60 and widget.region.bottom <= 18, widget.region
         labels = option_text(options)
+        assert 'Running services continue in the background' in labels, labels
+        assert 'does not retry failed tasks' in labels, labels
+        assert '[t] Tasks' in labels, labels
         for label in ('Log', 'Tasks', 'Stop', 'Restart', 'Details', 'Browse', 'Quit'):
             assert label in labels, (label, labels)
         for label in ('Answer', 'Plan', 'Blockers'):
@@ -221,9 +353,20 @@ async def layout_pilot():
                 table = app.query_one(selector, DataTable)
                 assert table.region.height >= 3, (selector, table.region)
                 assert not table.show_horizontal_scrollbar, (selector, table.max_scroll_x)
-                assert sum(c.get_render_width(table) for c in table.columns.values()) <= width - 2
+                assert sum(c.get_render_width(table) for c in table.columns.values()) <= table.region.width - 2
             log = app.query_one('#log')
             assert log.region.height >= 4 and log.region.bottom <= height, log.region
+            footer = app.query_one('#nav-footer')
+            assert footer.region.height == 1 and footer.region.bottom <= height
+            for key, target in [('1', 'runners'), ('2', 'lanes'), ('3', 'log')]:
+                await pilot.press(key)
+                await pilot.pause()
+                assert app.focused.id == target, (key, app.focused)
+            if width >= 130 and height >= 26:
+                assert log.region.x >= app.query_one('#runners').region.right
+            else:
+                assert log.region.y >= app.query_one('#runners').region.bottom
+
             bar = app.query_one('#menubar')
             painted = '\n'.join(bar.render_line(y).text for y in range(bar.content_size.height))
             assert 'More' in painted and '?' in painted, (width, height, painted)
@@ -252,6 +395,35 @@ async def layout_pilot():
         await pilot.pause()
         painted = '\n'.join(overview.render_line(y).text for y in range(overview.content_size.height))
         assert '1 errors' in painted and '0 notes' in painted and 'Main:' in painted, painted
+        await pilot.press('m')
+        await settle(app, pilot)
+        from textual.widgets import Input
+        field = app.screen.query_one('#filter', Input)
+        field.focus()
+        await pilot.press('h', '1', '2', '3')
+        await pilot.pause()
+        assert field.value == 'h123' and app.focused is field
+        await pilot.press('escape')
+        await pilot.press('h')
+        await pilot.pause()
+        from pi_autowork.tui import WorkflowGuide
+        assert isinstance(app.screen, WorkflowGuide)
+        await pilot.press('escape')
+        assert len(app.screen_stack) == 1
+
+
+async def execution_copy_pilot():
+    from textual.widgets import DataTable
+    async with fixture_app((80, 24)) as (app, pilot):
+        runner = app.current()
+        runner.state = 'working'  # Service maintenance is not task execution.
+        runner.snapshot = replace(runner.snapshot, counts=(0, 0, 0, 1, 0, 1))
+        app.render_fleet()
+        await pilot.pause()
+        assert str(app.query_one('#runners', DataTable).get_row_at(0)[1]) == 'Needs attention'
+        shown = str(app.query_one('#overview').render())
+        assert 'service running' in shown and '0 in progress' in shown, shown
+        assert 'Working' not in shown, shown
 
 
 async def welcome_pilot():
@@ -321,7 +493,7 @@ async def palette_pilot():
         await settle(app, pilot)
         assert isinstance(app.screen, tui.PickModel), type(app.screen).__name__
         model_commands = {command.title for command in app.get_system_commands(app.screen)}
-        assert {'Login in Pi', 'Refresh Pi models'} <= model_commands, model_commands
+        assert {'Configure Pi provider', 'Refresh Pi models'} <= model_commands, model_commands
         await pilot.press('escape')
         app.view_only = True
         read_only = {command.title for command in app.get_system_commands(app.screen)}
@@ -351,8 +523,23 @@ class TuiRedesignTests(unittest.TestCase):
     def test_compact_and_wide_layout_keep_help_and_journal_visible(self):
         self.run_case('layout')
 
+    def test_service_activity_does_not_claim_task_progress(self):
+        self.run_case('execution')
+
     def test_empty_fleet_has_responsive_guided_welcome(self):
         self.run_case('welcome')
+
+    def test_reading_surfaces_have_orientation_and_reachable_controls(self):
+        self.run_case('surfaces')
+
+    def test_tasks_explain_selected_work_and_disclose_raw_record(self):
+        self.run_case('tasks')
+
+    def test_details_use_readable_workspace_and_survive_refresh(self):
+        self.run_case('details')
+
+    def test_progress_card_separates_activity_intervention_and_publication(self):
+        self.run_case('progress')
 
     def test_command_palette_exposes_contextual_autowork_actions(self):
         self.run_case('palette')
@@ -365,7 +552,7 @@ if __name__ == '__main__':
             publisher_contract()
         else:
             asyncio.run({'redraw': redraw_pilot, 'menu': menu_pilot,
-                         'layout': layout_pilot, 'welcome': welcome_pilot,
-                         'palette': palette_pilot}[case]())
+                         'layout': layout_pilot, 'welcome': welcome_pilot, 'progress': progress_pilot, 'details': details_layout_pilot, 'tasks': task_workspace_pilot, 'surfaces': reading_surfaces_pilot,
+                         'palette': palette_pilot, 'execution': execution_copy_pilot}[case]())
     else:
         unittest.main()

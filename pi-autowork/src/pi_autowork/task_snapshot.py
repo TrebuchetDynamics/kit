@@ -90,6 +90,9 @@ def task_row(record, store, *, observation=None, phase=None, stopped='', questio
         bucket = view.WAITING if cause in view.WAIT_CAUSES else view.BLOCKER
         words, kind = f'{bucket} · ' + view.blocker_detail(cause, bool(question)), 'held'
         why = "waiting for another task's files" if bucket == view.WAITING else view.blocker_detail(cause, bool(question))
+        limit_notice = view.provider_limit_notice(row.get('reason'))
+        if limit_notice:
+            why = limit_notice
     elif row.get('planning_error'):
         bucket, words, kind = view.BLOCKER, 'Blocker · Planning repair', 'held'
         why = row['planning_error']

@@ -14,6 +14,7 @@ from textual.widgets.option_list import Option
 from .planning_hub import PlanningHub
 from .planning_views import history_text, preview_text, roadmap_text
 from .tui_dialogs import Confirm
+from .tui_common import ViewHeader
 
 
 class DecisionPrompt(ModalScreen[dict]):
@@ -22,7 +23,7 @@ class DecisionPrompt(ModalScreen[dict]):
                 Binding('ctrl+s,ctrl+enter', 'save', 'Save answer', priority=True)]
     DEFAULT_CSS = '''
     DecisionPrompt { align: center middle; }
-    #decision-form { width: 84; max-width: 100%; height: 24; max-height: 100%; padding: 0 1; background: $surface; border: thick $accent; }
+    #decision-form { width: 84; max-width: 100%; height: 24; max-height: 100%; padding: 0 1; background: $surface; border: round $accent; }
     #decision-fields { height: 1fr; }
     #decision-context { height: 8; border: round $panel; }
     #decision-text { height: 3; border: round $panel; }
@@ -38,7 +39,7 @@ class DecisionPrompt(ModalScreen[dict]):
 
     def compose(self):
         with Vertical(id='decision-form'):
-            yield Label(f'Answer {self.task_id} · Ctrl+S saves · Esc cancels', markup=False, id='decision-title')
+            yield ViewHeader('Your decision · ' + self.task_id, 'Write an answer, choose the next section, then Save. Ctrl+S saves · Esc cancels.', id='decision-title')
             with VerticalScroll(id='decision-fields'):
                 yield TextArea(self.context, read_only=True, show_cursor=False, id='decision-context')
                 yield TextArea(id='decision-text')
@@ -85,7 +86,7 @@ class QuestionPicker(ModalScreen[str]):
     BINDINGS = [Binding('escape', 'dismiss(None)', 'Back')]
     DEFAULT_CSS = '''
     QuestionPicker { align: center middle; }
-    #answer-picker { width: 84; max-width: 100%; height: auto; max-height: 90%; border: thick $accent; }
+    #answer-picker { width: 84; max-width: 100%; height: auto; max-height: 90%; border: round $accent; }
     #answer-questions { height: 1fr; max-height: 18; }
     '''
 
@@ -127,6 +128,12 @@ class PlanScreen(Screen):
     #plan-input { height: 4; }
     #plan-controls { height: 3; }
     #plan-controls Button { min-width: 8; width: 1fr; padding: 0; }
+    PlanScreen.compact #plan-state { height: 1; }
+    PlanScreen.compact #plan-tabs { min-height: 3; }
+    PlanScreen.compact #plan-input { height: 3; }
+    PlanScreen.compact #plan-mode { width: 14; }
+    PlanScreen.compact #plan-task { width: 12; }
+    PlanScreen.compact #plan-new { width: 8; min-width: 8; }
     '''
 
     def __init__(self, repo, task=None, mode='plan', *, planner_factory=None):
@@ -155,6 +162,7 @@ class PlanScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
+        yield ViewHeader('Planning workspace', 'Discuss a task → review the proposal → apply only the changes you accept.')
         with Horizontal(classes='plan-line'):
             yield Input(self.repo, placeholder='Project path (service may be paused or absent)', id='plan-repository')
             yield Button('Load', id='plan-load')
@@ -178,9 +186,13 @@ class PlanScreen(Screen):
         with Horizontal(id='plan-controls'):
             for label, key in [('Send', 'send'), ('Steer', 'steer'), ('Cancel', 'cancel'),
                                ('Review', 'review'), ('Apply', 'apply'), ('Back', 'back')]:
-                yield Button(label, id='plan-' + key, variant='warning' if key == 'apply' else 'default')
+                yield Button(label, id='plan-' + key, variant='warning' if key == 'apply' else 'primary' if key == 'send' else 'default')
+
+    def on_resize(self, event):
+        self.set_class(event.size.width < 90 or event.size.height < 26, 'compact')
 
     def on_mount(self):
+        self.set_class(self.size.width < 90 or self.size.height < 26, 'compact')
         self.title = 'Plan · ' + Path(self.repo).name
         self._load_project()
         self.set_interval(.2, self.poll_turn)
@@ -254,6 +266,7 @@ class PlanScreen(Screen):
             self.planner, sessions, roadmap = result
             self.repo = str(Path(self.planner.repo).resolve())
             self.query_one('#plan-repository', Input).value = self.repo
+            self.set_class(self.size.width < 90 or self.size.height < 26, 'compact')
             self.title = 'Plan · ' + Path(self.repo).name
             self._known_sessions = sessions
             self.query_one('#plan-session', Select).set_options(
@@ -270,7 +283,7 @@ class PlanScreen(Screen):
         self._operation(load, done)
 
     def on_select_changed(self, event):
-        if event.select.id != 'plan-session' or event.value is Select.BLANK or self.planner is None:
+        if event.select.id != 'plan-session' or event.select.is_blank() or self.planner is None:
             return
         sid = str(event.value)
         if sid == self.session_id:
@@ -423,7 +436,7 @@ class PlanScreen(Screen):
         elif key == 'plan-new':
             if not self.readonly and not self._busy:
                 self.session_id, self.preview, self._history = None, None, ''
-                self.query_one('#plan-session', Select).value = Select.BLANK
+                self.query_one('#plan-session', Select).clear()
                 self.query_one('#plan-chat', TextArea).load_text('New session. Optional objective below; Send starts discovery.')
                 for pane in ('history', 'proposal', 'roadmap'):
                     self.query_one('#plan-' + pane, TextArea).load_text('No session selected.')

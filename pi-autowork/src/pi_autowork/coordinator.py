@@ -1424,6 +1424,33 @@ class Coordinator:
         LOG.say(f'Held the merge of {ref}: {self.merge_error}')
         return False
 
+    def resolve_upstream_merge(self, upstream):
+        """`merge_planning(upstream)` just failed. A conflict is resolved by Pi, once per upstream
+        revision in this process, as a moved main is: deferring it at every sync left main diverged
+        from its upstream, and so unpublished, until someone merged by hand. True only for a
+        concluded merge that passes the record checks; the caller aborts whatever else is left."""
+        conflicts = (git(self.integ, 'diff', '--name-only', '--diff-filter=U') or '').splitlines()
+        rev = git(self.repo, 'rev-parse', upstream)
+        if not conflicts or not rev or self.stop or self.seen.get('upstream-resolved') == rev:
+            return False
+        self.seen['upstream-resolved'] = rev
+        before = git(self.integ, 'rev-parse', 'HEAD')
+        LOG.say(f'{upstream} conflicts with this session in: {" ".join(conflicts)}; asking Pi to resolve the merge')
+        self.pi_job('merge', self.integ_branch.removeprefix('pi-autowork/'), self.integ,
+                    merge_prompt(branch=self.integ_branch, base=upstream, files=conflicts,
+                                 tasks=self.tasks_cli, repo=self.repo),
+                    f'pi-autowork-merge-{datetime.now():%Y%m%d%H%M%S}', self.verify_timeout)
+        marker = git(self.integ, 'rev-parse', '--path-format=absolute', '--git-path', 'MERGE_HEAD')
+        if ((marker and Path(marker).exists()) or dirty(self.integ)
+                or not git_ok(self.integ, 'merge-base', '--is-ancestor', rev, 'HEAD')):
+            return False
+        if self.reject_record_merge(self.integ, before, rev):
+            return False
+        if self.reopen_stale_closures():
+            return True
+        git(self.integ, 'reset', '-q', '--merge', before)
+        return False
+
     def end_session(self):
         """Only a clean, fully merged session is removed. Its regenerable build output goes first:
         a day-old session kept for `.dart_tool/` alone said so every cycle and never rotated."""

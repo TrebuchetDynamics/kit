@@ -70,7 +70,7 @@ changing live gates.
 | Continuous runner | [runner guide](../pi-autowork/README.md) | Coordinate bounded workers, verification, local integration and recovery |
 | Portable packages | [Claude marketplace](../.claude-plugin/marketplace.json), [Codex manifest](../.codex-plugin/plugin.json), [marketplace](../.agents/plugins/marketplace.json), [Pi manifest](../package.json), [Pi extension](../adapters/pi.mjs) | Discover explicit portable workflows without Hermes configuration dependencies |
 | Portable behavior | [host contract](../adapters/skills/COMMON.md) | Use the current host's tools and preserve its permissions, memory and credentials |
-| Paseo interface | [plugin guide](../integrations/paseo/README.md) | Inspect the same tasks/runners and expose policy-gated actions; not a scheduler or provider |
+| Paseo interface | [plugin guide](../pi-autowork/integrations/paseo/README.md) | Inspect the same tasks/runners and expose policy-gated actions; not a scheduler or provider |
 
 Python owners live under `pi-autowork/src/`, with tests under `pi-autowork/tests/`. Root scripts and legacy entrypoints load those selected-release owners through the shared bootstrap, and Paseo planning uses the same source tree.
 

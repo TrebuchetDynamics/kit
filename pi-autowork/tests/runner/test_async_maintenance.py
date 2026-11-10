@@ -482,6 +482,67 @@ class AsyncMaintenanceTests(unittest.TestCase):
             owner.finish_cycle('IDLE')
         self.assertEqual(done.exception.code, 4)
 
+    def diverge(self):
+        """Upstream and the session both change one file; the session is the main checkout here."""
+        other = self.root / 'other'
+        self.git(self.root, 'clone', '-q', '-b', 'main', str(self.remote), str(other))
+        self.git(other, 'config', 'user.name', 'Fixture')
+        self.git(other, 'config', 'user.email', 'fixture@example.invalid')
+        (other / 'shared.txt').write_text('upstream\n')
+        self.git(other, 'add', 'shared.txt')
+        self.git(other, 'commit', '-qm', 'upstream change')
+        self.git(other, 'push', '-q', 'origin', 'main')
+        (self.repo / 'shared.txt').write_text('local\n')
+        self.git(self.repo, 'add', 'shared.txt')
+        self.git(self.repo, 'commit', '-qm', 'local change')
+        owner = self.owner
+        owner.integ, owner.integ_branch = str(self.repo), 'main'
+        owner.tasks_cli, owner.verify_timeout = 'autowork tasks', '60'
+        owner.reject_record_merge = Mock(return_value=False)
+        owner.reopen_stale_closures = Mock(return_value=True)
+        owner.fast_forward_main = Mock(return_value='')
+        owner.push = Mock(return_value='pending')
+        return self.git(other, 'rev-parse', 'HEAD')
+
+    def test_a_conflicting_upstream_is_resolved_by_pi_and_lands(self):
+        upstream = self.diverge()
+        local = self.git(self.repo, 'rev-parse', 'HEAD')
+
+        def resolve(role, task, directory, message, session, limit):
+            self.assertEqual((role, directory), ('merge', str(self.repo)))
+            self.assertIn('unfinished merge of origin/main that conflicts in: shared.txt', message)
+            (self.repo / 'shared.txt').write_text('local\nupstream\n')
+            self.git(self.repo, 'commit', '-qam', 'merge upstream')
+            return True, ''
+        self.owner.pi_job = Mock(side_effect=resolve)
+        self.assertEqual(self.owner.sync_upstream(), 'pending')
+        self.until(lambda: maintenance.read(self.owner, 'publication').get('phase') in ('ready', 'done'))
+        self.owner.pi_job.assert_called_once()
+        self.assertEqual(self.git(self.repo, 'rev-list', '--parents', '-1', 'HEAD').split()[1:], [local, upstream])
+        self.assertEqual((self.repo / 'shared.txt').read_text(), 'local\nupstream\n')
+        self.owner.fast_forward_main.assert_called_once()
+        self.owner.push.assert_called_once()
+        said = ' '.join(call.args[0] for call in coordinator.LOG.say.call_args_list)
+        self.assertIn('asking Pi to resolve the merge', said)
+        self.assertIn('Pulled 1 commit(s) from origin/main into main', said)
+        self.assertNotIn('Upstream merge deferred', said)
+
+    def test_an_unresolved_upstream_conflict_is_aborted_and_asked_once_per_revision(self):
+        self.diverge()
+        local = self.git(self.repo, 'rev-parse', 'HEAD')
+        self.owner.pi_job = Mock(return_value=(False, ''))  # Pi leaves the merge unfinished
+        for _ in range(2):
+            self.assertEqual(self.owner.sync_upstream(), 'pending')
+            self.until(lambda: maintenance.read(self.owner, 'publication').get('phase') == 'done')
+            self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), local)
+            self.assertEqual(self.git(self.repo, 'status', '--porcelain'), '')
+            maintenance.write(self.owner, 'publication', {})
+        self.owner.pi_job.assert_called_once()
+        self.owner.fast_forward_main.assert_not_called()
+        self.owner.push.assert_not_called()
+        said = [call.args[0] for call in coordinator.LOG.say.call_args_list]
+        self.assertEqual(sum('Upstream merge deferred' in line for line in said), 2)
+
     def test_landings_during_older_push_coalesce_into_fresh_qualified_candidate(self):
         self.blocked_push()
         self.git(self.repo, 'commit', '-qm', 'new qualified landing', '--allow-empty')
