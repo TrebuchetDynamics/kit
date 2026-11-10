@@ -9,15 +9,15 @@
     [
       "cp",
       "-R",
-      "integrations/paseo/client",
-      "integrations/paseo/server",
-      "integrations/paseo/shared",
+      "pi-autowork/integrations/paseo/client",
+      "pi-autowork/integrations/paseo/server",
+      "pi-autowork/integrations/paseo/shared",
       "."
     ],
     [
       "cp",
-      "integrations/paseo/index.client.tsx",
-      "integrations/paseo/index.server.ts",
+      "pi-autowork/integrations/paseo/index.client.tsx",
+      "pi-autowork/integrations/paseo/index.server.ts",
       "."
     ]
   ]

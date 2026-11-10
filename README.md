@@ -85,10 +85,10 @@ codex plugin add kit@autowork-marketplace
 
 Install the **Autowork Paseo plugin** on the intended daemon host. It requires
 Paseo 0.13, 0.14 or 0.15 and an existing Linux Autowork installation.
-See the [full requirements](integrations/paseo/README.md#requirements).
+See the [full requirements](pi-autowork/integrations/paseo/README.md#requirements).
 
 > **Trusted, unsandboxed code:** a Paseo plugin runs as the daemon user.
-> Review the [security notes](integrations/paseo/docs/security.md) before installation.
+> Review the [security notes](pi-autowork/integrations/paseo/docs/security.md) before installation.
 > It is read-only by default. Execution grants are shared by authenticated daemon
 > managers, not isolated per user.
 
@@ -275,9 +275,9 @@ states its own boundaries and what "done" means.
 
 ## Paseo interface
 
-The [Autowork Paseo plugin](integrations/paseo/README.md) lives in `integrations/paseo/`.
+The [Autowork Paseo plugin](pi-autowork/integrations/paseo/README.md) lives in `pi-autowork/integrations/paseo/`.
 Install it from Git with the [command above](#paseo), or follow the
-[local checkout instructions](integrations/paseo/README.md#install-only-after-reviewing-trusted-code).
+[local checkout instructions](pi-autowork/integrations/paseo/README.md#install-only-after-reviewing-trusted-code).
 
 - **See the work:** inspect runners, tasks, goals, owner questions, logs and the scorecard.
 - **Review the plan:** prepare staged planning proposals, then review and explicitly apply them.
@@ -286,10 +286,10 @@ Install it from Git with the [command above](#paseo), or follow the
 
 The plugin uses the existing Autowork engine. It is not a model provider or scheduler.
 Planning does not start a runner. Physical client and live control qualification
-remain pending. See the [qualification record](integrations/paseo/docs/qualification.md).
+remain pending. See the [qualification record](pi-autowork/integrations/paseo/docs/qualification.md).
 
-Developer checks use `npm --prefix integrations/paseo run check` after
-`npm --prefix integrations/paseo ci --ignore-scripts`.
+Developer checks use `npm --prefix pi-autowork/integrations/paseo run check` after
+`npm --prefix pi-autowork/integrations/paseo ci --ignore-scripts`.
 See [testing](docs/testing.md#paseo-plugin-checks).
 
 ## The runner (Autowork)
@@ -422,7 +422,7 @@ and [install](#install) again in each host; in Hermes, rewire existing cron jobs
 | Claude Code | Plugin validation and an earlier isolated install are recorded; no live model workflow is demonstrated in that record. |
 | Codex | Earlier isolated installation and skill discovery, plus portable-package checks; the current package still needs renewed native/live qualification. |
 | Hermes | Offline tests, native registration/integration checks and gateway activation receipts. Live model behavior and Telegram delivery require separate live checks. |
-| Paseo | The plugin's offline checks (the real Paseo 0.15 compiler and an isolated runtime) and a live local daemon load with read-only reads are in [its qualification record](integrations/paseo/docs/qualification.md). Physical client and live control qualification remain pending. |
+| Paseo | The plugin's offline checks (the real Paseo 0.15 compiler and an isolated runtime) and a live local daemon load with read-only reads are in [its qualification record](pi-autowork/integrations/paseo/docs/qualification.md). Physical client and live control qualification remain pending. |
 
 Package contents have changed since some isolated-install runs. The
 [cross-host verification record](docs/cross-host.md#behavior-and-verification) names the

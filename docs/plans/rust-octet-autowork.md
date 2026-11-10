@@ -133,3 +133,40 @@ Builder review found three fixable gaps: durable task-proposal publication, trus
 - [Octet native-host limits](https://github.com/skaft-software/octet/blob/4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee/docs/sdk.md#headless-safety-and-cancellation): no unattended writable native host and no in-band abort.
 - [Octet effect broker](https://github.com/skaft-software/octet/blob/4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee/crates/octet-agent/src/effect.rs) and [ephemeral confirmation API](https://github.com/skaft-software/octet/blob/4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee/crates/octet-agent/src/tool.rs).
 - [rusqlite transaction behavior](https://docs.rs/rusqlite/0.40.2/rusqlite/enum.TransactionBehavior.html); upstream Octet's 0.10.0 Cargo.lock also uses rusqlite 0.40.2. No database or Rust compilation was performed during planning.
+
+## Next bounded batch: read surfaces and task-command parity
+
+Plan round 2 of 10. The first batch supplies the pinned crate/API and CLI
+(`TOOLSET-472`), controlled native roles (`473`), committed task snapshots and
+pending publication (`474`), journal recovery (`475`), planner re-entry (`476`)
+and serialized offline cycles (`477`). Source owners are now
+`pi-autowork/rust/autowork/src/{runtime,task_store,state,planning,execution}.rs`.
+The retained receipts for 472–475 and immutable 477/481 inputs in Sources record
+passing reviewed candidates. The 476 closure is manual at `8db90299`; its
+`planning_reentry.rs` cases are implementation evidence, not independently
+verified or live qualification. These historical inputs are not fresh checks.
+
+Choose read-only versioned status and bounded offline task-command parity next.
+Both have concrete existing TaskStore/TaskService and StateStore interfaces;
+neither needs a new shell confinement design or production provider credentials.
+Status consumes committed snapshots and persisted journal observations, reports
+schema/application versions and uncertainty, and performs no reconciliation
+writes. Task mutations use the existing pending-edit/publication transaction,
+preserve unknown notes and gates, and reject stale revisions. Protected Owner
+decision writes and `place --decision` remain explicitly refused by the planner
+authority seam; trusted human decision-command parity remains deferred. Keep command output
+explicit about pending edits versus committed/selectable state. A closing planner
+compares their actual results before selecting another batch.
+
+General model-authored shell execution remains disabled. Native production
+provider/auth, steering, cancellation/resource qualification, service management,
+Rust TUI, Paseo wiring, installation, legacy migration/import and Python/Pi
+retirement remain open goal outcomes. JSON status is an offline seam, not Paseo
+compatibility or installed-service acceptance. No old LANG-003 task is present in
+the current committed queue; preserve its historical contract and resolve actual
+ownership before any migration/cutover work. This round changes no old owner,
+service, source pin, model grants or runtime state.
+
+The saved follow-up task records own exact write scopes, proposed offline checks
+and dependencies. New behavior checks remain proposed until implementation;
+planning never qualifies native execution, migration or live delivery.

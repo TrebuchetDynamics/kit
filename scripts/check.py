@@ -32,7 +32,7 @@ EXCLUSIONS = {
 # 764s of a 1324s run as one process, while its tests are independent runner fixtures.
 SPLIT = {'pi-autowork/tests/runner/test_pi_autowork.py': 12,
          'pi-autowork/tests/engine/test_parallel_integrate.py': 4}
-PASEO = 'integrations/paseo'
+PASEO = 'pi-autowork/integrations/paseo'
 LIVE_FLAGS = ('CONTAINMENT_LINUX_TESTS', 'RUN_CONTROLLER_BRIDGE_LINUX',
               'HERMES_NATIVE_HANDOFF_TEST', 'HERMES_NATIVE_REGISTRATION_TEST')
 
