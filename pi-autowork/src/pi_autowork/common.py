@@ -25,7 +25,7 @@ def ponytail_prompt(level=None, *, review=False, toolset=None):
     method path and a compact reminder; material work still reads the method.
     """
     level = level or ponytail_level()
-    root = Path(toolset) if toolset is not None else Path(__file__).resolve().parents[2]
+    root = Path(toolset) if toolset is not None else Path(__file__).resolve().parents[3]
     method = root / 'skills/shared/PONYTAIL.md'
     if level == 'off':
         text = 'Ponytail is off for this task. Preserve acceptance, safety, scope and verification.'

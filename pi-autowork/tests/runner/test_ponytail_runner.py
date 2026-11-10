@@ -29,7 +29,7 @@ class PonytailRunnerTests(unittest.TestCase):
 
     def test_reviewer_prompt_names_the_review_protocol_and_off_is_explicit(self):
         review = common.ponytail_prompt('full', review=True)
-        self.assertIn('ponytail-review/PROTOCOL.md', review)
+        self.assertIn(str(ROOT / 'skills/ponytail/upstream/skills/ponytail-review/PROTOCOL.md'), review)
         off = common.ponytail_prompt('off')
         self.assertIn('Ponytail is off', off)
         self.assertNotIn('smallest complete change', off)
