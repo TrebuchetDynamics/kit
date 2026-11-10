@@ -32,7 +32,7 @@ class TextualDependencyTests(unittest.TestCase):
         legacy = 'error: textual==8.2.8 is not available in the offline cache'
         cases = [
             ('pi-autowork/tests/runner/test_task_prepare.py', 'PackageImportTests',
-             'test_every_module_imports_in_isolation_and_all_import_edges_are_acyclic', 5),
+             'test_every_module_imports_in_isolation_and_all_import_edges_are_acyclic', None),
             ('pi-autowork/tests/runner/test_blockers_report.py', 'BlockersPilotTests',
              'test_pinned_textual_report_interactions', 1),
             ('pi-autowork/tests/runner/test_fleet_view.py', 'FleetViewTests',
@@ -68,6 +68,7 @@ class TextualDependencyTests(unittest.TestCase):
                 spec = importlib.util.spec_from_file_location('fixture_' + Path(path).stem, ROOT / path)
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
+                expected_skips = len(module.PackageImportTests.RENDERERS) if skip_count is None else skip_count
                 for code, stderr, outcome in scenarios:
                     with self.subTest(test=method, code=code, stderr=stderr):
                         def run(command, **kwargs):
@@ -80,7 +81,7 @@ class TextualDependencyTests(unittest.TestCase):
                         with mock.patch('subprocess.run', side_effect=run):
                             getattr(module, cls)(method).run(result)
                         self.assertEqual(result.errors, [])
-                        self.assertEqual(len(result.skipped), skip_count if outcome == 'skip' else 0)
+                        self.assertEqual(len(result.skipped), expected_skips if outcome == 'skip' else 0)
                         self.assertEqual(bool(result.failures), outcome == 'fail', result.failures)
 
 
