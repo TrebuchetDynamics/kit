@@ -20,4 +20,16 @@ impl std::fmt::Display for Unavailable {
 
 impl std::error::Error for Unavailable {}
 
+impl From<std::io::Error> for Unavailable {
+    fn from(_: std::io::Error) -> Self { Self("filesystem operation failed") }
+}
+
+impl From<task_store::StoreError> for Unavailable {
+    fn from(_: task_store::StoreError) -> Self { Self("task-store operation failed") }
+}
+
+impl From<state::StateError> for Unavailable {
+    fn from(_: state::StateError) -> Self { Self("journal operation failed") }
+}
+
 pub type Result<T> = std::result::Result<T, Unavailable>;

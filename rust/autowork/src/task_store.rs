@@ -190,6 +190,18 @@ fn record_path(path: &str) -> bool {
         && matches!(p[1], "items" | "goals")
         && p[2].strip_suffix(".md").is_some_and(valid_id)
 }
+fn evidence_path(path: &str) -> bool {
+    let p: Vec<_> = path.split('/').collect();
+    p.len() == 3
+        && p[0] == "tasks"
+        && p[1] == "evidence"
+        && p[2]
+            .strip_suffix(".toml")
+            .is_some_and(|id| valid_id(id) && !id.is_empty())
+}
+fn store_path(path: &str) -> bool {
+    record_path(path) || evidence_path(path)
+}
 fn valid_id(id: &str) -> bool {
     id.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
         && id
@@ -925,6 +937,8 @@ pub struct PendingSnapshot {
     pub branch: String,
     pub tree: String,
     pub captured_bytes: BTreeMap<String, Vec<u8>>,
+    /// Exact working-tree evidence receipts; committed atomically with records.
+    pub captured_evidence: BTreeMap<String, Vec<u8>>,
     pub token: String,
 }
 #[derive(Clone, Debug)]
@@ -1006,18 +1020,18 @@ impl TaskService {
             if !paths.insert(path.to_string()) {
                 return refuse("duplicate proposal path");
             }
-            let old = records.get(path);
+            let old = records.get(path).cloned();
             let revision = match old {
-                Some(b) => digest(b)?,
+                Some(ref b) => digest(b)?,
                 None => String::new(),
             };
             if revision != change.expected_revision {
                 return refuse(format!("{path}: stale expected record revision"));
             }
-            planner_authority(path, old.map(Vec::as_slice), &change.proposed_bytes)?;
+            planner_authority(path, old.as_deref(), &change.proposed_bytes)?;
             edits.push(JournalRecord {
                 path: path.into(),
-                before: old.cloned(),
+                before: old,
                 after: change.proposed_bytes.clone(),
             });
             records.insert(path.into(), change.proposed_bytes.clone());
@@ -1067,6 +1081,135 @@ impl TaskService {
             paths: paths.into_iter().map(PathBuf::from).collect(),
         })
     }
+    /// Coordinator-authored closure change. It follows the same exact-byte
+    /// transaction and schema validation but is not a planner proposal.
+    pub fn apply_coordinator(
+        &self,
+        expected_revision: &str,
+        changes: &[crate::planning::RecordChange],
+    ) -> Result<PendingEdit> {
+        let lock = self.lock()?;
+        self.undo(&lock)?;
+        let base = TaskStore::read_at(&self.repo, "HEAD")?;
+        if base.revision != expected_revision {
+            return refuse("stale coordinator base revision");
+        }
+        let mut records = self.working_records()?;
+        let mut evidence = self.working_evidence()?;
+        let before_records = records.clone();
+        let before_evidence = evidence.clone();
+        let mut edits = Vec::new();
+        let mut paths = BTreeSet::new();
+        for change in changes {
+            let Some(path) = change.path.to_str().filter(|p| store_path(p)) else {
+                return refuse("coordinator path is not a task/evidence record");
+            };
+            if !paths.insert(path.to_string()) {
+                return refuse("duplicate coordinator path");
+            }
+            let old = if record_path(path) {
+                records.get(path)
+            } else {
+                evidence.get(path)
+            }.cloned();
+            let revision = match &old {
+                Some(b) => digest(b)?,
+                None => String::new(),
+            };
+            if revision != change.expected_revision {
+                return refuse(format!("{path}: stale expected record revision"));
+            }
+            if record_path(path) {
+                parse(path, &change.proposed_bytes)?;
+                records.insert(path.into(), change.proposed_bytes.clone());
+            } else {
+                std::str::from_utf8(&change.proposed_bytes)
+                    .map_err(|_| StoreError("evidence must be UTF-8".into()))?;
+                toml::from_str::<toml::Table>(
+                    std::str::from_utf8(&change.proposed_bytes)
+                        .map_err(|_| StoreError("evidence must be UTF-8".into()))?,
+                )
+                .map_err(|e| StoreError(format!("{path}: {e}")))?;
+                evidence.insert(path.into(), change.proposed_bytes.clone());
+            }
+            edits.push(JournalRecord {
+                path: path.into(),
+                before: old,
+                after: change.proposed_bytes.clone(),
+            });
+        }
+        snapshot(&self.repo, &base.revision, records.clone(), &evidence)?;
+        if self.working_records()? != before_records
+            || self.working_evidence()? != before_evidence
+            || git_text(&self.repo, &["rev-parse", "HEAD"])? != base.revision
+        {
+            return refuse("store or HEAD changed during coordinator validation");
+        }
+        for edit in &edits {
+            if side_path(&self.repo.join(&edit.path), "undo").exists() {
+                return refuse("reconcile preserved external undo bytes before writing");
+            }
+        }
+        let journal = lock.git_dir.join("autowork-rust-tasks.transaction");
+        atomic_bytes(
+            &journal,
+            &serde_json::to_vec(&edits).map_err(|e| StoreError(e.to_string()))?,
+        )?;
+        let result = (|| -> Result<()> {
+            for edit in &edits {
+                let path = self.repo.join(&edit.path);
+                fs::create_dir_all(path.parent().unwrap())?;
+                if read_regular(&path)? != edit.before {
+                    return refuse("record changed before replace");
+                }
+                atomic_bytes(&path, &edit.after)?;
+            }
+            if self.working_records()? != records
+                || self.working_evidence()? != evidence
+                || git_text(&self.repo, &["rev-parse", "HEAD"])? != base.revision
+            {
+                return refuse("store or HEAD changed during coordinator write");
+            }
+            Ok(())
+        })();
+        if let Err(e) = result {
+            self.undo(&lock)?;
+            return Err(e);
+        }
+        fs::remove_file(&journal)?;
+        sync_dir(&lock.git_dir)?;
+        Ok(PendingEdit {
+            expected_revision: base.revision,
+            paths: paths.into_iter().map(PathBuf::from).collect(),
+        })
+    }
+    fn working_evidence(&self) -> Result<BTreeMap<String, Vec<u8>>> {
+        let mut evidence = BTreeMap::new();
+        let dir = self.repo.join("tasks/evidence");
+        match fs::symlink_metadata(&dir) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(evidence),
+            Ok(m) if m.file_type().is_dir() => (),
+            _ => return refuse("expected regular evidence directory"),
+        }
+        for entry in fs::read_dir(dir)? {
+            let path = entry?.path();
+            let name = path
+                .strip_prefix(&self.repo)
+                .unwrap()
+                .to_str()
+                .ok_or_else(|| StoreError("non-UTF-8 evidence path".into()))?
+                .to_owned();
+            if !evidence_path(&name) {
+                continue;
+            }
+            let bytes = read_regular(&path)?
+                .ok_or_else(|| StoreError("evidence disappeared".into()))?;
+            std::str::from_utf8(&bytes)
+                .map_err(|_| StoreError(format!("{name}: evidence must be UTF-8")))?;
+            evidence.insert(name, bytes);
+        }
+        Ok(evidence)
+    }
     /// Does not recover implicitly: inspecting a partial transaction must change nothing.
     pub fn capture_pending(&self) -> Result<PendingSnapshot> {
         let lock = self.lock()?;
@@ -1079,15 +1222,23 @@ impl TaskService {
         }
         let base_head = git_text(&self.repo, &["rev-parse", "--verify", "HEAD^{commit}"])?;
         let branch = git_text(&self.repo, &["symbolic-ref", "--quiet", "HEAD"])?;
-        let (base_records, evidence) = read_tree(&self.repo, &base_head)?;
+        let (base_records, base_evidence) = read_tree(&self.repo, &base_head)?;
         let captured_bytes = self.working_records()?;
-        snapshot(&self.repo, &base_head, captured_bytes.clone(), &evidence)?;
+        let captured_evidence = self.working_evidence()?;
+        snapshot(
+            &self.repo,
+            &base_head,
+            captured_bytes.clone(),
+            &captured_evidence,
+        )?;
+        let mut base_capture = base_records.clone();
+        base_capture.extend(base_evidence);
         let scratch = Scratch::new()?;
         let index = scratch.0.join("index");
         git_env(&self.repo, &["read-tree", &base_head], &[], Some(&index))?;
-        for path in base_records
+        for path in base_capture
             .keys()
-            .filter(|p| !captured_bytes.contains_key(*p))
+            .filter(|p| !captured_bytes.contains_key(*p) && !captured_evidence.contains_key(*p))
         {
             git_env(
                 &self.repo,
@@ -1096,8 +1247,8 @@ impl TaskService {
                 Some(&index),
             )?;
         }
-        for (path, bytes) in &captured_bytes {
-            if base_records.get(path) == Some(bytes) {
+        for (path, bytes) in captured_bytes.iter().chain(captured_evidence.iter()) {
+            if base_capture.get(path) == Some(bytes) {
                 continue;
             }
             let oid = text(git_env(
@@ -1126,17 +1277,19 @@ impl TaskService {
         if git_text(&self.repo, &["rev-parse", "HEAD"])? != base_head
             || git_text(&self.repo, &["symbolic-ref", "--quiet", "HEAD"])? != branch
             || self.working_records()? != captured_bytes
+            || self.working_evidence()? != captured_evidence
         {
             return refuse("capture inputs changed; retry");
         }
         let token = json_hash(
-            &serde_json::json!({"base_head":base_head,"branch":branch,"tree":tree,"captured_bytes":captured_bytes}),
+            &serde_json::json!({"base_head":base_head,"branch":branch,"tree":tree,"captured_bytes":captured_bytes,"captured_evidence":captured_evidence}),
         )?;
         Ok(PendingSnapshot {
             base_head,
             branch,
             tree,
             captured_bytes,
+            captured_evidence,
             token,
         })
     }
@@ -1180,7 +1333,7 @@ impl TaskService {
         let edits: Vec<JournalRecord> = serde_json::from_slice(&bytes)
             .map_err(|e| StoreError(format!("invalid task journal: {e}")))?;
         for edit in &edits {
-            if !record_path(&edit.path) {
+            if !store_path(&edit.path) {
                 return refuse("invalid journal record path");
             }
         }

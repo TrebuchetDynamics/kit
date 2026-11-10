@@ -1,9 +1,9 @@
 # Native-Octet Autowork candidate
 
 This Linux Rust component provides an owned-agent runtime and durable journal,
-not the installed Python runner. `version` and `capabilities` work without a model. The coordinator
-`run` command remains unavailable. This component does not install a service,
-import global authentication, or replace an existing runner.
+not the installed Python runner. `version` and `capabilities` work without a model; `run` starts the native coordinator and reports a JSON summary. This component does not install a service, import global authentication, or replace an existing runner.
+
+`run` accepts `--repo`, repeatable `--task`, `--max-tasks`, `--pause` and `--no-commit`. Model routing is explicit: set `AUTOWORK_MODEL_REF`, `AUTOWORK_MODEL_NAME` and `AUTOWORK_MODEL_BASE_URL`; an optional `AUTOWORK_MODEL_SECRET_FILE` names a private credential file outside the workspace. Credential contents are never command-line arguments. Durable evidence is written under `$XDG_STATE_HOME/autowork-next/evidence` (or `$HOME/.local/state/autowork-next/evidence`). The CLI does not register arbitrary check commands; unsupported required check IDs stay unmet.
 
 See the [accepted design](../../docs/plans/rust-octet-autowork.md),
 [dependency pin and build prerequisites](../../docs/dependencies.md#rust-autowork-candidate),
