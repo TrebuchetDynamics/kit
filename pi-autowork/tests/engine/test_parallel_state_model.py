@@ -861,6 +861,23 @@ class StateModelTests(unittest.TestCase):
             self.assertEqual(crashed['state'], 'held')
             self.assertIn(crashed.get('cause'), ('crash', 'empty'))
 
+    def test_reconcile_holds_a_slot_whose_worktree_cannot_be_validated(self):
+        # Was a bug: a dead worker whose worktree no longer matches the slot (a detached HEAD,
+        # a lost branch, a moved path) makes workspace() raise ValueError. reconcile let it
+        # through, so the slot stayed 'running' with no live worker and every later slot went
+        # unreconciled; the runner then reported only "the engine needs attention: consumer
+        # must be an existing Git workspace" and retried the same failure forever.
+        # Expected: that slot alone is held with the validation error as its reason and the
+        # other slots are still reconciled.
+        with tempfile.TemporaryDirectory() as tmp:
+            fx = self.reconciled_pair(tmp)
+            fx.git('checkout', '-q', '--detach', repo=fx.paths['A'])
+            result = {s['task_id']: s for s in state.reconcile(fx.repo, fx.owner)}
+            self.assertEqual(result['A']['state'], 'held')
+            self.assertEqual(result['A']['cause'], 'crash')
+            self.assertIn('git symbolic-ref --short HEAD failed', result['A']['reason'])
+            self.assertEqual(result['B']['state'], 'released')
+
 
 if __name__ == '__main__':
     unittest.main()
