@@ -10,7 +10,8 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
 from offline_textual import textual_unavailable
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+SOURCE = Path(__file__).resolve().parents[2] / 'src'
+sys.path.insert(0, str(SOURCE))
 from pi_autowork import fleet_view, blockers_report
 
 
@@ -345,12 +346,17 @@ class BlockersPilotTests(unittest.TestCase):
     def test_pinned_textual_report_interactions(self):
         if not shutil.which('uv'):
             self.skipTest('uv is needed for pinned Textual')
+        for module in (fleet_view, blockers_report):
+            self.assertTrue(Path(module.__file__).resolve().is_relative_to(SOURCE))
         result = subprocess.run(['uv', 'run', '--offline', '--no-project', '--with', 'textual==8.2.8',
                                  'python', str(Path(__file__).with_name('blockers_pilot.py'))],
                                 capture_output=True, text=True, timeout=90)
         if textual_unavailable(result):
             self.skipTest('textual==8.2.8 is not in the offline cache')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        print('WRAPPER', sys.executable, sys.version.split()[0],
+              'source=' + str(Path(fleet_view.__file__).resolve()))
+        print(result.stdout, end='')
 
 
 if __name__ == '__main__':
