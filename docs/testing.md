@@ -85,6 +85,16 @@ cwd/PYTHONPATH, including deterministic fake inference. Native copied-release
 fixtures remain separate; neither closure qualifies a model or installed service.
 See [source layout](../pi-autowork/docs/source-layout.md).
 
+## Skill task-persistence contracts
+
+`python3 scripts/check.py tests/test_planning_cli_contract.py` checks every
+first-party skill's explicit route to the shared task CLI policy, excluding pinned
+upstream methods. It checks unavailable-tool, authority and deletion guidance and
+uses a disposable repository to exercise the existing absolute Python entrypoint
+from an unrelated directory: capabilities, add, literal JSON field update with a
+record revision, readback and validation. The stale-read and completed-task safety
+contracts remain covered. These checks do not prove model adherence or live delivery.
+
 ## Parallel offline acceptance
 
 `python3 -m unittest pi-autowork/tests/engine/test_parallel_e2e.py` exercises the
