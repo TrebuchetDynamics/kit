@@ -283,18 +283,27 @@ class OfflineCheckTests(unittest.TestCase):
         renames = {(row['source'], row['old']): row for row in fixture['renames']}
         inputs, removed = {}, set()
         for snapshot in fixture['snapshots']:
-            inputs.update(snapshot['inputs'])
             for path, delta in snapshot['delta'].items():
                 methods = required.setdefault(path, set())
                 for name in delta['removed']:
-                    source = fixture['modules'][path]['source']
+                    source = fixture['modules'][path]['source'] or path
                     proof = renames[source, name]
                     self.assertIn(proof['new'], delta['added'])
                     self.assertRegex(proof['commit'], r'^[0-9a-f]{40}$')
+                    if 'before_input' in proof:
+                        self.assertEqual(inputs[path], proof['before_input'])
+                        self.assertEqual(snapshot['inputs'][path], proof['after_input'])
+                        self.assertEqual(snapshot['revision'], proof['commit'])
+                        self.assertRegex(proof['parent'], r'^[0-9a-f]{40}$')
+                        for input_path, mode, blob in (proof['before_input'], proof['after_input']):
+                            self.assertEqual(input_path, proof['path'])
+                            self.assertEqual(mode, '100644')
+                            self.assertRegex(blob, r'^[0-9a-f]{40}$')
                     methods.remove(name)
                     removed.add((source, name))
                 self.assertFalse(methods & set(delta['added']), (path, 'duplicate addition'))
                 methods.update(delta['added'])
+            inputs.update(snapshot['inputs'])
             fingerprint = hashlib.sha256(json.dumps(
                 {p: sorted(ids) for p, ids in sorted(required.items())}, sort_keys=True).encode()).hexdigest()
             self.assertEqual(fingerprint, snapshot['method_inventory_sha256'], snapshot['role'])
