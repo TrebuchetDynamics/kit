@@ -19,8 +19,9 @@ format, mandatory experiment or acceptance ceremony is introduced.
   It creates no coordinator-verification receipt. Ordinary dependencies, verified
   dependencies and goal qualification remain distinct. Never manufacture a waiver
   or manually close implementation acceptance merely to unblock a queue.
-- Preserve full existing identifiers and the current eight-hex allocation contract;
-  do not promise impossible collision freedom or renumber existing work.
+- Allocate plain numbered task IDs without hash suffixes through `autowork tasks`.
+  Preserve existing identities and references; never renumber live work or promise
+  cross-checkout collision freedom.
 - Use literal JSON for prose and carry a material earlier read's `record_revision`
   into supported `--expect` updates. On refusal reread and reapply only attributable
   changes, never blind-retry a stale full snapshot. Operation-local locking alone

@@ -25,7 +25,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 
 from pi_autowork import landing, task_handoff, task_status
 from pi_autowork.engine import task_select  # noqa: E402
@@ -381,7 +380,7 @@ def place_between(ranked, position):
 
 
 def new_id(repo, store, prefix=None):
-    """Next number plus an eight-hex hash; legacy and archived IDs are taken too."""
+    """Next plain numbered ID; legacy hashed and archived numbers are taken too."""
     ids = set(store.tasks) | set(store.goals)
     archive = Path(repo) / 'TODO.archive.md'
     if archive.is_file():
@@ -397,11 +396,7 @@ def new_id(repo, store, prefix=None):
         raise CommandError('invalid prefix: letters, digits or underscores, starting with a letter')
     numbers = [n for p, n in numbered if p == prefix]
     number = str(max([0] + [int(n) for n in numbers]) + 1).zfill(max([3] + [len(n) for n in numbers]))
-    for _ in range(64):
-        digest = hashlib.sha256(f'{prefix}-{number}:{time.time_ns()}:{os.urandom(8).hex()}'.encode()).hexdigest()
-        if (candidate := f'{prefix}-{number}-{digest[:8]}') not in ids:
-            return candidate
-    raise CommandError(f'no unused ID for {prefix}-{number}')
+    return f'{prefix}-{number}'
 
 
 def _task(store, tid):
