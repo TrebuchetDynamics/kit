@@ -370,6 +370,46 @@ fn pinned_selection_preserves_contracts() {
 }
 
 #[test]
+fn goal_edit_reader_uses_working_bytes_and_apply_rechecks_the_digest() {
+    let r = Repo::new();
+    let service = TaskService::new(&r.0).unwrap();
+    let snapshot = TaskStore::read_at(&r.0, "HEAD").unwrap();
+    let base = snapshot.revision();
+    let hash = &snapshot.goals()["G-1"].record_revision;
+    assert_eq!(
+        service.goal_record_for_edit("G-1", hash).unwrap(),
+        GOAL.as_bytes()
+    );
+    for id in ["UNKNOWN", "../G-1", "T-1"] {
+        assert!(service.goal_record_for_edit(id, hash).is_err());
+    }
+    assert!(service.record_for_edit("G-1", hash).is_err());
+    let edited = GOAL.replace("Task store", "Pending goal");
+    let mut proposal = r.proposal(TASK);
+    proposal.record_changes = vec![RecordChange {
+        path: "tasks/goals/G-1.md".into(),
+        expected_revision: hash.clone(),
+        proposed_bytes: edited.as_bytes().to_vec(),
+    }];
+    let pending = service.apply(base, &proposal).unwrap();
+    let hash = &pending.record_revisions["tasks/goals/G-1.md"];
+    assert_eq!(
+        service.goal_record_for_edit("G-1", hash).unwrap(),
+        edited.as_bytes()
+    );
+    proposal.record_changes[0].expected_revision = hash.clone();
+    // Another writer changes the record after the locked read, before apply.
+    let external = format!("{edited}Unknown note: preserve me\n");
+    r.write("tasks/goals/G-1.md", &external);
+    assert!(service.apply(base, &proposal).is_err());
+    assert!(service.goal_record_for_edit("G-1", hash).is_err());
+    assert_eq!(
+        fs::read(r.0.join("tasks/goals/G-1.md")).unwrap(),
+        external.as_bytes()
+    );
+}
+
+#[test]
 fn transaction_refuses_stale_or_invalid_records() {
     let r = Repo::new();
     let service = TaskService::new(&r.0).unwrap();
