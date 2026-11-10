@@ -29,6 +29,7 @@ export class ModelRuntime {
   async login(provider, method, interaction, options) {
     if (provider !== 'fixture' || !options.signal) throw Error('invalid provider');
     interaction.notify({type:'progress', message:'progress secret must not leak'});
+    interaction.notify({type:'info', message:'Run gcloud auth application-default login', links:[{label:'ADC docs',url:'https://example.com/adc'}]});
     if (method === 'oauth') interaction.notify({type:'auth_url', url:'https://example.com/oauth'});
     const key = await interaction.prompt({type:'secret', message:'Fixture key'});
     if (key === 'bad-secret') throw Error('Provider rejected ' + key);
@@ -81,6 +82,7 @@ class PiAuthTests(unittest.TestCase):
             error, events, bridge = self.run_login('literal-fixture-secret', method)
             self.assertIsNone(error)
             self.assertIn(dict(type='success'), events)
+            self.assertIn(dict(type='info', message='Run gcloud auth application-default login', links=[dict(label='ADC docs', url='https://example.com/adc')]), events)
             self.assertNotIn('literal-fixture-secret', json.dumps(events))
             self.assertNotIn('progress secret', json.dumps(events))
             self.assertEqual(json.loads((self.profile / 'auth.json').read_text()),

@@ -103,6 +103,21 @@ class ProviderAuth(ModalScreen[bool]):
         elif kind == 'error':
             # SDK exception messages can contain keys/tokens; only fixed local diagnostics.
             self.show_error('Pi authentication failed. Check credentials or provider access, then retry.')
+        elif kind == 'info':
+            # Explicit SDK guidance is user-facing; arbitrary SDK exceptions stay hidden.
+            guidance = str(event.get('message', ''))
+            self.url = ''
+            for link in event.get('links', []):
+                url = link.get('url', '')
+                try:
+                    parsed = urlsplit(url)
+                except ValueError:
+                    continue
+                if parsed.scheme == 'https' and parsed.hostname and not parsed.username:
+                    guidance += '\n' + str(link.get('label') or 'Documentation') + ': ' + url
+                    self.url = self.url or url
+            self.query_one('#auth-guidance', Static).update(guidance)
+            self.query_one('#auth-browser', Button).disabled = not self.url
         elif kind == 'progress':
             self.query_one('#auth-status', Static).update('Connecting to Pi provider… Esc cancels.')
         elif kind in ('url', 'device'):

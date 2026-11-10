@@ -55,7 +55,9 @@ try {
       signal: controller.signal,
       notify: event => {
         // Status text comes from the provider, never forward arbitrary exceptions/credentials.
-        if (event.type === 'auth_url') emit({ type: 'url', url: event.url });
+        if (event.type === 'info') emit({ type: 'info', message: String(event.message).slice(0, 8192),
+          links: (event.links || []).slice(0, 8).map(link => ({ label: String(link.label || ''), url: String(link.url || '') })) });
+        else if (event.type === 'auth_url') emit({ type: 'url', url: event.url });
         else if (event.type === 'device_code') emit({ type: 'device', url: event.verificationUri, code: event.userCode });
         else emit({ type: 'progress' });
       },

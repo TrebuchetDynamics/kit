@@ -148,6 +148,7 @@ async def login_pilot(size):
         async def run(self, operation, receive, chosen, method):
             self.operation, self.chosen, self.method = operation, chosen, method
             await receive(dict(type='progress'))
+            await receive(dict(type='info', message='Provider prerequisite: authenticate first', links=[dict(label='Setup guide', url='https://example.com/setup')]))
             if method == 'oauth':
                 await receive(dict(type='url', url='https://example.com/authorize?state=private'))
             await receive(dict(type='prompt', kind='secret', message='Enter fixture credential'))
@@ -177,6 +178,8 @@ async def login_pilot(size):
                 await pilot.press('enter', 'end', 'enter', 'tab', 'enter')
                 await settle(app, pilot)
                 assert active[-1].agent_dir == app.new_model_agent_dir
+                assert 'Provider prerequisite' in text(screen.query_one('#auth-guidance'))
+                assert 'https://example.com/setup' in text(screen.query_one('#auth-guidance'))
                 field = screen.query_one('#auth-answer', Input)
                 visible(field, size)
                 visible(screen.query_one('#auth-status'), size)
