@@ -2,7 +2,7 @@
 schema = 1
 id = "AUTH-001"
 title = "Preserve provider text replies and repository-bound TUI authentication identity"
-short = "Harden TUI authentication protocol guards"
+short = "Preserve TUI auth replies and identity"
 status = "open"
 section = "Next"
 rank = 25000
