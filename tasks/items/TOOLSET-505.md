@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-505"
 title = "Preview and publish exact pending Rust task edits without agent execution"
 short = "Publish pending Rust task edits"
-status = "open"
+status = "done"
 goal = "RUST-OCTET"
 section = "Next"
 rank = 20000
@@ -16,6 +16,8 @@ scope = "Implement docs/plans/rust-octet-autowork.md#selected-pending-publicatio
 acceptance = ["Given added/changed/deleted task and goal records plus unrelated staged/dirty files, tests/cli.rs::pending_publication_preview_is_exact proves dry-run validates one stable snapshot, returns clean or pending_commit with base_head/branch/tree/token/files/diff, and leaves task bytes, index, refs, repository object inventory and logical journal unchanged. Preview refuses interrupted Python/Rust task journals without recovery, invalid/linked records, detached HEAD, non-HEAD --rev and oversized diffs; it does not claim a selectable working-tree revision or writer/runtime authority.", "Given a preview token and a disposable repository, tests/cli.rs::pending_publication_commits_only_reviewed_records proves explicit commit publishes exactly the captured task/goal tree with ordinary hooks, preserves unrelated staged/dirty bytes, and reports the local commit separately from execution/closure. Missing/stale/malformed tokens, source/branch/record/index drift, conflicting Rust writer, pause/stop and unrelated unresolved effects refuse safely. Empty edits report clean without a commit. No model routes, credentials, native agent calls, task selection, integration or receipt fabrication occur.", "Given retained publication effects and restart, tests/cli.rs::pending_publication_recovers_without_dispatch proves the same token resumes only its own exact recorded publication, returns the existing commit after settled success without another commit/hook call, and retains uncertain/failed hooks and conflicting bytes without replay or broad coordinator recovery. Existing task-store, autonomous-cycle and inspection/bootstrap guards pass. Capabilities advertises task_publication generation 1 and only the implemented subset; unsupported mutation verbs and working-tree selection remain unsupported."]
 checks = ["RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml --test cli --test task_store --test autonomous_cycle", "RUSTUP_TOOLCHAIN=1.95.0 cargo fmt --manifest-path pi-autowork/rust/autowork/Cargo.toml --check"]
 exclusions = ["No live providers, credentials, general shell/check tools, service operations, Python-writer takeover, migration, installed handoff, installer changes, push or deployment.", "No task-authoring verb port, new dependencies/lock/schema, upstream edits, fabricated verified closure, automatic hook replay, broad delivery recovery or bypass of private-state/ownership gates."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-505.toml"
 +++
 - Sources: docs/plans/rust-octet-autowork.md#selected-pending-publication-contract; pi-autowork/task-store.md#writing-and-autowork-tasks; pi-autowork/rust/autowork/README.md#checks-review-and-local-publication
 - Next action: Add the failing pending_publication_preview_is_exact case to tests/cli.rs with a committed disposable repository and staged/dirty sentinels.
