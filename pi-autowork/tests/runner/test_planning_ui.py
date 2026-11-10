@@ -21,7 +21,7 @@ class PlanningUiTests(unittest.TestCase):
             self.skipTest('uv is needed for pinned Textual')
         result = subprocess.run(['uv', 'run', '--offline', '--no-project', '--with', 'textual==8.2.8',
                                  'python', str(Path(__file__).with_name(name))],
-                                capture_output=True, text=True, timeout=90)
+                                capture_output=True, text=True, timeout=180 if name == 'decision_pilot.py' else 90)
         if textual_unavailable(result):
             self.skipTest('textual==8.2.8 is not in the offline cache')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

@@ -107,9 +107,14 @@ The record loads off the UI thread and Save stays disabled until a current open
 record is available. A concurrent task edit causes a revision-guarded refusal and
 keeps your answer draft; copy it and reopen to review the latest record before retrying.
 
-Save commits the answer and requested section locally and reports **Task edits
-committed locally**. It commits only that answer delta against the committed record:
-unrelated notes, other task edits and unrelated staged changes stay untouched.
+On main/master, Save commits the answer and requested section locally and reports
+**Task edits committed locally**. It commits only that answer delta against the
+committed record: unrelated notes, other task edits and unrelated staged changes
+stay untouched. On detached HEAD, Save instead reports **Saved locally — pending
+commit** and returns to Tasks. It saves the answer/section without switching branches,
+creating a commit, or changing refs/index. Reopening restores the saved answer and
+shows pending feedback. An unchanged answer/section creates no new delta or commit;
+existing pending task edits are still disclosed. Named non-main branches still refuse.
 A staged target record or an uncommitted contract change requires separate review;
 a hook/commit failure keeps the answer locally pending and the editor reports failure,
 not successful handoff. Inspect `tasks handoff` before retrying an uncertain result.
@@ -130,8 +135,13 @@ This records a dated `Owner decision:` note through the task-store transaction.
 mark acceptance verified, close the task, remove a hold, change live authorization,
 or infer permissions. Section changes retain existing live-worker contract guards.
 Without `--commit`, the CLI remains a local edit requiring a separate reviewed commit.
-With `--commit`, main/master must be checked out; a successful local commit makes
-the answer available to the runner, but is not proof that it has been read or executed.
+Plain `--commit` requires main/master. The TUI adds `--save-if-detached` to allow
+only the detached local-save outcome; CLI callers must opt in explicitly, for example
+`autowork tasks decide TASK-1 'Use the smaller design' /path/to/repo --commit --save-if-detached`.
+This is not a fallback for hook failures or Git/ref/index uncertainty. Pending answers
+need a separate reviewed commit before the runner can see them. A successful local
+commit makes the answer available to the runner, but neither outcome proves runner
+acceptance or execution.
 A quick-hold fingerprint still requires its specific Blocker resolution; recording
 an unrelated decision must not falsely clear it.
 

@@ -98,11 +98,13 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
             self.query_one('#decision-section', Select).value = 'Now'
         self.query_one('#decision-save', Button).disabled = False
         self.query_one('#decision-text', TextArea).focus()
+        feedback = (task_status.edit_lifecycle('pending_commit')['message'] + '\n'
+                    if saved and record.get('display', {}).get('pending') else '')
         self.query_one('#decision-status', Static).update(
-            'Answer already saved; owner-performed action still outstanding. '
+            feedback + ('Answer already saved; owner-performed action still outstanding. '
             'Save updates direction, not execution or completion.' if saved and owner_action else
-            'Save commits this answer and the selected section locally, not unrelated edits. '
-            'No push, live permission, hold release or verification.')
+            'Save commits this answer and section on main/master; detached HEAD saves locally pending commit. '
+            'No branch switch, push, live permission, hold release or verification.'))
 
     def submit(self, value):
         runner = next((r for r in self.app.runners if (r.name, r.repo) == (self.runner_name, self.repo)), None)
@@ -110,7 +112,7 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
             self.load_failed('task actions are no longer available')
             return
         argv = [self.app.command, 'tasks', 'decide', self.task_id, value['text'], self.repo,
-                '--expect', self.record['record_revision'], '--commit']
+                '--expect', self.record['record_revision'], '--commit', '--save-if-detached']
         if value['section']:
             argv += ['--section', value['section']]
         self.saving = True
@@ -118,7 +120,7 @@ class DecisionScreen(ReadScreen, DecisionPrompt):
         self.query_one('#decision-section', Select).disabled = True
         self.query_one('#decision-save', Button).disabled = True
         self.query_one('#decision-cancel', Button).disabled = True
-        self.query_one('#decision-status', Static).update('Saving and committing this answer… wait for the result.')
+        self.query_one('#decision-status', Static).update('Saving this answer… wait for the commit or pending result.')
         self.app.execute(fleet_view.Action('e', f'Answer {self.task_id}', argv), on_complete=self.saved)
 
     def saved(self, ok, message):

@@ -221,9 +221,12 @@ the separate `autowork blockers [dir]` command, not this report.
 
 Select a runner and press **t Tasks**, select a task (use **Decisions** or
 **Questions** to filter), then **e Decide**. **Ctrl+S** or **Ctrl+Enter** saves and
-commits the answer with a revision check; **Esc** cancels. A refused commit leaves
-the answer pending and shows why. An answer commit is not a hold release,
-technical-recovery retry or live permission.
+commits the answer on main/master with a revision check; **Esc** cancels. On detached
+HEAD, Save instead reports **Saved locally — pending commit**, without switching
+branches or creating a commit. Named non-main branches still refuse. A commit
+failure is not pending-save success: it keeps the draft and reports why; inspect
+`tasks handoff` before retrying. Neither result proves runner acceptance, releases
+a hold, retries technical recovery or grants live permission.
 Small dialogs keep action buttons visible while their contents scroll. In opt-in
 `--mouse`/browser mode, fleet menu clicks use the same guarded actions as keys;
 normal terminal mode still permits native text selection.
@@ -544,7 +547,11 @@ Next, Needs decision), `c` **C**lears its hold, `a` sets a held task **A**side, 
 `g` **Discuss** and `v` **Investigate** open the planning
 console scoped to that task, and `n` adds a **N**ew task from a form. Enter opens the
 task: its question and the runner's suggested answer, its whole task record and its
-worker's last actions. `C` **C**ommits the saved owner answers that a reading runner
+worker's last actions. **Decide** Save uses `tasks decide --commit --save-if-detached`:
+main/master commits only the answer and chosen section; detached HEAD keeps them
+locally pending. Return/reopen feedback identifies pending edits; the runner cannot
+see them until committed. An unchanged answer/section creates no new pending delta
+or commit, but existing pending edits remain visible. `C` **C**ommits the saved owner answers that a reading runner
 cannot see yet: one line above the rows names how many edits wait, and the form asks
 for a commit message before it moves tasks/ paths only (no push, no execution).
 Answer it there, written to the task's record where the runner reads

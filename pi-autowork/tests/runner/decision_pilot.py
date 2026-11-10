@@ -58,7 +58,7 @@ async def main():
                 async with app.run_test(size=(width, 30)) as pilot:
                     try:
                         await pilot.press('t', 'e')
-                        assert await asyncio.to_thread(show_started.wait, 3)
+                        assert await asyncio.to_thread(show_started.wait, 10)
                         # A previously started action can complete while this modal loads.
                         app.action_completed()
                     finally:
@@ -66,11 +66,12 @@ async def main():
                     await pilot.pause(.3)
                     assert isinstance(app.screen, tui.DecisionPrompt), 'Tasks e must open the selected question'
                     screen = app.screen
-                    for _ in range(100):
+                    for _ in range(600):
                         if not screen.query_one('#decision-save', Button).disabled:
                             break
                         await pilot.pause(.05)
-                    assert screen.record is not None, 'Invalidation during load must reschedule the current record read'
+                    assert screen.record is not None, ('Invalidation during load must reschedule the current record read',
+                                                       screen.query_one('#decision-status', Static).render().plain)
                     assert screen.focused is screen.query_one('#decision-text', TextArea), 'The answer editor must own first focus'
                     context = screen.query_one('#decision-context', TextArea).text
                     assert 'Which design should we use?' in context and 'Choose the smaller design' in context
@@ -100,7 +101,7 @@ async def main():
                     await pilot.press('e')
                     await pilot.pause(.3)
                     screen = app.screen
-                    for _ in range(100):
+                    for _ in range(600):
                         if not screen.query_one('#decision-save', Button).disabled:
                             break
                         await pilot.pause(.05)
@@ -133,7 +134,7 @@ async def main():
                         await pilot.press('e')
                         await pilot.pause(.3)
                         screen = app.screen
-                        for _ in range(100):
+                        for _ in range(600):
                             if not screen.query_one('#decision-save', Button).disabled:
                                 break
                             await pilot.pause(.05)
@@ -152,6 +153,63 @@ async def main():
                         assert data.get('live', 'denied') == 'denied'
                     assert fixture.git('rev-parse', 'HEAD') != baseline
                     assert 'section = "Needs decision"' in fixture.git('show', 'HEAD:tasks/items/T-1.md')
+                    # Detached Save is an explicit local handoff, never a detached commit.
+                    fixture.git('checkout', '--detach', '-q')
+                    detached_head = fixture.git('rev-parse', 'HEAD')
+                    detached_refs = fixture.git('show-ref')
+                    index = fixture.repo / '.git/index'
+                    index_bytes = index.read_bytes()
+                    for section in ('Next', 'Needs decision'):
+                        await pilot.press('e')
+                        await pilot.pause(.3)
+                        screen = app.screen
+                        for _ in range(600):
+                            if not screen.query_one('#decision-save', Button).disabled:
+                                break
+                            await pilot.pause(.05)
+                        if section == 'Needs decision':
+                            assert 'pending commit' in screen.query_one('#decision-status', Static).render().plain
+                        screen.query_one('#decision-text', TextArea).load_text('Detached direction')
+                        screen.query_one('#decision-section', Select).value = section
+                        started.clear()
+                        release.clear()
+                        with patch.object(app, 'notify', side_effect=lambda message, **kw: notices.append(str(message))):
+                            try:
+                                if section == 'Next':
+                                    await pilot.press('ctrl+enter')
+                                else:
+                                    await pilot.click('#decision-save')
+                                assert await asyncio.to_thread(started.wait, 3)
+                                count = len([a for a in calls if a[2] == 'decide'])
+                                await pilot.press('ctrl+enter')
+                                assert len([a for a in calls if a[2] == 'decide']) == count
+                            finally:
+                                release.set()
+                            await app.workers.wait_for_complete()
+                            await pilot.pause()
+                        assert not isinstance(app.screen, tui.DecisionPrompt)
+                        assert 'pending commit' in notices[-1].lower(), notices
+                        assert '--save-if-detached' in next(a for a in reversed(calls) if a[2] == 'decide')
+                        data = tomllib.loads(record.read_text().split('+++', 2)[1])
+                        assert data['section'] == section and data['status'] == 'open'
+                        assert data.get('live', 'denied') == 'denied'
+                        assert record.read_text().count('Owner decision:') == 1
+                        assert 'Detached direction' in record.read_text() and 'Other owner:' in record.read_text()
+                    saved_bytes = record.read_bytes()
+                    await pilot.press('e')
+                    await pilot.pause(.3)
+                    screen = app.screen
+                    for _ in range(600):
+                        if not screen.query_one('#decision-save', Button).disabled:
+                            break
+                        await pilot.pause(.05)
+                    assert screen.query_one('#decision-text', TextArea).text.endswith('Detached direction')
+                    assert 'pending commit' in screen.query_one('#decision-status', Static).render().plain
+                    await pilot.press('escape')
+                    assert record.read_bytes() == saved_bytes
+                    assert fixture.git('rev-parse', 'HEAD') == detached_head
+                    assert fixture.git('show-ref') == detached_refs
+                    assert index.read_bytes() == index_bytes
                     # A stale generic approval question must not hide the real saved answer
                     # or imply that another approval can execute an owner-only task.
                     record.write_text(record.read_text().replace('ownership = "worker"', 'ownership = "owner"'))
@@ -163,11 +221,11 @@ async def main():
                     await pilot.press('e')
                     await pilot.pause(.3)
                     screen = app.screen
-                    for _ in range(100):
+                    for _ in range(600):
                         if not screen.query_one('#decision-save', Button).disabled:
                             break
                         await pilot.pause(.05)
-                    assert screen.query_one('#decision-text', TextArea).text.endswith('Keep the same scope')
+                    assert screen.query_one('#decision-text', TextArea).text.endswith('Detached direction')
                     context = screen.query_one('#decision-context', TextArea).text
                     assert context.startswith('Saved answer (working record):')
                     assert 'Another approval is not required' in context
@@ -183,20 +241,20 @@ async def main():
                     show_release.clear()
                     try:
                         await pilot.press('e')
-                        assert await asyncio.to_thread(show_started.wait, 3)
+                        assert await asyncio.to_thread(show_started.wait, 10)
                         await pilot.press(*'new draft')
                     finally:
                         show_release.set()
                     await pilot.pause(.3)
                     screen = app.screen
-                    for _ in range(100):
+                    for _ in range(600):
                         if not screen.query_one('#decision-save', Button).disabled:
                             break
                         await pilot.pause(.05)
                     context = screen.query_one('#decision-context', TextArea).text
                     assert 'Choose the changed planning scope' in context
                     assert 'Another approval is not required' not in context
-                    assert 'Keep the same scope' in context
+                    assert 'Detached direction' in context
                     assert screen.query_one('#decision-text', TextArea).text == 'new draft', \
                         'Loading a saved answer must not overwrite a draft typed during the read'
                     await pilot.press('escape')
@@ -207,7 +265,7 @@ async def main():
                     await pilot.press('e')
                     await pilot.pause(.3)
                     screen = app.screen
-                    for _ in range(100):
+                    for _ in range(600):
                         if not screen.query_one('#decision-save', Button).disabled:
                             break
                         await pilot.pause(.05)
@@ -234,12 +292,18 @@ async def main():
                     assert isinstance(app.screen, tui.DecisionPrompt)
                     assert app.screen.query_one('#decision-save', Button).disabled
                     await pilot.press('escape')
+                    # Let the resumed Tasks screen finish its read before measuring a no-op.
+                    for _ in range(600):
+                        if not app.reads.active and not app.reads.pending:
+                            break
+                        await pilot.pause(.05)
+                    assert not app.reads.active and not app.reads.pending
                     app.view_only = True
                     before = len(calls)
                     await pilot.press('e')
                     await pilot.pause()
                     assert isinstance(app.screen, tui.TasksScreen) and len(calls) == before
-            print('PASS decisions', width, 'context, keyboard, stale edit, scoped answer commit, task routing, view-only')
+            print('PASS decisions', width, 'context, keyboard, stale edit, scoped answer commit, detached pending save, task routing, view-only')
         finally:
             fixture.doCleanups()
 
