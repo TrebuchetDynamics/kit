@@ -24,6 +24,8 @@ class ReopenTests(LandingFixture):
         for where in (self.repo, self.integ):
             self.git(where, 'config', 'user.name', 'T')
             self.git(where, 'config', 'user.email', 't@example.invalid')
+        # Each resolver case must run even when the host enables Git rerere.
+        self.git(self.repo, 'config', 'rerere.enabled', 'false')
         store_fixture.write_todo(self.repo, TODO)
         self.git(self.integ, 'merge', '-q', '--no-edit', 'main')
         self.runner.integration = None
