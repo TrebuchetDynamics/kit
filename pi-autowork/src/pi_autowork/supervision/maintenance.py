@@ -18,6 +18,7 @@ from pi_autowork.common import LOG, atomic_write, dirty, git, git_ok
 from pi_autowork.processes import running, start_time
 
 ATTEMPTS = 3
+PUSH_TIMEOUT = 3600  # Includes local pre-push verification, not just the network transfer.
 BACKOFF = 30
 READBACK_COOLDOWN = 300
 
@@ -241,7 +242,7 @@ def publish(owner, remote, branch, source):
     record.update(repository=str(owner.repo), source=source, remote=remote, branch=branch, endpoint=target, phase='push',
                   attempts=record.get('attempts', 0) + 1)
     start(owner, 'publication', record, ['git', '-C', owner.repo, 'push', '--quiet', remote,
-                                       f'{source}:refs/heads/{branch}'], 300, publish=True)
+                                       f'{source}:refs/heads/{branch}'], PUSH_TIMEOUT, publish=True)
     LOG.say(f'Publishing {source[:12]} to {remote}/{branch} in the background (attempt {record["attempts"]})')
     return 'pending'
 

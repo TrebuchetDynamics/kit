@@ -368,8 +368,11 @@ Upstream session merges wait for reviews, resolvers and other session writers to
 release it.
 
 Toolset discovery, fetch/schema checks and `pi update` also run off-loop. Lock
-contention defers immediately; the complete job is bounded to 600 seconds (pushes
-to 300, upstream fetches to 120, remote probes to 60). Installation retries are
+contention defers immediately; the complete update job is bounded to 600 seconds.
+Both publication paths allow 3600 seconds for the whole push, including local
+pre-push verification; a five-minute network-sized deadline could kill valid
+repository checks. Hooks remain enabled. Upstream fetches stay bounded to 120
+seconds and remote probes to 60. Installation retries are
 limited to three per checked release. An installed revision that differs from the
 checked candidate, or an interrupted update that moved the package, cannot activate
 through the runner's automatic re-exec. Automatic activation prepares the exact
