@@ -18,3 +18,4 @@ checks = ["RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --offline --manifest-path
 exclusions = ["No live models, credentials, upstream edits, general shell, service operations, installation, migration, runtime retirement or authority expansion."]
 +++
 - Sources: docs/plans/rust-octet-autowork.md#round-four-batch-goal-command-parity
+- Owner decision: 2026-11-10: pruebas
