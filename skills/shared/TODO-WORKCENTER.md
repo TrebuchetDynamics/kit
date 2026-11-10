@@ -162,7 +162,9 @@ still saves planning documents and task records; it does not change product code
 
 Reuse existing task IDs and document owners. New IDs are plain numbered IDs such
 as `TOOLSET-084`; do not append a hash or random suffix. `autowork tasks add`
-allocates the next number, counting existing and archived legacy hashed IDs too.
+allocates the next number, counting existing, archived and locally committed
+historical IDs (including legacy hashed IDs), so pruning committed tasks does not
+recycle their numbers.
 `autowork tasks new-id` prints a candidate, not a reservation; let `add` allocate
 under its write lock, and reconcile cross-checkout collisions rather than overwrite.
 Keep existing IDs and references intact, especially for live attempts; removing

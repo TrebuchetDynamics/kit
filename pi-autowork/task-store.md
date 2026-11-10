@@ -14,7 +14,10 @@ implementation kind, worker ownership, empty dependencies/resources/exclusions a
 denied live authority. Override those defaults only when the task needs it.
 New IDs are plain numbered IDs such as `T-001`, without hash suffixes. Allocation
 keeps the prevalent task prefix and number width (at least three digits), and skips
-numbers used by tasks, goals and archived IDs, including legacy hashed IDs.
+numbers used by tasks, goals and archived IDs, including legacy hashed IDs and
+record paths in available local Git history. Pruning a committed finished record
+therefore does not recycle its ID. Uncommitted deleted IDs and history absent from
+a shallow clone are not durable reservations.
 `autowork tasks new-id` only previews a candidate; `add` allocates under the task
 write lock. Separate clones can still collide and must reconcile, not overwrite.
 Existing IDs and references remain readable and are not automatically renamed.
