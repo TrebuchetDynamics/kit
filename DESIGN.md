@@ -98,6 +98,24 @@ preserve exact repository/task
 identity and selection across refresh/reorder. Unmatched lanes remain explicit source
 observations and cannot increase active-task counts.
 
+## Current work summary
+
+The selected-project summary answers three questions: what is happening now,
+what action was last observed, and whether the owner needs to act. Only fresh,
+identity-matched lanes may supply current activity. Process liveness alone must
+not claim implementation progress. Five minutes without an observed action is
+labelled a quiet worker, not a failure or a confirmed hang. Other blocked tasks
+remain separate from active work. Main checks and automatic publication are
+shown independently; missing change evidence never becomes a zero-file claim.
+Compact terminals retain the three-line provenance/check summary and Details route.
+The Tasks view offers guarded Retry for held work through the supported CLI,
+which enforces eligibility and preserves earlier attempts. Repeated overflow
+points to the model picker rather than suggesting repeated service restarts.
+
+The dashboard journal prefers the latest runner start found in its last-hour
+window. Full Log retains earlier runs; if no start is captured, the dashboard
+keeps the available window rather than guessing a session boundary.
+
 ## Design principles
 
 Prioritize actions and evidence over decoration. Summaries disclose uncertainty.

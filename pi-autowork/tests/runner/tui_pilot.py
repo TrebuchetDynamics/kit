@@ -945,9 +945,22 @@ async def main():
             assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['Held task'], tasks.row_count
             assert app.screen.current().task == 'T-9'
             keys = str(app.screen.query_one('#menubar').render())
-            assert keys.rstrip().endswith('enter Open  e Decide  B Report  Info/Help  esc Back'), keys
+            assert keys.rstrip().endswith('enter Open  e Decide  Retry  B Report  Info/Help  esc Back'), keys
             assert 'Up' in app.screen.query_one('#task-provenance').text
             assert 'Delete' in app.screen.query_one('#task-provenance').text
+            before_retry = len(calls)
+            await pilot.press('r')                      # retry asks first; cancelling executes nothing
+            await pilot.pause()
+            assert isinstance(app.screen, Confirm), app.screen
+            await pilot.press('n')
+            await pilot.pause()
+            assert len(calls) == before_retry
+            await pilot.press('r')
+            await pilot.pause()
+            await pilot.press('y')
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert calls[-1] == ['aw', 'retry', 'india', 'T-9'], calls
             await pilot.press('x')                      # delete asks first; decline here
             await pilot.pause()
             assert isinstance(app.screen, Confirm), app.screen

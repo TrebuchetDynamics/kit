@@ -545,6 +545,25 @@ from the current browser directory, and `~` opens your home directory.
 paths leave the current directory unchanged and show an error. Browsing changes
 neither the process working directory nor a runner's repository.
 
+The project summary separates **Now**, the **last observed action**, **Your action**,
+**Main** checks, and **Publish**. An active worker is not proof of code changes.
+A worker with no observed action says so; after five minutes without an observed
+action it is labelled **Quiet worker**, without claiming a hang. Other blocked
+tasks can need attention while active work continues. Unmatched/stale observations
+cannot supply current progress. Small terminals retain the compact summary and
+Details route.
+
+In **Tasks**, select held work and press **r Retry** to request a fresh failed
+attempt, preserving previous work. Confirmation explains eligibility; the CLI
+refuses attempts it cannot safely retry. **c Clear** returns a held commit to
+integration instead. If context overflow repeats, return to **Choose model** and
+select a suitable alternative before retrying. Restarting a service preserves its
+attempts and is not a replacement for Retry.
+
+The dashboard journal prefers the latest runner start found in its last-hour
+window. Full Log retains earlier runs; if no start is captured, the dashboard
+keeps the available window rather than guessing a session boundary.
+
 A visible **Choose model** row shows the selected service's model. Press `m` (or
 click it with `autowork tui --mouse`) to choose a **Provider**, then search that
 provider's models. With multiple providers, select one before choosing a model;
