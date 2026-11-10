@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-477-e5de6356"
 title = "Rust coordinator completes and recovers multi-task deliveries offline"
 short = "Rust multi-task delivery cycle"
-status = "open"
+status = "done"
 goal = "RUST-OCTET"
 section = "Next"
 rank = 13000
@@ -16,6 +16,8 @@ scope = "Implement Coordinator::run_until_quiescent and wire autowork-next run t
 acceptance = ["Given two accepted offline tasks and a third requiring a routine decision, autonomous_cycle.rs::finish_multiple_tasks_and_replan proves automatic selection, checks, independent review, serialized local integration and evidence-bound closure for the integrated changes without Pi/Python execution or an owner menu. For discovered work it asserts the exact pending task tree is locally committed before selection from its durable revision; an ephemeral validation tree is never selected.", "Given failing checks, review rejection, a crash during integration or unrelated staged/dirty content, autonomous_cycle.rs::recover_git_effects_without_false_closure proves acceptance is not weakened, unrelated bytes stay, failed/uncertain work stays open and restart does not duplicate settled work. Cover crashes after proposal apply, before/after the tasks-only commit, and before selection; reconcile the captured tree/parent without duplicate settled local commits.", "Given an explicit one-task limit or a user pause/stop, autonomous_cycle.rs::respect_limits_and_explain_quiescence proves no further dispatch, with completed/pending/external-wait versus sudo/credential help states reported separately. Reject model-authored command text, unknown operations and executable/source drift. A no-commit limit leaves pending edits unselected, not falsely complete."]
 checks = ["cargo test --locked --manifest-path rust/autowork/Cargo.toml --test autonomous_cycle", "cargo test --locked --manifest-path rust/autowork/Cargo.toml --tests"]
 exclusions = ["No live models, device operations, service changes, old-runtime cutover, push or deployment in offline acceptance.", "No changes to upstream Octet, unrelated work or existing user grants."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-477-e5de6356.toml"
 +++
 - Sources: docs/plans/rust-octet-autowork.md#accepted-direction; docs/plans/rust-octet-autowork.md#first-implementation-batch
 - Planner calls: Consumes: Runtime, TaskService, StateStore and Planner public seams. Produces: offline multi-task local-cycle evidence for the next planning round. This is not full replacement, general shell qualification, live model qualification or migration acceptance.
