@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-490-a67e5eb2"
 title = "Separate command-result interpretation from the TUI"
 short = "Interpret command results without TUI"
-status = "open"
+status = "done"
 section = "Now"
 rank = 12000
 depends_on = []
@@ -15,6 +15,8 @@ scope = "Extract FleetApp command-result interpretation into a headless module. 
 acceptance = ["Headless tests cover generic output, warning-success, failed commands, execution exceptions, pending answers, committed answers and invalid receipts with unchanged meanings.", "The TUI delegates interpretation while preserving notification truncation, callback ordering and refresh behavior; existing rendered control and deletion tests pass."]
 checks = ["python3 scripts/affected_tests.py --base 65cb36913d7f68bb4293e8ee91a142542f4ba679 --run"]
 exclusions = ["No runner policy changes, live service actions, additional architecture candidates, push or deployment."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-490-a67e5eb2.toml"
 +++
 - Owner decision: Accepted the bounded extraction and regression tests in the interactive LGTM request.
 - Next action: Merge the reviewed extraction with current main, rerun affected checks on the merged candidate, then push and reinstall under the owner's explicit delivery request. Preserve existing runner and task authority; a verified engine close has not been recorded.
