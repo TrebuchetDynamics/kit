@@ -48,7 +48,7 @@ fn bootstrap_without_pi() {
     assert_eq!(capabilities["commands"]["capabilities"], "available");
     assert_eq!(capabilities["model_execution"], "explicit-owned-route");
     assert_eq!(capabilities["installed_runner"], "unchanged");
-    assert_eq!(capabilities["commands"]["run"], "unavailable");
+    assert_eq!(capabilities["commands"]["run"], "explicit-local-cycle");
     assert_eq!(capabilities["commands"]["internal-agent"], "owned-only");
     for command in ["run", "internal-agent"] {
         assert!(!cli(&[command]).status.success());

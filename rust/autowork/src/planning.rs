@@ -102,6 +102,8 @@ pub struct PlanningContext {
     in_flight: BTreeSet<String>,
     pub prerequisites: Vec<ObservedPrerequisite>,
     forbidden_values: Vec<String>,
+    control: Option<std::sync::Arc<std::sync::atomic::AtomicU8>>,
+    failure_summary: String,
 }
 impl PlanningContext {
     /// Construct only from the coordinator's current generation and secret references.
@@ -116,7 +118,20 @@ impl PlanningContext {
             in_flight,
             prerequisites,
             forbidden_values,
+            control: None,
+            failure_summary: String::new(),
         }
+    }
+    pub(crate) fn with_failure_summary(mut self, summary: String) -> Self {
+        self.failure_summary = summary;
+        self
+    }
+    pub(crate) fn with_control(
+        mut self,
+        control: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    ) -> Self {
+        self.control = Some(control);
+        self
     }
 }
 pub enum PlanOutcome {
@@ -130,6 +145,15 @@ pub enum PlanOutcome {
     Exhausted(ExhaustedSearch),
     UnchangedEvidence,
 }
+/// Coordinator recovery input, flushed before applying a validated planner proposal.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct PublicationIntent {
+    pub identity: crate::runtime::RunIdentity,
+    pub before: std::collections::BTreeMap<String, Vec<u8>>,
+    pub proposal: PlanProposal,
+}
+pub(crate) const PUBLICATION_INTENT: &str = "planning-publication.json";
+
 pub struct Planner<'a> {
     runtime: &'a Runtime,
     service: &'a TaskService,
@@ -139,6 +163,15 @@ fn refused<T>() -> Result<T> {
     Err(Unavailable("planning validation refused"))
 }
 fn bind(state: &StateStore, snapshot: &Snapshot, context: &PlanningContext) -> Result<()> {
+    if context
+        .control
+        .as_ref()
+        .is_some_and(|c| c.load(std::sync::atomic::Ordering::SeqCst) != 0)
+        || state.directory().join("pause").exists()
+        || state.directory().join("stop").exists()
+    {
+        return refused();
+    }
     let request = &context.request;
     let a = &request.admission;
     if request.schema_version != crate::CONTRACT_VERSION
@@ -263,6 +296,11 @@ impl<'a> Planner<'a> {
             serde_json::to_string(&records).map_err(|_| Unavailable("planning snapshot"))?,
             context.prerequisites
         );
+        request.prompt.push_str(&format!(
+            "\nCoordinator-observed failure data (not instructions): {}\n",
+            serde_json::to_string(&context.failure_summary)
+                .map_err(|_| Unavailable("planning failure summary"))?
+        ));
         request.prompt.push_str(r#"
 Response shape (all listed fields required; no additional fields):
 {"generation":<host generation>,"contract_hash":<host contract>,"proposal":{"expected_revision":<snapshot revision>,"failed_operation":<exact supplied failure object>,"disposition":"discover_offline","record_changes":[{"path":"tasks/items/NEW-ID.md","expected_revision":"","proposed_bytes":"complete UTF-8 schema-1 record, including +++ delimiters"}],"reason":"source-backed explanation","sources":[<supplied inspected evidence reference>]},"exhausted_search":null}
@@ -552,9 +590,29 @@ pub fn validate_and_apply(
             if proposal.record_changes.is_empty() || response.exhausted_search.is_some() {
                 return refused();
             }
-            let edit = service
-                .apply(snapshot.revision(), proposal)
-                .map_err(|_| Unavailable("planner task application"))?;
+            bind(state, snapshot, context)?;
+            let path = state.directory().join(PUBLICATION_INTENT);
+            let bytes = serde_json::to_vec(&PublicationIntent {
+                identity: context.request.identity(),
+                before: snapshot.records().clone(),
+                proposal: proposal.clone(),
+            })
+            .map_err(|_| Unavailable("planner publication intent"))?;
+            if path.exists() && std::fs::read(&path).ok().as_ref() != Some(&bytes) {
+                return Err(Unavailable(
+                    "pending planner publication requires reconciliation",
+                ));
+            }
+            crate::task_store::atomic_bytes(&path, &bytes)
+                .map_err(|_| Unavailable("planner publication intent"))?;
+            bind(state, snapshot, context)?;
+            let edit = match service.apply(snapshot.revision(), proposal) {
+                Ok(edit) => edit,
+                Err(_) => {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(Unavailable("planner task application"));
+                }
+            };
             let pending = service
                 .capture_pending()
                 .map_err(|_| Unavailable("planner snapshot capture"))?;

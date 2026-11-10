@@ -147,21 +147,36 @@ fn run(mut command: Command, input: &[u8]) -> Result<Vec<u8>> {
     written?;
     Ok(output.stdout)
 }
-fn git_env(repo: &Path, args: &[&str], input: &[u8], index: Option<&Path>) -> Result<Vec<u8>> {
-    let mut command = Command::new("git");
+pub(crate) fn git_command(repo: &Path, args: &[&str], index: Option<&Path>) -> Command {
+    let mut command = Command::new("/usr/bin/git");
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("GIT_") {
             command.env_remove(key);
         }
     }
     command
-        .args(["--no-optional-locks", "--no-replace-objects", "-C"])
+        .args([
+            "--literal-pathspecs",
+            "-c",
+            "core.fsmonitor=false",
+            "--no-optional-locks",
+            "--no-replace-objects",
+            "-C",
+        ])
         .arg(repo)
         .args(args);
     if let Some(index) = index {
         command.env("GIT_INDEX_FILE", index);
     }
-    run(command, input)
+    command
+}
+pub(crate) fn git_env(
+    repo: &Path,
+    args: &[&str],
+    input: &[u8],
+    index: Option<&Path>,
+) -> Result<Vec<u8>> {
+    run(git_command(repo, args, index), input)
 }
 fn git(repo: &Path, args: &[&str]) -> Result<Vec<u8>> {
     git_env(repo, args, &[], None)
@@ -169,10 +184,10 @@ fn git(repo: &Path, args: &[&str]) -> Result<Vec<u8>> {
 fn text(bytes: Vec<u8>) -> Result<String> {
     String::from_utf8(bytes).map_err(|e| StoreError(e.to_string()))
 }
-fn git_text(repo: &Path, args: &[&str]) -> Result<String> {
+pub(crate) fn git_text(repo: &Path, args: &[&str]) -> Result<String> {
     Ok(text(git(repo, args)?)?.trim_end_matches('\n').to_string())
 }
-fn digest(bytes: &[u8]) -> Result<String> {
+pub(crate) fn digest(bytes: &[u8]) -> Result<String> {
     let out = text(run(Command::new("sha256sum"), bytes)?)?;
     let hash = out.split_whitespace().next().unwrap_or("");
     if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -919,7 +934,7 @@ pub struct PendingEdit {
     pub paths: Vec<PathBuf>,
 }
 /// Publication input, deliberately without a Snapshot/select conversion.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PendingSnapshot {
     pub base_head: String,
     pub branch: String,
@@ -956,7 +971,7 @@ impl Drop for Scratch {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-struct TaskLock {
+pub(crate) struct TaskLock {
     _file: File,
     git_dir: PathBuf,
 }
@@ -968,7 +983,10 @@ impl TaskService {
         }
         Ok(Self { repo })
     }
-    fn lock(&self) -> Result<TaskLock> {
+    pub(crate) fn repository(&self) -> &Path {
+        &self.repo
+    }
+    pub(crate) fn lock(&self) -> Result<TaskLock> {
         let git_dir = PathBuf::from(git_text(&self.repo, &["rev-parse", "--absolute-git-dir"])?);
         let file = OpenOptions::new()
             .create(true)
@@ -1070,6 +1088,9 @@ impl TaskService {
     /// Does not recover implicitly: inspecting a partial transaction must change nothing.
     pub fn capture_pending(&self) -> Result<PendingSnapshot> {
         let lock = self.lock()?;
+        self.capture_locked(&lock)
+    }
+    pub(crate) fn capture_locked(&self, lock: &TaskLock) -> Result<PendingSnapshot> {
         if lock
             .git_dir
             .join("autowork-rust-tasks.transaction")
@@ -1318,7 +1339,7 @@ fn stage(path: &Path, bytes: &[u8]) -> Result<PathBuf> {
     f.sync_all()?;
     Ok(staged)
 }
-fn atomic_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn atomic_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     let staged = stage(path, bytes)?;
     fs::rename(staged, path)?;
     sync_dir(path.parent().unwrap())
