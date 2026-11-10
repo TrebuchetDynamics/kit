@@ -172,28 +172,29 @@ and dependencies. New behavior checks remain proposed until implementation;
 planning never qualifies native execution, migration or live delivery.
 
 
-## Round-three batch: committed task queries
+## Round-four batch: goal command parity
 
-Plan round 3 of 10. Versioned status and ordinary pending task commands are now
-available under the [Rust CLI contract](../../pi-autowork/rust/autowork/README.md#read-only-status-and-pending-task-commands).
-Their integrated source is `85c5dcd5`; the locked offline CLI/task-store/recovery
-checks pass 14 cases, with independent code review. Tests cover ready/blocked
-committed tasks, absent/corrupt/active journal reads, persisted uncertainty,
-unchanged state bytes, typed validation, protected grants, stale input and chained
-pending edits. This is source/fixture proof, not installed or live qualification.
+Plan round 4 of 10. The Rust CLI now exposes committed task list/show through
+TaskStore::read_at before mutation services, including pinned historical revisions,
+typed metadata and exact record content. Source `b55fb732` passed 12 locked offline
+CLI/task-store tests and independent read-only review. The fixtures demonstrate
+pending-byte preservation, explicit invalid-ID/revision failures and poisoned Git
+environment isolation without creating task locks or runtime state. This does not
+qualify an installed runner, native provider or migration.
 
-Choose one bounded next implementation: `tasks --repo PATH list` and
-`tasks --repo PATH show ID`, optionally pinned with `--rev COMMIT`. Consume
-TaskStore::read_at and committed Record/Snapshot metadata without invoking task
-mutation, capture_pending, StateStore::open or runtime reconciliation. Return
-versioned JSON with the pinned revision, task identity and original record bytes;
-missing IDs and invalid revisions fail explicitly. Pending edits remain excluded.
-RUST-READS-02 owns the exact scope and fixtures; RUST-PLAN-04 follows its actual
-integration and evidence in round 4 of 10.
+The next bounded implementation is goal command parity. Existing Snapshot::goals
+and TaskService::apply already supply the immutable map and protected goal-record
+proposal seam. Add committed `goals list/show` with revision pinning, plus pending
+`goals add/field` for ordinary metadata only. Keep status/progress, closure,
+qualification and owner/live authority protected. Reuse the current expected-base,
+record-digest CAS and pending identity contracts; extend the exact working-record
+reader for goals rather than reconstructing edits from committed bytes.
+RUST-GOALS-01 owns the interfaces and proposed fixtures. RUST-PLAN-05 follows its
+actual integration and review in round 5 of 10; no later implementation is assumed.
 
-The current status reader deliberately reports an active writer or uncheckpointed
-WAL unavailable; it does not claim live journal freshness. Trusted human decision
-writes, production provider/auth, general shell, service/TUI/Paseo wiring,
-installation, migration and runtime retirement remain open goal outcomes. No
-LANG-003 owner or contract changes. Select later work from measured results rather
-than widening authority or treating these offline commands as live cutover proof.
+Active-journal snapshots, trusted human decision writes, native provider/auth,
+general shell, service/TUI/Paseo wiring, installation, migration and runtime
+retirement remain open outcomes. The current status reader reports active writers
+and uncheckpointed WAL unavailable. Preserve original state, the unresolved
+LANG-003 ownership and live gates. Selecting a bounded offline metadata command
+never grants progress, model execution or service cutover authority.
