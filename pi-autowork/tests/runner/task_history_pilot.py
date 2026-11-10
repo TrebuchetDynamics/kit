@@ -81,7 +81,7 @@ async def main():
                         assert 'Unknown closure' in body
                         assert 'Closure provenance not recorded' in body
                         assert 'An independent planning question' in body
-                        assert 'Task record (working tree;' in body
+                        assert '[i] Technical record' in body  # raw record stays behind [i]
                         assert app.screen.answers() == []
                         assert 'Section' not in app.screen.query_one(tui.MenuBar).render().plain
                         await pilot.press('s', 'o', 'r', 'w', 'd', 'e')
