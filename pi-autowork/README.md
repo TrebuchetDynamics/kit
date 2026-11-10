@@ -553,6 +553,12 @@ tasks can need attention while active work continues. Unmatched/stale observatio
 cannot supply current progress. Small terminals retain the compact summary and
 Details route.
 
+A recorded OpenRouter daily free-model quota failure (HTTP 429 with
+`free-models-per-day`) is displayed as **Daily free-model quota exhausted**.
+Wait for the provider's reset or choose another configured provider before
+retrying. The diagnostic is display-only: failure ownership, retry admission,
+credentials and model selection keep their existing guards.
+
 In **Tasks**, select held work and press **r Retry** to request a fresh failed
 attempt, preserving previous work. Confirmation explains eligibility; the CLI
 refuses attempts it cannot safely retry. **c Clear** returns a held commit to

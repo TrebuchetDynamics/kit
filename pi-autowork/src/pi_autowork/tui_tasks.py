@@ -323,6 +323,9 @@ def task_list_status(row):
 def task_guidance(row):
     """Plain language display only; raw causes and authority stay in task details."""
     reason = (row.why + ' ' + row.state).casefold()
+    if 'quota exhausted' in reason:
+        return ('The provider has exhausted its daily free-model quota.',
+                'Wait for the quota reset or choose another configured provider. Retry only after that; writing an answer does not restore quota.')
     if 'owner action' in reason or 'owner-performed' in reason:
         return ('This task needs a check performed outside the runner.',
                 'Open the task and read the required action. A saved answer is not completion evidence.')

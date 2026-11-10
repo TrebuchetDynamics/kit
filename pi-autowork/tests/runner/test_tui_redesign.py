@@ -179,6 +179,9 @@ async def task_workspace_pilot():
             assert 'previous attempt ended without a usable result' in body
             owner_row = replace(rows[0], why='owner action required; perform the check outside the runner')
             assert not {'r', 'c', 'a'} & {action.key for action in screen.actions(owner_row)}
+            quota_row = replace(rows[0], why='Daily free-model quota exhausted (HTTP 429)')
+            happened, next_step = tui_tasks.task_guidance(quota_row)
+            assert 'daily free-model quota' in happened and 'Retry only after that' in next_step
             await pilot.press('space')
             assert app.focused is selected
             await pilot.resize_terminal(60, 18)
