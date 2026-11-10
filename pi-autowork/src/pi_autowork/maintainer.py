@@ -22,6 +22,7 @@ import time
 from pi_autowork.engine import failure_policy
 
 from .common import git, safe_name
+from . import post_completion
 
 ROLE = 'DOCS-MAINTAINER'
 PLANNING_CAUSES = ('scope', 'scope_request', 'blocker', 'contract_changed', 'no_change')
@@ -419,6 +420,8 @@ def reason_class(why, task_ids=()):
 
 
 def item_key(item):
+    if item[1] == post_completion.KIND:
+        return 'post-completion:' + key([item])
     if item[1] == 'repeated quick hold':
         return 'quick-hold:' + item[0] + ':' + item[2].split(';', 1)[0]
     if item[1] == 'engineering repair':
@@ -431,7 +434,7 @@ def recovery_key(item, entry, reasons, task_ids, *, receipt=None, recovery=None)
     identity = item_key(item)
     if item[0] == 'MAIN':
         return key([(identity, '', main_evidence(item))])
-    if item[0] == 'LEDGER' or item[1] in ('repeated quick hold', 'ledger edit', 'engineering repair'):
+    if item[0] == 'LEDGER' or item[1] in ('repeated quick hold', 'ledger edit', 'engineering repair', post_completion.KIND):
         return identity
     incident = [(identity, entry.get('digest', ''), reason_class(reasons.get(item[0], item[2]), task_ids))]
     if item[1] == 'plan' and ((receipt or {}).get('plan_policy') == PLAN_POLICY
@@ -517,7 +520,7 @@ def matches(receipt, item, entry, reasons, task_ids):
         return False
     if item[0] == 'MAIN':
         return receipt.get('evidence', '') == main_evidence(item)
-    if item[0] == 'LEDGER' or item[1] in ('repeated quick hold', 'ledger edit', 'engineering repair'):
+    if item[0] == 'LEDGER' or item[1] in ('repeated quick hold', 'ledger edit', 'engineering repair', post_completion.KIND):
         return True  # the key identifies the test/error, blocker or exact patch, even after archival
     why = (reasons or {}).get(item[0], item[2])
     return (receipt.get('digest') == entry.get('digest', '')
@@ -561,6 +564,8 @@ def pending(state, found, *, entries=None, reasons=None, eligible=None):
     # Isolate a rolling round from ordinary repairs so its additions and limits are
     # attributable to that round. The runner lease and synchronous job serialize writes.
     planning = [item for item in selected if item[1] == 'plan']
+    if selected and all(item[1] == post_completion.KIND for item in selected):
+        return selected  # One closeout pass coalesces the durable, unhandled completion events.
     return planning[:1] if planning else selected[:LIMIT]
 
 
