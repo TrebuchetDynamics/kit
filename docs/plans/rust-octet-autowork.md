@@ -115,6 +115,144 @@ These outcomes remain part of the goal; later rounds turn them into concrete imp
 
 The closing planning task carries `Plan round: 1 of 10` and must read the six building tasks' actual reports, the accepted crate-relocation proof from the [one-product-root batch](pi-autowork-component-layout.md#one-product-root-contract), and remaining goal proof. Retained records and the immutable Git inputs below preserve those requirements when satisfied ordinary dependency edges are pruned. Manual closure is not verified qualification. Preserve the original six building contracts, native acceptance and live-denied gates. Round two uses the landed `pi-autowork/rust/autowork/` owner. Save at most eight tasks per round and no speculative code tasks. Existing rolling-planning defaults cap one automatic planning chain at ten rounds; reaching that bound is not goal completion. The general runtime's future replanning follows the accepted authority and real evidence rather than turning the bound into a safety bypass.
 
+## Next implementation frontier
+
+Planner call for TOOLSET-478-9a8d7ece: deliver one cohesive read-only inspection
+surface before selecting UI, service or migration implementations. The goal remains
+unmet. The owner requested the Rust redesign and delegated engineering choices;
+this sequencing and the interfaces below are planner decisions, not new owner
+requirements. No execution, installation or live authorization changes here.
+
+### Evidence and remaining proof
+
+At input `bb2275c4310b262547b433949385a1bf4328bc1a`, the crate owner is
+`pi-autowork/rust/autowork/`. Its lock retains Octet revision
+`4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee`. The foundation report binds the locked
+build and CLI checks to `deae1aca446e9c9cc966a5547f8675ffca947fa3`.
+Native role/admission/cancellation checks bind to
+`68fd74aa655909bf5e9d85387ccba3b1cdc824d9`; task-store transaction/selection checks
+to `112c7d278a4afd6bbe68d50fb762bfb8855927f6`; journal recovery/fencing checks to
+`c38a9a1e1d1f2219de1b0fdcd026844af7dca72a`. These reports are under the execution
+common directory's `slot-data/<task ID>/attempt-1/report.json` for the corresponding
+first-batch IDs above. They qualify only their reported offline sources.
+
+The planner's retained report is instead at
+`slot-history/TOOLSET-476-fb27960d/1/slot-data/attempt-1/report.json`. It reports
+native fixture re-entry and unchanged-evidence suppression at
+`124bf21383442651f85712e07431416261a3bc93`. The task's manual closure cites
+`8db90299`; it is not coordinator verification or goal qualification.
+The cycle report at `slot-data/TOOLSET-477-e5de6356/attempt-1/report.json` reports
+17 passing integration tests at `4abe796dfdcba37621ffc66f2d9b5864326adc07`, including
+proposal publication, serialized integration, failure recovery and pause/no-commit
+limits. Its immutable receipt and contract are in Sources below. The relocation
+report at `slot-data/TOOLSET-481-33040cb9/attempt-1/report.json` reports 18 passing
+offline tests from both working directories, unchanged lock bytes and original test
+inventory. Those results do not become fresh checks of this planning input.
+
+The current source provides `TaskStore::read_at` and selection, and journal
+transitions/projections. However, `main.rs::Command` has no public task-inspection
+or status command. `StateStore::open` takes the exclusive writer lock and increments
+`metadata.epoch`. It cannot be reused as a monitoring reader. This is the concrete
+next gap, not a request for an unavailable coordinator receipt.
+
+Remaining outcomes retain these boundaries:
+
+- General shell/check execution, additional provider/auth adapters and steering
+  remain unqualified. The fixed-operation registry and fixture cancellation do
+  not establish a general execution boundary or live provider behavior.
+- Task reads are the selected slice of command compatibility. Task/goal mutations,
+  pending-commit CLI, history presentation and additional closure/recovery parity
+  remain for later source-backed batches. Existing exact-tree publication remains
+  required, not deferred or replaced.
+- Read-only journal status is the selected prerequisite surface for later Rust UI
+  and versioned Paseo integration. It does not implement either client, services,
+  multi-repository scheduling or installed ownership handoff.
+- Migration/import previews, live qualification, installer/rollback and Python/Pi
+  retirement remain unmet. Preserve Python state, pauses, active/unmerged work and
+  secret references. No cutover follows from inspection passing.
+- The old LANG-003 entry is absent from the current task store. Do not recreate or
+  alter its historical owner. `LANGUAGE-STRATEGY` and the missing contemporaneous
+  measurement inputs in `2026-11-05-language-strategy.md#measurement-round-1` remain
+  separate unresolved proof. Reconcile actual ownership before any future live
+  handoff; this batch neither samples nor changes that contract.
+
+### Selected inspection contract
+
+Implement in the existing crate and CLI, with no new dependencies or state schema.
+One building task owns the command registry, source changes, CLI tests and component
+README. Keeping queue and runtime inspection together avoids competing registry
+writers and tests the user-visible distinction between intent and runtime facts.
+A full command port or service-first cutover would require more unproven authority
+and recovery interfaces. A second JSON status file would create another state owner.
+Neither alternative is selected.
+
+Add `autowork-next tasks list|goals|show ID|why ID --repo PATH --rev REF`.
+`--rev` defaults to HEAD and resolves once to an immutable commit. Reads use
+`TaskStore`, not `TaskService`, working-tree proof commits or Python. List/goals
+return arrays; show/why return objects. Expose IDs, titles, typed fields and exact
+record revisions without normalizing records. List rows and why results carry the
+selection-only flags and committed source/ref/revision described by
+`pi-autowork/task-store.md#selection`, including unknown-ID explanations. Never
+claim admission, live ownership or dispatch. Unsupported mutation verbs and
+`--worktree` remain explicitly unsupported in this native slice. Advertise the
+implemented subset as `contracts.task_inspection = 1`, not complete Python parity.
+
+Add `autowork-next status --repo PATH`, advertising `contracts.status = 1`.
+Use a separate read-only journal connection, never `StateStore::open`. Validate
+common-directory identity, existing private paths, local filesystem and schema 1.
+Read metadata, latest per-task generations and the event high-water mark within
+one short SQLite read transaction. Release it before rendering. No writer lock,
+owner-epoch update, claim, reconciliation, checkpoint, migration or database creation.
+A missing journal returns `journal_state: absent`, not idle, stopped or complete.
+Unsupported/corrupt/foreign journals fail with structured secret-free diagnostics;
+never fall back to an empty success. Use finite SQLite busy handling, with a
+structured unavailable result when the bound is reached; its exact bound is a
+reversible implementation detail, tested without sleep-based timing assumptions.
+
+The versioned status object contains repository identity, journal schema, event
+high-water mark and latest projection rows: task/attempt/generation/role,
+contract/source revision, durable status and event ID. Do not include raw event
+payloads, session contents, environment, model text, credentials or resolved secret
+paths. Runtime status is not task closure, current PID liveness or a live lease.
+Task reads and journal reads identify their own sources; do not invent atomicity
+between Git and SQLite. Future clients must check the advertised API generation.
+
+SQLite read-only WAL readers can use shared-memory sidecars. Preserve ordinary WAL
+reader coordination, but do not use `immutable=1` against a changing journal or
+promise byte-identical sidecars. See [SQLite WAL concurrency and read-only rules](https://www3.sqlite.org/wal.html).
+No application-authored writes or logical database changes are allowed by status.
+
+### Checks and continuation
+
+Extend `tests/cli.rs` with offline disposable-repository tests for pinned task reads,
+selection-only JSON, concurrent writer/status reads, missing/unsafe journals and
+sanitized failures. Retain the existing empty-PATH bootstrap, immutable pin and
+crate-owner inventory assertions. Reuse current task-store and state-recovery
+fixtures; new behavior needs assertions, not copied baseline suites. Run the
+focused CLI, task-store and state-recovery targets on Rust 1.95.0 with the locked
+manifest. These new checks are proposed and UNRUN during planning. Bounded defects
+in those paths which prevent these checks may be repaired in the building task;
+no live setup or unavailable external input is required.
+
+The saved frontier is TOOLSET-503 in Next, behind existing owner priorities, plus
+TOOLSET-504, the single successor of kind plan with `Plan round: 2 of 10` depending
+on TOOLSET-503. The successor
+must read its actual report, current source and remaining goal proof before
+choosing the next batch, with at most eight new tasks including any later successor.
+The already-authorized coordinator can continue the chain after integration. To
+stop it, move that planning task to Needs decision. This planning pass starts no
+runner. Expected execution is one implementation merge and its normal independent
+review, separate from this planning commit. No new owner-only question is needed
+for the selected offline slice.
+
+A fresh read-only builder checked the saved TOOLSET-503/504 contracts against
+`main.rs`, `state.rs`, the CLI tests and the normative selection contract. It found
+nothing important left: the reader avoids the writer lock/epoch, the native subset
+is explicit, and the successor dependency and round are correct. This is contract
+review, not execution evidence. TOOLSET-503 is dependency-ready; TOOLSET-504 waits
+for its actual result. Canonical integration and runtime admission belong to the
+invoking coordinator, not this isolated planning checkout.
+
 ## Verification and builder handoff
 
 First selection-ready outcome: the Rust foundation. Subsequent runtime, store and journal implementations can proceed independently after foundation. Planning depends on their real APIs; the coordinator depends on all of them. Run only focused task checks plus repository-required landing/main gates. Include exact manifest/lock paths in the foundation's protected `touches`.
