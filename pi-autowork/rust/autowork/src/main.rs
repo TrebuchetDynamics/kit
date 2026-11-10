@@ -18,6 +18,22 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Read committed tasks and existing journal without runtime side effects.
+    Status {
+        #[arg(long)]
+        repo: std::path::PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Prepare ordinary task edits; protected authority remains refused.
+    Tasks {
+        #[arg(long)]
+        repo: std::path::PathBuf,
+        #[arg(long)]
+        expected_revision: Option<String>,
+        #[command(subcommand)]
+        action: TaskCommand,
+    },
     /// Print application and immutable engine versions as JSON.
     Version,
     /// Report implemented commands and versioned wire contracts as JSON.
@@ -50,6 +66,29 @@ enum Command {
     InternalAgent,
 }
 
+#[derive(Subcommand)]
+enum TaskCommand {
+    Add {
+        id: String,
+        #[arg(long)]
+        record: std::path::PathBuf,
+    },
+    Field {
+        id: String,
+        #[arg(long)]
+        record_revision: String,
+        key: String,
+        value: String,
+    },
+    Place {
+        id: String,
+        #[arg(long)]
+        record_revision: String,
+        section: String,
+    },
+    Preview,
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     match dispatch(Cli::parse().command).await {
@@ -66,6 +105,12 @@ async fn main() -> ExitCode {
 
 async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
     match command {
+        Command::Status { repo, json: _ } => println!("{}", status(&repo)?),
+        Command::Tasks {
+            repo,
+            expected_revision,
+            action,
+        } => println!("{}", task_command(&repo, expected_revision, action)?),
         Command::Version => println!(
             "{}",
             json!({
@@ -85,6 +130,8 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     "version": "available",
                     "capabilities": "available",
                     "run": "explicit-local-cycle",
+                    "status": "read-only-json-v1",
+                    "tasks": "pending-ordinary-edits",
                     "internal-agent": "owned-only"
                 },
                 "unknown_commands": "unsupported",
@@ -205,4 +252,161 @@ async fn dispatch(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn git_common(repo: &std::path::Path) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let mut command = std::process::Command::new("/usr/bin/git");
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("GIT_") {
+            command.env_remove(key);
+        }
+    }
+    let result = command
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .output()?;
+    if !result.status.success() {
+        return Err(io::Error::other("Git repository required").into());
+    }
+    Ok(String::from_utf8(result.stdout)?.trim().into())
+}
+
+fn status(repo: &std::path::Path) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    use autowork_next::task_store::{Scope, TaskStore};
+    let repo = std::fs::canonicalize(repo)?;
+    let snapshot = TaskStore::read_at(&repo, "HEAD")?;
+    let selection = snapshot.select(&Scope { task_ids: vec![] })?;
+    let tasks: Vec<_> = snapshot.tasks().values().map(|task| json!({
+        "id": task.id, "title": task.title, "status": task.string("status"),
+        "ready": selection.task_ids.contains(&task.id),
+        "blocked": selection.blocked.get(&task.id).map(|reason| json!({"code": reason.code, "detail": reason.detail}))
+    })).collect();
+    let journal = match autowork_next::state::read_status(git_common(&repo)?) {
+        Ok(value) => value,
+        Err(_) => json!({"status": "unavailable", "reason": "journal absent, invalid or changing"}),
+    };
+    Ok(
+        json!({"schema_version": 1, "application": "autowork-next", "version": env!("CARGO_PKG_VERSION"),
+        "revision": snapshot.revision(), "task_count": tasks.len(), "tasks": tasks, "journal": journal,
+        "qualification": "observed-only"}),
+    )
+}
+
+fn task_command(
+    repo: &std::path::Path,
+    expected: Option<String>,
+    action: TaskCommand,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    use autowork_next::{
+        planning::{FailureEvidence, PlanDisposition, PlanProposal, RecordChange},
+        task_store::{TaskService, TaskStore},
+    };
+    let service = TaskService::new(repo)?;
+    if matches!(action, TaskCommand::Preview) {
+        return Ok(
+            json!({"status": "pending", "snapshot": service.capture_pending()?, "selectable": false}),
+        );
+    }
+    let expected = expected
+        .ok_or_else(|| io::Error::other("--expected-revision is required for mutations"))?;
+    let snapshot = TaskStore::read_at(repo, "HEAD")?;
+    if snapshot.revision() != expected {
+        return Err(io::Error::other("stale expected revision").into());
+    }
+    let (id, record_revision, bytes) = match action {
+        TaskCommand::Add { id, record } => (id, String::new(), std::fs::read(record)?),
+        TaskCommand::Field {
+            id,
+            record_revision,
+            key,
+            value,
+        } => {
+            let bytes = edit_record(
+                &service,
+                &id,
+                &record_revision,
+                &key,
+                serde_json::from_str(&value)?,
+            )?;
+            (id, record_revision, bytes)
+        }
+        TaskCommand::Place {
+            id,
+            record_revision,
+            section,
+        } => {
+            if !["Now", "Next", "Needs decision"].contains(&section.as_str()) {
+                return Err(io::Error::other("invalid section").into());
+            }
+            let bytes = edit_record(&service, &id, &record_revision, "section", json!(section))?;
+            (id, record_revision, bytes)
+        }
+        TaskCommand::Preview => unreachable!(),
+    };
+    if id.is_empty()
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err(io::Error::other("invalid task ID").into());
+    }
+    let pending = service.apply(
+        &expected,
+        &PlanProposal {
+            expected_revision: expected.clone(),
+            failed_operation: FailureEvidence {
+                operation_id: "cli-task-edit".into(),
+                fingerprint: expected.clone(),
+                evidence_refs: vec![],
+            },
+            disposition: PlanDisposition::RepairCurrent,
+            record_changes: vec![RecordChange {
+                path: format!("tasks/items/{id}.md").into(),
+                expected_revision: record_revision,
+                proposed_bytes: bytes,
+            }],
+            reason: "Explicit pending task edit; no publication authority".into(),
+            sources: vec![],
+        },
+    )?;
+    Ok(
+        json!({"status": "pending", "paths": pending.paths, "base_revision": pending.expected_revision, "record_revisions": pending.record_revisions, "selectable": false, "publication": "not-committed"}),
+    )
+}
+
+fn edit_record(
+    service: &autowork_next::task_store::TaskService,
+    id: &str,
+    record_revision: &str,
+    key: &str,
+    value: serde_json::Value,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    if ![
+        "title",
+        "short",
+        "scope",
+        "acceptance",
+        "checks",
+        "exclusions",
+        "touches",
+        "resources",
+        "depends_on",
+        "rank",
+        "section",
+    ]
+    .contains(&key)
+    {
+        return Err(io::Error::other("unsupported or protected task field").into());
+    }
+    let bytes = service.record_for_edit(id, record_revision)?;
+    let source = std::str::from_utf8(&bytes)?;
+    let (header, notes) = source
+        .strip_prefix("+++\n")
+        .or_else(|| source.strip_prefix("+++\r\n"))
+        .and_then(|s| s.split_once("\n+++"))
+        .ok_or_else(|| io::Error::other("invalid task header"))?;
+    let mut fields: toml::Table = toml::from_str(header)?;
+    fields.insert(key.into(), toml::Value::try_from(value)?);
+    Ok(format!("+++\n{}+++{}", toml::to_string(&fields)?, notes).into_bytes())
 }

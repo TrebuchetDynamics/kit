@@ -412,3 +412,19 @@ fn fence_foreign_owner_and_schema() {
     );
     assert!(backup.exists());
 }
+
+#[test]
+fn readonly_projection_preserves_uncertain_state() {
+    let repo = Repo::new();
+    let store = StateStore::open(repo.common()).unwrap();
+    let run = identity(&store, 1);
+    store.claim(0, run.clone(), "source-commit").unwrap();
+    let mut event = transition(&run, RecordKind::Note);
+    event.status = DurableStatus::Uncertain;
+    store.transition(1, event).unwrap();
+    drop(store);
+    let before = fs::read(repo.database()).unwrap();
+    let observed = autowork_next::state::read_status(repo.common()).unwrap();
+    assert_eq!(observed["runs"][0]["status"], "uncertain");
+    assert_eq!(fs::read(repo.database()).unwrap(), before);
+}

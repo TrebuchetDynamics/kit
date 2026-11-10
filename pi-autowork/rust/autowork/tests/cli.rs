@@ -225,3 +225,379 @@ fn bounds_runtime_events() {
     event.schema_version = 2;
     assert!(event.to_json_line().is_err());
 }
+
+struct TaskCliRepo(std::path::PathBuf);
+impl TaskCliRepo {
+    fn new() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "autowork cli fixture {} {}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(root.join("tasks/items")).unwrap();
+        std::fs::create_dir_all(root.join("tasks/goals")).unwrap();
+        let repo = Self(root);
+        repo.git(&["init", "-q", "-b", "main"]);
+        repo.git(&["config", "user.name", "Fixture"]);
+        repo.git(&["config", "user.email", "fixture@example.invalid"]);
+        std::fs::write(
+            repo.0.join("tasks/items/T-1.md"),
+            include_str!("fixtures/task_store/tasks/items/T-1.md"),
+        )
+        .unwrap();
+        std::fs::write(
+            repo.0.join("tasks/goals/G-1.md"),
+            include_str!("fixtures/task_store/tasks/goals/G-1.md"),
+        )
+        .unwrap();
+        repo.git(&["add", "tasks"]);
+        repo.git(&["commit", "-qm", "fixture"]);
+        repo
+    }
+    fn git(&self, args: &[&str]) -> String {
+        let out = Command::new("/usr/bin/git")
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .arg("-C")
+            .arg(&self.0)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap().trim().into()
+    }
+    fn run(&self, args: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_autowork-next"))
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .args(args)
+            .output()
+            .unwrap()
+    }
+    fn value(&self, args: &[&str]) -> Value {
+        let result = self.run(args);
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        serde_json::from_slice(&result.stdout).unwrap()
+    }
+}
+impl Drop for TaskCliRepo {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[test]
+fn status_reads_committed_tasks_without_creating_or_recovering_state() {
+    let repo = TaskCliRepo::new();
+    let path = repo.0.to_str().unwrap();
+    let original = std::fs::read(repo.0.join("tasks/items/T-1.md")).unwrap();
+    let value = repo.value(&["status", "--repo", path, "--json"]);
+    assert_eq!(value["schema_version"], 1);
+    assert_eq!(value["task_count"], 1);
+    assert_eq!(value["journal"]["status"], "unavailable");
+    assert!(!repo.0.join(".git/autowork-rust").exists());
+    let store = autowork_next::state::StateStore::open(repo.0.join(".git")).unwrap();
+    assert_eq!(
+        repo.value(&["status", "--repo", path, "--json"])["journal"]["status"],
+        "unavailable"
+    );
+    drop(store);
+    let database = repo.0.join(".git/autowork-rust/journal.sqlite3");
+    let bytes = std::fs::read(&database).unwrap();
+    assert_eq!(
+        repo.value(&["status", "--repo", path, "--json"])["journal"]["status"],
+        "observed"
+    );
+    assert_eq!(std::fs::read(&database).unwrap(), bytes);
+    assert!(
+        !repo
+            .0
+            .join(".git/autowork-rust/journal.sqlite3-shm")
+            .exists()
+    );
+    std::fs::write(&database, b"invalid database").unwrap();
+    assert_eq!(
+        repo.value(&["status", "--repo", path, "--json"])["journal"]["status"],
+        "unavailable"
+    );
+    assert_eq!(std::fs::read(database).unwrap(), b"invalid database");
+    assert_eq!(
+        std::fs::read(repo.0.join("tasks/items/T-1.md")).unwrap(),
+        original
+    );
+    assert_eq!(repo.git(&["status", "--porcelain"]), "");
+}
+
+#[test]
+fn task_cli_prepares_edits_and_refuses_stale_or_protected_changes() {
+    use autowork_next::task_store::TaskStore;
+    let repo = TaskCliRepo::new();
+    let path = repo.0.to_str().unwrap();
+    let snapshot = TaskStore::read_at(&repo.0, "HEAD").unwrap();
+    let revision = snapshot.revision();
+    let record = &snapshot.tasks()["T-1"].record_revision;
+    let before = std::fs::read(repo.0.join("tasks/items/T-1.md")).unwrap();
+    for key in ["live", "ownership", "Owner decision", "verified_depends_on"] {
+        let out = repo.run(&[
+            "tasks",
+            "--repo",
+            path,
+            "--expected-revision",
+            revision,
+            "field",
+            "T-1",
+            "--record-revision",
+            record,
+            key,
+            "\"authorized\"",
+        ]);
+        assert!(!out.status.success());
+        assert_eq!(
+            std::fs::read(repo.0.join("tasks/items/T-1.md")).unwrap(),
+            before
+        );
+    }
+    let out = repo.run(&[
+        "tasks",
+        "--repo",
+        path,
+        "--expected-revision",
+        "stale",
+        "field",
+        "T-1",
+        "--record-revision",
+        record,
+        "title",
+        "\"Updated\"",
+    ]);
+    assert!(!out.status.success());
+    let value = repo.value(&[
+        "tasks",
+        "--repo",
+        path,
+        "--expected-revision",
+        revision,
+        "field",
+        "T-1",
+        "--record-revision",
+        record,
+        "title",
+        "\"Updated\"",
+    ]);
+    assert_eq!(value["status"], "pending");
+    assert_eq!(value["selectable"], false);
+    assert_eq!(value["base_revision"], revision);
+    let pending_revision = value["record_revisions"]["tasks/items/T-1.md"]
+        .as_str()
+        .unwrap();
+    let pending = std::fs::read(repo.0.join("tasks/items/T-1.md")).unwrap();
+    assert!(String::from_utf8_lossy(&pending).contains("Free notes."));
+    assert_eq!(
+        TaskStore::read_at(&repo.0, "HEAD").unwrap().tasks()["T-1"].title,
+        "Read tasks"
+    );
+    assert!(
+        !repo
+            .run(&[
+                "tasks",
+                "--repo",
+                path,
+                "--expected-revision",
+                revision,
+                "place",
+                "T-1",
+                "--record-revision",
+                record,
+                "Next"
+            ])
+            .status
+            .success()
+    );
+    assert_eq!(
+        std::fs::read(repo.0.join("tasks/items/T-1.md")).unwrap(),
+        pending
+    );
+    let next = repo.value(&[
+        "tasks",
+        "--repo",
+        path,
+        "--expected-revision",
+        revision,
+        "place",
+        "T-1",
+        "--record-revision",
+        pending_revision,
+        "Next",
+    ]);
+    let chained = std::fs::read_to_string(repo.0.join("tasks/items/T-1.md")).unwrap();
+    assert!(chained.contains("title = \"Updated\""));
+    assert!(chained.contains("section = \"Next\""));
+    assert!(chained.contains("Free notes."));
+    assert_ne!(
+        next["record_revisions"]["tasks/items/T-1.md"],
+        pending_revision
+    );
+    assert_eq!(
+        repo.value(&["tasks", "--repo", path, "preview"])["status"],
+        "pending"
+    );
+}
+
+#[test]
+fn task_cli_add_and_place_preserve_unknown_notes_and_pending_boundaries() {
+    use autowork_next::task_store::TaskStore;
+    let repo = TaskCliRepo::new();
+    let path = repo.0.to_str().unwrap();
+    let snapshot = TaskStore::read_at(&repo.0, "HEAD").unwrap();
+    let revision = snapshot.revision();
+    let bytes = include_str!("fixtures/task_store/tasks/items/T-1.md").replace("T-1", "T-2");
+    let input = repo.0.join("proposal.md");
+    std::fs::write(&input, bytes).unwrap();
+    let value = repo.value(&[
+        "tasks",
+        "--repo",
+        path,
+        "--expected-revision",
+        revision,
+        "add",
+        "T-2",
+        "--record",
+        input.to_str().unwrap(),
+    ]);
+    assert_eq!(value["selectable"], false);
+    assert!(repo.0.join("tasks/items/T-2.md").exists());
+    assert!(
+        !TaskStore::read_at(&repo.0, "HEAD")
+            .unwrap()
+            .tasks()
+            .contains_key("T-2")
+    );
+    let record = &snapshot.tasks()["T-1"].record_revision;
+    repo.value(&[
+        "tasks",
+        "--repo",
+        path,
+        "--expected-revision",
+        revision,
+        "place",
+        "T-1",
+        "--record-revision",
+        record,
+        "Next",
+    ]);
+    let pending = std::fs::read_to_string(repo.0.join("tasks/items/T-1.md")).unwrap();
+    assert!(pending.contains("Free notes."));
+    assert!(pending.contains("section = \"Next\""));
+    assert!(repo.0.join("tasks/items/T-2.md").exists());
+    let observed = repo.value(&["status", "--repo", path, "--json"]);
+    assert_eq!(observed["task_count"], 1);
+    assert_eq!(
+        std::fs::read_to_string(repo.0.join("tasks/items/T-1.md")).unwrap(),
+        pending
+    );
+}
+
+#[test]
+fn status_reports_dependency_blocks_and_mutations_validate_types_and_grants() {
+    let repo = TaskCliRepo::new();
+    let path = repo.0.to_str().unwrap();
+    let fixture = include_str!("fixtures/task_store/tasks/items/T-1.md");
+    std::fs::write(
+        repo.0.join("tasks/items/T-2.md"),
+        fixture
+            .replace("T-1", "T-2")
+            .replace("depends_on = []", "depends_on = [\"T-1\"]"),
+    )
+    .unwrap();
+    repo.git(&["add", "tasks"]);
+    repo.git(&["commit", "-qm", "dependency"]);
+    let value = repo.value(&["status", "--repo", path, "--json"]);
+    let tasks = value["tasks"].as_array().unwrap();
+    assert_eq!(
+        tasks.iter().find(|t| t["id"] == "T-1").unwrap()["ready"],
+        true
+    );
+    let blocked = tasks.iter().find(|t| t["id"] == "T-2").unwrap();
+    assert_eq!(blocked["ready"], false);
+    assert!(blocked["blocked"]["code"].is_string());
+    let snap = autowork_next::task_store::TaskStore::read_at(&repo.0, "HEAD").unwrap();
+    let revision = snap.revision();
+    let record = &snap.tasks()["T-1"].record_revision;
+    let before = std::fs::read(repo.0.join("tasks/items/T-1.md")).unwrap();
+    assert!(
+        !repo
+            .run(&[
+                "tasks",
+                "--repo",
+                path,
+                "--expected-revision",
+                revision,
+                "field",
+                "T-1",
+                "--record-revision",
+                record,
+                "title",
+                "123"
+            ])
+            .status
+            .success()
+    );
+    assert!(
+        !repo
+            .run(&[
+                "tasks",
+                "--repo",
+                path,
+                "--expected-revision",
+                revision,
+                "place",
+                "T-1",
+                "--record-revision",
+                record,
+                "Next",
+                "--decision",
+                "approve"
+            ])
+            .status
+            .success()
+    );
+    assert_eq!(
+        std::fs::read(repo.0.join("tasks/items/T-1.md")).unwrap(),
+        before
+    );
+    let input = repo.0.join("protected.md");
+    std::fs::write(
+        &input,
+        fixture
+            .replace("T-1", "T-3")
+            .replace("live = \"denied\"", "live = \"authorized\""),
+    )
+    .unwrap();
+    assert!(
+        !repo
+            .run(&[
+                "tasks",
+                "--repo",
+                path,
+                "--expected-revision",
+                revision,
+                "add",
+                "T-3",
+                "--record",
+                input.to_str().unwrap()
+            ])
+            .status
+            .success()
+    );
+    assert!(!repo.0.join("tasks/items/T-3.md").exists());
+}

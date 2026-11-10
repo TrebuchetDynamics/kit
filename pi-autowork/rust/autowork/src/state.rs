@@ -767,3 +767,55 @@ fn require_local(path: &Path) -> Result<()> {
         "journal WAL requires a verified local filesystem",
     )
 }
+
+/// Observe a quiescent journal without creating, migrating or recovering it.
+/// A live writer/WAL is unavailable rather than a possibly stale snapshot.
+pub fn read_status(common_dir: impl AsRef<Path>) -> Result<serde_json::Value> {
+    let repository = Repository::inspect(common_dir.as_ref())?;
+    let directory = repository.common_dir.join("autowork-rust");
+    private_path(&directory, true)?;
+    let lock_path = directory.join("writer.lock");
+    private_path(&lock_path, false)?;
+    let lock = File::open(lock_path)?;
+    lock.try_lock_shared()
+        .map_err(|_| StateError("journal writer active".into()))?;
+    let database = directory.join("journal.sqlite3");
+    private_path(&database, false)?;
+    require(
+        fs::metadata(directory.join("journal.sqlite3-wal"))
+            .map(|m| m.len() == 0)
+            .unwrap_or(true),
+        "uncheckpointed journal unavailable",
+    )?;
+    use std::os::unix::ffi::OsStrExt;
+    let encoded: String = database
+        .as_os_str()
+        .as_bytes()
+        .iter()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"/._-".contains(b) {
+                (*b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect();
+    let connection = Connection::open_with_flags(
+        format!("file:{encoded}?immutable=1"),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+    )?;
+    let version: i64 = connection.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    require(version == SCHEMA_VERSION, "unsupported journal schema")?;
+    let retained: String =
+        connection.query_row("SELECT repository FROM metadata", [], |r| r.get(0))?;
+    require(
+        retained == serde_json::to_string(&repository)?,
+        "foreign journal",
+    )?;
+    let mut statement = connection
+        .prepare("SELECT task,generation,status,source FROM runs ORDER BY task,generation")?;
+    let runs = statement.query_map([], |row| Ok((row.get::<_,String>(0)?, row.get::<_,i64>(1)?, row.get::<_,String>(2)?, row.get::<_,String>(3)?)))?
+        .map(|row| { let (task,generation,status,revision) = row?; let status: DurableStatus = serde_json::from_str(&status)?;
+            Ok(serde_json::json!({"task":task,"generation":generation,"status":status,"revision":revision})) }).collect::<Result<Vec<_>>>()?;
+    Ok(serde_json::json!({"status":"observed", "runs":runs, "qualification":"persisted-only"}))
+}

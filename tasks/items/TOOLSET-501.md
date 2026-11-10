@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-501"
 title = "Exclude extensionless build binaries from affected-test source scanning"
 short = "Exclude binaries from test scanning"
-status = "open"
+status = "done"
 section = "Now"
 rank = 11000
 depends_on = []
@@ -15,6 +15,11 @@ scope = "Repair affected-test input classification so untracked extensionless bu
 acceptance = ["A private-fixture regression proves an untracked extensionless binary is not admitted to source text decoding or dependency edges while a legitimate extensionless script still selects its dependent test.", "Binary detection reads only a bounded prefix before deciding whether full text decoding is appropriate; no dependency upgrades, Cargo builds, large binary fixtures or scans of real retained build outputs are needed for the regression.", "Existing affected-test selection, conservative unmapped-code behavior, duplicate module stems and document/planning-record rules remain intact. Focused checks and independent review bind the same immutable candidate. Preserve existing attempts, retry limits, pauses, acceptance and live gates."]
 checks = ["python3 scripts/check.py tests/test_affected_tests.py (only when the existing gate is clear)", "python3 skills/docs-sync/scripts/docs.py check .", "autowork tasks validate .", "git diff --check"]
 exclusions = ["No edits to live worker/review checkouts or contracts; no deletion/cleanup of target directories; no service actions, competing tests, push, install, state migration, lowered gates or live-success claim."]
+closure = "manual"
+closure_actor = "interactive-codex"
+closure_timestamp = "2026-11-10T18:28:09.705020+00:00"
+closure_reason = "Bounded 4096-byte binary filtering now guards inventory and graph decoding. Synthetic binary/script and deleted-source regressions pass; original selector suite passes. Final independent review approved exact candidate including preserved deleted dependency targets."
+closure_evidence = "643fc7d4; /tmp/kit-501-final.log; tests/test_affected_tests.py"
 +++
 - Sources: /tmp/kit-debug-rust-selector-artifact-evidence.json (private observation input); retained integration 69b0178c49c63b7d7c39a1373025c8f33fb11b25 against base 9ae914e0178ec942cb8d89ef588ad3302e56e47d (not a landed-qualification claim); scripts/affected_tests.py: repository_files and dependency_graph; tests/test_affected_tests.py.
 - Evidence: The Rust candidate replaces the legacy target ignore with the relocated one while retaining3.5GB at the legacy target. Git exposes3676 artifact entries. The selector admits extensionless untracked files and dependency_graph decodes them with read_text(errors=replace). Repeated real-repository select calls in test_affected_tests consumed sustained CPU; candidate full-check log reports root-test TIMEOUT after1800seconds, five other directories passed. The outer integration then timed out after5346seconds at06:32; this does not qualify the candidate or prove every slowdown is binary decoding.

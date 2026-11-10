@@ -42,6 +42,30 @@ exercise local integration and task-proposal publication in disposable repositor
 Neither set qualifies a live provider, deployment, devices, migration or sustained
 service operation.
 
+## Read-only status and pending task commands
+
+`autowork-next status --repo /path/to/repo --json` returns schema version 1,
+committed task counts, dependency readiness and persisted journal observations.
+Absent, corrupt, foreign or actively written journals report unavailable. Reads
+create no state, migrations or reconciliation effects. A quiescent journal is
+read under its existing lock through immutable SQLite access; this is an observed
+snapshot, not model or service qualification.
+
+`tasks --repo /path/to/repo --expected-revision COMMIT` accepts:
+
+- `add ID --record /path/to/record.md`: validate a complete task record through the
+  existing task service. A new ID needs an absent destination.
+- `field ID --record-revision SHA256 title '"New title"'`: JSON values and an exact
+  working-record revision prevent stale edits. Existing unknown notes survive.
+- `place ID --record-revision SHA256 Next`: change the scheduling section.
+
+`tasks --repo /path/to/repo preview` captures the pending-edit identity. Mutation
+results include their base revision and resulting record hashes. Follow-up edits
+use those hashes and preserve earlier pending edits. They remain uncommitted and
+unselectable until the existing coordinator publishes the validated snapshot.
+Protected fields, Owner decision changes and `--decision` are refused by this
+ordinary planning seam; no command grants live execution or publication.
+
 ## Revision-bound task store
 
 [`task_store.rs`](src/task_store.rs) implements the current
