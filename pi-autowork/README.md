@@ -510,6 +510,16 @@ actions. The palette includes provider/model selection on the fleet and provider
 and refresh while the model picker is open. Read-only mode omits actions that
 change runner or repository state.
 
+The fleet uses a two-pane workspace on terminals at least 130 columns and 26
+rows: project/context on the left, current work/activity on the right. Smaller
+terminals keep a vertical stack. Borders identify panels and highlight keyboard
+focus; the fixed footer shows **1 Projects**, **2 Work**, **3 Activity**, Help and
+Quit. Press **h Guide** for the setup/execution/review/publication flow and how to
+interpret waiting, attention and unconfirmed states. Task progress is separate
+from the service being alive. The number keys move focus only on the fleet screen; arrows select and
+Enter opens the selected log. Resizing does not acquire new state or dispatch an
+action.
+
 The fleet has three numbered regions: **Projects**, **Current work** and
 **Recent activity**. The project list shows Project, Status and Tasks at every
 width. The selected summary identifies the next useful action; detailed counts,
