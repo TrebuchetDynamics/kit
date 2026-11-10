@@ -65,7 +65,7 @@ class AffectedTestsTests(unittest.TestCase):
             with patch.object(affected_tests, 'ROOT', root):
                 graph = affected_tests.dependency_graph(list(files), conservative=True)
                 self.assertIn('pi-autowork/src/pi_autowork/engine/owner.py', graph['pi-autowork/src/pi_autowork/engine/consumer.py'])
-                self.assertIn('pi-autowork/src/pi_autowork/command.py', graph['pi-autowork/src/pi_autowork/command.py'])
+                self.assertIn('pi-autowork/src/pi_autowork/command.py', graph['pi-autowork/pi_autowork/command.py'])
                 self.assertIn('pi-autowork/src/pi_autowork/__init__.py', graph['tests/test_public.py'])
                 self.assertNotIn('unrelated/owner.py', graph['pi-autowork/src/pi_autowork/engine/consumer.py'])
                 self.assertNotIn('pi-autowork/src/pi_autowork/engine/owner.py', graph['tests/test_other.py'])
