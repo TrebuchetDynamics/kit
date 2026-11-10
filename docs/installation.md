@@ -182,6 +182,10 @@ hermes autowork setup --yes-deps
 hermes autowork doctor
 ```
 
+This Hermes install fetches Git source from `TrebuchetDynamics/kit`, not an npm
+release. The package name `@trebuchet/kit` does not establish npm publication;
+creating an npm scope is not a prerequisite for Git-source verification.
+
 From a local checkout, one command performs the complete installation for every
 existing live profile:
 
@@ -243,8 +247,11 @@ maintains the bundle's Telegram menu entries. It does not undo earlier changes.
 **Renamed from Autowork to Kit.** Both settings are also read under the legacy
 `plugins.entries.autowork` key for one release. `settings` takes precedence over
 legacy `config`; within either subtree, `kit` wins per key and missing keys fall
-back to `autowork`. Existing opt-outs remain effective. Writes use `kit`, and a
-profile carrying both entries is reported once.
+back to `autowork`. Existing opt-outs remain effective. Writes use `kit`. A legacy
+entry, alone or alongside `kit`, produces a once-per-runtime warning:
+`Migrated settings lookup from plugins.entries.autowork to plugins.entries.kit`.
+This reports compatibility lookup, not a physical config migration; the legacy
+entry is retained.
 Setup, including `--bundle-only`, honors the same opt-out: it skips the approval,
 gateway-injection and skill-disable-list settings for that profile and says so in
 its preview.
@@ -257,6 +264,30 @@ the relevant file/terminal tools. Direct source evidence is sufficient for routi
 task and document repairs; Graphify is useful for uncertain cross-component
 relationships, or required when the request explicitly calls for it.
 Use `hermes autowork setup --dry-run` to preview target profiles.
+
+### Verify a pre-rename profile
+
+Before invoking Hermes (which can load plugins and write defaults), identify the
+authorized profile and read its configuration without booting Hermes. Retain a
+private baseline of its approvals mode, Telegram command-menu priority,
+`apply_runtime_defaults` opt-out and explicit `runtime_policy`, including whether
+each value is absent. Record the runner executable, state-directory location and
+saved-job identities/statuses too; keep credentials and profile identities out of Git.
+
+Install from clean Git source, record its revision, and load Kit in that same
+profile. Compare the effective settings against the baseline. An opt-out must
+remain effective, approval values must follow the selected policy, and custom menu
+priorities must survive (Kit still adds current workflow entries and removes retired
+bundle entries). Observe the migration warning and any writes under
+`plugins.entries.kit`, then confirm the runner CLI, existing state directory and
+saved jobs still resolve without recreating or resuming them. Preserve the legacy
+entry during this comparison; removing it would hide the compatibility check.
+
+Report isolated fixture/native-loader checks separately from live qualification.
+A fixture, a Git-source install or a saved approval alone proves neither a live
+profile migration nor npm publication. If the live profile or its pre-rename
+baseline is unavailable, retain that qualification as pending rather than replacing
+it with a newly invented profile.
 
 ## Preflight before fleet writes
 
