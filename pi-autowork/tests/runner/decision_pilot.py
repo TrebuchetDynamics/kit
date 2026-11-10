@@ -31,7 +31,7 @@ async def main():
             started, release = threading.Event(), threading.Event()
             show_started, show_release = threading.Event(), threading.Event()
             release.set()
-            command = str(Path(__file__).resolve().parents[1] / 'bin/autowork')
+            command = str(Path(__file__).resolve().parents[2] / 'bin/autowork')
 
             def run(argv, **kwargs):
                 assert argv[:2] == [command, 'tasks'], argv

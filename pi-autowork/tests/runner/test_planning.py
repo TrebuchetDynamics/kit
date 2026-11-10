@@ -273,6 +273,13 @@ class PlanningTests(unittest.TestCase):
             for flag in ('--no-extensions', '--no-mcp', '--no-skills', '--no-context-files', '--no-approve'):
                 self.assertIn(flag, argv)
             self.assertEqual(argv.count('--skill'), 3)
+            skills = [Path(argv[i + 1]) for i, arg in enumerate(argv) if arg == '--skill']
+            self.assertEqual(skills, [ROOT / 'adapters/skills' / name / 'SKILL.md'
+                                     for name in ('plan-for-me', 'plan-with-me', 'docs-sync')])
+            self.assertTrue(all(path.is_file() for path in skills))
+            schema = ROOT / 'pi-autowork/task-store.md'
+            self.assertTrue(schema.is_file())
+            self.assertIn('\nBundled schema: ' + str(schema), argv[argv.index('--append-system-prompt') + 1])
         prompts = [r['message'] for r in records if r.get('type') == 'prompt']
         self.assertTrue(prompts[0].startswith('/skill:plan-for-me '))
         self.assertFalse(prompts[1].startswith('/'))
