@@ -12,7 +12,7 @@ import time
 
 from pi_autowork import maintainer
 from pi_autowork.engine import task_queue
-from pi_autowork.engine.task_store import TaskStore, StoreError, _git
+from pi_autowork.engine.task_store import Ownership, TaskStore, StoreError, _git
 
 
 @dataclass(frozen=True)
@@ -95,8 +95,13 @@ def task_row(record, store, *, observation=None, phase=None, stopped='', questio
         why = row['planning_error']
     elif state in ('waiting', 'pending', 'interrupted', 'released'):
         bucket = view.BLOCKER if stopped or bucket == view.BLOCKER else view.WAITING
-        why = ('behind ' + stopped) if stopped else (
-            row.get('reason') or ('paused by a restart' if state in ('interrupted', 'released') else why))
+        if record.ownership in (Ownership.OWNER, Ownership.COORDINATOR):
+            # Idle engine text cannot replace committed responsibility.
+            if stopped:
+                why += '; behind ' + stopped
+        else:
+            why = ('behind ' + stopped) if stopped else (
+                row.get('reason') or ('paused by a restart' if state in ('interrupted', 'released') else why))
         words = bucket
     if bucket == view.BLOCKER:
         words, kind = (words if words.startswith(view.BLOCKER) else view.BLOCKER), 'held'
@@ -158,6 +163,10 @@ def _canonical_reason(record, store):
         if roots:
             return 'Blocker', reason + '; stopped by ' + ', '.join(roots)
         return 'Waiting', reason
+    if record.ownership == Ownership.OWNER:
+        return 'Blocker', 'owner action required'
+    if record.ownership == Ownership.COORDINATOR:
+        return 'Waiting', 'awaiting coordinator action'
     return 'Waiting', 'ready; awaiting dispatch'
 
 

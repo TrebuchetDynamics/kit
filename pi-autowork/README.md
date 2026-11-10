@@ -577,9 +577,19 @@ or tmux intercepts selection. The browser view retains mouse controls.
 Fleet counts, task rows and Waiting/Blocker details use one committed `tasks/`
 snapshot per repository and refresh generation. Each committed open ID contributes
 once to Active, Mergeable, Waiting, Blocker or Decision, whose sum is Total.
-Ordinary ready work is Waiting (`ready; awaiting dispatch`); Needs decision comes
-from the committed section. Stopped dependency waits are Blocker. Uncommitted
-records and planning-branch records do not enlarge this inventory.
+Ordinary ready worker tasks are Waiting (`ready; awaiting dispatch`). Ready
+owner-only tasks are Blocker (`owner action required`), not a worker dispatch wait
+or another approval request. Ready coordinator-owned tasks are Waiting
+(`awaiting coordinator action`). Committed Needs decision takes precedence as
+Decision. Stopped dependency waits are Blocker. Uncommitted records and
+planning-branch records do not enlarge this inventory.
+
+Ownership comes from the committed record, even without runtime data. Compatible
+idle waiting text cannot replace an owner-action or coordinator reason. Compatible
+in-flight evidence still supplies the runtime state under the identity guards below.
+An existing question adds context but is not required to show owner action.
+A saved yes records direction, not completed action or live authorization. These
+labels do not change task selection, worker admission, ownership or closure.
 
 Runtime observations must name the same repository and compatible current/admitted
 contracts. Compatibility symlinks to the same state directory are read once; distinct
