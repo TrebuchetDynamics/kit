@@ -102,6 +102,10 @@ owner/external-blocked affected tasks pending.
 
 ## Save the plan and hand off
 
+Save the planning batch on canonical `main` under
+[main-branch persistence](../shared/PLAN-HANDOFF.md#main-branch-persistence)
+before reporting planning complete; a branch-only save remains pending.
+
 Follow the shared protocol's save and validate steps. Use
 [Docs Sync](../docs-sync/SKILL.md) to persist findings and decisions in the existing
 document owners. Reuse Docs Sync's capability/prepare flow against the actual

@@ -209,6 +209,33 @@ class PlanningCliContractTests(unittest.TestCase):
         self.assertRegex(self.tasks('new-id').stdout.strip(), r'^T-\d+-[0-9a-f]{8}$')
         self.assertEqual((self.repo / 'tasks/items/T-1.md').read_bytes(), before)
 
+    def test_all_planning_routes_require_main_persistence_before_completion(self):
+        # Instruction coverage only; no claim that a model or live runner follows it.
+        policy = prose(HANDOFF).split('## Main-branch persistence', 1)[1].split(
+            '## One planning pass, one handoff', 1)[0]
+        for required in ('canonical local `main`', 'before reporting planning complete',
+                         'standalone planning, rolling plans and Autowork-owned planning substeps',
+                         'git worktree list --porcelain', 'actual writer ownership',
+                         'autowork tasks', 'attributable batch', 'branch-local commit',
+                         'intermediate save', 'supported path', 'preserving unrelated edits and active workers',
+                         'read back', 'autowork tasks validate --worktree .', 'autowork tasks why ID',
+                         'on canonical `main`', 'selection was not assessed', 'main persistence pending',
+                         'exact blocker', 'no-write and no-commit restrictions take precedence',
+                         'no implementation, push, installation or runner-start authority',
+                         'same coordinator'):
+            with self.subTest(rule=required):
+                self.assertIn(required, policy)
+        protocol = prose('skills/shared/RESEARCH-PLAN.md')
+        self.assertIn('PLAN-HANDOFF.md#main-branch-persistence', protocol)
+        self.assertIn('every writable planning route', protocol)
+        for path in (*INTERACTIVE, *AUTONOMOUS):
+            with self.subTest(route=path):
+                text = prose(path)
+                self.assertIn('PLAN-HANDOFF.md#main-branch-persistence', text)
+                self.assertIn('canonical `main`', text)
+                self.assertIn('before reporting planning complete', text)
+                self.assertIn('branch-only save remains pending', text)
+
     def test_readiness_guidance_separates_selection_from_dispatch_and_delivery(self):
         handoff = prose(HANDOFF)
         self.assertIn('committed-store selection', handoff)

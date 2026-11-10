@@ -82,6 +82,10 @@ the saved contract, then run `autowork tasks validate --worktree .` and commit t
 batch once before reporting it ready. Report saved paths, task IDs, the
 planner's calls and the next executable task, distinguishing proposals from ready work.
 
+Save the planning batch on canonical `main` under
+[main-branch persistence](../../../skills/shared/PLAN-HANDOFF.md#main-branch-persistence)
+before reporting planning complete; a branch-only save remains pending.
+
 Use the [single-pass handoff](../../../skills/shared/PLAN-HANDOFF.md#one-planning-pass-one-handoff):
 resume accepted decisions and existing task IDs, investigate only missing evidence,
 persist one affected batch, and reuse input-bound checks. Unchanged findings need

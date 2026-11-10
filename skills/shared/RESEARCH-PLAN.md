@@ -52,6 +52,11 @@ own boundary, stop the offending action and report attributable changes; do not
 hide them with reset/clean or overwrite unrelated work.
 
 
+For every writable planning route, complete
+[main-branch persistence](PLAN-HANDOFF.md#main-branch-persistence) before the final
+handoff. A branch-only save is pending, not completed planning. Explicit no-write
+and no-commit restrictions still take precedence.
+
 ## Shared planning interface
 
 Plan With Me and Plan For Me are two adapters over one sequence. The mode changes

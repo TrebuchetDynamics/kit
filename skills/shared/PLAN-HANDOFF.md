@@ -14,6 +14,32 @@ When a separate plan is justified, its accepted section names its status
 Planning saves accepted work as complete records in `tasks/` through `autowork tasks`
 ([work center](TODO-WORKCENTER.md)); a goal without tasks is not an executable task.
 
+## Main-branch persistence
+
+Every writable planning route saves its affected plan documents, tasks and goals
+on the target repository's canonical local `main` before reporting planning complete.
+This includes standalone planning, rolling plans and Autowork-owned planning substeps.
+Resolve the canonical checkout with `git worktree list --porcelain`; check fresh
+branch, status and actual writer ownership before writing or integrating there.
+Use `autowork tasks` for record changes and commit only the attributable batch.
+
+When isolation is needed, a branch-local commit is an intermediate save, not a
+finished handoff. Integrate the reviewed batch through the repository's supported
+path into canonical `main`, preserving unrelated edits and active workers. Verify
+that `main` includes the batch, read back its saved records there, and run
+`autowork tasks validate --worktree .` there. Assess selection with
+`autowork tasks why ID` on canonical `main`, or state selection was not assessed.
+Report the main commit separately from push, runtime admission and execution.
+
+If `main` is absent, another writer owns the checkout, integration conflicts or a
+required guard refuses, preserve the saved work and report main persistence pending
+with the exact blocker. Do not force, reset, stash another writer's work, rename a
+branch or start a competing coordinator to make delivery succeed. Explicit read-only,
+no-write and no-commit restrictions take precedence: report inline or local-only
+results without claiming main persistence. This rule grants no implementation,
+push, installation or runner-start authority; an Autowork substep returns to the
+same coordinator for any remaining supported integration.
+
 ## One planning pass, one handoff
 
 Plan With Me investigates and resolves consequential choices with the user. Plan
@@ -127,11 +153,12 @@ Then run `autowork tasks validate --worktree .` before reporting it saved: fix e
 error. It lists drafts: a record missing contract fields is never selected. Commit
 the batch once as a new scoped commit: inspect current HEAD and the entire staged
 diff, include only the reviewed batch, and never amend a runner-created merge or
-another session's commit. After the commit, `autowork tasks why ID` reports committed-store
+another session's commit. Complete [main-branch persistence](#main-branch-persistence)
+before the final handoff. After the main commit, `autowork tasks why ID` reports committed-store
 selection eligibility and position, not resource/ownership admission, capacity or
 dispatch. Report each task as selection-ready, waiting (and on what) or draft;
 readiness is not execution authorization or a live ownership check. A branch-local
-commit and passing checks do not establish consumer delivery: disclose whether the
+commit and passing checks do not complete planning or establish consumer delivery: disclose whether the
 actual consumer includes that commit and whether selection was checked there.
 
 Diagnose every validation error and draft before closing the handoff. When existing
