@@ -2989,45 +2989,86 @@ fcntl.flock = observed_flock
     def test_ten_empty_intervals_keep_one_session_and_release_its_lease(self):
         self.write_todo(todo([]))
         self.git(self.repo, 'commit', '-qam', 'nothing queued')
-        runner = self.start_runner('--interval', '1')
         log = lambda: ''.join(p.read_text() for p in self.state.glob('*/runner.log'))
-        deadline = time.monotonic() + 90
+        common = Path(self.git(self.repo, 'rev-parse', '--absolute-git-dir'))
+        journal = common / 'autowork-execution/journal.jsonl'
+        identity, output_path = self.root / 'runner-process.json', self.root / 'runner-output'
+        started, stages = time.monotonic(), {}
 
-        def wait_for_intervals(count):
-            while log().count('Queue empty; checking again') < count:
-                self.assertLess(time.monotonic(), deadline, log())
-                self.assertIsNone(runner.poll(), log())
-                time.sleep(0.05)
+        def lease_events():
+            # The writer appends JSONL: a concurrently written trailing line is not a milestone.
+            lines = journal.read_text().splitlines(keepends=True) if journal.exists() else []
+            return [e['event'] for line in lines if line.endswith('\n')
+                    and (e := json.loads(line))['event'].startswith('coordinator_')]
 
-        try:
-            wait_for_intervals(1)
-            sessions = list(self.state.glob('*/session.json'))
-            self.assertEqual(len(sessions), 1, log())
-            session_file = sessions[0]
-            session = json.loads(session_file.read_text())
-            path = Path(session['path'])
-            admin = Path(self.git(path, 'rev-parse', '--absolute-git-dir'))
-            # Not the index: any `git status` may refresh its stat data (racily clean entries), which
-            # depends on the host's timing; HEAD, its log and the session file show a recreated session.
-            unchanged = [admin / 'HEAD', admin / 'logs/HEAD', session_file]
-            stamps = [p.stat().st_mtime_ns for p in unchanged]
-            wait_for_intervals(10)
-            self.assertEqual(json.loads(session_file.read_text()), session)
-            self.assertEqual([p.stat().st_mtime_ns for p in unchanged], stamps)
-            self.assertEqual(log().count(' started from main'), 1, log())
-            common = Path(self.git(self.repo, 'rev-parse', '--absolute-git-dir'))
-            journal = [json.loads(l) for l in (common / 'autowork-execution/journal.jsonl').read_text().splitlines()]
-            lease_events = [e['event'] for e in journal if e['event'].startswith('coordinator_')]
-            self.assertEqual(lease_events[:20], ['coordinator_claimed', 'coordinator_released'] * 10)
-            # Continuous idle runs search once, not once per interval. Discovery has
-            # settled before releasing the lease and must not become a code worker.
-            self.assertEqual([r['role'] for r in self.runs()], ['maintainer'])
-            self.assertTrue(self.runs()[0]['message'].startswith('You are discovering independent maintenance work'))
-        finally:
-            if runner.poll() is None:
-                runner.send_signal(signal.SIGINT)
-            out, err = runner.communicate(timeout=60)
-        self.assertEqual(runner.returncode, 130, out + err)
+        # Reuse the guard to reap even setsid fake children on assertion failure.
+        # File output cannot block the runner while the observer is descheduled.
+        with output_path.open('w') as output:
+            guard = subprocess.Popen(
+                [sys.executable, str(ROOT / 'pi-autowork/pi_autowork/pi_process.py'),
+                 '--identity', str(identity), '--deadline', str(90 + 9 * 30 + 60), '--',
+                 'bash', str(RUNNER), '--interval', '1'],
+                cwd=self.repo, env=self.env, stdout=output, stderr=subprocess.STDOUT)
+            runner_fd = None
+
+            def wait_for_interval(count, timeout=30):
+                # Historical suite load completed eight cycles in 90 s, with 5–16 s gaps.
+                # Bound startup separately, then each real idle/released-lease milestone.
+                deadline = time.monotonic() + timeout
+                while True:
+                    text, events = log(), lease_events()
+                    details = (f'interval {count}; stages={stages}; leases={events}; load={os.getloadavg()}\n'
+                               f'{text}\n{output_path.read_text()}')
+                    self.assertIsNone(guard.poll(), details)
+                    if (text.count('Queue empty; checking again') >= count
+                            and events[:2 * count] == ['coordinator_claimed', 'coordinator_released'] * count):
+                        stages[count] = round(time.monotonic() - started, 3)
+                        return
+                    self.assertLess(time.monotonic(), deadline, details)
+                    time.sleep(0.05)
+
+            try:
+                wait_for_interval(1, timeout=90)
+                owned = json.loads(identity.read_text())
+                runner_fd = os.pidfd_open(owned['pi_pid'])
+                ticks = Path(f'/proc/{owned["pi_pid"]}/stat').read_text().rsplit(')', 1)[1].split()[19]
+                self.assertEqual(owned['pi_start_time'], ticks)
+                sessions = list(self.state.glob('*/session.json'))
+                self.assertEqual(len(sessions), 1, log())
+                session_file = sessions[0]
+                session = json.loads(session_file.read_text())
+                path = Path(session['path'])
+                admin = Path(self.git(path, 'rev-parse', '--absolute-git-dir'))
+                # Not the index: `git status` may refresh racily clean stat data.
+                unchanged = [admin / 'HEAD', admin / 'logs/HEAD', session_file]
+                stamps = [p.stat().st_mtime_ns for p in unchanged]
+                for count in range(2, 11):
+                    wait_for_interval(count)
+                self.assertEqual(json.loads(session_file.read_text()), session)
+                self.assertEqual([p.stat().st_mtime_ns for p in unchanged], stamps)
+                self.assertEqual(log().count(' started from main'), 1, log())
+                self.assertEqual(lease_events()[:20], ['coordinator_claimed', 'coordinator_released'] * 10)
+                # Discovery settles before release and must not become a code worker.
+                self.assertEqual([r['role'] for r in self.runs()], ['maintainer'])
+                self.assertTrue(self.runs()[0]['message'].startswith('You are discovering independent maintenance work'))
+                signal.pidfd_send_signal(runner_fd, signal.SIGINT)
+                guard.wait(timeout=60)
+                self.assertEqual(guard.returncode, 130, output_path.read_text())
+            finally:
+                if runner_fd is not None:
+                    os.close(runner_fd)
+                if guard.poll() is None:
+                    guard.terminate()
+                try:
+                    guard.wait(timeout=10)
+                finally:
+                    if guard.poll() is None:
+                        guard.kill()
+                        guard.wait()
+                print(f'IDLE_STAGES {stages}; load={os.getloadavg()}; '
+                      f'python={sys.executable} {sys.version}', flush=True)
+                self.assertTrue(identity.is_file(), output_path.read_text())
+                self.assertTrue(json.loads(identity.read_text())['cleanup_complete'], output_path.read_text())
         self.assertFalse(path.exists())
         self.assertFalse(session_file.exists())
         self.assertEqual(self.branches(), ['main'])
