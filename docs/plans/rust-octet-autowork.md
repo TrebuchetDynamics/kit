@@ -170,3 +170,26 @@ service, source pin, model grants or runtime state.
 The saved follow-up task records own exact write scopes, proposed offline checks
 and dependencies. New behavior checks remain proposed until implementation;
 planning never qualifies native execution, migration or live delivery.
+
+
+## Round-three entry criteria
+
+RUST-PLAN-03 remains pending until RUST-STATUS-01 and RUST-TASKS-01
+are integrated with source-bound results and review. Current CLI source provides
+version, capabilities and explicit run commands; it does not yet expose the
+accepted status or task-mutation commands. No round-three implementation batch
+is selected from these missing results.
+
+At re-entry, read the integrated revisions and actual CLI/task-store/state-recovery
+test results for both tasks. Check status reads against absent/corrupt state and
+pending task bytes without creating or reconciling state. Check ordinary task
+mutations against stale revisions, unknown notes and protected authority, including
+explicit refusal of Owner decision changes through the planner seam. Keep
+pending-edit capture distinct from committed selection and publication.
+
+Map failures and remaining outcomes before selecting at most eight bounded tasks.
+Do not preselect service, provider, installer, migration or retirement work from
+assumed parity. Preserve unresolved LANG-003 ownership and live gates. Obtain a
+fresh read-only builder review of the resulting batch, validate the saved records
+with `autowork tasks validate --worktree .`, and read them back before closing
+this planning activity. These entry criteria do not satisfy its dependencies.
