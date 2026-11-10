@@ -439,7 +439,7 @@ headless TUI pilot cover these displays; they do not qualify live publication.
 The fleet defaults to a bounded summary, leaving space for worker rows and the
 journal. **i Details** replaces that summary with a keyboard-scrollable diagnostics
 pane (End/Page Down scroll; **i** returns to the fleet). It retains paths, revisions,
-source warnings, model/fallback and push settings. Runtime observation failures
+source errors and notes, model/fallback and push settings. Runtime observation failures
 remain visible in the summary; a short viewport prioritizes the main-check result
 over the generic explanation. This changes presentation, not health or admission.
 The fleet table's State uses the semantic label from the same captured verdict as
@@ -460,16 +460,29 @@ The projection groups **acquisition errors** separately from informational **sou
 notes** (unmatched execution, unmatched activity, revision and provenance). Its
 counts deduplicate identical messages within each category; every original message
 and explicit affected task ID remains available on the groups for Details consumers.
-The existing overview still counts raw annotations as warnings; grouped rendering
-is available through this projection. Details/Blockers retain their full evidence.
+The overview shows deduplicated **errors** and **notes**, not a combined warning
+count. Details groups their categories and retains every original observation,
+including repeated notes and unmatched task IDs. Main-check evidence retains the
+checked revision, current main revision and original start age, even when superseded;
+it does not qualify the newer main. Details/Blockers retain their full evidence.
 The projection grants no readiness, scheduling or current-main verification authority.
 
 Below 120 columns the fleet shows Runner, State and Total; selecting a runner shows
 its complete task-count breakdown. Below 100 columns the repository browser stacks
 readiness below the directory tree. Source: `pi-autowork/src/pi_autowork/tui.py` (`FleetApp`,
-`BrowseScreen`); fixture coverage: `pi-autowork/tests/test_tui_layout.py`.
+`BrowseScreen`); fixture coverage: `pi-autowork/tests/runner/test_tui_layout.py`
+and the bounded `test_tui_operations.py` / `tui_operations_pilot.py` beside it.
+Matched worker cells show committed task titles (or the captured short name when
+no full record is available). **i Details** exposes full names, exact IDs, phases
+and wait reasons; **Enter** on a worker opens that task's action log. Duplicate
+names never become action keys. Unmatched lanes remain observations, not active
+committed tasks.
 
-Keys are highlighted in the top menu, which wraps on narrow terminals:
+The fleet menu shows one useful **Next** action, then **Log**, **Tasks**,
+**Details** and **? More** (without duplicate entries). Next uses captured status:
+Tasks for questions or waiting work, Details for blocked/unavailable inventory,
+Log for live work, or Play for a stopped runner when controls are allowed.
+Every available action remains searchable in More; all direct keys remain:
 `l` (or Enter) **L**og, `p` **P**lay/**P**ause (starts a stopped service, resumes a
 paused one, pauses a running one), `s` **S**top, `r` **R**estart, `m` **M**odel
 (from Pi's list, type to filter), `t` **T**asks, `u` **U**ninstall the
@@ -480,8 +493,10 @@ planning and blocker inspection live inside task views (or the directory browser
 for repository-wide planning), not separate fleet hotkeys or palette entries.
 Press **? More** to search all available actions and see their shortcuts. Choosing
 an action uses the same command and confirmation as its direct key. Read-only
-views list only read-only actions. Compact terminals show the primary actions in
-the menu; secondary actions remain in More and retain their keyboard shortcuts.
+views list only read-only actions. Stop, Restart, Model, Browse, Uninstall (when
+available) and Quit live in More at every size and retain their direct shortcuts.
+Model also remains directly clickable on the model bar. More rechecks the selected
+repository identity before dispatch and uses the existing confirmation flow.
 Press **Ctrl+P** to search fleet commands, switch themes, or find screen-specific
 actions. The palette includes provider/model selection on the fleet and Pi login
 and refresh while the model picker is open. Read-only mode omits actions that
@@ -489,8 +504,11 @@ change runner or repository state.
 
 The fleet separates **Runners**, **Workers** and **Activity** with labelled rules.
 Below 22 terminal rows, the selected summary uses three lines and keeps the main
-check visible. The activity journal retains at least four rows. Repeated identical
-text does not repaint widgets; style and click-target changes still update them.
+check visible. The activity journal retains at least four rows and one worker row
+remains selectable at 60×18. Abbreviated names, phases or evidence have a visible
+Details route; those cell sizes are fixture test dimensions, not live terminal
+qualification. Repeated identical text does not repaint widgets; style and
+click-target changes still update them.
 Acquisition and freshness rules are unchanged. See [DESIGN.md](../DESIGN.md) for the maintained
 terminal layout and interaction contract.
 

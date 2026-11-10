@@ -105,9 +105,10 @@ async def redraw_pilot():
             app.show_lanes(runner)
             assert doing.call_count == 10, 'Activity formatting must run once per worker row'
         lanes = app.query_one('#lanes')
-        expected = [f'{runner.lanes[0].task} [{i + 1}]' for i in range(10)]
-        assert [str(lanes.get_row_at(i)[0]) for i in range(10)] == expected
-        assert [key.value for key in lanes.rows] == expected
+        assert [str(lanes.get_row_at(i)[0]) for i in range(10)] == [runner.lanes[0].task] * 10
+        import json
+        assert [json.loads(key.value) for key in lanes.rows] == [
+            [runner.name, runner.repo, lane.task, lane.attempt] for lane in runner.lanes]
         # Snapshot acquisition remains independent of presentation deduplication.
         with patch.object(fleet_view, 'collect_for_tui', side_effect=AssertionError('redraw recollected')):
             app.show_detail()
@@ -230,7 +231,8 @@ async def layout_pilot():
             if height < 22:
                 assert app.query_one('#overview').region.height <= 3
             if height < 22 or width < 80:
-                assert 'Browse' in painted and 'Quit' in painted
+                assert 'Details' in painted and 'Tasks' in painted
+                assert 'Browse' not in painted and 'Quit' not in painted  # secondary routes live in More
                 for label in ('Restart', 'Uninstall', 'Plan', 'Blockers'):
                     assert label not in painted, (width, height, painted)
         # A green main check never makes stale observations look current.
@@ -249,7 +251,7 @@ async def layout_pilot():
         app.show_detail()
         await pilot.pause()
         painted = '\n'.join(overview.render_line(y).text for y in range(overview.content_size.height))
-        assert '1 warnings' in painted and 'Main:' in painted, painted
+        assert '1 errors' in painted and '0 notes' in painted and 'Main:' in painted, painted
 
 
 async def welcome_pilot():

@@ -802,9 +802,9 @@ async def main():
             menubar = app.query_one('#menubar')
             assert menubar.region.y < app.query_one('#runners').region.y, 'the menu bar is above the runners'
             hints = menubar.render()
-            assert str(hints).rstrip().endswith('Log  Pause  Stop  Restart  Model  Tasks  Details  ctrl+p Commands  ? More  n Browse  Quit'), str(hints)
+            assert str(hints).rstrip() == 'Details  Log  Tasks  ? More', str(hints)
             marked = {str(hints)[span.start:span.end] for span in hints.spans if 'underline' in str(span.style)}
-            assert marked == set('LPSRMTQin?') | {'ctrl+p'}, marked
+            assert marked == set('iLT?'), marked
             log = '\n'.join(line.text for line in app.query_one('#log').lines)
             assert 'TASK-036: waiting' in log and 'pending —' not in log, log
             agent = base / 'agent'
@@ -819,9 +819,9 @@ async def main():
                 for view_only in (False, True):
                     app.view_only = view_only
                     for service, state_name, menu in (
-                            ('running', 'stalled', 'Log  Pause  Stop  Restart  Model  Tasks  Details  ctrl+p Commands  ? More  n Browse  Quit'),
-                            ('stopped', 'not running', 'Log  Play  Model  Tasks  Uninstall  Details  ctrl+p Commands  ? More  n Browse  Quit'),
-                            ('stopped', 'paused', 'Log  Play  Model  Tasks  Uninstall  Details  ctrl+p Commands  ? More  n Browse  Quit'),
+                            ('running', 'stalled', 'Details  Log  Tasks  ? More'),
+                            ('stopped', 'not running', 'Play  Log  Tasks  Details  ? More'),
+                            ('stopped', 'paused', 'Play  Log  Tasks  Details  ? More'),
                             ('', '', 'Model  n Browse  ctrl+p Commands  ? Help  Quit')):
                         selected = replace(runner, service=service, state=state_name) if service else None
                         envelope = fleet_view.FleetSnapshot((selected,) if selected else (),
@@ -829,7 +829,9 @@ async def main():
                         async with patched_reads(app, mock.patch.object(fleet_view, 'collect_for_tui', return_value=envelope),
                                 mock.patch.object(portal, 'probe', side_effect=AssertionError('fleet key probed Portal'))):
                             await refresh(app, pilot)
-                            expected = ('view only  Log  Tasks  Details  ctrl+p Commands  ? More  Quit' if selected else 'ctrl+p Commands  ? Help  Quit') if view_only else menu
+                            expected = (('view only  Details  Log  Tasks  ? More' if service == 'running' else
+                                         'view only  Log  Tasks  Details  ? More') if selected else
+                                        'ctrl+p Commands  ? Help  Quit') if view_only else menu
                             assert str(menubar.render()).strip() == expected, menubar.render()
                             painted = ' '.join(menubar.render_line(y).text for y in range(menubar.content_size.height))
                             assert ' '.join(painted.split()) == ' '.join(expected.split()), painted

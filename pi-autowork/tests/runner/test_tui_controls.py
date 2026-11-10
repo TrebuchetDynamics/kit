@@ -244,7 +244,7 @@ async def controls_pilot(case):
                         for label, expected in [('Log', tui.LogScreen), ('Stop', tui.Confirm),
                                                 ('Tasks', tui.TasksScreen)]:
                             text = bar.render().plain
-                            shown_label = 'More' if label == 'Stop' and size[1] < 22 else label
+                            shown_label = 'More' if label == 'Stop' else label
                             # Find its rendered cell after wrapping, rather than assume
                             # every action fits on the first line.
                             position = None
