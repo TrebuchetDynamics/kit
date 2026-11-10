@@ -846,6 +846,30 @@ class BatchFailureTests(unittest.TestCase):
         coordinator.reexec_due = coordinator.batch_pending = lambda: False
         return coordinator
 
+    def test_batch_gate_artifacts_are_generation_scoped(self):
+        with tempfile.TemporaryDirectory() as folder:
+            logs = []
+
+            def gate(state, label, checkout, base):
+                path = worker.gate_log(state, label)
+                path.parent.mkdir(exist_ok=True)
+                path.write_text(os.environ['PI_AUTOWORK_BATCH_GENERATION'])
+                logs.append(path)
+                return True, ''
+
+            with patch.object(worker.optimistic, 'enabled', return_value=False), \
+                    patch.object(worker, 'full_suite_gate', side_effect=gate), \
+                    patch.object(worker, 'gate_note', side_effect=lambda state, label, checkout:
+                                 worker.gate_log(state, label).read_text()), \
+                    patch.object(worker, 'gate_selection', return_value=None), \
+                    patch.object(worker, 'review_gate_evidence', return_value=None):
+                for generation in ('first', 'second'):
+                    with patch.dict(os.environ, PI_AUTOWORK_BATCH_GENERATION=generation):
+                        result = json.loads(worker.batch_gate(folder, 'checkout', 'base', [('A', 'head')], {}))
+                        self.assertEqual(result['note'], generation)
+            self.assertNotEqual(logs[0], logs[1])
+            self.assertEqual([path.read_text() for path in logs], ['first', 'second'])
+
     def test_a_failed_batch_is_not_batched_again_after_a_restart_or_a_new_candidate(self):
         with tempfile.TemporaryDirectory() as folder:
             first = self.coordinator(folder)
@@ -1245,6 +1269,34 @@ class BatchLandingTests(unittest.TestCase):
         (runner.state / 'batch-order.txt').write_text('\n'.join(states) + '\n')
         runner.tasks = lambda snapshot=None: [{'task': t, 'state': s} for t, s in states.items()]
         return runner, coordinator
+
+    def test_initial_batch_and_train_keep_distinct_tip_publications(self):
+        from unittest.mock import Mock
+
+        with tempfile.TemporaryDirectory() as folder:
+            runner, coordinator = self.runner(folder, {})
+            (runner.state / 'runs').mkdir()
+            runner.batch_recovered = True
+            runner.process_script = 'fixture'
+            runner.restart_status = lambda: None
+            with patch.object(coordinator.worker, 'batch_identity', return_value={}), \
+                    patch.object(coordinator, 'git', return_value='base'), \
+                    patch.object(coordinator.main_check, 'full_check', return_value='true'), \
+                    patch.object(coordinator.subprocess, 'Popen', side_effect=[Mock(), Mock()]) as launch, \
+                    patch.object(coordinator.LOG, 'say'):
+                runner.start_batch(['A', 'B'])
+                first = runner.integration
+                runner.start_batch(['C'], on='ahead', closure_context={})
+                second = runner.train
+            self.assertNotEqual(first['tip'], second['tip'])
+            for job, call in zip((first, second), launch.call_args_list):
+                self.assertEqual(job['tip'], job['out'] + '.tip')
+                self.assertEqual(call.kwargs['env']['PI_AUTOWORK_BATCH_TIP'], job['tip'])
+                self.assertEqual(call.kwargs['env']['PI_AUTOWORK_BATCH_GENERATION'], job['generation'])
+            Path(first['tip']).write_text('first')
+            Path(second['tip']).write_text('second')
+            self.assertEqual(Path(first['tip']).read_text(), 'first')
+            self.assertNotEqual(first['generation'], second['generation'])
 
     def test_a_reload_waits_for_batch_passed_candidates_to_land(self):
         with tempfile.TemporaryDirectory() as folder:
