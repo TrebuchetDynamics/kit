@@ -148,7 +148,7 @@ measured. Without it the report says `no baseline`. Keep these files and exports
 private. The [component report contract](../pi-autowork/README.md#evaluation-report)
 defines JSON/CSV fields, denominator and percentile rules, attribution, telemetry
 coverage and partial-week limits. The 30-day fixture and format-parity checks live in
-`pi-autowork/tests/test_scorecard.py`; these are offline evidence for the report, not
+`pi-autowork/tests/runner/test_scorecard.py`; these are offline evidence for the report, not
 results from operating Autowork on other products. The owner's real-repository run
 remains separate and unqualified by this instrumentation.
 
@@ -207,7 +207,7 @@ pilot hour as a separate end-to-end metric so shutdowns cannot improve the headl
 
 ### Capability boundaries and chosen designs
 
-Use the existing Python standard-library modules under `src/pi_autowork/`, unittest
+Use the existing Python standard-library modules under `pi-autowork/src/pi_autowork/`, unittest
 fixtures in `pi-autowork/tests/` and `tests/`, and existing docs/task records. No new
 service, queue, telemetry store, spec registry, approval layer or scheduling authority.
 The source style is small helpers and explicit dictionaries, for example the current

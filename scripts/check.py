@@ -17,8 +17,9 @@ import sys
 import tempfile
 import time
 
-TEST_DIRS = ('tests', 'pi-autowork/engine', 'skills/docs-sync/scripts',
-             'skills/git-commit-push/scripts', 'pi-autowork/tests')
+TEST_DIRS = ('tests', 'pi-autowork/tests/runner', 'pi-autowork/tests/native',
+             'pi-autowork/tests/engine', 'skills/docs-sync/scripts',
+             'skills/git-commit-push/scripts')
 EXCLUSIONS = {
     'tests/integration_plugin.py':
         ('integration', 'requires the optional Hermes loader environment'),
@@ -29,7 +30,8 @@ EXCLUSIONS = {
 }
 # Modules whose tests run in several processes: tests/test_pi_autowork.py alone took
 # 764s of a 1324s run as one process, while its tests are independent runner fixtures.
-SPLIT = {'tests/test_pi_autowork.py': 12, 'pi-autowork/engine/test_parallel_integrate.py': 4}
+SPLIT = {'pi-autowork/tests/runner/test_pi_autowork.py': 12,
+         'pi-autowork/tests/engine/test_parallel_integrate.py': 4}
 PASEO = 'integrations/paseo'
 LIVE_FLAGS = ('CONTAINMENT_LINUX_TESTS', 'RUN_CONTROLLER_BRIDGE_LINUX',
               'HERMES_NATIVE_HANDOFF_TEST', 'HERMES_NATIVE_REGISTRATION_TEST')
@@ -220,11 +222,11 @@ def source_guard(root):
     try:
         layout_api = runpy.run_path(str(bootstrap))['Layout']
         sources = layout_api.python_sources(root)
-        engine_names = {p.stem for folder in (root / 'src/pi_autowork/engine', root / 'pi-autowork/engine')
+        engine_names = {p.stem for folder in (root / 'pi-autowork/src/pi_autowork/engine', root / 'pi-autowork/engine')
                         for p in folder.glob('*.py') if not p.name.startswith('test_')}
         for source in sources:
             tree = ast.parse(source.read_bytes(), str(source))
-            if source.is_relative_to(root / 'src/pi_autowork'):
+            if source.is_relative_to(root / 'pi-autowork/src/pi_autowork'):
                 for node in ast.walk(tree):
                     names = ([alias.name for alias in node.names] if isinstance(node, ast.Import)
                              else [node.module or ''] if isinstance(node, ast.ImportFrom) and node.level == 0
@@ -411,6 +413,12 @@ def main(argv=None):
     # every Autowork host sets one, but a bare interactive shell does not, and the resulting errors
     # read like a red tree rather than a missing setting.
     env.setdefault('TMPDIR', tempfile.gettempdir())
+    support_paths = [str(root / 'pi-autowork/tests'), str(root / 'tests'),
+                     str(root / 'pi-autowork'), str(root / 'pi-autowork/src'),
+                     str(root / 'pi-autowork/src/pi_autowork/engine'),
+                     str(root / 'pi-autowork/engine')]
+    existing_pythonpath = env.get('PYTHONPATH')
+    env['PYTHONPATH'] = os.pathsep.join(support_paths + ([existing_pythonpath] if existing_pythonpath else []))
     passed = failed = gated = 0
     work = list(units(root, tests, args.pattern, args.shard))
     # Modules (and shards of split ones) are independent processes; output is still printed

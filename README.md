@@ -410,7 +410,7 @@ name: the command namespace is `kit:` and the settings key is
 `plugins.entries.kit`. Settings under `plugins.entries.autowork` keep being read for
 one release, so an opt-out you already set still applies. Remove an older installation
 and [install](#install) again in each host; in Hermes, rewire existing cron jobs with
-`python3 scripts/wire-owner-cron.py --root DEFAULT_HERMES_HOME --apply`.
+`python3 pi-autowork/scripts/wire-owner-cron.py --root DEFAULT_HERMES_HOME --apply`.
 
 </details>
 

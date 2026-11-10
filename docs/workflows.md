@@ -1054,7 +1054,7 @@ or skipped pilot cases are coverage gaps, not passes. Current interpreter lacks
 Textual; no dependency installation was performed during planning.
 
 Sources: `pi-autowork/pi_autowork/tui.py` (`Confirm`, modal pickers, FleetApp refresh
-and execute paths), `pi-autowork/tests/tui_pilot.py`, `test_fleet_view.py`, and
+and execute paths), `pi-autowork/tests/runner/tui_pilot.py`, `test_fleet_view.py`, and
 [Textual screens](https://textual.textualize.io/guide/screens/) /
 [layout](https://textual.textualize.io/guide/layout/) documentation. Retain task IDs,
 queue ordering and the separate stale-question/status and model-account plans.
@@ -1132,7 +1132,7 @@ planned, unrun; skipped pilot tooling is not a UI pass. This plan changes no run
 queue states, schedules, services, provider accounts or credentials.
 
 Sources: existing FleetApp screens/bindings in `pi-autowork/pi_autowork/tui.py`,
-`pi-autowork/tests/tui_pilot.py` and `pi-autowork/tests/test_fleet_view.py`.
+`pi-autowork/tests/runner/tui_pilot.py` and `pi-autowork/tests/runner/test_fleet_view.py`.
 Rejected: displaying only lane slots omits most tasks; a second ledger/parser
 would drift from /pending and /done; eager history queries on fleet timers would
 block/overload the UI. No task editing or new slash-command alias is in scope.
@@ -1262,8 +1262,8 @@ runner/model/profile/job change, frontend dependency, paid reference tool, commi
 push, live operation or new telemetry project is authorized by this request.
 
 Sources: `pi-autowork/pi_autowork/tui.py` (FleetApp.compose, bindings, action guards),
-`pi-autowork/pi_autowork/fleet_view.py`, `pi-autowork/tests/tui_pilot.py`,
-`pi-autowork/tests/test_fleet_view.py`, and the existing task owners named above.
+`pi-autowork/pi_autowork/fleet_view.py`, `pi-autowork/tests/runner/tui_pilot.py`,
+`pi-autowork/tests/runner/test_fleet_view.py`, and the existing task owners named above.
 
 Builder refinements: route read-only log opening through its own guarded action for
 keyboard and row activation. Nested inspection Esc returns to its originating
