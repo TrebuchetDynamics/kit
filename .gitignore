@@ -23,4 +23,4 @@ __pycache__/
 node_modules/
 
 # Local Rust candidate build artifacts.
-/rust/autowork/target/
+/pi-autowork/rust/autowork/target/

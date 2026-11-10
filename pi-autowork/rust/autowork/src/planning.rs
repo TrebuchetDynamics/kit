@@ -287,8 +287,8 @@ impl<'a> Planner<'a> {
             .collect();
         request.prompt = format!(
             "{}\n{}\nREAD-ONLY COORDINATOR SUBSTEP: Return only one strict JSON PlanResponse, no fences. Do not dispatch, write records, mark done, emit admission or propose executable argv. Preserve acceptance, live gates and active contracts. Only observed prerequisites justify owner help. A wait is not completion. An exhausted result requires bounded source-backed alternatives. Bind generation {} and contract {}. Snapshot revision: {}. Failure: {}. Records: {}. Observed prerequisites: {:?}",
-            include_str!("../../../skills/plan-for-me/SKILL.md"),
-            include_str!("../../../skills/shared/RESEARCH-PLAN.md"),
+            include_str!("../../../../skills/plan-for-me/SKILL.md"),
+            include_str!("../../../../skills/shared/RESEARCH-PLAN.md"),
             request.generation,
             request.contract_hash,
             snapshot.revision(),

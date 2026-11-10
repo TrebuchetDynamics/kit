@@ -1632,7 +1632,7 @@ impl<'a> Coordinator<'a> {
         let reviewer = request.identity();
         request.prompt = format!(
             "{}\nFresh READ-ONLY independent review. Inspect the actual candidate {} tree {}, compared with base {}. Acceptance and exclusions: {}. Check receipts: {}. Return ONLY JSON {{\"approved\":true|false,\"candidate\":\"{}\",\"tree\":\"{}\",\"contract_hash\":\"{}\"}}. Reject unmet acceptance. Do not run commands, dispatch, or write.",
-            include_str!("../../../skills/ponytail-review/SKILL.md"),
+            include_str!("../../../../skills/ponytail-review/SKILL.md"),
             candidate,
             tree,
             snapshot.revision(),

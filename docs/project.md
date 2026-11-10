@@ -51,9 +51,12 @@ is also **planned**: editable Autowork implementation, product tests, fixtures,
 dedicated tools, Paseo and the Rust successor belong under `pi-autowork/`.
 Shared Kit resources and required host entrypoints stay outside. Preserve import
 and package boundaries, selected-release identity, test inventories, locks and
-runtime state. Active Rust builders keep their existing crate contracts; relocation
-follows their completion. A directory move does not qualify runtime behavior or
-permit deleting retained worktrees, restarting workers or changing live gates.
+runtime state. The Rust candidate's single crate, tests, fixtures and lockfile now
+live in [`pi-autowork/rust/autowork/`](../pi-autowork/rust/autowork/README.md);
+`rust/autowork/` is no longer an implementation owner. Other component placement
+requirements remain governed by that contract. A directory move does not qualify
+runtime behavior or permit deleting retained worktrees, restarting workers or
+changing live gates.
 
 ## Current components
 

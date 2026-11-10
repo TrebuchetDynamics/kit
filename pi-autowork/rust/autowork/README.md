@@ -6,8 +6,8 @@ serialized local delivery coordinator, not the installed Python runner.
 routes and an isolated repository. It does not install a service, import global
 authentication, push, deploy or replace an existing runner.
 
-See the [accepted design](../../docs/plans/rust-octet-autowork.md),
-[dependency pin and build prerequisites](../../docs/dependencies.md#rust-autowork-candidate),
+See the [accepted design](../../../docs/plans/rust-octet-autowork.md),
+[dependency pin and build prerequisites](../../../docs/dependencies.md#rust-autowork-candidate),
 and [upstream license notice](THIRD_PARTY_NOTICES.md).
 
 ## Build and offline checks
@@ -16,13 +16,13 @@ From the repository root, use Rust/Cargo 1.95.0, Git, a C compiler and a linker.
 The task store also uses the Linux `sha256sum` and `date` utilities:
 
 ```sh
-RUSTUP_TOOLCHAIN=1.95.0 cargo build --locked --manifest-path rust/autowork/Cargo.toml
-RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test runtime_native
-RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test cli
-RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test task_store
-RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test state_recovery
-RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --test autonomous_cycle
-RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path rust/autowork/Cargo.toml --tests
+RUSTUP_TOOLCHAIN=1.95.0 cargo build --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml --test runtime_native
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml --test cli
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml --test task_store
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml --test state_recovery
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml --test autonomous_cycle
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml --tests
 ```
 
 The native tests use a local OpenAI Chat-compatible HTTP fixture through the real
@@ -45,7 +45,7 @@ service operation.
 ## Revision-bound task store
 
 [`task_store.rs`](src/task_store.rs) implements the current
-[schema-1 contract](../../pi-autowork/task-store.md), without a Python runtime or
+[schema-1 contract](../../task-store.md), without a Python runtime or
 another queue. `TaskStore::read_at(repo, revision)` resolves a commit once, disables
 Git replacement refs and inherited `GIT_*` redirection, and eagerly reads its
 records and evidence. `Snapshot::revision()`, `records()`, `tasks()` and `goals()`
@@ -289,7 +289,7 @@ separate. An exhausted search needs a bounded list of alternatives and inspected
 source references; an empty model answer cannot establish quiescence.
 
 ```sh
-RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --offline --manifest-path rust/autowork/Cargo.toml --test planning_reentry
+RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --offline --manifest-path pi-autowork/rust/autowork/Cargo.toml --test planning_reentry
 ```
 
 The two tests use disposable repositories and a loopback response through the

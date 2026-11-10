@@ -63,6 +63,15 @@ release until a supported reload or restart selects a committed replacement.
 | `pi_autowork/questions.py` | The owner's questions block in `BLOCKERS.md`, built from the engine status without a model |
 | `pi_autowork/release.py` | Safe-checkpoint test before a self-update: fleet idle, and the new release reads current state |
 
+## Rust candidate
+
+The separate [native-Octet candidate](rust/autowork/README.md) lives entirely in
+`pi-autowork/rust/autowork/`, including its locked dependencies, tests and fixtures.
+It builds `autowork-next`; it does not replace the installed Python runner.
+See its [offline build checks](rust/autowork/README.md#build-and-offline-checks)
+and [dependency prerequisites](../docs/dependencies.md#rust-autowork-candidate).
+A source relocation grants no live-provider, service or migration qualification.
+
 ## Reviewed Hermes observers
 
 Startup and `--install-service` normally refuse active repository Hermes jobs
