@@ -342,40 +342,76 @@ class PickModel(ReadScreen, ModalScreen[str]):
 
 
 class LogScreen(ReadScreen, Screen):
-    """A runner's output, full screen, refreshed."""
-    BINDINGS = [Binding('escape,q', 'app.pop_screen', 'back')]
+    """A bounded journal capture; Raw/Summary changes presentation, never acquisition."""
+    BINDINGS = [Binding('escape,q', 'back', 'back'), Binding('v', 'toggle_view', 'Raw/Summary')]
+    DEFAULT_CSS = '#journal-status { height: auto; max-height: 3; }'
 
     def __init__(self, runner, logs):
         super().__init__()
         self.runner, self.logs = runner, logs
+        self.raw, self.cached_text, self.journal_error = False, None, ''
+        self.captured_at = ''
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield MenuBar(id='menubar')
+        yield Static('Reading journal…', id='journal-status', markup=False)
         yield RichLog(id='full-log', wrap=True, highlight=False, markup=False)
 
     def on_mount(self):
         self.title = f'{self.runner.name}: log'
-        self.query_one('#menubar', MenuBar).show([('esc', 'Back')])
+        self.show_mode()
         self.refresh_log()
         self.set_interval(LOG_REFRESH, self.refresh_log)
 
     def refresh_log(self):
         runner, logs = read_input(self.runner), self.logs
         return self.read('full-log', (runner.name, runner.repo),
-                         lambda: fleet_view.log_lines(logs(runner, 1000)), self.show_log)
+                         lambda: logs(runner, 1000), self.show_log, self.log_failed)
 
-    def show_log(self, lines):
-        if lines == getattr(self, '_lines', None):
+    def action_back(self):
+        self.app.pop_screen()
+
+    def action_toggle_view(self):
+        self.raw = not self.raw
+        self.show_mode()
+        self.render_log()
+        self.query_one('#full-log', RichLog).focus(scroll_visible=False)
+
+    def show_mode(self):
+        self.query_one('#menubar', MenuBar).show(
+            [('v', 'Summary' if self.raw else 'Raw'), ('esc', 'Back')],
+            prefix='Raw' if self.raw else 'Summary',
+            click_actions={'v': 'screen.toggle_view', 'esc': 'screen.back'})
+
+    def log_failed(self, error):
+        self.journal_error = str(error)
+        self.render_log()
+
+    def show_log(self, text):
+        self.cached_text, self.journal_error = text, ''
+        self.captured_at = time.strftime('%H:%M:%S')
+        self.render_log()
+
+    def render_log(self):
+        text = self.cached_text
+        lines = ([(line, '') for line in text.splitlines()] if self.raw else fleet_view.log_lines(text)) if text is not None else []
+        status = (f'Captured excerpt · last successful read {self.captured_at}' if text is not None else 'Reading journal…')
+        if self.journal_error:
+            status = (f'Last good capture {self.captured_at} · stale' if text is not None else 'Journal unavailable') + ': ' + self.journal_error
+        publish_text(self.query_one('#journal-status', Static), Text(status, style='yellow' if self.journal_error else 'dim'))
+        key = (self.raw, lines, self.journal_error)
+        if key == getattr(self, '_lines', None):
             return
-        self._lines = lines
+        self._lines = key
         log = self.query_one('#full-log', RichLog)
         follow, at = log.is_vertical_scroll_end, log.scroll_y
         log.clear()
         for line, style in lines:
             log.write(Text(line, style=style), scroll_end=follow)
         if not lines:
-            log.write('(no output yet)', scroll_end=follow)
+            log.write('(journal unavailable)' if self.journal_error else '(no output yet)' if text is not None else 'Reading journal…',
+                      scroll_end=follow)
         if not follow:
             log.call_after_refresh(log.scroll_to, y=at, animate=False, force=True)
 
@@ -1114,9 +1150,9 @@ class FleetApp(App):
         if hasattr(self, 'planning_hub'):
             self.planning_hub.close()
 
-    def read(self, kind, identity, loader, apply):
+    def read(self, kind, identity, loader, apply, failed=None):
         token = self.reader.request(kind, identity, self.read_epoch, loader)
-        token.apply = apply
+        token.apply, token.failed = apply, failed
         return token
 
     def read_done(self, token, value, error):
@@ -1127,9 +1163,13 @@ class FleetApp(App):
             errors[token.kind] = str(error)
             self.sub_title = ' · '.join(f'{kind}: stale / unavailable: {message}' for kind, message in errors.items())
             self.notify(self.sub_title, severity='warning')
+            if token.failed:
+                token.failed(error)
         else:
-            errors.pop(token.kind, None)
+            previous_error = errors.pop(token.kind, None)
             token.apply(value)
+            if token.kind == 'journal' and previous_error:
+                self.render_fleet()  # remove stale journal provenance without another acquisition
 
     def invalidate_reads(self):
         self.read_epoch += 1
@@ -1622,7 +1662,7 @@ class FleetApp(App):
         table.display = bool(runner.lanes)
 
     def logs(self, runner, lines=200, since=None):
-        return fleet_view.logs(runner, lines=lines, journalctl=self.journalctl, since=since)
+        return fleet_view.logs(runner, lines=lines, journalctl=self.journalctl, since=since, strict=True)
 
     def refresh_log(self):
         """The last hour, folded and counted (fleet_view.log_lines); rewritten only when it changed."""
@@ -1631,30 +1671,37 @@ class FleetApp(App):
         if runner is None:
             self.reader.current.pop('journal', None)
             self.reads.retire()
-            self._log_identity, self._log = None, None
+            self._log_identity, self._log, self._journal_lines = None, None, None
             log.clear()
             return
         identity = (runner.name, runner.repo)
         if identity != getattr(self, '_log_identity', None):
-            self._log_identity, self._log = identity, None
+            self._log_identity, self._log, self._journal_lines = identity, None, None
             log.clear()
             log.write(f'{runner.name}: reading journal…')
         runner, journal = read_input(runner), self.journalctl
         return self.read('journal', (runner.name, runner.repo),
-                         lambda: fleet_view.log_lines(fleet_view.logs(runner, lines=400, journalctl=journal, since='-60min')),
-                         lambda lines: self.show_log(runner.name, lines))
+                         lambda: fleet_view.log_lines(fleet_view.logs(runner, lines=400, journalctl=journal, since='-60min', strict=True)),
+                         lambda lines: self.show_log(runner.name, lines),
+                         lambda error: self.show_log(runner.name, self._journal_lines, str(error)))
 
-    def show_log(self, name, lines):
+    def show_log(self, name, lines, error=''):
         log = self.query_one('#log', RichLog)
-        key = (name, lines)
+        if not error:
+            self._journal_lines = lines
+            self._journal_at = time.strftime('%H:%M:%S')
+        key = (name, lines, error)
         if key == getattr(self, '_log', None):
             return
         self._log = key
         follow, at = log.is_vertical_scroll_end, log.scroll_y
         log.clear()
-        for line, style in lines:
+        if error:
+            source = f'Last good journal {self._journal_at} · stale' if lines is not None else 'Journal unavailable'
+            log.write(Text(f'{source}: {error}', style='yellow'), scroll_end=follow)
+        for line, style in lines or []:
             log.write(Text(line, style=style), scroll_end=follow)
-        if not lines:
+        if not lines and not error:
             log.write('(nothing in the last hour; Enter shows the whole log)', scroll_end=follow)
         if not follow:
             log.call_after_refresh(log.scroll_to, y=at, animate=False, force=True)
@@ -1785,7 +1832,7 @@ class FleetApp(App):
         if key == 'l':
             journal = self.journalctl
             self.push_screen(LogScreen(read_input(runner), lambda runner, lines: fleet_view.logs(
-                runner, lines=lines, journalctl=journal)))
+                runner, lines=lines, journalctl=journal, strict=True)))
             return
         if key == 't':  # view-only shows the tasks too, without their actions
             self.open_tasks(runner)
