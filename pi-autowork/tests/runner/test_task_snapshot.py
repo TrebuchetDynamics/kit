@@ -31,6 +31,63 @@ class TaskSnapshotTests(unittest.TestCase):
                     tasks=[dict(task=t.id, state='waiting', contract_hash=t.contract_hash,
                                 admitted_contract_hash=None) for t in store.tasks.values()], **updates)
 
+    def test_owner_action_is_not_awaiting_dispatch(self):
+        store_fixture.write_todo(self.repo, '## Now\n- [ ] A — Supply signed input\n'
+                                '- [ ] B — Publish accepted result\n- [ ] C — Reconcile result\n'
+                                '- [ ] E — Ordinary worker\n## Needs decision\n- [ ] D — Decide\n')
+        for task, ownership in (('A', 'owner'), ('B', 'owner'), ('C', 'coordinator'),
+                                ('D', 'owner'), ('E', 'worker')):
+            path = self.repo / f'tasks/items/{task}.md'
+            path.write_text(edit(path.read_text(), dict(ownership=ownership, live='denied',
+                scope='Perform the recorded action.', acceptance=['Result recorded'],
+                checks=['Check recorded result'], touches=['result.txt']))
+                + ('\n- Owner decision: 2026-11-07: yes\n' if task == 'B' else ''))
+        subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=T', '-c', 'user.email=t@example.invalid',
+                        'commit', '-qam', 'typed ownership'], check=True)
+        original = task_queue.store(self.repo)
+        question = fleet_view.Question('B', 'input', 0, 'Perform the recorded action.',
+                                      'Approval already saved.', 'owner_action')
+        for evidence in ('absent', 'waiting', 'stale', 'mismatch', 'question'):
+            with self.subTest(evidence=evidence):
+                obs = self.observation()
+                for row in obs['tasks']:
+                    row['reason'] = 'ready; awaiting dispatch'
+                if evidence == 'absent':
+                    obs = None
+                elif evidence == 'stale':
+                    obs['task_source']['observed_at'] = 1
+                elif evidence == 'mismatch':
+                    obs['task_source']['repository_identity'] = '/another/.git'
+                elif evidence == 'question':
+                    obs['questions'] = [question]
+                snap = task_snapshot.capture(self.repo, engine_observation=obs, generation=1)
+                rows = {row.task: row for row in snap.rows}
+                self.assertEqual(set(rows), {'A', 'B', 'C', 'D', 'E'})
+                self.assertEqual(snap.counts, (0, 0, 2, 2, 1, 5))
+                for task in ('A', 'B'):
+                    row = rows[task]
+                    self.assertEqual((row.bucket, row.state), ('Blocker', 'Blocker'))
+                    self.assertIn('owner action', row.why)
+                    self.assertNotIn('dispatch', row.why)
+                    self.assertEqual(row.question, evidence == 'question' and task == 'B')
+                    display = task_snapshot.task_display(original.tasks[task], original, row=row)
+                    self.assertEqual((display['bucket'], display['why']), (row.bucket, row.why))
+                    canonical = task_snapshot.task_display(original.tasks[task], original)
+                    self.assertEqual((canonical['bucket'], canonical['why']), ('Blocker', 'owner action required'))
+                self.assertEqual((rows['C'].bucket, rows['C'].why), ('Waiting', 'awaiting coordinator action'))
+                self.assertEqual((rows['E'].bucket, rows['E'].why), ('Waiting', 'ready; awaiting dispatch'))
+                self.assertEqual((rows['D'].bucket, rows['D'].why), ('Decision', 'in Needs decision'))
+                if evidence == 'question':
+                    self.assertIn('; you: ' + question.needs, rows['B'].why)
+        obs = self.observation()
+        for row in obs['tasks']:
+            if row['task'] in ('A', 'B'):
+                row.update(state='running' if row['task'] == 'A' else 'integrated',
+                           admitted_contract_hash=row['contract_hash'])
+        snap = task_snapshot.capture(self.repo, engine_observation=obs, generation=2)
+        self.assertEqual(snap.counts, (1, 1, 2, 0, 1, 5), 'compatible in-flight evidence retains precedence')
+        self.assertEqual(task_queue.store(self.repo).tasks, original.tasks, 'display changes no gates or closure')
+
     def test_a_saved_plan_refusal_is_agent_repair_not_ready_or_owner_authority(self):
         path = self.repo / 'tasks/items/A.md'
         path.write_text(edit(path.read_text(), {'kind': 'plan'}))

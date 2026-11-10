@@ -171,10 +171,12 @@ async def task_names_pilot():
         name = 'Descriptive task name using all 40 cols!'
         assert len(name) == 40
         rows = tuple(fleet_view.TaskRow(f'TOOLSET-{i:03d}-abcdef12', name, 'Now',
-                     'Waiting · Implemented', 'working', 'waiting for review', bucket='Waiting')
+                     'Waiting', 'waiting', 'ready; awaiting dispatch', bucket='Waiting')
                      for i in range(16))
+        rows = tuple(replace(row, state='Blocker', kind='held', why='owner action required', bucket='Blocker')
+                     if i in (1, 2) else row for i, row in enumerate(rows))
         snap = task_snapshot.TaskSnapshot(str(root), str(root / '.git'), 'a' * 40, 1, time.time(),
-                    rows=rows, counts=(0, 0, 16, 0, 0, 16), pending_paths=())
+                    rows=rows, counts=(0, 0, 14, 2, 0, 16), pending_paths=())
         runner = fleet_view.Runner('fixture', repo=str(root), snapshot=snap)
         envelope = fleet_view.FleetSnapshot((runner,), (snap,), 1, time.time())
         def no_command(*args, **kwargs):
@@ -210,6 +212,7 @@ async def task_names_pilot():
                         assert table.columns[list(table.columns)[-1]].get_render_width(table) >= 18
                     views = screen.query_one('#task-views').render().plain
                     assert '1 Open [16]' in views and '7 Closed [0]' in views, views
+                    assert '3 Blocker [2]' in views and '4 Waiting [14]' in views, views
                     filters = screen.query_one('#task-views')
                     painted_filters = ''.join(filters.render_line(y).text for y in range(filters.content_size.height))
                     assert 'Closed [0]' in painted_filters, painted_filters
@@ -226,13 +229,35 @@ async def task_names_pilot():
                     screen.refresh_tasks()
                     assert screen.current().task == rows[1].task
                     assert rows[1].task in str(screen.query_one('#task-detail').render())
+                    assert 'owner action required' in screen.query_one('#task-detail').render().plain
+                    await pilot.press('i')
+                    assert 'owner action required' in screen.query_one('#task-provenance').text
+                    await pilot.press('i', '3')
+                    assert table.row_count == 2 and screen.current().task == rows[1].task
+                    await pilot.press('4')
+                    assert table.row_count == 14 and all(row.bucket == 'Waiting' for row in screen.shown)
+                    await pilot.press('1')
+                    table.move_cursor(row=1)
+                    await pilot.pause()
                 # Long identities, owner instructions and stale warnings must not push
                 # details below a compact viewport, even with scrollable Info open.
                 owner = fleet_view.Question(rows[1].task, 'input', 0, 'Perform the recorded task.',
-                                            'Approval already saved.', 'owner_action')
-                runner.snapshot = replace(snap, rows=rows[:3], freshness='stale',
+                                            'Approval already saved (2026-11-07: yes).', 'owner_action')
+                question_rows = tuple(replace(row, question=True, why=row.why + '; you: ' + owner.needs)
+                                      if row.task == owner.id else row for row in rows[:3])
+                runner.snapshot = replace(snap, rows=question_rows, freshness='stale',
                                           errors=('inventory read denied: ' + 'long diagnostic ' * 20,))
                 runner.questions = [owner]
+                screen.refresh_tasks()
+                await pilot.press('5')
+                assert table.row_count == 1 and screen.current().task == owner.id
+                assert screen.current().bucket == 'Blocker', 'saved approval is not completed owner action'
+                await pilot.press('1')
+                app.view_only = False
+                with patch.object(app, 'decide_task') as decide:
+                    await pilot.press('e')
+                    decide.assert_called_once_with(runner, owner.id)
+                app.view_only = True
                 await pilot.resize_terminal(40, 18)
                 screen.loaded_pending({'files': ['tasks/items/TASK.md'],
                                        'lifecycle': {'message': 'Pending answer needs an explicit commit. ' * 5}})
@@ -247,6 +272,7 @@ async def task_names_pilot():
                     assert table.region.height >= 3
                 info = screen.query_one('#task-provenance')
                 assert rows[1].task in info.text and name in info.text
+                assert 'owner action required' in info.text
                 assert 'Pending answer needs an explicit commit. ' * 5 in info.text
                 # Reach the safety text through the actual scrollable, painted Info surface.
                 await pilot.press('ctrl+home')
