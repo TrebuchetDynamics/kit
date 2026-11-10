@@ -755,8 +755,10 @@ must prove a preflight or settled provider failure with safe cleanup. Attempt
 counts remain recorded until a completed collection. Restarting does not clear
 those records or shorten the cooldown. Other auxiliary retry budgets stay bounded.
 Uncertain acceptance, in-flight submissions, incomplete cleanup and malformed
-recovery evidence never gain replay permission from this policy. Explicit pauses,
-task authority and unavailable external inputs still apply. A recovery attempt is
+recovery evidence never gain replay permission from this policy. A service also
+checks its saved pause and deliberate-stop markers before discovery, even if the
+unit is active. An unreadable marker observation refuses discovery. Task authority
+and unavailable external inputs still apply. A recovery attempt is
 not completed implementation or proof that the queue progressed.
 
 An accepted `kind = "plan"` task runs through DOCS-MAINTAINER, not a code worker.
