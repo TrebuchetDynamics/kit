@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from support.src_fixture import copy_sources
+from src_fixture import copy_sources
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/install-graphify.py'
 GRAPHIFY = '''import os, sys

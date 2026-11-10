@@ -1,4 +1,11 @@
 """Native owners execute in the public host namespace, never a borrowed release."""
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path[:0] = [str(_Path(__file__).resolve().parent),
+                 str(_Path(__file__).resolve().parents[3] / 'tests'),
+                 str(_Path(__file__).resolve().parents[1]),
+                 str(_Path(__file__).resolve().parents[2]),
+                 str(_Path(__file__).resolve().parents[2] / 'engine')]
 import os
 from pathlib import Path
 import subprocess
@@ -6,7 +13,7 @@ import sys
 import tempfile
 import unittest
 
-from support.src_fixture import copy_sources
+from src_fixture import copy_sources
 
 ROOT = Path(__file__).resolve().parents[3]
 OWNERS = {
@@ -16,15 +23,22 @@ OWNERS = {
     'workflow_commands.py': ('workflow_commands.py', 'register'),
     'runtime_defaults.py': ('runtime_defaults.py', 'expected_settings'),
     'telegram_menu_policy.py': ('telegram_menu_policy.py', 'menu_patch'),
+    'preflight_config.py': ('preflight_config.py', 'main'),
 }
 
 
 OWNERS = {('scripts/' + entry if entry != '__init__.py' else entry): owner
           for entry, owner in OWNERS.items()}
-SUBFOLDER = {'autoresearch_commands.py': 'commands', 'workflow_commands.py': 'commands'}
+SUBFOLDER = {'autoresearch_commands.py': 'commands', 'workflow_commands.py': 'commands',
+             'preflight_config.py': 'install'}
 
 
 class SrcNativeTests(unittest.TestCase):
+    def test_native_payload_and_source_have_component_owners(self):
+        for relative in ('src/autowork_runtime/plugin.py', 'scripts/profile-audit-cron.py',
+                         'scripts/autowork-start-notice.py'):
+            self.assertTrue((ROOT / 'pi-autowork' / relative).is_file(), relative)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -77,7 +91,7 @@ for entry, (owner, function) in {OWNERS!r}.items():
         self.probe(rf'''import argparse, importlib, importlib.util, sys, types
 from pathlib import Path
 sys.path.insert(0, {str(ROOT / 'tests')!r})
-from test_plugin import Context
+from native_context import Context
 roots = [Path({str(self.root)!r}), Path({str(other)!r})]
 sys.modules['hermes_constants'] = types.SimpleNamespace(get_hermes_home=lambda: roots[0].parent / 'profile')
 sys.modules['hermes_cli.commands'] = types.SimpleNamespace(resolve_command=lambda name: None)

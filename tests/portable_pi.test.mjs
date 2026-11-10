@@ -140,8 +140,24 @@ test('APK Get accepts a bare invocation without requiring an app path', async ()
 test('npm package excludes local bytecode and keeps portable support files', async () => {
   const {execFileSync} = await import('node:child_process');
   const {fileURLToPath} = await import('node:url');
+  const {cp, mkdir, mkdtemp, readFile, rm} = await import('node:fs/promises');
+  const {tmpdir} = await import('node:os');
+  const {join} = await import('node:path');
   const root = fileURLToPath(new URL('../', import.meta.url));
-  const packed = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--offline', '--dry-run', '--json'], {cwd: root, encoding: 'utf8'}))[0];
+  const source = await mkdtemp(join(tmpdir(), 'portable inventory '));
+  let packed;
+  try {
+    const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+    for (const entry of ['package.json', ...manifest.files.filter(p => !p.startsWith('!'))]) {
+      const target = join(source, entry);
+      await mkdir(join(target, '..'), {recursive: true});
+      try { await cp(join(root, entry), target, {recursive: true, filter: p => !p.includes('node_modules')}); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    packed = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--offline', '--dry-run', '--json'], {cwd: source, encoding: 'utf8'}))[0];
+  } finally {
+    await rm(source, {recursive: true, force: true});
+  }
   const paths = new Set(packed.files.map(f => f.path));
   assert.equal(paths.has('adapters/skills/grill-me/SKILL.md'), false);
   assert.equal(paths.has('adapters/skills/grill-me/PROTOCOL.md'), true);
@@ -165,7 +181,7 @@ test('installed archive resolves portable references and commands without checko
   const {tmpdir} = await import('node:os');
   const {join} = await import('node:path');
   const {fileURLToPath, pathToFileURL} = await import('node:url');
-  const scratch = await mkdtemp(join(tmpdir(), 'portable-package-'));
+  const scratch = await mkdtemp(join(tmpdir(), 'portable package '));
   try {
     const root = fileURLToPath(new URL('../', import.meta.url));
     // A private release fixture, not an install: include the declared resources and
@@ -177,7 +193,7 @@ test('installed archive resolves portable references and commands without checko
       const target = join(source, entry);
       await mkdir(join(target, '..'), {recursive: true});
       // npm's include list may retain optional paths absent in this release.
-      try { await cp(join(root, entry), target, {recursive: true}); }
+      try { await cp(join(root, entry), target, {recursive: true, filter: p => !p.includes('node_modules')}); }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
     await mkdir(join(source, 'pi-autowork/src/autowork_runtime'), {recursive: true});
@@ -189,20 +205,25 @@ test('installed archive resolves portable references and commands without checko
     assert.equal(archive.files.some(f => f.path.startsWith('pi-autowork/src/autowork_runtime/')), false);
     execFileSync('tar', ['-xzf', join(scratch, archive.filename), '-C', scratch]);
     const installed = join(scratch, 'package');
-    const pythonEnv = {...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: join(installed, 'scripts')};
-    const probe = code => execFileSync('python3', ['-B', '-c', code],
-      {cwd: installed, env: pythonEnv, encoding: 'utf8'});
-    probe('from pathlib import Path\nimport autowork_bootstrap as b\nassert b.run(Path.cwd(), "pi_autowork.fixture_reader", ["read"]) == 1\n');
-    const help = execFileSync('python3', ['pi-autowork/pi_autowork/command.py', '--help'],
-      {cwd: installed, env: pythonEnv, encoding: 'utf8'});
+    const foreign = join(scratch, 'unrelated cwd');
+    await mkdir(join(foreign, 'pi_autowork'), {recursive: true});
+    await writeFile(join(foreign, 'pi_autowork/__init__.py'), 'raise AssertionError("foreign package")\n');
+    await writeFile(join(foreign, 'task_store.py'), 'raise AssertionError("foreign engine")\n');
+    const pythonEnv = {...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: foreign};
+    const probe = code => execFileSync('python3', ['-B', '-c',
+      `import sys\nfrom pathlib import Path\nroot = Path(${JSON.stringify(installed)})\nsys.path.insert(0, str(root / 'scripts'))\n` + code],
+      {cwd: foreign, env: pythonEnv, encoding: 'utf8'});
+    probe('import autowork_bootstrap as b\nassert b.run(root, "pi_autowork.fixture_reader", ["read"]) == 1\n');
+    const help = execFileSync('python3', [join(installed, 'pi-autowork/pi_autowork/command.py'), '--help'],
+      {cwd: foreign, env: pythonEnv, encoding: 'utf8'});
     assert.match(help, /tasks/);
-    const readOnly = JSON.parse(execFileSync('python3', ['pi-autowork/pi_autowork/command.py', 'capabilities'],
-      {cwd: installed, env: pythonEnv, encoding: 'utf8'}));
+    const readOnly = JSON.parse(execFileSync('python3', [join(installed, 'pi-autowork/pi_autowork/command.py'), 'capabilities'],
+      {cwd: foreign, env: pythonEnv, encoding: 'utf8'}));
     assert.equal(readOnly.release, null);
     assert.equal(readOnly.commands.includes('tasks'), true);
     // Reading an archive is not immutable runner qualification: pinning still
     // needs a committed Git toolset. A fixture never manufactures that evidence.
-    probe('import sys\nfrom pathlib import Path\nsys.path.insert(0, "pi-autowork")\nfrom pi_autowork import release\ntry:\n release.prepare(Path("pin-state"), Path.cwd())\nexcept RuntimeError as e:\n assert "committed toolset release" in str(e), str(e)\nelse:\n raise AssertionError("archive accepted as committed runner")\n');
+    probe('import sys\nfrom pathlib import Path\nsys.path.insert(0, str(root / "pi-autowork"))\nfrom pi_autowork import release\ntry:\n release.prepare(Path("pin-state"), root)\nexcept RuntimeError as e:\n assert "committed toolset release" in str(e), str(e)\nelse:\n raise AssertionError("archive accepted as committed runner")\n');
     let skillCount = 0;
     const walk = async (dir) => {
       for (const entry of await readdir(dir, {withFileTypes: true})) {

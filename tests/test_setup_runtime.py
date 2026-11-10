@@ -6,7 +6,7 @@ import types
 import unittest
 from unittest.mock import patch, Mock
 
-from support.src_fixture import copy_sources
+from src_fixture import copy_sources
 
 class RuntimeSetupTests(unittest.TestCase):
     def setUp(self):

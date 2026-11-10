@@ -86,9 +86,15 @@
       "path": "docs/testing.md",
       "covers": [
         "scripts/check.py",
-        "tests"
+        "tests",
+        "pi-autowork/tests"
       ],
       "verified_at": "41aaad8fccfe"
+    },
+    "source-layout": {
+      "status": "maintained",
+      "path": "pi-autowork/docs/source-layout.md",
+      "covers": ["pi-autowork/src", "pi-autowork/scripts", "pi-autowork/bin", "scripts/autowork_bootstrap.py"]
     },
     "changelog": {
       "status": "maintained",

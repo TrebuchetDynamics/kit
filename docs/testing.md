@@ -27,7 +27,7 @@ reports nor relocation checks qualify live models, devices or the Python service
 
 ## Read-only fleet blocker report
 
-`python3 -m unittest discover -s pi-autowork/tests -p test_blockers_report.py`
+`python3 -m unittest discover -s pi-autowork/tests/runner -p test_blockers_report.py`
 checks a real disposable committed TaskStore, full reasons/IDs/questions, selector
 decisions, unreadable/invalid sources, literal text and no repository/state writes.
 The real `health.update` fixture retains full held/root and waiting observations
@@ -58,6 +58,32 @@ checks view navigation while it has focus.
 Run affected modules from the implementation base as well. Historical receipts,
 statuses and missing closure metadata are not repaired by these tests. A skipped
 renderer dependency is not a rendered pass; remote-host adoption stays unqualified.
+
+## Component inventory and source closure
+
+Product Python tests are direct children of `pi-autowork/tests/runner/`,
+`pi-autowork/tests/engine/` and `pi-autowork/tests/native/`. Shared Kit tests and
+`src_fixture.py` remain in `tests/`; product helpers and fixtures stay under
+`pi-autowork/tests/`. Use `python3 scripts/check.py PATH ...` for focused checks.
+
+`tests/test_check.py` reconciles the complete method identities in
+`tests/fixtures/python-layout.json`. The fixture is derived from immutable
+pre-migration, failed-integration-base, landed-integration-base and task-base Git
+inputs, not hashes regenerated from the migrated result. The chain also includes
+the held integration's actual first-parent input and the corrective task base;
+intentional scheduler test replacements retain their `fd36cedb` patch and blob
+provenance instead of restoring superseded scheduling rules. Its snapshot rows retain
+source blob IDs/modes and exact added/removed identities; each historical removal
+names its replacement and the commit that renamed it. Later additions are allowed,
+but lost baseline identities, changed exclusions and incomplete/duplicate shard
+coverage fail. The self-contained fixture also works in shallow CI checkouts.
+When an intentional later rename/removal needs reconciliation, preserve its Git
+provenance rather than deleting an expected ID or repinning to a passing tree.
+
+The extracted offline archive checks use paths with spaces and poisoned unrelated
+cwd/PYTHONPATH, including deterministic fake inference. Native copied-release
+fixtures remain separate; neither closure qualifies a model or installed service.
+See [source layout](../pi-autowork/docs/source-layout.md).
 
 ## Parallel offline acceptance
 
@@ -180,7 +206,7 @@ checks malformed array/object role statuses through `validate`, `check` and `sta
 retain independent field errors, emit no traceback and leave fixture files unchanged.
 Supported status values retain the existing positive and negative CLI coverage.
 
-`python3 -m unittest discover -s tests -p test_profile_consult.py -v` includes
+`python3 -m unittest discover -s pi-autowork/tests/native -p test_profile_consult.py -v` includes
 real local subprocesses emitting valid stream-json replies and malformed stderr
 for zero and nonzero exit codes. Diagnostics retain replacement
 characters without discarding replies or changing failure verdicts. Malformed
@@ -217,8 +243,8 @@ Response headings, Unicode and long prompts. The collector shares the consultati
 cache's character-count parser, reads native documents up to 256 KiB, and redacts
 before capping display at 32,768 characters. Invalid or oversized frames produce
 explicit gaps; legacy compatibility tails retain their unknown-coverage boundary.
-`python3 -m unittest discover -s pi-autowork/engine -p test_response_tail.py`
-and `python3 -m unittest discover -s tests -p test_profile_consult.py` cover both
+`python3 -m unittest discover -s pi-autowork/tests/engine -p test_response_tail.py`
+and `python3 -m unittest discover -s pi-autowork/tests/native -p test_profile_consult.py` cover both
 callers. Frame validity does not prove execution/file association or completion.
 
 Fleet execution metadata is bounded to twelve recent records per existing job,
@@ -444,7 +470,7 @@ cases skip when ruamel.yaml is unavailable). `test_complete_setup.py` separately
 checks orchestration after admission, including no installation calls on dry-run,
 and rejects missing declared native source/bootstrap payloads before stages run.
 The setup/provisioning and Graphify fixtures copy the same-release Python
-closure and exercise real `src/autowork_runtime` bodies through the `scripts/`
+closure and exercise real `pi-autowork/src/autowork_runtime` bodies through the `scripts/`
 entrypoints; external commands and gateway responses remain private fixtures.
 No passing preview is evidence of a live model or Telegram workflow.
 
@@ -494,7 +520,7 @@ uv run --python 3.12 --no-project --with-requirements requirements-test.txt pyth
 
 These offline checks do not qualify installed model behavior, native task
 execution, publication or Telegram reporting. Keep those live gates separate.
-At the repository root, `python3 -m unittest discover -s tests -p test_owner_cron.py`
+At the repository root, `python3 -m unittest discover -s pi-autowork/tests/native -p test_owner_cron.py`
 checks prompt generation, repair-mode opt-in and preserved job settings without
 scheduling or executing a live repair.
 

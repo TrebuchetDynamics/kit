@@ -1,15 +1,18 @@
 # Pi Autowork component
 
 Execution defaults to SDK-backed Pi RPC. See [installation, lifecycle guarantees,
-controls and explicit JSON rollback](../docs/pi-rpc.md), and the separate
+controls and explicit JSON rollback](docs/pi-rpc.md), and the separate
 [qualification evidence](../docs/research/pi-rpc-qualification-2026-10-24.md).
 An already-running release is not automatically upgraded by this source change.
+
+[Source layout and compatibility](docs/source-layout.md) describes component ownership,
+selected-release loading, product tests and copied payloads.
 
 The `pi-autowork` runner. `scripts/pi-autowork.sh` is a thin entry point and the
 service command: it finds this component and runs the stable `pi_autowork/cli.py`
 adapter, which continues in the toolset release it resolves. Runner and legacy-reader
-implementations live in `src/pi_autowork/`; the generic task lifecycle (admission,
-slots, integration, closure) lives in `src/pi_autowork/engine/` and remains the only
+implementations live in `pi-autowork/src/pi_autowork/`; the generic task lifecycle (admission,
+slots, integration, closure) lives in `pi-autowork/src/pi_autowork/engine/` and remains the only
 authority for task state. The original Python paths, `bin/autowork` and shell/service
 commands remain public entry points. Flat engine imports and canonical
 `pi_autowork.engine` imports share the same module objects, including exception types.
@@ -161,7 +164,7 @@ necessary. Offline coverage is in `tests/test_hermes_observers.py` and the runne
 service/command fixtures; live toolset activation, service restart and competing
 interactive-writer handoff require separate operational qualification.
 
-Source: `src/pi_autowork/hermes_observers.py`, `cli.py`, and `service.py`.
+Source: `pi-autowork/src/pi_autowork/hermes_observers.py`, `cli.py`, and `service.py`.
 
 ## Blockers report
 
@@ -196,13 +199,13 @@ times where available; missing data or unknown freshness is not health evidence.
 The committed section reads the selected repository's HEAD on each report request,
 not a last-good inventory. Selection eligibility is never runtime admission.
 Full producer reasons replace matching truncated questions; unavailable full
-reasons remain explicitly truncated. Source: `src/pi_autowork/blockers_report.py:build`.
+reasons remain explicitly truncated. Source: `pi-autowork/src/pi_autowork/blockers_report.py:build`.
 
 **a Answer** leaves the frozen report for that runner's Tasks in the **Decisions**
 view, where the answer form, its default destination section and the single dispatch
 live. The report itself stays read-only: it lists the recorded questions, and
 answering never happens inside a frozen capture. View-only navigation opens the same
-list without its actions. Source: `src/pi_autowork/tui.py:BlockersScreen`.
+list without its actions. Source: `pi-autowork/src/pi_autowork/tui.py:BlockersScreen`.
 
 **c Copy** requests the plain text of the current summary/details view, without
 terminal padding. **F7** selects all; **Ctrl+C** requests copying a selection.
@@ -216,7 +219,7 @@ exact **app-host** path—not a file on the SSH client. In browser mode it reque
 a plain-text download; transfer completion is not proof the user saved/opened it.
 Export is explicit, never automatic; reports may contain sensitive operational
 context. Refresh, Details and Escape remain usable during a host save, and a
-refresh does not change the exported capture. Source: `src/pi_autowork/tui.py:BlockersScreen`.
+refresh does not change the exported capture. Source: `pi-autowork/src/pi_autowork/tui.py:BlockersScreen`.
 
 **r** explicitly refreshes; **Esc** returns. Opening, refreshing and copying run no
 agent, runner command or task mutation; only explicit Export writes a report copy.
@@ -279,7 +282,7 @@ and the explicit agent commands below do.
 | `autowork run [dir]` | Run the runner in the foreground here, for debugging |
 | `autowork web [--port N] [--host H] [--view-only]` | The TUI in a browser at `http://127.0.0.1:8765` (this machine only); `--view-only` disables control keys |
 | `autowork blockers [dir]` | `/autowork blockers` in an agent (`AUTOWORK_AGENT`, else `claude`, else `pi`); records the session's elapsed owner minutes privately when the agent exits |
-| `autowork plan [dir]` | Embedded Pi RPC planning: autonomous discovery, task discussion/investigation, saved sessions, roadmap and explicit Review → Apply. `--interactive` chats/steers; `--list`, `--session ID`, `--history`, `--preview`, `--apply REV` resume/review locally. No service start or push; [planning guide](../docs/planning-console.md). `--legacy` retains the former external-agent planner and its owner-time accounting |
+| `autowork plan [dir]` | Embedded Pi RPC planning: autonomous discovery, task discussion/investigation, saved sessions, roadmap and explicit Review → Apply. `--interactive` chats/steers; `--list`, `--session ID`, `--history`, `--preview`, `--apply REV` resume/review locally. No service start or push; [planning guide](docs/planning-console.md). `--legacy` retains the former external-agent planner and its owner-time accounting |
 | `autowork attention MINUTES [--task ID] [--note TEXT] [target]` | Record other owner time (finite, nonnegative minutes); defaults to this repository, optionally attributed to one task. Notes stay private |
 | `autowork tasks list\|validate\|new-id [target]`, `autowork tasks show\|why TASK [target]` | Read the `tasks/` store at HEAD (`validate --worktree`: uncommitted edits too) |
 | `autowork tasks add\|field\|place\|move\|hold\|release\|decide\|done\|supersede\|delete\|goal ... [target]` | Edit task and goal files in the working tree, never committing: an owner answer (`field TASK "Owner decision" TEXT`, `"Blocker resolution"`), a dated direction (`decide TASK TEXT`, optionally `--section`), a section (`place`, optionally `--decision`), the priority (`move TASK up\|down` changes its rank), a hold (`hold --by`, `release`), a manual close (`done ID --by WHO --reason TEXT [--evidence REF]`, not verification), a new task or goal, or a full record removal (`delete ID`; busy or still-depended-on tasks warn but are removed). Each write validates the whole store |
@@ -463,7 +466,7 @@ The projection grants no readiness, scheduling or current-main verification auth
 
 Below 120 columns the fleet shows Runner, State and Total; selecting a runner shows
 its complete task-count breakdown. Below 100 columns the repository browser stacks
-readiness below the directory tree. Source: `src/pi_autowork/tui.py` (`FleetApp`,
+readiness below the directory tree. Source: `pi-autowork/src/pi_autowork/tui.py` (`FleetApp`,
 `BrowseScreen`); fixture coverage: `pi-autowork/tests/test_tui_layout.py`.
 
 Keys are highlighted in the top menu, which wraps on narrow terminals:

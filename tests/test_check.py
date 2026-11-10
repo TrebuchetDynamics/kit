@@ -229,7 +229,7 @@ class OfflineCheckTests(unittest.TestCase):
                 self.assertEqual(selection['tests'], ['tests/test_new.py', 'tests/test_old.py'])
 
     def test_source_guard_inspects_owners_not_just_public_shims(self):
-        from support.src_fixture import copy_sources
+        from src_fixture import copy_sources
         copy_sources(self.root)
         self.write('tests/test_one.py', 'import unittest\nclass One(unittest.TestCase):\n    def test_one(self): pass\n')
         self.write('scripts/bundle.py', "bootstrap.execute(globals(), 'pi-autowork/src/autowork_runtime/bundle.py')\n")
@@ -250,6 +250,68 @@ class OfflineCheckTests(unittest.TestCase):
         result = self.run_check('tests/test_one.py')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_component_layout_preserves_baseline_inventory_and_partitions(self):
+        import hashlib
+        import runpy
+        fixture = json.loads((ROOT / 'tests/fixtures/python-layout.json').read_text())
+        checker = runpy.run_path(str(SCRIPT))
+        actual = {p.relative_to(ROOT).as_posix(): p for p in checker['discover_tests'](ROOT)}
+        required = {p: set(row['methods']) for p, row in fixture['modules'].items()
+                    if row['source'] is not None}
+        # Reconcile immutable pre-migration, failed-integration, landed-base and task-base
+        # inputs. Only recorded historical renames may remove an original identity.
+        renames = {(row['source'], row['old']): row for row in fixture['renames']}
+        inputs, removed = {}, set()
+        for snapshot in fixture['snapshots']:
+            inputs.update(snapshot['inputs'])
+            for path, delta in snapshot['delta'].items():
+                methods = required.setdefault(path, set())
+                for name in delta['removed']:
+                    source = fixture['modules'][path]['source']
+                    proof = renames[source, name]
+                    self.assertIn(proof['new'], delta['added'])
+                    self.assertRegex(proof['commit'], r'^[0-9a-f]{40}$')
+                    methods.remove(name)
+                    removed.add((source, name))
+                self.assertFalse(methods & set(delta['added']), (path, 'duplicate addition'))
+                methods.update(delta['added'])
+            fingerprint = hashlib.sha256(json.dumps(
+                {p: sorted(ids) for p, ids in sorted(required.items())}, sort_keys=True).encode()).hexdigest()
+            self.assertEqual(fingerprint, snapshot['method_inventory_sha256'], snapshot['role'])
+            self.assertEqual(set(inputs), set(required))
+        self.assertEqual(removed, set(renames))
+        self.assertEqual(set(required), set(fixture['modules']))
+        self.assertFalse(set(required) - set(actual), 'lost baseline modules')
+        for path, methods in required.items():
+            with self.subTest(path=path):
+                ids = {name.removeprefix(actual[path].stem + '.')
+                       for name in checker['test_ids'](actual[path])}
+                self.assertEqual(methods - ids, set(), 'lost baseline methods')
+        # Later work may add modules/methods; every current ID still participates in
+        # the disjoint/exhaustive shard proof instead of freezing an obsolete count.
+        self.assertEqual(checker['SPLIT'], fixture['split'])
+        self.assertEqual({p: list(value) for p, value in checker['EXCLUSIONS'].items()}, fixture['exclusions'])
+        for name, count in fixture['split'].items():
+            groups = list(checker['units'](ROOT, [actual[name]]))
+            self.assertEqual(len(groups), count)
+            self.assertEqual(sorted(i for _, ids in groups for i in ids),
+                             sorted(checker['test_ids'](actual[name])))
+        partitions = [[(str(folder.relative_to(ROOT)), name)
+                       for folder, names in checker['units'](ROOT, list(actual.values()), shard=(i, 3))
+                       for name in names] for i in range(3)]
+        observed = set().union(*map(set, partitions))
+        self.assertEqual(sum(map(len, partitions)), len(observed))
+        expected = {(str(path.parent.relative_to(ROOT)), name)
+                    for path in actual.values() for name in checker['test_ids'](path) or [path.stem]}
+        self.assertEqual(observed, expected)
+        mapping = fixture['tracked_mapping']
+        self.assertEqual(len(mapping), len(set(mapping.values())), 'duplicate editable owners')
+        for previous, current in mapping.items():
+            with self.subTest(previous=previous, current=current):
+                self.assertTrue((ROOT / current).is_file())
+                if previous.startswith('src/') or (previous != current and Path(previous).name.startswith('test_')):
+                    self.assertFalse((ROOT / previous).exists())
+
     def test_importable_inventory_is_side_effect_free(self):
         self.assertTrue(SCRIPT.is_file(), 'missing offline checker')
         spec = importlib.util.spec_from_file_location('check_inventory', SCRIPT)
@@ -265,8 +327,8 @@ class OfflineCheckTests(unittest.TestCase):
 
     def test_symlinked_directory_components_never_import_external_tests(self):
         cases = (('tests', 'test_external.py'),
-                 ('pi-autowork', 'engine/test_external.py'),
-                 ('pi-autowork/engine', 'test_external.py'))
+                 ('pi-autowork', 'tests/engine/test_external.py'),
+                 ('pi-autowork/tests/engine', 'test_external.py'))
         base = self.root
         for index, (link_name, module_name) in enumerate(cases):
             with self.subTest(component=link_name):
@@ -322,7 +384,7 @@ class Check(unittest.TestCase):
 
     def test_a_broken_tree_fails_before_any_test_runs(self):
         """Conflict markers twice reached main in Python modules; the tree guard runs first."""
-        from support.src_fixture import copy_sources
+        from src_fixture import copy_sources
         copy_sources(self.root)
         guard = ROOT / 'scripts/tree_guard.py'
         self.assertTrue(guard.is_file(), 'missing tree guard')

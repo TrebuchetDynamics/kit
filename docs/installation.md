@@ -7,7 +7,7 @@ The native setup bodies live in [`pi-autowork/src/autowork_runtime/install/`](..
 Their Python entrypoints live in `scripts/`, including `scripts/setup_bundle.py`
 and `scripts/install-graphify.py`. Only `__init__.py` stays at the repository root:
 Hermes requires that adapter beside `plugin.yaml` to load the plugin.
-Keep the entrypoints, same-release `scripts/autowork_bootstrap.py` and `src/`
+Keep the entrypoints, same-release `scripts/autowork_bootstrap.py` and `pi-autowork/src/`
 payload together; a single copied
 installer is not standalone. Preflight rejects missing declared source payloads
 before installation stages. This layout does not change setup targets or policy.

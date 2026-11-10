@@ -11,7 +11,7 @@ from types import ModuleType
 import unittest
 from unittest.mock import patch
 
-from support.src_fixture import copy_sources
+from src_fixture import copy_sources
 
 ROOT=Path(__file__).resolve().parents[1]
 

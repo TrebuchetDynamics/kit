@@ -12,7 +12,10 @@ import time
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path[:0] = [str(Path(__file__).resolve().parent),
+                str(Path(__file__).resolve().parents[1]),
+                str(Path(__file__).resolve().parents[2]),
+                str(Path(__file__).resolve().parents[2] / 'engine')]
 from pi_autowork import main_check  # noqa: E402
 from test_optimistic import Repo as OptimisticRepo, git  # noqa: E402
 

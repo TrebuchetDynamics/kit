@@ -47,8 +47,8 @@ services, migration and live qualification. It grants no Python-runtime authorit
 service restart or live migration.
 
 The accepted [one-product-root contract](plans/pi-autowork-component-layout.md#one-product-root-contract)
-is also **planned**: editable Autowork implementation, product tests, fixtures,
-dedicated tools, Paseo and the Rust successor belong under `pi-autowork/`.
+places editable Python implementation, product tests, fixtures and dedicated tools
+under `pi-autowork/`. Paseo package relocation remains a separate planned step.
 Shared Kit resources and required host entrypoints stay outside. Preserve import
 and package boundaries, selected-release identity, test inventories, locks and
 runtime state. The Rust candidate's single crate, tests, fixtures and lockfile now
@@ -797,7 +797,7 @@ Defaults are `openai-codex/gpt-6.1-sol` with
 record the actual model and give fallback no broader authority. Parse Pi events because successful process exit alone does not
 prove a successful model response. Use the supported skill/runtime invocation, not
 an extension command presumed synchronous. The [runner guide](../pi-autowork/README.md)
-and [RPC contract](pi-rpc.md) own current transports and configuration.
+and [RPC contract](../pi-autowork/docs/pi-rpc.md) own current transports and configuration.
 
 Local locks alone do not coordinate Hermes cron: refuse conflicting Autowork cron
 ownership of the same repository. Unconverted repositories follow Task Store v2's
