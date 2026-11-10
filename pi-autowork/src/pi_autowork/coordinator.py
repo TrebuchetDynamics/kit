@@ -301,7 +301,7 @@ def _auxiliary_failed(path, records, task, key, failure, *, retryable=True):
     previous = previous if isinstance(previous, dict) and previous.get('key') == key else {}
     attempts = previous.get('attempts', 0) + (previous.get('phase') != 'in_flight')
     records[task] = dict(key=key, attempts=attempts, phase='failed',
-                         retry_at=time.time() + min(600, 60 * (2 ** max(0, attempts - 1))), failure=failure,
+                         retry_at=time.time() + min(600, 60 * (2 ** min(4, max(0, attempts - 1)))), failure=failure,
                          replay_blocked=not retryable)
     health.write_status(path, records)
     LOG.say(f'{task}: technical {failure}; recovery attempt {attempts}/3, not a completed owner verdict')
@@ -2696,6 +2696,14 @@ class Coordinator:
         if discovery and (self.mode != 'continuous' or self.draining
                           or time.monotonic() < self.pause_until or self.reexec_due()):
             return False
+        if discovery and (env_file := os.environ.get('PI_AUTOWORK_ENV_FILE')):
+            markers = (service.stop_marker(env_file),
+                       fleet_view.paused_marker(Path(env_file).parent, Path(env_file).stem))
+            try:
+                if any(marker.exists() for marker in markers):
+                    return False  # An active unit does not revoke saved owner stop intent.
+            except OSError:
+                return False  # Unknown pause intent cannot authorize autonomous discovery.
         if (overlap or completion) and self.reexec_due():
             # A due reload already holds new reviews and batches and waits for a re-cut beside the
             # loop: one started then kept integration idle for its whole Pi job. Reload first.
@@ -2769,10 +2777,12 @@ class Coordinator:
             receipt=history.get('items', {}).get(maintainer.item_key(item)),
             recovery=recovery.get(maintainer.item_key(item))) for item in found}
         if discovery:
-            # Constant identity: neither another round nor a restart may replay an
-            # uncertain provider. Successful collection resets only this technical budget.
-            incidents = {'repository-work': 'repository-work-v1'}
-            if not _auxiliary_ready(recovery.get('repository-work'), incidents['repository-work']):
+            # Keep uncertainty fenced across rounds/restarts. Only settled safe failures
+            # may continue past the burst budget, under discovery's persisted cooldown.
+            incidents = {'repository-work': repository_work.RECOVERY_KEY}
+            marker = recovery.get('repository-work')
+            if (not _auxiliary_ready(marker, incidents['repository-work'])
+                    and not repository_work.retry_ready(self.state, marker)):
                 return False
         else:
             found = maintainer.pending(self.state, found, entries=before, reasons=reasons, eligible=lambda item:

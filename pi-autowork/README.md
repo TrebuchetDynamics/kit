@@ -762,6 +762,18 @@ The TUI and web view run Textual 8.2.8 (and textual-serve 1.1.3) through `uv`.
 
 ## Autonomous planning and waiting
 
+Continuous runners retry safe repository-discovery failures after the persistent
+30-minute cooldown, including after three failed attempts. The terminal receipt
+must prove a preflight or settled provider failure with safe cleanup. Attempt
+counts remain recorded until a completed collection. Restarting does not clear
+those records or shorten the cooldown. Other auxiliary retry budgets stay bounded.
+Uncertain acceptance, in-flight submissions, incomplete cleanup and malformed
+recovery evidence never gain replay permission from this policy. A service also
+checks its saved pause and deliberate-stop markers before discovery, even if the
+unit is active. An unreadable marker observation refuses discovery. Task authority
+and unavailable external inputs still apply. A recovery attempt is
+not completed implementation or proof that the queue progressed.
+
 An accepted `kind = "plan"` task runs through DOCS-MAINTAINER, not a code worker.
 The maintainer can write its existing planning surface and the task's exact declared
 Markdown files under `docs/plans/`. Directory, glob, traversal and symlink paths do

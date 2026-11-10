@@ -11,6 +11,7 @@ from . import health
 
 EVERY = 1800
 LIMIT = 3
+RECOVERY_KEY = 'repository-work-v1'
 
 
 def read(state):
@@ -25,9 +26,29 @@ def trigger(state, *, now=None):
     """Persisted cooldown survives restarts, including failed/no-change searches."""
     now = time.time() if now is None else now
     previous = read(state)
-    if previous and now - previous.get('at', now) < EVERY:
-        return []
+    if previous:
+        stamp = previous.get('at')
+        if type(stamp) not in (int, float) or not 0 <= stamp <= now or now - stamp < EVERY:
+            return []
     return [('REPOSITORY', 'discover', 'No existing task can start; inspect independent repository work')]
+
+
+def retry_ready(state, marker, *, now=None):
+    """An exhausted safe discovery may retry on cooldown, never an uncertain submission."""
+    if (not isinstance(marker, dict) or marker.get('key') != RECOVERY_KEY
+            or marker.get('phase') != 'failed' or marker.get('replay_blocked') is not False
+            or marker.get('failure') not in ('no_model', 'toolchain', 'provider_failure')
+            or type(marker.get('attempts')) is not int or marker['attempts'] < 3):
+        return False
+    previous = read(state)
+    stamp, retry_at = previous.get('at'), marker.get('retry_at')
+    now = time.time() if now is None else now
+    # Bounds reject nonfinite and oversized timestamps without converting integers to float.
+    if (type(previous.get('round')) is not int or previous['round'] < 1
+            or any(type(value) not in (int, float) or not 0 <= value <= now
+                   for value in (stamp, retry_at))):
+        return False
+    return now - stamp >= EVERY
 
 
 def reserve(state, *, now=None):

@@ -1,5 +1,6 @@
 """Continuous queue exhaustion discovers work without rewriting blocked contracts."""
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -47,6 +48,77 @@ class RepositoryWorkTests(unittest.TestCase):
             self.assertFalse(repository_work.trigger(state, now=1899))
             self.assertTrue(repository_work.trigger(state, now=1900))
             self.assertEqual(repository_work.reserve(state, now=1900)['round'], 2)
+
+    def test_safe_exhausted_discovery_retries_only_after_persisted_cooldown(self):
+        with tempfile.TemporaryDirectory() as state:
+            repository_work.reserve(state, now=100)
+            marker = dict(key='repository-work-v1', attempts=3, phase='failed',
+                          failure='provider_failure', replay_blocked=False, retry_at=340)
+            self.assertFalse(repository_work.retry_ready(state, marker, now=1899))
+            self.assertTrue(repository_work.retry_ready(Path(state), marker, now=1900))
+            for failure in ('no_model', 'toolchain', 'provider_failure'):
+                self.assertTrue(repository_work.retry_ready(state, dict(marker, failure=failure), now=1900))
+            self.assertFalse(repository_work.retry_ready(state, dict(marker, retry_at=2000), now=1900))
+            self.assertEqual(marker['attempts'], 3, 'Eligibility must not erase attempt history')
+
+    def test_discovery_retry_never_replays_uncertain_or_malformed_evidence(self):
+        with tempfile.TemporaryDirectory() as state:
+            repository_work.reserve(state, now=100)
+            marker = dict(key='repository-work-v1', attempts=3, phase='failed',
+                          failure='provider_failure', replay_blocked=False, retry_at=340)
+            for changes in (dict(key='another-incident'), dict(phase='in_flight'), dict(phase='completed'),
+                            dict(failure='uncertain_acceptance'), dict(failure='cleanup_unproven'),
+                            dict(failure='runtime'), dict(replay_blocked=True), dict(replay_blocked=0),
+                            dict(attempts=True), dict(attempts=2), dict(attempts=-1),
+                            dict(retry_at=None), dict(retry_at=True), dict(retry_at=float('nan')),
+                            dict(retry_at=float('inf')), dict(retry_at=10**400), dict(retry_at=-1)):
+                with self.subTest(changes=changes):
+                    self.assertFalse(repository_work.retry_ready(state, dict(marker, **changes), now=10000))
+            for value in (None, 'repository-work-v1', {}, []):
+                self.assertFalse(repository_work.retry_ready(state, value, now=10000))
+            for stamp in (None, True, '100', float('nan'), float('inf'), 10**400, -1, 20000):
+                with self.subTest(stamp=stamp):
+                    (Path(state) / 'repository-work.json').write_text(json.dumps({'at': stamp, 'round': 1}))
+                    self.assertFalse(repository_work.retry_ready(state, marker, now=10000))
+                    self.assertFalse(repository_work.trigger(state, now=10000))
+            (Path(state) / 'repository-work.json').write_text(json.dumps({'at': 100}))
+            self.assertFalse(repository_work.retry_ready(state, marker, now=10000))
+            (Path(state) / 'repository-work.json').unlink()
+            self.assertFalse(repository_work.retry_ready(state, marker, now=10000))
+
+    def test_reconstructed_coordinator_reserves_fourth_safe_discovery_before_spawn(self):
+        with tempfile.TemporaryDirectory() as state:
+            repository_work.reserve(state, now=100)
+            recovery = Path(state) / 'maintainer-recovery.json'
+            recovery.write_text(json.dumps({'repository-work': dict(
+                key='repository-work-v1', attempts=3, phase='failed', failure='provider_failure',
+                replay_blocked=False, retry_at=340)}))
+            for now, expected in ((1899, 0), (1900, 1), (4000, 0)):
+                owner = Coordinator.__new__(Coordinator)
+                owner.stop = owner.draining = False
+                owner.integ, owner.repo, owner.state = '/session', '/repo', Path(state)
+                owner.mode, owner.pause_until = 'continuous', 0
+                owner.maintainer_job = None
+                owner.toolset, owner.tasks_cli = '/toolset', 'autowork tasks'
+                owner.reexec_due = owner.session_busy = owner.in_flight = lambda: False
+                owner.validate_ledger = lambda: []
+                owner.tasks = lambda: []
+                owner.scratch_checkout = lambda _: '/scratch'
+                owner.remember_job_cleanup = Mock()
+                def start(job, message, session):
+                    saved = json.loads(recovery.read_text())['repository-work']
+                    self.assertEqual(saved['attempts'], 4)
+                    self.assertEqual(saved['phase'], 'in_flight')
+                    self.assertTrue(saved['replay_blocked'])
+                    self.assertEqual(repository_work.read(state)['at'], 1900)
+                owner.start_maintainer = Mock(side_effect=start)
+                with patch('pi_autowork.coordinator.dirty', return_value=False), \
+                        patch('pi_autowork.coordinator.git', return_value='base'), \
+                        patch('pi_autowork.coordinator.dispatch_module'), \
+                        patch('pi_autowork.maintainer.entries', return_value={}), \
+                        patch('pi_autowork.coordinator.time.time', return_value=now):
+                    self.assertFalse(owner.maintain(discovery=True))
+                self.assertEqual(owner.start_maintainer.call_count, expected)
 
     def test_findings_survive_collection_and_next_reservation_with_bounded_history(self):
         with tempfile.TemporaryDirectory() as state:
@@ -194,6 +266,29 @@ class RepositoryWorkTests(unittest.TestCase):
                 owner.pause_until = float('inf') if gate == 'pause' else 0
                 owner.reexec_due = lambda: gate == 'reload'
                 self.assertFalse(owner.maintain(discovery=True))
+
+    def test_discovery_preserves_saved_service_pause_stop_and_unreadable_markers(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env_file = Path(folder) / 'fixture.env'
+            owner = Coordinator.__new__(Coordinator)
+            owner.stop = owner.draining = False
+            owner.integ, owner.mode, owner.pause_until = '/session', 'continuous', 0
+            owner.maintainer_job = None
+            owner.reexec_due = lambda: False
+            owner.validate_ledger = Mock(side_effect=AssertionError('paused discovery reached task reads'))
+            with patch.dict(os.environ, PI_AUTOWORK_ENV_FILE=str(env_file)):
+                for name in ('fixture.paused', 'fixture.env.stopped'):
+                    marker = Path(folder) / name
+                    marker.write_text('explicit owner stop')
+                    self.assertFalse(owner.maintain(discovery=True))
+                    self.assertEqual(marker.read_text(), 'explicit owner stop')
+                    marker.unlink()
+                with patch('pi_autowork.coordinator.fleet_view.paused_marker') as paused:
+                    paused.return_value.exists.side_effect = PermissionError('unknown pause intent')
+                    self.assertFalse(owner.maintain(discovery=True))
+                owner.validate_ledger.assert_not_called()
+                with self.assertRaisesRegex(AssertionError, 'paused discovery reached task reads'):
+                    owner.maintain(discovery=True)  # An unmarked service still reaches normal admission.
 
     def test_prompt_keeps_authority_and_evidence_boundaries_and_rotates_search_seam(self):
         with tempfile.TemporaryDirectory() as state:
