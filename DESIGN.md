@@ -91,7 +91,7 @@ Tasks is the fleet's task-management entry. Its numbered views use bracketed
 counts and clickable labels. The table separates short state labels from activity
 or wait reasons, reserving reason space at normal widths. Compact tables retain
 state and put full reasons in selected details/Info. Short queues place details
-immediately after their rows, without a large empty gap; activity is not labelled
+immediately below the framed queue on compact terminals and beside it on wide terminals; activity is not labelled
 as an owner next action. Task IDs remain in details and drive every action. Matched
 worker rows use committed descriptive names, never titles as keys. Duplicate names
 preserve exact repository/task
@@ -211,3 +211,28 @@ Project Details replaces the work/activity area with a wide scrollable reading
 view. It never renders long diagnostic prose in the project sidebar. On small
 terminals it uses the remaining full-width workspace and hides the summary.
 Refresh preserves this mode; i returns, and 2/3 return directly to work/activity.
+
+## Reading hierarchy across screens
+
+All reading surfaces use the same orientation header: a title followed by a brief
+purpose, collapsed to a title on small terminals. Activity, worker output, project
+browsing, task details, reports and planning retain their existing readers and
+identity guards. Dialogs share round semantic borders and keep primary actions
+separate from cancellation or publication-sensitive actions.
+
+Tasks uses a framed queue and selected-task reading panel. At 120 columns and
+26 rows they sit side by side; otherwise they stack. Full committed titles are
+used where space permits. Reasons in the queue use plain-language explanations;
+canonical state and raw evidence remain in details and Info. The selected panel
+separates what happened from what the owner can do. Space focuses it for scrolling.
+Info replaces that panel with a copyable technical reading view instead of
+consuming another strip above the queue. On short terminals only the selected
+filter is shown, with Tab and 1–7 advertised for switching views; unknown counts
+remain unknown.
+
+A task's reading view shows the committed scope and acceptance requirements.
+The raw working-tree record is hidden until i explicitly opens Technical record;
+its independent provenance remains labelled. This disclosure never changes task
+membership, permissions, verification or retry eligibility. Planning's compact
+layout reserves space for chat input and controls; report actions share available
+width rather than overflowing the terminal.

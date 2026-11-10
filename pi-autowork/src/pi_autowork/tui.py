@@ -30,7 +30,7 @@ from pi_autowork import pi_auth
 from pi_autowork.tui_auth import ProviderAuth
 from pi_autowork.tui_dialogs import Confirm  # noqa: E402
 from pi_autowork.tui_common import (  # noqa: E402
-    REFRESH, MenuBar, ReadScreen, action_text, hotkeys, publish_text, read_input)
+    REFRESH, MenuBar, ViewHeader, ReadScreen, action_text, hotkeys, publish_text, read_input)
 from pi_autowork.tui_tasks import (  # noqa: E402
     CommitEdits, DecisionScreen, NewTask, PickSection, TaskScreen, TasksScreen,
     TextPrompt, pending_edits)
@@ -65,7 +65,7 @@ class ActionMenu(ModalScreen[str]):
     BINDINGS = [Binding('escape', 'cancel', 'Back')]
     DEFAULT_CSS = '''
     ActionMenu { align: center middle; }
-    ActionMenu > Vertical { width: 72; max-width: 100%; height: 80%; border: thick $accent; background: $surface; padding: 0 2; }
+    ActionMenu > Vertical { width: 72; max-width: 100%; height: 80%; border: round $accent; background: $surface; padding: 0 2; }
     #actions { height: 1fr; min-height: 1; }
     #action-status { height: 1; }
     '''
@@ -166,7 +166,7 @@ class PortalSetup(ModalScreen[dict]):
     BINDINGS = [Binding('escape', 'cancel', 'cancel')]
     DEFAULT_CSS = '''
     PortalSetup { align: center middle; }
-    PortalSetup > Vertical { width: 86; max-width: 100%; height: auto; max-height: 95%; border: thick $accent; background: $surface; padding: 1 2; }
+    PortalSetup > Vertical { width: 86; max-width: 100%; height: auto; max-height: 95%; border: round $accent; background: $surface; padding: 1 2; }
     #portal-fields { height: 1fr; }
     PortalSetup Input { margin-bottom: 1; }
     PortalSetup Horizontal { height: auto; align-horizontal: right; }
@@ -224,7 +224,7 @@ class PickModel(ReadScreen, ModalScreen[str]):
     BINDINGS = [Binding('escape', 'cancel', 'cancel')]
     DEFAULT_CSS = '''
     PickModel { align: center middle; }
-    PickModel > Vertical { width: 80; max-width: 100%; height: 90%; border: thick $accent; background: $surface; padding: 0 2; }
+    PickModel > Vertical { width: 80; max-width: 100%; height: 90%; border: round $accent; background: $surface; padding: 0 2; }
     PickModel OptionList { height: 1fr; min-height: 1; }
     #model-actions { height: 3; }
     #model-actions Button { width: auto; min-width: 0; margin-right: 1; }
@@ -244,7 +244,7 @@ class PickModel(ReadScreen, ModalScreen[str]):
     def compose(self) -> ComposeResult:
         from textual.widgets import Input
         with Vertical():
-            yield Label(Text(self.title_text, style='bold'))
+            yield ViewHeader(self.title_text, '1 Choose provider   2 Search or filter free models   3 Select a model')
             yield Label(Text(f'Current: {self.current}' if self.current else 'Choose a model available through Pi.'))
             yield Select([], prompt='1. Choose a Pi provider', id='provider', disabled=True)
             yield Input(placeholder='2. Search this provider\'s models', id='filter')
@@ -423,7 +423,7 @@ class PickModel(ReadScreen, ModalScreen[str]):
 class LogScreen(ReadScreen, Screen):
     """A bounded journal capture; Raw/Summary changes presentation, never acquisition."""
     BINDINGS = [Binding('escape,q', 'back', 'back'), Binding('v', 'toggle_view', 'Raw/Summary')]
-    DEFAULT_CSS = '#journal-status { height: auto; max-height: 3; }'
+    DEFAULT_CSS = '#journal-status { height: auto; max-height: 3; padding: 0 1; } #full-log { border: round $panel; }'
 
     def __init__(self, runner, logs):
         super().__init__()
@@ -433,12 +433,14 @@ class LogScreen(ReadScreen, Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
+        yield ViewHeader(f'Activity log · {self.runner.name}', 'Follow events here. Summary groups repeats; Raw keeps every original line.')
         yield MenuBar(id='menubar')
         yield Static('Reading journal…', id='journal-status', markup=False)
         yield RichLog(id='full-log', wrap=True, highlight=False, markup=False)
 
     def on_mount(self):
         self.title = f'{self.runner.name}: log'
+        self.query_one('#full-log').border_title = 'Activity · PgUp/PgDn scroll'
         self.show_mode()
         self.refresh_log()
         self.set_interval(LOG_REFRESH, self.refresh_log)
@@ -461,7 +463,7 @@ class LogScreen(ReadScreen, Screen):
         self.query_one('#menubar', MenuBar).show(
             [('v', 'Summary' if self.raw else 'Raw'), ('esc', 'Back')],
             prefix='Raw' if self.raw else 'Summary',
-            click_actions={'v': 'screen.toggle_view', 'esc': 'screen.back'})
+            click_actions={'v': 'screen.toggle_view', 'esc': 'screen.back'}, explicit_keys=True)
 
     def log_failed(self, error):
         self.journal_error = str(error)
@@ -500,6 +502,7 @@ class WorkerScreen(ReadScreen, Screen):
     bottom so the view keeps its place while you scroll back; refreshed. Each action is colored by
     its kind and kept to one line; w shows long ones whole."""
     BINDINGS = [Binding('escape,q', 'app.pop_screen', 'back'), Binding('w', 'toggle_wrap', 'wrap')]
+    DEFAULT_CSS = '#worker-actions { border: round $panel; }'
 
     def __init__(self, runner, task):
         super().__init__()
@@ -510,6 +513,7 @@ class WorkerScreen(ReadScreen, Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
+        yield ViewHeader(f'Worker · {self.task_id}', 'Read the worker’s observed actions. No output does not prove progress.')
         yield MenuBar(id='menubar')
         yield RichLog(id='worker-actions', wrap=True, highlight=False, markup=False)
 
@@ -525,7 +529,8 @@ class WorkerScreen(ReadScreen, Screen):
 
     def on_mount(self):
         self.title = f'{self.runner.name}: {self.task_id}'
-        self.query_one('#menubar', MenuBar).show([('w', 'Wrap'), ('esc', 'Back')])
+        self.query_one('#worker-actions').border_title = 'Observed actions · w expand lines'
+        self.query_one('#menubar', MenuBar).show([('w', 'Expand lines'), ('esc', 'Back')], explicit_keys=True)
         self.refresh_actions()
         self.set_interval(LOG_REFRESH, self.refresh_actions)
 
@@ -658,7 +663,8 @@ class BrowseScreen(ReadScreen, Screen):
     #browse-status { height: auto; max-height: 2; padding: 0 1; }
     #browser-body { height: 1fr; }
     #tree, #info-scroll { width: 1fr; }
-    #info-scroll { border-left: solid $panel; }
+    #info-scroll { border: round $panel; }
+    #tree { border: round $panel; }
     #info { height: auto; padding: 0 1; }
     BrowseScreen.compact #browser-body { layout: vertical; }
     BrowseScreen.compact #tree, BrowseScreen.compact #info-scroll { width: 100%; height: 1fr; }
@@ -677,6 +683,7 @@ class BrowseScreen(ReadScreen, Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
+        yield ViewHeader('Choose a project', '1 Open a folder   2 Review readiness   3 Start work')
         yield MenuBar(id='menubar')
         with Horizontal(id='browser-location'):
             yield Input(value=str(self.root or Path.home()), placeholder='Directory path · Enter to open', id='browse-path')
@@ -691,7 +698,7 @@ class BrowseScreen(ReadScreen, Screen):
     def on_mount(self):
         self.set_class(self.size.width < 100, 'compact')
         self.title = f'start a runner: {self.root or Path.home()}'
-        self.query_one('#menubar', MenuBar).show([('p', 'Play'), ('g', 'Plan'), ('ctrl+l', 'Path'), ('esc', 'Back')])
+        self.query_one('#menubar', MenuBar).show([('p', 'Start'), ('g', 'Plan'), ('ctrl+l', 'Path'), ('esc', 'Back')], explicit_keys=True)
         self.query_one('#tree', RepoTree).focus()
         if self.root is None:
             home = Path.home()
@@ -963,7 +970,7 @@ class BlockersScreen(Screen):
     BlockersScreen #report-state { height: auto; padding: 0 1; }
     BlockersScreen TextArea { height: 1fr; }
     BlockersScreen Horizontal { height: 3; }
-    BlockersScreen Button { margin-right: 1; min-width: 8; width: auto; padding: 0; }
+    BlockersScreen Button { margin-right: 0; min-width: 7; width: 1fr; height: 3; padding: 0; }
     '''
 
     def __init__(self, runner):
@@ -973,20 +980,21 @@ class BlockersScreen(Screen):
         self.diagnostics = self.exporting = False
 
     def compose(self):
+        yield ViewHeader(f'Attention report · {self.runner.name}', 'Read what is blocked. Answer a task, copy the report or inspect evidence.')
         yield MenuBar(id='report-menu')
         yield Static(Text(f'{self.runner.name} — read only; loading…'), id='report-state')
         yield TextArea(read_only=True, show_cursor=False, id='blockers-text')
         with Horizontal():
-            yield Button('Answer (a)', id='answer-report', variant='primary')
-            yield Button('Copy (c)', id='copy-report', disabled=True)
-            yield Button('Details (d)', id='details-report', disabled=True)
-            yield Button('Export (e)', id='export-report', disabled=True)
-            yield Button('Refresh (r)', id='refresh-report')
-            yield Button('Back (Esc)', id='back-report')
+            yield Button('Answer', id='answer-report', variant='primary')
+            yield Button('Copy', id='copy-report', disabled=True)
+            yield Button('Details', id='details-report', disabled=True)
+            yield Button('Export', id='export-report', disabled=True)
+            yield Button('Refresh', id='refresh-report')
+            yield Button('Back', id='back-report')
 
     def on_mount(self):
         self.query_one(MenuBar).show([('a', 'Answer'), ('escape', 'Back'), ('c', 'Copy'), ('d', 'Details'),
-                                      ('e', 'Export'), ('r', 'Refresh')], prefix='Blockers')
+                                      ('e', 'Export'), ('r', 'Refresh')], prefix='Blockers', explicit_keys=True)
         self.action_refresh_report()
 
     def action_refresh_report(self):
@@ -1004,7 +1012,7 @@ class BlockersScreen(Screen):
         self.report_text = (blockers_report.summary(text)
                             if not self.diagnostics and blockers_report.DIAGNOSTICS in text else text)
         self.query_one(TextArea).load_text(self.report_text)
-        self.query_one('#details-report', Button).label = 'Summary (d)' if self.diagnostics else 'Details (d)'
+        self.query_one('#details-report', Button).label = 'Summary' if self.diagnostics else 'Details'
         self.query_one('#report-state', Static).update(Text(
             f'{self.runner.name} — read only report; {"full diagnostics" if self.diagnostics else "summary"}. '
             'Copy/export uses this view. Answer (a) opens these questions in Tasks.'))
@@ -1081,7 +1089,7 @@ class WorkflowGuide(ModalScreen):
 
     def compose(self):
         with Vertical():
-            yield Label(Text('How Autowork works', style='bold'))
+            yield ViewHeader('How Autowork works', 'Start with a task. Follow its progress. Act only when the task needs you.')
             with VerticalScroll(id='workflow-copy'):
                 yield Static('Model → Project → Tasks → Execution → Checks → Local merge', markup=False)
                 yield Static('\nSET UP\nChoose a provider/model and a project. Tasks is your queue of work. Add bounded tasks there; starting a service does not create a task.', markup=False)
@@ -1388,13 +1396,13 @@ class FleetApp(App):
         words = cut.rsplit(' ', 1)[0]
         return (words if len(words) > room * 2 // 3 else cut).rstrip(' ,;:·') + '…'
 
-    def fill(self, table, rows, fixed, text, minimum=16, limits=None):
+    def fill(self, table, rows, fixed, text, minimum=16, limits=None, budget=None):
         """Show ``rows`` ({column: (text, style)}) in ``table``. The fixed columns always show,
         whole; the text columns share what the terminal has left, each cut to fit, and the last
         named goes first when fewer than ``minimum`` columns would be left for each. Redrawn only
         when something changed, since a clear-and-rewrite every refresh made the panes flicker."""
         limits = limits or {}
-        budget = ((42 if table.id == 'runners' else self.size.width - 42)
+        budget = budget or ((42 if table.id == 'runners' else self.size.width - 42)
                   if self.screen_stack[0].has_class('wide') and table.id in ('runners', 'lanes') else self.size.width)
         width = lambda column: min(limits.get(column, self.size.width),
                                    max([cell_len(column), *(cell_len(row[column][0]) for row in rows)])) + 2

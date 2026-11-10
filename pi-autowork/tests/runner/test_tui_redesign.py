@@ -122,6 +122,82 @@ def option_text(options):
     return '\n'.join(str(options.get_option_at_index(i).prompt) for i in range(options.option_count))
 
 
+async def reading_surfaces_pilot():
+    from pi_autowork import tui, planning_ui
+    from textual.widgets import Button
+    from pi_autowork.tui_common import ViewHeader
+    for size in ((60, 18), (140, 40)):
+        async with fixture_app(size) as (app, pilot):
+            runner = app.current()
+            with patch.object(fleet_view, 'action_log', return_value=[]), \
+                 patch.object(app, 'request_blockers'), \
+                 patch.object(planning_ui.PlanScreen, '_load_project'), \
+                 patch.object(planning_ui.PlanScreen, 'poll_turn'):
+                cases = [
+                    (lambda: tui.LogScreen(runner, lambda *_: 'sample event'), '#full-log'),
+                    (lambda: tui.WorkerScreen(runner, 'TASK-1'), '#worker-actions'),
+                    (lambda: tui.BrowseScreen(runner.repo, lambda _: None), '#tree'),
+                    (lambda: tui.BlockersScreen(runner), '#blockers-text'),
+                    (lambda: planning_ui.PlanScreen(runner.repo), '#plan-controls'),
+                ]
+                for factory, content in cases:
+                    screen = factory()
+                    await app.push_screen(screen)
+                    await settle(app, pilot)
+                    header = screen.query_one(ViewHeader)
+                    assert header.region.height >= 1 and header.region.bottom <= size[1], (type(screen).__name__, header.region)
+                    region = screen.query_one(content).region
+                    assert region.height >= 2 and region.bottom <= size[1], (type(screen).__name__, size, region)
+                    for button in screen.query(Button):
+                        assert button.region.right <= size[0] and button.region.bottom <= size[1], (type(screen).__name__, button.id, button.region)
+                    app.pop_screen()
+                    await pilot.pause()
+
+
+async def task_workspace_pilot():
+    from types import SimpleNamespace
+    from pi_autowork import tui, tui_tasks
+    from textual.widgets import DataTable
+    rows = (task_snapshot.TaskRow('TASK-1', 'Short label', 'Now', 'Blocker · No result', 'held',
+                                 'No result · Agent repair', bucket='Blocker'),)
+    record = SimpleNamespace(title='A full descriptive task title that is not shortened in the reading panel',
+                             scope='Implement the requested outcome.', acceptance=('A meaningful check passes.',))
+    async with fixture_app((180, 45)) as (app, pilot):
+        runner = app.current()
+        runner.snapshot = replace(runner.snapshot, rows=rows, counts=(0, 0, 0, 1, 0, 1),
+                                  store=SimpleNamespace(tasks={'TASK-1': record}))
+        with patch.object(tui_tasks, 'pending_edits', return_value={'files': []}), \
+             patch.object(fleet_view, 'task_entry', return_value='RAW SOURCE RECORD'), \
+             patch.object(fleet_view, 'recent_actions', return_value=[]):
+            await app.push_screen(tui.TasksScreen(runner.name))
+            await settle(app, pilot)
+            screen = app.screen
+            queue, selected = screen.query_one('#task-list'), screen.query_one('#task-selection')
+            assert selected.region.x >= queue.region.right
+            body = screen.query_one('#task-detail').render().plain
+            assert record.title in body and 'What is happening' in body and 'What you can do' in body
+            assert 'previous attempt ended without a usable result' in body
+            owner_row = replace(rows[0], why='owner action required; perform the check outside the runner')
+            assert not {'r', 'c', 'a'} & {action.key for action in screen.actions(owner_row)}
+            await pilot.press('space')
+            assert app.focused is selected
+            await pilot.resize_terminal(60, 18)
+            await pilot.pause()
+            assert selected.region.bottom <= 18 and queue.region.width >= 58, (queue.region, selected.region)
+            screen.query_one('#tasks', DataTable).focus()
+            await pilot.press('enter')
+            await settle(app, pilot)
+            assert isinstance(app.screen, tui.TaskScreen)
+            text = app.screen.query_one('#task-body').render().plain
+            assert 'Work requested' in text and record.scope in text
+            assert 'RAW SOURCE RECORD' not in text
+            await pilot.press('i')
+            await pilot.pause()
+            assert 'RAW SOURCE RECORD' in app.screen.query_one('#task-body').render().plain
+            await pilot.press('i')
+            assert 'RAW SOURCE RECORD' not in app.screen.query_one('#task-body').render().plain
+
+
 async def details_layout_pilot():
     async with fixture_app((180, 45)) as (app, pilot):
         await pilot.press('i')
@@ -450,6 +526,12 @@ class TuiRedesignTests(unittest.TestCase):
     def test_empty_fleet_has_responsive_guided_welcome(self):
         self.run_case('welcome')
 
+    def test_reading_surfaces_have_orientation_and_reachable_controls(self):
+        self.run_case('surfaces')
+
+    def test_tasks_explain_selected_work_and_disclose_raw_record(self):
+        self.run_case('tasks')
+
     def test_details_use_readable_workspace_and_survive_refresh(self):
         self.run_case('details')
 
@@ -467,7 +549,7 @@ if __name__ == '__main__':
             publisher_contract()
         else:
             asyncio.run({'redraw': redraw_pilot, 'menu': menu_pilot,
-                         'layout': layout_pilot, 'welcome': welcome_pilot, 'progress': progress_pilot, 'details': details_layout_pilot,
+                         'layout': layout_pilot, 'welcome': welcome_pilot, 'progress': progress_pilot, 'details': details_layout_pilot, 'tasks': task_workspace_pilot, 'surfaces': reading_surfaces_pilot,
                          'palette': palette_pilot, 'execution': execution_copy_pilot}[case]())
     else:
         unittest.main()

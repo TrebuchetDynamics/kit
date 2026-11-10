@@ -48,6 +48,28 @@ def publish_text(widget, text):
     return True
 
 
+class ViewHeader(Static):
+    """Consistent orientation for reading screens, compact on small terminals."""
+    DEFAULT_CSS = 'ViewHeader { height: auto; max-height: 2; padding: 0 1; background: $surface; }'
+
+    def __init__(self, title, purpose, **kwargs):
+        super().__init__(**kwargs)
+        self.heading, self.purpose = title, purpose
+
+    def on_mount(self):
+        self.show_heading()
+
+    def on_resize(self):
+        if self.is_mounted:
+            self.show_heading()
+
+    def show_heading(self):
+        text = Text(self.heading, style='bold cyan')
+        if self.screen.size.height >= 24:
+            text.append('\n' + self.purpose, style='dim')
+        publish_text(self, text)
+
+
 class MenuBar(Static):
     """A screen's keys under its title, wrapping rather than hiding narrow-screen actions."""
     DEFAULT_CSS = 'MenuBar { dock: top; height: auto; max-height: 3; background: $boost; padding: 0 1; }'
