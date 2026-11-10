@@ -10,7 +10,7 @@ class Confirm(ModalScreen[bool]):
     BINDINGS = [Binding('y', 'answer(True)', 'yes'), Binding('n,escape', 'answer(False)', 'no')]
     DEFAULT_CSS = '''
     Confirm { align: center middle; }
-    Confirm > Vertical { width: 76; max-width: 100%; height: auto; max-height: 95%; border: thick $warning; background: $surface; padding: 1 2; }
+    Confirm > Vertical { width: 76; max-width: 100%; height: auto; max-height: 95%; border: round $warning; background: $surface; padding: 1 2; }
     #confirm-body { height: 1fr; }
     Confirm Horizontal { height: auto; align-horizontal: right; margin-top: 1; }
     Confirm Button { margin-left: 2; }
@@ -22,6 +22,7 @@ class Confirm(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Vertical():
+            yield Label('Confirm action', classes='confirm-title')
             with VerticalScroll(id='confirm-body'):
                 yield Label(self.question, markup=False)
             with Horizontal():

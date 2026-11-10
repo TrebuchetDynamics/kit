@@ -207,18 +207,23 @@ async def task_names_pilot():
                         assert name in painted, painted
                     if width >= 60:
                         assert str(table.get_row_at(0)[2]) == 'Waiting'
-                    if width >= 80:
+                    if table.size.width >= 76:
                         assert 'Why' in [str(c.label) for c in table.columns.values()]
                         assert table.columns[list(table.columns)[-1]].get_render_width(table) >= 18
                     views = screen.query_one('#task-views').render().plain
-                    assert '1 Open [16]' in views and '7 Closed [0]' in views, views
-                    assert '3 Blocker [2]' in views and '4 Waiting [14]' in views, views
-                    filters = screen.query_one('#task-views')
-                    painted_filters = ''.join(filters.render_line(y).text for y in range(filters.content_size.height))
-                    assert 'Closed [0]' in painted_filters, painted_filters
+                    if height >= 22:
+                        assert '1 Open [16]' in views and '7 Closed [0]' in views, views
+                        assert '3 Blocker [2]' in views and '4 Waiting [14]' in views, views
+                    else:
+                        assert 'Open [16]' in views and 'Tab / 1–7 filters' in views, views
                     detail = screen.query_one('#task-detail')
-                    assert detail.region.y == table.region.bottom
-                    assert table.region.height >= 3 and detail.region.bottom <= height, (table.region, detail.region)
+                    selection = screen.query_one('#task-selection')
+                    if screen.has_class('task-wide'):
+                        assert selection.region.x >= screen.query_one('#task-list').region.right
+                    else:
+                        assert selection.region.y >= table.region.bottom
+                        assert selection.region.y - table.region.bottom <= 2
+                    assert table.region.height >= 3 and selection.region.bottom <= height, (table.region, selection.region)
                     if height == 40:
                         assert table.region.height == len(rows) + 1, table.region
                     assert name in detail.render().plain
@@ -268,7 +273,8 @@ async def task_names_pilot():
                         await pilot.press('i')
                         await pilot.pause()
                     detail = screen.query_one('#task-detail')
-                    assert detail.region.bottom <= 18 and detail.region.height >= 2, detail.region
+                    viewport = screen.query_one('#task-selection')
+                    assert viewport.region.bottom <= 18 and viewport.region.height >= 3, viewport.region
                     assert table.region.height >= 3
                 info = screen.query_one('#task-provenance')
                 assert rows[1].task in info.text and name in info.text

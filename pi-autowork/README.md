@@ -641,10 +641,16 @@ The directory tree marks legacy or interrupted conversions **legacy planning**, 
 **needs tasks**; a repository without planning still reads **needs tasks**.
 The headless pilot exercises preparation on disposable repositories, with faked
 service starts and forced service/worker effects; it does not qualify a live service.
-The Tasks window lists open tasks in priority order (section, then rank) with their
-short title, state and reason. View counts appear in brackets, separate from the
-number shortcuts; click a view or use its key to filter. A short queue keeps its
-selected-task details immediately below the rows rather than at the screen bottom.
+The Tasks window shows a queue and a selected-task reading panel. Wide terminals
+(120×26 and larger) place them side by side; smaller terminals stack them. The
+panel explains **What is happening** and **What you can do**. **Space** focuses it
+for scrolling; **Enter** opens the complete task. Full committed titles are used
+where space permits. **i Info/Help** replaces the reading panel with technical
+context without changing the selected task. On short terminals, the current filter
+and count remain visible with Tab / 1–7 hints; other terminals show all filters.
+In a task's complete view, scope and acceptance are readable first; **i Technical
+record** explicitly reveals the raw working-tree fields and source provenance.
+
 `1`–`7` (or Tab) show Open, Active, Blocker, Waiting, Questions, Decisions or
 Closed. Decisions is the committed **Needs decision** section: open tasks that wait
 for the owner and never dispatch. Closed history shows **Verified** with the receipt, or **Manual** with the reason

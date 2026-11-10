@@ -9,13 +9,14 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Static
 
 from pi_autowork import pi_auth
+from pi_autowork.tui_common import ViewHeader
 
 
 class ProviderAuth(ModalScreen[bool]):
     BINDINGS = [Binding('escape', 'cancel', 'Cancel', priority=True)]
     DEFAULT_CSS = '''
     ProviderAuth { align: center middle; }
-    ProviderAuth > Vertical { width: 78; max-width: 100%; height: 95%; border: thick $accent; background: $surface; padding: 0 1; }
+    ProviderAuth > Vertical { width: 78; max-width: 100%; height: 95%; border: round $accent; background: $surface; padding: 0 1; }
     #auth-content { height: 1fr; }
     #auth-actions { height: 3; }
     #auth-actions Button { width: auto; min-width: 10; margin-right: 1; }
@@ -32,7 +33,7 @@ class ProviderAuth(ModalScreen[bool]):
 
     def compose(self):
         with Vertical():
-            yield Label('Configure Pi: ' + self.provider['id'])
+            yield ViewHeader('Connect provider · ' + self.provider['id'], 'Choose a sign-in method, then Connect. Credentials stay in your Pi profile.')
             with VerticalScroll(id='auth-content'):
                 yield Static('Credentials save in the selected Pi profile. Esc cancels.', markup=False)
                 yield Select([('OAuth' if m == 'oauth' else 'API key', m) for m in self.provider['methods']],

@@ -940,7 +940,7 @@ async def main():
             assert isinstance(app.screen, TasksScreen), app.screen
             assert app.reader.applied['fleet'] > generation, read_state(app)
             tasks = app.screen.query_one('#tasks')
-            assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['Ship it', 'Held task', 'Waits']
+            assert [str(tasks.get_row_at(i)[1]) for i in range(tasks.row_count)] == ['Ship the thing', 'Held task', 'Waits']
             assert [row.task for row in app.screen.shown] == ['TASK-034', 'T-9', 'TASK-040']
             await pilot.press('3')                      # the Held view
             await pilot.pause()
@@ -983,7 +983,10 @@ async def main():
             await pilot.pause()
             assert isinstance(app.screen, TaskScreen), app.screen
             body = str(app.screen.query_one('#task-body').render())
-            assert 'the worker asked for a key' in body and 'title = "Held task"' in body, body
+            assert 'the worker asked for a key' in body and 'title = "Held task"' not in body, body
+            await pilot.press('i')
+            await pilot.pause()
+            assert 'title = "Held task"' in str(app.screen.query_one('#task-body').render())
             await pilot.press('w')                      # write a decision: typed, then Enter
             await pilot.pause()
             await pilot.press(*'use fallback for other models')
