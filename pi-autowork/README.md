@@ -779,6 +779,39 @@ remain local to their dependent tasks and do not age into engineering stalls.
 Independent ready work can still run. Offline tests cover these contracts; installed
 runner execution needs separate qualification.
 
+### Post-completion Docs Sync
+
+After a worker's verified closure is finalized **and landed on the canonical branch**,
+DOCS-MAINTAINER runs a scoped `/skill:docs-sync` Maintain pass asynchronously in its
+existing isolated checkout. Worker exit, a report, a held candidate or an unlanded
+closure is not sufficient. Continuous, `--once` and draining runs use the same path;
+finite runs collect an admitted pass before exiting, without dispatching another task.
+
+The pass prunes eligible done records, their unneeded `tasks/evidence/ID.toml` receipts
+and dedicated `docs/tasks/ID{,-report,-repair}.md` reports. It improves inactive pending
+titles, short names, scope descriptions and Description/Notes/Sources notes, and can
+clarify existing explicitly referenced files under `docs/plans/`. Git is the archive;
+there is no keep-last-N quota or replacement completion ledger. A no-change result is
+valid. The maintainer reports cleanup counts and concrete retention reasons.
+
+The proposal gate rechecks selected-source identity and fresh ownership at collection.
+Active/retained attempts, sequential claims, shared active plans, acceptance/checks,
+priorities, goals, owner decisions, verified dependencies and live authority stay intact.
+Only already-satisfied ordinary edges to pruned tasks may be removed, on inactive
+consumers. New concurrent dependencies/references retain their evidence; immutable Git
+references must resolve in reachable history. Pruning waits for a clean canonical
+checkout. This is task/document maintenance, not implementation, dispatch, proof of
+live acceptance, or permission to remove runtime recovery state/worktrees.
+
+Closed engine slots and canonical receipts recover completion triggers after restart.
+The existing maintainer journal records each captured completion independently, coalesces
+bursts into one pass and leaves newer completions for the next pass. Provider reservations
+are durable before launch; uncertain submissions or unproven cleanup never gain an
+automatic replay. Refusals/no-change outcomes are recorded rather than spinning a finite
+run; technical retries keep the existing bounded recovery policy. A refused or failed
+pass is not a claim that cleanup happened. Offline tests exercise the real engine and
+Git with fake model output; installed-model execution needs separate qualification.
+
 ## Questions
 
 The fleet reads owner questions from `BLOCKERS.md`, preferring the runner's session

@@ -25,7 +25,7 @@ import tempfile
 import time
 
 from . import (fleet_view, health, janitor, landing, main_check, maintainer, optimistic, pi_runtime, questions, release,
-               post_merge_barrier, repository_work, service, task_commands, telemetry, worker, workspaces)
+               post_completion, post_merge_barrier, repository_work, service, task_commands, telemetry, worker, workspaces)
 from .common import GIT, LOG, atomic_write, dirty, git, git_ok, lifecycle, open_for_writing, safe_name, summary_list
 from .processes import own_process, process_name, start_time
 from .supervision import main_checks, maintenance
@@ -2684,7 +2684,7 @@ class Coordinator:
         return False
 
     def maintain(self, main_only=False, ledger_errors=None, ledger_edits_only=False, overlap=False,
-                 discovery=False):
+                 discovery=False, completion=False):
         """DOCS-MAINTAINER (TOOLSET-164-f1): when nothing runs and tasks are held for a planning
         cause or are not runnable as written, one Pi job restates them from the repository's own
         evidence in a disposable checkout. Its commit merges into the session only if it changed
@@ -2696,7 +2696,7 @@ class Coordinator:
         if discovery and (self.mode != 'continuous' or self.draining
                           or time.monotonic() < self.pause_until or self.reexec_due()):
             return False
-        if overlap and self.reexec_due():
+        if (overlap or completion) and self.reexec_due():
             # A due reload already holds new reviews and batches and waits for a re-cut beside the
             # loop: one started then kept integration idle for its whole Pi job. Reload first.
             return False
@@ -2708,9 +2708,16 @@ class Coordinator:
         # A re-cut of tasks waiting on a shared file writes planning files only: it runs beside
         # workers, which is when idle slots make it worth a model run.
         if (dirty(self.integ) or self.session_busy() or self.resolvers
-                or (self.in_flight() and not main_only and not self.ledger_errors and not overlap)):
+                or (self.in_flight() and not main_only and not self.ledger_errors and not overlap and not completion)):
             return False
-        rows = [] if main_only or self.ledger_errors else self.tasks()
+        if completion and self.ledger_errors:
+            return False  # A cleanup pass cannot repair around an invalid store.
+        if completion:
+            self.snapshot = None  # ownership can change without a task-store revision change
+        observation = self.status() if completion else None
+        if completion and not self.completion_observation_current(observation):
+            return False  # Unknown/stale activity must not admit destructive housekeeping.
+        rows = [] if main_only or self.ledger_errors else self.tasks(observation) if completion else self.tasks()
         if ledger_edits_only:
             rows = [r for r in rows if r.get('state') in ('integrated', 'closing', 'closed')
                     and r.get('ledger_edit_dropped')]
@@ -2726,11 +2733,25 @@ class Coordinator:
                                      reported_flakes=maintainer.last(self.state).get('flaky_tests', []),
                                      common=dispatch.state.common_dir(self.repo)))
         queue = dispatch.task_queue
+        completion_store, completion_plans, completion_protected = None, (), set()
+        if completion:
+            try:
+                completion_store = queue.store(Path(self.integ))
+                canonical = queue.store(Path(self.repo), self.base)
+            except queue.StoreError:
+                return False
+            held, problems = task_commands.in_flight(self.repo, (*task_commands.OCCUPYING, 'released'))
+            if any(problem != 'a live parallel coordinator lease' for problem in problems):
+                return False  # unreadable ownership or a concurrent sequential execution lease
+            completion_protected = post_completion.protected_tasks(rows, completion_store) | held
+            receipts = post_completion.landed_receipts(self.integ, completion_store.rev, canonical.rev)
+            found = post_completion.triggers(rows, completion_store, canonical, receipts)
+            completion_plans = post_completion.plan_paths(completion_store, completion_protected)
 
         def entries(snapshot):
             return maintainer.entries(snapshot, queue)
 
-        before = entries(queue.store(Path(self.integ))) if any(task not in ('MAIN', 'LEDGER')
+        before = entries(completion_store or queue.store(Path(self.integ))) if any(task not in ('MAIN', 'LEDGER')
                                                                 for task, _, _ in found) else {}
         reasons = {r['task']: r.get('reason') or '' for r in rows if r.get('task')}
         history = maintainer.last(self.state)
@@ -2766,11 +2787,16 @@ class Coordinator:
         if not scratch:
             return False
         names = [task for task, _, _ in found]
-        LOG.say(f'{maintainer.ROLE}: repairing the task docs of {", ".join(names)}')
+        action = 'post-completion Docs Sync for' if completion else 'repairing the task docs of'
+        LOG.say(f'{maintainer.ROLE}: {action} {", ".join(names)}')
         try:
             base = git(scratch, 'rev-parse', 'HEAD')
-            message = (repository_work.prompt(self.repo, self.tasks_cli, self.state) if discovery else
+            message = (post_completion.prompt(self.repo, self.tasks_cli, found,
+                                             completion_protected, completion_plans, base) if completion else
+                       repository_work.prompt(self.repo, self.tasks_cli, self.state) if discovery else
                        maintainer.prompt(found, self.repo, self.tasks_cli, entries=before, workspace=scratch))
+            if completion and (error := maintainer.plan_output_error(completion_plans, scratch)):
+                raise ValueError(error)
             if rolling:
                 message += f'\nFinished batch reports: {Path(self.cfg["git_common"]) / "autowork-execution/slot-data"}.'
         except ValueError as exc:
@@ -2785,7 +2811,8 @@ class Coordinator:
             raise
         job = dict(found=found, names=names, scratch=scratch, base=base, before=before, reasons=reasons,
                    rows=rows, trigger_key=trigger_key, rolling=rolling,
-                   discovery=discovery,
+                   discovery=discovery, completion=completion, completion_store=completion_store,
+                   completion_plans=completion_plans,
                    recovery=incidents if discovery else {maintainer.item_key(item): incidents[maintainer.item_key(item)]
                                                   for item in found})
         for identity, incident in job['recovery'].items():
@@ -2795,7 +2822,7 @@ class Coordinator:
         if discovery:
             repository_work.reserve(self.state)
             LOG.say('Repository work discovery: inspecting independent work while the queue is blocked or empty')
-        if overlap or discovery:
+        if overlap or discovery or completion:
             # A re-cut runs beside the loop, as merge resolutions do: it held reviews, landings
             # and dispatch for five minutes at a time while workers were busy.
             self.start_maintainer(job, message, session)
@@ -2849,7 +2876,11 @@ class Coordinator:
         Path(job['out']).unlink(missing_ok=True)
         for note in result.get('notes') or []:
             LOG.say(note)
-        if self.maintainer_result(job, bool(result.get('ok'))):
+        changed = self.maintainer_result(job, bool(result.get('ok')))
+        if changed or job.get('completion'):
+            # This async pass occupied the maintainer when handle_outcome considered
+            # ordinary repair/planning. Give those triggers a turn even after no change,
+            # rather than exiting --until-empty with a ready plan or repair skipped.
             self.settled = True
 
     def stop_maintainer(self):
@@ -2946,11 +2977,24 @@ class Coordinator:
                         plan_error = 'invalid planning documents: ' + str(exc)
                 if not ok or git(scratch, 'rev-list', '--count', f'{base}..{head}') != '1':
                     plan_error = 'planning must finish successfully in one commit'
+            completion_error = None
+            if job.get('completion'):
+                if dirty(scratch):
+                    completion_error = 'planning checkout has uncommitted changes'
+                elif invalid:
+                    completion_error = 'invalid task store: ' + invalid
+                elif not head or not git_ok(scratch, 'merge-base', '--is-ancestor', base, head):
+                    completion_error = 'post-completion candidate lost its admitted base'
+                elif paths:
+                    completion_error = self.completion_proposal_error(job, proposed, paths, head)
             if rolling and plan_error:
                 outcome = 'planning failed: ' + plan_error
+            elif completion_error:
+                outcome = 'refused: ' + completion_error
             elif not paths:
                 outcome = 'no change' if ok else 'failed'
-            elif not maintainer.planning_only(paths, outputs=maintainer.plan_outputs(found, before), repo=scratch):
+            elif not job.get('completion') and not maintainer.planning_only(
+                    paths, outputs=maintainer.plan_outputs(found, before), repo=scratch):
                 outcome = maintainer.PLAN_PATH_REFUSAL
             elif dirty(scratch):
                 outcome = 'refused: planning checkout has uncommitted changes'
@@ -2973,7 +3017,8 @@ class Coordinator:
         after = before
         if outcome == 'merged':
             after = entries(queue.store(Path(self.integ)))
-            changed = (sorted(set(after) - set(before)) if job.get('discovery') else
+            changed = (sorted(t for t in set(before) | set(after) if before.get(t) != after.get(t))
+                       if job.get('completion') else sorted(set(after) - set(before)) if job.get('discovery') else
                        [task for task in names if before.get(task) != after.get(task)
                         or (task in ('MAIN', 'LEDGER') and task in changed)])
             self.snapshot = None  # waiting reasons must be reread against the repaired entries
@@ -3002,6 +3047,60 @@ class Coordinator:
                         + f'; {maintainer.ROLE} {outcome}; see BLOCKERS.md')
         proposals = [item for item in maintainer.triggers(rows, limit=None) if item[1] == 'ledger edit']
         return outcome == 'merged' or bool(maintainer.pending(self.state, proposals, entries=after, reasons=reasons))
+
+    def completion_observation_current(self, observation):
+        source = observation.get('task_source') or {}
+        common = git(self.integ, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+        rows = observation.get('tasks')
+        return (observation.get('outcome') == 'PARALLEL_STATUS'
+                and source.get('revision') == git(self.integ, 'rev-parse', 'HEAD')
+                and source.get('workspace') == str(Path(self.integ).resolve())
+                and common and source.get('repository_identity') == str(Path(common).resolve())
+                and isinstance(rows, list) and all(isinstance(row, dict) and row.get('task') and row.get('state') for row in rows))
+
+    def completion_proposal_error(self, job, proposed, paths, head):
+        """Recheck source identity and live ownership after the asynchronous model run."""
+        self.snapshot = None
+        observation = self.status()
+        if not self.completion_observation_current(observation):
+            return 'post-completion activity is unavailable or stale'
+        queue = dispatch_module(self.toolset).task_queue
+        try:
+            current = queue.store(Path(self.integ))
+            canonical = queue.store(Path(self.repo), self.base)
+        except queue.StoreError as exc:
+            return 'post-completion inputs unavailable: ' + str(exc)
+        # Git can merge disjoint prose automatically; that is not permission to overwrite
+        # an owner change or newly admitted contract/plan underneath a stale proposal.
+        for path in paths:
+            original = git(self.integ, 'rev-parse', f'{job["base"]}:{path}')
+            if (original is None or original != git(self.integ, 'rev-parse', f'HEAD:{path}')
+                    or original != git(self.repo, 'rev-parse', f'{self.base}:{path}')
+                    or git(self.repo, 'status', '--porcelain', '--', path) != ''):
+                return 'post-completion path changed since admission or is not landed: ' + path
+        for task in set(job['completion_store'].tasks) - set(proposed.tasks):
+            record = job['completion_store'].tasks[task]
+            if record.verified:
+                path = record.closure_evidence
+                original = git(self.integ, 'rev-parse', f'{job["base"]}:{path}')
+                if (original is None or original != git(self.integ, 'rev-parse', f'{current.rev}:{path}')
+                        or original != git(self.repo, 'rev-parse', f'{canonical.rev}:{path}')):
+                    return 'post-completion closure receipt changed or is not landed: ' + task
+        held, problems = task_commands.in_flight(self.repo, (*task_commands.OCCUPYING, 'released'))
+        if any(problem != 'a live parallel coordinator lease' for problem in problems):
+            return 'post-completion ownership is unknown or a sequential execution lease is live'
+        rows = [*self.tasks(observation), *(dict(task=task, state='held') for task in held)]
+        deleted = {p for p in (git(job['scratch'], 'diff', '--name-only', '--diff-filter=D', '-z', job['base'], head) or '').split('\0') if p}
+        if deleted and dirty(self.repo):
+            return 'post-completion pruning waits for a clean canonical checkout'
+        return (post_completion.proposal_error(job['completion_store'], proposed, current, canonical,
+                                              rows, paths, deleted, job['completion_plans'])
+                or post_completion.proposal_error(job['completion_store'], proposed, canonical, canonical,
+                                                  rows, paths, deleted, job['completion_plans'])
+                or maintainer.plan_output_error(paths, job['scratch'])
+                or post_completion.reference_error(job['scratch'], deleted, job['base'])
+                or post_completion.reference_error(self.integ, deleted, job['base'], exclude=paths)
+                or post_completion.reference_error(self.repo, deleted, job['base'], ref=self.base, exclude=paths))
 
     def environment_hold(self, task):
         """What a review of the held commit could not run without, or None (TOOLSET-173-94)."""
@@ -4069,6 +4168,8 @@ class Coordinator:
         self.handle_requests()
         observed = self.status()
         self.health_update(observed)
+        if self.integ and not self.stop:
+            self.maintain(completion=True)  # also during --once/drain, before any finite/blocked return
         if observed.get('outcome') != 'PARALLEL_STATUS' or not isinstance(observed.get('tasks'), list):
             idle_diagnostic = 'Task state unavailable: ' + ' '.join(str(
                 observed.get('reason') or observed.get('outcome') or 'no answer from the engine').split())
@@ -4099,6 +4200,12 @@ class Coordinator:
             if outcome in ('WAITING', 'PAUSED'):
                 self.pause(self.interval)  # do not spin on a resource-gated same-attempt resume
             return  # dispatch only these same-attempt resumes on the next cycle, even in --once
+        if self.draining or self.mode != 'continuous':
+            self.merge_main()
+            if self.integ:
+                self.maintain(completion=True)  # a closure may have reached canonical only in this final landing
+            if self.maintainer_job:
+                return self.pause(min(self.interval, 5))
         if outcome in ('WAITING', 'BLOCKED', 'PAUSED'):
             # Tasks remain, but none can start now (held work, dependencies or the resource gate).
             if self.mode != 'continuous':
@@ -4114,7 +4221,6 @@ class Coordinator:
                 and not self.stop):
             if maintenance.invalid(self):
                 self.finish(4, 'Maintenance receipt is invalid; publication/update remain unqualified')
-            self.merge_main()
             if not self.merge_pending and maintenance.pending(self):
                 self.pause(min(self.interval, 1))
                 return
@@ -4132,6 +4238,10 @@ class Coordinator:
                 self.finish(1 if self.failures >= self.max_failures else 0, 'Finished.')
         if outcome == 'IDLE':
             if self.merge_main():
+                if self.integ:
+                    self.maintain(completion=True)
+                if self.maintainer_job:
+                    return self.pause(min(self.interval, 5))
                 self.engine('--parallel', str(self.workers), '--max-workers', '16', '--release')
                 # Keep the worktree and branch: follow_base() takes main's next plan in
                 # place. Release the lease nevertheless, so interactive engine users can
