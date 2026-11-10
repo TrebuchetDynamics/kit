@@ -226,8 +226,9 @@ agent, runner command or task mutation; only explicit Export writes a report cop
 Native terminal drag selection remains available.
 The directory browser's **g Plan** opens the embedded planning console for any
 repository; Tasks offers **g Discuss** and **v Investigate** for a selected task.
-Interactive repair is still
-the separate `autowork blockers [dir]` command, not this report.
+Both **b** and **B** in Tasks open this in-app report; neither launches an agent
+or suspends the TUI. Interactive repair is still the separate
+`autowork blockers [dir]` command, not this report.
 
 ## The autowork command
 

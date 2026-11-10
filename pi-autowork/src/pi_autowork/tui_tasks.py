@@ -328,14 +328,14 @@ class TasksScreen(ReadScreen, Screen):
                 Binding('shift+tab', 'step_view(-1)', 'previous view', show=False),
                 *[Binding(str(n + 1), f'show_view("{view}")', view, show=False)
                   for n, view in enumerate(fleet_view.TASK_VIEWS)],
-                *[Binding(key, f'task("{key}")', key, show=False) for key in 'udcabs'],
+                *[Binding(key, f'task("{key}")', key, show=False) for key in 'udcas'],
                 Binding('n', 'new_task', 'New', show=False),
                 Binding('x,delete', 'task("x")', 'Delete', show=False),
                 Binding('g', 'plan("discuss")', 'Discuss', show=False),
                 Binding('v', 'plan("investigate")', 'Investigate', show=False),
                 Binding('e', 'decide', 'Decide', show=False),
                 Binding('C', 'commit_tasks', 'Commit', show=False),
-                Binding('B', 'report', 'Report', show=False),
+                Binding('b,B', 'report', 'Report', show=False),
                 Binding('i', 'snapshot_info', 'Snapshot info', show=False, priority=True)]
     DEFAULT_CSS = '''
     #task-views { height: auto; padding: 0 1; }
