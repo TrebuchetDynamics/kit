@@ -243,6 +243,13 @@ Small dialogs keep action buttons visible while their contents scroll. In opt-in
 `--mouse`/browser mode, fleet menu clicks use the same guarded actions as keys;
 normal terminal mode still permits native text selection.
 
+**Log** opens in **Summary** mode. Press **v Raw** to inspect every original line
+in the captured journal excerpt, including hidden startup and pending lines. Press
+**v Summary** to return. These labelled menu items use the same local action as the
+keyboard. **Esc** or **q** returns to the fleet. Toggling changes only cached text,
+keeps scroll/follow behavior, and runs no read or runner action. Raw is the bounded
+capture, not all historical logs or the worker's Pi transcript.
+
 Matching exhausted or held automatic-triage failures appear as **Technical recovery
 needed**, separately from the preserved worker-reported questions. Details and the
 Blockers report show the recorded failure and retained-work reconciliation guidance.
@@ -715,6 +722,29 @@ wrap use cached data. Directory labels are loaded separately from the selected
 repository's readiness; confirmed Start always requests fresh readiness.
 Model discovery is fresh per opening and uses the selected service's provider context.
 Read failures retain last-good data with a stale/unavailable diagnostic and allow retry.
+
+Activity requests up to **400 journal lines from the last hour**. Full-screen Log
+requests up to **1000 lines**. Both use the existing **20-second** command timeout
+and shared four-reader coordinator. Summary folds only adjacent identical messages
+with explicit task identity, or operation family and revision (plus an explicit
+target when present). Folded events show their count and original first/last times,
+including spans across midnight. Changed reasons and interleaved events remain in
+source order. Unknown and multiline diagnostics are retained, not deduplicated.
+Restart markers retain their observed time span and toolset revision when present.
+A missing start or outcome remains absent evidence. A timeout or unconfirmed push,
+integration, closure, or an older main-check result does not prove remote publication
+or current-main acceptance.
+
+The TUI distinguishes a successful empty journal from timeout, OS error and nonzero
+journal exit. Failed reads keep the last-good capture with a stale/error notice,
+or show **Journal unavailable** when no capture exists. Log also shows its last
+successful read time. Raw/Summary and resize retain these disclosures and reject
+obsolete reader results. The CLI journal command and `logs(..., strict=False)`
+compatibility remain unchanged; only TUI acquisition opts into strict errors.
+`tests/runner/test_activity_log.py` covers projection and subprocess failures, plus
+`tests/runner/activity_log_pilot.py` at 60×18, 80×24 and 120×32 with blocked fixture
+readers. These offline checks do not qualify physical terminal, SSH/browser or
+installed-release behavior.
 
 Offline checks in `tests/test_tui_reads.py`, `tests/test_task_snapshot.py`,
 `tests/test_fleet_view.py` and `tests/test_health.py`, plus the headless

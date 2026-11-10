@@ -50,6 +50,15 @@ Model selection follows provider → search → model → existing change/start 
 Login opens Pi against the same agent directory and refreshes the model catalog on return.
 Browse exposes the current path, Parent/Home, folder navigation, and readiness.
 Escape returns from a secondary screen; opening a menu changes no runner state.
+Activity shows a journal summary. Full-screen Log defaults to Summary and labels
+its local **v Raw / v Summary** control. Raw exposes every original line in the
+captured excerpt, including startup settings and suppressed pending lines. It does
+not promise all historical logs. Keyboard and menu clicks use the same screen-local
+action; Escape/q returns. Adjacent identical recognized events fold with a count
+and original first/last timestamps. Changed failure details, task/revision/target
+identity and unknown multiline diagnostics remain ordered. Missing outcomes stay
+unknown: integration, closure, timeout and historical green checks prove neither
+remote publication nor acceptance of current main.
 Tasks is the fleet's task-management entry. Its numbered views use bracketed
 counts and clickable labels. The table separates short state labels from activity
 or wait reasons, reserving reason space at normal widths. Compact tables retain
@@ -104,6 +113,11 @@ identity and reasons. Errors and source notes are separate counts, not a warning
 Unknown inventory is unavailable, never zero; superseded checks never qualify current main.
 At 80×24 preserve the stacked hierarchy; at 150×45 show wider columns and more rows.
 Resize uses cached observations and performs no filesystem or service acquisition.
+Log's mode toggle also uses cached text only, preserving scroll/follow behavior and
+reader identity/epoch guards. Activity captures up to 400 lines from the last hour;
+Log captures up to 1000 lines. Both retain the 20-second journal bound and shared
+four-reader ownership. Failed reads show unavailable or stale last-good evidence
+with acquisition errors, never successful empty output.
 
 ## Interaction states
 
