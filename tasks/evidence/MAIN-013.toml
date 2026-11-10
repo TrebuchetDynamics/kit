@@ -1,9 +1,0 @@
-schema = 1
-task = "MAIN-013"
-candidate = "7cad3e95c9cf4318fb876ca925d7d38a8a2285d1"
-integration = "29cdccf3e69515ecd912b2f7c6549bab83e8a9b1"
-tree = "b89290c68ccbc342110127433b74a124833ec321"
-contract_hash = "c31fe56b20df1ca17eb2590bba66a598de34627a983eb81332e2265cd5c79816"
-checks = ["<path>", "<path>", "--verify", "<path>", "MAIN-013"]
-result = "pass"
-review = "passed"

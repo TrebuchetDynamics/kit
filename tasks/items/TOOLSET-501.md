@@ -2,7 +2,7 @@
 schema = 1
 id = "TOOLSET-501"
 title = "Exclude extensionless build binaries from affected-test source scanning"
-short = "Keep binaries out of the test dependency graph"
+short = "Exclude binaries from test scanning"
 status = "open"
 section = "Now"
 rank = 11000
