@@ -25,7 +25,7 @@ import tempfile
 import time
 import uuid
 
-from pi_autowork import fleet_view, portal, tui_reads, blockers_report, task_status  # noqa: E402
+from pi_autowork import fleet_view, portal, tui_reads, blockers_report, command_results  # noqa: E402
 from pi_autowork.planning_ui import PlanScreen, DecisionPrompt, QuestionPicker  # noqa: E402
 from pi_autowork.tui_dialogs import Confirm  # noqa: E402
 from pi_autowork.tui_common import (  # noqa: E402
@@ -1916,25 +1916,12 @@ class FleetApp(App):
         """In a worker thread: run the command, then report it on the event loop."""
         try:
             result = self.runner_cmd(action.argv, env=env, capture_output=True, text=True)
-            output = ((result.stdout or '') + (result.stderr or '')).strip().splitlines()
-            ok, message = result.returncode == 0, (output[-1] if output else action.label)
         except Exception as error:
-            ok, message = False, str(error)
-        decision = action.argv[1:3] == ['tasks', 'decide'] or (
-            action.argv[1:3] == ['tasks', 'field'] and '--commit' in action.argv)
-        if ok and decision:
-            if '--commit' in action.argv:
-                try:
-                    receipt = json.loads(result.stdout)
-                    if receipt['lifecycle']['state'] != 'committed':
-                        raise ValueError('answer commit not confirmed')
-                    message = receipt['lifecycle']['message']
-                except (ValueError, KeyError, TypeError):
-                    ok, message = False, 'Answer commit not confirmed; inspect tasks handoff before retrying. Draft kept.'
-            else:
-                message = task_status.edit_lifecycle('pending_commit')['message']
+            result = error
+        outcome = command_results.interpret(action.argv, action.label, result)
+        ok, message = outcome.ok, outcome.message
         self.call_from_thread(self.notify, message[:300], severity='information' if ok else 'error',
-                              title=f'{action.label}: {"done" if ok else "failed"}', timeout=10 if decision else 3)
+                              title=f'{action.label}: {"done" if ok else "failed"}', timeout=10 if outcome.decision else 3)
         if on_complete is not None:
             self.call_from_thread(on_complete, ok, message)
         self.call_from_thread(self.action_completed, action, ok)
