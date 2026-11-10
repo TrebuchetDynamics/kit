@@ -18,7 +18,11 @@ jobs:
       - name: Git identity
         run: git config --global user.name CI && git config --global user.email ci@example.invalid
       - name: Install test dependencies
-        run: python -m pip install -r requirements-test.txt
+        run: python -m pip install -r requirements-test.txt uv==0.11.3
+      # TUI acceptance uses uv --offline with this exact pin. Prepare its cache here,
+      # before the offline suites, instead of skipping required probes on a cold host.
+      - name: Cache pinned Textual acceptance environment
+        run: uv run --python 3.12 --with textual==8.2.8 python -c "import textual"
       - name: Offline suites without the runner integration module
         run: python scripts/check.py --exclude pi-autowork/tests/runner/test_pi_autowork.py
       - name: Plugin syntax
