@@ -879,6 +879,12 @@ def inventory_rows(runner):
     return tuple(row for row in snapshot_for(runner).rows if row.task not in runner.display_deleted)
 
 
+def task_name(runner, task):
+    """A committed task's display name, falling back to its stable ID when none is recorded."""
+    row = next((row for row in inventory_rows(runner) if row.task == task), None)
+    return (row.short or row.task) if row is not None else task
+
+
 # Why a task in flight waits, as a label of the Waiting row ("7 implemented, waiting for review").
 WAIT_LABELS = task_status.WAIT_LABELS
 
@@ -1608,7 +1614,8 @@ def runner_rows(runners):
     """Pure fleet-table projection: one row per runner, ready for a Textual DataTable."""
     rows = []
     for runner in runners:
-        now = ', '.join(f'{lane.task} {lane_status(runner, lane)[0]}' for lane in runner.lanes[:2])
+        now = ', '.join(f'{task_name(runner, lane.task)} {lane_status(runner, lane)[0]}'
+                        for lane in runner.lanes[:2])
         if runner.job:
             now = ', '.join(x for x in (job_text(runner.job), now) if x)
         if len(runner.lanes) > 2:

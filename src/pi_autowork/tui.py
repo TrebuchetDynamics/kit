@@ -1223,7 +1223,8 @@ class FleetApp(App):
         if not table.columns:
             table.add_columns(*columns)
         for row, values in zip(rows, cells):
-            table.add_row(*(Text(value, style=style) for value, style in values), key=row[columns[0]][0])
+            table.add_row(*(Text(value, style=style) for value, style in values),
+                          key=row.get('_key', row[columns[0]][0]))
         return True
 
     def reload_if_updated(self):
@@ -1359,7 +1360,8 @@ class FleetApp(App):
         if event.data_table.id == 'runners':
             self.action_run('l')
         elif event.data_table.id == 'lanes' and event.row_key is not None and self.current() is not None:
-            self.push_screen(WorkerScreen(self.current(), event.row_key.value))
+            task = getattr(self, '_lane_keys', {}).get(event.row_key.value, event.row_key.value)
+            self.push_screen(WorkerScreen(self.current(), task))
 
     def action_toggle_details(self):
         self.details_open = not self.details_open
@@ -1369,17 +1371,83 @@ class FleetApp(App):
         (pane if self.details_open else self.query_one('#runners')).focus()
         self.show_detail()
 
+    def presentation_of(self, runner):
+        """The captured projection shared by Fleet, overview and Details; None before capture."""
+        if runner is None or runner.snapshot is None:
+            return None
+        try:
+            return fleet_view.presentation(runner)
+        except (ValueError, TypeError, AttributeError):
+            return None
+
+    def diagnostic_counts(self, runner):
+        project = self.presentation_of(runner)
+        if project is not None:
+            return project.error_count, project.source_note_count
+        if runner is None:
+            return 0, 0
+        snap = runner.snapshot
+        return ((len(set((*snap.errors, *runner.acquisition_errors))) if snap else 0),
+                len(snap.annotations) if snap else 0)
+
+    def main_check_summary(self, runner):
+        """Keep the receipt's process-bound line, then make revision drift and age explicit."""
+        checked = fleet_view.main_check.line(runner.main_check)
+        if not checked:
+            return ''
+        project = self.presentation_of(runner)
+        observation = project.main_check if project is not None else None
+        notes = []
+        if observation is not None:
+            current = (observation.current_revision or '')[:7]
+            if observation.superseded and current and 'superseded' not in checked:
+                notes.append(f'main now {current}')
+            if observation.state in ('red', 'broken', 'green', 'recheck') and observation.started:
+                age = max(0, int(time.time() - observation.started))
+                notes.append(f'checked {fleet_view.ago(age)} ago')
+        return checked + ('; ' + '; '.join(notes) if notes else '')
+
+    def primary_action(self, runner, project=None):
+        """The one action most likely to move this runner now; every other stays in More."""
+        if runner is None or self.view_only:
+            return None
+        available = {action.key: action for action in self.available(runner)}
+        if not available:
+            return None
+        if self.answerable_questions(runner) and 'a' in available:
+            key = 'a'
+        else:
+            project = project or self.presentation_of(runner)
+            label = (project.label if project is not None else fleet_view.verdict(runner)[0]).lower()
+            if 'paused' in label or 'not running' in label:
+                key = 'p'
+            elif 'waiting on you' in label:
+                key = 't'
+            elif any(word in label for word in ('stalled', 'stuck', 'blocked', 'unavailable', 'not cycling')):
+                key = 'l'
+            elif (project is not None and project.activity) or 'working' in label:
+                key = 'l'
+            elif 'idle' in label:
+                key = 't'
+            else:
+                key = 'l'
+            if key not in available:
+                key = next(iter(available))
+        return available[key]
+
     def next_hint(self, runner):
         """The one or two actions most likely to move this runner now."""
         if self.answerable_questions(runner):
             return 'a Answer · b Blockers'
-        if runner.state in ('paused', 'not running'):
+        project = self.presentation_of(runner)
+        label = (project.label if project is not None else fleet_view.verdict(runner)[0]).lower()
+        if 'paused' in label or 'not running' in label:
             return 'p Play · l Log'
-        if runner.state == 'waiting on you':
+        if 'waiting on you' in label:
             return 't Tasks · b Blockers'
-        if runner.state in ('blocked', 'stalled', 'unavailable', 'not cycling'):
+        if any(word in label for word in ('stalled', 'stuck', 'blocked', 'unavailable', 'not cycling')):
             return 'l Log · i Details'
-        if runner.lanes:
+        if project is not None and project.activity:
             return 'l Log · t Tasks'
         if runner.questions:
             return 'b Blockers'
@@ -1394,27 +1462,33 @@ class FleetApp(App):
         if runner is None:
             # Reuse the truthful loading/empty/discovery-failure message below.
             return
-        verdict, style = fleet_view.verdict(runner)
-        headline, _, reason = verdict.partition(' — ')
+        project = self.presentation_of(runner)
+        if project is not None:
+            headline, reason, style, counts = project.label, project.explanation, project.style, project.counts
+        else:
+            sentence, style = fleet_view.verdict(runner)
+            headline, _, reason = sentence.partition(' — ')
+            counts = fleet_view.task_counts(runner)
         line(f'{runner.name} · {headline}', style)
-        counts = fleet_view.task_counts(runner)
+        errors, notes = self.diagnostic_counts(runner)
+        provenance = []
+        if project is not None:
+            if project.inventory_freshness != 'fresh':
+                provenance.append(f'Inventory {project.inventory_freshness}')
+            if project.execution_freshness != 'fresh':
+                provenance.append(f'execution {project.execution_freshness}')
+        if errors:
+            provenance.append(f'{errors} error{"s" if errors != 1 else ""}')
+        if notes:
+            provenance.append(f'{notes} source note{"s" if notes != 1 else ""}')
         if self.size.height < 22:
-            snap = fleet_view.snapshot_for(runner)
-            provenance = []
-            if snap.freshness != 'fresh':
-                provenance.append(f'Inventory {snap.freshness}')
-            if snap.engine_freshness != 'fresh':
-                provenance.append(f'execution {snap.engine_freshness}')
-            warnings = len(set((*snap.errors, *runner.acquisition_errors))) + len(snap.annotations)
-            if warnings:
-                provenance.append(f'{warnings} warnings')
             if counts is None:
                 count_line = 'Tasks unknown / unavailable'
             else:
                 active, mergeable, waiting, blocker, decision, total = counts
                 count_line = f'{total} open · {active} active · {blocker} blocker · {decision} decisions'
             line(' · '.join([*provenance, count_line]), 'yellow' if provenance or counts is None else '')
-            check = fleet_view.main_check.line(runner.main_check)
+            check = self.main_check_summary(runner)
             if check:
                 line('Main: ' + check, 'bold red' if runner.main_check.get('state') in ('red', 'broken') else '')
             else:
@@ -1428,25 +1502,28 @@ class FleetApp(App):
             active, mergeable, waiting, blocker, decision, total = counts
             line(f'{total} open · {active} active · {mergeable} mergeable')
             line(f'{waiting} waiting · {blocker} blocker · {decision} in Needs decision')
-        snap = fleet_view.snapshot_for(runner)
-        warnings = len(set((*snap.errors, *runner.acquisition_errors)))
-        observation = f'Inventory {snap.freshness} · execution {snap.engine_freshness}'
-        if warnings or snap.annotations:
-            observation += f' · {warnings + len(snap.annotations)} warnings'
-        line(observation, 'yellow' if warnings or snap.engine_freshness != 'fresh' else 'dim')
-        check = fleet_view.main_check.line(runner.main_check)
-        check_style = 'bold red' if runner.main_check.get('state') in ('red', 'broken') else ''
+        observation = (f'Inventory {project.inventory_freshness} · execution {project.execution_freshness}'
+                       if project is not None else
+                       f'Inventory {fleet_view.snapshot_for(runner).freshness} · '
+                       f'execution {fleet_view.snapshot_for(runner).engine_freshness}')
+        if provenance:
+            observation += ' · ' + ' · '.join(p for p in provenance
+                                             if not p.startswith(('Inventory ', 'execution ')))
+        line(observation, 'yellow' if errors or (project is not None and project.execution_freshness != 'fresh') else 'dim')
+        check = self.main_check_summary(runner)
         if runner.questions:
             actions = 'a Answer · b Blockers' if self.answerable_questions(runner) else 'b Blockers (read only)'
             line(f'{len(runner.questions)} recorded questions · {actions}', 'yellow')
-        elif 'unavailable' in headline.lower():
-            line('Observation unavailable · i Details · l Log', 'yellow')
         elif reason:
             line('Why: ' + ' '.join(reason.split()))
         else:
             line('Next: ' + self.next_hint(runner), 'dim')
         if check:
-            line('Main: ' + check, check_style)
+            line('Main: ' + check, 'bold red' if runner.main_check.get('state') in ('red', 'broken') else '')
+        if project is not None and project.activity:
+            activity = '; '.join(f'{fleet_view.task_name(runner, item.task)} {item.phase}'
+                                 for item in project.activity[:2])
+            line('Working: ' + activity, 'green')
         text.rstrip()
         publish_text(self.query_one('#overview', Static), text)
 
@@ -1515,19 +1592,26 @@ class FleetApp(App):
                           ('b', 'Blockers'), ('ctrl+p', 'Commands'), ('?', 'More'), ('q', 'Quit')], prefix='view only',
                          click_actions=clicks)
         else:
-            primary = [(a.key, a.label) for a in self.available(runner)]
+            project = self.presentation_of(runner)
+            primary = self.primary_action(runner, project)
+            essential = [(primary.key, primary.label)] if primary is not None else []
             if self.size.height < 22 or self.size.width < 80:
-                primary = [(key, label) for key, label in primary if key in ('a', 'l', 'p', 't')]
+                essential += [('i', 'Summary' if self.details_open else 'Details')]
             else:
-                primary += [('i', 'Summary' if self.details_open else 'Details'), ('b', 'Blockers')]
-            menubar.show(primary + [('ctrl+p', 'Commands'), ('?', 'More'), ('n', 'Browse'), ('q', 'Quit')],
+                essential += [('i', 'Summary' if self.details_open else 'Details'), ('b', 'Blockers')]
+            menubar.show(essential + [('?', 'More'), ('ctrl+p', 'Commands'), ('n', 'Browse'), ('q', 'Quit')],
                          click_actions=clicks)
         text = Text()
+        project = self.presentation_of(runner)
         # First the answer to "is it stuck, and why": one sentence, wrapped, never cut.
-        sentence, style = fleet_view.verdict(runner)
+        if project is not None:
+            sentence, style = project.label + (' — ' + project.explanation if project.explanation else ''), project.style
+            vector = project.counts
+        else:
+            sentence, style = fleet_view.verdict(runner)
+            vector = fleet_view.task_counts(runner)
         text.append(f'{runner.name}  ', style='bold')
         text.append(sentence + '\n', style=style)
-        vector = fleet_view.task_counts(runner)
         if vector is None:
             detail_row(text, 'Tasks', 'unknown / unavailable', 'bold yellow')
         else:
@@ -1535,6 +1619,23 @@ class FleetApp(App):
             detail_row(text, 'Tasks', f'{total} open · {active} active · {mergeable} mergeable · {waiting} waiting · {blocker} blocker'
                        + f' · {decision} in Needs decision')
         detail_row(text, 'Inventory', fleet_view.freshness(runner), 'dim')
+        # Grouped diagnostics: real errors first, source notes separately. Every original
+        # message stays here even when the compact summary only carries counts.
+        for group in (project.diagnostics if project is not None else ()):
+            detail_row(text, 'Error' if group.kind == 'error' else 'Note',
+                       f'{group.category}: ' + '; '.join(' '.join(str(message).split())
+                                                         for message in group.originals),
+                       'bold red' if group.kind == 'error' else 'yellow')
+        # Worker rows show names; the stable ID and its status remain together here.
+        for lane in runner.lanes:
+            activity = self.fit(fleet_view.doing(lane), max(12, self.size.width - 48))
+            detail_row(text, 'Worker',
+                       f'{fleet_view.task_name(runner, lane.task)} · {lane.task} · '
+                       f'{fleet_view.lane_status(runner, lane)[0]} · {activity}', 'dim')
+        if runner.job:
+            detail_row(text, 'Worker',
+                       f'{fleet_view.task_name(runner, runner.job.get("task") or "")} · '
+                       f'{runner.job.get("task") or "job"} · job · {fleet_view.job_text(runner.job)}', 'dim')
         if runner.triage_failures:
             detail_row(text, 'Recovery', fleet_view.recovery_detail(runner), 'bold yellow')
         if runner.preparation is not None:
@@ -1558,9 +1659,9 @@ class FleetApp(App):
                 text.append(' ' * 14 + q.needs + '\n')
             if count > QUESTIONS_SHOWN:
                 text.append(' ' * 12 + f'+{count - QUESTIONS_SHOWN} more\n', style='dim')
-        checked = fleet_view.main_check.line(runner.main_check)
+        checked = self.main_check_summary(runner)
         if checked:
-            detail_row(text, 'Main', checked, 'bold red' if checked.startswith('main red') else '')
+            detail_row(text, 'Main', checked, 'bold red' if runner.main_check.get('state') in ('red', 'broken') else '')
         repair = fleet_view.maintainer_line(runner)
         if repair:
             detail_row(text, 'Maintainer', repair, 'cyan')
@@ -1577,13 +1678,20 @@ class FleetApp(App):
         self.show_lanes(runner)
 
     def show_lanes(self, runner):
-        """One row per worker: phase, attempt, how long, and what it is doing in plain words."""
+        """One row per worker: committed name, phase, attempt, how long, and what it is doing."""
         table = self.query_one('#lanes', DataTable)
         counts = Counter(lane.task for lane in runner.lanes)
         rows = []
+        self._lane_keys = {}
         for i, lane in enumerate(runner.lanes):
             activity = doing(lane)
-            rows.append({'Task': (lane.task if counts[lane.task] == 1 else f'{lane.task} [{i + 1}]', ''),
+            name = fleet_view.task_name(runner, lane.task)
+            shown = name if counts[lane.task] == 1 else f'{name} [{i + 1}]'
+            # A task's ID, not its title, keys the row and any action it opens. Duplicate
+            # attempts of one task still need unique keys, so the attempt is included.
+            key = lane.task if counts[lane.task] == 1 else f'{lane.task} [{i + 1}]'
+            self._lane_keys[key] = lane.task
+            rows.append({'_key': key, 'Task': (shown, ''),
                          'Status': fleet_view.lane_status(runner, lane),
                          'Try': (str(lane.attempt), ''), 'For': (fleet_view.duration(lane.minutes), ''),
                          'Quiet': (fleet_view.quiet(lane).removeprefix('quiet '), 'bold yellow'),

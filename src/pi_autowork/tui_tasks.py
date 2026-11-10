@@ -478,9 +478,10 @@ class TasksScreen(ReadScreen, Screen):
         current = follow or (self.current().task if self.current() else None)
         self.shown = self.view_rows(self.view)
         position = {row.task: number + 1 for number, row in enumerate(self.rows)}
-        cells = [{'#': (str(position[row.task]), 'dim'), 'Task': (row.short, 'bold'),
+        cells = [{'#': (str(position[row.task]), 'dim'), 'Task': (row.short or row.task, 'bold'),
                   'State': (row.state, fleet_view.state_style(row)),
-                  'Why': (row.why, 'yellow' if row.question else 'dim')} for row in self.shown]
+                  'Why': (row.why, 'yellow' if row.question else 'dim'), '_key': row.task}
+                 for row in self.shown]
         # Names get the space previously spent on opaque IDs; IDs remain in details
         # and self.shown for selection/actions, including tasks with identical names.
         name_room = max(1, self.size.width - len(str(max(position.values(), default=0))) - 8)
@@ -688,11 +689,12 @@ class TaskScreen(ReadScreen, Screen):
         row = closed_row or (next((r for r in fleet_view.task_rows(runner, include_closed=True)
                                    if r.task == self.task_id), None) if runner else None)
         text = Text()
-        text.append(self.task_id, style='bold')
-        if row:
-            text.append(f'  {row.short}\n')
-            text.append(f'{row.section} · {row.state}\n', style=fleet_view.state_style(row) or 'dim')
+        if row is not None and row.short:
+            text.append(row.short, style='bold')
+            text.append(f'\n{self.task_id}', style='dim')
+            text.append(f'\n{row.section} · {row.state}\n', style=fleet_view.state_style(row) or 'dim')
         else:
+            text.append(self.task_id, style='bold')
             text.append('  (closed, or not in tasks/ now)\n', style='dim')
         if self.closed and row is not None and row.why:
             text.append(row.why + '\n')
