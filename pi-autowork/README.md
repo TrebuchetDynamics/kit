@@ -590,7 +590,9 @@ and provider limits can change. Selecting an unconfigured model opens provider
 configuration; refresh after login and choose the model to use it.
 Choose **Configure provider** for the selected provider, select
 OAuth or API key where supported, then **Connect**. Follow the prompts in the TUI.
-All answers are masked and never prefilled from storage. **Browser** explicitly
+All answers are masked and never prefilled from storage. Text replies preserve blank
+provider-defined defaults, such as Copilot's `github.com` host. Secrets and callback
+codes still require a nonblank answer. **Browser** explicitly
 opens the provider's HTTPS OAuth page when required. Escape cancels the connection;
 progress and failures stay in the dialog. Pi owns credential persistence in the
 selected runner's `PI_CODING_AGENT_DIR` (the session's profile for a new runner).
@@ -598,8 +600,10 @@ Successful setup refreshes models automatically; **Refresh models** retries manu
 API-key setup stores the key using Pi's SDK; it does not prove that a provider will
 accept the key or execute a model. Providers without interactive setup require their
 normal Pi environment/settings configuration. Opening the picker starts no login,
-model call, service or browser. Changing runner/profile or entering read-only mode
-cancels an active dialog and discards stale model callbacks.
+model call, service or browser. Changing the selected repository, runner or profile,
+or entering read-only mode, cancels an active dialog and discards stale model
+callbacks. A same-name runner with the same profile but a different repository is
+a different target.
 
 Provider setup uses the official **Pi SDK 1.5.0** and Node.js **22.19 or newer**.
 A native Pi binary alone does not contain the importable SDK. For Pi 1.5.0, prepare

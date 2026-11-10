@@ -599,6 +599,10 @@ runs the focused offline provider bridge and TUI checks. The bridge fixtures use
 Pi 1.5.0 public SDK interaction shape in disposable profiles. They cover provider
 catalogs with no stored credentials, OAuth/API-key success, invalid fixture keys,
 missing providers/helpers, cancellation, secret-safe errors and subprocess cleanup.
+Text-default fixtures follow the tagged Pi 1.5.0 Copilot blank-host prompt and retain
+malformed-answer, nonblank-secret and command-key refusal. TUI fixtures reject stale
+catalog, authentication, model-choice and confirmation callbacks when a same-name
+runner changes repositories without changing its Pi profile.
 Pinned Textual 8.2.8 pilots cover 60×18, 80×24 and 120×32 terminals, masked input,
 explicit browser actions, automatic refresh and unchanged model/start confirmations.
 These checks use no live account login, credential migration, model or service call.

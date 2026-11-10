@@ -79,7 +79,10 @@ try {
         const answer = value => {
           signal.removeEventListener('abort', abort);
           waiting = undefined;
-          if (typeof value !== 'string' || !value.trim()) { reject(new Error('Empty answer')); return; }
+          // Text may use a blank provider-defined default (e.g. Copilot's github.com host).
+          if (typeof value !== 'string' || (prompt.type !== 'text' && !value.trim())) {
+            reject(new Error('Invalid answer')); return;
+          }
           // Pi interprets ! values as executable configuration; secret entry must be literal.
           if (prompt.type === 'secret' && value.startsWith('!')) { reject(new Error('Command key')); return; }
           resolve(value);
