@@ -763,11 +763,13 @@ model execution, device operation or live acceptance; those remain consumer chec
 
 ### Task admission and integration
 
-`Touches:` schedules work: a task naming a file that running work or an unlanded commit
-also names waits until that one lands (a waiting task holds no files); directory and glob
-overlap only ranks it after independent work (TOOLSET-161-17). While slots idle on such
-waits, the DOCS-MAINTAINER re-cuts the waiting tasks, at most every 30 minutes. A worker may change whatever its task
-needs. Finished work integrates one task at a time in priority order; the merge settles
+`Touches:` ranks likely-independent work first. Ordinary file, directory and glob
+overlap does not hold dispatch, even beside an unlanded commit or when many tasks
+name the same file. Each worker edits its own worktree. A `live` resource requires
+authorization and excludes other users of that resource, but does not drain
+unrelated workers. Use `exclusive` for work that must run alone. Shared resources,
+dependencies and protected-path admission remain enforced. A worker may change
+whatever its task needs. Finished work integrates one task at a time in priority order; the merge settles
 overlap, and a real conflict goes to the merge resolver. Only coordinator-owned files and
 undeclared protected files (manifests, lock files, schema, migration and CI files) hold a
 commit. The runner no longer infers or widens `Touches:`.
@@ -937,9 +939,9 @@ No service restart, fleet activation or live qualification is implied by offline
 How it works:
 
 - **Tasks and workers.** Each cycle the engine plans the queue: a task runs beside
-  others only when it declares `Touches:` paths that do not overlap theirs, shares no
-  `Resources:` and has its dependencies closed; anything else runs alone, and section
-  then rank decide order. An empty queue costs no model call, and nothing asks
+  others when its dependencies are closed and resource/protected-path gates allow it.
+  Ordinary `Touches:` overlap ranks work after independent tasks but does not block
+  dispatch. Only `exclusive` requires running alone. Section then rank decide order. An empty queue costs no model call, and nothing asks
   Autowork to invent work. A held task (`Held by:`) is never dispatched and holds back
   tasks that depend on it or share its resources, but not unrelated ones. Touches
   schedule work; they never hold a commit. A task without Touches (`["**"]`) may change

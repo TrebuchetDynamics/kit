@@ -262,7 +262,7 @@ def selectable(repo, requested=None, plan=None, *, sequential=False, rev='HEAD')
 
 
 def unfinished(repo, rev='HEAD'):
-    """Every open task as a contract, runnable or not: planning context for hot files."""
+    """Every open task as a contract, runnable or not: dependency and claim context."""
     snapshot = store(repo, rev)
     return [contract(t, snapshot) for t in snapshot.tasks.values() if t.status == 'open']
 

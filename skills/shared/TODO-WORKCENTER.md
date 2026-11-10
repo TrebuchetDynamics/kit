@@ -197,13 +197,12 @@ paths or globs it is expected to change (a trailing `/` covers a directory). Nam
 exact files from the scope, sources and the code you inspected, including its tests
 and docs; when a file is not known yet, widen to the owning directories rather than
 omit the field. Parallel Autowork uses `touches` to rank likely-independent work
-first. A shared literal hot production file (named by at least three unfinished
-contracts) gates overlapping work; test modules are exempt from that hot-file gate.
-Overlapping cold files, directories and globs are scheduling hints, not blanket
-serialization. Report possible merge conflicts honestly; do not invent product
+first. Ordinary file, directory and glob overlap is a scheduling hint, not a
+dispatch gate, regardless of how many unfinished tasks name a file. Report possible merge conflicts honestly; do not invent product
 `depends_on` edges for file overlap. Keep real prerequisites and
 [bounded write sets](PLANNING-CRAFT.md#disjoint-write-sets). Add `resources` where
-needed (`live` or `exclusive` to run alone, or shared names such as `test-db`);
+needed (`exclusive` to run alone, `live` for authorized live work, or shared names
+such as `test-db`);
 resource and protected manifest/lock/schema/migration/CI gates still apply. Only
 when no path can be bounded, set `resources` to `exclusive` with the reason in a
 note and `touches` to the widest owning directory. Do not list `tasks/`,

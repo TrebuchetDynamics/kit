@@ -173,8 +173,9 @@ finished without anyone:
   depends on the last. Split a task that touches unrelated areas.
 - **Resources mean resources.** Use the `exclusive` or `live` resource only for a
   real shared thing, such as a device, a port the code cannot move, or a live
-  account. Never use them for caution: a task marked so runs alone and holds back
-  the queue.
+  account. Never use them for caution: `exclusive` runs alone and holds back the
+  queue. `live` requires authorization and serializes other users of that resource,
+  not unrelated offline workers.
 - **No process gates the repository lacks.** Signatures, registries, ownership
   ledgers and evidence bundles belong in a task only if the repository already has
   the mechanism, and the task says how to use it.
@@ -203,23 +204,21 @@ promise independent execution or add fictitious dependency/resource gates.
 actual overlap rather than invent prerequisites. Under
 [`parallel_plan.py::plan`](../../pi-autowork/engine/parallel_plan.py):
 
-- Tasks naming the same hot literal production file wait until the unlanded work lands.
-  Hot means named by three or more unfinished tasks, including noncandidate
-  contracts and live slots awaiting integration; file length does not make it hot.
-  Cold files, directories, globs and test modules only rank likely-independent work
-  first; their overlap alone does not hold dispatch. Test modules are excluded from
-  the hot-file gate even when three or more tasks name them. Merge resolves actual
-  conflicts and checks qualify the merged result; overlap is not a promise of no conflict.
+- Ordinary files, directories, globs and test modules only rank likely-independent
+  work first. Their overlap alone does not hold dispatch, even when three or more
+  unfinished tasks name the same file or another commit waits to land. Workers use
+  separate worktrees. Merge resolves actual conflicts and checks qualify the merged
+  result; overlap is not a promise of no conflict.
 - Add `depends_on` only for a real prerequisite, not merely a shared path or a
-  preferred sequence. For example, overlapping tests or cold files do not require
+  preferred sequence. For example, overlapping source files or tests do not require
   extraction or dependency edges.
 - Choose extraction for cohesion, observed conflict cost and testability, not a
   line-count or task-count threshold.
   A bounded fix may stay in a large or hot file when it is cohesive and testable at
   an existing seam. Re-cut ownership or extract only when evidence makes that useful;
   do not invent a preliminary extraction task or another permission gate.
-- Shared named resources serialize their users; `exclusive`/`live` run alone only
-  for real resource needs. Keep protected-path coordination: protected-path tasks
+- Shared named resources serialize their users; only `exclusive` requires running
+  alone. `live` still needs authorization but does not drain unrelated workers. Keep protected-path coordination: protected-path tasks
   serialize with each other, not ordinary tasks in isolated worktrees. New manifests,
   lockfiles, schema/migration and CI files need explicit protected paths in `touches`
   before editing; a broad directory does not reserve them. These gates apply even

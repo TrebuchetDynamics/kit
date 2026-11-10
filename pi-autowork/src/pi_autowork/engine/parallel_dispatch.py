@@ -957,8 +957,8 @@ def contracts(repo, requested=None, plan=None):
 def task_context(repo):
     """All open tasks for planning, including nonrunnable ones.
 
-    Selection still uses contracts(); a decision or dependency must not hide a
-    third declaration of a hot file (or a running slot's declared files).
+    Selection still uses contracts(); nonrunnable tasks retain dependency edges
+    and resource claims in the planning context.
     """
     return [{'id': task['id'], 'fields': task['fields']} for task in task_queue.unfinished(repo)]
 
