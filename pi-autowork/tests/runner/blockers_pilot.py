@@ -157,7 +157,7 @@ async def main(root):
                  patch.object(app, 'copy_to_clipboard') as copy:
                 async with app.run_test(size=(width, 30)) as pilot:
                     await pilot.pause()
-                    assert not any(b.key in ('b', 'g') for b in app.BINDINGS)
+                    assert not any(any(key in ('b', 'g') for key in b.key.split(',')) for b in app.BINDINGS)
                     await pilot.press('t')
                     tasks = app.screen
                     assert isinstance(tasks, tui.TasksScreen)
@@ -206,11 +206,11 @@ async def main(root):
                     await pilot.press('escape')
                     assert len(app.screen_stack) == 1
                     bar = app.screen.query_one('#menubar', tui.MenuBar)
-                    x = bar.render().plain.index('Tasks') + 2
+                    x = bar.render().plain.index('Tasks') + bar.styles.padding.left
                     await pilot.click('#menubar', offset=(x, 0))
                     assert isinstance(app.screen, tui.TasksScreen)
                     bar = app.screen.query_one('#menubar', tui.MenuBar)
-                    x = bar.render().plain.index('Report') + 2
+                    x = bar.render().plain.index('Report') + bar.styles.padding.left
                     await pilot.click('#menubar', offset=(x, 0))
                     await app.workers.wait_for_complete()
                     assert isinstance(app.screen, tui.BlockersScreen), 'click must open the same read-only report'
@@ -225,22 +225,27 @@ async def main(root):
                     assert len(app.screen_stack) == 1
             print('PASS', width, 'view_only=' + str(view_only), 'keyboard, mouse, copy, literal text, no controls')
 
-    # Browser Plan is independent of execution readiness and never starts a command.
+    # Browser Plan is independent of execution readiness; fleet g is intentionally inert.
     repo = root / 'setup'
     repo.mkdir()
+    runner = fleet_view.Runner('setup', repo=str(repo), prepare_state='none')
     ready = fleet_view.Readiness(str(repo), repo=str(repo), problems=['tasks not prepared'])
     app = tui.FleetApp(command='aw', script='pa', state_root=root / 'state', env_dir=root / 'env',
                        agent='agent', browse_root=str(repo))
-    with patch.object(fleet_view, 'collect_for_tui', return_value=collected([])), \
+    with patch.object(fleet_view, 'collect_for_tui', return_value=collected([runner])), \
          patch.object(fleet_view, 'readiness', return_value=ready), \
          patch.object(app, 'logs', return_value=''), patch.object(app, 'open_plan') as plan, \
          patch.object(app, 'execute') as execute:
         async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.press('g')
+            plan.assert_not_called()
             await pilot.press('n')
             browser = app.screen
             assert isinstance(browser, tui.BrowseScreen)
             for prepared in (False, True):
                 ready.ready = prepared
+                ready.problems = [] if prepared else ['tasks not prepared']
+                runner.prepare_state = 'converted' if prepared else 'none'
                 token = browser.show_repository(str(repo))
                 await token.wait()
                 await pilot.pause()
@@ -292,13 +297,14 @@ async def main(root):
     with patch.object(fleet_view, 'collect_for_tui', return_value=collected([])), patch.object(app, 'logs', return_value=''), \
          patch.object(blockers_report, 'build') as build:
         async with app.run_test(size=(80, 24)) as pilot:
-            await pilot.press('t', 'B')
+            await pilot.press('b', 't', 'B')
             assert len(app.screen_stack) == 1
             build.assert_not_called()
     print('PASS empty fleet does not open or read a report')
 
 
 if __name__ == '__main__':
+    # Tasks reads pending edits on entry; report fixtures must not spawn a CLI.
     with tempfile.TemporaryDirectory() as folder, \
          patch.object(tui_tasks, 'pending_edits', return_value={'files': []}):
         asyncio.run(main(Path(folder)))
