@@ -689,7 +689,7 @@ class FleetViewTests(unittest.TestCase):
         self.assertEqual(task['d'].argv, ['aw', 'tasks', 'move', 'T-9', 'down', 'india'])
         self.assertEqual(task['c'].argv, ['aw', 'clear-held', 'india', 'T-9'])
         self.assertEqual(task['a'].argv, ['pa.sh', '--repo', '/git/india', '--set-aside', 'T-9'])
-        self.assertEqual(task['b'].argv, ['aw', 'blockers', '/git/india'])
+        self.assertNotIn('b', task)  # Reports stay in the TUI, even with an agent installed.
         for key in ('c', 'a'):
             self.assertTrue(task[key].confirm, key)
         ready = fleet_view.TaskRow('T-1', 'Short', 'Now', 'ready', 'ready')
@@ -1080,7 +1080,7 @@ class FleetViewTests(unittest.TestCase):
             '[22:37] Questions for the owner in BLOCKERS.md: 4 open (easiest: TASK-036, decision)'])
         self.assertEqual(fleet_view.log_lines(text), [
             ('[22:26] TASK-011: running — worker started', 'cyan'),
-            ('[22:36] ── restarted ──', 'bold'),
+            ('[22:36] ── restarted ── ([22:36]–[22:37])', 'bold'),
             ('[22:37] TASK-011: paused — stopped by a runner restart; resumes on attempt 1', 'yellow'),
             ('[22:37] TASK-011: running — worker started', 'cyan'),
             ('[22:37] TASK-011: failed — report.json pending_live must be a list of strings', 'bold red'),
@@ -1102,7 +1102,7 @@ class FleetViewTests(unittest.TestCase):
         self.assertEqual(fleet_view.log_lines(text), [
             ('[10:09] No task can start now: TASK-012: not runnable', 'yellow'),
             ('[10:15] ── restarted onto 03d8f5b ──', 'bold'),
-            ('[10:15] No task can start now: TASK-012: not runnable  ×3', 'yellow'),
+            ('[10:15] No task can start now: TASK-012: not runnable  ×3 ([10:15]–[10:17])', 'yellow'),
             ('[10:20] ── restarting onto 5caf145 ──', 'bold')])
 
     def test_the_verdict_says_whether_it_is_stuck_and_why(self):

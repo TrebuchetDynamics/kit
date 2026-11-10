@@ -331,6 +331,9 @@ the [runner guide](pi-autowork/README.md) and
 (`tasks/goals/<ID>.md`), edited only through `autowork tasks` (`list`, `goals`, `show`, `add`,
 `field`, `move`, `done`, …). The store is read from a commit, so a run's decisions are
 reproducible, and `/docs-sync` prepares or converts it.
+If the wrapper is missing, follow the [task CLI policy](skills/shared/TODO-WORKCENTER.md#task-cli-policy)
+for the trusted Python entrypoint fallback. Missing or incompatible tooling leaves
+complete proposals **UNSAVED**, never a hand-edited or duplicate queue.
 
 Ordinary authoring needs **title, scope, acceptance and checks**. The CLI derives
 IDs, list labels and scheduling defaults. Goals are optional multi-task outcomes;

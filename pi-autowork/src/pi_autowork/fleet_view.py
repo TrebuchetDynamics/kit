@@ -1171,65 +1171,94 @@ def needs(runner):
 TASK_LINE = re.compile(r'^\[(\d\d:\d\d)\] (\S+): (\w+)\b')
 # systemd's own lines about the unit, and the runner's start banner (its settings are in the detail).
 UNIT_LINE = re.compile(r'^(Starting|Started|Stopping|Stopped) pi-autowork@|^pi-autowork@\S+: ')
-BANNER = re.compile(r'^(PI AUTOWORK$|Repository: |Toolset: |Engine: |Primary: |Fallback: |Mode: )')
+BANNER = re.compile(r'^(PI AUTOWORK$|Repository: |Toolset: |Engine: |Primary: |Fallback: |Mode: |Transport: |Push: )')
 WORD_STYLES = {'done': 'green', 'integrated': 'green', 'failed': 'bold red', 'running': 'cyan',
                'verifying': 'cyan', 'landing': 'cyan', 'implemented': 'cyan', 'resuming': 'cyan', 'paused': 'yellow'}
 
 
 def log_lines(text):
-    """[(line, style)]: the journal as a person reads it. Per-task `pending` lines (the
-    `No task can start now` line covers them), systemd's unit lines, the start banner, session
-    lines and the results a restart printed again are dropped; a stop and the start that
-    follows are one `restarted` line (`onto <commit>` for an update), and a line that only
-    repeats the one before gets a `×N` count instead of a copy."""
-    out, last = [], {}
-    stop = None        # (time, onto) of a stop or update not yet followed by its start
+    """Ordered summary of a captured excerpt, not a verdict on current runtime state.
+
+    Only adjacent identical, explicitly identified operations fold. Unknown diagnostics
+    (including continuation/blank lines) stay intact; Raw exposes suppressed startup noise.
+    """
+    out = []
+    stop = None        # index of the first stop/update, kept in source order
     onto = ''
 
-    def add(line, style):
-        message = line[8:] if line.startswith('[') and line[6:8] == '] ' else line
-        if out and out[-1][3] == message:
+    def add(line, style='', identity=None):
+        match = re.match(r'^(\[\d\d:\d\d\]) (.*)$', line)
+        stamp, message = match.groups() if match else ('unknown', line)
+        if identity and out and out[-1][3:5] == [message, identity]:
             out[-1][2] += 1
+            out[-1][6] = stamp
             return
-        out.append([line, style, 1, message])
+        out.append([line, style, 1, message, identity, stamp, stamp])
 
     for line in text.splitlines():
-        if UNIT_LINE.match(line) or BANNER.match(line) or not line.strip():
+        if UNIT_LINE.match(line) or BANNER.match(line):
+            if out:
+                out[-1][4] = None
             continue
         stamp = line[:7]
-        update = re.search(r'\] Toolset updated to (\S+?);? restarting on it', line)
+        update = re.match(r'^\[\d\d:\d\d\] Toolset updated to (\S+?);? restarting on it$', line)
         if update:
-            onto, stop = update.group(1), stop or (stamp, update.group(1))
+            revision = update.group(1)
+            if onto and revision != onto:
+                stop = None  # a different update cannot replace an earlier observed target
+            onto = revision
+            if stop is None:
+                stop = len(out)
+                add(f'{stamp} ── restarting onto {onto} ──', 'bold')
+            else:
+                out[stop][0] = f'{out[stop][5]} ── restarting onto {onto} ──'
             continue
-        if '] Stopping: ' in line or '] Stopped. ' in line:
-            stop = stop or (stamp, onto)
+        if re.match(r'^\[\d\d:\d\d\] (?:Stopping: |Stopped\. )', line):
+            if stop is None:
+                stop = len(out)
+                add(f'{stamp} ── stopped ──', 'bold')
+            out[stop][6] = stamp
             continue
-        if ' Started (PID ' in line:
-            if stop:
-                add(f"{stop[0]} ── restarted{' onto ' + stop[1] if stop[1] else ''} ──", 'bold')
+        if re.match(r'^\[\d\d:\d\d\] Started \(PID \d+\)\. Stop with Ctrl\+C\.$', line):
+            if stop is not None:
+                out[stop][0] = f"{out[stop][5]} ── restarted{' onto ' + onto if onto else ''} ──"
+                out[stop][6] = stamp
             else:
                 add(f'{stamp} ── started ──', 'bold')
             stop, onto = None, ''
+            out[-1][4] = None  # a restart is always an operation boundary
             continue
         if re.match(r'^\[\d\d:\d\d\] Session \S+ started from ', line):
+            if out:
+                out[-1][4] = None
             continue
         task = TASK_LINE.match(line)
         if task:
             _, name, word = task.groups()
-            if word == 'pending' or last.get(name) == word:
+            if word == 'pending':
+                if out:
+                    out[-1][4] = None
                 continue
-            last[name] = word
-            add(line, WORD_STYLES.get(word, ''))
+            known = word in WORD_STYLES or word in ('closed', 'closing', 'held', 'waiting', 'interrupted', 'reported', 'dispatched')
+            task_id = re.fullmatch(r'[A-Z0-9]+(?:-[A-Za-z0-9]+)+', name)
+            add(line, WORD_STYLES.get(word, ''), ('task', name) if known and task_id else None)
             continue
+        message = line[8:] if re.match(r'^\[\d\d:\d\d\] ', line) else line
+        main = re.match(r'^(?:Checking main|Main|The main check|main check)\b.*?\b(?:at|on) ([0-9a-f]{7,40})\b', message)
+        push = re.match(r'^(?:Publishing|Push of|Pushed) ([0-9a-f]{7,40}) to (\S+)', message)
+        waiting = tuple(re.findall(r'\b[A-Z0-9]+(?:-[A-Za-z0-9]+)+:', message))
+        identity = (('main-check', main.group(1)) if main else
+                    ('publication', *push.groups()) if push else
+                    ('admission', waiting) if waiting and message.startswith('No task can start now: ') else None)
         if 'Questions for the owner' in line or 'No task can start' in line or 'Merge pending' in line:
-            add(line, 'yellow')
+            add(line, 'yellow', identity)
         elif 'needs attention' in line or 'failed' in line.lower():
-            add(line, 'red')
+            add(line, 'red', identity)
         else:
-            add(line, '')
-    if stop:
-        out.append([f"{stop[0]} ── {'restarting onto ' + stop[1] if stop[1] else 'stopped'} ──", 'bold', 1, ''])
-    return [(line + (f'  ×{count}' if count > 1 else ''), style) for line, style, count, _ in out]
+            add(line, '', identity)
+    return [(line + (f'  ×{count}' if count > 1 else '')
+             + (f' ({first}–{last})' if count > 1 or first != last else ''), style)
+            for line, style, count, _, _, first, last in out]
 
 
 def quiet_log(text):
@@ -1689,12 +1718,12 @@ def summary(runners):
     return [(state, counts[state]) for state in order + sorted(set(counts) - set(order)) if state in counts]
 
 
-def logs(runner, *, lines=200, journalctl='journalctl', since=None):
-    """Recent output: the service journal (``since``: a journalctl time such as '-60min')."""
+def logs(runner, *, lines=200, journalctl='journalctl', since=None, strict=False):
+    """Recent journal output; strict TUI reads distinguish unavailable from empty."""
     if not runner.has_service:
         return ''
     return '\n'.join(_lines([journalctl, '--user', '-u', f'pi-autowork@{runner.name}.service', '-n', str(lines),
-                             *(['--since', since] if since else []), '--no-pager', '-o', 'cat'], timeout=20))
+                             *(['--since', since] if since else []), '--no-pager', '-o', 'cat'], timeout=20, strict=strict))
 
 
 @dataclass
@@ -1909,7 +1938,7 @@ def task_view(rows, view):
 
 def task_actions(runner, row, *, command, script, agent=None):
     """What the Tasks window can do with one task: re-sort it (its rank is the priority),
-    clear or set aside its hold, answer the owner's questions in an agent, or delete it."""
+    clear or set aside its hold, or delete it. Reports and answers stay in the TUI."""
     repo, name, task = runner.repo, runner.name, row.task
     if task in runner.display_deleted:
         return []
@@ -1931,8 +1960,6 @@ def task_actions(runner, row, *, command, script, agent=None):
                                   'its worktrees stay.'))
         out.append(Action('a', 'Aside', [script, '--repo', repo, '--set-aside', task],
                           confirm=f'Set aside {task}? Its work stays on -set-aside-N branches and it runs fresh.'))
-    if agent and runner.questions:
-        out.append(Action('b', 'Blockers', [command, 'blockers', repo], interactive=True))
     out.append(delete)
     return out
 

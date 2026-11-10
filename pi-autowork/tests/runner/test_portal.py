@@ -1,4 +1,6 @@
 """Public setup and consumer seams with disposable config and a health-only proxy."""
+from contextlib import contextmanager
+import errno
 import http.server
 import json
 import os
@@ -14,10 +16,8 @@ from pi_autowork import portal, pi_runtime  # noqa: E402
 
 
 class PortalTests(unittest.TestCase):
-    def test_health_only_preflight_has_actionable_errors_and_no_authentication(self):
-        health = {'status': 'ok', 'upstream': 'Nous Portal', 'authenticated': True}
-        requests = []
-
+    @contextmanager
+    def health_server(self, health, requests):
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
                 requests.append((self.path, self.headers.get('Authorization')))
@@ -28,13 +28,32 @@ class PortalTests(unittest.TestCase):
             def log_message(self, *args):
                 pass
 
-        port = int(os.environ.get('AUTOWORK_PORT_BASE', '20700')) + 2
-        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(os.environ, PI_CODING_AGENT_DIR=folder):
-            server = http.server.HTTPServer(('127.0.0.1', port), Handler)
-            self.addCleanup(server.server_close)
-            threading.Thread(target=server.serve_forever, daemon=True).start()
-            endpoint = f'http://127.0.0.1:{port}/v1'
+        base = os.environ.get('AUTOWORK_PORT_BASE')
+        # Match the CLI fixture: stay in the lease, reserving +3 for its wrong endpoint.
+        ports = range(int(base) + 4, int(base) + 100) if base else (0,)
+        for port in ports:
             try:
+                server = http.server.HTTPServer(('127.0.0.1', port), Handler)
+                break  # Keep the listening socket; never probe/close/rebind.
+            except OSError as error:
+                if error.errno != errno.EADDRINUSE or port == ports[-1]:
+                    error.add_note(f'Portal health fixture could not bind within ports {ports}')
+                    raise
+        with server:
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                yield server
+            finally:
+                server.shutdown()
+                thread.join()
+
+    def test_health_only_preflight_has_actionable_errors_and_no_authentication(self):
+        health = {'status': 'ok', 'upstream': 'Nous Portal', 'authenticated': True}
+        requests = []
+        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(os.environ, PI_CODING_AGENT_DIR=folder):
+            with self.health_server(health, requests) as server:
+                endpoint = f'http://127.0.0.1:{server.server_port}/v1'
                 proposal = portal.propose('nous-selected', 'example', endpoint)
                 portal.apply(proposal)
                 self.assertEqual(proposal.proxy['state'], 'available')
@@ -53,9 +72,6 @@ class PortalTests(unittest.TestCase):
                     self.assertEqual(pi_runtime.choose(settings)[0], 'ordinary/fallback')
                 health.update(upstream='other', authenticated=True)
                 self.assertEqual(portal.probe(endpoint)['state'], 'incompatible')
-            finally:
-                server.shutdown()
-                server.server_close()
             self.assertEqual(portal.probe(endpoint)['state'], 'unavailable')
             with self.assertRaisesRegex(portal.SetupError, 'Proxy unavailable'):
                 portal.check_model('nous-selected/example')
@@ -64,6 +80,23 @@ class PortalTests(unittest.TestCase):
                         'http://user:SECRET@127.0.0.1:8645/v1', 'http://localhost:8645/v1'):
                 with self.subTest(endpoint=bad), self.assertRaises(portal.SetupError):
                     portal.propose('nous-selected', 'example', bad)
+
+    def test_health_servers_are_isolated_and_close_on_assertion_failure(self):
+        health = {'status': 'ok', 'upstream': 'Nous Portal', 'authenticated': True}
+        requests = []
+        with self.health_server(health, []) as occupied:
+            occupied_endpoint = f'http://127.0.0.1:{occupied.server_port}/v1'
+            with self.assertRaisesRegex(AssertionError, 'fixture failure'):
+                with self.health_server(health, requests) as server:
+                    endpoint = f'http://127.0.0.1:{server.server_port}/v1'
+                    self.assertNotEqual(server.server_port, occupied.server_port)
+                    self.assertEqual(portal.probe(endpoint)['state'], 'available')
+                    raise AssertionError('fixture failure')
+            self.assertEqual(server.socket.fileno(), -1)
+            self.assertEqual(portal.probe(endpoint)['state'], 'unavailable')
+            self.assertEqual(portal.probe(occupied_endpoint)['state'], 'available')
+        self.assertEqual(occupied.socket.fileno(), -1)
+        self.assertEqual(requests, [('/health', None)])
 
     def test_read_only_preflight_preserves_unrelated_symlinked_configuration(self):
         with tempfile.TemporaryDirectory() as folder, mock.patch.dict(os.environ, PI_CODING_AGENT_DIR=folder):

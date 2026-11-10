@@ -7,6 +7,8 @@ license: Apache-2.0
 
 # UI Taste
 
+For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
+
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.

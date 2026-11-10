@@ -23,9 +23,13 @@ Separate current architecture from planned changes. Maintain README, requirement
 architecture/spec, test plan, runbook and changelog as applicable; add conditional
 roles only when useful. Fix supported doc issues now.
 
+Load the [task CLI policy](../../../skills/shared/TODO-WORKCENTER.md#task-cli-policy)
+for the missing-PATH-wrapper fallback and complete inline **UNSAVED** proposals when
+tooling is unavailable. A guard refusal is not tool absence; preserve the outcomes below.
+
 Before task work, run `autowork capabilities`: it must succeed, list `tasks` with
 `prepare`, and report `prepare_api` 4 or higher (consumer/content-safe conversion).
-If not, the installed CLI is older than this skill: report `TOOLCHAIN_MISMATCH` (executable, what is missing, fix:
+If a present CLI fails this gate, report `TOOLCHAIN_MISMATCH` (resolved executable, what is missing, fix:
 `autowork update` when the owner allows installing, then reload the host), keep to
 document work, and never fall back to editing TODO.md or goals.json.
 

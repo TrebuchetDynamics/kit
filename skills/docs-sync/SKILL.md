@@ -306,12 +306,16 @@ never hand-write records.
 
 ### Check the toolchain first
 
+Load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy) for the
+missing-PATH-wrapper fallback and complete inline **UNSAVED** proposals when tooling
+is unavailable. A guard refusal is not tool absence; preserve the outcomes below.
+
 Before any task-store step, run `autowork capabilities` with the `autowork` this host
 will use. It prints the resolved `executable`, `toolset` and `release`, the `commands`
 and `tasks` verbs, and `prepare_api`. Continue only when it succeeds, lists `tasks`
 with `prepare`, and reports `prepare_api` 4 or higher (consumer/content-safe conversion).
-Otherwise the installed CLI is older than this skill: report `TOOLCHAIN_MISMATCH` with the executable (`command -v
-autowork`), what is missing, and the one fix, `autowork update` (then reload the host
+If a present CLI fails this gate, report `TOOLCHAIN_MISMATCH` with the resolved
+executable, what is missing, and the fix, `autowork update` (then reload the host
 so it loads the matching skill). Run that update only when the owner's request allows
 installing; it can queue a gateway restart. Then continue document work, and do not
 touch tasks: never fall back to editing TODO.md or goals.json, and never report the
