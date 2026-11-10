@@ -5791,6 +5791,28 @@
       "inputs": {},
       "delta": {},
       "method_inventory_sha256": "83d4937f6213b2c57ef8ca3bfa33b4c07ce84baeddee5a9e5c307b59e9fec53b"
+    },
+    {
+      "revision": "89877429cabda62d253ac6ebb3bfc40f7e091dd5",
+      "role": "hosted_auth_transition",
+      "inputs": {
+        "pi-autowork/tests/runner/test_tui_models.py": [
+          "pi-autowork/tests/runner/test_tui_models.py",
+          "100644",
+          "9640093edf44b0316164fdc4d2b25e67dc014f00"
+        ]
+      },
+      "delta": {
+        "pi-autowork/tests/runner/test_tui_models.py": {
+          "removed": [
+            "TuiModelsTests.test_login_uses_pi_terminal_and_selected_agent_directory"
+          ],
+          "added": [
+            "TuiModelsTests.test_authentication_inside_tui_uses_selected_profile_masks_and_refreshes"
+          ]
+        }
+      },
+      "method_inventory_sha256": "690886ddea5a9e322160bf035fe844b47964f6dc77bd7f23b3c3048b51ea606c"
     }
   ],
   "renames": [
@@ -5847,6 +5869,24 @@
       "commit": "fd36cedbf5bc851868481cc73f1141d0a23f14eb",
       "before_blob": "b97af361a4673a0c8864ea125a4c826f9aa80a29",
       "after_blob": "bf8f74cce6d85ef917be2dd722c85f184a5155ca"
+    },
+    {
+      "source": "pi-autowork/tests/runner/test_tui_models.py",
+      "path": "pi-autowork/tests/runner/test_tui_models.py",
+      "old": "TuiModelsTests.test_login_uses_pi_terminal_and_selected_agent_directory",
+      "new": "TuiModelsTests.test_authentication_inside_tui_uses_selected_profile_masks_and_refreshes",
+      "commit": "89877429cabda62d253ac6ebb3bfc40f7e091dd5",
+      "parent": "a9ec9027c2de8fce10e683a679a060f1df9cb71f",
+      "before_input": [
+        "pi-autowork/tests/runner/test_tui_models.py",
+        "100644",
+        "b25e8775dcb3b253100c72f5a9d532608873f1a5"
+      ],
+      "after_input": [
+        "pi-autowork/tests/runner/test_tui_models.py",
+        "100644",
+        "9640093edf44b0316164fdc4d2b25e67dc014f00"
+      ]
     }
   ],
   "split": {

@@ -713,6 +713,7 @@ class PackageImportTests(unittest.TestCase):
             package = root / 'pi-autowork/src/pi_autowork'
             package.mkdir(parents=True)
             (package / 'planning_ui.py').write_text('')
+            (package / 'tui_auth.py').write_text('')
             other = package / 'z_other.py'
             other.write_text('')
 
@@ -725,7 +726,7 @@ class PackageImportTests(unittest.TestCase):
                     mock.patch('subprocess.run', side_effect=run):
                 result = unittest.TestResult()
                 PackageImportTests(method).run(result)
-                self.assertEqual(len(result.skipped), 1)
+                self.assertEqual(len(result.skipped), 2)
                 self.assertEqual(len(result.failures), 1)
                 self.assertIn('broken non-renderer', result.failures[0][1])
                 # A deferred cycle must fail before any optional dependency check.
