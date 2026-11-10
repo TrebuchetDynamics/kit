@@ -1048,6 +1048,10 @@ check selection/command and review policy must match the current owned producer.
 The coordinator reserves each accepted record once before promoting it to the engine's
 one-use verdict channel. An old producer cannot publish into a replacement generation.
 An independent merge-train car is invalidated as soon as a prefix moves its base.
+Each producer keeps its unique output filename in its tip-pointer path. Gate logs,
+status and rerun artifacts use its generation (PID for legacy direct calls), so
+concurrent train cars cannot overwrite each other's pointers or diagnostics.
+Immutable tree receipt reuse remains bound to its producing source and log.
 
 Stopping invalidates the generation before replacement. The existing birth-bound
 runtime supervisor must prove descendant cleanup; missing or false persisted cleanup

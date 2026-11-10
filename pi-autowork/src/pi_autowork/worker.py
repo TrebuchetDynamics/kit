@@ -1349,13 +1349,14 @@ def batch_gate(state, chain, base, steps, result):
     if optimistic.enabled() and not main_check.affected_checker(str(chain), main_check.full_check(str(chain))):
         # Optimistic batches only review; main checks the full suite after landing.
         return json.dumps({'note': OPTIMISTIC_NOTE})
-    ok, reason = full_suite_gate(state, 'batch', str(chain), base)
+    label = 'batch-' + (os.environ.get('PI_AUTOWORK_BATCH_GENERATION') or str(os.getpid()))
+    ok, reason = full_suite_gate(state, label, str(chain), base)
     if not ok:
         # Attribute failing tests when possible; otherwise the coordinator halves the batch.
         print(json.dumps(dict(result, outcome='BATCH_GATE_FAILED', reason=reason,
                               suspects=batch_suspects(state, str(chain), base, steps))))
         return None
-    return json.dumps({'note': gate_note(state, 'batch', str(chain)),
+    return json.dumps({'note': gate_note(state, label, str(chain)),
                        'selection': gate_selection(state, str(chain)),
                        'evidence': review_gate_evidence(state, str(chain))})
 

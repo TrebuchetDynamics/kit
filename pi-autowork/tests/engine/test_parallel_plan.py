@@ -97,6 +97,49 @@ class RunnableTests(unittest.TestCase):
                             self.assertEqual(fallback['outcome'], 'WAITING')
                             self.assertNotIn('task', fallback)
 
+    def test_typed_coordinator_work_waits_in_parallel_and_sequential_fallback(self):
+        from types import SimpleNamespace
+        import parallel_dispatch as dispatch
+        import parallel_plan
+
+        # The migration mapper also calls this gate; legacy prose retains its prior meaning.
+        self.assertIsNone(parallel_plan.authorization_wait(
+            {'id': 'legacy', 'fields': {'Ownership': 'Coordinator only'}}))
+        with tempfile.TemporaryDirectory() as folder:
+            repo = Path(folder)
+            for live in ('denied', 'authorized'):
+                with self.subTest(live=live):
+                    store_fixture.write_todo(repo, '''## Now
+- [ ] T-1 — Coordinator reconciliation
+  Scope: reconcile.py
+  Acceptance: reconciled
+  Checks: test reconciliation
+  Touches: reconcile.py
+- [ ] T-2 — Independent worker repair
+  Scope: worker.py
+  Acceptance: repaired
+  Checks: test repair
+  Touches: worker.py
+''')
+                    path = repo / 'tasks/items/T-1.md'
+                    changes = dict(ownership='coordinator', live=live)
+                    if live == 'authorized':
+                        changes.update(live_actor='owner', live_at='2026-10-17', live_scope=['reconcile.py'])
+                    path.write_text(task_store.edit(path.read_text(), changes) + '\n- Ownership: worker\n')
+                    subprocess.run(['git', '-C', str(repo), 'add', '--', str(path)], check=True)
+                    subprocess.run(['git', '-C', str(repo), 'commit', '-qm', 'typed coordinator task'], check=True)
+                    tasks = dispatch.contracts(repo)
+                    self.assertEqual(tasks[0]['fields']['Ownership'], 'Coordinator only')
+                    self.assertEqual(tasks[0]['ownership'], 'coordinator')
+                    result = dispatch.admit(tasks, [], set(), [], everything=tasks, parked=[], protected=[])
+                    self.assertEqual([t['id'] for t in result['dispatch']], ['T-2'])
+                    self.assertEqual(result['waiting'], [dict(
+                        id='T-1', reason='awaiting coordinator action', blocked_by=[])])
+                    fallback = dispatch.fallback(repo, SimpleNamespace(tasks='T-1', plan=None), 'no host')
+                    self.assertEqual(fallback['outcome'], 'WAITING')
+                    self.assertEqual(fallback['reason'], 'awaiting coordinator action')
+                    self.assertNotIn('task', fallback)
+
     def test_authorization_status_tracks_current_contract_without_dispatch(self):
         import json
         import subprocess

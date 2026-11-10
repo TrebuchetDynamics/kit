@@ -187,6 +187,8 @@ def fields(record):
         view['Resources'] = ', '.join(record.resources)
     if record.ownership == Ownership.OWNER:
         view['Ownership'] = 'Owner only'
+    elif record.ownership == Ownership.COORDINATOR:
+        view['Ownership'] = 'Coordinator only'
     if record.live == LiveAuthorization.AUTHORIZED:
         # A legacy or migrated grant without actor, date and scope never dispatches: the
         # admission gate names the missing field instead of trusting the typed bit.
@@ -213,6 +215,7 @@ def contract_text(record):
 
 def contract(record, snapshot):
     return {'id': record.id, 'title': record.title, 'section': record.section,
+            'ownership': record.ownership.value,
             'contract': contract_text(record), 'fields': fields(record),
             'record_revision': record.record_revision, 'contract_hash': record.contract_hash,
             'rev': snapshot.rev, 'priority': {'state': 'store', 'rev': snapshot.rev}}

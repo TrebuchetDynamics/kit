@@ -182,13 +182,15 @@ def authorization_wait(task):
     contract names what is missing, and the owner completes it in the record.
     """
     fields = task.get('fields', {})
+    ownership = ' '.join(fields.get('Ownership', '').split()).strip(' .`*_')
+    if task.get('ownership') == 'coordinator':
+        return {'id': task['id'], 'reason': 'awaiting coordinator action', 'blocked_by': []}
     if str(fields.get('Live authorization', '')).strip():
         missing = [label for label in ('Live actor', 'Live at', 'Live scope')
                    if not str(fields.get(label, '')).strip()]
         if missing:
             return {'id': task['id'], 'reason': 'grant lacks ' + ', '.join(missing),
                     'blocked_by': ['Live authorization: ' + task['id']]}
-    ownership = ' '.join(fields.get('Ownership', '').split()).strip(' .`*_')
     owner_only = re.fullmatch(r'owner(?: only| or (?:a )?coordinator with live authorization)?',
                               ownership, re.I)
     duplicates = task.get('authorization_duplicates', [])

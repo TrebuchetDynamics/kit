@@ -501,7 +501,7 @@ class Coordinator:
             self.recover_batches()
         out = tempfile.NamedTemporaryFile(dir=self.state / 'runs', prefix='batch.', delete=False)
         out.close()
-        tip = Path(out.name).with_suffix('.tip')  # where the batch publishes its chain's tip
+        tip = Path(out.name + '.tip')  # Keep the unique output suffix for concurrent train cars.
         args = ['/bin/bash', self.process_script, '--verify-batch', str(self.state), str(self.integ),
                 self.process_script, *tasks]
         generation = secrets.token_hex(24)
