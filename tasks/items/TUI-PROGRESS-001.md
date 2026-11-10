@@ -3,7 +3,7 @@ schema = 1
 id = "TUI-PROGRESS-001"
 title = "Keep progress headlines evidence-fresh and preserve startup-refusal attention"
 short = "Repair progress evidence precedence"
-status = "open"
+status = "done"
 section = "Next"
 rank = 26000
 depends_on = []
@@ -15,6 +15,8 @@ scope = "Repair two source-bound presentation regressions identified by independ
 acceptance = ["A mixed-freshness fixture with fresh execution metadata and stale retained task inventory cannot show unqualified In progress or Ready to merge in the project table or overview. Explicitly qualify retained-count detail even when the headline is Unconfirmed; do not erase useful last-good observations or fabricate zero/current counts.", "A running service with a startup refusal/stop_reason and fresh zero counts retains Needs attention or an equally explicit refusal headline/reason. Preserve paused/not-running, concrete failures, authorization gates and the distinction between service running and task progress; establish tested precedence rather than blanket replacement of presentation verdicts.", "Offline fixture regression tests reproduce each original defect and cover both table and overview output, mixed freshness, refusal precedence, valid fresh progress, paused and unavailable states. Keep dynamic text literal, static guide-only navigation, view-only restrictions, disabled push and cancellation assertions intact.", "Refresh latest source and actual ownership before edits; use a disjoint isolated canonical.worktrees checkout if authorized and unowned. Focused checks plus fresh independent review bind to exact candidate. No source acceptance is inferred from the previous194-module check on another tree, installed package adoption or author identity."]
 checks = ["Red/green fixture cases for stale inventory with fresh execution and fresh zero counts with startup refusal", "Affected TUI redesign/layout/model/pilot tests selected by actual source closure; no unnecessary full directory runs", "Fresh independent read-only exact-candidate review, tree/type guards and diff check"]
 exclusions = ["No real authentication, credentials/profile/provider/browser/model calls, service/restart/install actions or live qualification. No changes to owner decisions, denied live gates, task acceptance or active worker contracts. Do not replace pending Rust reconciliation or inject unqualified production fixes into an already-frozen CI publisher."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TUI-PROGRESS-001.toml"
 +++
 - Evidence: Fresh reviewer35273873-3573-4cae-a174-08e4310b63c7 at immutable63710df0, tui.py1557-1571 ignores inventory freshness and refusal verdict; retained-detail labels1613-1615 are unqualified. task_snapshot.py229-235 demonstrates independent fresh execution with stale last-good inventory; fleet_view.py540-543 establishes refusal attention precedence. Existing stale fixture sets both freshness dimensions nonfresh and misses the mixed case.
 - Current related findings: Incoming legacy3-column pilot fixes retain complete six-counter/dependency/unavailable/disabled-push evidence and are not test weakening. New UI fixtures are offline-isolated, but legacy pilots do perform local Git/task/dummy-profile operations inside temporary fixtures. Source inspection alone is not gate execution.
