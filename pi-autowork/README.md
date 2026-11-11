@@ -1104,6 +1104,10 @@ under its `-set-aside-N` name, and a held commit still goes through
 `--parallel-clear-held`. A second empty or no-change hold after that requeue is parked
 as a visible engineering hold and is never retried automatically.
 
+A first attempt held because its report lacks a met result with evidence for every
+acceptance item (`acceptance hold`) gets the ordinary one fresh attempt; its commit is
+kept. A second acceptance hold is a visible engineering hold and is not retried.
+
 ### Attempt provenance
 
 Each launch appends one record to `slot-data/<task>/attempt-N/provenance.jsonl`
