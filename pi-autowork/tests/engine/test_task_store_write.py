@@ -20,6 +20,9 @@ def variants():
     for path in sorted(FIXTURES.rglob('*.md')):
         yield path.name, path.read_text(), path.parent.name == 'goals'
     task = (FIXTURES / 'items/T-1.md').read_text()
+    yield 'structured waiver', edit(task, {
+        'owner_waiver': 'Accepted limitation', 'waiver_actor': 'owner',
+        'waiver_at': '2026-11-04', 'waiver_for': 'Pinned reads'}), False
     yield 'unicode', task.replace('title = "Read tasks"', 'title = "Lire les tâches — «vite»"'), False
     yield 'quotes', task.replace('scope = "Read only"', 'scope = "Read \\"only\\" \\\\ here"'), False
     yield 'literal string', task.replace('scope = "Read only"', "scope = 'Read only'"), False

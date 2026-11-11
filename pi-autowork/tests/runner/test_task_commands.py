@@ -419,6 +419,75 @@ class TaskCommandTests(unittest.TestCase):
         self.assertTrue(json.loads(self.tasks('why', 'T-1').stdout)['first'])
         self.assertEqual(self.tasks('release', 'T-1', ok=False).returncode, 1)
 
+    def test_contract_edit_refuses_unreadable_execution_state(self):
+        other = self.add('Independent task')
+        common = self.repo / '.git/autowork-execution'
+        slots = common / 'slots'
+        slots.mkdir(parents=True)
+        (slots / 'T-1.json').write_text(json.dumps(
+            {'task_id': 'T-1', 'state': 'running', 'attempt': 1}))
+        path = self.repo / 'tasks/items/T-1.md'
+        before = path.read_bytes()
+        for name in ('slots/Z.json', 'coordinator.json', 'active.json'):
+            with self.subTest(state=name):
+                broken = common / name
+                broken.write_text('{broken')
+                try:
+                    other_path = self.repo / f'tasks/items/{other}.md'
+                    other_before = other_path.read_bytes()
+                    refused = self.tasks('field', other, 'scope', 'Changed scope', ok=False)
+                    self.assertEqual(refused.returncode, 1)
+                    self.assertIn('cannot be read', refused.stderr)
+                    self.assertEqual(other_path.read_bytes(), other_before)
+                    refused = self.tasks('field', 'T-1', 'scope', 'Changed scope', ok=False)
+                    self.assertEqual(refused.returncode, 1)
+                    self.assertEqual(path.read_bytes(), before)
+                finally:
+                    broken.unlink()
+
+    def test_contract_edit_allows_other_tasks_with_healthy_live_leases(self):
+        from pi_autowork.engine import task_execution
+        other = self.add('Independent task')
+        common = self.repo / '.git/autowork-execution'
+        common.mkdir(parents=True)
+        for name in ('coordinator.json', 'active.json'):
+            with self.subTest(lease=name):
+                lease = common / name
+                lease.write_text(json.dumps({'owner': task_execution.identity(os.getpid()),
+                                             'task_id': 'T-1'}))
+                self.tasks('field', other, 'scope', 'Changed scope')
+                self.assertIn('live', ' '.join(commands.in_flight(self.repo)[1]))
+                if name == 'active.json':
+                    refused = self.tasks('field', 'T-1', 'scope', 'Changed scope', ok=False)
+                    self.assertEqual(refused.returncode, 1)
+                    self.assertIn('held by', refused.stderr)
+                lease.unlink()
+
+    def test_contract_edit_refuses_null_or_empty_sequential_lease(self):
+        common = self.repo / '.git/autowork-execution'
+        common.mkdir(parents=True)
+        for value in ('null', '{}'):
+            with self.subTest(value=value):
+                (common / 'active.json').write_text(value)
+                refused = self.tasks('field', 'T-1', 'scope', 'Changed scope', ok=False)
+                self.assertEqual(refused.returncode, 1)
+                self.assertIn('cannot be read', refused.stderr)
+
+    def test_manual_closure_clears_complete_owner_exceptions(self):
+        for note in ('owner_waiver', 'owner_qualification'):
+            with self.subTest(note=note):
+                tid = self.add(note)
+                self.qualify(tid, 'done', note=note)
+                self.tasks('done', tid, '--by', 'owner', '--reason', 'Finished')
+                self.commit()
+                record = TaskStore.at(self.repo, 'HEAD').tasks[tid]
+                self.assertEqual(record.status, 'done')
+                self.assertEqual(record.closure, 'manual')
+                self.assertFalse(record.qualified)
+                for key in ('owner_waiver', 'owner_qualification',
+                            'waiver_actor', 'waiver_at', 'waiver_for'):
+                    self.assertIsNone(getattr(record, key))
+
     def test_manual_closure_records_provenance_without_verification(self):
         sys.path.insert(0, str(ROOT / 'pi-autowork'))
         from pi_autowork import fleet_view

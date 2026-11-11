@@ -77,11 +77,14 @@ class ClosureDocumentsTests(unittest.TestCase):
             self.assertEqual(self.prepare(), expected)
             self.assertEqual(self.prepare(), expected)
         self.assertEqual({p.relative_to(self.repo): p.read_bytes() for p in self.repo.rglob('*') if p.is_file()}, before)
-        # A partial/replayed close removes manual attribution and never duplicates notes.
+        # A replay removes manual attribution, retains owner evidence and deduplicates notes.
         self.head['tasks/items/A.md'] = expected['tasks/items/A.md'].replace(
             '+++\nBody', 'closure_actor = "Someone"\nclosure_timestamp = "yesterday"\n'
             'closure_reason = "manual"\nowner_waiver = "old"\nowner_qualification = "old"\n+++\nBody')
-        self.assertEqual(self.prepare(), expected)
+        retained = dict(expected)
+        retained['tasks/items/A.md'] = retained['tasks/items/A.md'].replace(
+            '+++\nBody', 'owner_waiver = "old"\nowner_qualification = "old"\n+++\nBody')
+        self.assertEqual(self.prepare(), retained)
         self.slot['review'] = {'decision': 'approved fixture-private-value /private/work/review'}
         self.checks['outcome'] = 'FAILED'
         self.checks['command_receipt'] = {'exit_code': 1, 'command': 'check'}

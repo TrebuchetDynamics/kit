@@ -12,6 +12,14 @@ import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, H
 
 type ViewName = 'fleet' | 'runner' | 'tasks' | 'blockers' | 'planning' | 'scorecard';
 const views: Array<[ViewName, string]> = [['fleet', 'Fleet'], ['runner', 'Runner'], ['tasks', 'Tasks'], ['blockers', 'Blockers'], ['planning', 'Planning'], ['scorecard', 'Scorecard']];
+const viewHints: Record<ViewName, string> = {
+  fleet: 'Known repositories, ordered by what needs attention.',
+  runner: 'Inspect status and review runner controls.',
+  tasks: 'Browse the queue; open a task for its contract and evidence.',
+  blockers: 'Answer owner questions and inspect technical holds.',
+  planning: 'Discuss an objective, then review a proposal before applying it.',
+  scorecard: 'Compare observed outcomes across repositories on this host.',
+};
 const validView = (view: string | undefined): ViewName => views.find(([name]) => name === view)?.[0] ?? 'fleet';
 const lines = (value: string) => value.split('\n').map(item => item.trim()).filter(Boolean);
 const words = (value: string) => value.split(/[\s,]+/).map(item => item.trim()).filter(Boolean);
@@ -40,6 +48,7 @@ function HostScreen(props: PluginScreenProps) {
     </Row>
     {!host.online ? <Banner tone="danger" title="Host offline" body="Cached observations are not current authority. Nothing can be dispatched until the host is back." /> : null}
     {host.online && !host.foreground ? <Banner tone="warning" title="App backgrounded: polling paused" body="Reads resume when the app returns to the foreground." /> : null}
+    {!fleet.data && !fleet.error && host.enabled ? <Notice><Label bold>Reading repositories…</Label><Caption>The selected host is loading its fleet. Repository views will appear when the first observation arrives.</Caption></Notice> : null}
     {fleet.error ? <FleetUnavailable error={fleet.error} enabled={host.enabled} onRetry={host.refresh} /> : null}
     {fleet.data ? <FleetContent key={fleet.data.instance} props={props} host={host} fleet={fleet.data} scrollRef={scrollRef} /> : null}
   </ScrollView>;
@@ -140,7 +149,9 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
   const dangerous = !!pending?.danger;
   const typedOk = !dangerous || (typed.trim() === pending?.phrase && !!pending.phrase);
   return <>
+    {view !== 'fleet' ? <Row><Button label="Back to Fleet" compact onPress={() => setView('fleet')} /><Caption>{view === 'scorecard' ? 'Host overview' : repo?.label ?? 'No repository selected'} · {views.find(([name]) => name === view)?.[1]}</Caption></Row> : null}
     <Row>{views.map(([name, title]) => <Button key={name} label={title} compact selected={view === name} onPress={() => setView(name)} />)}</Row>
+    <Caption>{viewHints[view]}</Caption>
     {view === 'fleet' ? <FleetBanner repos={repos} decisions={decisions} running={running} onOpen={open} /> : null}
     {view === 'fleet' && hostBlocker ? <Notice tone="danger"><Label bold>Host-wide blocker</Label><Label>{hostBlocker}</Label><Caption>Affects every runner on this host; repository rows do not repeat it.</Caption></Notice> : null}
     {readOnly ? <Notice tone="warning"><Label bold>Read-only</Label><Caption>The daemon operator has not granted runner controls, planning, task edits or owner answers. Grants live in the daemon-side policy file.</Caption></Notice> : null}
@@ -165,10 +176,10 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
       </Expand>
     </> : null}
     {view === 'scorecard' ? <ScorecardView fleet={fleet} host={host} hostId={props.host.id} /> : null}
-    {!repos.length ? <Notice tone="warning"><Label>No known repository matches this directory.</Label><Caption>No arbitrary path RPC is sent.</Caption></Notice> : null}
+    {!repos.length && view !== 'scorecard' ? <Notice tone="warning"><Label bold>{directory ? 'No known repository matches this workspace.' : 'No repositories are configured.'}</Label><Caption>{directory ? 'Open a workspace inside a known repository, or add this repository to the daemon-side policy and refresh.' : 'Add a repository to the daemon-side policy, then refresh to see its runner and tasks.'}</Caption>{directory ? <Label mono>{directory}</Label> : null}<Button label="Refresh repositories" compact disabled={!host.enabled || host.fleet.isFetching} onPress={host.refresh} /></Notice> : null}
     {view !== 'fleet' && view !== 'scorecard' && repo ? <>
       <Row between>
-        <View style={{ flexShrink: 1, gap: 2 }}><Heading level={2}>{repo.label}</Heading>{repo.revision ? <HashChip value={revisionParts(repo.revision).hash} name="revision" suffix={revisionParts(repo.revision).suffix} /> : <Caption>revision unavailable</Caption>}</View>
+        <View style={{ flexShrink: 1, gap: 2 }}><Heading level={2}>{repo.label}</Heading><Caption>{repo.path}</Caption>{repo.revision ? <HashChip value={revisionParts(repo.revision).hash} name="revision" suffix={revisionParts(repo.revision).suffix} /> : <Caption>revision unavailable</Caption>}</View>
         <View style={{ alignItems: 'flex-end', gap: 6 }}>
           {repo.runner ? <StatusPill state={repo.runner.display?.state ?? 'unknown'} /> : null}
           <Button label="Switch repository" compact onPress={() => { setRepoSearch(''); setPicker(true); }} />
@@ -472,6 +483,7 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
       {showFilters ? <Row>{(['task', 'goal', 'runtime', 'section'] as const).map(key => <View key={key} style={{ flexGrow: 1, minWidth: 132 }}>
         <Input label={`Filter ${key}`} value={filters[key]} onChange={value => changeFilter(key, value)} placeholder={key === 'task' ? 'ID or title' : key === 'runtime' ? 'open, done, held…' : key} />
       </View>)}</Row> : null}
+      {!query.data && query.isFetching ? <Caption>Reading task queue… Open a task to inspect its contract after loading.</Caption> : null}
       {query.data ? <Caption>Showing {visibleTasks.length ? pageStart + 1 : 0}–{pageStart + pageTasks.length} of {visibleTasks.length} matching tasks · {all.length} total</Caption> : null}
       {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label>{query.data ? <Caption>Showing cached task data; retry when Autowork is free.</Caption> : null}<Button label="Retry" compact onPress={() => { void query.refetch(); }} /></Notice> : null}
       {pageTasks.map((task, index) => <View key={task.id} style={{ gap: 6 }}>
@@ -483,7 +495,7 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
         <Caption>Page {currentPage + 1} of {lastPage + 1}</Caption>
         <Button label="Next task page" compact disabled={currentPage === lastPage} onPress={() => setPage(currentPage + 1)} />
       </Row> : null}
-      {!query.isFetching && !query.isError && query.data && !visibleTasks.length ? <Notice><Label>{!all.length ? 'No tasks observed.' : hasFilters ? 'No tasks match these filters.' : blockers ? 'No blocked tasks observed.' : counts.done ? 'No open tasks; completed work is hidden.' : 'No tasks observed.'}</Label></Notice> : null}
+      {!query.isFetching && !query.isError && query.data && !visibleTasks.length ? <Notice><Label>{!all.length ? 'No tasks observed.' : hasFilters ? 'No tasks match these filters.' : blockers ? 'No blocked tasks observed.' : counts.done ? 'No open tasks; completed work is hidden.' : 'No tasks observed.'}</Label><Caption>{!all.length ? 'Refresh to check for newly recorded tasks.' : hasFilters ? 'Clear the task filters to return to the queue.' : blockers ? 'Use Tasks to browse the rest of the queue.' : counts.done ? 'Choose Show completed to inspect finished work.' : 'Refresh to check for newly recorded tasks.'}</Caption>{!all.length ? <Button label="Refresh task queue" compact disabled={!host.enabled} onPress={() => { void query.refetch(); }} /> : null}</Notice> : null}
     </Card>
     <Sheet title="Task detail" open={!!selected} onClose={() => select('')}>
       {selected ? <TaskView key={selected} task={all.find(task => task.id === selected)} taskId={selected} {...common} enabled={enabled && !!query.data && !query.isFetching && !query.isError} /> : null}
