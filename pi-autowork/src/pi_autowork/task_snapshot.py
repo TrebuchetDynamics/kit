@@ -75,7 +75,10 @@ def task_row(record, store, *, observation=None, phase=None, stopped='', questio
     state, cause = row.get('state'), row.get('cause')
     bucket, why = _canonical_reason(record, store)
     kind, words = 'waiting', view.WAITING
-    if record.section == 'Needs decision':
+    if deferred and task_queue.deferred_since(record):
+        bucket, words, why = 'Deferred', 'Deferred', 'deferred by owner; no expiry'
+        question = None
+    elif record.section == 'Needs decision':
         bucket, words = 'Decision', 'Waiting · Needs decision'
         why = 'recorded owner deferral' if deferred else 'in Needs decision'
     elif state in view.IN_FLIGHT:
@@ -123,8 +126,7 @@ def task_display(record, store, *, row=None):
     from pi_autowork import task_status as view
     from pi_autowork.engine import task_select
     if row is None:
-        row = task_row(record, store, deferred=(record.section == 'Needs decision'
-                                               and record.id in task_queue.deferred(store)))
+        row = task_row(record, store, deferred=record.id in task_queue.deferred(store))
     try:
         blocked = task_select.blocking(store, record) if record.status == 'open' else None
         blocker = row.why if row.bucket == view.BLOCKER else (

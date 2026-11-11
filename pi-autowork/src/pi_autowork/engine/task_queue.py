@@ -300,11 +300,26 @@ def _dated(text):
         return False  # 2026-02-30 is no date
 
 
+def deferred_since(record):
+    """Date of the latest dated owner decision when it explicitly defers work."""
+    decisions = []
+    for label, value in NOTE.findall(record.body):
+        if label != 'Owner decision':
+            continue
+        match = re.match(r'(\d{4}-\d{2}-\d{2}):\s*(.*)', value.strip())
+        if match and _dated(match[1]):
+            decisions.append((match[1], len(decisions), match[2]))
+    if not decisions:
+        return None
+    day, _, decision = max(decisions)
+    return day if re.match(r'deferred\b', decision, re.I) else None
+
+
 def deferred(snapshot):
-    """Owner-answered deferrals: open tasks in Needs decision with a dated `Owner decision:` note.
-    Their dependents wait for them without another question."""
-    return {t.id for t in snapshot.tasks.values() if t.status == 'open' and t.section == 'Needs decision'
-            and _dated(notes(t).get('Owner decision', ''))}
+    """Explicit deferrals have no expiry; retain legacy Needs decision answers."""
+    return {t.id for t in snapshot.tasks.values() if t.status == 'open'
+            and (deferred_since(t) or (t.section == 'Needs decision'
+                 and _dated(notes(t).get('Owner decision', ''))))}
 
 
 CONTRACT_LINE = re.compile(r"^[ \t]*(?:[-*][ \t]+)?([A-Za-z][A-Za-z '/-]*):[ \t]*(.*)$", re.M)

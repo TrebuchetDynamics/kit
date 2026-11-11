@@ -131,3 +131,17 @@ class ContractViewTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DeferredDecisionTests(unittest.TestCase):
+    def test_latest_dated_decision_controls_explicit_deferral(self):
+        from types import SimpleNamespace
+        task = SimpleNamespace(body='- Owner decision: 2026-11-10: deferred: ok\n',
+                               id='T', status='open', section='Now')
+        self.assertEqual(task_queue.deferred_since(task), '2026-11-10')
+        self.assertEqual(task_queue.deferred(SimpleNamespace(tasks={'T': task})), {'T'})
+        task.body += '- Owner decision: 2026-11-09: proceed\n'
+        self.assertEqual(task_queue.deferred_since(task), '2026-11-10')
+        task.body += '- Owner decision: 2026-11-11: proceed\n'
+        self.assertIsNone(task_queue.deferred_since(task))
+        self.assertEqual(task_queue.deferred(SimpleNamespace(tasks={'T': task})), set())
