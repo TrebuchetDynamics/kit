@@ -133,6 +133,8 @@ def _pending_tasks(snapshot, known=()):
                 row.update(reason='not runnable: ' + why, blocked_by=[task], root_kind='contract')
             elif record.kind.value == 'plan':
                 row['reason'] = 'ready for planning'
+            elif parallel_plan.coordinator_claim_expired(contract):
+                row['reason'] = parallel_plan.COORDINATOR_EXPIRED_REASON
         # A claim blocks as itself; a dependency by what it names; otherwise nothing.
         result.append(row)
     return result, done, deferred

@@ -127,6 +127,24 @@ class TaskSnapshotTests(unittest.TestCase):
                 self.assertEqual((rows['D'].bucket, rows['D'].why), ('Decision', 'in Needs decision'))
                 if evidence == 'question':
                     self.assertIn('; you: ' + question.needs, rows['B'].why)
+        for evidence in ('absent', 'waiting'):
+            with self.subTest(expired=evidence), mock.patch('time.time', return_value=(
+                    original.coordinator_changed_at['C'] + 7200)):
+                obs = self.observation() if evidence == 'waiting' else None
+                if obs:
+                    for row in obs['tasks']:
+                        row['reason'] = 'awaiting coordinator action'
+                snap = task_snapshot.capture(self.repo, engine_observation=obs, generation=2)
+                rows = {row.task: row for row in snap.rows}
+                self.assertEqual((rows['C'].bucket, rows['C'].kind, rows['C'].why),
+                                 ('Waiting', 'waiting', 'coordinator claim expired; ready; awaiting dispatch'))
+                self.assertEqual(snap.counts, (0, 0, 2, 2, 1, 5))
+                self.assertEqual(rows['A'].why, 'owner action required')
+                self.assertEqual(rows['D'].bucket, 'Decision')
+                runner = fleet_view.Runner('fixture', repo=str(self.repo), snapshot=snap)
+                display = command.runner_json(runner)['display']['tasks']['C']
+                self.assertEqual((display['state'], display['why']), (rows['C'].state, rows['C'].why))
+                self.assertEqual(task_queue.store(self.repo).tasks, original.tasks)
         obs = self.observation()
         for row in obs['tasks']:
             if row['task'] in ('A', 'B'):

@@ -216,6 +216,7 @@ def contract_text(record):
 def contract(record, snapshot):
     return {'id': record.id, 'title': record.title, 'section': record.section,
             'ownership': record.ownership.value, 'deferred': bool(deferred_since(record)),
+            'coordinator_changed_at': snapshot.coordinator_changed_at.get(record.id),
             'contract': contract_text(record), 'fields': fields(record),
             'record_revision': record.record_revision, 'contract_hash': record.contract_hash,
             'rev': snapshot.rev, 'priority': {'state': 'store', 'rev': snapshot.rev}}
