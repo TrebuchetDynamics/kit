@@ -1,0 +1,14 @@
+{
+  "repository": "ashx-j/t3code",
+  "commit": "eefaf41b7188fdaf619cdb47a4ad922a8209bb22",
+  "files": {
+    "package.json": "d562ef6dd0ebc80966be45caf594955efe822774553d2c1356e33af4da3bfb60",
+    "src/server.ts": "3695323f7d8b1337678caf3f9beac34efddfdeb96384ad3596903549f769a436",
+    "src/web.ts": "e718afe8e2d5290ea0218f399dead1070ee18d3add3ba02a1a33d98a35ada08e",
+    "src/shared.ts": "264f980c4b43966e0f0b86c94071f1992919d760bbe7db555aae91c64430febd",
+    "src/vite.ts": "f1fd1fdc7740fc5cb7f5f05f8d284ddce644d56c968bbb939dd1f95b477bfd0b",
+    "src/atom.ts": "dcf63ec2593350a1885c67bf7d114d69ec3e85fffcb073d7f405d75a537af4d6",
+    "src/atom-react.ts": "e42095f43255008d446e69b8b2fea0844c11545d6050ff6ebcd10b997cf86dc0",
+    "src/ui.ts": "3faf4e41f089f3e20a7a6e3c083b826ec99afdddfc10dc22e5658c785821f8e9"
+  }
+}

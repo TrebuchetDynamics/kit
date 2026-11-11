@@ -1,0 +1,41 @@
+{
+  "name": "autowork-t3code-experimental",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "t3-plugin.json",
+    "server.cjs",
+    "core.cjs",
+    "rpc.ts",
+    "dist/web.js",
+    "README.md",
+    "sdk-source.json",
+    "LICENSE",
+    "T3-SDK-LICENSE"
+  ],
+  "scripts": {
+    "sdk:fetch": "node scripts/fetch-sdk.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build",
+    "test": "node --test tests/*.test.cjs",
+    "check": "npm run typecheck && npm test",
+    "package:check": "node scripts/check-package.mjs",
+    "pretest": "npm run build"
+  },
+  "devDependencies": {
+    "@t3tools/plugin-sdk": "file:.sdk",
+    "@types/node": "24.19.2",
+    "@types/react": "19.2.17",
+    "react": "19.1.0",
+    "typescript": "5.9.3",
+    "vite": "8.1.0",
+    "react-test-renderer": "https://registry.npmjs.org/react-test-renderer/-/react-test-renderer-19.1.0.tgz"
+  },
+  "overrides": {
+    "rolldown": "1.1.5",
+    "react-is": "https://registry.npmjs.org/react-is/-/react-is-19.3.1.tgz",
+    "scheduler": "https://registry.npmjs.org/scheduler/-/scheduler-0.26.0.tgz"
+  }
+}
