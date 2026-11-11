@@ -3,16 +3,20 @@ import hashlib
 import json
 import os
 import runpy
+import signal
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / 'tests/fixtures/planning'
 COMMAND = ROOT / 'pi-autowork/pi_autowork/command.py'
+command_environment = runpy.run_path(str(FIXTURES / 'scenarios.py'))['command_environment']
 
 
 class PlanningSpecimenTests(unittest.TestCase):
@@ -20,16 +24,40 @@ class PlanningSpecimenTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.scratch = Path(self.tmp.name)
+        self.home = self.scratch / 'home'
+        self.home.mkdir()
 
-    def run_command(self, *args, cwd=None):
-        result = subprocess.run(args, cwd=cwd or ROOT, capture_output=True, text=True,
-                                env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}, umask=0o002, timeout=180)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        return result.stdout
+    def run_command(self, *args, cwd=None, env=None, timeout=180):
+        started = time.monotonic()
+        with subprocess.Popen(args, cwd=cwd or ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True, env=env if env is not None else command_environment(self.home),
+                              umask=0o002, start_new_session=True) as process:
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired as exc:
+                exc.add_note(f'cwd={cwd or ROOT}; python={sys.executable}; load={os.getloadavg()}')
+                raise
+            finally:
+                # A timed-out builder can still own a CLI/Git child holding its pipes.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.communicate()
+        self.assertEqual(process.returncode, 0,
+                         f'{args!r}; cwd={cwd or ROOT}; elapsed={time.monotonic() - started:.3f}s; '
+                         f'python={sys.executable}; load={os.getloadavg()}; stderr={stderr}')
+        return stdout
 
     def builder(self, script, action, root, *args):
-        return json.loads(self.run_command(sys.executable, str(FIXTURES / script),
-                                           action, str(root), *args))
+        started = time.monotonic()
+        try:
+            return json.loads(self.run_command(sys.executable, str(FIXTURES / script),
+                                               action, str(root), *args))
+        finally:
+            if action == 'prepare':
+                print(f'PLANNING_PREPARE {script} {args!r}: {time.monotonic() - started:.3f}s; '
+                      f'python={sys.executable} {sys.version.split()[0]}; load={os.getloadavg()}', file=sys.stderr)
 
     def tasks(self, repo, *args):
         return self.run_command(sys.executable, str(COMMAND), 'tasks', *args, cwd=repo)
@@ -88,6 +116,61 @@ class PlanningSpecimenTests(unittest.TestCase):
                 for entry in ('skills/plan-with-me/SKILL.md', 'adapters/skills/plan-with-me/SKILL.md'):
                     self.assertIn(entry, hashes)
                 self.assertTrue(all(not row['changed'] for row in self.builder(script, 'inspect', root)))
+
+    def test_command_failure_and_timeout_close_owned_process_and_pipes(self):
+        popen = subprocess.Popen
+        for code, error in (('raise SystemExit(1)', AssertionError),
+                            ('import signal; signal.pause()', subprocess.TimeoutExpired)):
+            with self.subTest(code=code):
+                processes = []
+
+                def launch(*args, **kwargs):
+                    process = popen(*args, **kwargs)
+                    processes.append(process)
+                    return process
+
+                with patch.object(subprocess, 'Popen', side_effect=launch), self.assertRaises(error):
+                    self.run_command(sys.executable, '-c', code,
+                                     timeout=1 if error is subprocess.TimeoutExpired else 180)
+                process, = processes
+                self.assertIsNotNone(process.poll())
+                self.assertTrue(process.stdout.closed)
+                self.assertTrue(process.stderr.closed)
+                with self.assertRaises(ProcessLookupError):
+                    os.killpg(process.pid, 0)
+
+    def test_prepare_ignores_inherited_git_config_and_python_imports(self):
+        poisoned = self.scratch / 'poisoned-home'
+        poisoned.mkdir()
+        (poisoned / 'ignored').write_text('tasks/\n')
+        (poisoned / '.gitconfig').write_text(f'[core]\n\texcludesFile = {poisoned / "ignored"}\n')
+        (poisoned / 'git').mkdir()
+        (poisoned / 'git/config').write_text('[core]\n\tautocrlf = true\n')
+        (poisoned / 'json.py').write_text('raise RuntimeError("inherited Python import")\n')
+        env = {**os.environ, 'HOME': str(poisoned), 'XDG_CONFIG_HOME': str(poisoned),
+               'GIT_DIR': str(poisoned / 'wrong-repo'),
+               'GIT_INDEX_FILE': str(poisoned / 'wrong-index')}
+        for script, case, selectors in (
+                ('scenarios.py', 'native-easy', ['--cases', 'native-easy']),
+                ('interviews.py', 'native-fully-specified',
+                 ['--cases', 'fully-specified', '--entrypoints', 'native'])):
+            with self.subTest(script=script):
+                root = self.scratch / script
+                # Inject at the builder boundary, rather than sanitizing in the test launcher.
+                self.run_command(sys.executable, str(FIXTURES / script), 'prepare', str(root),
+                                 *selectors, env=env)
+                repo = root / case
+                self.assertEqual(self.run_command('git', 'show', 'HEAD:tasks/items/FMT-01.md', cwd=repo),
+                                 (repo / 'tasks/items/FMT-01.md').read_text())
+                self.assertEqual(self.run_command('git', 'status', '--porcelain', cwd=repo), '')
+                self.assertTrue(json.loads(self.tasks(repo, 'validate'))['ok'])
+                self.assertTrue(all(not row['changed'] for row in self.builder(script, 'inspect', root, *selectors)))
+        # Test-launcher reads must also ignore inherited Git redirection and Python imports.
+        with patch.dict(os.environ, {**env, 'PYTHONPATH': str(poisoned)}):
+            self.assertEqual(self.run_command(sys.executable, '-c', 'import json; print(json.dumps(True))'),
+                             'true\n')
+            self.assertEqual(self.run_command('git', 'status', '--porcelain', cwd=repo), '')
+        self.assertFalse((poisoned / 'wrong-index').exists())
 
     def test_stall_cases_seed_both_entrypoints_with_reachable_evidence_and_existing_task(self):
         # Missing cases, invalid seeds or silently replacing FMT-01 must fail offline.
