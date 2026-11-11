@@ -42,8 +42,18 @@ def task(tid, touches, depends='None'):
 ALONE = task('S', 's.txt') + '- Resources: exclusive\n'
 
 
+def release_subreaper():
+    """An in-process bounded command makes the test process a child subreaper for good. Workers
+    that later tests orphan are then adopted by it and never reaped, so their process groups
+    still count as live: two stop tests failed after any such test ran in the same process."""
+    import ctypes
+    ctypes.CDLL(None, use_errno=True).prctl(36, 0, 0, 0, 0)  # PR_SET_CHILD_SUBREAPER off
+
+
 class DispatchTests(unittest.TestCase):
     def setUp(self):
+        release_subreaper()
+        self.addCleanup(release_subreaper)
         # Bootstrap independently of the invoking session's runtime dir and the worker's
         # inherited, potentially long TMPDIR.
         self.runtime = tempfile.TemporaryDirectory(prefix='awt-', dir=fixture_runtime_root())
