@@ -56,7 +56,9 @@ class WorkerTmpTests(unittest.TestCase):
                     self.slot(state='integrating')
                     env = {k: v for k, v in os.environ.items()
                            if not k.startswith(('PI_AUTOWORK_', 'AUTOWORK_'))}
-                    env.update(PI_AUTOWORK_CHECK_ROOT=self.temp.name, PI_AUTOWORK_CHECK_SLOTS=slots)
+                    pool = root / 'check-slots'
+                    pool.mkdir(mode=0o700)
+                    env.update(PI_AUTOWORK_CHECK_ROOT=str(pool), PI_AUTOWORK_CHECK_SLOTS=slots)
                     script = ('import sys,json,time; from pathlib import Path; '
                               f'sys.path[:0] = {[component, engine]!r}; '
                               'from pi_autowork import worker; import task_execution as execution\n')
@@ -66,6 +68,7 @@ class WorkerTmpTests(unittest.TestCase):
                         f'worker.run_suite({hold_command!r}, {str(root)!r}, 40, '
                         f'Path({str(root / "holder.log")!r}))'], env=env)
                     contender = None
+                    started = time.monotonic()
                     try:
                         deadline = time.monotonic() + 10
                         while not (root / 'holder.pid').exists():
@@ -75,10 +78,12 @@ class WorkerTmpTests(unittest.TestCase):
                         # Import/setup latency is not the slot contract: start the short budget
                         # only once this fixture is ready, before it can request admission.
                         ready = str(root / 'ready')
+                        # Admission needs only a shell side effect, not sleep/touch processes
+                        # competing for the remaining .5/.6 s under full-check host load.
                         command = [sys.executable, '-c', script +
                             f'Path({ready!r}).touch()\n'
                             f'while Path({ready!r}).exists(): time.sleep(.01)\n'
-                            f'r = worker.run_suite("sleep .1; touch ran", {str(root)!r}, .5, '
+                            f'r = worker.run_suite(": > ran", {str(root)!r}, .5, '
                             f'Path({str(root / "full-check/second.log")!r}), '
                             f'Path({str(root / "full-check/T-1.status.json")!r})); sys.exit(r["code"])']
                         contender = subprocess.Popen([sys.executable, '-c', script +
@@ -88,9 +93,12 @@ class WorkerTmpTests(unittest.TestCase):
                             '        assert child.poll() is None, "suite fixture exited during startup"\n'
                             '        assert time.monotonic() < deadline, "suite fixture startup timed out"\n'
                             '        time.sleep(.01)\n'
+                            '    global budget_started\n'
+                            '    budget_started = time.monotonic()\n'
                             f'    Path({ready!r}).unlink()\n'
                             f'r = execution.bounded_command({command!r}, Path({str(root)!r}), '
                             f'Path({str(root)!r}), "T", .6, on_start=start, check_slot_wait=True); '
+                            'r["fixture_active_wall"] = time.monotonic() - budget_started\n'
                             f'Path({str(root / "result.json")!r}).write_text(json.dumps(r))'], env=env)
                         progress = root / 'full-check/T-1.status.json'
                         deadline = time.monotonic() + 10
@@ -100,17 +108,21 @@ class WorkerTmpTests(unittest.TestCase):
                             time.sleep(.01)
                         self.assertTrue(progress.exists(), (root / 'result.json').read_text()
                                         if (root / 'result.json').exists() else 'no suite progress')
+                        progress_seen = time.monotonic()
                         if slots == '1':
-                            self.assertEqual(json.loads(progress.read_text())['ahead'], 1)
+                            # Controlled delayed observation: the holder keeps the waiting
+                            # snapshot stable even when the test observer loses CPU time.
+                            time.sleep(.8)  # longer than both execution budgets
+                            self.assertIsNone(contender.poll())
+                            self.assertFalse((root / 'ran').exists())
+                            status = json.loads(progress.read_text())
+                            self.assertEqual((status['state'], status['ahead']), ('waiting', 1))
                             runner = fleet_view.Runner('fixture', repo=str(self.repo), state_dir=str(root))
                             lane = fleet_view.lanes(runner)[0]
                             self.assertEqual((lane.phase, lane.detail), ('waiting for a check slot', '1 ahead'))
                             self.assertEqual(fleet_view.doing(lane), 'waiting for a check slot, 1 ahead')
                             lane.activity_age = 600
                             self.assertEqual(fleet_view.quiet(lane), '')
-                            time.sleep(.8)  # longer than both execution budgets
-                            self.assertIsNone(contender.poll())
-                            self.assertFalse((root / 'ran').exists())
                         else:
                             self.assertEqual(contender.wait(timeout=10), 0)
                             self.assertTrue((root / 'ran').exists())  # no slot even while holder runs
@@ -124,8 +136,15 @@ class WorkerTmpTests(unittest.TestCase):
                         result = json.loads((root / 'result.json').read_text())
                         self.assertEqual(result['outcome'], 'EXECUTED', result)
                         self.assertTrue((root / 'ran').exists())
+                        receipt = result['command_receipt']
                         if slots == '1':
-                            self.assertGreater(result['command_receipt']['check_slot_wait_seconds'], .8)
+                            self.assertGreater(receipt['check_slot_wait_seconds'], .8)
+                        print('CHECK_SLOT_FIXTURE', dict(slots=slots, killed=killed,
+                              startup_to_progress=progress_seen - started,
+                              slot_wait=receipt['check_slot_wait_seconds'],
+                              post_ready_nonqueue=result['fixture_active_wall'] - receipt['check_slot_wait_seconds'],
+                              receipt_wall=receipt['wall_seconds'],
+                              interpreter=sys.version, load=os.getloadavg()), file=sys.stderr)
                     finally:
                         for process in (holder, contender):
                             if process is not None:
