@@ -8,7 +8,7 @@ section = "Now"
 rank = 18000
 depends_on = []
 touches = ["pi-autowork/src/pi_autowork/engine/parallel_dispatch.py", "pi-autowork/src/pi_autowork/supervision/main_checks.py", "pi-autowork/src/pi_autowork/main_check.py", "pi-autowork/src/pi_autowork/worker.py", "pi-autowork/src/pi_autowork/health.py", "pi-autowork/tests/engine/test_parallel_dispatch.py", "pi-autowork/tests/runner/", "pi-autowork/README.md"]
-resources = ["autowork-python-layout"]
+resources = []
 kind = "implementation"
 ownership = "worker"
 scope = "Eight runners share one 24-CPU machine. On 2026-11-10 the load average stayed near 31, the worker gate in pi-autowork/src/pi_autowork/engine/parallel_dispatch.py (`resource gate: load average X >= N CPUs`) held ready kit tasks, and a full check took 15 to 20 minutes. Workers mostly wait on a model; full-suite runs use the CPUs. Add one fleet-wide limit of two concurrent full-suite runs, held as lock files under the shared state root so every runner of this user sees it, default 2 and set by one documented environment value. The main check, the batch or landing check and a worker's full-suite verification each take a slot; a focused test run takes none. A run that finds no free slot waits in a queue and states which runner holds the slots; it does not fail, time out its task or ask the owner. A slot whose holder process is dead is reclaimed. Remove the load-average gate for worker dispatch. The existing per-repository main-check slot stays."
