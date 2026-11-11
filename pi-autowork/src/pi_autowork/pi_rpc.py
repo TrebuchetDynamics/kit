@@ -337,6 +337,7 @@ class PiRpcRuntime:
                         raise RuntimeError('cannot identify the exclusively owned Pi process')
                     self.pi_version = self.client.pi_version
                     if not pi_version_supported(self.pi_version):
+                        failure = 'toolchain'
                         raise RuntimeError('toolchain')
                     self.active = True
                     async with self._queue_budget() as queued, self.client.stream(

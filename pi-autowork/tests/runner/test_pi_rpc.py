@@ -329,6 +329,8 @@ class SdkTests(unittest.TestCase):
         self.env['FAKE_VERSION']='1.3.0'
         result=self.execute()
         self.assertEqual(result['failure_kind'],'toolchain')
+        self.assertFalse(result['retry_safe'])
+        self.assertFalse(result['settled'])
         self.assertFalse((self.root/'calls').exists())
 
     def test_live_progress_and_state_are_visible_before_settlement(self):
