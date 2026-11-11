@@ -178,6 +178,69 @@ class AdversarialWorkerTests(unittest.TestCase):
         self.git('commit', '-qm', 'remove session-only file')
         self.assertEqual(self.land('B')['outcome'], 'INTEGRATED')
 
+    def test_acceptance_hold_resumes_once_and_keeps_an_unresolved_candidate(self):
+        from pi_autowork.coordinator import Coordinator
+        from pi_autowork.engine import parallel_status
+        self.commit_todo(*(task(tid, tid.lower() + '.txt').replace(
+            'Acceptance: changed.', 'Acceptance: changed.; proof recorded.') for tid in ('A', 'B', 'C')))
+        self.set_spec({tid: {'files': {tid.lower() + '.txt': 'done'}, 'sleep': 0.1}
+                       for tid in ('A', 'B', 'C')})
+        runner = Coordinator.__new__(Coordinator)
+        runner.integ, runner.stop, runner.restart_pending = self.repo, False, False
+        runner.engine = lambda *args: self.run_cli(*args, worker=False)[1]
+        script = self.root / 'acceptance_resume.py'
+        script.write_text('import json,pathlib,re,sys\n'
+                          'prompt=pathlib.Path(sys.argv[1]).read_text()\n'
+                          'report=json.loads(pathlib.Path(sys.argv[2]).read_text())\n'
+                          'assert "one automatic acceptance-hold resume" in prompt\n'
+                          'assert "Do not reimplement" not in prompt\n'
+                          'gaps=prompt.split("The exact acceptance gaps are:\\n",1)[1].split("\\nInspect",1)[0]\n'
+                          'assert "acceptance list missing or invalid; not_checked:" in gaps\n'
+                          'assert all(e["item"] in gaps for e in report["acceptance"])\n'
+                          'path=pathlib.Path(re.search(r"^Report file: (.+)$",prompt,re.M)[1])\n'
+                          'path.write_text(json.dumps(report))\n')
+        for tid, verdict in zip(('A', 'B', 'C'), ('met', 'not_met', 'not_checked')):
+            with self.subTest(verdict=verdict):
+                self.apply('--tasks', tid)
+                self.wait_until_idle()
+                kept = self.slot(tid)
+                path = dispatch.data_dir(self.common, kept) / 'report.json'
+                report = base.execution.read(path)
+                resumed_report = dict(report, acceptance=[dict(e, result=verdict) for e in report['acceptance']])
+                source = self.root / (tid + '-report.json')
+                base.execution.save(source, resumed_report)
+                report.pop('acceptance')
+                base.execution.save(path, report)
+                self.assertEqual(self.land(tid)['cause'], 'acceptance')
+                self.assertTrue(runner.settle_resume_report(dict(task=tid, **{
+                    k: v for k, v in self.slot(tid).items() if k != 'task_id'})))
+                self.assertEqual(base.execution.read(path), report)  # runner never writes results
+                argv = json.dumps([sys.executable, str(script), '{prompt_file}', str(source)])
+                _, resumed = self.run_cli('--apply', '--parallel', '--tasks', tid,
+                                          '--worker-command', argv, worker=False)
+                self.assertEqual([(d['task'], d['attempt']) for d in resumed['dispatched']], [(tid, 1)])
+                self.wait_until_idle()
+                self.assertEqual(base.execution.read(path), resumed_report)
+                self.assertEqual(self.slot(tid)['branch'], kept['branch'])
+                self.assertEqual(self.git('rev-parse', kept['branch']), kept['commit'])
+                result = self.land(tid)
+                if verdict == 'met':
+                    self.assertEqual(result['outcome'], 'INTEGRATED', result)
+                else:
+                    self.assertEqual((result['outcome'], result['cause']), ('HELD', 'acceptance'))
+                    for entry in resumed_report['acceptance']:
+                        self.assertIn(entry['item'], result['reason'])
+                    self.assertIn(verdict, result['reason'])
+                    self.assertTrue(state.exhausted(self.slot(tid)))
+                    row = next(r for r in parallel_status.snapshot(self.repo)['tasks'] if r['task'] == tid)
+                    self.assertEqual(row['failure_state'], 'repair_required')
+                    self.assertFalse(row['owner_decision_required'])
+                    self.assertFalse(runner.resume_report({'task': tid}))
+                    for _ in range(2):
+                        _, again = self.apply('--tasks', tid)
+                        self.assertEqual(again.get('dispatched', []), [])
+                    self.assertEqual((self.slot(tid)['attempt'], self.slot(tid)['commit']), (1, kept['commit']))
+
     def test_launch_with_a_lost_receipt_is_still_seen_as_running(self):
         """Gas Town `RunPlan`: a launch that happened while its receipt write failed must
         become reconciliation, not a blind second dispatch into the same worktree."""

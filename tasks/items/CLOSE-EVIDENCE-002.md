@@ -3,7 +3,7 @@ schema = 1
 id = "CLOSE-EVIDENCE-002"
 title = "An acceptance hold resumes the same worker once before it becomes a blocker"
 short = "Acceptance hold resumes its worker once"
-status = "open"
+status = "done"
 section = "Now"
 rank = 21000
 depends_on = []
@@ -15,5 +15,7 @@ scope = "CLOSE-EVIDENCE-001 holds a finished commit when its report lacks one me
 acceptance = ["A fixture with a held commit whose report has no acceptance list proves the runner resumes the same attempt once with the missing items named, and the task integrates after the worker reports every item as met with evidence.", "A fixture whose resumed worker still reports an item as not_met or not_checked proves the task is held with those items named, no second resume and no fresh attempt starts, and the retained commit is kept.", "Existing acceptance-mismatch and report-resume tests pass with assertions unchanged, and pi-autowork/README.md states the one-resume rule."]
 checks = ["python3 scripts/check.py pi-autowork/tests/engine/test_parallel_integrate.py pi-autowork/tests/engine/test_parallel_state.py", "python3 scripts/affected_tests.py --run --base <captured-task-base>", "python3 skills/docs-sync/scripts/docs.py check .", "autowork tasks validate ."]
 exclusions = ["No weakened or deleted test; no change to what the acceptance check accepts; no runner-written or inferred acceptance result.", "No model calls in tests, service start/stop/restart, installs, pushes or edits to another task's record."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/CLOSE-EVIDENCE-002.toml"
 +++
 - Sources: Owner request of 2026-11-11 (unblock all): eleven acceptance holds had no automatic recovery.

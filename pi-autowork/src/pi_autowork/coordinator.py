@@ -2180,7 +2180,7 @@ class Coordinator:
         """Resume unfinished work on the same attempt, also while draining."""
         state = row.get('state') or ''
         if (not self.stop and not self.restart_pending and (state == 'reported' or
-                              (state == 'held' and row.get('cause') in ('report', 'conflict')))
+                              (state == 'held' and row.get('cause') in ('report', 'conflict', 'acceptance')))
                 and row.get('commit') and self.resume_report(row)):
             self.settled = True
             return True
@@ -3273,7 +3273,7 @@ class Coordinator:
         return True
 
     def resume_report(self, row):
-        """Reportless commits belong to their worker, including legacy conflict holds.
+        """Missing reports and acceptance evidence belong to the retained commit's worker.
 
         Prepare recovery through the engine even when --once/--max-cycles draining skips
         refill; the usual paused-attempt admission then launches only this attempt.
@@ -3281,12 +3281,15 @@ class Coordinator:
         _, _, state = worker.engine_modules()
         common = state.common_dir(self.integ)
         slot = next((s for s in state.slots(common) if s['task_id'] == row['task']), None)
-        if (not slot or slot.get('report_resume_attempt') == slot['attempt'] or state.worker_live(slot)
-                or not state.missing_commit_report(common, slot)):
+        acceptance_hold = slot and slot['state'] == 'held' and slot.get('cause') == 'acceptance'
+        resume_used = (slot and slot.get('acceptance_resume_attempt' if acceptance_hold else 'report_resume_attempt')
+                       == slot['attempt'])
+        if (not slot or resume_used or state.worker_live(slot)
+                or (not acceptance_hold and not state.missing_commit_report(common, slot))):
             return False
         result = self.engine('--parallel-reverify', row['task'], '--reviewer-version', 'report-only')
         if result.get('report_only'):
-            LOG.say(f'{row["task"]}: resuming its worker on the same attempt to report its retained commit')
+            LOG.say(f'{row["task"]}: resuming its worker on the same attempt to complete its retained commit evidence')
             return True
         return False
 

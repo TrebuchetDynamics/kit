@@ -264,7 +264,7 @@ def check_failure_resumed(slot):
 
 
 def prompt(task, worktree, branch, baseline, report, resume=False, commit_finished=False, answers='',
-           retained_commit=None, landed_tasks=(), landed_revisions=(), rework=None):
+           retained_commit=None, landed_tasks=(), landed_revisions=(), rework=None, acceptance_resume=''):
     touches = task['fields'].get('Touches', '(none declared)')
     earlier = earlier_task_work(worktree, task['id'], branch, baseline)
     lines = [
@@ -388,7 +388,16 @@ def prompt(task, worktree, branch, baseline, report, resume=False, commit_finish
                   'Listed set-aside worktrees may also hold uncommitted work absent from every branch tip.',
                   'Inspect those paths there and copy only task-relevant work into your assigned worktree.',
                   'Never modify the earlier branches or their worktrees; no work is applied automatically.']
-    if retained_commit:
+    if acceptance_resume:
+        lines += ['', f'Your commit {retained_commit} is retained on this branch on this same attempt.',
+                  'This is the one automatic acceptance-hold resume. The exact acceptance gaps are:',
+                  acceptance_resume,
+                  'Inspect the retained work and finish any missing implementation or focused checks.',
+                  'Do not start over. If code must change, commit the scoped repair on this branch.',
+                  'Rewrite report.json yourself with one result and evidence for every acceptance item.',
+                  'Never infer a met result. Unfinished or live-only items remain not_met or not_checked;',
+                  'a second acceptance hold keeps the commit with no further automatic resume or fresh attempt.']
+    elif retained_commit:
         lines += ['', f'Your commit {retained_commit} is retained on this branch, but this attempt has no matching report.',
                   'Resume this same attempt only to write report.json for the commit already made.',
                   'Do not reimplement the task or make another commit. Inspect the retained commit and existing',
@@ -1274,6 +1283,9 @@ def dispatch_locked(args, repo, common, count, template, host):
                                       retained_commit=(previous.get('commit') if previous and
                                                        previous.get('report_resume_attempt') == previous['attempt']
                                                        else None),
+                                      acceptance_resume=((previous or {}).get('acceptance_resume_reason', '')
+                                                         if previous and previous.get('acceptance_resume_attempt')
+                                                         == previous['attempt'] else ''),
                                       landed_tasks=(previous or {}).get('landed_tasks', ()),
                                       landed_revisions=(previous or {}).get('landed_revisions', ()),
                                       commit_finished=bool(previous and check_failure_resumed(previous)),
