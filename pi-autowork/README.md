@@ -857,6 +857,23 @@ past its execution budget reads `overdue` and `past timeout`; waiting does not
 consume that budget. New slot receipts carry the command's configured timeout;
 older receipts fall back to 3600 seconds. Each line names the checked revision;
 a check of an older revision also reads `superseded by main at REV`.
+On the next supervision cycle after main moves, the runner stops an obsolete
+check unless the checker reports **more than 80%** of its test modules complete.
+Exactly 80% does not qualify. The offline checker reports actual module
+completions through `AUTOWORK_MODULE_PROGRESS`, counting a split module only
+when all its shards finish; buffered log output is not a progress count.
+Commands without module progress can be stopped too. The existing process
+supervisor reaps the check and its descendants, including detached test processes,
+before the runner removes its scratch worktree and temporary directory and
+schedules the current head through normal admission. A stopped check publishes
+no verdict or regression and preserves the previous last-green and red state.
+A check allowed to finish records its result for its own revision; the current
+head is checked next. Jobs adopted from an older release without cleanup
+supervision finish normally rather than risk orphaned processes.
+`tests/runner/test_main_check.py` covers replacement below and at the cutoff,
+cleanup, preserved state and completion above the cutoff; `../tests/test_check.py`
+covers the checker's split-module count. These are offline fixtures, not an
+installed-service qualification.
 A green result reads `main check passed at REV` for that revision only. If HEAD
 has advanced, it reads `Last green: OLD · HEAD: NEW · verification pending`.
 These are read-only displays: rendering never signals, cancels or restarts a check.

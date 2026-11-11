@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -36,9 +37,30 @@ def check_main(owner, *, git):
     pid, started = owner.check_main_reap(record)
     record = retry_repairs(owner, record)
     if record.get('state') == 'running':
+        head = git(owner.repo, 'rev-parse', owner.base)
+        if (head and head != record.get('rev') and not main_check.nearly_complete(record)
+                and main_check.exit_code(owner.state) is None and record.get('process_status')
+                and started and main_check.alive(pid, started)):
+            # The birth-bound subreaper kills/reaps even detached test processes.
+            if not record.get('superseded'):
+                try:
+                    fd = os.pidfd_open(int(pid))
+                    try:
+                        if main_check.alive(pid, started):
+                            signal.pidfd_send_signal(fd, signal.SIGTERM)
+                    finally:
+                        os.close(fd)
+                except ProcessLookupError:
+                    pass
+                record = main_check.write(owner.state, dict(record, superseded=True))
+        cleanup = main_check.slot_status(record.get('process_status') or '')
+        if record.get('process_status') and cleanup.get('cleanup_complete') is not True:
+            return
         if main_check.exit_code(owner.state) is not None or not main_check.alive(pid, started):
             owner.finish_main_check(record)
-        return
+            record = main_check.read(owner.state)
+        if record.get('state') == 'running' or record.get('pid') is not None:
+            return
     if record.get('pid') is not None:  # receipt consumed just before bash exited: reap next cycle
         return
     if owner.check_main_revert_pending(record):
@@ -182,6 +204,9 @@ def check_main_start(owner, record, rev, cmd, *, git):
     # and finish_main_check can then safely remove the shared scratch checkout.
     progress = owner.state / 'main-check-slot.json'
     progress.unlink(missing_ok=True)
+    progress.with_suffix('.modules.json').unlink(missing_ok=True)
+    process_status = owner.state / 'main-check-process.json'
+    process_status.unlink(missing_ok=True)
     limit = post_merge_barrier.timeout() if barrier else os.environ.get('PI_AUTOWORK_VALIDATE_TIMEOUT') or '3600'
     run = shlex.join([sys.executable, str(LAYOUT.entrypoint('main_check')), '--run', cmd, str(limit), str(progress)])
     retry_script = '' if barrier else f'if [ "$result" -ne 0 ]; then {retry}; fi\n'
@@ -199,7 +224,10 @@ def check_main_start(owner, record, rev, cmd, *, git):
     lease = owner.main_check_port_lease()
     ports = {'AUTOWORK_PORT_BASE': str(lease[0])} if lease else {}
     with open(owner.state / 'main-check.log', 'w') as log:
-        child = subprocess.Popen(['bash', '-c', script], cwd=path,
+        guard = Path(main_check.__file__).with_name('pi_process.py')
+        args = [sys.executable, str(guard), '--identity', str(process_status),
+                '--deadline', str(sys.float_info.max), '--', 'bash', '-c', script]
+        child = subprocess.Popen(args, cwd=path,
                                  env=owner.job_environment(TMPDIR=tmp, **ports, **check_env),
                                  stdout=log, stderr=subprocess.STDOUT, pass_fds=[lease[1]] if lease else (),
                                  stdin=subprocess.DEVNULL, start_new_session=True)
@@ -207,7 +235,8 @@ def check_main_start(owner, record, rev, cmd, *, git):
         os.close(lease[1])  # the check keeps the block for as long as it runs
     main_check.write(owner.state, dict(state='running', rev=rev, pid=child.pid,
                                       start_time=main_check.start_time(child.pid), started=time.time(), path=path,
-                                      tmp=tmp, slot_status=str(progress), green=record.get('green'), failures=record.get('failures'),
+                                      tmp=tmp, slot_status=str(progress), process_status=str(process_status),
+                                      green=record.get('green'), failures=record.get('failures'),
                                       red_since=record.get('red_since'), gated=record.get('gated'),
                                       crashed=record.get('crashed'), flaky_history=record.get('flaky_history') or {},
                                       last_finished=record.get('finished') or record.get('last_finished'), **metadata))
@@ -241,15 +270,13 @@ def finish_main_check(owner, record, *, git):
         git(owner.repo, 'worktree', 'remove', '--force', path)
     if tmp and Path(tmp).name.startswith('aw-main-'):
         shutil.rmtree(tmp, ignore_errors=True)
-    green = record.get('green')
-    history = record.get('flaky_history') or {}
     # The receipt can precede bash's exit. Retain its identity until a later cycle reaps it.
     child = {k: record[k] for k in ('pid', 'start_time') if k in record}
-    if code is None:  # the runner stopped under it: check this revision again
-        main_check.write(owner.state, dict(state='aborted', rev='', green=green, failures=record.get('failures'),
-                                          red_since=record.get('red_since'), flaky_history=history,
-                                          last_finished=record.get('last_finished'),
-                                          repair_pending=record.get('repair_pending') or [], **child))
+    if code is None or record.get('superseded'):  # stopped checks publish no verdict or regression
+        value = dict(record, state='aborted', rev='')
+        for key in ('path', 'tmp', 'slot_status', 'process_status', 'superseded', 'check_slot'):
+            value.pop(key, None)
+        main_check.write(owner.state, value)
         return
     try:
         log_text = (owner.state / 'main-check.log').read_text(errors='replace')

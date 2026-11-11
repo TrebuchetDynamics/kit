@@ -264,6 +264,7 @@ def run_command(cmd, checkout, limit, progress, output=None, stop=None, backgrou
                 transition(False)
             notify('running', started=time.time())
             env = {k: v for k, v in os.environ.items() if k != 'AUTOWORK_CHECK_WAIT_FD'}
+            env['AUTOWORK_MODULE_PROGRESS'] = str(Path(progress).with_suffix('.modules.json'))
             with subprocess.Popen(['bash', '-c', cmd], cwd=checkout, env=env, stdin=subprocess.DEVNULL,
                                   stdout=output, stderr=subprocess.STDOUT, start_new_session=True,
                                   preexec_fn=(lambda: os.nice(BACKGROUND_NICE)) if background else None,
@@ -295,6 +296,15 @@ def slot_status(path):
         return value if isinstance(value, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def nearly_complete(record):
+    """Only the checker's own completed module count permits an obsolete run to finish."""
+    path = record.get('slot_status')
+    progress = slot_status(Path(path).with_suffix('.modules.json')) if path else {}
+    total, completed = progress.get('total'), progress.get('completed')
+    return (type(total) is int and type(completed) is int
+            and 0 <= completed <= total and total > 0 and completed * 5 > total * 4)
 
 
 def record_path(state):
@@ -375,6 +385,9 @@ def publish_evidence(state, common, revision, value):
 
 def exit_code(state):
     """Only a complete receipt counts: shell redirection can expose an empty file first."""
+    cleanup = Path(state) / 'main-check-process.json'
+    if cleanup.exists() and slot_status(cleanup).get('cleanup_complete') is not True:
+        return None
     try:
         return int((Path(state) / 'main-check.exit').read_text().strip())
     except (OSError, ValueError):
