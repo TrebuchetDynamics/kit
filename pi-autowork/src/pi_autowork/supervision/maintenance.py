@@ -311,12 +311,14 @@ def poll_publication(owner):
         return
     if phase not in ('merge', 'retry', 'fetch-retry'):
         return
-    # No session mutation while a review, resolver, train or unconsumed review answer exists.
-    if (owner.authority_problem() or os.environ.get('PI_AUTOWORK_PUSH') != '1'
-            or getattr(owner, 'integration', None) or getattr(owner, 'child', None)
-            or getattr(owner, 'prefix_landing', None) or getattr(owner, 'train', None)
-            or getattr(owner, 'maintainer_job', None) or owner.resolvers or owner.batch_landing()):
+    if owner.authority_problem() or os.environ.get('PI_AUTOWORK_PUSH') != '1':
         return
+    # No session mutation while a review, resolver, train or unconsumed review answer exists.
+    # Only an upstream merge mutates the session: a fetch, and a push of a main that is not
+    # behind its upstream, do not wait, or a queue that is never idle is never published.
+    busy = bool(getattr(owner, 'integration', None) or getattr(owner, 'child', None)
+                or getattr(owner, 'prefix_landing', None) or getattr(owner, 'train', None)
+                or getattr(owner, 'maintainer_job', None) or owner.resolvers or owner.batch_landing())
     upstream = f'{record["remote"]}/{record["branch"]}'
     configured = git(owner.repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', f'{owner.base}@{{u}}')
     if (configured != upstream or record.get('fetch_endpoint')
@@ -328,17 +330,20 @@ def poll_publication(owner):
     if phase == 'merge':
         if git(owner.repo, 'symbolic-ref', '--short', '-q', 'HEAD') != owner.base:
             return
-        if owner.integ and not dirty(owner.integ):
-            behind = int(git(owner.repo, 'rev-list', '--count', f'{owner.base}..{upstream}') or 0)
-            if behind:
-                if (not (owner.merge_planning(upstream) or owner.resolve_upstream_merge(upstream))
-                        or owner.fast_forward_main()):
-                    git(owner.integ, 'merge', '--abort')
-                    record.update(phase='done')
-                    write(owner, 'publication', record)
-                    LOG.say(f'Upstream merge deferred: {upstream} could not land; session preserved')
-                    return
-                LOG.say(f'Pulled {behind} commit(s) from {upstream} into {owner.base}')
+        behind = int(git(owner.repo, 'rev-list', '--count', f'{owner.base}..{upstream}') or 0)
+        if not behind:
+            pass  # nothing to merge: publication needs neither the session nor an idle runner
+        elif busy:
+            return
+        elif owner.integ and not dirty(owner.integ):
+            if (not (owner.merge_planning(upstream) or owner.resolve_upstream_merge(upstream))
+                    or owner.fast_forward_main()):
+                git(owner.integ, 'merge', '--abort')
+                record.update(phase='done')
+                write(owner, 'publication', record)
+                LOG.say(f'Upstream merge deferred: {upstream} could not land; session preserved')
+                return
+            LOG.say(f'Pulled {behind} commit(s) from {upstream} into {owner.base}')
         elif owner.integ:
             return
         if record.get('source') and not git_ok(owner.repo, 'merge-base', '--is-ancestor', record['source'], upstream):

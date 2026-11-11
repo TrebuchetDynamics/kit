@@ -129,7 +129,26 @@ class AsyncMaintenanceTests(unittest.TestCase):
         self.assertEqual(pushes, [budget])
         self.assertEqual(self.git(self.remote, 'rev-parse', 'main'), self.source)
 
+    def upstream_moves(self):
+        other = self.root / 'other'
+        self.git(self.root, 'clone', '-q', '-b', 'main', str(self.remote), str(other))
+        self.git(other, '-c', 'user.name=Other', '-c', 'user.email=other@example.invalid',
+                 'commit', '-qm', 'upstream', '--allow-empty')
+        self.git(other, 'push', '-q', 'origin', 'HEAD:main')
+
+    def test_a_busy_runner_still_publishes_a_main_that_is_not_behind_its_upstream(self):
+        # 2026-11-10: nine verified commits waited two hours because a review was always running.
+        self.owner.integ = str(self.repo)
+        self.owner.integration = {'unconsumed': True}
+        self.owner.merge_planning = Mock(side_effect=AssertionError('nothing to merge'))
+        self.owner.fast_forward_main = Mock(side_effect=AssertionError('nothing to merge'))
+        self.assertEqual(self.owner.sync_upstream(), 'pending')
+        self.until(lambda: maintenance.read(self.owner, 'publication').get('phase') == 'done')
+        self.assertEqual(self.git(self.remote, 'rev-parse', 'main'), self.source)
+        self.assertEqual(self.owner.integration, {'unconsumed': True})
+
     def test_fetch_completion_waits_for_review_answer_before_any_session_mutation(self):
+        self.upstream_moves()  # a merge is needed, and the merge is what must wait
         self.owner.integ = str(self.repo)
         self.owner.integration = {'unconsumed': True}
         self.owner.merge_planning = Mock(side_effect=AssertionError('review owns the session'))
@@ -140,9 +159,10 @@ class AsyncMaintenanceTests(unittest.TestCase):
         self.owner.fast_forward_main.assert_not_called()
         self.assertFalse(maintenance.read(self.owner, 'publication').get('job'))
         self.owner.integration = None
-        self.owner.integ = None
+        self.owner.merge_planning = Mock(return_value=False)
+        self.owner.resolve_upstream_merge = Mock(return_value=False)
         self.until(lambda: maintenance.read(self.owner, 'publication').get('phase') == 'done')
-        self.assertEqual(self.git(self.remote, 'rev-parse', 'main'), self.source)
+        self.owner.merge_planning.assert_called_once()  # the merge ran only after the review was consumed
 
     def test_interrupted_publication_is_adopted_and_remote_outcome_reconciled(self):
         self.git(self.repo, 'push', '-q', 'origin', f'{self.source}:main')

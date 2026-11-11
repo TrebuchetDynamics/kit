@@ -388,7 +388,9 @@ execution; observed drift refuses publication. The named remote is retained so
 pre-push hooks receive their normal remote name. This is not an atomic URL pin:
 external concurrent Git configuration edits remain a standard Git race.
 Upstream session merges wait for reviews, resolvers and other session writers to
-release it. An upstream that conflicts with the session goes to the Pi merge resolver,
+release it. Only that merge waits: a fetch, and a push of a main that is not behind
+its upstream, run while reviews are in flight, so a queue that is never idle is
+still published. An upstream that conflicts with the session goes to the Pi merge resolver,
 once per upstream revision in a runner process, the same way a moved main does; the
 resolved merge passes the task-record checks before main takes it. An unresolved
 conflict is aborted and logged as `Upstream merge deferred`, and main stays
