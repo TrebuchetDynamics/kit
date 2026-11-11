@@ -8,14 +8,6 @@ no extra approval step or execution authority.
 
 <!-- pi-autowork:questions:start -->
 
-### Q-TOOLSET-463-8af43073 — USER_INPUT — effort input — unblocks 1
-
-- Task: TOOLSET-463-8af43073 — Stopped runners stay stopped; restart cannot enable push
-- Needs: TOOLSET-463-8af43073 requires owner-performed action, not unattended execution. Saved owner answer: 2026-11-10: unblock. Another approval is not requested.
-- Since: 2026-11-10T22:31:21Z
-- Answer: Perform the task outside this runner and record the actual completion evidence, or explicitly defer or cancel it. Saved direction is not completion evidence; another approval or live grant does not transfer an owner-owned task to the runner.
-- Kind: owner_action
-
 <!-- pi-autowork:questions:end -->
 
 None.
