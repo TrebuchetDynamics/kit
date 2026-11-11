@@ -264,10 +264,16 @@ omit the field. Parallel Autowork uses `touches` to rank likely-independent work
 first. Ordinary file, directory and glob overlap is a scheduling hint, not a
 dispatch gate, regardless of how many unfinished tasks name a file. Report possible merge conflicts honestly; do not invent product
 `depends_on` edges for file overlap. Keep real prerequisites and
-[bounded write sets](PLANNING-CRAFT.md#disjoint-write-sets). Add `resources` where
-needed (`exclusive` to run alone, `live` for authorized live work, or shared names
-such as `test-db`);
-resource and protected manifest/lock/schema/migration/CI gates still apply. Only
+[bounded write sets](PLANNING-CRAFT.md#disjoint-write-sets). `touches` is the only
+declaration of file overlap. `resources` names only things that cannot be shared,
+such as a port, an install, a device or a live service: use `port:8080` for an
+exclusive port, but `touches = ["pi-autowork/src/"]` for overlapping source edits,
+not a broad resource such as `autowork-python-layout`. Tasks sharing a declared
+resource still run one at a time (`exclusive` runs alone; `live` needs authorization).
+`autowork tasks validate` warns, without failing, about a resource that no task
+uses with a live, port, install or device word in its resources. Review the warning;
+it does not remove the resource or change scheduling. Resource and protected
+manifest/lock/schema/migration/CI gates still apply. Only
 when no path can be bounded, set `resources` to `exclusive` with the reason in a
 note and `touches` to the widest owning directory. Do not list `tasks/`,
 `BLOCKERS.md`, `TODO.archive.md` or `CHANGELOG.md`: the coordinator owns them.
