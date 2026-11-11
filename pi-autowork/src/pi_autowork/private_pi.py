@@ -84,25 +84,6 @@ def fill(root, source, *, refresh=False):
     (target / 'login-refused').unlink(missing_ok=True)
 
 
-def ensure(root, home=None):
-    """Fill a private directory that has no login, once, from the interactive Pi home.
-
-    A runner that updates itself to a release with the private directory never ran the
-    installer. Returns the line to print, or None when nothing was needed or possible; a
-    refused login is left for the owner's refill."""
-    fault = problem(root)
-    if not fault or 'refused' in fault:
-        return None
-    source = Path(home or Path.home()) / '.pi/agent'
-    try:
-        if source.resolve() == directory(root).resolve() or not has_login(source / 'auth.json'):
-            return None
-        fill(root, source)
-    except (OSError, RuntimeError):
-        return None
-    return 'Private Pi directory had no login; filled it from the interactive Pi home'
-
-
 def install(root, source):
     """An independent Git checkout, not a worktree tied to the interactive package clone."""
     target = Path(root) / 'installed'
