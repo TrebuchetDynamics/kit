@@ -851,7 +851,7 @@ class MaintainTests(Repo):
         report = self.prepare()
         self.assertIn(dict(code='DRAFT', id=self.export, detail='missing checks',
                            fix=f'autowork tasks field {self.export} <field> <value> from its accepted source; '
-                               'never invent it'), report['diagnostics'])
+                               'never invent it', **{'class': 'actionable'}), report['diagnostics'])
         self.assertEqual(report['drafts'], [self.export])
         self.tasks('field', self.export, 'checks', 'python3 -m unittest')
         self.assertEqual(self.prepare()['drafts'], [])
@@ -916,7 +916,8 @@ class MaintainTests(Repo):
         self.add('START', 'Uncommitted work', '--touches', 'src/')
         before = self.snapshot()
         report = self.prepare('--check')
-        self.assertEqual((report['read'], len(report['pending'])), ('HEAD', 1))
+        # --check reads the uncommitted record too, and still writes nothing.
+        self.assertEqual((report['read'], len(report['pending'])), ('worktree', 1))
         self.assertEqual(self.snapshot(), before)
 
     def test_no_completion_without_a_manual_reason_or_goal_evidence(self):

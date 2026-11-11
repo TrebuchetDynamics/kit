@@ -281,7 +281,7 @@ class PlanningCliContractTests(unittest.TestCase):
                      'no arbitrary keep-last-N', 'Audit/read-only', 'actual worker/session activity',
                      'closure and integration', 'ordinary dependency edges', 'inactive surviving tasks',
                      'verified_depends_on', 'manual closure', 'immutable Git',
-                     'autowork tasks delete ID', 'warnings, not safety refusals',
+                     'autowork tasks delete ID', 'warnings, not safety refusals', 'autowork tasks prune',
                      'dedicated receipts/reports', 'runtime recovery state',
                      'goal status', 'empty history is not proof',
                      'autowork tasks validate --worktree', 'retained record'):

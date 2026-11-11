@@ -77,9 +77,11 @@ permitted reasoning in their existing document owners, not a runnable alternate 
    installation, conversion-force, execution or delivery authority.
 
 Use [Edit records](#edit-records) for add, field, place/move and goal operations.
-For delete, follow [completed-task retention](#completed-task-retention), including
-fresh ownership and dependency checks before deletion: delete diagnostics are
-warnings, not safety refusals. A successful command alone does not establish safety.
+For pruning, run `autowork tasks prune` under
+[completed-task retention](#completed-task-retention); it makes the fresh ownership
+and dependency checks. `delete` refuses while a surviving task depends on the
+record, but its holder diagnostics are warnings, not safety refusals: a successful
+`delete` alone does not establish safety.
 
 ## The records
 
@@ -327,7 +329,8 @@ reservations.
 | `autowork tasks hold ID --by WHO [--until YYYY-MM-DD]`, `release ID` | Apply an explicitly user-requested task pause, or release a reconciled hold under the policy above. |
 | `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]` | Manual close of any task kind; optional evidence is a reference, not verified acceptance. |
 | `autowork tasks supersede ID --by OTHER --reason TEXT` | Replace a task. |
-| `autowork tasks delete ID` | Delete a task record only after the [ownership/dependency and retention checks](#completed-task-retention); warnings are not safety refusals. Receipts and dependents are unchanged. |
+| `autowork tasks prune [--apply --expect-plan REV] [--summary]` | Apply the [retention decision table](#completed-task-retention): print the plan (default), or delete eligible finished records and remove their satisfied dependency edges. One reason per retained record. |
+| `autowork tasks delete ID [--closure\|--force]`, `autowork tasks delete --ids-file FILE` | Delete one record or a set in one transaction. Refuses while a surviving task depends on it; `--closure` prints the dependents, `--force` leaves dangling references. Holder warnings are not safety refusals. Receipts are unchanged. |
 | `autowork tasks goal ID [--title --source --priority --status --focus/--no-focus --depends-on --evidence]` | Add or change a goal; `--status met` needs evidence and all non-superseded owned tasks done and qualified. |
 | `autowork tasks goals [--worktree]` | Read every goal record, in priority order. |
 | `autowork tasks commit [--message TEXT] [--dry-run]` | Commit the working tree's `tasks/` edits and nothing else; `--dry-run` shows the paths and their diff. |
@@ -404,10 +407,14 @@ Pruning is a separate reconciliation after closeout, not a replacement for it:
    current open requirements before pruning; a prose link cannot replace a typed
    verification gate. If the current consumer still needs the record/receipt to enforce
    that gate, retain it until that need ends. Never fabricate qualification or a waiver.
-3. Once safe, use `autowork tasks delete ID` for each eligible record. This command
-   can delete live or referenced tasks: its warnings are warnings, not safety refusals.
-   Perform the checks above before invoking it; do not use successful deletion as
-   evidence of safety. It leaves receipts and dependents untouched.
+3. Run `autowork tasks prune` for the plan, then `autowork tasks prune --apply
+   --expect-plan REV`. It applies steps 1 and 2 as one decision table (status,
+   section, typed dependents, runtime slot state and citation class; see the
+   [pruning reference](../docs-sync/references/pruning.md)) and prints one reason for
+   each retained record. Do not derive those rules by script. `autowork tasks delete
+   ID` remains for one record: it refuses while a surviving task depends on it, but
+   it can delete a held task: its holder diagnostics are warnings, not safety refusals,
+   so a successful deletion is not evidence of safety. Both leave receipts untouched.
 4. Remove only dedicated receipts/reports whose consumers and remaining obligations
    have been reconciled, using scoped file removal after confirming their immutable
    Git copies are reachable. Never fabricate or rewrite receipts, replace them with

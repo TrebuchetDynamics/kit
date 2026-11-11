@@ -35,6 +35,8 @@ service again. Force accepts tracked legacy consumers without changing their cod
 reports them as LEGACY_CONSUMER diagnostics. It still never discards work or data: content
 a conversion cannot account for, or a queue that does not validate, refuses with MIGRATION_BLOCKED.
 """
+import difflib
+import fnmatch
 import hashlib
 import json
 import os
@@ -115,14 +117,70 @@ def _target(repo, reference):
     if not target.exists():
         return f'{path} does not exist'
     if anchor and target.is_file() and path.endswith('.md'):
-        if anchor not in {a for a, _ in headings(target.read_text(errors='replace'))}:
-            return f'{path} has no heading #{anchor}'
+        anchors = [a for a, _ in headings(target.read_text(errors='replace'))]
+        if anchor not in anchors:
+            near = [a for a in anchors if a.startswith(anchor) or anchor.startswith(a)][:3]
+            near += [a for a in difflib.get_close_matches(anchor, anchors, n=3, cutoff=0.5) if a not in near]
+            hint = '; did you mean ' + ', '.join(f'#{a}' for a in near[:3]) if near else ''
+            return f'{path} has no heading #{anchor}{hint}'
     return None
+
+
+# How an agent treats each diagnostic code (skills/docs-sync/references/diagnostics.md).
+ADVISORY = ('GOAL_WITHOUT_WORK', 'IN_FLIGHT', 'NOT_RUNNABLE')
+ALLOWLIST = '.autowork-legacy-allow'
+FIXTURE = re.compile(r'(?:^|/)(?:testdata|fixtures|__fixtures__)/')
+
+
+def allowlist(repo):
+    """([(glob, reason)], problems) from `.autowork-legacy-allow`: one `GLOB  REASON` per
+    line, # comments. An entry without a reason allows nothing and is reported."""
+    entries, problems = [], []
+    try:
+        lines = (Path(repo) / ALLOWLIST).read_text(errors='replace').splitlines()
+    except OSError:
+        return entries, problems
+    for number, line in enumerate(lines, 1):
+        line = line.split('#', 1)[0].strip()
+        if not line:
+            continue
+        glob, _, reason = line.partition(' ')
+        if reason.strip():
+            entries.append((glob, reason.strip()))
+        else:
+            problems.append(f'{ALLOWLIST}:{number}: {glob} has no reason; it allows nothing')
+    return entries, problems
+
+
+def classify(repo, path, allowed, cache):
+    """(class, reason) of a legacy-name hit: frozen history and intentional literals are
+    counted, not reported as defects; everything else is actionable."""
+    from pi_autowork import task_prune
+    for glob, reason in allowed:
+        if fnmatch.fnmatch(path, glob):
+            return 'intentional', reason
+    if FIXTURE.search(path):
+        return 'intentional', 'test fixture data'
+    if task_prune.frozen(repo, path, cache):
+        return 'frozen', 'frozen history'
+    return 'actionable', None
+
+
+def summarize(diagnostics):
+    """Counts per code, and per file for the legacy-reference codes."""
+    codes, files = {}, {}
+    for d in diagnostics:
+        codes[d['code']] = codes.get(d['code'], 0) + 1
+        if d['code'].startswith('LEGACY_'):
+            files[d['id']] = files.get(d['id'], 0) + 1
+    return dict(total=len(diagnostics), by_code=dict(sorted(codes.items())),
+                by_file=dict(sorted(files.items(), key=lambda item: (-item[1], item[0]))))
 
 
 def diagnose(repo, store, held=()):
     """Defects an evidence-driven repair can fix, each with the command that does it. Sorted,
-    so an unchanged store reports the same list."""
+    so an unchanged store reports the same list. ``held`` is the in-flight IDs, or
+    `task_commands.in_flight_facts`' mapping so IN_FLIGHT names who holds each."""
     found = []
 
     def add(code, rid, detail, fix):
@@ -159,8 +217,9 @@ def diagnose(repo, store, held=()):
             if reason := _target(repo, ref):
                 add('BROKEN_SOURCE', t.id, reason, f'autowork tasks field {t.id} Sources "<accepted path#anchor>"')
         if t.id in held:
-            add('IN_FLIGHT', t.id, 'a worker or lease holds it: rank, title and notes only',
-                'change no contract field until its attempt ends')
+            fact = held[t.id] if isinstance(held, dict) else None
+            add('IN_FLIGHT', t.id, (task_commands.holder_text(fact) if fact else 'a worker or lease')
+                + ' holds it: rank, title and notes only', 'change no contract field until its attempt ends')
     titles = {}
     for t in sorted(tasks.values(), key=lambda t: t.id):
         if t.status == 'open':
@@ -303,7 +362,7 @@ def prepare(repo, mode='commit', *, force=None, inventory=True):
 
 
 def _prepare(repo, mode, inventory=True):
-    held, problems = task_commands.in_flight(repo, task_commands.ACTIVE)
+    held, problems = task_commands.in_flight_facts(repo, task_commands.ACTIVE)
     report = dict(ok=True, repo=str(repo), mode=mode, state=detect(repo), actions=[], refusals=[],
                   in_flight=sorted(held), pending=[], diagnostics=[])
     state = report['state']
@@ -360,10 +419,17 @@ def _prepare(repo, mode, inventory=True):
     except StoreError:
         report['pending'] = []
     store = None
-    if report['pending'] and mode != 'check':
+    if report['pending'] and mode == 'check' and (
+            Path(_git(repo, 'rev-parse', '--absolute-git-dir') or '') / 'autowork-tasks.transaction').exists():
+        # An interrupted task edit: reading it would need the lock and a recovery write.
+        report['read_note'] = (f"{len(report['pending'])} uncommitted task files ignored: an interrupted "
+                               'task edit awaits recovery (any `autowork tasks` write recovers it)')
+    elif report['pending']:
         try:
-            store = worktree_store(repo)
+            # --check takes no lock and writes nothing: the same isolated read, unserialized.
+            store = (worktree_store.__wrapped__ if mode == 'check' else worktree_store)(repo)
             report['read'] = 'worktree'
+            report['read_note'] = f"includes {len(report['pending'])} uncommitted task files"
         except StoreError as exc:
             report.update(ok=False, state='invalid', refusals=[str(exc)],
                           next='fix the named line of the uncommitted record, or revert it, then run again')
@@ -372,6 +438,7 @@ def _prepare(repo, mode, inventory=True):
         try:
             store = TaskStore.at(repo, 'HEAD')
             report['read'] = 'HEAD'
+            report.setdefault('read_note', 'no uncommitted task files')
         except StoreError as exc:
             report.update(ok=False, state='invalid', refusals=[str(exc)],
                           next='the committed store is invalid: fix the named line from its accepted source '
@@ -379,12 +446,25 @@ def _prepare(repo, mode, inventory=True):
             return report
     report.update(_summary(store))
     report['diagnostics'] = diagnose(repo, store, held)
+    allowed, allow_problems = allowlist(repo)
+    cache, suppressed = {}, []
+    for d in report['diagnostics']:
+        d['class'] = 'advisory' if d['code'] in ADVISORY else 'actionable'
     for group, code in (('consumers', 'LEGACY_CONSUMER'), ('documentation_drift', 'LEGACY_DOCUMENTATION')):
         for hit in report[group]:
-            report['diagnostics'].append(dict(code=code, id=hit['path'],
-                detail=f"{hit['path']}:{hit['line']} names {', '.join(hit['names'])}",
-                fix='update the reference for tasks/ or the preserved document from source evidence; '
-                    'conversion never rewrites consumers'))
+            kind, reason = classify(repo, hit['path'], allowed, cache)
+            item = dict(code=code, id=hit['path'],
+                        detail=f"{hit['path']}:{hit['line']} names {', '.join(hit['names'])}",
+                        fix='update the reference for tasks/ or the preserved document from source evidence; '
+                            'conversion never rewrites consumers', **{'class': kind})
+            if kind == 'actionable':
+                report['diagnostics'].append(item)
+            else:
+                suppressed.append(dict(item, reason=reason, fix='none: leave it as it is'))
+    # Frozen history and intentional literals are counted, never listed as defects to repair.
+    report['suppressed'] = dict(frozen=sum(d['class'] == 'frozen' for d in suppressed),
+                                intentional=sum(d['class'] == 'intentional' for d in suppressed),
+                                allowlist_problems=allow_problems, items=suppressed)
     report['next'] = ('reconcile accepted documents with these records through `autowork tasks`; '
                       'repair the diagnostics only from evidence')
     if problems:

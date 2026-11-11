@@ -68,6 +68,13 @@ acting on the recommendation over asking about equivalent details.
 4. Report the result and any real remaining blocker. A short progress sentence is
    enough when work takes time. Approval itself is not evidence of execution.
 
+## One recommendation per checkpoint
+
+End every checkpoint with exactly one recommended action and the check that
+verifies it. Name an alternative only as a rejected option with its reason. A
+closing “or do X” is a menu: when a checkpoint has one, LGTM accepts the first
+stated recommendation.
+
 ## Default first, ask last
 
 A checkpoint that offers a recommendation is already answered by LGTM. Do not

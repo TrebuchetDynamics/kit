@@ -23,4 +23,6 @@ recommendation and no safe default exists. Do not require the user to restate th
 scope or reply “confirmed”, and do not repeat the plan. If the checkpoint reports
 completed work, acknowledge without repeating it. Preserve exclusions and any
 earlier “no push”/“no deploy” limit; do not infer commit/push/deployment from a
-generic approval that did not recommend or offer it.
+generic approval that did not recommend or offer it. End every checkpoint you write
+with exactly one recommended action and the check that verifies it; a closing
+“or do X” is a menu, and LGTM accepts the first stated recommendation.

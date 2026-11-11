@@ -55,6 +55,10 @@ With no accepted intent, report the missing input and create no queue.
 Its `diagnostics` name defects with the `autowork tasks` command that
 repairs each: repair only from accepted evidence, never grant ownership, `live` or
 resources, never close work to silence one, and leave `IN_FLIGHT` contracts alone.
+Classify each with the [triage table](../../../skills/docs-sync/references/diagnostics.md):
+actionable, advisory, intentional or frozen. Read `--summary` first, then one code
+with `--code CODE --limit N`. Report counts, the first failure and a path; never
+paste the full report.
 
 Before conversion, inspect `consumers`, `documentation_drift` and `preserved`. Tracked
 build/CI/hook/source/test references to TODO.md or goals.json block conversion;
@@ -92,13 +96,16 @@ reason) so parallel Autowork can run tasks together. Keep Now/Next/Needs decisio
 distinct; priority is section, then rank. Only typed fields (`ownership`,
 `resources`, `live`) grant authority; live authorization is the owner's to grant.
 Preserve live IDs, completed implementation, required proof, holds and priorities;
-never manufacture work. Safe pruning of completed task records and unneeded dedicated
-receipts/reports is mandatory within scope on Bootstrap/Maintain. Follow
-[completed-task retention](../../../skills/shared/TODO-WORKCENTER.md#completed-task-retention),
-including actual ownership, integration, dependency and qualification checks.
-Keep only records with a concrete current need; Git history is the archive.
-Audit/read-only deletes nothing. Report cleanup counts and retention reasons,
-not a replacement completed-task ledger.
+never manufacture work. The
+[pruning procedure](../../../skills/docs-sync/references/pruning.md) is mandatory
+within scope on every Bootstrap/Maintain, for
+[completed-task retention](../../../skills/shared/TODO-WORKCENTER.md#completed-task-retention).
+A bare invocation prints the `autowork tasks prune` plan and stops; it deletes no
+record. `/docs-sync tasks`, or a request that names pruning or task cleanup, runs
+`autowork tasks prune --apply --expect-plan REV`. Do not derive the retention rules
+by script. Keep only records with a concrete current need; Git history is the archive.
+Audit/read-only deletes nothing. Report cleanup counts and one reason for each
+retained record, not a replacement completed-task ledger.
 
 For any prose containing quotes, backticks, `$` (including `$(...)` and `$VAR`)
 or newlines, write one UTF-8 JSON object with a file-writing tool and use
@@ -118,7 +125,9 @@ task lock, refuses a file changed since it was read (or since `--expect REV`, th
 `record_revision` of `show ID --worktree`) and validates the whole store; `add`
 refuses a duplicate title under the same goal. Finish with `autowork tasks validate
 --worktree .` and `autowork tasks prepare .` again (an unchanged repository reports
-the same result); `list`, `show` and `why` read the committed store. Never write
+the same result). `list`, `show` and `why` read the committed store unless
+`--store worktree` is given; `prepare --check` reads the working tree when task
+files are uncommitted and prints `read: HEAD` or `read: worktree`. Never write
 TODO.md or goals.json. An existing `TODO.archive.md` is frozen, read-only
 history ([frozen archive](../../../skills/docs-sync/references/todo-archive.md)).
 Do not create a second tracker. Use source inspection for routine edits; graph tools
@@ -129,8 +138,10 @@ Its optional repository-type `profile` sets which roles are baseline.
 
 The scaffold's parent-skill references describe document roles, not permission to
 start Hermes coordination. Use this adapter for execution rules. Keep actual external
-inputs in BLOCKERS.md; internal engineering work belongs in tasks. Saving docs does
-not authorize implementation, commit, push, scheduling or host configuration changes.
+inputs in BLOCKERS.md; internal engineering work belongs in tasks. This skill neither
+grants nor removes delivery authority: the repository's `AGENTS.md` governs commit,
+integration and push. Saving docs does not authorize implementation, scheduling or
+host configuration changes.
 
 Use the [single-pass handoff](../../../skills/shared/PLAN-HANDOFF.md#one-planning-pass-one-handoff):
 resume accepted decisions and existing task IDs, investigate only missing evidence,
