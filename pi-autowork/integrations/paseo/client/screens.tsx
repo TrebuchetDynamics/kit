@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
 import { canAnswer, closureTone, taskTone, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
 import { operationsKey, readForHost, rememberOperation, useConfirmedAction, useHostState, useReadBackoff, useWatch, type HostState } from './state';
-import { Badge, Banner, Button, Caption, Card, Choice, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme, useColors } from './ui';
+import { Badge, Banner, Button, Caption, Card, Choice, Compact, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, NavItem, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme, Workspace, useColors } from './ui';
 
 type ViewName = 'fleet' | 'runner' | 'tasks' | 'blockers' | 'planning' | 'scorecard';
 const views: Array<[ViewName, string]> = [['fleet', 'Fleet'], ['runner', 'Runner'], ['tasks', 'Tasks'], ['blockers', 'Blockers'], ['planning', 'Planning'], ['scorecard', 'Scorecard']];
@@ -26,9 +26,9 @@ const words = (value: string) => value.split(/[\s,]+/).map(item => item.trim()).
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 export function AutoworkScreen(props: PluginScreenProps) {
-  return <Theme.Provider value={props.theme}>
+  return <Theme.Provider value={props.theme}><Compact.Provider value={props.layout.compact}>
     <HostScreen key={props.host.id} {...props} />
-  </Theme.Provider>;
+  </Compact.Provider></Theme.Provider>;
 }
 
 function HostScreen(props: PluginScreenProps) {
@@ -38,10 +38,10 @@ function HostScreen(props: PluginScreenProps) {
   const digest = useWatch(host, props.host.id, fleet.data?.instance);
   const checked = fleet.isFetching ? 'Refreshing…' : fleet.data ? `${host.current ? (digest ? 'Live via watch' : 'Live') : 'Cached'} · checked ${relativeTime(fleet.data.capturedAt)}${!host.current && digest ? ' · watch active' : ''}` : host.enabled ? 'Loading fleet…' : 'No live observation';
   // Bottom clearance keeps the last action above the navigation bar and the host's floating control.
-  return <ScrollView ref={scrollRef} style={{ flex: 1, backgroundColor: props.theme.colors.surface0 }} contentContainerStyle={{ padding: props.layout.compact ? 14 : 22, paddingBottom: props.layout.compact ? 128 : 48, gap: 12, maxWidth: 1100, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={fleet.isFetching} enabled={host.enabled} onRefresh={host.refresh} tintColor={props.theme.colors.accent} />}>
+  return <ScrollView ref={scrollRef} style={{ flex: 1, backgroundColor: props.theme.colors.surface0 }} contentContainerStyle={{ padding: props.layout.compact ? 16 : 32, paddingBottom: props.layout.compact ? 128 : 48, gap: 24, maxWidth: 1180, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={fleet.isFetching} enabled={host.enabled} onRefresh={host.refresh} tintColor={props.theme.colors.accent} />}>
     <Row between>
       <View style={{ flexShrink: 1, gap: 2, paddingRight: 56 }}>
-        <Heading>{props.host.label}</Heading>
+        <Caption>Autowork / {props.host.label}</Caption><Heading>Operations</Heading>
         <Caption>Autowork · {checked}</Caption>
       </View>
       <Button label={fleet.isFetching ? 'Refreshing…' : 'Refresh'} compact disabled={!host.enabled || fleet.isFetching} onPress={host.refresh} />
@@ -150,11 +150,11 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
   const typedOk = !dangerous || (typed.trim() === pending?.phrase && !!pending.phrase);
   return <>
     {view !== 'fleet' ? <Row><Button label="Back to Fleet" compact onPress={() => setView('fleet')} /><Caption>{view === 'scorecard' ? 'Host overview' : repo?.label ?? 'No repository selected'} · {views.find(([name]) => name === view)?.[1]}</Caption></Row> : null}
-    <Row>{views.map(([name, title]) => <Button key={name} label={title} compact selected={view === name} onPress={() => setView(name)} />)}</Row>
-    <Caption>{viewHints[view]}</Caption>
+    <View accessibilityLabel="Autowork navigation"><Row>{views.map(([name, title]) => <NavItem key={name} label={title} selected={view === name} onPress={() => setView(name)} />)}</Row></View>
+    <Stack gap={4}><Heading level={2}>{views.find(([name]) => name === view)?.[1]}</Heading><Caption>{viewHints[view]}</Caption></Stack>
     {view === 'fleet' ? <FleetBanner repos={repos} decisions={decisions} running={running} onOpen={open} /> : null}
     {view === 'fleet' && hostBlocker ? <Notice tone="danger"><Label bold>Host-wide blocker</Label><Label>{hostBlocker}</Label><Caption>Affects every runner on this host; repository rows do not repeat it.</Caption></Notice> : null}
-    {readOnly ? <Notice tone="warning"><Label bold>Read-only</Label><Caption>The daemon operator has not granted runner controls, planning, task edits or owner answers. Grants live in the daemon-side policy file.</Caption></Notice> : null}
+    {readOnly ? <Notice><Label bold>Read-only</Label><Caption>The daemon operator has not granted runner controls, planning, task edits or owner answers. Grants live in the daemon-side policy file.</Caption></Notice> : null}
     {view !== 'fleet' && view !== 'scorecard' && repos.length ? <Sheet title="Choose repository" open={picker} onClose={() => setPicker(false)}>
       {repos.length > 6 ? <Input label="Search repositories" value={repoSearch} onChange={setRepoSearch} placeholder="name or path" /> : null}
       {repoMatches.map(item => <RepositoryOption key={item.id} repo={item} selected={repo?.id === item.id} onPress={() => { selectId(item.id); setPicker(false); }} />)}
@@ -167,7 +167,7 @@ function FleetContent({ props, host, fleet, scrollRef }: { props: PluginScreenPr
         <Stat value={running} label="running lanes" tone={running ? 'success' : 'neutral'} />
         <Stat value={decisions} label="need decision" tone={decisions ? 'warning' : 'neutral'} />
       </Row>
-      {repos.map(item => <FleetRow key={item.id} repo={item} hostBlocker={hostBlocker} onOpen={open} />)}
+      <View accessibilityLabel="Repository list" style={{ gap: 2 }}>{repos.map(item => <FleetRow key={item.id} repo={item} hostBlocker={hostBlocker} onOpen={open} />)}</View>
       <Expand title="Connection details">
         <Facts rows={[['Release', fleet.release], ['Instance', fleet.instance], ['Executable', fleet.executable], ['Prepare API', String(fleet.prepareApi)], ['Policy', `${fleet.policy.path ?? 'none'} (${fleet.policy.source})`], ['Granted', readOnly ? 'nothing' : grants.join(' · ')], ['Transport', 'unknown'], ['Delivery', 'unknown']]} />
         {fleet.warnings.length ? <Caption>Daemon warnings: {fleet.warnings.join(' · ')}</Caption> : null}
@@ -227,18 +227,19 @@ function FleetBanner({ repos, decisions, running, onOpen }: { repos: Repo[]; dec
 function FleetRow({ repo, hostBlocker, onOpen }: { repo: Repo; hostBlocker: string | null; onOpen: (repo: Repo, view: ViewName) => void }) {
   const runner = repo.runner;
   const ownBlocker = runner?.blocker.trim() && runner.blocker.trim() !== hostBlocker ? runner.blocker.trim() : '';
-  return <Card compact tone={repo.error ? 'danger' : undefined}>
+  const colors = useColors();
+  return <View style={{ paddingVertical: 20, gap: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
     <Row between>
-      <View style={{ flexShrink: 1, gap: 1 }}><Label bold>{repo.label}</Label><Caption truncate>{countSummary(runner)}</Caption></View>
+      <View style={{ flexShrink: 1, gap: 1 }}><Label size="title" bold>{repo.label}</Label><Caption>{countSummary(runner)}</Caption></View>
       <StatusPill state={runner?.display?.state ?? 'unknown'} />
     </Row>
     {ownBlocker ? <Caption>Blocked: {ownBlocker}</Caption> : null}
     {repo.error ? <><Caption>{repo.error}</Caption><Caption truncate>{repo.path} · restore or remove it in the daemon policy</Caption></> : null}
     <Row>
-      <Button label="Open" compact variant="primary" accessibilityLabel={`Open ${repo.label}`} onPress={() => onOpen(repo, 'runner')} />
+      <Button label="Open runner" compact variant="ghost" accessibilityLabel={`Open ${repo.label}`} onPress={() => onOpen(repo, 'runner')} />
       {(runner?.decisions ?? 0) > 0 ? <Button label="Answer" compact accessibilityLabel={`Answer ${repo.label}`} onPress={() => onOpen(repo, 'blockers')} /> : null}
     </Row>
-  </Card>;
+  </View>;
 }
 
 function RepositoryOption({ repo, selected, onPress }: { repo: Repo; selected: boolean; onPress: () => void }) {
@@ -318,17 +319,8 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
   const control = (action: typeof controls[number]) => request(action === 'restart'
     ? { kind: 'control', repoId: repo.id, action, stopWorkers: restartMode !== 'graceful', now: restartMode === 'now' }
     : { kind: 'control', repoId: repo.id, action });
-  return <Stack gap={12}>
-    <Card>
-      <Heading level={2}>Controls</Heading>
-      {safe.length ? <>
-        {!enabled ? <Notice tone="warning"><Label bold>Actions disabled</Label><Caption>{repo.error ? 'Repository identity is unavailable.' : !host.online ? 'Host is offline.' : !host.current ? 'This observation is cached; refresh for live authority.' : 'Another action is being prepared.'}</Caption></Notice> : null}
-        <Row>{safe.map(action => <Button key={action} label={controlTitles[action] ?? action} variant="primary" disabled={!enabled} onPress={() => control(action)} />)}</Row>
-        {controls.includes('restart') ? <Choice label="Restart mode" value={restartMode} options={restartModes} onChange={setRestartMode} disabled={!enabled} danger={['now']} /> : null}
-        {restartMode === 'now' ? <Notice tone="danger"><Label bold>Interrupting merges now can leave an integration incomplete.</Label></Notice> : null}
-        <Caption>Each control is prepared, shown for confirmation with its exact effect, then dispatched once.</Caption>
-      </> : <Caption>Runner controls are read-only by operator policy. Grant controls in the daemon-side policy file to enable start, pause, resume, stop or restart.</Caption>}
-    </Card>
+  return <Stack gap={20}>
+    <Banner tone={stateTone(runner.display?.state ?? 'unknown')} title={runner.display?.state ?? 'Unknown runner state'} body={runner.display?.needs || 'Inspect the observed work and checks before choosing a control.'} />
     <Card>
       <Row>
         <Stat value={runner.running} label="running" tone={runner.running ? 'success' : 'neutral'} />
@@ -345,13 +337,7 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
         </Row>
       </Notice> : null}
     </Card>
-    {danger.length ? <Card tone="danger">
-      <Heading level={2}>Danger zone</Heading>
-      {danger.includes('remove') ? <Label>Remove deletes this runner service from the host. Task records and worktrees stay on disk.</Label> : null}
-      {danger.includes('update') ? <Label>Update replaces the installed Autowork suite for every runner on this host; reload the plugin afterwards.</Label> : null}
-      <Caption>Remove asks for the repository name; Update all runners asks for “all runners” before dispatch.</Caption>
-      <Row>{danger.map(action => <Button key={action} label={controlTitles[action] ?? action} variant="danger" disabled={!enabled} onPress={() => control(action)} />)}</Row>
-    </Card> : null}
+    <Workspace primary={<>
     <Card>
       <Heading level={2}>Health</Heading>
       <Row><StatusPill state={human(record(runner.main_check)?.result_class ?? record(runner.main_check)?.state ?? 'no evidence')} tone={mainCheckTone(runner.main_check)} /><Label>Main check: {mainCheckSummary(runner.main_check)}</Label></Row>
@@ -380,6 +366,26 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
         {query.error ? <Notice tone="danger"><Label>{friendlyError(query.error)}</Label></Notice> : null}
         <Label mono>{query.data?.text ?? 'Loading…'}</Label>
       </Stack> : null}
+    </Card>
+    {runner.lanes.length ? <Card>
+      <Heading level={2}>Active lanes</Heading>
+      {runner.lanes.map((lane, index) => <View key={index} style={{ gap: 3, paddingVertical: 6 }}>
+        <Row><Badge label={lane.phase} tone="accent" /><Label mono>{lane.task}</Label></Row>
+        {lane.detail ? <Label>{lane.detail}</Label> : null}
+        <Caption>{[lane.activity || null, lane.activity_age != null ? `age ${lane.activity_age}` : null, lane.minutes != null ? `${lane.minutes} min` : null, `attempt ${lane.attempt}`].filter(Boolean).join(' · ')}</Caption>
+        {index < runner.lanes.length - 1 ? <Divider /> : null}
+      </View>)}
+    </Card> : null}
+    </>} secondary={<>
+    <Card>
+      <Heading level={2}>Controls</Heading>
+      {safe.length ? <>
+        {!enabled ? <Notice tone="warning"><Label bold>Actions disabled</Label><Caption>{repo.error ? 'Repository identity is unavailable.' : !host.online ? 'Host is offline.' : !host.current ? 'This observation is cached; refresh for live authority.' : 'Another action is being prepared.'}</Caption></Notice> : null}
+        <Row>{safe.map(action => <Button key={action} label={controlTitles[action] ?? action} variant={action === 'start' || action === 'resume' ? 'primary' : 'secondary'} disabled={!enabled} onPress={() => control(action)} />)}</Row>
+        {controls.includes('restart') ? <Choice label="Restart mode" value={restartMode} options={restartModes} onChange={setRestartMode} disabled={!enabled} danger={['now']} /> : null}
+        {restartMode === 'now' ? <Notice tone="danger"><Label bold>Interrupting merges now can leave an integration incomplete.</Label></Notice> : null}
+        <Caption>Each control is prepared, shown for confirmation with its exact effect, then dispatched once.</Caption>
+      </> : <Caption>Runner controls are read-only by operator policy. Grant controls in the daemon-side policy file to enable start, pause, resume, stop or restart.</Caption>}
     </Card>
     <Card>
       <Heading level={2}>Runtime and policy</Heading>
@@ -410,15 +416,14 @@ function RunnerView({ repo, fleet, host, hostId, enabled, request }: RepoViewPro
         <Caption>Technical recovery: held commits return to integration; no owner decision is recorded.</Caption>
       </Expand> : null}
     </Card> : null}
-    {runner.lanes.length ? <Card>
-      <Heading level={2}>Active lanes</Heading>
-      {runner.lanes.map((lane, index) => <View key={index} style={{ gap: 3, paddingVertical: 6 }}>
-        <Row><Badge label={lane.phase} tone="accent" /><Label mono>{lane.task}</Label></Row>
-        {lane.detail ? <Label>{lane.detail}</Label> : null}
-        <Caption>{[lane.activity || null, lane.activity_age != null ? `age ${lane.activity_age}` : null, lane.minutes != null ? `${lane.minutes} min` : null, `attempt ${lane.attempt}`].filter(Boolean).join(' · ')}</Caption>
-        {index < runner.lanes.length - 1 ? <Divider /> : null}
-      </View>)}
+    {danger.length ? <Card tone="danger">
+      <Heading level={2}>Danger zone</Heading>
+      {danger.includes('remove') ? <Label>Remove deletes this runner service from the host. Task records and worktrees stay on disk.</Label> : null}
+      {danger.includes('update') ? <Label>Update replaces the installed Autowork suite for every runner on this host; reload the plugin afterwards.</Label> : null}
+      <Caption>Remove asks for the repository name; Update all runners asks for “all runners” before dispatch.</Caption>
+      <Row>{danger.map(action => <Button key={action} label={controlTitles[action] ?? action} variant="danger" disabled={!enabled} onPress={() => control(action)} />)}</Row>
     </Card> : null}
+    </>} />
   </Stack>;
 }
 
@@ -473,7 +478,7 @@ function TasksView({ repo, fleet, host, hostId, enabled, request, blockers }: Re
     {editing || fleet.permissions.commit ? <PendingCard {...common} /> : null}
     <Card>
       <Row between><Heading level={2}>{blockers ? 'Blocked tasks' : 'Task queue'}</Heading><Caption>{query.isFetching ? 'Refreshing…' : `${host.enabled && !query.isStale && !query.isError ? 'Live' : 'Cached'}${revision ? ` · ${revision.short}${revision.suffix ? ' · working tree' : ''}` : ''}`}</Caption></Row>
-      {query.data ? <Caption>{plural(counts.open, 'open task')} · {counts.decisions} need decision · {counts.blocked} blocked{blockers ? '' : ` · ${counts.done} done`}{editing ? ' · working-tree records, uncommitted edits included' : ''}</Caption> : null}
+      {query.data ? <><Row><Stat value={counts.open} label="open tasks" /><Stat value={counts.decisions} label="need decision" tone={counts.decisions ? 'warning' : 'neutral'} /><Stat value={counts.blocked} label="blocked" />{!blockers ? <Stat value={counts.done} label="done" /> : null}</Row>{editing ? <Caption>working-tree records, uncommitted edits included</Caption> : null}</> : null}
       <Row>
         <Button label="Filters" compact selected={showFilters} onPress={() => setShowFilters(!showFilters)} />
         <Button label={showCompleted ? 'Hide completed' : 'Show completed'} compact selected={showCompleted} onPress={() => setShowCompleted(!showCompleted)} />
@@ -512,15 +517,13 @@ function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; q
   const blocked = !!task.display?.blocker;
   const meta = [task.position ? `Position ${task.position}` : null, blocked ? `Blocked by ${task.display!.blocker}` : !question && task.section ? `Section: ${task.section}` : null].filter(Boolean).join(' · ');
   // A row inside the queue, not a card inside a card.
-  return <View style={{ gap: 6, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
-    <Row><Label mono>{task.id}</Label><StatusPill state={task.display?.state ?? 'unknown'} tone={taskTone(task, question)} />{closure ? <Badge label={closure.label} tone={closureTone(task)} /> : null}</Row>
-    <Label>{task.title}</Label>
-    {meta ? <Caption>{meta}</Caption> : null}
+  return <View style={{ gap: 8, paddingVertical: 18, borderTopWidth: 1, borderTopColor: colors.border }}>
+    <Row between><View style={{ flex: 1, minWidth: 160 }}><Label bold>{task.title}</Label></View><StatusPill state={task.display?.state ?? 'unknown'} tone={taskTone(task, question)} />{closure ? <Badge label={closure.label} tone={closureTone(task)} /> : null}</Row>
+    <Caption>{task.id}{meta ? ` · ${meta}` : ''}</Caption>
     {task.display?.why ? <Caption>{task.display.why}</Caption> : null}
-    {closure && closure.detail !== task.display?.why ? <Caption>{closure.detail}</Caption> : null}
     <Row>
       {question ? <Button label="Answer" compact variant="primary" accessibilityLabel={`Answer task ${task.id}`} onPress={onAnswer} /> : null}
-      <Button label={selected ? 'Hide details' : 'Details'} compact accessibilityLabel={`Open task ${task.id}`} selected={selected} onPress={onOpen} />
+      <Button label={selected ? 'Hide details' : 'Details'} compact variant="ghost" accessibilityLabel={`Open task ${task.id}`} selected={selected} onPress={onOpen} />
     </Row>
   </View>;
 }

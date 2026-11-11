@@ -85,6 +85,13 @@ For a first read-only check:
 3. Select **Refresh**. Inspect the repositories already known to Autowork.
 4. Open **Settings → Plugins → Autowork grants** to see which grants the policy file gives.
 
+The Fleet leads with the current priority and its next action, followed by a compact
+count strip and repository rows. Navigation uses a quiet underline; filled accents
+identify actions. Runner evidence and controls sit in two columns on wide clients
+and stack on compact clients. Task titles lead each queue row; full contracts,
+closure evidence and edits open in the task detail sheet. Content stays within a
+reading width and uses the selected host theme in light and dark modes.
+
 Paseo owns host selection. Inventories and caches never merge across hosts. An offline or unknown host does not fall back to another machine. Workspace and agent panels show only known repositories that match the workspace directory.
 
 These commands are installation instructions, not actions performed by this repository.
