@@ -123,6 +123,8 @@ class IntegrationTests(unittest.TestCase):
         self.git('commit', '-qm', 'worker ' + task, cwd=root)
         commit = self.git('rev-parse', 'HEAD', cwd=root)
         slot = state.transition(self.repo, self.owner, task, 'reported', commit=commit)
+        slot = state.write_slot(self.common, dict(slot, review={
+            'decision': 'passed', 'reason': 'Synthetic independent fixture verdict'}), slot)
         self.pin_contract(task, slot)
         data = dispatch.data_dir(self.common, slot)
         execution.save(data / 'report.json', {'task': task, 'commit': commit,
@@ -131,6 +133,26 @@ class IntegrationTests(unittest.TestCase):
                                       for i, text in enumerate(self.record(task, base).acceptance if self.record(task, base) else (), 1)],
                        'changed_files': list(files or {task + '.txt': ''}), 'checks': [{'command': 'true', 'result': 'pass'}], 'blockers': [], 'changelog': 'fixture'})
         return root, commit
+
+    def test_missing_or_skipped_review_holds_before_any_closure_write(self):
+        self.worker()
+        module = self.module()
+        self.assertEqual(module.integrate(self.repo, self.owner, 'A', ['true'], 10)['outcome'], 'INTEGRATED')
+        original = state.slots(self.common)[0]
+        before = self.task_text('A')
+        for review in (None, {'decision': 'skipped'}, {'decision': 'failed'}):
+            with self.subTest(review=review):
+                slot = dict(original, review=review)
+                state.write_slot(self.common, slot, state.slots(self.common)[0])
+                result = module.close(self.repo, self.owner, 'A')
+                self.assertEqual((result['outcome'], result['cause']), ('HELD', 'validation'))
+                self.assertIn('independent review outstanding', result['reason'])
+                self.assertEqual(self.task_text('A'), before)
+                self.assertFalse((self.repo / 'tasks/evidence/A.toml').exists())
+                held = state.slots(self.common)[0]
+                self.assertEqual(held['report'], original['report'])
+                self.assertEqual(held['commit'], original['commit'])
+                self.assertEqual(held['integration'], original['integration'])
 
     def test_absent_acceptance_holds_without_close_writes(self):
         self.assert_acceptance_hold('absent')

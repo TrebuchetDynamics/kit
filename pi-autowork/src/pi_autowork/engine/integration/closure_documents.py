@@ -15,6 +15,7 @@ class ClosurePorts:
     passed: Callable
     task_path: Callable
     live_items: Callable
+    validate_acceptance: Callable
 
 
 def receipt_path(task):
@@ -33,13 +34,18 @@ def receipt_text(repo, task, slot, info, checks, record, *, ports):
         text = check_receipt.redact(str(text))
         return re.sub(r'(?<![\w.-])/(?:[^\s/]+/)+[^\s/]*', '<path>', text)
 
+    ports.validate_acceptance(slot.get('report') or {}, record.acceptance)
     tree = ports.git(repo, 'rev-parse', f"{info['commit']}^{{tree}}")
-    review = (slot.get('review') or {}).get('decision') or ('passed' if ports.passed(checks) else 'failed')
+    review = (slot.get('review') or {}).get('decision') or 'not_supplied'
     fields = [('schema', 1), ('task', task), ('candidate', slot['commit']), ('integration', info['commit']),
               ('tree', tree), ('contract_hash', record.contract_hash),
               ('checks', [public(part) for part in command]),
               ('result', 'pass' if ports.passed(checks) else 'fail'), ('review', public(review))]
     lines = [f'{key} = {task_store.toml_value(key, value)}' for key, value in fields]
+    for entry in sorted(slot['report']['acceptance'], key=lambda item: item['index']):
+        lines.append('\n[[acceptance]]')
+        lines.extend(f'{key} = {task_store.toml_value(key, public(entry[key]) if key != "index" else entry[key])}'
+                     for key in ('index', 'criterion', 'result', 'evidence'))
     return '\n'.join(lines) + '\n'
 
 
@@ -117,6 +123,9 @@ def close_writes(repo, task, slot, info, checks, record, *, ports):
     By default live checks are notes on the done record, not another owner decision;
     PI_AUTOWORK_LIVE_FOLLOWUP=backlog keeps the per-goal backlog behavior, and =none drops the
     notes. Nothing else; TODO.archive.md is not written."""
+    ports.validate_acceptance(slot.get('report') or {}, record.acceptance)
+    if (slot.get('review') or {}).get('decision') != 'passed':
+        raise ValueError('independent review outstanding: a passed review is required for Verified closure')
     # From the record as committed: a close records the verified contract, never a local edit.
     committed = ports.git(repo, 'show', f'HEAD:{ports.task_path(task)}', raw=True).decode()
     text = task_store.edit(committed, {'status': 'done', 'closure': 'coordinator_verified',

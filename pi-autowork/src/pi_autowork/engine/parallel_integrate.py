@@ -1061,6 +1061,11 @@ def integrate(repo, owner_pid, task, argv, timeout, reviewer=None, base=None, ba
                     git(repo, 'merge', '--ff-only', merge)
                     if git(repo, 'rev-parse', 'HEAD') != merge:
                         raise ValueError('canonical fast-forward readback mismatch')
+                    review = slot.get('review')
+                    if len(argv) == 5 and argv[2] == '--verify':
+                        from pi_autowork import worker
+                        review = worker.review_verdict(argv[3], task, root)
+                    slot = state.write_slot(common, dict(slot, review=review), slot)
                     state.change(common, slot, 'integrated', {'integration': integration, 'checks': check})
                     return {'outcome': 'INTEGRATED', 'task': task, 'integration': integration,
                             'ledger_edit_dropped': slot.get('ledger_edit_dropped'),
@@ -1159,9 +1164,15 @@ def display_free(contract):
     return _DISPLAY_LINE.sub('', contract or '').strip()
 
 
+def _validate_closure_acceptance(report, criteria):
+    if mismatch := acceptance_mismatch(report, criteria):
+        raise Hold('validation', mismatch)
+
+
 def _closure_ports():
     return closure_documents.ClosurePorts(git=git, passed=passed,
-                                          task_path=execution.task_path, live_items=live_items)
+                                          task_path=execution.task_path, live_items=live_items,
+                                          validate_acceptance=_validate_closure_acceptance)
 
 
 def receipt_path(task):
@@ -1283,6 +1294,10 @@ def close(repo, owner_pid, task):
             raise ValueError('task record missing from tasks/; no close')
         if record.contract_hash != info.get('contract_hash'):
             raise ValueError(CONTRACT_CHANGED)
+        if (slot.get('review') or {}).get('decision') != 'passed':
+            return hold(common, slot,
+                        'independent review outstanding: a passed review is required for Verified closure',
+                        cause='validation')
         written = repo / execution.task_path(task)
         on_disk = task_store.edit(written.read_text(), {}) if written.exists() else ''
         done_on_disk = 'status = "done"' in on_disk

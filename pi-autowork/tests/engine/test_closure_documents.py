@@ -26,14 +26,19 @@ RECEIPT = ('schema = 1\ntask = "A"\ncandidate = "candidate"\nintegration = "merg
            'checks = ["check", "[REDACTED]", "<path>"]\nresult = "pass"\nreview = "passed"\n')
 
 
+RECEIPT += '\n[[acceptance]]\nindex = 1\ncriterion = "Criterion"\nresult = "met"\nevidence = "check [REDACTED] <path>"\n'
+
+
 class ClosureDocumentsTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=os.environ['TMPDIR'])
         self.addCleanup(self.temp.cleanup)
         self.repo = Path(self.temp.name)
         self.record = SimpleNamespace(id='A', goal='GOAL-1', rank=7, touches=('src/a.py', 'shared'),
-                                      resources=('device',), contract_hash='contract')
-        self.slot = {'commit': 'candidate', 'report': {'pending_live': ['Phone check']}}
+                                      resources=('device',), contract_hash='contract', acceptance=('Criterion',))
+        self.slot = {'commit': 'candidate', 'review': {'decision': 'passed'}, 'report': {
+            'pending_live': ['Phone check'], 'acceptance': [dict(index=1, criterion='Criterion',
+            result='met', evidence='check fixture-private-value /private/work/check.py')]}}
         self.info = {'commit': 'merge'}
         self.checks = {'outcome': 'EXECUTED', 'command_receipt': {
             'exit_code': 0, 'argv': ['check', 'fixture-private-value', '/private/work/check.py']}}
@@ -86,6 +91,57 @@ class ClosureDocumentsTests(unittest.TestCase):
         self.assertEqual(receipt, RECEIPT.replace('["check", "[REDACTED]", "<path>"]', '["check"]')
                          .replace('result = "pass"', 'result = "fail"')
                          .replace('review = "passed"', 'review = "approved [REDACTED] <path>"'))
+
+    def test_missing_or_unmet_evidence_refuses_before_preparation(self):
+        for entries in (None, [], [dict(index=1, criterion='Criterion', result='not_met', evidence='failed')],
+                        [dict(index=1, criterion='Criterion', result='not_checked', evidence='unreached')]):
+            with self.subTest(entries=entries):
+                self.slot['report']['acceptance'] = entries
+                with patch.object(facade, 'git', side_effect=AssertionError('prepared documents')):
+                    with self.assertRaisesRegex(facade.Hold, 'acceptance evidence'):
+                        self.prepare()
+                self.assertEqual(list(self.repo.iterdir()), [])
+
+    def test_absent_and_skipped_review_are_literal(self):
+        self.slot.pop('review')
+        self.assertIn('review = "not_supplied"', facade.receipt_text(self.repo, 'A', self.slot, self.info, self.checks, self.record))
+        self.slot['review'] = {'decision': 'skipped'}
+        self.assertIn('review = "skipped"', facade.receipt_text(self.repo, 'A', self.slot, self.info, self.checks, self.record))
+
+    def test_successful_reviewer_records_only_source_bound_verdict(self):
+        import json
+        from pi_autowork import worker
+        with patch.object(worker, 'worker_tmp', return_value=None), \
+                patch.object(worker, 'repository_cache', return_value=None), \
+                patch.object(worker, 'pending_live', return_value=[]), \
+                patch.object(worker, 'changelog_note', return_value=''), \
+                patch.object(worker, 'ponytail_prompt', return_value=''), \
+                patch.object(worker, 'dirty', return_value=False), \
+                patch.object(worker, 'git', side_effect=lambda checkout, *args: 'tree' if args[-1] == 'HEAD^{tree}' else 'merge'), \
+                patch.object(worker.pi_runtime, 'Settings', return_value=object()), \
+                patch.object(worker.pi_runtime, 'job', return_value={
+                    'ok': True, 'text': 'PI_AUTOWORK_VERIFY: pass independently checked acceptance'}) as reviewer:
+            self.assertEqual(worker.review(str(self.repo), 'A', str(self.repo), 'merge'), 0)
+            reviewer.assert_called_once()
+            verdict = worker.review_verdict(str(self.repo), 'A', str(self.repo))
+            self.assertEqual(verdict, {'decision': 'passed', 'commit': 'merge', 'tree': 'tree'})
+            path = self.repo / 'review-verdict/A.json'
+            for field in ('commit', 'tree'):
+                path.write_text(json.dumps(dict(verdict, **{field: 'stale'})))
+                self.assertIsNone(worker.review_verdict(str(self.repo), 'A', str(self.repo)))
+            path.write_text(json.dumps(verdict))
+            with patch.object(worker.pi_runtime, 'job', return_value={'ok': True, 'text': 'no verdict'}):
+                self.assertEqual(worker.review(str(self.repo), 'A', str(self.repo), 'merge'), 1)
+            self.assertIsNone(worker.review_verdict(str(self.repo), 'A', str(self.repo)))
+
+    def test_unpassed_review_refuses_closure_preparation(self):
+        for review in (None, {'decision': 'skipped'}, {'decision': 'failed'}):
+            with self.subTest(review=review):
+                self.slot['review'] = review
+                with patch.object(facade, 'git', side_effect=AssertionError('prepared documents')):
+                    with self.assertRaisesRegex(ValueError, 'independent review outstanding'):
+                        self.prepare()
+                self.assertEqual(list(self.repo.iterdir()), [])
 
     def test_followup_modes_keep_notes_or_return_one_backlog(self):
         for mode in (None, 'notes', ' UNKNOWN ', 'none', ' BACKLOG '):
@@ -188,8 +244,8 @@ class ClosureDocumentsTests(unittest.TestCase):
             'task_store_rank': '(record)', 'close_writes': '(repo, task, slot, info, checks, record)'}
         for name, signature in signatures.items():
             self.assertEqual(str(inspect.signature(getattr(facade, name))), signature)
-        self.assertEqual([f.name for f in fields(leaf.ClosurePorts)], ['git', 'passed', 'task_path', 'live_items'])
-        ports = leaf.ClosurePorts(facade.git, facade.passed, facade.execution.task_path, facade.live_items)
+        self.assertEqual([f.name for f in fields(leaf.ClosurePorts)], ['git', 'passed', 'task_path', 'live_items', 'validate_acceptance'])
+        ports = leaf.ClosurePorts(facade.git, facade.passed, facade.execution.task_path, facade.live_items, facade._validate_closure_acceptance)
         with self.assertRaises(FrozenInstanceError):
             ports.git = None
         seen = []
@@ -215,7 +271,7 @@ class ClosureDocumentsTests(unittest.TestCase):
             self.assertEqual(writes['records/A.md'], DONE + f'- Pending live: live-{n}\n')
             self.assertEqual(writes['tasks/evidence/A.toml'], RECEIPT.replace('tree = "tree"', f'tree = "tree-{n}"')
                              .replace('result = "pass"', 'result = "pass"' if n == 1 else 'result = "fail"')
-                             .replace('review = "passed"', 'review = "passed"' if n == 1 else 'review = "failed"'))
+                             .replace('review = "passed"', 'review = "passed"'))
         self.assertIsNot(seen[0], seen[1])
 
     def test_actual_src_leaf_rejects_reverse_imports_and_import_time_side_effects(self):

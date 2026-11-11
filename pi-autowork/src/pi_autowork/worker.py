@@ -28,7 +28,10 @@ from .processes import alive, start_time
 REVIEW = ('You are an independent reviewer verifying task {task} in {checkout}, which holds a worker\'s commit '
           'merged onto the session branch (see git log -1 and git diff HEAD^1 HEAD). Read the task\'s record, '
           'tasks/items/{task}.md (its acceptance and checks), run the offline checks it lists, and judge the merged change '
-          'against the acceptance criteria. Block only concrete acceptance failures, regressions, security issues '
+          'against the acceptance criteria. Independently confirm EACH admitted criterion against actual evidence. '
+          'The report acceptance list uses index (1-based), exact criterion text, result (met, not_met or '
+          'not_checked), and evidence. Fail any met claim you cannot independently confirm. A stopped or '
+          'unreached verdict is not_checked, never met; passing checks alone do not prove acceptance. Block only concrete acceptance failures, regressions, security issues '
           'or credible data-loss risks, with the affected behavior and evidence named. Do not ask for more '
           'tests than the acceptance and Checks need. Style, preferred abstractions, duplicate tests and '
           'table-driven test preferences are advisory follow-ups, not failures, unless they cause a concrete '
@@ -905,6 +908,8 @@ def review_decision(state, task, checkout, evidence=None):
     except (OSError, ValueError):
         previous = {}
     path.write_text(json.dumps(decision))
+    if not decision['required']:
+        (Path(state) / 'review-verdict' / f'{safe_name(task)}.json').unlink(missing_ok=True)
     action = 'required' if decision['required'] else 'skipped'
     # A re-dispatched worker asks the same question of the same tree. Say it once per tree rather
     # than repeat an identical line every cycle (2026-10-31); the stored decision is the answer.
@@ -1597,7 +1602,23 @@ def gate_note(state, task, checkout):
     return build_gate_note(command, tree, outcome, reference, selection)
 
 
+def review_verdict(state, task, checkout):
+    """A successful independent verdict bound to this exact candidate tree and commit."""
+    path = Path(state) / 'review-verdict' / f'{safe_name(task)}.json'
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if (isinstance(value, dict) and value.get('decision') == 'passed'
+            and value.get('commit') == git(checkout, 'rev-parse', 'HEAD')
+            and value.get('tree') == git(checkout, 'rev-parse', 'HEAD^{tree}')):
+        return value
+    return None
+
+
 def review(state, task, checkout, head_before, gate=''):
+    verdict_path = Path(state) / 'review-verdict' / f'{safe_name(task)}.json'
+    verdict_path.unlink(missing_ok=True)
     provisioned = worker_tmp(checkout, task)
     cache = repository_cache(checkout)
     # Set or cleared: a value inherited from the caller names another task's files.
@@ -1646,6 +1667,9 @@ def review(state, task, checkout, head_before, gate=''):
     elif verdict == 'pass':
         findings_path(state, task).unlink(missing_ok=True)
     if result['ok'] and verdict == 'pass':
+        verdict_path.parent.mkdir(parents=True, exist_ok=True)
+        verdict_path.write_text(json.dumps({'decision': 'passed', 'commit': head_before,
+                                            'tree': git(checkout, 'rev-parse', 'HEAD^{tree}')}))
         return 0
     if not verdict:
         # Why there is no verdict, for the hold: a review that ran out of time is reviewed again with
