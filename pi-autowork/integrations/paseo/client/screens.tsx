@@ -6,7 +6,7 @@ import { Pressable, RefreshControl, View } from 'react-native';
 import type { ScrollView as NativeScrollView } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { goalsRpc, logsRpc, modelsRpc, operationRpc, planningRpc, scorecardRpc, statusRpc, storeRpc, taskRpc, tasksRpc, type ActionInput, type Fleet, type Goal, type Operation, type Repo, type Runner, type Task, type TaskDetail } from '../shared/contracts';
-import { canAnswer, closureTone, taskTone, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, taskMatches, whyStopped, type TaskFilters } from './presentation';
+import { canAnswer, closureTone, taskTone, countSummary, display, emptyFilters, friendlyError, headline, human, isActionable, jobSummary, knownDirectory, mainCheckSummary, mainCheckTone, observationRows, previewForApply, record, relativeTime, reloadRequired, revisionParts, runnerFacts, selectionFacts, sharedBlocker, sortByUrgency, stateTone, stopFacts, taskMatches, whyStopped, type TaskFilters } from './presentation';
 import { operationsKey, readForHost, rememberOperation, useConfirmedAction, useHostState, useReadBackoff, useWatch, type HostState } from './state';
 import { Badge, Banner, Button, Caption, Card, Choice, Compact, Divider, Expand, Facts, HashChip, Heading, Input, Label, Markdown, NavItem, Notice, Row, ScrollRow, Sheet, Stack, Stat, StatusPill, Theme, Workspace, useColors } from './ui';
 
@@ -515,7 +515,7 @@ function TaskRow({ task, question, selected, onOpen, onAnswer }: { task: Task; q
   const colors = useColors();
   const closure = task.display?.closure;
   const blocked = !!task.display?.blocker;
-  const meta = [task.position ? `Position ${task.position}` : null, blocked ? `Blocked by ${task.display!.blocker}` : !question && task.section ? `Section: ${task.section}` : null].filter(Boolean).join(' · ');
+  const meta = [task.position ? `Position ${task.position}` : null, blocked ? `Stopped · ${task.display!.blocker}` : !question && task.section ? `Section: ${task.section}` : null].filter(Boolean).join(' · ');
   // A row inside the queue, not a card inside a card.
   return <View style={{ gap: 8, paddingVertical: 18, borderTopWidth: 1, borderTopColor: colors.border }}>
     <Row between><View style={{ flex: 1, minWidth: 160 }}><Label bold>{task.title}</Label></View><StatusPill state={task.display?.state ?? 'unknown'} tone={taskTone(task, question)} />{closure ? <Badge label={closure.label} tone={closureTone(task)} /> : null}</Row>
@@ -541,6 +541,7 @@ function DecisionsCard({ runner, tasks, onAnswer }: { runner: Runner | null; tas
       <Row><Button label="Answer" variant="primary" compact accessibilityLabel={`Answer ${question.id}`} onPress={() => onAnswer(question.id)} /></Row>
       <Divider />
     </View>) : <Caption>No canonical owner question observed.</Caption>}
+    {questions.length ? <Caption>An answer records a decision note. It does not start runners, grant live permission or complete the unblocked tasks; commit it separately.</Caption> : null}
     <Expand title="Technical holds and blocker evidence">
       <Label>Held commits and stopped groups are technical state, not owner questions.</Label>
       <Facts rows={[['Held', human(runner?.held)], ['Roots', human(runner?.roots)], ['Waiting groups', human(runner?.waiting_groups)], ['Stopped groups', human(runner?.stopped_groups)], ['Main check', mainCheckSummary(runner?.main_check)]]} />
@@ -720,7 +721,7 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
   const answerable = !!(task && repo.runner && detail && canAnswer(task, repo.runner, detail));
   const presentation = (detail && task?.display?.record_revision === detail.record_revision
     ? task.display : detail?.display) ?? task?.display;
-  const blocked = !!presentation?.blocker;
+  const stopped = stopFacts(presentation, answerable);
   const state = presentation?.state ?? 'unknown';
   const meta = detail ? [detail.section ? `Section: ${detail.section}` : null, detail.goal ? `Goal: ${detail.goal}` : null].filter(Boolean).join(' · ') : '';
   const closure = presentation?.closure;
@@ -744,7 +745,7 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
     </Notice> : null}
     {detail ? <>
       <Row><StatusPill state={state} tone={taskTone(detail ?? task, answerable)} />{closure ? <Badge label={closure.label} tone={closureTone(detail ?? task)} /> : null}{meta ? <Caption>{meta}</Caption> : null}</Row>
-      {presentation?.why ? <Caption>{presentation.why}</Caption> : null}
+      {!stopped && presentation?.why ? <Caption>{presentation.why}</Caption> : null}
       {closure && closure.detail !== presentation?.why ? <Caption>{closure.detail}</Caption> : null}
       {answerable ? <>
         <Heading level={3}>Decision needed</Heading>
@@ -752,12 +753,12 @@ function TaskView({ task, taskId, repo, fleet, host, hostId, enabled, request }:
         {question ? <Caption>unblocks {plural(question.unblocks, 'task')}</Caption> : null}
         <Input label="Owner answer" value={answer} onChange={setAnswer} multiline placeholder="State the decision and its scope, or explain why the task stays deferred." />
         <Button label="Send answer" variant="primary" disabled={!writable || !answer.trim() || !fleet.permissions.decisions} onPress={() => request({ kind: 'decision', repoId: repo.id, task: taskId, revision: detail.record_revision, text: answer })} />
-        <Caption>Review and confirm next. Saves a note; commit it separately. An answer alone does not grant live permission or move this task.</Caption>
+        <Caption>Review and confirm next. Saves a note; commit it separately. An answer alone does not grant live permission, start work or close the task.</Caption>
         {question?.answer ? <Expand title="How to resolve"><Markdown text={question.answer} /></Expand> : null}
         {!fleet.permissions.decisions ? <Caption>Owner answers are not granted by operator policy.</Caption> : null}
-      </> : blocked ? <Notice tone="warning">
-        <Label bold>Blocked by {presentation!.blocker}</Label>
-        <Caption>No owner question is recorded for this task, so there is nothing to answer here. Refresh for a current blocker; a technical hold clears without an owner answer.</Caption>
+      </> : stopped ? <Notice tone="warning">
+        <Label bold>{stopped.title}</Label>
+        <Facts rows={stopped.rows} />
       </Notice> : null}
       <Expand title="Contract and evidence">
         <Facts rows={contract} />
