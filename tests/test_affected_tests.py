@@ -1,9 +1,12 @@
 """scripts/affected_tests.py selects the test modules a change can reach, with the reason."""
+import contextlib
+import io
+import json
 from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -152,6 +155,67 @@ class AffectedTestsTests(unittest.TestCase):
     def test_planning_records_select_nothing(self):
         tests, _, full = affected_tests.select(['tasks/items/TOOLSET-001-00.md'])
         self.assertEqual(([t for t in tests if t != SELF], full), ([], False))
+
+
+class ExecutionTests(unittest.TestCase):
+    def invoke(self, argv, *, full=True, tests=None):
+        tests = ['tests/test_example.py'] if tests is None else tests
+        reasons = {test: 'unmapped.py has no resolved test mapping: the whole suite' for test in tests}
+        output = io.StringIO()
+        with patch.object(affected_tests, 'changed_files', return_value=['unmapped.py']), \
+                patch.object(affected_tests, 'select', return_value=(tests, reasons, full)) as select, \
+                patch.object(affected_tests.subprocess, 'run', return_value=Mock(returncode=7)) as run, \
+                contextlib.redirect_stdout(output):
+            code = affected_tests.main(['--base', 'HEAD', *argv])
+        select.assert_called_once_with(['scripts/check.py'] if '--full' in argv else ['unmapped.py'],
+                                       'HEAD', conservative=True)
+        return code, output.getvalue(), run
+
+    def test_push_defers_a_full_selection_with_an_explicit_reason(self):
+        code, output, run = self.invoke(['--run', '--defer-full'])
+        self.assertEqual(code, 0)
+        run.assert_not_called()
+        self.assertIn('unmapped.py has no resolved test mapping', output)
+        self.assertIn('deferred to CI', output)
+        self.assertIn('no test modules run locally', output)
+
+    def test_default_execution_keeps_the_conservative_full_suite(self):
+        for argv in (['--run'], ['--run', '--full']):
+            with self.subTest(argv=argv):
+                code, _, run = self.invoke(argv)
+                self.assertEqual(code, 7)
+                run.assert_called_once_with(
+                    [sys.executable, str(ROOT / 'scripts/check.py')], cwd=ROOT)
+
+    def test_push_runs_targeted_tests_and_preserves_failure_and_pattern(self):
+        code, _, run = self.invoke(['--run', '--defer-full', '-k', 'example'], full=False)
+        self.assertEqual(code, 7)
+        run.assert_called_once_with(
+            [sys.executable, str(ROOT / 'scripts/check.py'), 'tests/test_example.py', '-k', 'example'], cwd=ROOT)
+
+    def test_empty_and_preview_selections_do_not_run(self):
+        for argv, full, tests in ((['--defer-full'], True, ['tests/test_example.py']),
+                                  (['--run', '--defer-full'], False, [])):
+            with self.subTest(argv=argv, full=full):
+                code, _, run = self.invoke(argv, full=full, tests=tests)
+                self.assertEqual(code, 0)
+                run.assert_not_called()
+
+    def test_json_distinguishes_deferral_from_a_passing_test_run(self):
+        code, output, run = self.invoke(['--run', '--defer-full', '--json'])
+        self.assertEqual(code, 0)
+        selection = json.loads(output)
+        self.assertTrue(selection['full'])
+        self.assertTrue(selection['deferred'])
+        self.assertEqual(selection['tests'], ['tests/test_example.py'])
+        run.assert_not_called()
+        _, output, _ = self.invoke(['--defer-full', '--json'])
+        self.assertFalse(json.loads(output)['deferred'])
+
+    def test_explicit_full_and_deferral_are_mutually_exclusive(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+            affected_tests.main(['--full', '--defer-full'])
+        self.assertEqual(error.exception.code, 2)
 
 
 if __name__ == '__main__':

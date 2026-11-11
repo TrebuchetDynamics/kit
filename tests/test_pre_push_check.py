@@ -33,6 +33,17 @@ class PushedBasesTests(unittest.TestCase):
                  f'refs/heads/new {C} refs/heads/new {ZERO}']
         self.assertEqual(pre_push_check.pushed_bases(lines, known=lambda sha: True), [A, None])
 
+    def test_affected_command_defers_full_suite_but_keeps_targeted_failures(self):
+        for base in (A, None):
+            with self.subTest(base=base), mock.patch.object(pre_push_check.subprocess, 'run',
+                                                          return_value=mock.Mock(returncode=7)) as run:
+                code = pre_push_check.run_affected(base)
+                self.assertEqual(code, 7)
+                run.assert_called_once_with(
+                    [sys.executable, str(pre_push_check.ROOT / 'scripts/affected_tests.py'),
+                     '--run', '--defer-full', *(['--base', base] if base else [])],
+                    cwd=pre_push_check.ROOT, env=pre_push_check.test_environment())
+
 
 class MainTests(unittest.TestCase):
     def setUp(self):
