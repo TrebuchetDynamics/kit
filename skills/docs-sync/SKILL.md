@@ -589,7 +589,9 @@ confirm with `autowork tasks why ID` that it is not selected.
 
 ### Prune completed task history
 
-Before the final validation, perform the mandatory
+Before the final validation, perform
+[working-set reconciliation](../shared/TODO-WORKCENTER.md#reconcile-the-working-set),
+including the mandatory
 [completed-task retention pass](../shared/TODO-WORKCENTER.md#completed-task-retention)
 for the maintained scope. Confirm actual closure, integration and inactive ownership;
 reconcile satisfied ordinary dependencies and still-required proof before deleting

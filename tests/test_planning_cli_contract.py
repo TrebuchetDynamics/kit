@@ -302,6 +302,55 @@ class PlanningCliContractTests(unittest.TestCase):
         self.assertNotIn('The closed record stays', archive)
         self.assertIn('frozen, read-only history', archive)
 
+    def test_writable_workflows_reconcile_the_working_set(self):
+        # Routing coverage, not evidence that an installed runner performs cleanup.
+        policy = prose(WORKCENTER).split('## Reconcile the working set', 1)[1].split(
+            '## Completed-task retention', 1)[0]
+        for rule in ('writable planning/maintenance handoff', 'integrated execution closeout',
+                     'coordinator', 'staged, unstaged and untracked', 'orphan receipts/reports',
+                     'not deletion proof', 'eligible records removed', 'no-op'):
+            self.assertIn(rule, policy)
+        for path in (HANDOFF, 'skills/shared/ENGINEERING-CYCLE.md',
+                     'skills/autowork/SKILL.md', 'skills/work/SKILL.md',
+                     'skills/docs-sync/SKILL.md'):
+            with self.subTest(path=path):
+                self.assertIn('TODO-WORKCENTER.md#reconcile-the-working-set', prose(path))
+        pending = prose('skills/pending/SKILL.md')
+        self.assertIn('TODO-WORKCENTER.md#read-completed-work-from-git', pending)
+        self.assertIn('Manual versus Verified', pending)
+        self.assertIn('list --worktree', pending)
+        history = prose(WORKCENTER).split('## Read completed work from Git', 1)[1].split(
+            '## Rolling planning', 1)[0]
+        for rule in ('manual closes have no receipt', 'not a completion count',
+                     'deletion commit is not the closure revision', 'Deduplicate by task ID',
+                     'missing/shallow history', 'Never restore historical records'):
+            self.assertIn(rule, history)
+
+    def test_git_history_preserves_a_pruned_manual_close_without_a_receipt(self):
+        self.tasks('done', 'T-1', '--by', 'fixture', '--reason', 'accepted manual disposition')
+
+        def git(*args):
+            return subprocess.run(
+                ['git', '-C', str(self.repo), '-c', 'user.name=Fixture',
+                 '-c', 'user.email=fixture@example.invalid', *args],
+                check=True, capture_output=True, text=True).stdout.strip()
+
+        git('add', 'tasks/')
+        git('commit', '-qm', 'close fixture')
+        closure = git('rev-parse', 'HEAD')
+        self.tasks('delete', 'T-1')
+        git('add', 'tasks/')
+        git('commit', '-qm', 'prune fixture')
+        self.assertFalse((self.repo / 'tasks/items/T-1.md').exists())
+        self.assertFalse((self.repo / 'tasks/evidence/T-1.toml').exists())
+        log = git('log', 'HEAD', '--format=%H', '--', 'tasks/items/', 'tasks/evidence/')
+        self.assertIn(closure, log.splitlines())
+        record = git('show', f'{closure}:tasks/items/T-1.md')
+        self.assertIn('status = "done"', record)
+        self.assertIn('closure = "manual"', record)
+        self.assertIn('accepted manual disposition', record)
+        self.assertFalse((self.repo / 'tasks/items/T-1.md').exists())
+
     def test_identifier_guidance_matches_current_allocation_without_renaming_history(self):
         center = prose(WORKCENTER)
         self.assertIn('plain numbered IDs', center)
