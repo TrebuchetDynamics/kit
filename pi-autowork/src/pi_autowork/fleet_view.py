@@ -2019,7 +2019,7 @@ def task_view(rows, view):
         return [r for r in rows if r.question]
     if view == 'decisions':
         # Owner-waiting rows never dispatch, so they are not a kind and stay out of every other view.
-        return [r for r in rows if r.section == 'Needs decision' and r.kind not in ('closed', 'annotation')]
+        return [r for r in rows if r.section == 'Needs decision' and r.bucket != 'Deferred' and r.kind not in ('closed', 'annotation')]
     return [r for r in rows if r.kind == view]
 
 

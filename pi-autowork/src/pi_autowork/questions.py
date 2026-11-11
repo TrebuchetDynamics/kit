@@ -94,6 +94,8 @@ def build(snapshot, repo, repairs=(), resolving=(), *, now=None):
         if disposition['resolution_owner'] != failure_policy.OWNER:
             return
         qid = _question_id(qid)
+        if qid in deferred:
+            return
         found[qid] = dict(id=qid, resolution_owner=failure_policy.OWNER,
                           type='USER_INPUT' if effort == 'input' else 'USER_DECISION', effort=effort,
                           unblocks=unblocks, task=_one_line(task_line), needs=_one_line(needs),

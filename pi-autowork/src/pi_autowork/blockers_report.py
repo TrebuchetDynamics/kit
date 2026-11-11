@@ -108,6 +108,24 @@ def _deferred_wait(row, deferred):
     return False
 
 
+def _deferred_root(root, deferred, inventory):
+    """Only outside task roots can be quiet; claims and technical roots stay visible.
+
+    Legacy producers encoded a live gate in the ID. Accept only that exact
+    prefix followed by a known deferred task, never arbitrary display prose.
+    """
+    if not isinstance(root, dict) or root.get('kind') != 'outside':
+        return False
+    identity = root.get('task') or root.get('id')
+    if isinstance(identity, str) and identity.startswith('Live authorization: '):
+        identity = identity[len('Live authorization: '):]
+    if identity not in inventory or identity not in deferred:
+        return False
+    affected = root.get('tasks', [identity])
+    return (isinstance(affected, list) and bool(affected)
+            and all(isinstance(t, str) and t in inventory and t in deferred for t in affected))
+
+
 def _deferred_summary(runner, store, deferred, status, now):
     """A small overview only when every open task is deferred or waits on those deferrals."""
     entries = []
@@ -395,7 +413,7 @@ def build(runner):
     only_waits = all(row.get('state') in ('closed', 'done', 'superseded')
                      or (row.get('state') == 'waiting' and row['task'] in opened
                          and _deferred_wait(row, deferred)) for row in rows)
-    only_deferred_roots = all(root.get('id') in deferred for root in [*roots, *runner.roots])
+    only_deferred_roots = all(_deferred_root(root, deferred, store.tasks) for root in [*roots, *runner.roots])
     backlog_busy = isinstance(backlog, dict) and (backlog.get('count') or backlog.get('paused'))
     if (deferred and not groups and not technical and not interrupted and not errors
             and not recorded_activity and not runner.lanes and not runner.held

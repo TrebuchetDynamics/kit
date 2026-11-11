@@ -28,6 +28,8 @@ def describe(committed, saved, paths, revision, workspace, baseline_error=None):
         new_answer = committed is not None and bool(answers(after)) and answers(after) != answers(before)
         if pending:
             state, action = ('pending_commit' if new_answer else 'pending_edit'), 'review_commit'
+        elif after and tid in deferrals:
+            state, action = 'deferred', 'wait_for_input'
         elif after and after.section == 'Needs decision':
             state, action = ('deferred', 'wait_for_input') if tid in deferrals else ('answer_required', 'answer')
         else:

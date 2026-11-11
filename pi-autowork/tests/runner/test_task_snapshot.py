@@ -17,6 +17,38 @@ from pi_autowork import command, fleet_view, task_snapshot
 
 
 class TaskSnapshotTests(unittest.TestCase):
+    def test_committed_deferred_owner_live_end_to_end(self):
+        from pi_autowork.engine import parallel_status
+        from pi_autowork import health, questions
+        store_fixture.write_todo(self.repo, '## Now\n- [ ] A — Owner live action\n- [ ] B — Dependent\n')
+        a = self.repo / 'tasks/items/A.md'
+        b = self.repo / 'tasks/items/B.md'
+        original = edit(a.read_text(), dict(ownership='owner', live='denied'))
+        b.write_text(edit(b.read_text(), dict(depends_on=['A'])))
+        for note, deferred in (('2026-11-01: deferred: waiting', True),
+                               ('2026-11-01: deferred: waiting\n- Owner decision: 2026-11-02: proceed', False),
+                               ('', False)):
+            with self.subTest(note=note):
+                a.write_text(original + ('\n- Owner decision: ' + note + '\n' if note else ''))
+                subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=T',
+                                '-c', 'user.email=t@example.invalid', 'commit', '-qam', 'decision'], check=True)
+                value = parallel_status.snapshot(self.repo)
+                snap = task_snapshot.capture(self.repo, engine_observation=value, generation=1)
+                rows = {row.task: row for row in snap.rows}
+                self.assertEqual(rows['A'].state == 'Deferred', deferred)
+                self.assertEqual(task_queue.store(self.repo).tasks['B'].status, 'open')
+                self.assertEqual(task_queue.store(self.repo).tasks['A'].ownership, 'owner')
+                self.assertEqual(task_queue.store(self.repo).tasks['A'].live, 'denied')
+                if deferred:
+                    self.assertFalse(rows['A'].question)
+                    self.assertEqual(rows['A'].bucket, 'Deferred')
+                    self.assertEqual(snap.counts, (0, 0, 2, 0, 0, 2))
+                    self.assertEqual({row.task for row in fleet_view.task_view(snap.rows, 'waiting')}, {'A', 'B'})
+                    self.assertEqual(questions.build(value, self.repo), [])
+                    (self.repo / 'state').mkdir(exist_ok=True)
+                    health.update(self.repo / 'state', value)
+                self.assertEqual(health.classify(dict(value, active_workers=1)), 'working')
+
     def test_daily_provider_quota_is_explained_without_changing_task_authority(self):
         from pi_autowork import task_status
         store = task_queue.store(self.repo)

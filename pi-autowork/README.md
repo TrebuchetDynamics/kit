@@ -1696,3 +1696,7 @@ Do not configure services to load the spike; adoption requires an owner decision
 Design: [coordinator redesign](../docs/plans/2026-10-16-pi-autowork-coordinator.md),
 [component layout](../docs/plans/pi-autowork-component-layout.md). Tests run from
 `python3 scripts/check.py` (`pi-autowork/tests`).
+
+Explicit dated `Owner decision: YYYY-MM-DD: deferred: …` notes display as
+Deferred in task inventory with no expiry. A later dated nondeferred decision
+restores presentation; deferral grants no execution or completion authority.
