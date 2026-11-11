@@ -918,7 +918,13 @@ def main(argv=None):
             return 0
     # `update` forwards arbitrary install.sh flags, so take its unknowns as those flags and
     # keep the strict parse for every other command.
-    args, extra = top.parse_known_args(argv)
+    if argv[0] == 'update' and not {'-h', '--help'} & set(argv[1:]):
+        # Verbatim and in order: parsing moved the value of `--only autowork` in front of its
+        # flag, so the refill command that status prints failed in the installer.
+        args, extra = top.parse_args(['update']), []
+        args.extra = list(argv[1:])
+    else:
+        args, extra = top.parse_known_args(argv)
     if args.command == 'update':
         args.extra = [*args.extra, *extra]
     elif extra:
