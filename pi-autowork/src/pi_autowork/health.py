@@ -592,6 +592,11 @@ def render(rows, *, now=None):
             lines.append('    ' + observation_text(row['observation'], now=now))
         elif row.get('errors') or row.get('blocker', '').startswith('status unavailable since '):
             lines.append('    ' + row['blocker'])
+        if ((row.get('main_check') or {}).get('check_slot') or {}).get('state') == 'waiting':
+            from pi_autowork import main_check
+            detail = main_check.line(row['main_check'], now=now)
+            if detail:
+                lines.append('    ' + detail)
         if row['state'] in ('stalled', 'blocked', 'not running', 'not cycling'):
             for root in [r for r in row['roots'] if needs_person(r)][:3]:
                 lines.append('    blocked by ' + describe(root))

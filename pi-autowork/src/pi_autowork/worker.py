@@ -492,18 +492,12 @@ def full_suite_gate(state, task, checkout, base=None):
     return ok, reason
 
 
-class QuietWindowMissed(Exception):
-    """No quiet window came within PI_AUTOWORK_QUIET_WAIT."""
-
-
 def quiet_reruns(state, task, log, checkout, rev, tests, limit, *, cmd=None):
-    """The ``tests`` that pass when rerun one at a time with a host check slot held, once this
+    """The ``tests`` that pass when rerun one at a time, once this
     repository's main check is done. Rerun four at a time beside main's full suite, the runner's
     own engine tests ran out of their 120 s and held three candidates whose trees pass them.
-    The wait for that quiet window is bounded by PI_AUTOWORK_QUIET_WAIT (default 900 s): the
-    host's few check slots are shared by every runner's full suite, and a two-minute rerun queued
-    behind them held a review for three hours. Past the bound the tests rerun one at a time
-    without a slot."""
+    The wait for main is bounded by PI_AUTOWORK_QUIET_WAIT (default 900 s).
+    Focused reruns take no fleet full-suite slot."""
     receipt = log.with_suffix('.quiet.json')
     receipt.unlink(missing_ok=True)
     wait = setting('PI_AUTOWORK_QUIET_WAIT', 900, float)
@@ -514,11 +508,6 @@ def quiet_reruns(state, task, log, checkout, rev, tests, limit, *, cmd=None):
             break
         check_stop()
         time.sleep(5)
-
-    def waiting(_ahead):
-        check_stop()
-        if time.monotonic() >= deadline:
-            raise QuietWindowMissed
 
     def rerun(only):
         main_check.rerun_failures(str(log), checkout, str(receipt), rev, cmd=cmd, only=set(only), workers=1)
@@ -541,13 +530,7 @@ def quiet_reruns(state, task, log, checkout, rev, tests, limit, *, cmd=None):
         return flaky
 
     try:
-        try:
-            with main_check.check_slot(waiting):
-                return reruns()
-        except QuietWindowMissed:
-            print(f'pi-autowork: no quiet check slot for {task} within {wait:g} s; '
-                  'rerunning its failures one at a time without one', file=sys.stderr)
-            return reruns()
+        return reruns()
     except main_check.Stopped:
         raise
     except Exception as error:  # like the first reruns: without a receipt, none is excused

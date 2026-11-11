@@ -271,15 +271,152 @@ class MainCheckTests(unittest.TestCase):
         self.assertEqual(main_check.failures('FAILED tests/test_a.py::test_b - x\n    --- FAIL: TestC (0.1s)\n'),
                          ['tests/test_a.py::test_b', 'TestC'])
 
+    def test_three_runners_share_two_full_suite_slots_and_queue_without_spending_budget(self):
+        """Main, a worker and a landing from distinct runner states share the same pool."""
+        from pi_autowork import health
+        import shlex
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = dict(os.environ, PI_AUTOWORK_CHECK_ROOT=str(root / 'pool'),
+                       PYTHONPATH=str(Path(main_check.__file__).resolve().parents[1]))
+            env.pop('PI_AUTOWORK_CHECK_SLOTS', None)  # the default must be two, even on a large host
+            children = []
+
+            def await_value(path, state=None):
+                end = time.monotonic() + 10
+                while time.monotonic() < end:
+                    if path.exists():
+                        if state is None:
+                            return
+                        value = json.loads(path.read_text())
+                        if value.get('state') == state:
+                            return value
+                    time.sleep(.01)
+                self.fail(f'{path} never reached {state}')
+
+            for index in range(3):
+                directory = root / f'runner-{index}'
+                directory.mkdir()
+                command = [sys.executable, '-c',
+                           'from pathlib import Path; import time; Path("started").touch(); '
+                           'exec("while not Path(\'release\').exists(): time.sleep(.01)")']
+                if index == 1:
+                    # The compatibility CLI supplies __main__ behavior for this module.
+                    argv = [sys.executable, str(Path(__file__).resolve().parents[2] / 'engine/autowork_run.py'), *command]
+                else:
+                    code = ('from pathlib import Path; from pi_autowork import main_check, worker; '
+                            'import sys; p=Path.cwd(); '
+                            'r=worker.run_suite(sys.argv[1], p, float(sys.argv[2]), p/"check.log", p/"progress.json"); '
+                            'sys.exit(r["code"])')
+                    if index == 0:
+                        code = ('from pathlib import Path; from pi_autowork import main_check; '
+                                'import sys; p=Path.cwd(); '
+                                'rc,_=main_check.run_command(sys.argv[1], p, 10, p/"progress.json", background=True); '
+                                'sys.exit(rc)')
+                    argv = [sys.executable, '-c', code, shlex.join(command), '10' if index == 0 else '.5']
+                child = subprocess.Popen(argv, cwd=directory, env=env,
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                children.append(child)
+                self.addCleanup(child.wait)
+                self.addCleanup(lambda c=child: c.kill() if c.poll() is None else None)
+                if index < 2:
+                    await_value(directory / 'started')
+                else:
+                    queued = await_value(directory / 'progress.json', 'waiting')
+                    self.assertEqual(len(queued['holders']), 2)
+                    self.assertTrue(any('runner-0' in holder for holder in queued['holders']))
+                    self.assertTrue(any('runner-1' in holder for holder in queued['holders']))
+                    record = dict(state='running', pid=child.pid, start_time=main_check.start_time(child.pid),
+                                  rev='abcdef1', check_slot=queued)
+                    text = main_check.line(record)
+                    self.assertIn('queued for a fleet slot; holders:', text)
+                    row = dict(name='runner-2', service='-', state='working', workers=0, waiting=0,
+                               roots=[], main_check=record)
+                    self.assertIn('runner-1', health.render([row]))
+            # Wait longer than a check's complete execution budget while it is queued.
+            time.sleep(.65)
+            third = root / 'runner-2'
+            self.assertFalse((third / 'started').exists())
+            self.assertIsNone(children[2].poll())
+            (root / 'runner-0' / 'release').touch()
+            await_value(third / 'started')
+            (third / 'release').touch()
+            self.assertEqual(children[2].wait(timeout=5), 0)
+            for index in (0, 1):
+                (root / f'runner-{index}' / 'release').touch()
+            for child in children:
+                child.wait(timeout=5)
+
+    def test_focused_checker_commands_take_no_fleet_slot_but_full_fallback_does(self):
+        import fcntl
+        import shlex
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+                os.environ, PI_AUTOWORK_CHECK_ROOT=str(Path(tmp) / 'pool'), PI_AUTOWORK_CHECK_SLOTS='1'):
+            root = Path(tmp)
+            (root / 'scripts').mkdir()
+            checker = root / 'scripts/check.py'
+            checker.write_text('from pathlib import Path\n'
+                               'def discover_tests(root):\n'
+                               '    return [Path(root)/"tests/test_one.py", Path(root)/"tests/test_two.py"]\n'
+                               'def affected_selection(root, revisions):\n'
+                               '    return {"full": revisions == "full..head"}\n')
+            (root / 'scripts/affected_tests.py').touch()
+            full = shlex.join([sys.executable, 'scripts/check.py'])
+            focused = full + ' --jobs 2 tests/test_one.py'
+            affected = full + ' --affected focused..head'
+            fallback = full + ' --affected full..head'
+            self.assertTrue(main_check.full_suite_command(full, root))
+            self.assertTrue(main_check.full_suite_command(full + ' --jobs 2', root))
+            self.assertTrue(main_check.full_suite_command(full + ' --timeout 60', root))
+            self.assertTrue(main_check.full_suite_command(full + ' --shard 1/1', root))
+            self.assertTrue(main_check.full_suite_command(full + ' .', root))
+            self.assertFalse(main_check.full_suite_command(full + ' --shard 1/2', root))
+            self.assertTrue(main_check.full_suite_command(focused + '; ' + full, root))
+            self.assertTrue(main_check.full_suite_command(fallback, root))
+            for command in (focused, affected):
+                self.assertFalse(main_check.full_suite_command(command, root))
+                pool = main_check.slot_root()
+                with (pool / 'slot-0').open('a') as held:
+                    fcntl.flock(held, fcntl.LOCK_EX)
+                    end = time.monotonic() + 2
+                    self.assertEqual(main_check.run_command(
+                        command, root, .5, root / 'progress.json',
+                        stop=lambda: time.monotonic() > end), (0, False))
+                    # Workers use the identical classifier and shared pool.
+                    wrapper = Path(__file__).resolve().parents[2] / 'engine/autowork_run.py'
+                    result = subprocess.run([sys.executable, str(wrapper), *shlex.split(command)],
+                                            cwd=root, env=os.environ, capture_output=True, timeout=3)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertNotIn(b'queued', result.stderr)
+
+    def test_dead_fleet_holder_is_reclaimed_without_unlinking_the_slot(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+                os.environ, PI_AUTOWORK_CHECK_ROOT=tmp, PI_AUTOWORK_CHECK_SLOTS='1'):
+            env = dict(os.environ, PYTHONPATH=str(Path(main_check.__file__).resolve().parents[1]))
+            code = ('from pi_autowork import main_check; import time; '
+                    'exec("with main_check.check_slot(lambda _: None, holder=dict(runner=\'dead-runner\')):\\n '
+                    'print(\'held\', flush=True); time.sleep(30)")')
+            child = subprocess.Popen([sys.executable, '-c', code], env=env, stdout=subprocess.PIPE, text=True)
+            self.addCleanup(child.stdout.close)
+            self.addCleanup(child.wait)
+            self.addCleanup(lambda: child.kill() if child.poll() is None else None)
+            self.assertEqual(child.stdout.readline().strip(), 'held')
+            inode = (Path(tmp) / 'slot-0').stat().st_ino
+            self.assertEqual(main_check.slot_holders(), ['dead-runner'])
+            child.kill()
+            child.wait(timeout=5)
+            self.assertEqual(main_check.slot_holders(), [])
+            with main_check.check_slot(lambda _: self.fail('dead holder was not reclaimed')):
+                self.assertEqual((Path(tmp) / 'slot-0').stat().st_ino, inode)
+
     def test_the_check_slot_pool_does_not_follow_the_environment(self):
         """One host-wide pool: a cron job or a systemd unit without XDG_RUNTIME_DIR derived a
         second pool, with its own PI_AUTOWORK_CHECK_SLOTS, so the limit was never host-wide."""
-        uid = os.getuid()
-        runtime = Path(f'/run/user/{uid}')
-        expected = (runtime if runtime.is_dir() else Path('/var/tmp')) / f'autowork-checks-{uid}'
+        expected = Path.home() / '.local/state/pi-autowork/check-slots'
         self.assertEqual(main_check.slot_home(), expected)
         with tempfile.TemporaryDirectory() as elsewhere, patch.dict(
-                os.environ, XDG_RUNTIME_DIR=str(Path(elsewhere) / 'stale'), PI_AUTOWORK_CHECK_ROOT=elsewhere):
+                os.environ, HOME=str(Path(elsewhere) / 'home'), XDG_RUNTIME_DIR=str(Path(elsewhere) / 'stale'),
+                PI_AUTOWORK_CHECK_ROOT=elsewhere):
             self.assertEqual(main_check.slot_home(), expected, 'the environment cannot move the pool')
             self.assertEqual(main_check.slot_root(), Path(elsewhere), 'the override names it')
         with tempfile.TemporaryDirectory() as loose, patch.dict(os.environ, PI_AUTOWORK_CHECK_ROOT=loose):
@@ -1035,7 +1172,7 @@ class MainCheckTests(unittest.TestCase):
         for record, want in (
                 (running, 'main check running on abcdef1 (10m)'),
                 (dict(running, check_slot={'state': 'waiting', 'ahead': 2}),
-                 'main check waiting for a check slot, 2 ahead on abcdef1'),
+                 'main check waiting for a check slot, 2 ahead on abcdef1; queued for a fleet slot; holders: unknown'),
                 (dict(running, start_time='wrong-process'), 'main check interrupted on abcdef1'),
                 (dict(running, start_time=None), 'main check interrupted on abcdef1'),
                 (dict(running, check_slot={'state': 'running', 'started': 0, 'timeout': 60}),

@@ -181,12 +181,9 @@ class DispatchTests(unittest.TestCase):
 
     def test_long_worker_checks_share_a_slot_and_keep_the_command_exit_code(self):
         with patch.dict(os.environ, PI_AUTOWORK_CHECK_ROOT=str(self.root / 'checks'),
-                        PI_AUTOWORK_WORKER_CHECK_SLOTS='1'):
+                        PI_AUTOWORK_CHECK_SLOTS='1'):
             checks = self.root / 'checks'
             checks.mkdir(mode=0o700)
-            runner_slot = (checks / 'slot-0').open('a')
-            self.addCleanup(runner_slot.close)
-            fcntl.flock(runner_slot, fcntl.LOCK_EX)  # runner full checks use a separate pool
             workers = []
             for name in ('first', 'second'):
                 data = self.common / 'slot-data' / name / 'attempt-1'
@@ -227,6 +224,98 @@ class DispatchTests(unittest.TestCase):
             time.sleep(.01)
         self.fail(f'did not observe {text or path}: {path.parent}')
 
+    def test_fleet_queue_wait_does_not_timeout_the_worker_task(self):
+        self.write_todo(task('A', 'a.txt'))
+        checks = self.root / 'fleet-checks'
+        checks.mkdir(mode=0o700)
+        check = 'from pathlib import Path; import time; Path("started").touch(); time.sleep(30)'
+        command = [sys.executable, '-c',
+                   'import subprocess,sys; subprocess.call(["autowork-run", sys.executable, "-c", '
+                   + repr(check) + '])']
+        with patch.dict(os.environ, PI_AUTOWORK_CHECK_ROOT=str(checks), PI_AUTOWORK_CHECK_SLOTS='1'):
+            with (checks / 'slot-0').open('a') as lease:
+                fcntl.flock(lease, fcntl.LOCK_EX)
+                self.run_cli('--apply', '--parallel', '--worker-timeout', '3',
+                             '--worker-command', json.dumps(command), worker=False)
+                slot = state.slots(self.common)[0]
+                data = dispatch.data_dir(self.common, slot)
+                self.await_file(data / 'worker.log', 'queued for a fleet slot')
+                time.sleep(3.2)
+                self.assertGreater(time.time() - slot['started_at'], 3)
+                self.assertIn('holders', dispatch.summary(self.common, slot)['check_slot'])
+                from pi_autowork import fleet_view
+                view = fleet_view.Runner(name='repo', repo=str(self.repo))
+                lane, = fleet_view.lanes(view)
+                self.assertEqual(lane.phase, 'waiting for a check slot')
+                self.assertIn('queued for a fleet slot; holders:', lane.detail)
+                self.assertEqual(dispatch.enforce_timeouts(self.repo, self.owner, self.common, 3), [])
+                fcntl.flock(lease, fcntl.LOCK_UN)
+            self.await_file(Path(slot['worktree']) / 'started')
+            self.assertEqual(dispatch.enforce_timeouts(self.repo, self.owner, self.common, 3), [])
+            # Execution still has a finite budget after queueing ends.
+            now = time.time()
+            with patch.object(dispatch.time, 'time', return_value=now + 5):
+                stopped = dispatch.enforce_timeouts(self.repo, self.owner, self.common, 3)
+            self.assertEqual([row['state'] for row in stopped], ['interrupted'])
+
+    def test_native_hermes_template_keeps_a_finite_queue_aware_process_guard(self):
+        from pi_autowork.processes import alive
+        pool, records = self.root / 'hermes-pool', self.root / 'hermes-checks'
+        pool.mkdir(mode=0o700)
+        records.mkdir()
+        started = self.root / 'hermes-started'
+        wrapper = SCRIPTS / 'autowork_run.py'
+        hermes = self.root / 'hermes'
+        check = 'from pathlib import Path; import sys,time; Path(sys.argv[1]).touch(); time.sleep(30)'
+        hermes.write_text('#!' + sys.executable + '\nimport subprocess,sys\n'
+                         + f'sys.exit(subprocess.call([sys.executable, {str(wrapper)!r}, '
+                         + f'sys.executable, "-c", {check!r}, {str(started)!r}]))\n')
+        hermes.chmod(0o700)
+        env = dict(os.environ, PATH=str(self.root) + os.pathsep + os.environ['PATH'],
+                   PI_AUTOWORK_CHECK_ROOT=str(pool), PI_AUTOWORK_CHECK_SLOTS='1',
+                   AUTOWORK_WORKER_CHECK_DIR=str(records))
+        args = type('Args', (), dict(worker_command=None, worker_host='hermes', worker_profile='fixture'))
+        with patch.dict(os.environ, env):
+            template, _ = dispatch.worker_command(args, self.owner)
+            argv = dispatch.render(template, dict(report_file=self.root / 'report.json', timeout=.5,
+                                                  prompt_file=self.root / 'prompt', worktree=self.repo))
+            with (pool / 'slot-0').open('a') as lease:
+                fcntl.flock(lease, fcntl.LOCK_EX)
+                execution.subreaper()
+                pidfile = self.root / 'worker.pid'
+                launch = ('import json,subprocess,sys; from pathlib import Path; '
+                          'p=subprocess.Popen(json.loads(sys.argv[1]), start_new_session=True, '
+                          'stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); '
+                          'Path(sys.argv[2]).write_text(str(p.pid))')
+                subprocess.run([sys.executable, '-c', launch, json.dumps(argv), str(pidfile)],
+                               env=env, check=True, timeout=5)
+                pid = int(pidfile.read_text())
+                def cleanup():
+                    if alive(pid):
+                        os.killpg(pid, signal.SIGKILL)
+                    try:
+                        os.waitpid(pid, 0)
+                    except ChildProcessError:
+                        pass
+                self.addCleanup(cleanup)
+                end = time.monotonic() + 5
+                while not list(records.glob('*.json')) and time.monotonic() < end:
+                    time.sleep(.01)
+                self.assertTrue(list(records.glob('*.json')))
+                time.sleep(.7)
+                self.assertTrue(alive(pid))
+                fcntl.flock(lease, fcntl.LOCK_UN)
+            end = time.monotonic() + 5
+            while alive(pid) and time.monotonic() < end:
+                time.sleep(.01)
+            self.assertFalse(alive(pid))
+            _, status = os.waitpid(pid, 0)
+            self.assertEqual(os.waitstatus_to_exitcode(status), 124)
+        self.assertTrue(started.exists())
+        proof = json.loads((self.root / 'report.json.process.json').read_text())
+        self.assertTrue(proof['cleanup_complete'])
+        self.assertEqual(proof['reason'], 'deadline')
+
     def test_worker_report_sums_slot_waits_without_replacing_its_checks(self):
         import autowork_run
         directory = self.root / 'worker-checks'
@@ -243,7 +332,7 @@ class DispatchTests(unittest.TestCase):
     def test_a_killed_worker_check_holder_releases_its_slot(self):
         import shlex
         env = dict(os.environ, PI_AUTOWORK_CHECK_ROOT=str(self.root / 'checks'),
-                   PI_AUTOWORK_WORKER_CHECK_SLOTS='1')
+                   PI_AUTOWORK_CHECK_SLOTS='1')
         wrapper = [sys.executable, str(SCRIPTS / 'autowork_run.py')]
         for mode in ('killed', 'shell', 'python'):
             with self.subTest(mode=mode):
@@ -313,7 +402,7 @@ class DispatchTests(unittest.TestCase):
         records = self.root / 'worker-checks'
         records.mkdir()
         env = dict(os.environ, PI_AUTOWORK_CHECK_ROOT=str(checks),
-                   PI_AUTOWORK_WORKER_CHECK_SLOTS='1', AUTOWORK_WORKER_CHECK_DIR=str(records))
+                   PI_AUTOWORK_CHECK_SLOTS='1', AUTOWORK_WORKER_CHECK_DIR=str(records))
         started = self.root / 'started'
         command = [sys.executable, str(SCRIPTS / 'autowork_run.py'), sys.executable, '-c',
                    'from pathlib import Path; import sys,time; '
@@ -321,7 +410,7 @@ class DispatchTests(unittest.TestCase):
         import shlex
         # Preserve the shell ancestor: its age includes both queueing and execution.
         shell = shlex.join(command) + '; :'
-        with (checks / 'worker-slot-0').open('a') as lease, patch.dict(os.environ, env):
+        with (checks / 'slot-0').open('a') as lease, patch.dict(os.environ, env):
             fcntl.flock(lease, fcntl.LOCK_EX)
             pi = subprocess.Popen([sys.executable, '-c',
                                    'import subprocess,sys; sys.exit(subprocess.call(["bash", "-c", sys.argv[1]]))',
@@ -1797,17 +1886,14 @@ Path(report).write_text(json.dumps({'task': 'A', 'commit': git('rev-parse', 'HEA
             self.assertEqual(dispatch.resource_gate(0, 3000, self.repo), '')
 
     def test_load_gates_only_workers_after_this_runners_first(self):
+        """Historical inventory name: fleet slots now replace this former load gate."""
         self.write_todo(task('A', 'a.txt'), task('B', 'b.txt'))
         self.set_spec({'A': {'sleep': 60}, 'B': {'sleep': 60}})
-        with patch.object(dispatch.os, 'getloadavg', return_value=(3.0, 0.0, 0.0)), \
-                patch.dict(os.environ, AUTOWORK_GATE_CPUS='2'):
-            _, first = self.apply()
-            self.assertEqual([s['task'] for s in first['dispatched']], ['A'])
-            self.assertEqual(first['waiting'], [dict(id='B', blocked_by=[],
-                              reason='resource gate: load average 3.00 >= 2 CPUs')])
-            _, again = self.apply()
-            self.assertEqual((again['outcome'], again['dispatched']), ('WAITING', []))
-            self.assertEqual(again['waiting'], first['waiting'])
+        with patch.object(dispatch.os, 'getloadavg', return_value=(99999.0, 0.0, 0.0)), \
+                patch.object(dispatch.os, 'cpu_count', return_value=2):
+            _, result = self.apply()
+        self.assertEqual([s['task'] for s in result['dispatched']], ['A', 'B'])
+        self.assertFalse(any('resource gate: load average' in w['reason'] for w in result['waiting']))
 
     def test_low_memory_holds_dispatch(self):
         with patch.object(dispatch, 'available_memory_mb', return_value=1000), \
@@ -1934,7 +2020,11 @@ Path(report).write_text(json.dumps({'task': 'A', 'commit': git('rev-parse', 'HEA
         args = type('Args', (), {'worker_command': None, 'worker_host': 'hermes', 'worker_profile': 'work'})
         with patch.object(dispatch.shutil, 'which', return_value='/bin/hermes'):
             template, host = dispatch.worker_command(args, self.owner)
-        self.assertEqual((template[:4], host), (['hermes', '-p', 'work', 'chat'], 'hermes'))
+        command = template[template.index('--') + 1:]
+        self.assertEqual((command[:4], host), (['hermes', '-p', 'work', 'chat'], 'hermes'))
+        self.assertEqual(command[command.index('--run-budget') + 1], '0')
+        self.assertIn('--deadline', template[:template.index('--')])
+        self.assertIn('--check-queue', template[:template.index('--')])
 
     def test_hermes_launcher_process_is_detected_as_the_coordinator_host(self):
         process = subprocess.Popen([sys.executable, '-I', '-c', 'import time  # hermes_cli.main\ntime.sleep(30)'])

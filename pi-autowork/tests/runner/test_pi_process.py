@@ -51,6 +51,37 @@ class PiProcessTests(unittest.TestCase):
         self.children = []
         self.addCleanup(self.cleanup)
 
+    def test_full_suite_queue_pauses_guard_deadline_but_execution_still_times_out(self):
+        import fcntl
+        pool, records = self.root / 'pool', self.root / 'checks'
+        pool.mkdir(mode=0o700)
+        records.mkdir()
+        wrapper = WRAPPER.parents[1] / 'engine/autowork_run.py'
+        started = self.root / 'started'
+        env = dict(os.environ, PI_AUTOWORK_CHECK_ROOT=str(pool), PI_AUTOWORK_CHECK_SLOTS='1',
+                   AUTOWORK_WORKER_CHECK_DIR=str(records))
+        with (pool / 'slot-0').open('a') as lease:
+            fcntl.flock(lease, fcntl.LOCK_EX)
+            child = subprocess.Popen([sys.executable, str(WRAPPER), '--identity', str(self.metadata),
+                '--deadline', '.5', '--check-queue', str(records), '--',
+                sys.executable, str(wrapper), sys.executable, '-c',
+                'from pathlib import Path; import sys,time; Path(sys.argv[1]).touch(); time.sleep(30)',
+                str(started)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.children.append(child)
+            end = time.monotonic() + 5
+            while not list(records.glob('*.json')) and time.monotonic() < end:
+                time.sleep(.01)
+            self.assertTrue(list(records.glob('*.json')))
+            time.sleep(.7)
+            self.assertIsNone(child.poll(), 'the queue consumed the guard deadline')
+            self.assertFalse(started.exists())
+            fcntl.flock(lease, fcntl.LOCK_UN)
+        self.assertEqual(child.wait(timeout=5), 124)
+        self.assertTrue(started.exists())
+        proof = json.loads(self.metadata.read_text())
+        self.assertTrue(proof['cleanup_complete'])
+        self.assertEqual(proof['reason'], 'deadline')
+
     def cleanup(self):
         for child in self.children:
             if child.poll() is None:

@@ -36,6 +36,10 @@ elif behavior == 'rate_limit':
     end(stop='error', error='429 rate limit exceeded (sk-secret123456789)')
 elif behavior == 'crash':
     end(settled=False)
+elif behavior == 'fleet_queue':
+    import subprocess
+    subprocess.run([sys.executable, os.environ['FAKE_CHECK_WRAPPER'], sys.executable, '-c', 'pass'], check=True)
+    end()
 elif behavior == 'hang':
     time.sleep(30)
 elif behavior == 'overflow':
@@ -63,6 +67,36 @@ class RuntimeTests(unittest.TestCase):
         os.environ.update(self.env)
         self.addCleanup(lambda: (os.environ.clear(), os.environ.update(self.patch)))
         self.set_plan([])
+
+    def test_json_worker_excludes_fleet_queue_from_its_process_deadline(self):
+        import fcntl
+        import threading
+        root = Path(self.temp.name)
+        pool, records = root / 'pool', root / 'checks'
+        pool.mkdir(mode=0o700)
+        records.mkdir()
+        os.environ.update(PI_AUTOWORK_CHECK_ROOT=str(pool), PI_AUTOWORK_CHECK_SLOTS='1',
+                          AUTOWORK_WORKER_CHECK_DIR=str(records),
+                          FAKE_CHECK_WRAPPER=str(Path(__file__).resolve().parents[2] / 'engine/autowork_run.py'))
+        self.set_plan(['fleet_queue'])
+        with (pool / 'slot-0').open('a') as lease:
+            fcntl.flock(lease, fcntl.LOCK_EX)
+            def release():
+                end = time.monotonic() + 5
+                while not list(records.glob('*.json')) and time.monotonic() < end:
+                    time.sleep(.01)
+                time.sleep(.7)
+                fcntl.flock(lease, fcntl.LOCK_UN)
+            thread = threading.Thread(target=release)
+            thread.start()
+            try:
+                result = runtime.run_json(runtime.Settings(self.state), root, 'fixture', 'queue-json',
+                                          'offline/fixture', .5, [], role='worker')
+            finally:
+                thread.join(timeout=7)
+        self.assertEqual(result['rc'], 0, result)
+        self.assertTrue(result['settled'])
+        self.assertEqual(list((self.state / 'runs').iterdir()), [])
 
     def set_plan(self, plan):
         self.plan.write_text(json.dumps(plan))

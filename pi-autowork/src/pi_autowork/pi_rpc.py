@@ -5,6 +5,7 @@ host beneath pi_process's OS ownership boundary, never a shared fleet daemon.
 """
 import asyncio
 from dataclasses import asdict, dataclass
+from contextlib import asynccontextmanager, suppress
 import fcntl
 import hashlib
 from importlib.metadata import PackageNotFoundError, version
@@ -258,6 +259,34 @@ class PiRpcRuntime:
                 pass
         await asyncio.to_thread(self._save_progress)
 
+    @asynccontextmanager
+    async def _queue_budget(self):
+        directory = dict(self.spec.environment).get('AUTOWORK_WORKER_CHECK_DIR')
+        if self.spec.role != 'worker' or not directory:
+            yield False
+            return
+        from pi_autowork.engine.autowork_run import queued_seconds
+        loop = asyncio.get_running_loop()
+        begin = time.monotonic()
+        async with asyncio.timeout(None) as budget:
+            async def update():
+                while True:
+                    remaining = self.spec.timeout - (time.monotonic() - begin
+                                                     - queued_seconds(directory, os.getpid()))
+                    if remaining <= 0:
+                        # Arm only after reading fresh queue evidence; a stale wall deadline
+                        # must not cancel a task that entered the queue since the last poll.
+                        budget.reschedule(loop.time())
+                        return
+                    await asyncio.sleep(min(.05, remaining))
+            monitor = asyncio.create_task(update())
+            try:
+                yield True
+            finally:
+                monitor.cancel()
+                with suppress(asyncio.CancelledError):
+                    await monitor
+
     async def execute(self):
         from pi_autowork.pi_events import ProjectionOverflow
         begin = time.monotonic()
@@ -310,7 +339,8 @@ class PiRpcRuntime:
                     if not pi_version_supported(self.pi_version):
                         raise RuntimeError('toolchain')
                     self.active = True
-                    async with self.client.stream(self.spec.prompt, timeout=self.spec.timeout) as stream:
+                    async with self._queue_budget() as queued, self.client.stream(
+                            self.spec.prompt, timeout=None if queued else self.spec.timeout) as stream:
                         async for event in stream:
                             self.events.consume(event.raw)
                             if publisher.done():
@@ -329,7 +359,7 @@ class PiRpcRuntime:
                 failure = 'toolchain'
             except PiCommandError:
                 failure = 'rejected'
-            except PiTimeoutError:
+            except (PiTimeoutError, TimeoutError):
                 failure = 'uncertain_acceptance'
             except (PiSubscriptionOverflow, PiResultOverflow, ProjectionOverflow):
                 failure = 'overflow'
@@ -486,6 +516,16 @@ def run(settings, directory, message, session, target, limit, extra, role=None, 
                 '--identity', str(identity), '--deadline', str(float(limit) + 10),
                 '--parent-pid', str(os.getpid()), '--parent-start', str(start_time(os.getpid())), '--',
                 sdk_python(settings), str(LAYOUT.entrypoint('pi_autowork.pi_rpc'))]
+        queue = os.environ.get('AUTOWORK_WORKER_CHECK_DIR') if role == 'worker' else None
+        if queue:
+            delimiter = argv.index('--')
+            argv[delimiter:delimiter] = ['--check-queue', queue]
+        def elapsed():
+            queued = 0
+            if queue:
+                from pi_autowork.engine.autowork_run import queued_seconds
+                queued = queued_seconds(queue, os.getpid())
+            return time.monotonic() - begin - queued
         child, started = None, None
         try:
             child = subprocess.Popen(argv, cwd=directory, stdin=subprocess.PIPE,
@@ -493,7 +533,7 @@ def run(settings, directory, message, session, target, limit, extra, role=None, 
             started = start_time(child.pid)
             payload = json.dumps(asdict(spec)).encode()
             while True:
-                if time.monotonic() - begin > float(limit) + 25:
+                if elapsed() > float(limit) + 25:
                     child.kill()  # Missing cleanup proof is terminal; never replay.
                     try:
                         child.wait(timeout=2)
@@ -506,7 +546,7 @@ def run(settings, directory, message, session, target, limit, extra, role=None, 
                     break
                 except subprocess.TimeoutExpired:
                     payload = None
-                    if stop_requested() or time.monotonic() - begin > float(limit) + 20:
+                    if stop_requested() or elapsed() > float(limit) + 20:
                         child.terminate()  # Guard remains alive to reap its complete subtree.
             try:
                 result = json.loads(output)

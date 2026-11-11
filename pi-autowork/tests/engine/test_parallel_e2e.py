@@ -173,15 +173,15 @@ class ABCWorkload:
 
 class EndToEndTests(unittest.TestCase):
     def test_a_busy_host_skips_the_workload_instead_of_failing_it(self):
-        """TOOLSET-193-54: the fleet's own load refused these dispatches and main read red."""
+        """Historical inventory name: load no longer skips ready work; fleet suites own capacity."""
         import contextlib, io
         from unittest import mock
-        marker = io.StringIO()  # kept from the output: this skip is forced, not the host's
+        marker = io.StringIO()
         with mock.patch.dict(os.environ, AUTOWORK_GATE_CPUS='0.001'), ABCWorkload() as workload:
-            with self.assertRaisesRegex(unittest.SkipTest, 'host busy: resource gate: load average'), \
-                    contextlib.redirect_stderr(marker):
-                workload.run()
-        self.assertIn('RESOURCE_GATE_SKIP: resource gate: load average', marker.getvalue())
+            with contextlib.redirect_stderr(marker):
+                result = workload.run()
+        self.assertEqual(result['metrics']['peak_workers'], 2)
+        self.assertNotIn('RESOURCE_GATE_SKIP: resource gate: load average', marker.getvalue())
 
     def test_abc_real_cli(self):
         with ABCWorkload() as workload:

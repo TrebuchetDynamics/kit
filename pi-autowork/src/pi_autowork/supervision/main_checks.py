@@ -228,7 +228,7 @@ def check_main_start(owner, record, rev, cmd, *, git):
         args = [sys.executable, str(guard), '--identity', str(process_status),
                 '--deadline', str(sys.float_info.max), '--', 'bash', '-c', script]
         child = subprocess.Popen(args, cwd=path,
-                                 env=owner.job_environment(TMPDIR=tmp, **ports, **check_env),
+                                 env=owner.job_environment(TMPDIR=tmp, AUTOWORK_CHECK_RUNNER=str(owner.repo), **ports, **check_env),
                                  stdout=log, stderr=subprocess.STDOUT, pass_fds=[lease[1]] if lease else (),
                                  stdin=subprocess.DEVNULL, start_new_session=True)
     if lease:

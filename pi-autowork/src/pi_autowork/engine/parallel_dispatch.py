@@ -1,7 +1,7 @@
 """Start parallel workers in their own worktrees; no integration or task status.
 
-A worker is a host CLI process started in its own process group with the
-worktree as its working directory. Its process identity is the slot's proof of
+A worker is a host CLI or its finite supervisor, started in its own process group
+with the worktree as its working directory. Its process identity is the slot's proof of
 life, so a live worker is never replaced or duplicated. Templates never add
 flags that bypass host approvals or sandboxes.
 """
@@ -17,6 +17,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import time
 
 from pi_autowork.engine import parallel_plan
@@ -25,6 +26,7 @@ from pi_autowork.engine import task_queue
 from pi_autowork.engine import parallel_state as state
 from pi_autowork.engine import task_execution as execution
 from pi_autowork.engine import provenance
+from pi_autowork.engine import autowork_run
 from pi_autowork.engine.worktree_paths import worktree_path
 from pi_autowork.common import ponytail_prompt
 
@@ -39,7 +41,7 @@ DEFAULT_WORKERS, WORKER_CAP, HARD_LIMIT = 2, 4, 16
 # arrives on stdin, which Codex reads for `-`.
 TEMPLATES = {
     'hermes': ['hermes', 'chat', '--query-file', '{prompt_file}', '--oneshot', '--in', '{worktree}',
-               '--run-budget', '{timeout}', '-Q'],
+               '--run-budget', '0', '-Q'],
     'codex': ['codex', 'exec', '-C', '{worktree}', '--sandbox', 'workspace-write',
               '--add-dir', '{git_common_dir}', '-'],
     'pi': ['pi', '-p', '@{prompt_file}'],
@@ -101,6 +103,15 @@ def worker_command(args, owner_pid):
         return None, f'worker CLI {template[0]!r} is not installed'
     if host in UNQUALIFIED:
         return None, UNQUALIFIED[host]
+    if host == 'hermes':
+        # Hermes' own wall budget counts queued tool time. Keep the finite task limit
+        # in our process guard, which can account for identity-bound fleet waits.
+        # The engine CLI exits after dispatch. A waiting shell keeps the guard's
+        # immediate parent alive; its finite deadline still bounds orphan workers.
+        template = ['bash', '-c', '"$@"; result=$?; exit "$result"', 'autowork-worker',
+                    sys.executable, str(LAYOUT.entrypoint('pi_autowork.pi_process')),
+                    '--identity', '{report_file}.process.json', '--deadline', '{timeout}',
+                    '--check-queue', '--', *template]
     return template, host
 
 
@@ -138,13 +149,6 @@ def resource_gate(running, min_free_mb, path=None):
     memory = available_memory_mb()
     if memory < 2 * min_free_mb:
         return f'resource gate: {memory} MB available, need {2 * min_free_mb} MB for one more worker'
-    # AUTOWORK_GATE_CPUS lowers the threshold so a test can force a refusal (TOOLSET-193-54);
-    # scripts/check.py removes AUTOWORK_* from test processes, so a runner's value never leaks in.
-    load, cpus = os.getloadavg()[0], float(os.environ.get('AUTOWORK_GATE_CPUS') or 0) or os.cpu_count() or 1
-    # Each runner gets its first worker even when another runner keeps the host busy.
-    # Memory and disk still gate every worker; load only gates additional live workers.
-    if running >= 1 and load >= cpus:
-        return f'resource gate: load average {load:.2f} >= {cpus:g} CPUs'
     return ''
 
 
@@ -866,9 +870,15 @@ def enforce_timeouts(repo, owner_pid, common, default_timeout):
     """Each worker keeps the timeout it was started with (saved in its meta.json)."""
     stopped = []
     for slot in state.slots(common):
+        if slot['state'] not in ('dispatched', 'running') or not state.worker_live(slot):
+            continue
         limit = meta(common, slot).get('worker_timeout', default_timeout)
-        if (slot['state'] in ('dispatched', 'running') and state.worker_live(slot)
-                and time.time() - slot['started_at'] > limit):
+        age = time.time() - slot['started_at']
+        # Wrapper records bind monotonic queue intervals to this worker's process identity.
+        # Merge simultaneous waits so concurrent tool calls cannot multiply the allowance.
+        age -= autowork_run.queued_seconds(
+            data_dir(common, slot) / 'worker-checks', (slot.get('worker') or {}).get('pid'))
+        if age > limit:
             activity = timeout_activity(common, slot, time.time())
             stop(slot['worker'], slot['worktree'])
             commit = reported_commit(common, slot)
@@ -896,11 +906,12 @@ def enforce_timeouts(repo, owner_pid, common, default_timeout):
 
 def summary(common, slot):
     info = meta(common, slot)
+    queued = autowork_run.waiting_records(data_dir(common, slot) / 'worker-checks')
     return {'task': slot['task_id'], 'state': slot['state'], 'attempt': slot['attempt'],
             'worktree': slot['worktree'], 'branch': slot['branch'], 'baseline': slot['baseline'],
             'worker_pid': (slot.get('worker') or {}).get('pid'), 'slot': info.get('slot_index'),
             'command': info.get('command'), 'log': slot.get('log_path'), 'reason': slot.get('reason'),
-            'commit': slot.get('commit')}
+            'commit': slot.get('commit'), **({'check_slot': queued[0]} if queued else {})}
 
 
 def capacity(args):

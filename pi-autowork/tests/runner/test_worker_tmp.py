@@ -104,8 +104,10 @@ class WorkerTmpTests(unittest.TestCase):
                             self.assertEqual(json.loads(progress.read_text())['ahead'], 1)
                             runner = fleet_view.Runner('fixture', repo=str(self.repo), state_dir=str(root))
                             lane = fleet_view.lanes(runner)[0]
-                            self.assertEqual((lane.phase, lane.detail), ('waiting for a check slot', '1 ahead'))
-                            self.assertEqual(fleet_view.doing(lane), 'waiting for a check slot, 1 ahead')
+                            self.assertEqual(lane.phase, 'waiting for a check slot')
+                            self.assertTrue(lane.detail.startswith('1 ahead; queued for a fleet slot; holders: '))
+                            self.assertIn(str(root), lane.detail)
+                            self.assertEqual(fleet_view.doing(lane), 'waiting for a check slot, ' + lane.detail)
                             lane.activity_age = 600
                             self.assertEqual(fleet_view.quiet(lane), '')
                             time.sleep(.8)  # longer than both execution budgets

@@ -36,7 +36,10 @@ Requires Linux prctl, /proc and Python pidfd APIs (no PID-only signal fallback).
 Subreaping catches double forks and setsid escapes; pidfds bind signals to the
 observed process, with start ticks and live ancestry checked when acquiring
 handles. Cleanup grants 0.35s for TERM then escalates, with a 1.5s total budget.
-The deadline bounds execution, plus that bounded cleanup allowance.
+The deadline bounds execution, plus that bounded cleanup allowance. With
+``--check-queue DIR``, only identity-bound waits by descendant full-suite wrappers
+are excluded from execution time; parent identity, signalling and cleanup gates
+stay in force.
 
 This is scoped supervision, not a security boundary or cgroup replacement.
 SIGKILL of this wrapper cannot run cleanup or publish proof; Pi has a parent-
@@ -288,6 +291,8 @@ def main(argv=None):
     parser.add_argument('--deadline', required=True, type=float)
     parser.add_argument('--parent-pid', type=int)
     parser.add_argument('--parent-start')
+    parser.add_argument('--check-queue', type=Path, nargs='?',
+                        const=Path(os.environ.get('AUTOWORK_WORKER_CHECK_DIR') or '/nonexistent'))
     parser.add_argument('command', nargs=argparse.REMAINDER)
     try:
         args = parser.parse_args(argv)
@@ -303,6 +308,13 @@ def main(argv=None):
             return 125
     except (ValueError, TypeError):
         return 125
+
+    def elapsed():
+        queued = 0
+        if args.check_queue:
+            from pi_autowork.engine.autowork_run import queued_seconds
+            queued = queued_seconds(args.check_queue, os.getpid())
+        return time.monotonic() - began - queued
 
     started = _stat(os.getpid())[1]
     record = dict(pid=os.getpid(), start_time=started, pi_pid=None,
@@ -337,7 +349,7 @@ def main(argv=None):
         if stopped:
             code = 128 + stopped
             record['reason'] = 'signal'
-        elif time.monotonic() - began >= args.deadline:
+        elif elapsed() >= args.deadline:
             code = 124
             record['reason'] = 'deadline'
         else:
@@ -359,7 +371,7 @@ def main(argv=None):
                     code = result if result >= 0 else 128 - result
                     record['reason'] = 'exit'
                     break
-                if time.monotonic() - began >= args.deadline:
+                if elapsed() >= args.deadline:
                     code = 124
                     record['reason'] = 'deadline'
                     break
