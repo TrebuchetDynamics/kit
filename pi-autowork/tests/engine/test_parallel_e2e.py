@@ -45,6 +45,7 @@ subprocess.run(['git', 'commit', '-qm', 'fake worker ' + task], check=True)
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
 report.write_text(json.dumps(dict(task=task, commit=commit, changed_files=[task + '.txt'],
     checks=[dict(command='check_fixture.py', result='pass', summary='fixture check')],
+    acceptance=[dict(item='Fixture check passes', result='met', evidence='check_fixture.py passed')],
     blockers=[], changelog='Complete fixture ' + task, started=started, finished=time.time())))
 '''
 CHECK = '''from pathlib import Path

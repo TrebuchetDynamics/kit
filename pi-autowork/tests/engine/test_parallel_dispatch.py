@@ -170,6 +170,11 @@ class DispatchTests(unittest.TestCase):
         for text in ('autowork-run', 'more than two minutes', 'focused tests directly',
                      'worker_check_slot_wait_seconds'):
             self.assertIn(text, gated)
+        from pi_autowork import worker
+        for text in ('acceptance list', 'met', 'not_met', 'not_checked', 'stopped or unreached verdict'):
+            self.assertIn(text, gated)
+            self.assertIn(text, worker.REVIEW)
+        self.assertIn('met claim you cannot confirm', worker.REVIEW)
         for text in ('unrelated_failures', 'environment_failures', 'rerun each alone once',
                      'git worktree add --detach', 'commit anyway', 'never blockers'):
             self.assertIn(text, gated)
@@ -754,7 +759,9 @@ class DispatchTests(unittest.TestCase):
                             slot = state.transition(self.repo, self.owner, tid, 'reported', commit=commit)
                             execution.save(dispatch.data_dir(self.common, slot) / 'report.json',
                                            dict(task=tid, commit=commit, changed_files=[tid.lower() + '.txt'],
-                                                blockers=[], checks=[], pending_live=[]))
+                                                blockers=[], checks=[{'command': 'inspect', 'result': 'pass'}],
+                                                acceptance=[{'item': 'changed.', 'result': 'met', 'evidence': 'fixture'}],
+                                                pending_live=[]))
                 self.set_spec({'OLD': {'sleep': 60}, 'F': {'sleep': 60}})
                 with patch.dict(os.environ, PI_AUTOWORK_MERGE_BACKLOG=setting,
                                 PI_AUTOWORK_MERGE_BACKLOG_AFTER=after):
@@ -1361,7 +1368,9 @@ Path(repo, ' a.txt').write_text('half, in metres')
 git('commit', '-qam', 'continue retained candidate')
 report = re.search(r'^Report file: (.+)$', prompt, re.M)[1]
 Path(report).write_text(json.dumps({'task': 'A', 'commit': git('rev-parse', 'HEAD'),
-    'changed_files': [' a.txt'], 'checks': [], 'blockers': [], 'changelog': ''}))
+    'changed_files': [' a.txt'], 'checks': [{'command': 'inspect', 'result': 'pass'}],
+    'acceptance': [{'item': 'keep the earlier candidate, in metres.', 'result': 'met', 'evidence': 'fixture'}],
+    'blockers': [], 'changelog': ''}))
 ''')
         _, fresh = self.run_cli('--apply', '--parallel', '--worker-command',
                                 json.dumps([sys.executable, str(recover), '{prompt_file}', '{worktree}']),

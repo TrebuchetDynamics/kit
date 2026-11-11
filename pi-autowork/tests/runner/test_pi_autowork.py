@@ -179,11 +179,15 @@ def finish(stop='stop', text='', error=None):
 def git(*command):
     return subprocess.run(['git', '-c', 'user.email=fake@example.invalid', '-c', 'user.name=Fake', *command],
                           capture_output=True, text=True)
+def acceptance():
+    import tomllib
+    contract = tomllib.loads(open(record_path(task)).read().split('+++')[1])
+    return [{'item': item, 'result': 'met', 'evidence': 'offline fixture'} for item in contract['acceptance']]
 def report(commit, blockers=()):
     with open(field('Report file'), 'w') as out:
         json.dump({'task': task, 'commit': commit, 'changed_files': [task + '.txt'] if commit else [],
                    'checks': [{'command': f'test -s {task}.txt', 'result': 'pass', 'summary': 'ok'}] if commit else [],
-                   'blockers': list(blockers), 'changelog': 'Complete ' + task}, out)
+                   'acceptance': acceptance(), 'blockers': list(blockers), 'changelog': 'Complete ' + task}, out)
 def work():
     open(task + '.txt', 'w').write('done ' + task + '\n')
     git('add', task + '.txt')
@@ -437,7 +441,8 @@ elif behavior == 'extra':  # also changes a file its Touches did not foresee
     git('commit', '-qm', 'worker ' + task)
     with open(field('Report file'), 'w') as out:
         json.dump({'task': task, 'commit': git('rev-parse', 'HEAD').stdout.strip(),
-                   'changed_files': [task + '-extra.txt', task + '.txt'], 'checks': [], 'blockers': [],
+                   'changed_files': [task + '-extra.txt', task + '.txt'],
+                   'checks': [{'command': 'true', 'result': 'pass'}], 'acceptance': acceptance(), 'blockers': [],
                    'changelog': ''}, out)
     finish(text='done')
 elif behavior == 'live':  # offline work done; a device check is left for a live task

@@ -162,6 +162,9 @@ def verify(repo, common, slot, contracts):
         raise ReportedBlocker(**state.blocker_updates(repo, slot, blockers))
     for field in ('pending_live', 'unrelated_failures', 'environment_failures'):
         report[field] = live_items(report.get(field))
+    record = task_queue.record(repo, slot['task_id'])
+    if mismatch := closure_documents.acceptance_mismatch(report, record.acceptance):
+        raise Hold('acceptance', 'acceptance hold: ' + mismatch, report=report)
     mismatch = report_mismatch(repo, report, slot['task_id'], commit, files)
     if mismatch:
         raise Hold('report', 'report.json does not match worker commit/files or reports failure: ' + mismatch)
@@ -310,7 +313,12 @@ def report_mismatch(repo, report, task, commit, files):
     checks = report.get('checks')
     if not isinstance(checks, list) or any(not isinstance(c, dict) or c.get('result') != 'pass' for c in checks):
         return 'a check did not pass'
-    return ''
+    record = task_queue.record(repo, task)
+    if record is None:
+        return 'task contract missing'
+    if record.checks and not checks:
+        return 'checks is empty but the contract declares checks: ' + '; '.join(record.checks)
+    return closure_documents.acceptance_mismatch(report, record.acceptance)
 
 
 def passed(check):
@@ -970,11 +978,11 @@ def integrate(repo, owner_pid, task, argv, timeout, reviewer=None, base=None, ba
                     state.require_owner(common, owner_pid)
                     # Re-read report, refs, scopes and source contracts after arbitrary validation.
                     fresh_contracts = {t['id']: t for t in dispatch.contracts(repo)}
+                    # A rank, title or note edit keeps the validation; a contract change does not.
+                    if fresh_contracts.get(task, {}).get('contract_hash') != contracts[task].get('contract_hash'):
+                        raise Hold('contract_changed', 'task contract changed during validation')
                     verify(repo, common, slot, fresh_contracts)
                     verify_scope(repo, common, slot, fresh_contracts, changed(repo, baseline, merge))
-                    # A rank, title or note edit keeps the validation; a contract change does not.
-                    if fresh_contracts[task].get('contract_hash') != contracts[task].get('contract_hash'):
-                        raise Hold('contract_changed', 'task contract changed during validation')
                     require_no_writers(repo, changed(repo, baseline, merge))
                     if git(repo, 'symbolic-ref', 'HEAD') != canonical_branch:
                         raise ValueError('canonical branch changed during validation')
@@ -1220,6 +1228,8 @@ def close(repo, owner_pid, task):
             raise ValueError('task record missing from tasks/; no close')
         if record.contract_hash != info.get('contract_hash'):
             raise ValueError(CONTRACT_CHANGED)
+        if mismatch := closure_documents.acceptance_mismatch(slot.get('report') or {}, record.acceptance):
+            return hold(common, slot, 'acceptance hold: ' + mismatch, cause='acceptance')
         written = repo / execution.task_path(task)
         on_disk = task_store.edit(written.read_text(), {}) if written.exists() else ''
         done_on_disk = 'status = "done"' in on_disk

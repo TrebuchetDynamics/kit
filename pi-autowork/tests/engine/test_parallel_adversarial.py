@@ -143,14 +143,17 @@ class AdversarialWorkerTests(unittest.TestCase):
         self.assertEqual((self.slot('B')['state'], self.slot('B')['paused']), ('interrupted', True))
         # A report-only worker: it records the retained HEAD, never implements or commits.
         script = self.root / 'report_only.py'
-        script.write_text('import json,pathlib,re,subprocess,sys,time\n'
+        script.write_text('import json,pathlib,re,subprocess,sys,time,tomllib\n'
                           'p=pathlib.Path(sys.argv[1]).read_text()\n'
                           'assert "Do not reimplement" in p\n'
                           'time.sleep(0.2)\n'
                           'head=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()\n'
                           'path=pathlib.Path(re.search(r"^Report file: (.+)$",p,re.M)[1])\n'
                           'path.write_text(json.dumps(dict(task="B",commit=head,changed_files=["b.txt"],'
-                          'checks=[],blockers=[],changelog="fixture")))\n')
+                          'checks=[dict(command="true",result="pass")],'
+                          'acceptance=[dict(item=i,result="met",evidence="offline fixture") for i in '
+                          'tomllib.loads(pathlib.Path("tasks/items/B.md").read_text().split("+++")[1])["acceptance"]],'
+                          'blockers=[],changelog="fixture")))\n')
         argv = json.dumps([sys.executable, str(script), '{prompt_file}'])
         _, resumed = self.run_cli('--apply', '--parallel', '--tasks', 'B',
                                   '--worker-command', argv, worker=False)

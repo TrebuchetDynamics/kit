@@ -248,6 +248,7 @@ class HoldCausesTests(unittest.TestCase):
             'blocker': ('ask_owner', 'IDLE', 'held'),
             'timeout': ('reverify', 'IDLE', 'held'),
             'no_change': ('engineering_stuck', 'IDLE', 'held'),
+            'acceptance': ('engineering_stuck', 'IDLE', 'held'),
             'reviewed_twice': ('engineering_stuck', 'IDLE', 'held'),
             'task_wait': ('wait_for_task', 'RESUMED', 'interrupted'),
             'scope_request': ('rerun', 'RESUMED', 'interrupted'),

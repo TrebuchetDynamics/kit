@@ -23,7 +23,9 @@ DONE = ('+++\nschema = 1\nid = "A"\ntitle = "Task A"\nstatus = "done"\n'
         'closure = "coordinator_verified"\nclosure_evidence = "tasks/evidence/A.toml"\n+++\nBody stays.\n')
 RECEIPT = ('schema = 1\ntask = "A"\ncandidate = "candidate"\nintegration = "merge"\n'
            'tree = "tree"\ncontract_hash = "contract"\n'
-           'checks = ["check", "[REDACTED]", "<path>"]\nresult = "pass"\nreview = "passed"\n')
+           'checks = ["check", "[REDACTED]", "<path>"]\nresult = "pass"\nreview = "passed"\n'
+           'model_review = "not_recorded"\n'
+           '\n[[acceptance]]\nitem = "Offline fixture"\nresult = "met"\nevidence = "Check passed"\n')
 
 
 class ClosureDocumentsTests(unittest.TestCase):
@@ -32,8 +34,9 @@ class ClosureDocumentsTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.repo = Path(self.temp.name)
         self.record = SimpleNamespace(id='A', goal='GOAL-1', rank=7, touches=('src/a.py', 'shared'),
-                                      resources=('device',), contract_hash='contract')
-        self.slot = {'commit': 'candidate', 'report': {'pending_live': ['Phone check']}}
+                                      resources=('device',), contract_hash='contract', acceptance=('Offline fixture',))
+        self.slot = {'commit': 'candidate', 'report': {'pending_live': ['Phone check'], 'acceptance': [
+            {'item': 'Offline fixture', 'result': 'met', 'evidence': 'Check passed'}]}}
         self.info = {'commit': 'merge'}
         self.checks = {'outcome': 'EXECUTED', 'command_receipt': {
             'exit_code': 0, 'argv': ['check', 'fixture-private-value', '/private/work/check.py']}}
@@ -86,6 +89,13 @@ class ClosureDocumentsTests(unittest.TestCase):
         self.assertEqual(receipt, RECEIPT.replace('["check", "[REDACTED]", "<path>"]', '["check"]')
                          .replace('result = "pass"', 'result = "fail"')
                          .replace('review = "passed"', 'review = "approved [REDACTED] <path>"'))
+        log = self.repo / 'validation.log'
+        self.checks['command_receipt']['log'] = str(log)
+        for result in ('skipped', 'passed'):
+            log.write_text(f'PI_AUTOWORK_MODEL_REVIEW: {result}\n')
+            rendered = facade.receipt_text(self.repo, 'A', self.slot, self.info, self.checks, self.record)
+            self.assertIn(f'model_review = "{result}"\n', rendered)
+            self.assertNotIn('model_review = "not_recorded"', rendered)
 
     def test_followup_modes_keep_notes_or_return_one_backlog(self):
         for mode in (None, 'notes', ' UNKNOWN ', 'none', ' BACKLOG '):

@@ -579,10 +579,36 @@ restores the pre-merge head without moving main or accepting the worker report.
 An intact parent record may replace a broken record, so ledger repairs still land.
 This guard runs before the separate stale-closure reopening described below.
 
+A worker report must include an `acceptance` list. Each entry has `item` (the exact
+text of one admitted acceptance item), `result` (`met`, `not_met` or `not_checked`),
+and `evidence` (a nonempty string that identifies the observed result and its proof).
+The list must cover every item exactly once. Integration and verified close require
+all results to be `met`. Passing checks cannot replace these results. An empty
+`checks` list is refused when the contract declares checks. Contracts without
+declared checks keep the existing report-check behavior.
+
+Missing, duplicate, unknown, `not_met`, `not_checked` or unsupported results leave
+the task open on an `acceptance` engineering hold. The reason names the affected
+items. The engine writes no done record or public receipt. A stopped or unreached
+verdict is `not_checked`. A live-only acceptance item also stays `not_checked`:
+retain its `pending_live` evidence, but do not close it Verified from offline proof.
+Pending-live checks that do not settle an acceptance item keep the existing route.
+These holds never become owner questions, even after a report-resume budget is spent.
+
+Compatibility is fail-closed: an in-flight report from an older release without
+`acceptance` is held under the same rule. Its report, commit, branch and worktree
+remain available for engineering reconciliation. The engine does not discard the
+attempt, infer results, or silently accept its old passing checks. Already committed
+historical receipts retain their existing validation rules. The reviewer receives
+the report list, confirms each item and its evidence, and fails any `met` claim
+it cannot confirm.
+
 The verified close writes `status = "done"`, `closure = "coordinator_verified"`,
 `closure_evidence = "tasks/evidence/<ID>.toml"` and `tasks/evidence/<ID>.toml` (candidate and
-integration commits, tree, contract hash, checks, result, review; secrets redacted and paths
-dropped) in one commit; a live follow-up becomes `<ID>-LIVE` in Needs decision. A replayed
+integration commits, tree, contract hash, checks, result, review and `[[acceptance]]`
+per-item results with evidence; secrets redacted and paths dropped) in one commit.
+Pending-live checks become notes by default, or a per-goal backlog when
+`PI_AUTOWORK_LIVE_FOLLOWUP=backlog`. A replayed
 close completes missing files and refuses differing ones, so a crash between writes resumes
 to one commit, and a close whose commit exists is a no-op. `--parallel-close` first returns
 `CLOSED` with the `files` to commit, leaving the slot integrated and its worker worktree and
@@ -594,6 +620,20 @@ session the runner reopens an explicitly coordinator-verified done task whose re
 pins another contract hash than its merged record (one side closed it, the other changed
 its acceptance), before main moves. An explicit manual closure is not reopened because
 of a retained receipt from an earlier attempt.
+
+The legacy receipt `review` field records the aggregate validation verdict. The
+separate `model_review` field records `passed` or `skipped` from the validation log,
+or `not_recorded` when no such evidence is available. A skipped model review must
+not be read as independent confirmation of acceptance. Existing review-policy
+and receipt-validation gates are unchanged.
+
+Offline regressions in `tests/engine/test_parallel_integrate.py` cover acceptance
+holds (including older reports), empty declared-check evidence, per-item receipt
+results, changed contracts, tamper refusal and close replay. The rendering tests in
+`tests/engine/test_closure_documents.py` cover deterministic per-item receipts and
+model-review markers. Prompt assertions in `tests/engine/test_parallel_dispatch.py`
+cover the worker and reviewer rules. These fixtures do not prove model adherence
+or live qualification.
 
 `TaskRecord.verified` requires explicit verified provenance and a schema-1 receipt naming
 this task and contract hash, a passing result and review, an existing candidate commit,
