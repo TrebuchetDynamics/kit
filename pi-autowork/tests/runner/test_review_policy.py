@@ -88,7 +88,7 @@ Accepted documentation task.
                     'commit': self.git('rev-parse', 'HEAD'), 'command': self.command,
                     'result': {'code': 0, 'failures': [], 'timed_out': False,
                                'skips': 0, 'resource_skips': 0}}
-        options = dict(evidence=evidence, env={'PI_AUTOWORK_REVIEW': 'auto'})
+        options = dict(evidence=evidence, env={})
         options.update(kwargs)
         return review_policy.decide(str(self.repo), 'T-1', **options)
 
@@ -99,7 +99,9 @@ Accepted documentation task.
                 self.candidate(path)
                 self.assertFalse(self.decide()['required'])
                 self.assertTrue(self.decide(evidence=None)['required'])
-                self.assertTrue(self.decide(env={})['required'])
+                self.assertFalse(self.decide(env={'PI_AUTOWORK_REVIEW': 'auto'})['required'])
+                self.assertTrue(self.decide(env={'PI_AUTOWORK_REVIEW': '1'})['required'])
+                self.assertFalse(self.decide(evidence=None, env={'PI_AUTOWORK_REVIEW': '0'})['required'])
                 self.assertTrue(self.decide(env={'PI_AUTOWORK_REVIEW': 'invalid'})['required'])
 
     def test_ordinary_multicommit_candidate_cannot_hide_earlier_code(self):
@@ -325,7 +327,7 @@ Accepted documentation task.
         merged = self.git('rev-parse', 'HEAD')
         state = self.root / 'state'
         environment = {k: v for k, v in os.environ.items() if not k.startswith('PI_AUTOWORK_')}
-        environment.update(PI_AUTOWORK_REVIEW='auto', PI_AUTOWORK_VALIDATE=self.command,
+        environment.update(PI_AUTOWORK_VALIDATE=self.command,
                            PI_AUTOWORK_CHECK_ROOT=str(self.root / 'slots'))
         with patch.dict(os.environ, environment, clear=True), patch.object(
                 worker.pi_runtime, 'job', side_effect=AssertionError('unnecessary model review')):
@@ -379,7 +381,7 @@ Accepted documentation task.
 
     def test_the_default_reason_names_what_decides_it(self):
         """A repeated "review is required: review is required" named nothing to act on."""
-        decision = self.decide(env={})
+        decision = self.decide(env={'PI_AUTOWORK_REVIEW': '1'})
         self.assertTrue(decision['required'])
         self.assertIn('PI_AUTOWORK_REVIEW=1', decision['reason'])
         self.assertIn('auto', decision['reason'])

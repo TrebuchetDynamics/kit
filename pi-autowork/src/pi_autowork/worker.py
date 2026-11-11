@@ -766,7 +766,7 @@ def batch_publications(state, session, job):
         if (manifest['generation'] != job['generation'] or manifest['base'] != job['base']
                 or manifest['admission'] != job['admission']
                 or manifest['command'] != job['command'] or manifest['command'] != main_check.full_check(session)
-                or manifest['mode'] != job['mode'] or manifest['mode'] != os.environ.get('PI_AUTOWORK_REVIEW', '1')
+                or manifest['mode'] != job['mode'] or manifest['mode'] != os.environ.get('PI_AUTOWORK_REVIEW', 'auto')
                 or manifest['policy_version'] != job['policy_version']
                 or manifest['policy_version'] != review_policy.version()
                 or manifest['optimistic'] != job['optimistic'] or manifest['optimistic'] != optimistic.enabled()):
@@ -837,7 +837,7 @@ def batched_verdict(state, task, checkout):
             or batch_identity(checkout, [task]).get(task) != {
             k: binding.get(k) for k in ('task', 'attempt_id', 'contract_hash', 'commit')}
             or binding.get('command') != main_check.full_check(checkout)
-            or binding.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', '1')
+            or binding.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', 'auto')
             or binding.get('policy_version') != review_policy.version()
             or binding.get('optimistic') != optimistic.enabled()):
         record.unlink(missing_ok=True)
@@ -850,12 +850,12 @@ def batched_verdict(state, task, checkout):
     policy = value.get('review_policy')
     # A skipped model review cannot inherit same_code's broad docs/tasks drift allowance.
     # Nor may an old skip survive a policy/configuration change or be advertised as a review.
-    if ((os.environ.get('PI_AUTOWORK_REVIEW') == 'auto'
+    if ((os.environ.get('PI_AUTOWORK_REVIEW', 'auto') == 'auto'
          and (not isinstance(policy, dict) or type(policy.get('required')) is not bool))
             or (isinstance(policy, dict) and policy.get('required') is False and (
                 dirty(checkout) or policy.get('tree') != git(checkout, 'rev-parse', 'HEAD^{tree}')
                 or policy.get('version') != review_policy.version()
-                or policy.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', '1')
+                or policy.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', 'auto')
                 or policy.get('command') != main_check.full_check(checkout)))):
         record.unlink(missing_ok=True)
         return None
@@ -1481,12 +1481,12 @@ def verify_batch(state, session, script, tasks):
                                       selection=instructions.get('selection'), optimistic=optimistic.enabled(),
                                       command=main_check.full_check(str(chain)), review_policy=policy,
                                       closure_context=contexts[task],
-                                      mode=os.environ.get('PI_AUTOWORK_REVIEW', '1'),
+                                      mode=os.environ.get('PI_AUTOWORK_REVIEW', 'auto'),
                                       policy_version=review_policy.version())
             publish_batch(Path(state) / 'batch' / generation / 'chain.json',
                           dict(generation=generation, base=base, admission=admission,
                                command=main_check.full_check(str(chain)),
-                               mode=os.environ.get('PI_AUTOWORK_REVIEW', '1'),
+                               mode=os.environ.get('PI_AUTOWORK_REVIEW', 'auto'),
                                policy_version=review_policy.version(), optimistic=optimistic.enabled(),
                                steps=list(bindings.values())))
             result['bindings'] = bindings
