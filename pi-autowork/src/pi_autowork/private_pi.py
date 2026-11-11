@@ -21,11 +21,22 @@ def environment(root):
     return {'PI_CODING_AGENT_DIR': str(directory(root))}
 
 
+def has_login(path):
+    """Whether a login file names at least one provider. Pi writes an empty object when it
+    starts on a directory with no login; on 2026-11-11 that file passed for a login, was never
+    refilled, and every runner of the fleet lost its model. Contents are never returned."""
+    try:
+        value = json.loads(Path(path).read_bytes())
+    except (OSError, ValueError):
+        return False
+    return isinstance(value, dict) and bool(value)
+
+
 def problem(root):
     home = directory(root)
     if not home.is_dir():
         return f'Private Pi directory is missing; refill with: {REFILL}'
-    if not (home / 'auth.json').is_file():
+    if not has_login(home / 'auth.json'):
         return f'Private Pi login is missing; refill with: {REFILL}'
     if (home / 'login-refused').exists():
         return f'Private Pi login was refused; refill with: {REFILL}'
@@ -50,7 +61,7 @@ def fill(root, source, *, refresh=False):
         dest = target / name
         if dest.is_symlink():
             raise RuntimeError('Refusing a symlinked private Pi configuration file')
-        if dest.exists() and not refresh:
+        if dest.exists() and not refresh and (name != 'auth.json' or has_login(dest)):
             dest.chmod(0o600)
             continue
         try:

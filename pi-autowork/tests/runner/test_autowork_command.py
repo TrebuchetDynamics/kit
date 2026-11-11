@@ -4,6 +4,7 @@ No real service or model is touched.
 """
 import errno
 import http.server
+import stat
 import json
 import os
 from pathlib import Path
@@ -596,7 +597,10 @@ class AutoworkCommandTests(unittest.TestCase):
         sys.path.insert(0, str(ROOT / 'pi-autowork'))
         from pi_autowork import command
         from unittest import mock
-        with mock.patch.dict(os.environ, AUTOWORK_PI=str(self.base / 'bin' / 'pi')):
+        # A disposable state root: with the real one, an installed release on this machine
+        # answered instead of the fixture package.
+        with mock.patch.dict(os.environ, AUTOWORK_PI=str(self.base / 'bin' / 'pi'),
+                             PI_AUTOWORK_STATE_DIR=str(self.base / 'empty-state')):
             self.assertEqual(command.package_script(), str(package / 'pi-autowork' / 'bin' / 'pi-autowork.sh'))
             (package / 'pi-autowork' / 'bin' / 'pi-autowork.sh').unlink()
             self.assertIsNone(command.package_script())
@@ -683,6 +687,11 @@ class AutoworkCommandTests(unittest.TestCase):
                                 capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('install.sh update -q --dry-run', self.log.read_text())
+        # The refill command that status prints reaches the installer in the order it was typed.
+        result = subprocess.run([str(AUTOWORK), 'update', '--only', 'autowork', '-q'], env=env,
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('install.sh update --only autowork -q', self.log.read_text())
 
     def test_start_refuses_a_repository_that_is_not_ready(self):
         bare = self.make_repo('bare', files=('README.md',))
@@ -1029,6 +1038,25 @@ class AutoworkCommandTests(unittest.TestCase):
             self.assertIn('autowork update --only autowork', lines[0])
             self.assertNotIn('disposable-login', result.stdout + result.stderr + self.log.read_text())
             self.assertNotIn(str(Path(self.env['HOME']) / '.pi'), result.stdout + result.stderr)
+
+    def test_an_empty_private_pi_login_is_missing_and_the_installer_replaces_it(self):
+        # 2026-11-11: Pi wrote `{}` as the login of an unfilled private directory; it passed
+        # for a login, the installer never replaced it and nine runners lost their model.
+        from pi_autowork import private_pi
+        root, interactive = self.base / 'fleet-state', self.base / 'owner-home/.pi/agent'
+        private = root / 'pi-agent'
+        private.mkdir(parents=True)
+        interactive.mkdir(parents=True)
+        (private / 'auth.json').write_text('{}')
+        self.assertIn('login is missing', private_pi.problem(root))
+        (interactive / 'auth.json').write_text('{"fixture":"disposable-login"}')
+        private_pi.fill(root, interactive)  # a first install, not a refresh
+        self.assertIsNone(private_pi.problem(root))
+        self.assertEqual(stat.S_IMODE(private.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE((private / 'auth.json').stat().st_mode), 0o600)
+        (interactive / 'auth.json').write_text('{"fixture":"changed"}')
+        private_pi.fill(root, interactive)  # a present login is kept without refresh
+        self.assertIn('disposable-login', (private / 'auth.json').read_text())
 
     def test_logs_status_and_help(self):
         self.aw('start', str(self.repo))

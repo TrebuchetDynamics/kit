@@ -172,7 +172,8 @@ class IntegrationTests(unittest.TestCase):
                 self.assertEqual(self.git('rev-parse', original['branch']), original['commit'])
                 self.assertEqual(self.task_text('A'), before)
                 self.assertFalse((self.repo / 'tasks/evidence/A.toml').exists())
-        self.assertEqual(module.retry_held(self.retry_args())['outcome'], 'IDLE')
+        # The one fresh attempt an acceptance hold now gets is asserted with the other causes in
+        # test_hold_causes.test_each_cause_follows_its_rule (rerun -> RETRIED -> running).
         # An older release may already have integrated an attempt before the update.
         state.write_slot(self.common, original, state.slots(self.common)[0])
         execution.save(path, report)
