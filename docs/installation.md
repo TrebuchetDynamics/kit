@@ -100,6 +100,13 @@ registrations and other interactive settings are not copied. The interactive
 source is not changed by this component. Keep the private directory outside Git
 repositories and worktrees; never include its contents in logs or reports.
 
+A login file that names no provider counts as a missing login: Pi writes an empty one
+when it starts on an unfilled directory. A runner that starts with the directory or
+its login missing fills it once from `~/.pi/agent` when that home holds a login, and
+says so in its log; this covers a runner that updated itself to this release without
+the installer. It never replaces a present login and never acts on a refused one;
+those wait for `autowork update --only autowork`.
+
 The component also creates an independent Git installation under the same state
 root, in `installed/`. The `autowork` command link and installed service launcher
 point there. Runners select immutable releases from that installation and set
