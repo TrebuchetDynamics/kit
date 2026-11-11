@@ -61,10 +61,8 @@ HOLD_CAUSES = {
     # becomes a visible engineering hold. None is a product decision (failure_policy).
     'timeout': 'reverify',
     'no_change': 'engineering_stuck',
-    # A report without a met result for every acceptance item gets the ordinary one fresh
-    # attempt, whose prompt names the required results. As engineering_stuck the hold had
-    # no exit: no retry, and set-aside refused it (eleven kit tasks, 2026-11-11).
-    'acceptance': 'rerun',
+    # recover_reports offers one same-attempt repair; never replace the retained commit.
+    'acceptance': 'engineering_stuck',
     'reviewed_twice': 'engineering_stuck',
     'task_wait': 'wait_for_task',
     'scope_request': 'rerun',
@@ -664,7 +662,7 @@ def exhausted(slot):
     """
     return (slot['state'] == 'held' and (slot.get('waits_for') or slot['attempt'] >= 2
             or slot.get('cause') in NEEDS_PERSON
-            or slot.get('cause') in ('reviewed_twice', 'no_change', 'timeout')
+            or slot.get('cause') in ('reviewed_twice', 'no_change', 'timeout', 'acceptance')
             or (slot.get('cause') == 'report' and slot.get('report_resume_attempt') == slot['attempt'])
             or (slot.get('cause') == 'conflict' and bool(slot.get('merged_base'))))
             and not readoptable(slot))
@@ -690,13 +688,19 @@ def missing_commit_report(common, slot):
 
 
 def recover_reports(common, current):
-    """Prepare one report-only, same-attempt resume; never manufacture a worker report.
+    """Prepare one same-attempt report/acceptance resume; never manufacture a worker report.
 
     Caller holds writer.lock. Also repairs pre-upgrade conflict holds before any
     resolver or fresh retry can take ownership of the retained work.
     """
     result = []
     for slot in current:
+        if (slot['state'] == 'held' and slot.get('cause') == 'acceptance' and slot.get('commit')
+                and not worker_live(slot) and slot.get('acceptance_resume_attempt') != slot['attempt']):
+            value = {k: v for k, v in slot.items() if k not in ('cause', 'data_attempt')}
+            value.update(state='interrupted', paused=True, acceptance_resume_attempt=slot['attempt'],
+                         acceptance_resume_reason=slot['reason'], report_resume_attempt=slot['attempt'])
+            slot = write_slot(common, value, slot)
         eligible = (slot['state'] == 'reported' or
                     (slot['state'] == 'held' and slot.get('cause') in ('report', 'conflict')))
         if eligible and slot.get('commit') and not worker_live(slot) and (missing := missing_commit_report(common, slot)):

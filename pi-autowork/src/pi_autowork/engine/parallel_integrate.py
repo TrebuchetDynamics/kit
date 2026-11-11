@@ -1649,9 +1649,12 @@ def reverify(repo, owner_pid, task, version):
     with execution.lock(common / 'integration.lock'), execution.lock(common / 'writer.lock'):
         state.require_owner(common, owner_pid)
         slot = slot_for(common, task)
+        acceptance_resume = (slot and slot['state'] == 'held' and slot.get('cause') == 'acceptance'
+                             and slot.get('acceptance_resume_attempt') != slot['attempt'])
         if (slot and (slot['state'] == 'reported' or
-                      (slot['state'] == 'held' and slot.get('cause') in ('report', 'conflict')))
-                and slot.get('commit') and not state.worker_live(slot) and state.missing_commit_report(common, slot)):
+                      (slot['state'] == 'held' and slot.get('cause') in ('report', 'conflict', 'acceptance')))
+                and slot.get('commit') and not state.worker_live(slot)
+                and (acceptance_resume or state.missing_commit_report(common, slot))):
             recovered = state.recover_reports(common, [slot])[0]
             if recovered['state'] == 'interrupted':
                 return {'outcome': 'REVERIFY', 'task': task, 'version': version,

@@ -1104,9 +1104,10 @@ under its `-set-aside-N` name, and a held commit still goes through
 `--parallel-clear-held`. A second empty or no-change hold after that requeue is parked
 as a visible engineering hold and is never retried automatically.
 
-A first attempt held because its report lacks a met result with evidence for every
-acceptance item (`acceptance hold`) gets the ordinary one fresh attempt; its commit is
-kept. A second acceptance hold is a visible engineering hold and is not retried.
+An [acceptance hold](#verified-acceptance-evidence) resumes the same worker once
+on the same attempt and retained commit, with the missing or unmet items named.
+A second acceptance hold is a visible engineering hold: no further resume or fresh
+attempt starts automatically.
 
 ### Attempt provenance
 
@@ -1280,6 +1281,14 @@ Verified from offline results. These gaps leave the task open with an engineerin
 hold that names the items, not an owner question. No done record or receipt is written.
 Reports from older in-flight attempts without the list are held with their candidate
 work and reports preserved, not discarded or silently accepted.
+
+The first acceptance hold automatically resumes the same worker in its retained
+worktree on the same attempt and commit, once. Its prompt names the exact missing
+or unmet items. The worker finishes missing work and rewrites its own `report.json`
+with a result and evidence for every item; the runner never supplies or infers a
+result. A second acceptance hold on that attempt is final: it keeps the commit and
+names the remaining items as an engineering hold. No further resume or fresh attempt
+starts automatically.
 
 The reviewer receives the list and must confirm each item and its proof. An
 unconfirmed `met` claim fails review. A successful close records the per-item results
