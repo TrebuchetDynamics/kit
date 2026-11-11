@@ -28,7 +28,13 @@ from .processes import alive, start_time
 REVIEW = ('You are an independent reviewer verifying task {task} in {checkout}, which holds a worker\'s commit '
           'merged onto the session branch (see git log -1 and git diff HEAD^1 HEAD). Read the task\'s record, '
           'tasks/items/{task}.md (its acceptance and checks), run the offline checks it lists, and judge the merged change '
-          'against the acceptance criteria. Block only concrete acceptance failures, regressions, security issues '
+          'against the acceptance criteria. The worker report has an acceptance list: exactly one entry per '
+          'admitted acceptance item, with item (exact text), result (met, not_met or not_checked) and evidence. '
+          'Confirm each item and its evidence explicitly in your review. A stopped or unreached verdict is '
+          'not_checked, never met. Fail a report whose met claim you cannot confirm, or whose list is missing, '
+          'duplicates or omits an item, or contains not_met or not_checked. Passing checks alone cannot qualify '
+          'a Verified close; these gaps remain engineering holds, never owner questions. '
+          'Block only concrete acceptance failures, regressions, security issues '
           'or credible data-loss risks, with the affected behavior and evidence named. Do not ask for more '
           'tests than the acceptance and Checks need. Style, preferred abstractions, duplicate tests and '
           'table-driven test preferences are advisory follow-ups, not failures, unless they cause a concrete '
@@ -51,11 +57,11 @@ GATE = (' The runner\'s recorded full-check gate (`{command}`) for tree `{tree}`
         'runner\'s accepted gate policy: do not run it again. Run only a check '
         'the full check does not cover, such as a lint, a build or a script, and single tests to settle a doubt. '
         'Rerunning whole test files took most of every review\'s 20 to 40 minutes.')
-# Offline completion is separate from live qualification (AGENTS.md): checks recorded as
-# pending live become their own TASK-LIVE follow-up, so they must not fail the review.
+# Pending live retains its existing route, but cannot settle an acceptance item offline.
 LIVE = (' Checks that need a physical device, hardware, production or live services, or a person cannot run '
         'here. The worker recorded these as pending live checks, which become a separate live follow-up task: '
-        '{items}. Do not fail for those; judge everything that can be checked offline. A live check the task '
+        '{items}. Do not fail for those unless they are needed to settle an acceptance item: that item is '
+        'not_checked and cannot close Verified. Judge everything that can be checked offline. A live check the task '
         'requires that is not in that list is a failure: it would be lost.')
 NO_LIVE = (' The worker recorded no pending live checks: a device, hardware, production or human check the '
            'task requires and that cannot run here is a failure, because nothing would record it.')
@@ -906,6 +912,8 @@ def review_decision(state, task, checkout, evidence=None):
         previous = {}
     path.write_text(json.dumps(decision))
     action = 'required' if decision['required'] else 'skipped'
+    if not decision['required']:
+        print('PI_AUTOWORK_MODEL_REVIEW: skipped', flush=True)
     # A re-dispatched worker asks the same question of the same tree. Say it once per tree rather
     # than repeat an identical line every cycle (2026-10-31); the stored decision is the answer.
     unchanged = isinstance(previous, dict) and all(
@@ -1607,6 +1615,8 @@ def review(state, task, checkout, head_before, gate=''):
                             + (PROVISIONED.format(path=provisioned) if provisioned else '')
                             + (CACHE.format(path=cache) if cache else '') + (
                                 LIVE.format(items='; '.join(live)) if (live := pending_live(checkout, task)) else NO_LIVE)
+                            + '\nWorker report acceptance list: '
+                            + json.dumps(worker_report(checkout, task).get('acceptance'), ensure_ascii=False)
                             + changelog_note(checkout, task)
                             + '\n\n' + ponytail_prompt(review=True),
                             f'pi-autowork-verify-{safe_name(task)}-{datetime.now():%Y%m%d%H%M%S}',
@@ -1641,6 +1651,7 @@ def review(state, task, checkout, head_before, gate=''):
     elif verdict == 'pass':
         findings_path(state, task).unlink(missing_ok=True)
     if result['ok'] and verdict == 'pass':
+        print('PI_AUTOWORK_MODEL_REVIEW: passed', flush=True)
         return 0
     if not verdict:
         # Why there is no verdict, for the hold: a review that ran out of time is reviewed again with

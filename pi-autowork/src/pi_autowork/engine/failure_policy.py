@@ -22,6 +22,7 @@ RESOLUTION_OWNERS = (ENGINE, AGENT_REPAIR, OWNER, EXTERNAL)
 POLICY = {
     # Technical defects: a coding or documentation agent must repair the candidate.
     'validation': ('VALIDATION_FAILURE', AGENT_REPAIR, 'repair_required', 'repair_validation_findings'),
+    'acceptance': ('EVIDENCE_MISSING', AGENT_REPAIR, 'repair_required', 'record_acceptance_results'),
     'reviewed_twice': ('VALIDATION_FAILURE', AGENT_REPAIR, 'engineering_stuck', 'resume_repair_with_new_evidence'),
     'no_change': ('CONTRACT_MISMATCH', AGENT_REPAIR, 'repair_required', 'restate_or_close_task'),
     'scope': ('SCOPE_VIOLATION', OWNER, 'owner_decision_required', 'decide_scope_or_touches'),

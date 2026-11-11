@@ -1184,6 +1184,32 @@ mark main or its base green. Offline fixtures in `tests/test_check.py`,
 `tests/test_pi_autowork.py` and `pi-autowork/tests/test_main_check.py` cover selection,
 landing receipts and this full-main boundary; they do not establish live qualification.
 
+## Verified acceptance evidence
+
+A Verified close needs one recorded result for every acceptance item of the admitted
+contract. The worker report's `acceptance` list contains `item` (exact item text),
+`result` (`met`, `not_met` or `not_checked`) and `evidence` (the observed result and
+supporting proof). Integration refuses incomplete or duplicate coverage. Every item
+must be `met` with evidence, even when all checks pass. An empty `checks` list does
+not satisfy a contract that declares checks.
+
+A stopped or unreached verdict is `not_checked`. An item that needs a live or device
+check stays `not_checked` and retains its `pending_live` evidence. It cannot close
+Verified from offline results. These gaps leave the task open with an engineering
+hold that names the items, not an owner question. No done record or receipt is written.
+Reports from older in-flight attempts without the list are held with their candidate
+work and reports preserved, not discarded or silently accepted.
+
+The reviewer receives the list and must confirm each item and its proof. An
+unconfirmed `met` claim fails review. A successful close records the per-item results
+in the receipt. `model_review` distinguishes a passed model review from a skipped
+review or missing model-review evidence. The legacy `review` field remains the
+aggregate validation verdict, not proof that a model ran.
+Existing manual closure, historical receipt validation, live authority
+and goal-qualification rules do not change. See the
+[task-store close contract](task-store.md#integration-and-closure) for details and
+offline regression coverage.
+
 ## Passing batch prefixes
 
 After a batch's merged chain passes its existing gate, a contiguous passing prefix

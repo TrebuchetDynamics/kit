@@ -21,6 +21,25 @@ def receipt_path(task):
     return f'tasks/evidence/{task}.toml'
 
 
+def acceptance_mismatch(report, acceptance):
+    """Fail closed on missing/legacy results; never infer acceptance from passing checks."""
+    entries = report.get('acceptance')
+    if not isinstance(entries, list):
+        return 'acceptance list missing or invalid; not_checked: ' + '; '.join(acceptance)
+    problems = []
+    for item in acceptance:
+        found = [entry for entry in entries if isinstance(entry, dict) and entry.get('item') == item]
+        if len(found) != 1:
+            problems.append(f'{item}: expected exactly one result, found {len(found)}')
+        elif found[0].get('result') != 'met':
+            problems.append(f'{item}: {found[0].get("result", "not_checked")}')
+        elif not isinstance(found[0].get('evidence'), str) or not found[0]['evidence'].strip():
+            problems.append(f'{item}: met without evidence')
+    if any(not isinstance(entry, dict) or entry.get('item') not in acceptance for entry in entries):
+        problems.append('unexpected acceptance entries: ' + repr(entries))
+    return '; '.join(problems)
+
+
 def receipt_text(repo, task, slot, info, checks, record, *, ports):
     """The closure's evidence, deterministic for one verified operation: no time, no logs, no
     transcript; secrets redacted and absolute paths dropped, as for public commits."""
@@ -34,12 +53,23 @@ def receipt_text(repo, task, slot, info, checks, record, *, ports):
         return re.sub(r'(?<![\w.-])/(?:[^\s/]+/)+[^\s/]*', '<path>', text)
 
     tree = ports.git(repo, 'rev-parse', f"{info['commit']}^{{tree}}")
+    # The legacy review field is the validation verdict, not proof that a model ran.
     review = (slot.get('review') or {}).get('decision') or ('passed' if ports.passed(checks) else 'failed')
+    try:
+        log = Path(checks['command_receipt']['log']).read_text(errors='replace')
+    except (OSError, KeyError, TypeError):
+        log = ''
+    model_review = re.findall(r'^PI_AUTOWORK_MODEL_REVIEW: (passed|skipped)$', log, re.M)
     fields = [('schema', 1), ('task', task), ('candidate', slot['commit']), ('integration', info['commit']),
               ('tree', tree), ('contract_hash', record.contract_hash),
               ('checks', [public(part) for part in command]),
-              ('result', 'pass' if ports.passed(checks) else 'fail'), ('review', public(review))]
+              ('result', 'pass' if ports.passed(checks) else 'fail'), ('review', public(review)),
+              ('model_review', model_review[-1] if model_review else 'not_recorded')]
     lines = [f'{key} = {task_store.toml_value(key, value)}' for key, value in fields]
+    for entry in (slot.get('report') or {}).get('acceptance', []):
+        lines.append('\n[[acceptance]]')
+        lines.extend(f'{key} = {task_store.toml_value(key, public(entry[key]))}'
+                     for key in ('item', 'result', 'evidence'))
     return '\n'.join(lines) + '\n'
 
 
@@ -117,6 +147,8 @@ def close_writes(repo, task, slot, info, checks, record, *, ports):
     By default live checks are notes on the done record, not another owner decision;
     PI_AUTOWORK_LIVE_FOLLOWUP=backlog keeps the per-goal backlog behavior, and =none drops the
     notes. Nothing else; TODO.archive.md is not written."""
+    if mismatch := acceptance_mismatch(slot.get('report') or {}, record.acceptance):
+        raise ValueError('acceptance hold: ' + mismatch)
     # From the record as committed: a close records the verified contract, never a local edit.
     committed = ports.git(repo, 'show', f'HEAD:{ports.task_path(task)}', raw=True).decode()
     text = task_store.edit(committed, {'status': 'done', 'closure': 'coordinator_verified',
