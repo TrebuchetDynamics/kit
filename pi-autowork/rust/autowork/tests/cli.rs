@@ -1197,7 +1197,7 @@ fn status_reads_committed_tasks_without_creating_or_recovering_state() {
     let store = autowork_next::state::StateStore::open(repo.0.join(".git")).unwrap();
     assert_eq!(
         repo.value(&["status", "--repo", path, "--json"])["journal"]["status"],
-        "unavailable"
+        "observed"
     );
     drop(store);
     let database = repo.0.join(".git/autowork-rust/journal.sqlite3");
@@ -1207,12 +1207,6 @@ fn status_reads_committed_tasks_without_creating_or_recovering_state() {
         "observed"
     );
     assert_eq!(std::fs::read(&database).unwrap(), bytes);
-    assert!(
-        !repo
-            .0
-            .join(".git/autowork-rust/journal.sqlite3-shm")
-            .exists()
-    );
     std::fs::write(&database, b"invalid database").unwrap();
     assert_eq!(
         repo.value(&["status", "--repo", path, "--json"])["journal"]["status"],

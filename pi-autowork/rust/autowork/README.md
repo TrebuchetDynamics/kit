@@ -67,12 +67,14 @@ another runtime's active owner, so `capabilities` reports them as
 
 `autowork-next status --repo /path/to/repo --json` returns schema version 1,
 committed task counts, dependency readiness and persisted journal observations.
-Absent, corrupt, foreign or actively written journals report unavailable. Reads
-create no state, migrations or reconciliation effects. A quiescent journal is
-read under its existing lock through immutable SQLite access; this is an observed
-snapshot, not model or service qualification. The immutable read requires a
-write-ahead log that is provably absent or an empty regular file: a permission or
-I/O error on it reports unavailable.
+Absent, corrupt, foreign or unsafe journals report unavailable. Both status formats
+use the same validated SQLite read transaction, including private local paths and
+sidecars, repository identity, and run-to-event linkage for every generation.
+Public status preserves all generations; inspection status projects the latest
+runs and the transaction's event high-water mark. Concurrent WAL readers may
+create SQLite coordination sidecars. Reads never claim a writer epoch, migrate,
+recover or change logical journal data. These are observed snapshots, not model
+or service qualification.
 
 `tasks --repo /path/to/repo list` and `tasks --repo /path/to/repo show ID`
 return schema-versioned JSON from committed records only. Add `--rev COMMIT`

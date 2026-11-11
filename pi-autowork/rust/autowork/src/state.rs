@@ -242,6 +242,13 @@ pub struct JournalStatus {
 /// A short read transaction, not a StateStore and never a writer lease.
 /// Ordinary SQLite WAL coordination may create/change its own private sidecars.
 pub fn read_status(common_dir: &Path) -> std::result::Result<JournalStatus, InspectionError> {
+    Ok(read_snapshot(common_dir)?.0)
+}
+
+fn read_snapshot(
+    common_dir: &Path,
+) -> std::result::Result<(JournalStatus, Vec<serde_json::Value>), InspectionError> {
+    let mut history = Vec::new();
     let repository = Repository::inspect(common_dir).map_err(|_| InspectionError::UnsafeSource)?;
     require_local(&repository.common_dir).map_err(|_| InspectionError::UnsafeSource)?;
     let mut status = JournalStatus {
@@ -270,7 +277,7 @@ pub fn read_status(common_dir: &Path) -> std::result::Result<JournalStatus, Insp
         }
     };
     if !exists(&directory, true)? {
-        return Ok(status);
+        return Ok((status, history));
     }
     for name in [
         "writer.lock",
@@ -282,7 +289,7 @@ pub fn read_status(common_dir: &Path) -> std::result::Result<JournalStatus, Insp
     }
     let database = directory.join("journal.sqlite3");
     if !exists(&database, false)? {
-        return Ok(status);
+        return Ok((status, history));
     }
     let mut connection = Connection::open_with_flags(
         &database,
@@ -314,9 +321,10 @@ pub fn read_status(common_dir: &Path) -> std::result::Result<JournalStatus, Insp
     {
         let mut statement = tx.prepare(
             "SELECT task,generation,identity,source,status,event_id,
-                EXISTS(SELECT 1 FROM events WHERE id=r.event_id)
-             FROM runs r WHERE generation=(SELECT max(generation) FROM runs WHERE task=r.task)
-             ORDER BY task",
+                (SELECT payload FROM events WHERE id=r.event_id),
+                (SELECT key FROM events WHERE id=r.event_id),
+                generation=(SELECT max(generation) FROM runs WHERE task=r.task), owner_epoch
+             FROM runs r ORDER BY task,generation",
         )?;
         let mut rows = statement.query([])?;
         while let Some(row) = rows.next()? {
@@ -326,7 +334,14 @@ pub fn read_status(common_dir: &Path) -> std::result::Result<JournalStatus, Insp
             let source: String = row.get(3)?;
             let durable: String = row.get(4)?;
             let event_id: i64 = row.get(5)?;
-            let event_exists: bool = row.get(6)?;
+            let payload: Option<String> = row.get(6)?;
+            let key: Option<String> = row.get(7)?;
+            let latest: bool = row.get(8)?;
+            let owner_epoch: i64 = row.get(9)?;
+            let transition: Transition =
+                serde_json::from_str(&payload.ok_or(InspectionError::CorruptJournal)?)
+                    .map_err(|_| InspectionError::CorruptJournal)?;
+            let event = &transition.event;
             let identity: RunIdentity =
                 serde_json::from_str(&identity).map_err(|_| InspectionError::CorruptJournal)?;
             let durable: DurableStatus =
@@ -338,27 +353,44 @@ pub fn read_status(common_dir: &Path) -> std::result::Result<JournalStatus, Insp
                 || identity.generation != generation as u64
                 || event_id <= 0
                 || event_id > high_water
-                || !event_exists
+                || owner_epoch < 1
+                || owner_epoch > epoch
+                || transition.identity != identity
+                || transition.status != durable
+                || key.as_deref() != Some(transition.key.as_str())
+                || transition.key.is_empty()
+                || event.repo_id != identity.repo_id
+                || event.task_id != identity.task_id
+                || event.attempt_id != identity.attempt_id
+                || event.generation != identity.generation
+                || event.role != identity.role
+                || event.contract_hash != identity.contract_hash
+                || event.source_revision != source
+                || event.to_json_line().is_err()
             {
                 return Err(InspectionError::CorruptJournal);
             }
-            status.projections.push(StatusProjection {
-                task_id: identity.task_id,
-                attempt_id: identity.attempt_id,
-                generation: identity.generation,
-                role: identity.role,
-                contract_hash: identity.contract_hash,
-                source_revision: source,
-                status: durable,
-                event_id,
-            });
+            history.push(serde_json::json!({"task": task, "generation": generation,
+                "status": durable, "revision": source}));
+            if latest {
+                status.projections.push(StatusProjection {
+                    task_id: identity.task_id,
+                    attempt_id: identity.attempt_id,
+                    generation: identity.generation,
+                    role: identity.role,
+                    contract_hash: identity.contract_hash,
+                    source_revision: source,
+                    status: durable,
+                    event_id,
+                });
+            }
         }
     }
     tx.commit()?;
     status.journal_state = "present";
     status.journal_schema = Some(version);
     status.event_high_water_mark = Some(high_water);
-    Ok(status)
+    Ok((status, history))
 }
 
 pub struct StateStore {
@@ -958,57 +990,10 @@ fn require_local(path: &Path) -> Result<()> {
     )
 }
 
-/// public-v1 status: every persisted run generation of a quiescent journal, without
-/// creating, migrating or recovering it. A live writer/WAL is unavailable rather than
-/// a possibly stale snapshot. `read_status` is the inspection-v1 reader: it reads beside
-/// a writer and reports only each task's latest generation.
+/// Public history and inspection latest projections use the same validated read transaction.
 pub fn read_persisted_runs(common_dir: impl AsRef<Path>) -> Result<serde_json::Value> {
-    let repository = Repository::inspect(common_dir.as_ref())?;
-    let directory = repository.common_dir.join("autowork-rust");
-    private_path(&directory, true)?;
-    let lock_path = directory.join("writer.lock");
-    private_path(&lock_path, false)?;
-    let lock = File::open(lock_path)?;
-    lock.try_lock_shared()
-        .map_err(|_| StateError("journal writer active".into()))?;
-    let database = directory.join("journal.sqlite3");
-    private_path(&database, false)?;
-    // Only a WAL that is known absent or empty permits the immutable open below:
-    // a permission or I/O error proves neither.
-    let checkpointed = match fs::symlink_metadata(directory.join("journal.sqlite3-wal")) {
-        Ok(metadata) => metadata.is_file() && metadata.len() == 0,
-        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
-    };
-    require(checkpointed, "uncheckpointed journal unavailable")?;
-    use std::os::unix::ffi::OsStrExt;
-    let encoded: String = database
-        .as_os_str()
-        .as_bytes()
-        .iter()
-        .map(|b| {
-            if b.is_ascii_alphanumeric() || b"/._-".contains(b) {
-                (*b as char).to_string()
-            } else {
-                format!("%{b:02X}")
-            }
-        })
-        .collect();
-    let connection = Connection::open_with_flags(
-        format!("file:{encoded}?immutable=1"),
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
-    )?;
-    let version: i64 = connection.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    require(version == SCHEMA_VERSION, "unsupported journal schema")?;
-    let retained: String =
-        connection.query_row("SELECT repository FROM metadata", [], |r| r.get(0))?;
-    require(
-        retained == serde_json::to_string(&repository)?,
-        "foreign journal",
-    )?;
-    let mut statement = connection
-        .prepare("SELECT task,generation,status,source FROM runs ORDER BY task,generation")?;
-    let runs = statement.query_map([], |row| Ok((row.get::<_,String>(0)?, row.get::<_,i64>(1)?, row.get::<_,String>(2)?, row.get::<_,String>(3)?)))?
-        .map(|row| { let (task,generation,status,revision) = row?; let status: DurableStatus = serde_json::from_str(&status)?;
-            Ok(serde_json::json!({"task":task,"generation":generation,"status":status,"revision":revision})) }).collect::<Result<Vec<_>>>()?;
+    let (snapshot, runs) =
+        read_snapshot(common_dir.as_ref()).map_err(|error| StateError(error.code().into()))?;
+    require(snapshot.journal_state == "present", "journal absent")?;
     Ok(serde_json::json!({"status":"observed", "runs":runs, "qualification":"persisted-only"}))
 }

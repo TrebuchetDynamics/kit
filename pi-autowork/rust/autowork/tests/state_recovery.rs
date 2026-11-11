@@ -436,3 +436,91 @@ fn readonly_projection_preserves_uncertain_state() {
     assert!(autowork_next::state::read_persisted_runs(repo.common()).is_ok());
     assert_eq!(fs::read(repo.database()).unwrap(), before);
 }
+
+#[test]
+fn status_formats_share_wal_snapshot_and_reject_historical_link_corruption() {
+    use autowork_next::state::{read_persisted_runs, read_status};
+    let repo = Repo::new();
+    let store = StateStore::open(repo.common()).unwrap();
+    let first = identity(&store, 1);
+    store.claim(0, first.clone(), "source-commit").unwrap();
+    let second = identity(&store, 2);
+    store.claim(1, second, "source-commit").unwrap();
+    let public = read_persisted_runs(repo.common()).unwrap();
+    assert_eq!(public["runs"].as_array().unwrap().len(), 2);
+    let latest = serde_json::to_value(read_status(&repo.common()).unwrap()).unwrap();
+    assert_eq!(latest["projections"].as_array().unwrap().len(), 1);
+    assert_eq!(latest["projections"][0]["generation"], 2);
+    let connection = Connection::open(repo.database()).unwrap();
+    // A valid event from another generation must not authenticate an old run.
+    connection
+        .execute(
+            "UPDATE runs SET event_id=(SELECT max(id) FROM events) WHERE generation=1",
+            [],
+        )
+        .unwrap();
+    assert!(read_persisted_runs(repo.common()).is_err());
+    assert_eq!(
+        read_status(&repo.common()).err().unwrap().code(),
+        "corrupt_journal"
+    );
+}
+
+#[test]
+fn status_formats_reject_private_sidecar_and_event_identity_corruption() {
+    use autowork_next::state::{read_persisted_runs, read_status};
+    let repo = Repo::new();
+    let store = StateStore::open(repo.common()).unwrap();
+    store
+        .claim(0, identity(&store, 1), "source-commit")
+        .unwrap();
+    let connection = Connection::open(repo.database()).unwrap();
+    let payload: String = connection
+        .query_row("SELECT payload FROM events", [], |row| row.get(0))
+        .unwrap();
+    let mut event: serde_json::Value = serde_json::from_str(&payload).unwrap();
+    event["event"]["attempt_id"] = "foreign-attempt".into();
+    connection
+        .execute("UPDATE events SET payload=?1", [event.to_string()])
+        .unwrap();
+    assert!(read_persisted_runs(repo.common()).is_err());
+    assert_eq!(
+        read_status(&repo.common()).err().unwrap().code(),
+        "corrupt_journal"
+    );
+    connection
+        .execute("UPDATE events SET payload=?1", [payload])
+        .unwrap();
+    let wal = repo.common().join("autowork-rust/journal.sqlite3-wal");
+    fs::set_permissions(&wal, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(read_persisted_runs(repo.common()).is_err());
+    assert_eq!(
+        read_status(&repo.common()).err().unwrap().code(),
+        "unsafe_source"
+    );
+}
+
+#[test]
+fn status_snapshot_retains_reconciled_older_generation_without_accepting_it() {
+    use autowork_next::state::{read_persisted_runs, read_status};
+    let repo = Repo::new();
+    let store = StateStore::open(repo.common()).unwrap();
+    let first = identity(&store, 1);
+    store.claim(0, first.clone(), "source-commit").unwrap();
+    store
+        .transition(1, transition(&first, RecordKind::Intent(EffectKind::Git)))
+        .unwrap();
+    store
+        .claim(1, identity(&store, 2), "source-commit")
+        .unwrap();
+    store
+        .reconcile(observation(&first, EffectOutcome::Applied))
+        .unwrap();
+    let history = read_persisted_runs(repo.common()).unwrap();
+    assert_eq!(history["runs"][0]["status"], "uncertain");
+    assert_eq!(history["runs"][1]["generation"], 2);
+    let latest = serde_json::to_value(read_status(&repo.common()).unwrap()).unwrap();
+    assert_eq!(latest["projections"][0]["generation"], 2);
+    assert_eq!(latest["projections"][0]["status"], "ready");
+    assert_eq!(latest["event_high_water_mark"], 4);
+}
