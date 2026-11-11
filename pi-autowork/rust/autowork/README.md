@@ -50,7 +50,7 @@ and `capabilities`. It may appear before or after the subcommand.
 
 | Format | Selected by | `status` | `tasks` | `goals` |
 | --- | --- | --- | --- | --- |
-| `public-v1` | default | committed tasks plus persisted runs of every generation, from a quiescent journal | `list`, `show`, `add`, `field`, `place`, `preview` | `list`, `show`, `add`, `field` |
+| `public-v1` | default | committed tasks plus persisted runs of every generation, read beside a writer | `list`, `show`, `add`, `field`, `place`, `preview` | `list`, `show`, `add`, `field` |
 | `inspection-v1` | `--format inspection-v1` | typed latest-generation journal projection, read beside a writer | `list`, `goals`, `show`, `why`, `commit` | unsupported |
 
 A command outside the selected format is refused, never answered in the other
@@ -76,6 +76,8 @@ committed task counts, dependency readiness and persisted journal observations.
 Absent, corrupt, foreign or unsafe journals report unavailable. Both status formats
 use the same validated SQLite read transaction, including private local paths and
 sidecars, repository identity, and run-to-event linkage for every generation.
+Linked events must retain their operation ID and timestamp, just as the writer
+requires. WAL permission errors refuse inspection without an immutable fallback.
 Public status preserves all generations; inspection status projects the latest
 runs and the transaction's event high-water mark. Concurrent WAL readers may
 create SQLite coordination sidecars. Reads never claim a writer epoch, migrate,
