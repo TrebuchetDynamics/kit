@@ -66,6 +66,11 @@ class DispatchTests(unittest.TestCase):
         self.commit_if_changed('base')
         self.owner = os.getppid()
         self.common = state.common_dir(self.repo)
+        worker_fixture = self.root / 'fake_worker.py'
+        worker_fixture.write_text(FAKE.read_text().replace("'checks': [], 'blockers': spec.get", "'checks': [{'command': 'inspect.', 'result': 'pass'}], 'blockers': spec.get"))
+        fake_patch = patch(__name__ + '.FAKE', worker_fixture)
+        fake_patch.start()
+        self.addCleanup(fake_patch.stop)
         self.spec = self.root / 'spec.json'
         self.log = self.root / 'workers.jsonl'
         self.log.touch()
@@ -754,7 +759,7 @@ class DispatchTests(unittest.TestCase):
                             slot = state.transition(self.repo, self.owner, tid, 'reported', commit=commit)
                             execution.save(dispatch.data_dir(self.common, slot) / 'report.json',
                                            dict(task=tid, commit=commit, changed_files=[tid.lower() + '.txt'],
-                                                blockers=[], checks=[], pending_live=[]))
+                                                blockers=[], checks=[dict(command="inspect.", result="pass")], pending_live=[]))
                 self.set_spec({'OLD': {'sleep': 60}, 'F': {'sleep': 60}})
                 with patch.dict(os.environ, PI_AUTOWORK_MERGE_BACKLOG=setting,
                                 PI_AUTOWORK_MERGE_BACKLOG_AFTER=after):
@@ -1361,7 +1366,7 @@ Path(repo, ' a.txt').write_text('half, in metres')
 git('commit', '-qam', 'continue retained candidate')
 report = re.search(r'^Report file: (.+)$', prompt, re.M)[1]
 Path(report).write_text(json.dumps({'task': 'A', 'commit': git('rev-parse', 'HEAD'),
-    'changed_files': [' a.txt'], 'checks': [], 'blockers': [], 'changelog': ''}))
+    'changed_files': [' a.txt'], 'checks': [{'command': 'inspect.', 'result': 'pass'}], 'blockers': [], 'changelog': ''}))
 ''')
         _, fresh = self.run_cli('--apply', '--parallel', '--worker-command',
                                 json.dumps([sys.executable, str(recover), '{prompt_file}', '{worktree}']),

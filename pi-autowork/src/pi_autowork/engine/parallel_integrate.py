@@ -1,6 +1,7 @@
 """Serialized, validated local integration. Worker reports are evidence, not acceptance."""
 import hashlib
 import math
+import shlex
 from datetime import datetime
 import json
 import os
@@ -127,7 +128,21 @@ def live_items(value):
     return texts
 
 
-def verify(repo, common, slot, contracts):
+def coordinator_full_check(argv, repo=None):
+    """Exempt only a command this integration will actually execute as its gate."""
+    command = os.environ.get('AUTOWORK_RUNNER_FULL_CHECK', '').strip()
+    try:
+        direct = command and shlex.split(command) == list(argv)
+        from pi_autowork import main_check
+        wrapper = (repo is not None and command == main_check.full_check(repo) and len(argv) == 5 and argv[0] == '/bin/bash'
+                   and Path(argv[1]).resolve() == Path(__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+                   and argv[2] == '--verify')
+        return command if direct or (command and wrapper) else ''
+    except ValueError:
+        return ''
+
+
+def verify(repo, common, slot, contracts, coordinator_check=""):
     task = contracts.get(slot['task_id'])
     if task is None:
         raise ValueError('task contract is no longer eligible')
@@ -166,9 +181,11 @@ def verify(repo, common, slot, contracts):
     admitted = task_queue.record(repo, slot['task_id'], slot['baseline'])
     if admitted is None:
         raise Hold('report', 'missing immutable admitted task contract')
-    mismatch = report_mismatch(repo, report, slot['task_id'], commit, files, admitted.checks)
+    mismatch = report_mismatch(repo, report, slot['task_id'], commit, files, tuple(c for c in admitted.checks if c != coordinator_check))
     if mismatch:
-        raise Hold('report', 'report.json does not match worker commit/files or reports failure: ' + mismatch)
+        cause = ('validation' if mismatch.startswith('missing declared check evidence:')
+                 or mismatch == 'a check did not pass' else 'report')
+        raise Hold(cause, 'report.json does not match worker commit/files or reports failure: ' + mismatch)
     verify_scope(repo, common, slot, contracts, files)
     report['doc_impact'] = assess_doc_impact(repo, slot, task, files, report)
     return files, report
@@ -900,7 +917,7 @@ def integrate(repo, owner_pid, task, argv, timeout, reviewer=None, base=None, ba
                                 cause='conflict', conflict_files=conflicts)
                 raise ValueError(f'integrate the highest-priority reported task first: {first}')
             try:
-                files, report = verify(repo, common, slot, contracts)
+                files, report = verify(repo, common, slot, contracts, coordinator_full_check(argv, repo))
                 require_no_writers(repo, files)
                 if slot['state'] == 'integrating':
                     # Pre-upgrade intents can recover without the reported transition.
@@ -963,6 +980,11 @@ def integrate(repo, owner_pid, task, argv, timeout, reviewer=None, base=None, ba
                             receipt_context={'integration_commit': merge, **state.journal.context(common, slot)},
                             receipt_writer=save_receipt, run_id=run_id,
                             check_slot_wait=True)
+                # A wrapper's exit alone cannot stand in for its source/log-bound gate.
+                if coordinator_full_check(argv, repo) and len(argv) == 5 and argv[2] == '--verify' and passed(check):
+                    from pi_autowork import worker
+                    if worker.review_gate_evidence(argv[3], root) is None:
+                        raise Hold('validation', 'integration validation failed: missing bound full-check evidence')
                 queued += (check or {}).get('command_receipt', {}).get('check_slot_wait_seconds', 0)
                 if (check or {}).get('outcome') == 'TIMED_OUT':
                     # The host's speed, not the task (TOOLSET-196-fb): its own cause, reverified
@@ -980,7 +1002,7 @@ def integrate(repo, owner_pid, task, argv, timeout, reviewer=None, base=None, ba
                     state.require_owner(common, owner_pid)
                     # Re-read report, refs, scopes and source contracts after arbitrary validation.
                     fresh_contracts = {t['id']: t for t in dispatch.contracts(repo)}
-                    verify(repo, common, slot, fresh_contracts)
+                    verify(repo, common, slot, fresh_contracts, coordinator_full_check(argv, repo))
                     verify_scope(repo, common, slot, fresh_contracts, changed(repo, baseline, merge))
                     # A rank, title or note edit keeps the validation; a contract change does not.
                     if fresh_contracts[task].get('contract_hash') != contracts[task].get('contract_hash'):

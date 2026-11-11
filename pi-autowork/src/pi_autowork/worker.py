@@ -924,6 +924,10 @@ def verify(state, task):
     batched = None if batch_gate else batched_verdict(state, task, checkout)
     if batched is not None:
         ok, reason = batched
+        # Integration requires producing evidence for this tree, including when a
+        # batch supplied the review verdict. Reuse the tree cache where possible.
+        if ok and os.environ.get('AUTOWORK_RUNNER_FULL_CHECK') and review_gate_evidence(state, checkout) is None:
+            ok, reason = full_suite_gate(state, task, checkout)
         if ok:
             print(f'pi-autowork: {task} passed batch verification', file=sys.stderr)
             return 0
@@ -946,7 +950,8 @@ def verify(state, task):
     try:
         if batch_gate:  # a batch already passed the full check on a tree containing this one
             return batch_review(state, task, checkout, json.loads(batch_gate))
-        if optimistic.enabled() and not main_check.affected_checker(checkout, main_check.full_check(checkout)):
+        if (not os.environ.get('AUTOWORK_RUNNER_FULL_CHECK') and optimistic.enabled()
+                and not main_check.affected_checker(checkout, main_check.full_check(checkout))):
             # Optimistic landing (TOOLSET-344-7dadea23): its own checks and the review decide;
             # main's full check runs after it lands, and a regression there reverts it.
             if not review_decision(state, task, checkout)['required']:

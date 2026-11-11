@@ -139,12 +139,71 @@ class IntegrationTests(unittest.TestCase):
         head = self.git('rev-parse', 'HEAD')
         receipts = list(self.repo.glob('tasks/evidence/*'))
         result = self.module().integrate(self.repo, self.owner, 'A', ['true'], 30)
-        self.assertEqual((result['outcome'], result.get('cause')), ('HELD', 'report'))
+        self.assertEqual((result['outcome'], result.get('cause')), ('HELD', 'validation'))
         self.assertIn('true', result['reason'])
         self.assertEqual(self.task_text('A'), before)
         self.assertEqual(self.git('rev-parse', 'HEAD'), head)
         self.assertEqual(self.git('rev-parse', 'HEAD', cwd=root), commit)
         self.assertEqual(list(self.repo.glob('tasks/evidence/*')), receipts)
+
+    def test_coordinator_full_check_requires_actual_gate(self):
+        path = self.repo / 'tasks/items/A.md'
+        path.write_text(path.read_text().replace('checks = ["true"]', 'checks = ["true", "false"]'))
+        self.git('add', 'tasks/items/A.md')
+        self.git('commit', '-qm', 'declare coordinator check')
+        self.baseline = self.git('rev-parse', 'HEAD')
+        self.worker()
+        module = self.module()
+        slot = state.slots(self.common)[0]
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='false'):
+            self.assertFalse(module.report_matches(self.repo, self.common, slot))
+            result = module.integrate(self.repo, self.owner, 'A', ['false'], 30)
+        self.assertEqual(result['cause'], 'validation')
+        self.assertIn('integration validation failed', result['reason'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.baseline)
+
+    def test_batch_verdict_requires_actual_coordinator_gate(self):
+        from pi_autowork import worker
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='false'), \
+                patch.object(worker, 'link_ignored'), \
+                patch.object(worker, 'batched_verdict', return_value=(True, '')), \
+                patch.object(worker, 'review_gate_evidence', return_value=None), \
+                patch.object(worker, 'full_suite_gate', return_value=(False, 'gate failed')) as gate:
+            self.assertEqual(worker.verify(self.repo / 'runtime', 'A'), 1)
+            gate.assert_called_once()
+
+    def test_production_wrapper_success_requires_bound_gate_evidence(self):
+        self.worker()
+        module = self.module()
+        launcher = Path(module.__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+        argv = ['/bin/bash', str(launcher), '--verify', str(self.repo / 'runtime'), 'A']
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='true', PI_AUTOWORK_VALIDATE='true'), \
+                patch.object(module.execution, 'bounded_command', return_value={'outcome': 'EXECUTED'}):
+            result = module.integrate(self.repo, self.owner, 'A', argv, 30)
+        self.assertEqual(result.get('cause'), 'validation')
+        self.assertIn('missing bound full-check evidence', result['reason'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.baseline)
+
+    def test_exhausted_report_resume_missing_checks_stays_engineering(self):
+        self.worker()
+        slot = state.slots(self.common)[0]
+        state.write_slot(self.common, dict(slot, report_resume_attempt=slot['attempt']))
+        path = dispatch.data_dir(self.common, slot) / 'report.json'
+        execution.save(path, dict(execution.read(path), checks=[]))
+        result = self.module().integrate(self.repo, self.owner, 'A', ['true'], 30)
+        self.assertEqual(result.get('cause'), 'validation')
+        self.assertEqual(state.slots(self.common)[0]['cause'], 'validation')
+
+    def test_production_wrapper_owns_only_repository_full_check(self):
+        module = self.module()
+        launcher = Path(module.__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+        argv = ['/bin/bash', str(launcher), '--verify', '/tmp/fixture-state', 'A']
+        (self.repo / 'AGENTS.md').write_text('Full check: python3 scripts/check.py\n')
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='python3 scripts/check.py'):
+            self.assertEqual(module.coordinator_full_check(argv, self.repo), 'python3 scripts/check.py')
+            self.assertEqual(module.coordinator_full_check(['/bin/bash', '/tmp/fake.sh', *argv[2:]], self.repo), '')
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='arbitrary command'):
+            self.assertEqual(module.coordinator_full_check(argv, self.repo), '')
 
     def test_no_declared_checks_still_verifies(self):
         path = self.repo / 'tasks/items/A.md'
@@ -171,7 +230,7 @@ class IntegrationTests(unittest.TestCase):
         contracts['A']['fields']['Checks'] = ''
         with self.assertRaises(self.module().Hold) as caught:
             self.module().verify(self.repo, self.common, slot, contracts)
-        self.assertEqual(caught.exception.cause, 'report')
+        self.assertEqual(caught.exception.cause, 'validation')
         self.assertIn('true', str(caught.exception))
 
     def test_declared_check_evidence_shapes(self):
