@@ -162,7 +162,11 @@ def verify(repo, common, slot, contracts):
         raise ReportedBlocker(**state.blocker_updates(repo, slot, blockers))
     for field in ('pending_live', 'unrelated_failures', 'environment_failures'):
         report[field] = live_items(report.get(field))
-    mismatch = report_mismatch(repo, report, slot['task_id'], commit, files)
+    # Read committed admission inputs, never worker-written contract.txt or current task fields.
+    admitted = task_queue.record(repo, slot['task_id'], slot['baseline'])
+    if admitted is None:
+        raise Hold('report', 'missing immutable admitted task contract')
+    mismatch = report_mismatch(repo, report, slot['task_id'], commit, files, admitted.checks)
     if mismatch:
         raise Hold('report', 'report.json does not match worker commit/files or reports failure: ' + mismatch)
     verify_scope(repo, common, slot, contracts, files)
@@ -285,7 +289,7 @@ def assess_doc_impact(repo, slot, task, files, report):
             'resume': resume if status == 'pending' else '', 'inputs': inputs}
 
 
-def report_mismatch(repo, report, task, commit, files):
+def report_mismatch(repo, report, task, commit, files, declared_checks=()):
     """What in report.json disagrees with the worker's commit, or ''. A commit written as an
     abbreviated SHA that names the same commit is the same commit."""
     if report.get('task') != task:
@@ -310,6 +314,10 @@ def report_mismatch(repo, report, task, commit, files):
     checks = report.get('checks')
     if not isinstance(checks, list) or any(not isinstance(c, dict) or c.get('result') != 'pass' for c in checks):
         return 'a check did not pass'
+    missing = [command for command in declared_checks
+               if not any(c.get('command') == command for c in checks)]
+    if missing:
+        return 'missing declared check evidence: ' + repr(missing)
     return ''
 
 
@@ -340,8 +348,10 @@ def report_matches(repo, common, slot):
     if not isinstance(report, dict):
         return False
     try:
-        return not report_mismatch(repo, report, slot['task_id'], slot['commit'],
-                                   changed(repo, slot['baseline'], slot['commit']))
+        admitted = task_queue.record(repo, slot['task_id'], slot['baseline'])
+        return admitted is not None and not report_mismatch(
+            repo, report, slot['task_id'], slot['commit'],
+            changed(repo, slot['baseline'], slot['commit']), admitted.checks)
     except ValueError:
         return False
 

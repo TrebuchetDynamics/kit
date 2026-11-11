@@ -126,8 +126,67 @@ class IntegrationTests(unittest.TestCase):
         self.pin_contract(task, slot)
         data = dispatch.data_dir(self.common, slot)
         execution.save(data / 'report.json', {'task': task, 'commit': commit,
-                       'changed_files': list(files or {task + '.txt': ''}), 'checks': [], 'blockers': [], 'changelog': 'fixture'})
+                       'changed_files': list(files or {task + '.txt': ''}), 'checks': [{'command': 'true', 'result': 'pass'}], 'blockers': [], 'changelog': 'fixture'})
         return root, commit
+
+    def test_missing_declared_checks_holds_without_mutating_candidate(self):
+        root, commit = self.worker()
+        slot = state.slots(self.common)[0]
+        path = dispatch.data_dir(self.common, slot) / 'report.json'
+        report = execution.read(path)
+        execution.save(path, dict(report, checks=[]))
+        before = self.task_text('A')
+        head = self.git('rev-parse', 'HEAD')
+        receipts = list(self.repo.glob('tasks/evidence/*'))
+        result = self.module().integrate(self.repo, self.owner, 'A', ['true'], 30)
+        self.assertEqual((result['outcome'], result.get('cause')), ('HELD', 'report'))
+        self.assertIn('true', result['reason'])
+        self.assertEqual(self.task_text('A'), before)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        self.assertEqual(self.git('rev-parse', 'HEAD', cwd=root), commit)
+        self.assertEqual(list(self.repo.glob('tasks/evidence/*')), receipts)
+
+    def test_no_declared_checks_still_verifies(self):
+        path = self.repo / 'tasks/items/A.md'
+        path.write_text(path.read_text().replace('checks = ["true"]', 'checks = []'))
+        self.git('add', 'tasks/items/A.md')
+        self.git('commit', '-qm', 'fixture with no declared checks')
+        self.baseline = self.git('rev-parse', 'HEAD')
+        self.worker()
+        slot = state.slots(self.common)[0]
+        path = dispatch.data_dir(self.common, slot) / 'report.json'
+        execution.save(path, dict(execution.read(path), checks=[]))
+        contracts = {'A': {'contract': task_queue.contract_text(self.record('A'))}}
+        files, report = self.module().verify(self.repo, self.common, slot, contracts)
+        self.assertEqual(report['checks'], [])
+        self.assertEqual(files, ['A.txt'])
+
+    def test_current_contract_cannot_erase_admitted_checks(self):
+        self.worker()
+        slot = state.slots(self.common)[0]
+        data = dispatch.data_dir(self.common, slot)
+        execution.save(data / 'report.json', dict(execution.read(data / 'report.json'), checks=[]))
+        (data / 'contract.txt').write_text('Checks: \n')
+        contracts = {t['id']: t for t in dispatch.contracts(self.repo)}
+        contracts['A']['fields']['Checks'] = ''
+        with self.assertRaises(self.module().Hold) as caught:
+            self.module().verify(self.repo, self.common, slot, contracts)
+        self.assertEqual(caught.exception.cause, 'report')
+        self.assertIn('true', str(caught.exception))
+
+    def test_declared_check_evidence_shapes(self):
+        module = self.module()
+        report = {'task': 'A', 'commit': self.baseline, 'changed_files': [],
+                  'blockers': [], 'checks': []}
+        self.assertEqual(module.report_mismatch(self.repo, report, 'A', self.baseline, [], ()), '')
+        for checks in ([], None, ['true'], [{'command': 'true', 'result': 'fail'}],
+                       [{'command': 'other', 'result': 'pass'}]):
+            with self.subTest(checks=checks):
+                self.assertTrue(module.report_mismatch(
+                    self.repo, dict(report, checks=checks), 'A', self.baseline, [], ('true',)))
+        report['checks'] = [{'command': 'true', 'result': 'pass'}]
+        self.assertEqual(module.report_mismatch(
+            self.repo, report, 'A', self.baseline, [], ('true',)), '')
 
     def retain_evidence(self):
         """Retain command receipts, child output and slot state before fixture cleanup."""
@@ -1044,7 +1103,7 @@ finally:
         ]
         for impact, expected in cases:
             with self.subTest(impact=impact):
-                execution.save(path, dict(report, checks=[check], **({'doc_impact': impact} if impact else {})))
+                execution.save(path, dict(report, checks=report['checks'] + [check], **({'doc_impact': impact} if impact else {})))
                 _, assessed = module.verify(self.repo, self.common, slot, contracts)
                 evidence = assessed['doc_impact']
                 self.assertEqual(evidence['status'], expected)
@@ -1207,7 +1266,7 @@ finally:
         commit = self.git('rev-parse', 'HEAD', cwd=retry)
         slot = state.transition(self.repo, self.owner, 'A', 'reported', commit=commit)
         execution.save(dispatch.data_dir(self.common, slot) / 'report.json', {
-            'task': 'A', 'commit': commit, 'changed_files': ['A.txt'], 'checks': [], 'blockers': [],
+            'task': 'A', 'commit': commit, 'changed_files': ['A.txt'], 'checks': [{'command': 'true', 'result': 'pass'}], 'blockers': [],
             'changelog': 'fixture'})
         return commit
 
@@ -2089,6 +2148,7 @@ finally:
                     self.set_todo(self.todo + f'\n- [ ] {task} — Task {task}\n  Scope: fixture\n'
                                   f'  Touches: {task}.txt\n  Acceptance: fixture\n  Checks: true\n'
                                   '  Dependencies: None.\n  Status: open\n')
+                self.baseline = self.git('rev-parse', 'HEAD')
                 self.worker(task, files={'go.mod': 'x\n'})  # an undeclared protected file (TOOLSET-161-17)
                 slot = next(s for s in state.slots(self.common) if s['task_id'] == task)
                 contract = self.entry(task)
@@ -2267,7 +2327,7 @@ finally:
         commit = self.git('rev-parse', 'HEAD', cwd=retry)
         slot = state.transition(self.repo, self.owner, 'A', 'reported', commit=commit)
         execution.save(dispatch.data_dir(self.common, slot) / 'report.json', {
-            'task': 'A', 'commit': commit, 'changed_files': ['A.txt'], 'checks': [], 'blockers': [], 'changelog': 'fix'})
+            'task': 'A', 'commit': commit, 'changed_files': ['A.txt'], 'checks': [{'command': 'true', 'result': 'pass'}], 'blockers': [], 'changelog': 'fix'})
         self.worker('D')
         for task in ('A', 'D', 'B'):
             self.assertEqual(module.integrate(self.repo, self.owner, task, ['true'], 10)['outcome'], 'INTEGRATED')
