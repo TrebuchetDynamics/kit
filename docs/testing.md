@@ -370,11 +370,18 @@ HERMES_HOME="/path/to/isolated-installed-profile" PYTHONPATH="$HERMES_SOURCE" "$
 ```
 
 Before a push, the pre-push hook runs the checker's core contracts (docs check and
-task-store validation, a few seconds) and then `scripts/affected_tests.py --run` from the sha
-the remote already has. A document no test reads selects no test module, and a document
-reaches at most the tests that read it and the tests of the code that reads it; code no test
-reaches still selects the whole suite (`python3 scripts/pre_push_check.py --install` writes the hook,
-or chains it after an existing one-line exec hook such as the private-terms check).
+task-store validation, a few seconds) and then `scripts/affected_tests.py --run --defer-full`
+from the sha the remote already has. Targeted tests run locally; their failures still refuse
+the push. Whole-suite selections (check, CI, packaging or an unresolved mapping such as
+`.gitignore`) print the reason and defer test execution to CI instead of blocking a push on
+all modules. This is a deferral, not a passing local test result; the core contracts still run.
+A document no test reads selects no test module, and a document reaches at most the tests
+that read it and the tests of the code that reads it. Direct `scripts/affected_tests.py --run`
+keeps the conservative whole-suite fallback; `--full` explicitly selects the full suite and
+cannot be combined with `--defer-full`.
+`python3 scripts/pre_push_check.py --install` writes the hook, or chains it after an existing
+one-line exec hook such as the private-terms check. Existing installations use the updated
+script without reinstalling the hook.
 A push with nothing new, a deletion, or `KIT_PRE_PUSH=0` runs nothing; `git push
 --no-verify` skips every hook. The full suite is CI's job.
 
