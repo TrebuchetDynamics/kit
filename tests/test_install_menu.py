@@ -131,7 +131,7 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
         commands = [call.args[0] for call in run.call_args_list]
         self.assertEqual(len(commands), 3)
         self.assertEqual(commands[0][-2:], ['try-restart', 'hermes-gateway.service'])
-        self.assertEqual(commands[-1][-4:], ['restart', '--stop-workers', '--if-active', 'repo'])
+        self.assertEqual(commands[-1][-5:], ['restart', '--stop-workers', '--now', '--if-active', 'repo'])
 
     def test_restart_phase_runs_on_unchanged_and_failed_installs_but_not_preview(self):
         item = install_menu.Item('fixture', 'Fixture', steps=[

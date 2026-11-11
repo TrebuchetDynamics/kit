@@ -211,9 +211,9 @@ async def details_layout_pilot():
         await pilot.press('i')
         await pilot.pause()
         pane = app.query_one('#detail-scroll')
-        sidebar = app.query_one('#project-context')
-        assert pane.region.x >= sidebar.region.right, (pane.region, sidebar.region)
-        assert pane.region.width > 100, pane.region
+        projects = app.query_one('#project-context')
+        assert pane.region.y >= projects.region.bottom, (pane.region, projects.region)
+        assert pane.region.width >= 178, pane.region
         assert pane.region.height > 25, pane.region
         assert not app.query_one('#log').display and not app.query_one('#lanes').display
         for _ in range(3):
@@ -351,7 +351,7 @@ async def menu_pilot():
 async def layout_pilot():
     from textual.widgets import DataTable
     async with fixture_app((60, 18)) as (app, pilot):
-        for width, height in ((60, 18), (150, 45), (60, 24), (80, 18)):
+        for width, height in ((60, 18), (150, 45), (270, 70), (60, 24), (80, 18)):
             await pilot.resize_terminal(width, height)
             await pilot.pause()
             for selector in ('#runners', '#lanes'):
@@ -367,10 +367,20 @@ async def layout_pilot():
                 await pilot.press(key)
                 await pilot.pause()
                 assert app.focused.id == target, (key, app.focused)
-            if width >= 130 and height >= 26:
-                assert log.region.x >= app.query_one('#runners').region.right
+            projects = app.query_one('#runners')
+            workers = app.query_one('#lanes')
+            assert projects.region.width >= width - 2, projects.region
+            assert workers.region.width >= width - 2, workers.region
+            assert log.region.width >= width - 2, log.region
+            assert workers.region.y >= projects.region.bottom
+            assert log.region.y >= workers.region.bottom
+            labels = [str(column.label) for column in projects.columns.values()]
+            if width >= 120:
+                assert labels[:8] == list(app.RUNNER_COLUMNS), labels
+                assert str(projects.get_row_at(0)[0]) == app.current().name
+                assert [str(column.label) for column in workers.columns.values()][:5] == list(app.LANE_COLUMNS)
             else:
-                assert log.region.y >= app.query_one('#runners').region.bottom
+                assert labels == ['Runner', 'State', 'Total'], labels
 
             bar = app.query_one('#menubar')
             painted = '\n'.join(bar.render_line(y).text for y in range(bar.content_size.height))
