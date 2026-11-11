@@ -50,6 +50,28 @@ class ConditionalRestartTests(unittest.TestCase):
             self.assertEqual(code, 0)
             ctl.assert_called_once_with(paths, 'try-restart', 'pi-autowork@repo.service', quiet=False)
 
+    def test_immediate_installer_restart_skips_wait_and_preserves_stop_and_pause(self):
+        for held in ('active', 'stopped', 'paused'):
+            with self.subTest(held=held), tempfile.TemporaryDirectory() as tmp:
+                paths = dict(env_dir=tmp, state_root=tmp)
+                marker = (command.fleet_view.paused_marker(tmp, 'repo') if held == 'paused'
+                          else service.stop_marker(Path(tmp) / 'repo.env'))
+                if held != 'active':
+                    marker.write_text('owner decision')
+                with patch.object(service, 'restart_when_idle',
+                                  side_effect=AssertionError('immediate restart must not wait')), \
+                        patch.object(command, 'systemctl', return_value=Mock(returncode=0)) as ctl:
+                    code, _ = command.restart(paths, 'repo', tmp, stop_workers=True,
+                                              now=True, if_active=True)
+                self.assertEqual(code, 0)
+                if held == 'active':
+                    ctl.assert_called_once_with(paths, 'try-restart', 'pi-autowork@repo.service', quiet=False)
+                else:
+                    ctl.assert_not_called()
+                    self.assertEqual(marker.read_text(), 'owner decision')
+        parsed = command.parser().parse_args(['restart', '--stop-workers', '--now', '--if-active', 'repo'])
+        self.assertTrue(parsed.stop_workers and parsed.now and parsed.if_active)
+
     def test_explicit_restart_keeps_existing_start_semantics(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = dict(env_dir=tmp)
