@@ -277,7 +277,10 @@ coverage. Mark unavailable required checks NOT_CHECKED, never pretend they passe
    evidence. Run `autowork tasks validate --worktree .`, read back the changed
    records and include them in the handoff and any authorized commit together.
    These checks do not prove model adherence or live task completion.
-6. Re-read the eligible queue (`autowork tasks list`) and actual ownership after reconciliation. Under an active Autowork
+6. After integrated closeout, the coordinator performs
+   [working-set reconciliation](TODO-WORKCENTER.md#reconcile-the-working-set)
+   separately from the atomic close transaction. Re-read the eligible queue
+   (`autowork tasks list`) and actual ownership after reconciliation. Under an active Autowork
    invocation/job, finish authorized closeout. Select another batch only when caller
    scope permits it and saved stop/batch limits allow it.
    Default interactive, planning-only and explicit one-task requests report the next
