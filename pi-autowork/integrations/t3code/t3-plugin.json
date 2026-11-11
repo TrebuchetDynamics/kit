@@ -1,0 +1,18 @@
+{
+  "id": "autowork",
+  "name": "Autowork (experimental)",
+  "version": "0.1.0",
+  "description": "Read-only repository work overview. Requires the experimental T3 plugin-system branch.",
+  "engines": { "t3": ">=0.1.6" },
+  "permissions": ["Run configured Autowork read commands", "Expose configured repositories and redacted logs to environment readers"],
+  "server": "./server.cjs",
+  "web": "./dist/web.js",
+  "settingsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "executable": { "type": "string", "default": "", "description": "Absolute path to trusted installed autowork executable" },
+      "repositories": { "type": "array", "items": { "type": "string" }, "default": [], "description": "Absolute repository paths visible to every environment reader" }
+    }
+  }
+}

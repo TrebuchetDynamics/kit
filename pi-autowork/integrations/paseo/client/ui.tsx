@@ -4,6 +4,7 @@ import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-nat
 import { Icon, Modal, ScrollView, TextInput, copyText, useToast } from '@getpaseo/plugin/client/ui';
 import { markdownSegments, stateTone, toneIcon, type Tone } from './presentation';
 
+export const Compact = createContext(true);
 export const Theme = createContext<PluginTheme | null>(null);
 export function useColors() { const theme = useContext(Theme); if (!theme) throw new Error('Autowork theme missing'); return theme.colors; }
 export function toneColor(colors: PluginTheme['colors'], tone: Tone | 'accent'): string {
@@ -13,20 +14,21 @@ export function toneColor(colors: PluginTheme['colors'], tone: Tone | 'accent'):
 type LabelProps = { children: ReactNode; muted?: boolean; mono?: boolean; size?: 'caption' | 'body' | 'title'; bold?: boolean; truncate?: boolean };
 export function Label({ children, muted = false, mono = false, size = 'body', bold = false, truncate = false }: LabelProps) {
   const colors = useColors();
-  const fontSize = size === 'caption' ? 12 : size === 'title' ? 17 : 14;
+  const fontSize = size === 'caption' ? 13 : size === 'title' ? 20 : 15;
   return <Text selectable numberOfLines={truncate ? 1 : undefined} style={{ color: muted ? colors.foregroundMuted : colors.foreground, fontSize,
     lineHeight: fontSize + 6, fontWeight: bold ? '600' : '400', ...(mono ? { fontFamily: 'monospace' } : {}) }}>{children}</Text>;
 }
 export function Caption({ children, truncate = false }: { children: ReactNode; truncate?: boolean }) { return <Label muted size="caption" truncate={truncate}>{children}</Label>; }
 export function Heading({ children, level = 1 }: { children: ReactNode; level?: 1 | 2 | 3 }) {
   const colors = useColors();
-  const size = level === 1 ? 22 : level === 2 ? 17 : 14;
-  return <Text accessibilityRole="header" style={{ color: colors.foreground, fontSize: size, lineHeight: size + 6, fontWeight: '700' }}>{children}</Text>;
+  const compact = useContext(Compact);
+  const size = level === 1 ? (compact ? 28 : 34) : level === 2 ? 21 : 16;
+  return <Text accessibilityRole="header" style={{ color: colors.foreground, fontSize: size, lineHeight: size + 6, fontWeight: '600', letterSpacing: level === 1 ? -0.6 : -0.2, flexShrink: 1 }}>{children}</Text>;
 }
 export function Divider() { const colors = useColors(); return <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />; }
 export function Card({ children, compact = false, tone }: { children: ReactNode; compact?: boolean; tone?: Tone }) {
   const colors = useColors();
-  return <View style={{ padding: compact ? 10 : 14, gap: compact ? 6 : 9, borderWidth: 1, borderColor: tone && tone !== 'neutral' ? toneColor(colors, tone) : colors.border, borderRadius: 12, backgroundColor: colors.surface1 }}>{children}</View>;
+  return <View style={{ padding: compact ? 16 : 22, gap: compact ? 10 : 16, borderLeftWidth: tone && tone !== 'neutral' ? 3 : 0, borderColor: tone && tone !== 'neutral' ? toneColor(colors, tone) : colors.border, borderRadius: 14, backgroundColor: colors.surface1 }}>{children}</View>;
 }
 export function Row({ children, between = false, style }: { children: ReactNode; between?: boolean; style?: StyleProp<ViewStyle> }) {
   return <View style={[{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, ...(between ? { justifyContent: 'space-between' } : {}) }, style]}>{children}</View>;
@@ -44,13 +46,13 @@ export function Button({ label, onPress, disabled = false, selected = false, var
   // A disabled control never wears the accent: it looks inert, not like a green action that ignores taps.
   const danger = variant === 'danger';
   const primary = !disabled && !danger && (variant === 'primary' || selected);
-  const background = danger && selected ? colors.statusDanger : primary ? colors.accent : colors.surface2;
+  const background = danger && selected ? colors.statusDanger : primary ? colors.accent : variant === 'ghost' ? colors.surface1 : colors.surface2;
   const foreground = disabled ? colors.foregroundMuted : danger ? (selected ? colors.accentForeground : colors.statusDanger) : primary ? colors.accentForeground : colors.foreground;
   return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? label} accessibilityState={{ disabled, selected }} disabled={disabled} onPress={onPress}
     style={{ alignSelf: 'flex-start', minHeight: 48, minWidth: 48, paddingHorizontal: compact ? 10 : 16, paddingVertical: compact ? 6 : 10,
-      justifyContent: 'center', borderRadius: 9, borderWidth: 1, borderStyle: disabled ? 'dashed' : 'solid',
-      borderColor: disabled ? colors.border : danger ? colors.statusDanger : selected ? colors.accent : colors.border, backgroundColor: background, opacity: disabled ? 0.6 : 1 }}>
-    <Text style={{ color: foreground, fontSize: compact ? 13 : 14, fontWeight: '600', textAlign: 'center' }}>{label}</Text>
+      justifyContent: 'center', maxWidth: '100%', borderRadius: 9, borderWidth: 1, borderStyle: disabled ? 'dashed' : 'solid',
+      borderColor: disabled ? colors.border : danger ? colors.statusDanger : selected ? colors.accent : variant === 'ghost' ? colors.surface1 : colors.border, backgroundColor: background, opacity: disabled ? 0.6 : 1 }}>
+    <Text style={{ color: foreground, fontSize: compact ? 14 : 15, fontWeight: '600', textAlign: 'center' }}>{label}</Text>
   </Pressable>;
 }
 export function IconButton({ label, icon, onPress, disabled = false }: { label: string; icon: string; onPress: () => void; disabled?: boolean }) {
@@ -62,16 +64,16 @@ export function IconButton({ label, icon, onPress, disabled = false }: { label: 
 }
 export function Stat({ value, label, tone = 'neutral' }: { value: string | number; label: string; tone?: Tone }) {
   const colors = useColors();
-  return <View style={{ minWidth: 74, flexGrow: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, backgroundColor: colors.surface2 }}>
-    <Text style={{ color: tone === 'neutral' ? colors.foreground : toneColor(colors, tone), fontSize: 20, fontWeight: '700' }}>{value}</Text>
-    <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{label}</Text>
+  return <View accessible accessibilityLabel={`${value} ${label}`} style={{ minWidth: 90, flexDirection: 'row', alignItems: 'baseline', gap: 7, paddingVertical: 8, paddingRight: 20 }}>
+    <Text style={{ color: tone === 'neutral' ? colors.foreground : toneColor(colors, tone), fontSize: 22, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{value}</Text>
+    <Text style={{ color: colors.foregroundMuted, fontSize: 13 }}>{label}</Text>
   </View>;
 }
 export function Badge({ label, tone = 'neutral' }: { label: string; tone?: Tone | 'accent' }) {
   const colors = useColors();
   const color = toneColor(colors, tone);
-  return <View style={{ alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1, borderColor: color }}>
-    <Text style={{ color, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }}>{label}</Text>
+  return <View style={{ alignSelf: 'flex-start', maxWidth: '100%', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 5, backgroundColor: colors.surface2, borderColor: color }}>
+    <Text style={{ color, fontSize: 12, fontWeight: '500', flexShrink: 1 }}>{label}</Text>
   </View>;
 }
 /** A state with its colour, an icon that says the same thing, and the words themselves. */
@@ -79,9 +81,9 @@ export function StatusPill({ state, tone }: { state: string; tone?: Tone }) {
   const colors = useColors();
   const resolved = tone ?? stateTone(state);
   const color = toneColor(colors, resolved);
-  return <View accessibilityLabel={`status ${state}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1, borderColor: color }}>
+  return <View accessibilityLabel={`status ${state}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', maxWidth: '100%', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 5, backgroundColor: colors.surface2, borderColor: color }}>
     <Icon name={toneIcon(resolved)} size={13} color={color} />
-    <Text style={{ color, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }}>{state}</Text>
+    <Text style={{ color, fontSize: 12, fontWeight: '500', flexShrink: 1 }}>{state}</Text>
   </View>;
 }
 export function Notice({ children, tone = 'neutral' }: { children: ReactNode; tone?: Tone }) {
@@ -98,12 +100,12 @@ export function Notice({ children, tone = 'neutral' }: { children: ReactNode; to
 export function Banner({ tone, title, body, action, secondary }: { tone: Tone; title: string; body?: string; action?: { label: string; onPress: () => void; disabled?: boolean }; secondary?: { label: string; onPress: () => void } }) {
   const colors = useColors();
   const color = toneColor(colors, tone);
-  return <View accessibilityRole="summary" style={{ padding: 12, gap: 8, borderRadius: 12, borderWidth: 1, borderColor: color, backgroundColor: colors.surface1 }}>
+  return <View accessibilityRole="summary" style={{ padding: 24, gap: 20, borderRadius: 16, borderLeftWidth: 3, borderColor: color, backgroundColor: colors.surface1 }}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
       <Icon name={toneIcon(tone)} size={18} color={color} />
       <View style={{ flex: 1, gap: 2 }}>
-        <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: '700' }}>{title}</Text>
-        {body ? <Text style={{ color: colors.foregroundMuted, fontSize: 12, lineHeight: 17 }}>{body}</Text> : null}
+        <Text style={{ color: colors.foreground, fontSize: 24, lineHeight: 30, fontWeight: '600', letterSpacing: -0.4 }}>{title}</Text>
+        {body ? <Text style={{ color: colors.foregroundMuted, fontSize: 15, lineHeight: 23, maxWidth: 650 }}>{body}</Text> : null}
       </View>
     </View>
     {action || secondary ? <Row>
@@ -128,7 +130,7 @@ export function Input({ label, value, onChange, multiline = false, placeholder, 
   return <View style={{ gap: 4 }}>
     <Caption>{label}</Caption>
     <TextInput accessibilityLabel={label} value={value} onChangeText={onChange} multiline={multiline} maxLength={16000} placeholder={placeholder} placeholderTextColor={colors.foregroundMuted}
-      style={{ minHeight: multiline ? 64 : 42, color: colors.foreground, backgroundColor: colors.surface0, borderColor: colors.border, borderWidth: 1, borderRadius: 8, padding: 10, textAlignVertical: multiline ? 'top' : 'center' }} />
+      style={{ minHeight: multiline ? 88 : 48, color: colors.foreground, backgroundColor: colors.surface0, borderColor: colors.border, borderWidth: 1, borderRadius: 8, padding: 10, textAlignVertical: multiline ? 'top' : 'center' }} />
     {hint ? <Caption>{hint}</Caption> : null}
   </View>;
 }
@@ -157,7 +159,7 @@ export function Expand({ title, children, open = false, hint, onToggle }: { titl
 export function Markdown({ text }: { text: string }) {
   const colors = useColors();
   const paragraphs = text.split(/\n{2,}/).map(item => item.trim()).filter(Boolean);
-  return <View style={{ gap: 6 }}>{paragraphs.map((paragraph, index) => <Text key={index} selectable style={{ color: colors.foreground, fontSize: 14, lineHeight: 20 }}>
+  return <View style={{ gap: 6 }}>{paragraphs.map((paragraph, index) => <Text key={index} selectable style={{ color: colors.foreground, fontSize: 15, lineHeight: 23 }}>
     {markdownSegments(paragraph.replace(/^#+\s*/gm, '').replace(/^\s*[-*]\s+/gm, '• ')).map((segment, position) => <Text key={position} style={{
       fontWeight: segment.bold ? '700' : '400', ...(segment.code ? { fontFamily: 'monospace' } : {}),
       ...(segment.link ? { color: colors.accent, textDecorationLine: 'underline' } : {}) }}>{segment.text}</Text>)}
@@ -181,4 +183,22 @@ export function Sheet({ title, open, onClose, children }: { title: string; open:
   return <Modal title={title} open={open} onOpenChange={next => { if (!next) onClose(); }}>
     <Modal.Content><Theme.Provider value={theme}><View style={{ gap: 10 }}>{children}</View></Theme.Provider></Modal.Content>
   </Modal>;
+}
+
+/** Navigation has a quiet selected underline; filled accents are reserved for actions. */
+export function NavItem({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  const colors = useColors();
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected }} onPress={onPress}
+    style={{ minWidth: 48, minHeight: 48, paddingHorizontal: 14, justifyContent: 'center', borderBottomWidth: 2,
+      borderBottomColor: selected ? colors.accent : colors.border, backgroundColor: selected ? colors.surface2 : colors.surface0 }}>
+    <Text style={{ color: selected ? colors.foreground : colors.foregroundMuted, fontSize: 15, fontWeight: selected ? '600' : '400' }}>{label}</Text>
+  </Pressable>;
+}
+/** Evidence leads on desktop; actions sit alongside it, stacking in reading order on mobile. */
+export function Workspace({ primary, secondary }: { primary: ReactNode; secondary: ReactNode }) {
+  const compact = useContext(Compact);
+  return <View accessibilityLabel="Runner workspace" style={{ flexDirection: compact ? 'column' : 'row', alignItems: 'stretch', gap: 24 }}>
+    <View style={{ flex: compact ? undefined : 3, minWidth: 0, gap: 20 }}>{primary}</View>
+    <View style={{ flex: compact ? undefined : 2, minWidth: 0, gap: 20 }}>{secondary}</View>
+  </View>;
 }
