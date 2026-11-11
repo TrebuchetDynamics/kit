@@ -61,6 +61,7 @@ HOLD_CAUSES = {
     # becomes a visible engineering hold. None is a product decision (failure_policy).
     'timeout': 'reverify',
     'no_change': 'engineering_stuck',
+    'acceptance': 'engineering_stuck',
     'reviewed_twice': 'engineering_stuck',
     'task_wait': 'wait_for_task',
     'scope_request': 'rerun',

@@ -534,7 +534,7 @@ class Coordinator:
                'members': list(tasks), 'tip': str(tip), 'on': on, 'independent': independent,
                'base': base, 'generation': generation, 'admission': admission, 'cleanup': str(cleanup),
                'reserved': set(), 'integrated': set(), 'command': main_check.full_check(self.integ),
-               'mode': os.environ.get('PI_AUTOWORK_REVIEW', '1'), 'policy_version': worker.review_policy.version(),
+               'mode': os.environ.get('PI_AUTOWORK_REVIEW', 'auto'), 'policy_version': worker.review_policy.version(),
                'optimistic': optimistic.enabled(),
                'revisions': list(revisions if revisions is not None else getattr(self, 'batch_revisions', []))}
         self.snapshot = None
@@ -1070,7 +1070,9 @@ class Coordinator:
         Do not replace TMPDIR or sanitize the marker in descendants: checks and fake
         agents they launch are runner work too, wherever their working directory is.
         """
-        return dict(os.environ, AUTOWORK_EXECUTION_COMMON=str(self.cfg['git_common']),
+        from . import private_pi
+        return dict(os.environ, **private_pi.environment(self.cfg.get('state_root', private_pi.state_root())),
+                    AUTOWORK_EXECUTION_COMMON=str(self.cfg['git_common']),
                     AUTOWORK_MAIN_EVIDENCE=str(Path(self.cfg['git_common']) / 'autowork-execution/main-evidence'),
                     **overrides)
 

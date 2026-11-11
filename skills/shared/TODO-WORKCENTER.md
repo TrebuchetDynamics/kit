@@ -95,7 +95,7 @@ notes, one per line as `- Label: value`.
 | `depends_on`, `verified_depends_on` | Task IDs that must be done first; the verified subset additionally requires verification or an explicit owner exception. |
 | `touches`, `resources` | The write set and the shared resources (see [Bound the write set](#bound-the-write-set)). |
 | `kind` | `implementation`, `plan` or `inspection`. |
-| `ownership` | `worker`, `coordinator` or `owner`. Only `worker` tasks run in the runner. |
+| `ownership` | `worker`, `coordinator` or `owner`. Workers run worker tasks and coordinator tasks whose two-hour claim has expired. |
 | `live` | `denied` (default) or `authorized`; a task with the `live` resource runs only when authorized. |
 | `scope`, `acceptance`, `checks`, `exclusions` | The bounded outcome, its observable criteria, the commands that prove them, and what it must not do. |
 
@@ -104,6 +104,15 @@ Body notes carry what is not contract: `Sources`, `Owner decision`, `Held by`,
 like. A note never grants authority; only the typed fields `live`, `resources` and
 `ownership` do. A record missing contract fields is a visible draft and is never
 selected.
+
+When a planner or skill writes `ownership = "coordinator"`, the claim lasts two
+hours from the committer time of the last commit that changed the task file.
+Before expiry, admission waits with `awaiting coordinator action`. At expiry,
+parallel admission and sequential fallback treat it as worker work, without
+rewriting the record. Status and fleet rows say `coordinator claim expired` and
+show the ordinary ready dispatch wait. This applies to existing records too.
+Unrelated commits and uncommitted edits do not renew the claim. Owner-only work,
+Needs decision, live authorization and verification gates remain unchanged.
 
 For an explicitly attributed regression, put `- Regression of: <ID>; commit <sha>; severity low|medium|high; found by owner|check` in the later task's body, naming the original task and its receipt's full integration SHA; discovery is the note's first commit, not a later edit to the same files.
 
@@ -264,10 +273,16 @@ omit the field. Parallel Autowork uses `touches` to rank likely-independent work
 first. Ordinary file, directory and glob overlap is a scheduling hint, not a
 dispatch gate, regardless of how many unfinished tasks name a file. Report possible merge conflicts honestly; do not invent product
 `depends_on` edges for file overlap. Keep real prerequisites and
-[bounded write sets](PLANNING-CRAFT.md#disjoint-write-sets). Add `resources` where
-needed (`exclusive` to run alone, `live` for authorized live work, or shared names
-such as `test-db`);
-resource and protected manifest/lock/schema/migration/CI gates still apply. Only
+[bounded write sets](PLANNING-CRAFT.md#disjoint-write-sets). `touches` is the only
+declaration of file overlap. `resources` names only things that cannot be shared,
+such as a port, an install, a device or a live service: use `port:8080` for an
+exclusive port, but `touches = ["pi-autowork/src/"]` for overlapping source edits,
+not a broad resource such as `autowork-python-layout`. Tasks sharing a declared
+resource still run one at a time (`exclusive` runs alone; `live` needs authorization).
+`autowork tasks validate` warns, without failing, about a resource that no task
+uses with a live, port, install or device word in its resources. Review the warning;
+it does not remove the resource or change scheduling. Resource and protected
+manifest/lock/schema/migration/CI gates still apply. Only
 when no path can be bounded, set `resources` to `exclusive` with the reason in a
 note and `touches` to the widest owning directory. Do not list `tasks/`,
 `BLOCKERS.md`, `TODO.archive.md` or `CHANGELOG.md`: the coordinator owns them.

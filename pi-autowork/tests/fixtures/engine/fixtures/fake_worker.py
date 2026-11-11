@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 import time
+import tomllib
 
 prompt = Path(sys.argv[1]).read_text()
 worktree = Path(sys.argv[2])
@@ -73,7 +74,13 @@ if spec.get('commit', True) and spec.get('files'):
                             capture_output=True, text=True).stdout.strip()
     if spec.get('report', True):
         report.write_text(json.dumps({'task': task, 'commit': commit, 'changed_files': sorted(spec['files']),
-                                      'checks': [], 'blockers': spec.get('blockers', []),
+                                      'checks': [{'command': command, 'result': 'pass', 'summary': 'fixture'}
+                                                 for command in tomllib.loads((worktree / 'tasks/items' / (task + '.md'))
+                                                                             .read_text().split('+++')[1])['checks']],
+                                      'acceptance': [{'item': item, 'result': 'met', 'evidence': 'offline fixture'}
+                                                     for item in tomllib.loads((worktree / 'tasks/items' / (task + '.md'))
+                                                                               .read_text().split('+++')[1])['acceptance']],
+                                      'blockers': spec.get('blockers', []),
                                       'pending_live': spec.get('pending_live', []), 'changelog': ''}))
 elif spec.get('blockers'):  # stopped on purpose: no commit, says why
     report.write_text(json.dumps({'task': task, 'commit': None, 'changed_files': sorted(spec.get('files', {})),

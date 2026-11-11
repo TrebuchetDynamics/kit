@@ -177,17 +177,18 @@ def verify(repo, common, slot, contracts, coordinator_check=""):
         raise ReportedBlocker(**state.blocker_updates(repo, slot, blockers))
     for field in ('pending_live', 'unrelated_failures', 'environment_failures'):
         report[field] = live_items(report.get(field))
-    # Read committed admission inputs, never worker-written contract.txt or current task fields.
+    # Validate the immutable admitted contract, never worker-written contract.txt.
     admitted = task_queue.record(repo, slot['task_id'], slot['baseline'])
     if admitted is None:
         raise Hold('report', 'missing immutable admitted task contract')
-    mismatch = report_mismatch(repo, report, slot['task_id'], commit, files, tuple(c for c in admitted.checks if c != coordinator_check))
+    if mismatch := closure_documents.acceptance_mismatch(report, admitted.acceptance):
+        raise Hold('acceptance', 'acceptance hold: ' + mismatch, report=report)
+    mismatch = report_mismatch(repo, report, slot['task_id'], commit, files,
+                               tuple(c for c in admitted.checks if c != coordinator_check), admitted.acceptance)
     if mismatch:
         cause = ('validation' if mismatch.startswith('missing declared check evidence:')
                  or mismatch == 'a check did not pass' else 'report')
         raise Hold(cause, 'report.json does not match worker commit/files or reports failure: ' + mismatch)
-    if mismatch := acceptance_mismatch(report, admitted.acceptance):
-        raise Hold('validation', mismatch)
     verify_scope(repo, common, slot, contracts, files)
     report['doc_impact'] = assess_doc_impact(repo, slot, task, files, report)
     return files, report
@@ -308,36 +309,7 @@ def assess_doc_impact(repo, slot, task, files, report):
             'resume': resume if status == 'pending' else '', 'inputs': inputs}
 
 
-def acceptance_mismatch(report, criteria):
-    """Require exact per-item evidence against immutable admission inputs."""
-    entries = report.get('acceptance')
-    affected = [f'{i}: {text}' for i, text in enumerate(criteria, 1)]
-    prefix = 'acceptance evidence requires engineering validation: '
-    if not isinstance(entries, list):
-        return prefix + 'missing or malformed acceptance list; fresh evidence required for ' + repr(affected)
-    seen = set()
-    errors = []
-    for entry in entries:
-        index = entry.get('index') if isinstance(entry, dict) else None
-        if type(index) is not int or not 1 <= index <= len(criteria):
-            errors.append(f'invalid index {index!r}; admitted items {affected!r}')
-            continue
-        text = criteria[index - 1]
-        label = f'{index}: {text}'
-        if index in seen:
-            errors.append('duplicate ' + label)
-        seen.add(index)
-        if entry.get('criterion') != text:
-            errors.append('criterion mismatch ' + label)
-        result = entry.get('result')
-        evidence = entry.get('evidence')
-        if result != 'met' or not isinstance(evidence, str) or not evidence.strip():
-            errors.append(f'{label}: {result!r}; requires met with actual evidence')
-    errors.extend('missing ' + label for i, label in enumerate(affected, 1) if i not in seen)
-    return prefix + '; '.join(errors) if errors else ''
-
-
-def report_mismatch(repo, report, task, commit, files, declared_checks=()):
+def report_mismatch(repo, report, task, commit, files, declared_checks=None, acceptance=None):
     """What in report.json disagrees with the worker's commit, or ''. A commit written as an
     abbreviated SHA that names the same commit is the same commit."""
     if report.get('task') != task:
@@ -362,11 +334,17 @@ def report_mismatch(repo, report, task, commit, files, declared_checks=()):
     checks = report.get('checks')
     if not isinstance(checks, list) or any(not isinstance(c, dict) or c.get('result') != 'pass' for c in checks):
         return 'a check did not pass'
+    if declared_checks is None or acceptance is None:
+        record = task_queue.record(repo, task)
+        if record is None:
+            return 'task contract missing'
+        declared_checks = record.checks if declared_checks is None else declared_checks
+        acceptance = record.acceptance if acceptance is None else acceptance
     missing = [command for command in declared_checks
                if not any(c.get('command') == command for c in checks)]
     if missing:
         return 'missing declared check evidence: ' + repr(missing)
-    return ''
+    return closure_documents.acceptance_mismatch(report, acceptance)
 
 
 def passed(check):
@@ -399,7 +377,7 @@ def report_matches(repo, common, slot):
         admitted = task_queue.record(repo, slot['task_id'], slot['baseline'])
         return admitted is not None and not report_mismatch(
             repo, report, slot['task_id'], slot['commit'],
-            changed(repo, slot['baseline'], slot['commit']), admitted.checks)
+            changed(repo, slot['baseline'], slot['commit']), admitted.checks, admitted.acceptance)
     except ValueError:
         return False
 
@@ -1033,11 +1011,11 @@ def integrate(repo, owner_pid, task, argv, timeout, reviewer=None, base=None, ba
                     state.require_owner(common, owner_pid)
                     # Re-read report, refs, scopes and source contracts after arbitrary validation.
                     fresh_contracts = {t['id']: t for t in dispatch.contracts(repo)}
+                    # A rank, title or note edit keeps the validation; a contract change does not.
+                    if fresh_contracts.get(task, {}).get('contract_hash') != contracts[task].get('contract_hash'):
+                        raise Hold('contract_changed', 'task contract changed during validation')
                     verify(repo, common, slot, fresh_contracts, coordinator_full_check(argv, repo))
                     verify_scope(repo, common, slot, fresh_contracts, changed(repo, baseline, merge))
-                    # A rank, title or note edit keeps the validation; a contract change does not.
-                    if fresh_contracts[task].get('contract_hash') != contracts[task].get('contract_hash'):
-                        raise Hold('contract_changed', 'task contract changed during validation')
                     require_no_writers(repo, changed(repo, baseline, merge))
                     if git(repo, 'symbolic-ref', 'HEAD') != canonical_branch:
                         raise ValueError('canonical branch changed during validation')
@@ -1061,11 +1039,6 @@ def integrate(repo, owner_pid, task, argv, timeout, reviewer=None, base=None, ba
                     git(repo, 'merge', '--ff-only', merge)
                     if git(repo, 'rev-parse', 'HEAD') != merge:
                         raise ValueError('canonical fast-forward readback mismatch')
-                    review = slot.get('review')
-                    if len(argv) == 5 and argv[2] == '--verify':
-                        from pi_autowork import worker
-                        review = worker.review_verdict(argv[3], task, root)
-                    slot = state.write_slot(common, dict(slot, review=review), slot)
                     state.change(common, slot, 'integrated', {'integration': integration, 'checks': check})
                     return {'outcome': 'INTEGRATED', 'task': task, 'integration': integration,
                             'ledger_edit_dropped': slot.get('ledger_edit_dropped'),
@@ -1164,15 +1137,9 @@ def display_free(contract):
     return _DISPLAY_LINE.sub('', contract or '').strip()
 
 
-def _validate_closure_acceptance(report, criteria):
-    if mismatch := acceptance_mismatch(report, criteria):
-        raise Hold('validation', mismatch)
-
-
 def _closure_ports():
     return closure_documents.ClosurePorts(git=git, passed=passed,
-                                          task_path=execution.task_path, live_items=live_items,
-                                          validate_acceptance=_validate_closure_acceptance)
+                                          task_path=execution.task_path, live_items=live_items)
 
 
 def receipt_path(task):
@@ -1294,10 +1261,8 @@ def close(repo, owner_pid, task):
             raise ValueError('task record missing from tasks/; no close')
         if record.contract_hash != info.get('contract_hash'):
             raise ValueError(CONTRACT_CHANGED)
-        if (slot.get('review') or {}).get('decision') != 'passed':
-            return hold(common, slot,
-                        'independent review outstanding: a passed review is required for Verified closure',
-                        cause='validation')
+        if mismatch := closure_documents.acceptance_mismatch(slot.get('report') or {}, record.acceptance):
+            return hold(common, slot, 'acceptance hold: ' + mismatch, cause='acceptance')
         written = repo / execution.task_path(task)
         on_disk = task_store.edit(written.read_text(), {}) if written.exists() else ''
         done_on_disk = 'status = "done"' in on_disk

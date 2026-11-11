@@ -11,7 +11,7 @@ import sys
 import time
 
 from pi_autowork import maintainer
-from pi_autowork.engine import task_queue
+from pi_autowork.engine import parallel_plan, task_queue
 from pi_autowork.engine.task_store import Ownership, TaskStore, StoreError, _git
 
 
@@ -173,6 +173,11 @@ def _canonical_reason(record, store):
     if record.ownership == Ownership.OWNER:
         return 'Blocker', 'owner action required'
     if record.ownership == Ownership.COORDINATOR:
+        contract = task_queue.contract(record, store)
+        if parallel_plan.coordinator_claim_expired(contract):
+            if gate := parallel_plan.authorization_wait(contract):
+                return 'Blocker', gate['reason']
+            return 'Waiting', parallel_plan.COORDINATOR_EXPIRED_REASON
         return 'Waiting', 'awaiting coordinator action'
     return 'Waiting', 'ready; awaiting dispatch'
 

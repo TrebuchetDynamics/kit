@@ -66,11 +66,6 @@ class DispatchTests(unittest.TestCase):
         self.commit_if_changed('base')
         self.owner = os.getppid()
         self.common = state.common_dir(self.repo)
-        worker_fixture = self.root / 'fake_worker.py'
-        worker_fixture.write_text(FAKE.read_text().replace("'checks': [],", "'acceptance': [{'index': 1, 'criterion': 'changed.', 'result': 'met', 'evidence': 'Fixture applied requested file changes.'}], 'checks': [],").replace("'checks': [], 'blockers': spec.get", "'checks': [{'command': 'inspect.', 'result': 'pass'}], 'blockers': spec.get"))
-        fake_patch = patch(__name__ + '.FAKE', worker_fixture)
-        fake_patch.start()
-        self.addCleanup(fake_patch.stop)
         self.spec = self.root / 'spec.json'
         self.log = self.root / 'workers.jsonl'
         self.log.touch()
@@ -161,14 +156,6 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual([row['task'] for row in refill['dispatched']], ['D'])
         self.wait_until_idle()
 
-    def test_worker_and_resume_prompt_require_acceptance_evidence(self):
-        task = execution.select_all(self.repo, None, None)[0]
-        for resume in (False, True):
-            prompt = dispatch.prompt(task, self.repo, 'b', 'HEAD', self.root / 'r.json', resume=resume)
-            for text in ('"acceptance"', '"index": 1', '"criterion"', '"met"|"not_met"|"not_checked"',
-                         'stopped or unreached', 'preserve pending_live', 'Never invent completion'):
-                self.assertIn(text, prompt)
-
     def test_under_a_gating_runner_the_worker_leaves_the_full_check_to_it(self):
         """TOOLSET-227-a8: workers ran the full suite two or three times before the runner's gate."""
         task = execution.select_all(self.repo, None, None)[0]
@@ -183,6 +170,11 @@ class DispatchTests(unittest.TestCase):
         for text in ('autowork-run', 'more than two minutes', 'focused tests directly',
                      'worker_check_slot_wait_seconds'):
             self.assertIn(text, gated)
+        from pi_autowork import worker
+        for text in ('acceptance list', 'met', 'not_met', 'not_checked', 'stopped or unreached verdict'):
+            self.assertIn(text, gated)
+            self.assertIn(text, worker.REVIEW)
+        self.assertIn('met claim you cannot confirm', worker.REVIEW)
         for text in ('unrelated_failures', 'environment_failures', 'rerun each alone once',
                      'git worktree add --detach', 'commit anyway', 'never blockers'):
             self.assertIn(text, gated)
@@ -766,8 +758,10 @@ class DispatchTests(unittest.TestCase):
                             commit = self.git('rev-parse', 'HEAD', repo=root)
                             slot = state.transition(self.repo, self.owner, tid, 'reported', commit=commit)
                             execution.save(dispatch.data_dir(self.common, slot) / 'report.json',
-                                           dict(acceptance=[dict(index=i, criterion=text, result='met', evidence='Fixture committed requested file changes.') for i, text in enumerate(task_queue.record(self.repo, tid, slot['baseline']).acceptance, 1)], task=tid, commit=commit, changed_files=[tid.lower() + '.txt'],
-                                                blockers=[], checks=[dict(command="inspect.", result="pass")], pending_live=[]))
+                                           dict(task=tid, commit=commit, changed_files=[tid.lower() + '.txt'],
+                                                blockers=[], checks=[{'command': 'inspect.', 'result': 'pass'}],
+                                                acceptance=[{'item': 'changed.', 'result': 'met', 'evidence': 'fixture'}],
+                                                pending_live=[]))
                 self.set_spec({'OLD': {'sleep': 60}, 'F': {'sleep': 60}})
                 with patch.dict(os.environ, PI_AUTOWORK_MERGE_BACKLOG=setting,
                                 PI_AUTOWORK_MERGE_BACKLOG_AFTER=after):
@@ -1374,9 +1368,9 @@ Path(repo, ' a.txt').write_text('half, in metres')
 git('commit', '-qam', 'continue retained candidate')
 report = re.search(r'^Report file: (.+)$', prompt, re.M)[1]
 Path(report).write_text(json.dumps({'task': 'A', 'commit': git('rev-parse', 'HEAD'),
-    'acceptance': [{'index': 1, 'criterion': 'keep the earlier candidate, in metres.',
-                    'result': 'met', 'evidence': 'Retained candidate converted to half, in metres in a.txt.'}],
-    'changed_files': [' a.txt'], 'checks': [{'command': 'inspect.', 'result': 'pass'}], 'blockers': [], 'changelog': ''}))
+    'changed_files': [' a.txt'], 'checks': [{'command': 'inspect.', 'result': 'pass'}],
+    'acceptance': [{'item': 'keep the earlier candidate, in metres.', 'result': 'met', 'evidence': 'fixture'}],
+    'blockers': [], 'changelog': ''}))
 ''')
         _, fresh = self.run_cli('--apply', '--parallel', '--worker-command',
                                 json.dumps([sys.executable, str(recover), '{prompt_file}', '{worktree}']),

@@ -484,8 +484,20 @@ def cmd_why(repo, tid, rev='HEAD'):
 def cmd_validate(repo, rev='HEAD', worktree=False):
     store = worktree_store(repo) if worktree else TaskStore.at(repo, rev)
     drafts = sorted(t.id for t in store.tasks.values() if t.draft)
+    resource_users, exclusive_resources = {}, set()
+    for task in store.tasks.values():
+        words = set(re.findall(r'[a-z0-9]+', ' '.join(task.resources).lower()))
+        for resource in task.resources:
+            resource_users.setdefault(resource, set()).add(task.id)
+        if words & {'live', 'port', 'ports', 'install', 'installs', 'device', 'devices'}:
+            exclusive_resources.update(task.resources)
+    warnings = [
+        f'Resource {resource!r} ({", ".join(sorted(users))}) has no live, port, install or device context; '
+        'use touches for file overlap and resources only for exclusive things.'
+        for resource, users in sorted(resource_users.items()) if resource not in exclusive_resources
+    ]
     return dict(ok=True, tasks=len(store.tasks), goals=len(store.goals), drafts=drafts,
-                pending=list(TaskStore.pending(repo)))
+                pending=list(TaskStore.pending(repo)), warnings=warnings)
 
 
 def cmd_goals(repo, rev='HEAD', worktree=False):

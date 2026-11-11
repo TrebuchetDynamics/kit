@@ -83,7 +83,19 @@ def auth_ready(s, model):
     if s.dry_run:
         argv.append('--no-refresh')
     try:
-        return subprocess.run(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120).returncode == 0
+        ready = subprocess.run(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120).returncode == 0
+        from pi_autowork import private_pi
+        root = private_pi.state_root()
+        home = private_pi.directory(root)
+        if (not s.dry_run and s.state.resolve().parent == root.resolve()
+                and os.environ.get('PI_CODING_AGENT_DIR') == str(home) and home.is_dir()):
+            marker = home / 'login-refused'
+            if ready:
+                marker.unlink(missing_ok=True)
+            else:
+                fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                os.close(fd)
+        return ready
     except (OSError, subprocess.SubprocessError):
         return False
 

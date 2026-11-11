@@ -2,7 +2,7 @@
 schema = 1
 id = "RUST-PLAN-05"
 title = "Plan Rust round five from goal command evidence"
-short = "Plan Rust round five from goal comman..."
+short = "Plan Rust from goal-command evidence"
 status = "open"
 goal = "RUST-OCTET"
 section = "Now"

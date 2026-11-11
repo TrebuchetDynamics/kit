@@ -1,0 +1,25 @@
+schema = 1
+task = "SPEED-011"
+candidate = "60d45ad90325a0916bb56f02d1f224ed27813ab6"
+integration = "068aedec91d6c33e3ae35ea3da9f7a897eb2feae"
+tree = "1358d93ed616e898f0ecb0e9ae43a15b28be6501"
+contract_hash = "c9ce8ebaafb35deee3e0684a4b1e4042fc4cec9b7db708518965382d06683b42"
+checks = ["<path>", "<path>", "--verify", "<path>", "SPEED-011"]
+result = "pass"
+review = "passed"
+model_review = "not_recorded"
+
+[[acceptance]]
+item = "The three documents state the rule with one example of a correct resource and one of a file overlap that belongs in touches."
+result = "met"
+evidence = "All three owners state touches is the only file-overlap declaration, resources are exclusive things, port:8080 is a correct resource, and pi-autowork/src/ overlap belongs in touches rather than autowork-python-layout. Scoped Maintain readback and docs check pass."
+
+[[acceptance]]
+item = "A fixture proves validate prints the warning for a broad resource name shared by two tasks and stays ok:true, and prints none for `live` or a named port, install or device."
+result = "met"
+evidence = "test_validate_warns_about_broad_resources_without_failing passes in the 65-test CLI module. It asserts one warning for two tasks sharing autowork-python-layout at HEAD and in the worktree, ok:true, and no warnings for live, port:8080, python-install and device:phone, including store-wide co-declaration context."
+
+[[acceptance]]
+item = "No scheduling behaviour changes: tasks that share a declared resource still run one at a time."
+result = "met"
+evidence = "Only cmd_validate reporting changes in production code; no scheduler, resource claim, live authorization or selection mutation. All 28 existing parallel-plan tests pass, including test_conflicts_serialize_in_priority_order and test_overlapping_scopes_keep_resource_and_dependency_gates."

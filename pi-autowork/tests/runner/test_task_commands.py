@@ -1090,6 +1090,29 @@ class TaskCommandTests(unittest.TestCase):
                          blocker='dependency unfinished', closure=None, record_revision=shown['record_revision']))
         self.assertEqual((rows['T-1']['position'], rows[blocked]['blocked_by']), (1, 'DEPENDENCY_UNFINISHED'))
 
+    def test_validate_warns_about_broad_resources_without_failing(self):
+        broad = 'autowork-python-layout'
+        self.tasks('field', 'T-1', 'resources', broad)
+        other = self.add('Independent files', '--resources', broad)
+        self.commit()
+        for flags in ((), ('--worktree',)):
+            result = json.loads(self.tasks('validate', *flags).stdout)
+            self.assertTrue(result['ok'])
+            self.assertEqual(len(result['warnings']), 1)
+            for text in (broad, 'T-1', other, 'touches'):
+                self.assertIn(text, result['warnings'][0])
+        for context in ('live', 'port:8080', 'python-install', 'device:phone'):
+            with self.subTest(context=context):
+                # One task's concrete resource context qualifies the shared name store-wide.
+                self.tasks('field', other, 'resources', json.dumps([broad, context]))
+                result = json.loads(self.tasks('validate', '--worktree').stdout)
+                self.assertTrue(result['ok'])
+                self.assertEqual(result['warnings'], [])
+        for tid in ('T-1', other):
+            self.tasks('field', tid, 'resources', json.dumps(
+                ['live', 'port:8080', 'python-install', 'device:phone']))
+        self.assertEqual(json.loads(self.tasks('validate', '--worktree').stdout)['warnings'], [])
+
     def test_validate_fails_on_a_broken_file(self):
         self.assertEqual(json.loads(self.tasks('validate').stdout)['tasks'], 1)
         path = self.repo / 'tasks/items/T-1.md'

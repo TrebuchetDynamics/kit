@@ -3,7 +3,7 @@ schema = 1
 id = "CLOSE-EVIDENCE-001"
 title = "A Verified close requires a recorded result for every acceptance item"
 short = "Verified needs per-item results"
-status = "open"
+status = "done"
 section = "Now"
 rank = 14000
 depends_on = []
@@ -15,4 +15,6 @@ scope = "A task can close as coordinator_verified without its goal being qualifi
 acceptance = ["A regression proves a report with every check passing but one acceptance item not_checked, one not_met, one missing, or no acceptance list at all does not integrate to a Verified close; the task stays open with a hold reason naming the items, and no task record or receipt is written.", "A regression proves a report with every acceptance item met and passing checks still closes Verified, and the receipt records the per-item results it closed on.", "A regression proves an empty checks list alone no longer satisfies a contract that declares checks, while a contract with no declared checks keeps its current behaviour.", "The worker and reviewer prompts name the acceptance list, the three results and the rule that a stopped or unreached verdict is not_checked; the reviewer fails a report whose met claim it cannot confirm.", "An attempt reported by the previous release without the list has one documented, tested outcome, and existing close, receipt-tamper, changed-contract, pending-live and replay tests pass unchanged or with assertions strengthened, never weakened.", "pi-autowork/task-store.md and pi-autowork/README.md describe the per-item rule where they describe the verified close."]
 checks = ["python3 scripts/check.py pi-autowork/tests/engine/test_parallel_integrate.py pi-autowork/tests/engine/test_closure_documents.py", "python3 scripts/affected_tests.py --run --base <captured-task-base>", "python3 skills/docs-sync/scripts/docs.py check .", "autowork tasks validate ."]
 exclusions = ["No change to manual closure, owner waivers, live authorization, task selection or the receipt checks that exist today.", "No model calls, service actions, installs, pushes or edits to another task's record; no weakened or deleted test."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/CLOSE-EVIDENCE-001.toml"
 +++

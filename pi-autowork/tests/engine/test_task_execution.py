@@ -253,7 +253,10 @@ class RecoveryTests(ExecutionFixtureMixin, unittest.TestCase):
                 commit = git(root, 'rev-parse', 'HEAD')
                 slot = state.transition(self.repo, owner, task, 'reported', commit=commit)
                 save(dispatch.data_dir(common, slot) / 'report.json',
-                                        dict(task=task, commit=commit, changed_files=['fixture.py'], checks=[], blockers=[]))
+                                        dict(task=task, commit=commit, changed_files=['fixture.py'],
+                                             checks=[{'command': 'true', 'result': 'pass'}], blockers=[],
+                                             acceptance=[{'item': item, 'result': 'met', 'evidence': 'offline fixture'}
+                                                         for item in dispatch.task_queue.record(self.repo, task).acceptance]))
                 # Neither a scratch name, another repository's marker, nor another unit
                 # exempts a person's process, including a fixture runner under a real service.
                 if task == 'T1':

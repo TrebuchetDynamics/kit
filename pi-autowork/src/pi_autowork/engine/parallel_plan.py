@@ -7,6 +7,7 @@ patterns, not current files, so not-yet-created files are protected too.
 from fnmatch import fnmatchcase
 from functools import lru_cache
 import re
+import time
 
 # Reversible built-in serial policy, including nested packages and CI files.
 SERIAL_NAMES = (
@@ -173,6 +174,17 @@ def _resources(task):
     return found
 
 
+COORDINATOR_CLAIM_SECONDS = 2 * 60 * 60
+COORDINATOR_EXPIRED_REASON = 'coordinator claim expired; ready; awaiting dispatch'
+
+
+def coordinator_claim_expired(task):
+    """Only committed typed coordinator ownership expires; missing history fails closed."""
+    changed_at = task.get('coordinator_changed_at')
+    return (task.get('ownership') == 'coordinator' and changed_at is not None
+            and time.time() - changed_at >= COORDINATOR_CLAIM_SECONDS)
+
+
 def authorization_wait(task):
     """An unattended runner needs an explicit, structured record for owner-only or live work.
 
@@ -183,7 +195,7 @@ def authorization_wait(task):
     """
     fields = task.get('fields', {})
     ownership = ' '.join(fields.get('Ownership', '').split()).strip(' .`*_')
-    if task.get('ownership') == 'coordinator':
+    if task.get('ownership') == 'coordinator' and not coordinator_claim_expired(task):
         return {'id': task['id'], 'reason': 'awaiting coordinator action', 'blocked_by': []}
     if str(fields.get('Live authorization', '')).strip():
         missing = [label for label in ('Live actor', 'Live at', 'Live scope')

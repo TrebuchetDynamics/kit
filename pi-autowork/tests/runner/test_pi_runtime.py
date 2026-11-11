@@ -77,6 +77,20 @@ class RuntimeTests(unittest.TestCase):
     def calls(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
 
+    def test_refused_private_login_leaves_only_a_safe_status_marker(self):
+        root = Path(self.temp.name)
+        home = root / 'pi-agent'
+        home.mkdir(mode=0o700)
+        os.environ.update(PI_AUTOWORK_STATE_DIR=str(root), PI_CODING_AGENT_DIR=str(home),
+                          FAKE_UNAUTH='openai-codex')
+        self.assertFalse(runtime.auth_ready(runtime.Settings(self.state), 'openai-codex/fixture'))
+        marker = home / 'login-refused'
+        self.assertEqual(marker.read_bytes(), b'')
+        self.assertEqual(stat.S_IMODE(marker.stat().st_mode), 0o600)
+        os.environ['FAKE_UNAUTH'] = ''
+        self.assertTrue(runtime.auth_ready(runtime.Settings(self.state), 'openai-codex/fixture'))
+        self.assertFalse(marker.exists())
+
     def test_a_finished_run_is_recorded_once_with_secrets_redacted(self):
         result = self.job()
         self.assertTrue(result['ok'])

@@ -28,10 +28,13 @@ from .processes import alive, start_time
 REVIEW = ('You are an independent reviewer verifying task {task} in {checkout}, which holds a worker\'s commit '
           'merged onto the session branch (see git log -1 and git diff HEAD^1 HEAD). Read the task\'s record, '
           'tasks/items/{task}.md (its acceptance and checks), run the offline checks it lists, and judge the merged change '
-          'against the acceptance criteria. Independently confirm EACH admitted criterion against actual evidence. '
-          'The report acceptance list uses index (1-based), exact criterion text, result (met, not_met or '
-          'not_checked), and evidence. Fail any met claim you cannot independently confirm. A stopped or '
-          'unreached verdict is not_checked, never met; passing checks alone do not prove acceptance. Block only concrete acceptance failures, regressions, security issues '
+          'against the acceptance criteria. The worker report has an acceptance list: exactly one entry per '
+          'admitted acceptance item, with item (exact text), result (met, not_met or not_checked) and evidence. '
+          'Confirm each item and its evidence explicitly in your review. A stopped or unreached verdict is '
+          'not_checked, never met. Fail a report whose met claim you cannot confirm, or whose list is missing, '
+          'duplicates or omits an item, or contains not_met or not_checked. Passing checks alone cannot qualify '
+          'a Verified close; these gaps remain engineering holds, never owner questions. '
+          'Block only concrete acceptance failures, regressions, security issues '
           'or credible data-loss risks, with the affected behavior and evidence named. Do not ask for more '
           'tests than the acceptance and Checks need. Style, preferred abstractions, duplicate tests and '
           'table-driven test preferences are advisory follow-ups, not failures, unless they cause a concrete '
@@ -54,11 +57,11 @@ GATE = (' The runner\'s recorded full-check gate (`{command}`) for tree `{tree}`
         'runner\'s accepted gate policy: do not run it again. Run only a check '
         'the full check does not cover, such as a lint, a build or a script, and single tests to settle a doubt. '
         'Rerunning whole test files took most of every review\'s 20 to 40 minutes.')
-# Offline completion is separate from live qualification (AGENTS.md): checks recorded as
-# pending live become their own TASK-LIVE follow-up, so they must not fail the review.
+# Pending live retains its existing route, but cannot settle an acceptance item offline.
 LIVE = (' Checks that need a physical device, hardware, production or live services, or a person cannot run '
         'here. The worker recorded these as pending live checks, which become a separate live follow-up task: '
-        '{items}. Do not fail for those; judge everything that can be checked offline. A live check the task '
+        '{items}. Do not fail for those unless they are needed to settle an acceptance item: that item is '
+        'not_checked and cannot close Verified. Judge everything that can be checked offline. A live check the task '
         'requires that is not in that list is a failure: it would be lost.')
 NO_LIVE = (' The worker recorded no pending live checks: a device, hardware, production or human check the '
            'task requires and that cannot run here is a failure, because nothing would record it.')
@@ -763,7 +766,7 @@ def batch_publications(state, session, job):
         if (manifest['generation'] != job['generation'] or manifest['base'] != job['base']
                 or manifest['admission'] != job['admission']
                 or manifest['command'] != job['command'] or manifest['command'] != main_check.full_check(session)
-                or manifest['mode'] != job['mode'] or manifest['mode'] != os.environ.get('PI_AUTOWORK_REVIEW', '1')
+                or manifest['mode'] != job['mode'] or manifest['mode'] != os.environ.get('PI_AUTOWORK_REVIEW', 'auto')
                 or manifest['policy_version'] != job['policy_version']
                 or manifest['policy_version'] != review_policy.version()
                 or manifest['optimistic'] != job['optimistic'] or manifest['optimistic'] != optimistic.enabled()):
@@ -834,7 +837,7 @@ def batched_verdict(state, task, checkout):
             or batch_identity(checkout, [task]).get(task) != {
             k: binding.get(k) for k in ('task', 'attempt_id', 'contract_hash', 'commit')}
             or binding.get('command') != main_check.full_check(checkout)
-            or binding.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', '1')
+            or binding.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', 'auto')
             or binding.get('policy_version') != review_policy.version()
             or binding.get('optimistic') != optimistic.enabled()):
         record.unlink(missing_ok=True)
@@ -847,12 +850,12 @@ def batched_verdict(state, task, checkout):
     policy = value.get('review_policy')
     # A skipped model review cannot inherit same_code's broad docs/tasks drift allowance.
     # Nor may an old skip survive a policy/configuration change or be advertised as a review.
-    if ((os.environ.get('PI_AUTOWORK_REVIEW') == 'auto'
+    if ((os.environ.get('PI_AUTOWORK_REVIEW', 'auto') == 'auto'
          and (not isinstance(policy, dict) or type(policy.get('required')) is not bool))
             or (isinstance(policy, dict) and policy.get('required') is False and (
                 dirty(checkout) or policy.get('tree') != git(checkout, 'rev-parse', 'HEAD^{tree}')
                 or policy.get('version') != review_policy.version()
-                or policy.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', '1')
+                or policy.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', 'auto')
                 or policy.get('command') != main_check.full_check(checkout)))):
         record.unlink(missing_ok=True)
         return None
@@ -908,9 +911,9 @@ def review_decision(state, task, checkout, evidence=None):
     except (OSError, ValueError):
         previous = {}
     path.write_text(json.dumps(decision))
-    if not decision['required']:
-        (Path(state) / 'review-verdict' / f'{safe_name(task)}.json').unlink(missing_ok=True)
     action = 'required' if decision['required'] else 'skipped'
+    if not decision['required']:
+        print('PI_AUTOWORK_MODEL_REVIEW: skipped', flush=True)
     # A re-dispatched worker asks the same question of the same tree. Say it once per tree rather
     # than repeat an identical line every cycle (2026-10-31); the stored decision is the answer.
     unchanged = isinstance(previous, dict) and all(
@@ -929,8 +932,7 @@ def verify(state, task):
     batched = None if batch_gate else batched_verdict(state, task, checkout)
     if batched is not None:
         ok, reason = batched
-        # Integration requires producing evidence for this tree, including when a
-        # batch supplied the review verdict. Reuse the tree cache where possible.
+        # A batch verdict cannot replace the gate promised by this integration.
         if ok and os.environ.get('AUTOWORK_RUNNER_FULL_CHECK') and review_gate_evidence(state, checkout) is None:
             ok, reason = full_suite_gate(state, task, checkout)
         if ok:
@@ -1483,12 +1485,12 @@ def verify_batch(state, session, script, tasks):
                                       selection=instructions.get('selection'), optimistic=optimistic.enabled(),
                                       command=main_check.full_check(str(chain)), review_policy=policy,
                                       closure_context=contexts[task],
-                                      mode=os.environ.get('PI_AUTOWORK_REVIEW', '1'),
+                                      mode=os.environ.get('PI_AUTOWORK_REVIEW', 'auto'),
                                       policy_version=review_policy.version())
             publish_batch(Path(state) / 'batch' / generation / 'chain.json',
                           dict(generation=generation, base=base, admission=admission,
                                command=main_check.full_check(str(chain)),
-                               mode=os.environ.get('PI_AUTOWORK_REVIEW', '1'),
+                               mode=os.environ.get('PI_AUTOWORK_REVIEW', 'auto'),
                                policy_version=review_policy.version(), optimistic=optimistic.enabled(),
                                steps=list(bindings.values())))
             result['bindings'] = bindings
@@ -1602,23 +1604,7 @@ def gate_note(state, task, checkout):
     return build_gate_note(command, tree, outcome, reference, selection)
 
 
-def review_verdict(state, task, checkout):
-    """A successful independent verdict bound to this exact candidate tree and commit."""
-    path = Path(state) / 'review-verdict' / f'{safe_name(task)}.json'
-    try:
-        value = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return None
-    if (isinstance(value, dict) and value.get('decision') == 'passed'
-            and value.get('commit') == git(checkout, 'rev-parse', 'HEAD')
-            and value.get('tree') == git(checkout, 'rev-parse', 'HEAD^{tree}')):
-        return value
-    return None
-
-
 def review(state, task, checkout, head_before, gate=''):
-    verdict_path = Path(state) / 'review-verdict' / f'{safe_name(task)}.json'
-    verdict_path.unlink(missing_ok=True)
     provisioned = worker_tmp(checkout, task)
     cache = repository_cache(checkout)
     # Set or cleared: a value inherited from the caller names another task's files.
@@ -1633,6 +1619,8 @@ def review(state, task, checkout, head_before, gate=''):
                             + (PROVISIONED.format(path=provisioned) if provisioned else '')
                             + (CACHE.format(path=cache) if cache else '') + (
                                 LIVE.format(items='; '.join(live)) if (live := pending_live(checkout, task)) else NO_LIVE)
+                            + '\nWorker report acceptance list: '
+                            + json.dumps(worker_report(checkout, task).get('acceptance'), ensure_ascii=False)
                             + changelog_note(checkout, task)
                             + '\n\n' + ponytail_prompt(review=True),
                             f'pi-autowork-verify-{safe_name(task)}-{datetime.now():%Y%m%d%H%M%S}',
@@ -1667,9 +1655,7 @@ def review(state, task, checkout, head_before, gate=''):
     elif verdict == 'pass':
         findings_path(state, task).unlink(missing_ok=True)
     if result['ok'] and verdict == 'pass':
-        verdict_path.parent.mkdir(parents=True, exist_ok=True)
-        verdict_path.write_text(json.dumps({'decision': 'passed', 'commit': head_before,
-                                            'tree': git(checkout, 'rev-parse', 'HEAD^{tree}')}))
+        print('PI_AUTOWORK_MODEL_REVIEW: passed', flush=True)
         return 0
     if not verdict:
         # Why there is no verdict, for the hold: a review that ran out of time is reviewed again with

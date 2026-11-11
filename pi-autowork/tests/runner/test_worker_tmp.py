@@ -575,7 +575,9 @@ class WorkerTmpTests(unittest.TestCase):
         state = Path(self.temp.name) / 'state'
         record = worker.batch_record(state, 'T-1')
         record.parent.mkdir(parents=True)
-        write = lambda tree: record.write_text(json.dumps({'tree': tree, 'commit': commit, 'ok': True, 'reason': '', 'at': 0}))
+        write = lambda tree: record.write_text(json.dumps(
+            {'tree': tree, 'commit': commit, 'ok': True, 'reason': '', 'at': 0,
+             'review_policy': {'required': True}}))
         merged_tree = git('rev-parse', 'HEAD^{tree}')
         write(merged_tree)
         self.assertEqual(worker.batched_verdict(state, 'T-1', str(self.repo)), (True, ''))

@@ -123,94 +123,82 @@ class IntegrationTests(unittest.TestCase):
         self.git('commit', '-qm', 'worker ' + task, cwd=root)
         commit = self.git('rev-parse', 'HEAD', cwd=root)
         slot = state.transition(self.repo, self.owner, task, 'reported', commit=commit)
-        slot = state.write_slot(self.common, dict(slot, review={
-            'decision': 'passed', 'reason': 'Synthetic independent fixture verdict'}), slot)
         self.pin_contract(task, slot)
         data = dispatch.data_dir(self.common, slot)
         execution.save(data / 'report.json', {'task': task, 'commit': commit,
-                       'acceptance': [{'index': i, 'criterion': text, 'result': 'met',
-                                       'evidence': 'Fixture worker committed requested files; true passed.'}
-                                      for i, text in enumerate(self.record(task, base).acceptance if self.record(task, base) else (), 1)],
-                       'changed_files': list(files or {task + '.txt': ''}), 'checks': [{'command': 'true', 'result': 'pass'}], 'blockers': [], 'changelog': 'fixture'})
+                       'changed_files': list(files or {task + '.txt': ''}),
+                       'checks': [{'command': 'true', 'result': 'pass'}],
+                       'acceptance': self.acceptance(task), 'blockers': [], 'changelog': 'fixture'})
         return root, commit
 
-    def test_missing_or_skipped_review_holds_before_any_closure_write(self):
+    def acceptance(self, task='A'):
+        return [{'item': item, 'result': 'met', 'evidence': 'offline fixture: true passed'}
+                for item in (self.record(task).acceptance if self.record(task) else ())]
+
+    def test_acceptance_gaps_hold_without_writes_and_keep_legacy_reports(self):
+        self.set_todo(self.todo.replace('Acceptance: offline fixture',
+                                        'Acceptance: offline fixture; second criterion'))
+        self.baseline = self.git('rev-parse', 'HEAD')
         self.worker()
         module = self.module()
-        self.assertEqual(module.integrate(self.repo, self.owner, 'A', ['true'], 10)['outcome'], 'INTEGRATED')
         original = state.slots(self.common)[0]
+        path = dispatch.data_dir(self.common, original) / 'report.json'
+        report = execution.read(path)
         before = self.task_text('A')
-        for review in (None, {'decision': 'skipped'}, {'decision': 'failed'}):
-            with self.subTest(review=review):
-                slot = dict(original, review=review)
-                state.write_slot(self.common, slot, state.slots(self.common)[0])
-                result = module.close(self.repo, self.owner, 'A')
-                self.assertEqual((result['outcome'], result['cause']), ('HELD', 'validation'))
-                self.assertIn('independent review outstanding', result['reason'])
+        head = self.git('rev-parse', 'HEAD')
+        met = self.acceptance()
+        cases = [None, met[1:], met + [met[0]],
+                 [dict(met[0], item='invented'), *met[1:]],
+                 *[[dict(met[0], result=result), *met[1:]] for result in ('not_checked', 'not_met')],
+                 [dict(met[0], evidence=''), *met[1:]]]
+        for entries in cases:
+            with self.subTest(acceptance=entries):
+                state.write_slot(self.common, original, state.slots(self.common)[0])
+                value = dict(report, pending_live=['Physical device qualification'])
+                if entries is None:  # an already-in-flight report from the previous release
+                    value.pop('acceptance')
+                else:
+                    value['acceptance'] = entries
+                execution.save(path, value)
+                result = module.integrate(self.repo, self.owner, 'A', ['true'], 10)
+                self.assertEqual((result['outcome'], result['cause']), ('HELD', 'acceptance'), result)
+                self.assertIn(self.record('A').acceptance[0], result['reason'])
+                held = state.slots(self.common)[0]
+                from pi_autowork import questions
+                self.assertFalse(questions.exhausted(dict(held, attempt=2, resume_used=True)))
+                self.assertEqual(held['report']['pending_live'], value['pending_live'])
+                self.assertEqual(execution.read(path), value)
+                self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+                self.assertEqual(self.git('rev-parse', original['branch']), original['commit'])
                 self.assertEqual(self.task_text('A'), before)
                 self.assertFalse((self.repo / 'tasks/evidence/A.toml').exists())
-                held = state.slots(self.common)[0]
-                self.assertEqual(held['report'], original['report'])
-                self.assertEqual(held['commit'], original['commit'])
-                self.assertEqual(held['integration'], original['integration'])
-
-    def test_absent_acceptance_holds_without_close_writes(self):
-        self.assert_acceptance_hold('absent')
-
-    def test_missing_acceptance_holds_without_close_writes(self):
-        self.assert_acceptance_hold('missing')
-
-    def test_not_met_acceptance_holds_without_close_writes(self):
-        self.assert_acceptance_hold('not_met')
-
-    def test_duplicate_acceptance_holds_without_close_writes(self):
-        self.assert_acceptance_hold('duplicate')
-
-    def test_invalid_acceptance_holds_without_close_writes(self):
-        self.assert_acceptance_hold('invalid')
-
-    def test_unreached_acceptance_holds_without_close_writes(self):
-        self.assert_acceptance_hold('not_checked')
-
-    def assert_acceptance_hold(self, mode):
-        root, commit = self.worker()
-        slot = state.slots(self.common)[0]
-        path = dispatch.data_dir(self.common, slot) / 'report.json'
-        report = execution.read(path)
-        if mode == 'absent':
-            del report['acceptance']
-        elif mode == 'missing':
-            report['acceptance'] = []
-        elif mode == 'duplicate':
-            report['acceptance'] *= 2
-        elif mode == 'invalid':
-            report['acceptance'][0]['index'] = True
-        else:
-            report['acceptance'][0].update(result=mode, evidence='Device unavailable')
-        report['pending_live'] = ['Device qualification remains pending']
+        self.assertEqual(module.retry_held(self.retry_args())['outcome'], 'IDLE')
+        # An older release may already have integrated an attempt before the update.
+        state.write_slot(self.common, original, state.slots(self.common)[0])
         execution.save(path, report)
-        before = self.task_text('A')
-        result = self.module().integrate(self.repo, self.owner, 'A', ['true'], 30)
-        self.assertEqual((result['outcome'], result.get('cause')), ('HELD', 'validation'))
-        self.assertIn('1: offline fixture', result['reason'])
+        self.assertEqual(module.integrate(self.repo, self.owner, 'A', ['true'], 10)['outcome'], 'INTEGRATED')
+        slot = state.slots(self.common)[0]
+        slot['report'].pop('acceptance')
+        state.write_slot(self.common, slot, state.slots(self.common)[0])
+        result = module.close(self.repo, self.owner, 'A')
+        self.assertEqual((result['outcome'], result['cause']), ('HELD', 'acceptance'))
         self.assertEqual(self.task_text('A'), before)
-        self.assertFalse(list(self.repo.glob('tasks/evidence/*')))
-        self.assertEqual(execution.read(path), report)
-        self.assertEqual(self.git('rev-parse', 'HEAD', cwd=root), commit)
+        self.assertFalse((self.repo / 'tasks/evidence/A.toml').exists())
 
-    def test_acceptance_report_coverage(self):
-        validate = self.module().acceptance_mismatch
-        good = {'index': 1, 'criterion': 'offline fixture', 'result': 'met',
-                'evidence': 'Fixture worker committed A.txt and true passed.'}
-        self.assertEqual(validate({'acceptance': [good]}, ['offline fixture']), '')
-        cases = [None, [], [dict(good, result='not_met')],
-                 [dict(good, result='not_checked')], [good, good],
-                 [dict(good, index=True)], [dict(good, index=2)],
-                 [dict(good, criterion='invented')], [dict(good, evidence='')]]
-        for entries in cases:
-            with self.subTest(entries=entries):
-                report = {} if entries is None else {'acceptance': entries}
-                self.assertIn('offline fixture', validate(report, ['offline fixture']))
+    def test_empty_checks_only_pass_for_a_contract_without_declared_checks(self):
+        import task_store
+        _, commit = self.worker()
+        self.report(checks=[])
+        module = self.module()
+        result = module.integrate(self.repo, self.owner, 'A', ['true'], 10)
+        self.assertEqual(result['outcome'], 'HELD')
+        self.assertIn("missing declared check evidence: ['true']", result['reason'])
+        self.assertEqual(self.record('A').status, 'open')
+        path = self.repo / 'tasks/items/A.md'
+        path.write_text(task_store.edit(path.read_text(), {'checks': []}))
+        self.git('commit', '-qam', 'no declared checks for A')
+        report = execution.read(dispatch.data_dir(self.common, state.slots(self.common)[0]) / 'report.json')
+        self.assertEqual(module.report_mismatch(self.repo, report, 'A', commit, ['A.txt']), '')
 
     def test_missing_declared_checks_holds_without_mutating_candidate(self):
         root, commit = self.worker()
@@ -319,7 +307,7 @@ class IntegrationTests(unittest.TestCase):
     def test_declared_check_evidence_shapes(self):
         module = self.module()
         report = {'task': 'A', 'commit': self.baseline, 'changed_files': [],
-                  'blockers': [], 'checks': []}
+                  'blockers': [], 'checks': [], 'acceptance': self.acceptance()}
         self.assertEqual(module.report_mismatch(self.repo, report, 'A', self.baseline, [], ()), '')
         for checks in ([], None, ['true'], [{'command': 'true', 'result': 'fail'}],
                        [{'command': 'other', 'result': 'pass'}]):
@@ -1245,7 +1233,7 @@ finally:
         ]
         for impact, expected in cases:
             with self.subTest(impact=impact):
-                execution.save(path, dict(report, checks=report['checks'] + [check], **({'doc_impact': impact} if impact else {})))
+                execution.save(path, dict(report, checks=[*report['checks'], check], **({'doc_impact': impact} if impact else {})))
                 _, assessed = module.verify(self.repo, self.common, slot, contracts)
                 evidence = assessed['doc_impact']
                 self.assertEqual(evidence['status'], expected)
@@ -1408,9 +1396,9 @@ finally:
         commit = self.git('rev-parse', 'HEAD', cwd=retry)
         slot = state.transition(self.repo, self.owner, 'A', 'reported', commit=commit)
         execution.save(dispatch.data_dir(self.common, slot) / 'report.json', {
-            'acceptance': [{'index': i, 'criterion': text, 'result': 'met', 'evidence': 'Retry committed A.txt; true passed.'} for i, text in enumerate(self.record('A', slot['baseline']).acceptance, 1)],
-            'task': 'A', 'commit': commit, 'changed_files': ['A.txt'], 'checks': [{'command': 'true', 'result': 'pass'}], 'blockers': [],
-            'changelog': 'fixture'})
+            'task': 'A', 'commit': commit, 'changed_files': ['A.txt'],
+            'checks': [{'command': 'true', 'result': 'pass'}], 'acceptance': self.acceptance(),
+            'blockers': [], 'changelog': 'fixture'})
         return commit
 
     def test_a_paused_and_resumed_held_retry_integrates_from_r2(self):
@@ -2470,8 +2458,9 @@ finally:
         commit = self.git('rev-parse', 'HEAD', cwd=retry)
         slot = state.transition(self.repo, self.owner, 'A', 'reported', commit=commit)
         execution.save(dispatch.data_dir(self.common, slot) / 'report.json', {
-            'acceptance': [{'index': i, 'criterion': text, 'result': 'met', 'evidence': 'Retry committed A.txt; true passed.'} for i, text in enumerate(self.record('A', slot['baseline']).acceptance, 1)],
-            'task': 'A', 'commit': commit, 'changed_files': ['A.txt'], 'checks': [{'command': 'true', 'result': 'pass'}], 'blockers': [], 'changelog': 'fix'})
+            'task': 'A', 'commit': commit, 'changed_files': ['A.txt'],
+            'checks': [{'command': 'true', 'result': 'pass'}], 'acceptance': self.acceptance(),
+            'blockers': [], 'changelog': 'fix'})
         self.worker('D')
         for task in ('A', 'D', 'B'):
             self.assertEqual(module.integrate(self.repo, self.owner, task, ['true'], 10)['outcome'], 'INTEGRATED')
@@ -2886,6 +2875,9 @@ Path('untracked.pyo').unlink()
         self.assertIn(f'candidate = "{state.slots(self.common)[0]["commit"]}"', receipt)
         self.assertIn(f'contract_hash = "{self.record("A").contract_hash}"', receipt)
         self.assertNotIn(str(self.repo), receipt)
+        import tomllib
+        self.assertEqual(tomllib.loads(receipt)['acceptance'], self.acceptance())
+        self.assertTrue(self.record('A').verified)
         again = module.close(self.repo, self.owner, 'A')
         self.assertEqual((again['outcome'], again['files']), ('CLOSED', []))  # replayed after its commit: nothing
 

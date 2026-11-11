@@ -70,6 +70,16 @@ class FleetViewTests(unittest.TestCase):
         view = SimpleNamespace(counts=(0, 0, 1, 1, 0, 2),
                                inventory_freshness='fresh', execution_freshness='fresh')
         self.assertEqual(fleet_view.progress_summary(runner, view)[0], 'Needs attention')
+        # A blocker beside finished candidates in flight is not "No task executing".
+        from pi_autowork import task_snapshot
+        rows = (task_snapshot.TaskRow('TASK-1', 'one', 'Now', 'Waiting · Batch check', 'working'),
+                task_snapshot.TaskRow('TASK-2', 'two', 'Now', 'Blocker', 'held'))
+        runner.snapshot = task_snapshot.TaskSnapshot('/fixture', '/fixture/.git', 'a' * 40, 1, time.time(), rows=rows)
+        phase, evidence, action = fleet_view.progress_summary(runner, view)
+        self.assertEqual(phase, 'Checking')
+        self.assertIn('1 finished candidate(s)', evidence)
+        self.assertIn('other tasks need attention', action)
+        runner.snapshot = None
         view.counts = (0, 0, 1, 0, 0, 1)
         self.assertEqual(fleet_view.progress_summary(runner, view)[0], 'Waiting')
         runner.gate = 'Memory: 5000 MB available / 6000 MB required'

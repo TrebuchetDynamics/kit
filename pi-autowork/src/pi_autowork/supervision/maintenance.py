@@ -311,12 +311,14 @@ def poll_publication(owner):
         return
     if phase not in ('merge', 'retry', 'fetch-retry'):
         return
-    # No session mutation while a review, resolver, train or unconsumed review answer exists.
-    if (owner.authority_problem() or os.environ.get('PI_AUTOWORK_PUSH') != '1'
-            or getattr(owner, 'integration', None) or getattr(owner, 'child', None)
-            or getattr(owner, 'prefix_landing', None) or getattr(owner, 'train', None)
-            or getattr(owner, 'maintainer_job', None) or owner.resolvers or owner.batch_landing()):
+    if owner.authority_problem() or os.environ.get('PI_AUTOWORK_PUSH') != '1':
         return
+    # No session mutation while a review, resolver, train or unconsumed review answer exists.
+    # Only an upstream merge mutates the session: a fetch, and a push of a main that is not
+    # behind its upstream, do not wait, or a queue that is never idle is never published.
+    busy = bool(getattr(owner, 'integration', None) or getattr(owner, 'child', None)
+                or getattr(owner, 'prefix_landing', None) or getattr(owner, 'train', None)
+                or getattr(owner, 'maintainer_job', None) or owner.resolvers or owner.batch_landing())
     upstream = f'{record["remote"]}/{record["branch"]}'
     configured = git(owner.repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', f'{owner.base}@{{u}}')
     if (configured != upstream or record.get('fetch_endpoint')
@@ -328,17 +330,20 @@ def poll_publication(owner):
     if phase == 'merge':
         if git(owner.repo, 'symbolic-ref', '--short', '-q', 'HEAD') != owner.base:
             return
-        if owner.integ and not dirty(owner.integ):
-            behind = int(git(owner.repo, 'rev-list', '--count', f'{owner.base}..{upstream}') or 0)
-            if behind:
-                if (not (owner.merge_planning(upstream) or owner.resolve_upstream_merge(upstream))
-                        or owner.fast_forward_main()):
-                    git(owner.integ, 'merge', '--abort')
-                    record.update(phase='done')
-                    write(owner, 'publication', record)
-                    LOG.say(f'Upstream merge deferred: {upstream} could not land; session preserved')
-                    return
-                LOG.say(f'Pulled {behind} commit(s) from {upstream} into {owner.base}')
+        behind = int(git(owner.repo, 'rev-list', '--count', f'{owner.base}..{upstream}') or 0)
+        if not behind:
+            pass  # nothing to merge: publication needs neither the session nor an idle runner
+        elif busy:
+            return
+        elif owner.integ and not dirty(owner.integ):
+            if (not (owner.merge_planning(upstream) or owner.resolve_upstream_merge(upstream))
+                    or owner.fast_forward_main()):
+                git(owner.integ, 'merge', '--abort')
+                record.update(phase='done')
+                write(owner, 'publication', record)
+                LOG.say(f'Upstream merge deferred: {upstream} could not land; session preserved')
+                return
+            LOG.say(f'Pulled {behind} commit(s) from {upstream} into {owner.base}')
         elif owner.integ:
             return
         if record.get('source') and not git_ok(owner.repo, 'merge-base', '--is-ancestor', record['source'], upstream):
@@ -412,7 +417,8 @@ def update_package(pi, state_root, state, package, toolset, wait):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return dict(ok=False, reason='another runner is updating the toolset', retry=True)
-        source = release.package_source(pi, package)
+        independent = Path(package).resolve() == (Path(state_root) / 'installed').resolve()
+        source = git(package, 'remote', 'get-url', 'origin') if independent else release.package_source(pi, package)
         if not source:
             return dict(ok=False, current=True, reason='no registered Git package')
         check = release.check(state_root, state, package, wait=float(wait), current_toolset=toolset, source=source)
@@ -433,7 +439,9 @@ def update_package(pi, state_root, state, package, toolset, wait):
         attempts['count'] += 1
         atomic_write(attempts_path, json.dumps(attempts) + '\n')
         with open(Path(state) / 'engine.err', 'a') as err:
-            result = subprocess.run(['timeout', '--foreground', '--kill-after=5', '300', pi, 'update', source],
+            argv = (['git', '-C', package, 'merge', '--ff-only', expected] if independent
+                    else [pi, 'update', source])
+            result = subprocess.run(['timeout', '--foreground', '--kill-after=5', '300', *argv],
                                     stdout=err, stderr=err)
         installed = git(package, 'rev-parse', 'HEAD')
         if result.returncode or not expected or expected != installed:

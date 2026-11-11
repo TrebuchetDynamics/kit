@@ -47,8 +47,9 @@ default. Completion receipts stay machine-owned; Git records completed work.
 
 - `TaskStore.at(repo, rev)` resolves a Git revision to a commit SHA once, then
   reads `tasks/items/<ID>.md` and `tasks/goals/<ID>.md` with `git ls-tree` and one
-  `git cat-file --batch` call at that SHA, whatever the number of files. Explicit
-  coordinator-verified closures read receipts and referenced Git objects in two additional
+  `git cat-file --batch` call at that SHA, whatever the number of files.
+  Open coordinator-owned records also read their last-change commit time from pinned Git history.
+  Explicit coordinator-verified closures read receipts and referenced Git objects in two additional
   batches, and check integration ancestry at the same pinned revision. The returned `rev` is that pinned SHA, not the input
   branch name. Working-tree edits never become records. Git replacement refs
   are disabled so they cannot substitute content for the pinned object IDs.
@@ -131,7 +132,20 @@ The closure fields and `verified_depends_on` are optional. All other fields exce
 other than `schema` and `id` produce a visible draft rather than a store error.
 Empty acceptance/checks/touches also produce draft reasons in `missing_fields`.
 Explicit empty arrays are valid for dependencies, resources and exclusions.
-Resource strings are tokens such as `live`, `exclusive` or `test-db`, not prose.
+`touches` is the only declaration of file overlap. `resources` names only things
+that cannot be shared, such as a port, an install, a device or a live service.
+For example, `resources = ["port:8080"]` reserves an exclusive port; overlapping
+source edits belong in `touches = ["pi-autowork/src/"]`, not a broad resource such
+as `autowork-python-layout`. Resource strings are tokens, not prose; `exclusive`
+runs alone and `live` requires authorization. Tasks sharing a declared resource
+still run one at a time.
+
+`autowork tasks validate` returns advisory `warnings` while keeping `ok: true` for
+a valid store. It warns once per resource that no task in the store uses together
+with a live, port, install or device word in its resource tokens (case-insensitive,
+including plural ports, installs and devices). A named `port:8080`, `python-install`
+or `device:phone` supplies that context; a co-declared `live` also supplies it.
+The warning does not remove a resource, change scheduling or grant live authority.
 A string item that itself encodes a JSON array is refused in every task list field,
 including `verified_depends_on`; diagnostics name the task path and field. Store
 validation does not silently flatten or repair such records.
@@ -158,6 +172,17 @@ ownership never grants worker authority. This property does **not** evaluate
 prerequisite completion, dependency cycles, resource availability, worker leases,
 or the caller's rights. Consumers must gate those separately. In particular a
 check string is not permission to execute that command with coordinator rights.
+
+When assigning `ownership = "coordinator"`, planners and skills must account for
+its two-hour claim. Admission waits with `awaiting coordinator action` until two
+hours after the committer time of the last commit that changed that task file.
+At that boundary, admission treats the task as worker work without rewriting the
+record or changing its fingerprints. The rule also applies to existing records.
+Unrelated commits and uncommitted edits do not renew the claim. Missing commit-time
+evidence keeps it waiting. Status and fleet rows disclose `coordinator claim expired`
+with the ordinary ready dispatch wait. Owner-only tasks, Needs decision, dependencies,
+live authorization and receipt checks retain their gates. `task.runnable` remains
+a record-only property, not the time-dependent admission decision.
 
 ## Fingerprints
 
@@ -579,10 +604,36 @@ restores the pre-merge head without moving main or accepting the worker report.
 An intact parent record may replace a broken record, so ledger repairs still land.
 This guard runs before the separate stale-closure reopening described below.
 
+A worker report must include an `acceptance` list. Each entry has `item` (the exact
+text of one admitted acceptance item), `result` (`met`, `not_met` or `not_checked`),
+and `evidence` (a nonempty string that identifies the observed result and its proof).
+The list must cover every item exactly once. Integration and verified close require
+all results to be `met`. Passing checks cannot replace these results. An empty
+`checks` list is refused when the contract declares checks. Contracts without
+declared checks keep the existing report-check behavior.
+
+Missing, duplicate, unknown, `not_met`, `not_checked` or unsupported results leave
+the task open on an `acceptance` engineering hold. The reason names the affected
+items. The engine writes no done record or public receipt. A stopped or unreached
+verdict is `not_checked`. A live-only acceptance item also stays `not_checked`:
+retain its `pending_live` evidence, but do not close it Verified from offline proof.
+Pending-live checks that do not settle an acceptance item keep the existing route.
+These holds never become owner questions, even after a report-resume budget is spent.
+
+Compatibility is fail-closed: an in-flight report from an older release without
+`acceptance` is held under the same rule. Its report, commit, branch and worktree
+remain available for engineering reconciliation. The engine does not discard the
+attempt, infer results, or silently accept its old passing checks. Already committed
+historical receipts retain their existing validation rules. The reviewer receives
+the report list, confirms each item and its evidence, and fails any `met` claim
+it cannot confirm.
+
 The verified close writes `status = "done"`, `closure = "coordinator_verified"`,
 `closure_evidence = "tasks/evidence/<ID>.toml"` and `tasks/evidence/<ID>.toml` (candidate and
-integration commits, tree, contract hash, checks, result, review; secrets redacted and paths
-dropped) in one commit; a live follow-up becomes `<ID>-LIVE` in Needs decision. A replayed
+integration commits, tree, contract hash, checks, result, review and `[[acceptance]]`
+per-item results with evidence; secrets redacted and paths dropped) in one commit.
+Pending-live checks become notes by default, or a per-goal backlog when
+`PI_AUTOWORK_LIVE_FOLLOWUP=backlog`. A replayed
 close completes missing files and refuses differing ones, so a crash between writes resumes
 to one commit, and a close whose commit exists is a no-op. `--parallel-close` first returns
 `CLOSED` with the `files` to commit, leaving the slot integrated and its worker worktree and
@@ -594,6 +645,20 @@ session the runner reopens an explicitly coordinator-verified done task whose re
 pins another contract hash than its merged record (one side closed it, the other changed
 its acceptance), before main moves. An explicit manual closure is not reopened because
 of a retained receipt from an earlier attempt.
+
+The legacy receipt `review` field records the aggregate validation verdict. The
+separate `model_review` field records `passed` or `skipped` from the validation log,
+or `not_recorded` when no such evidence is available. A skipped model review must
+not be read as independent confirmation of acceptance. Existing review-policy
+and receipt-validation gates are unchanged.
+
+Offline regressions in `tests/engine/test_parallel_integrate.py` cover acceptance
+holds (including older reports), empty declared-check evidence, per-item receipt
+results, changed contracts, tamper refusal and close replay. The rendering tests in
+`tests/engine/test_closure_documents.py` cover deterministic per-item receipts and
+model-review markers. Prompt assertions in `tests/engine/test_parallel_dispatch.py`
+cover the worker and reviewer rules. These fixtures do not prove model adherence
+or live qualification.
 
 `TaskRecord.verified` requires explicit verified provenance and a schema-1 receipt naming
 this task and contract hash, a passing result and review, an existing candidate commit,

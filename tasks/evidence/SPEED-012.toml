@@ -1,0 +1,30 @@
+schema = 1
+task = "SPEED-012"
+candidate = "a4646a883c5d49330e7baf36680f8efac95b831b"
+integration = "249ecfb6c64937b083131eb029973addce08312b"
+tree = "e3c8745e73d505c88a4d4f3caa461a5cae13d7a7"
+contract_hash = "e1b417a5ec0ebac4bbaeb0123d4962ead745ce9bb3e5b3564fd01f731eb7e689"
+checks = ["<path>", "<path>", "--verify", "<path>", "SPEED-012"]
+result = "pass"
+review = "passed"
+model_review = "passed"
+
+[[acceptance]]
+item = "A fixture with a disposable interactive Pi home and state root proves install fills the private directory with owner-only permissions, and a runner job environment points Pi at it."
+result = "met"
+evidence = "Passing test_runner_install_survives_removing_interactive_pi invokes the installer with disposable HOME, checks the allowlisted settings/login copy, 0700 directory and 0600 files, and checks Coordinator.job_environment plus saved service PI_CODING_AGENT_DIR. It also verifies ordinary installation preserves files and update refreshes them."
+
+[[acceptance]]
+item = "A fixture proves that deleting the interactive Pi home afterwards leaves the runner's Pi environment, toolset path and the autowork command link usable."
+result = "met"
+evidence = "Passing installer fixture deletes its disposable interactive Pi home, verifies private job environment, installed toolset/service paths and independent .git directory, then successfully executes the installed autowork command link's capabilities command. Extended test_bootstrap_marks_only_managed_sources_as_package_installed removes the fake interactive Pi executable and verifies bootstrap selects the independent installed toolset and private Pi directory."
+
+[[acceptance]]
+item = "A fixture proves a missing private directory gives one status line naming the refill command and no silent fallback; no test reads a real login, and no login value appears in any log or report the tests inspect."
+result = "met"
+evidence = "Passing test_status_names_the_private_pi_refill_without_falling_back checks exactly one Private Pi diagnostic for missing and refused-login fixtures, naming autowork update --only autowork without an interactive-home fallback or login disclosure. Installer fixture checks captured installer/command output and fake logs contain no fixture login value. test_refused_private_login_leaves_only_a_safe_status_marker uses a fake Pi executable and proves the marker is empty, 0600 and removed after successful fake authentication. No real login or provider call was used."
+
+[[acceptance]]
+item = "docs/installation.md and pi-autowork/README.md describe the private directory, what is copied and how to refill it."
+result = "met"
+evidence = "Both documentation owners now describe pi-agent under the shared state root, allowlisted settings plus model configuration/login, owner-only permissions, independent installed checkout, no interactive fallback, and autowork update --only autowork recovery. Final readback and docs.py check passed."

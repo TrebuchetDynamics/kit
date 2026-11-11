@@ -168,6 +168,17 @@ class ReleaseCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), 'STATUS fixture')
 
+    def test_independent_install_updates_without_consulting_interactive_pi(self):
+        installed = self.state_root / 'installed'
+        self.toolset.rename(installed)
+        self.publish('STATE_SCHEMA = 2\nSTATE_SCHEMA_READS = (1, 2)\n', 'release 2')
+        with patch.object(release, 'package_source', side_effect=AssertionError('interactive Pi consulted')):
+            result = maintenance.update_package('unused', str(self.state_root), str(self.own),
+                                                str(installed), str(installed), '0')
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(result['revision'], subprocess.check_output(
+            ['git', '-C', str(installed), 'rev-parse', 'HEAD'], text=True).strip())
+
     def test_a_compatible_release_may_be_installed(self):
         self.assertEqual(self.check(), dict(ok=False, current=True, reason='already at the newest release'))
         self.publish('STATE_SCHEMA = 2\nSTATE_SCHEMA_READS = (1, 2)\n', 'release 2 reads 1')
@@ -386,6 +397,23 @@ class PackageUpdateTests(unittest.TestCase):
                     env=env, capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), installed)
+        independent = self.root / 'installed'
+        self.package.rename(independent)
+        self.pi.unlink()
+        cli = independent / 'pi-autowork/pi_autowork/cli.py'
+        cli.write_text('import json, os; print(json.dumps({k: os.environ[k] for k in '
+                       '["PI_AUTOWORK_PACKAGE_INSTALLED", "PI_AUTOWORK_TOOLSET", "PI_CODING_AGENT_DIR"]}))\n')
+        env = {k: v for k, v in env.items() if not k.startswith('PI_AUTOWORK_')}
+        env['PI_AUTOWORK_STATE_DIR'] = str(self.root)
+        env['PI_CODING_AGENT_DIR'] = str(self.root / 'removed-interactive')
+        result = subprocess.run([sys.executable, '-c',
+            'from pi_autowork import release; import sys; '
+            'release.launch(sys.argv[1], sys.argv[2], ["--status", "--repo", sys.argv[3]])',
+            str(cli.parent.parent), str(independent / 'pi-autowork/bin/pi-autowork.sh'), str(independent)],
+            env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {'PI_AUTOWORK_PACKAGE_INSTALLED': '1',
+                         'PI_AUTOWORK_TOOLSET': str(independent), 'PI_CODING_AGENT_DIR': str(self.root / 'pi-agent')})
 
     def test_unknown_or_unreadable_package_declarations_do_not_update(self):
         self.listing.write_text('User packages:\n  git:github.com/example/other\n'

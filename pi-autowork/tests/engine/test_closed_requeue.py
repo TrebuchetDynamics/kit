@@ -21,7 +21,7 @@ from pi_autowork.engine import parallel_status as status, task_store
 
 class ClosedRequeueTests(unittest.TestCase):
     # Reuse the real repository/worker/receipt fixture, not its inherited tests.
-    for name in ('setUp', 'git', 'worker', 'pin_contract', 'record', 'module',
+    for name in ('setUp', 'git', 'worker', 'acceptance', 'pin_contract', 'record', 'module',
                  'close_committed', 'retry_args'):
         locals()[name] = getattr(fixture.IntegrationTests, name)
 

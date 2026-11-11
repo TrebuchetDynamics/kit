@@ -27,11 +27,37 @@ source checks, TUI code stamps and review fingerprints inspect actual implementa
 Runtime state lives outside the repository, under
 `${XDG_STATE_HOME:-~/.local/state}/pi-autowork/<repository key>/`.
 
-Automatic toolset updates use the exact Git package source registered in `pi list`,
-including its ref. A local-path package is owner-managed, even when its checkout
-has a Git remote. Local, missing or unreadable package declarations do not trigger
-an update fetch or `pi update`. Running processes keep their selected immutable
-release until a supported reload or restart selects a committed replacement.
+### Private Pi configuration and installed runner
+
+`install.sh` (the `autowork` component) creates a fleet-wide `pi-agent/` under
+`${PI_AUTOWORK_STATE_DIR:-${XDG_STATE_HOME:-~/.local/state}/pi-autowork}`.
+It copies the interactive Pi home's `auth.json` login and `models.json` provider
+configuration, plus only `defaultProvider`, `defaultModel` and
+`defaultThinkingLevel` from `settings.json`. No sessions, package registrations,
+extensions or other interactive settings are copied. The directory is 0700 and
+copied files are 0600; keep them outside repositories, worktrees, logs and reports.
+The interactive source is `${PI_CODING_AGENT_DIR:-~/.pi/agent}` and is not changed
+by this copy. Runner jobs always set `PI_CODING_AGENT_DIR` to the private directory;
+they do not fall back to the interactive home.
+
+The command link and installed systemd launcher use the independent Git checkout
+in the state root's `installed/`, not the interactive Pi package clone. Immutable
+process releases remain under `releases/`. Removing the interactive home leaves
+these paths usable; the Pi executable and Node still need to be on PATH.
+Automatic updates of this installed checkout fetch its origin and fast-forward
+only after the existing fleet/schema check. For legacy package launches, updates
+still require a registered Git package source in `pi list`, including its ref;
+local-path declarations remain owner-managed. Running processes keep their
+selected release until a supported reload or restart.
+
+Ordinary installation keeps existing private files. To refresh the copied settings
+and login, run `autowork update --only autowork` from an interactive shell with a
+working Pi home (set `PI_CODING_AGENT_DIR` there for a custom source).
+`autowork status` names this command when the private directory/login is missing
+or the runner has observed a refused login. Status is read-only and makes no
+provider call. See [installation and recovery](../docs/installation.md#private-runner-pi-directory).
+Disposable offline fixtures verify permissions, job configuration, command-link
+survival and missing/refused-login diagnosis, not live provider acceptance.
 
 | Module | Role |
 | --- | --- |
@@ -277,7 +303,7 @@ and the explicit agent commands below do.
 | Command | What it does |
 |---|---|
 | `autowork` | The live TUI on a terminal (help otherwise) |
-| `autowork start [dir]` | Safely select an existing local main branch when needed, then install (if needed) and start the repository's service. Requires a valid committed `tasks/` store on main/master, saying what is missing (`autowork tasks prepare` converts legacy planning or reports the next step). Services run from the Pi package installed from `git:github.com/TrebuchetDynamics/kit`; a service on another copy (a package under an older name) is moved onto it and restarted, and the others follow at their next restart |
+| `autowork start [dir]` | Safely select an existing local main branch when needed, then install (if needed) and start the repository's service. Requires a valid committed `tasks/` store on main/master, saying what is missing (`autowork tasks prepare` converts legacy planning or reports the next step). Services prefer the independent installed runner under the shared state root; legacy package installations are used only when that installation is absent |
 | `autowork stop [target]` | Stop the service; workers pause and resume on the same attempt. A deliberate stop is terminal: a restart will not revive the previous release or its push grant until `autowork start` |
 | `autowork restart [target] [--stop-workers [--now]]` | Reload in place; running workers keep running. `--stop-workers` waits for in-flight merges, then restarts the service and pauses workers; `--now` interrupts immediately instead |
 | `autowork pause` / `resume [target]` | Stop the service and keep it off, also after a reboot (disable), or start it again (enable); only a paused service is listed as `paused`, any other stopped one as `not running` |
@@ -388,7 +414,9 @@ execution; observed drift refuses publication. The named remote is retained so
 pre-push hooks receive their normal remote name. This is not an atomic URL pin:
 external concurrent Git configuration edits remain a standard Git race.
 Upstream session merges wait for reviews, resolvers and other session writers to
-release it. An upstream that conflicts with the session goes to the Pi merge resolver,
+release it. Only that merge waits: a fetch, and a push of a main that is not behind
+its upstream, run while reviews are in flight, so a queue that is never idle is
+still published. An upstream that conflicts with the session goes to the Pi merge resolver,
 once per upstream revision in a runner process, the same way a moved main does; the
 resolved merge passes the task-record checks before main takes it. An unresolved
 conflict is aborted and logged as `Upstream merge deferred`, and main stays
@@ -719,12 +747,19 @@ once to Active, Mergeable, Waiting, Blocker or Decision, whose sum is Total.
 Ordinary ready worker tasks are Waiting (`ready; awaiting dispatch`). Ready
 owner-only tasks are Blocker (`owner action required`), not a worker dispatch wait
 or another approval request. Ready coordinator-owned tasks are Waiting
-(`awaiting coordinator action`). Committed Needs decision takes precedence as
+(`awaiting coordinator action`) for two hours after the committer time of the last
+commit that changed their task file. The claim then expires: parallel admission
+and sequential fallback treat them as worker tasks without rewriting the record.
+Their ready wait becomes `coordinator claim expired; ready; awaiting dispatch`.
+This also applies to existing records. Unrelated commits and uncommitted edits do
+not renew the claim. Owner-only and live-authorization gates remain unchanged.
+Committed Needs decision takes precedence as
 Decision. Stopped dependency waits are Blocker. Uncommitted records and
 planning-branch records do not enlarge this inventory.
 
 Ownership comes from the committed record, even without runtime data. Compatible
-idle waiting text cannot replace an owner-action or coordinator reason. Compatible
+idle waiting text cannot replace an owner-action or coordinator-claim reason,
+including an expired claim's ready wait. Compatible
 in-flight evidence still supplies the runtime state under the identity guards below.
 An existing question adds context but is not required to show owner action.
 A saved yes records direction, not completed action or live authorization. These
@@ -857,6 +892,23 @@ past its execution budget reads `overdue` and `past timeout`; waiting does not
 consume that budget. New slot receipts carry the command's configured timeout;
 older receipts fall back to 3600 seconds. Each line names the checked revision;
 a check of an older revision also reads `superseded by main at REV`.
+On the next supervision cycle after main moves, the runner stops an obsolete
+check unless the checker reports **more than 80%** of its test modules complete.
+Exactly 80% does not qualify. The offline checker reports actual module
+completions through `AUTOWORK_MODULE_PROGRESS`, counting a split module only
+when all its shards finish; buffered log output is not a progress count.
+Commands without module progress can be stopped too. The existing process
+supervisor reaps the check and its descendants, including detached test processes,
+before the runner removes its scratch worktree and temporary directory and
+schedules the current head through normal admission. A stopped check publishes
+no verdict or regression and preserves the previous last-green and red state.
+A check allowed to finish records its result for its own revision; the current
+head is checked next. Jobs adopted from an older release without cleanup
+supervision finish normally rather than risk orphaned processes.
+`tests/runner/test_main_check.py` covers replacement below and at the cutoff,
+cleanup, preserved state and completion above the cutoff; `../tests/test_check.py`
+covers the checker's split-module count. These are offline fixtures, not an
+installed-service qualification.
 A green result reads `main check passed at REV` for that revision only. If HEAD
 has advanced, it reads `Last green: OLD · HEAD: NEW · verification pending`.
 These are read-only displays: rendering never signals, cancels or restarts a check.
@@ -1184,6 +1236,32 @@ mark main or its base green. Offline fixtures in `tests/test_check.py`,
 `tests/test_pi_autowork.py` and `pi-autowork/tests/test_main_check.py` cover selection,
 landing receipts and this full-main boundary; they do not establish live qualification.
 
+## Verified acceptance evidence
+
+A Verified close needs one recorded result for every acceptance item of the admitted
+contract. The worker report's `acceptance` list contains `item` (exact item text),
+`result` (`met`, `not_met` or `not_checked`) and `evidence` (the observed result and
+supporting proof). Integration refuses incomplete or duplicate coverage. Every item
+must be `met` with evidence, even when all checks pass. An empty `checks` list does
+not satisfy a contract that declares checks.
+
+A stopped or unreached verdict is `not_checked`. An item that needs a live or device
+check stays `not_checked` and retains its `pending_live` evidence. It cannot close
+Verified from offline results. These gaps leave the task open with an engineering
+hold that names the items, not an owner question. No done record or receipt is written.
+Reports from older in-flight attempts without the list are held with their candidate
+work and reports preserved, not discarded or silently accepted.
+
+The reviewer receives the list and must confirm each item and its proof. An
+unconfirmed `met` claim fails review. A successful close records the per-item results
+in the receipt. `model_review` distinguishes a passed model review from a skipped
+review or missing model-review evidence. The legacy `review` field remains the
+aggregate validation verdict, not proof that a model ran.
+Existing manual closure, historical receipt validation, live authority
+and goal-qualification rules do not change. See the
+[task-store close contract](task-store.md#integration-and-closure) for details and
+offline regression coverage.
+
 ## Passing batch prefixes
 
 After a batch's merged chain passes its existing gate, a contiguous passing prefix
@@ -1221,8 +1299,8 @@ are control-flow checks, not live-service qualification or a measured latency be
 
 ## Selective review pilot
 
-Model review remains on by default. `PI_AUTOWORK_REVIEW=auto` is an opt-in,
-conservative pilot: skip the model only for small **ordinary prose** changes whose
+`PI_AUTOWORK_REVIEW=auto` is the default. This conservative policy skips the
+model only for small **ordinary prose** changes whose
 committed task checks are already proved by a successful, source/log-bound gate.
 It does not skip the gate, change full-main checks, grant publication, or treat a
 timeout as a pass. Review findings about style, preferred abstractions, repetitive
@@ -1251,7 +1329,8 @@ command, with a complete successful
 result and no recorded skips; uncovered commands, affected-only selections,
 missing/legacy evidence and unknown inventory retain review. Optimistic landing
 without a pre-landing gate therefore still invokes the reviewer in `auto` mode.
-Unknown setting values also retain review. Explicit `PI_AUTOWORK_REVIEW=0` remains
+Unknown setting values also retain review. Explicit `PI_AUTOWORK_REVIEW=1` reviews
+every task. Explicit `PI_AUTOWORK_REVIEW=0` remains
 the broader operator opt-out; it is not the selective policy and is not recommended
 as a fleet-wide speed shortcut.
 
@@ -1263,14 +1342,14 @@ verdict is invalidated by tree, policy, mode or validation-command drift; it can
 reuse the broader docs/task drift allowance.
 A skip is a policy decision, not an independent model approval.
 
-For a pilot, record `autowork scorecard --days 7 <target>` before enabling `auto` in
-one repository's saved service settings and reloading at a safe point. After a
-week compare dispatch-to-integration time, repeated attempts, regressions and
-owner attention; inspect decision records to see how often review was actually
-skipped. Return to `PI_AUTOWORK_REVIEW=1` if quality worsens. Enabling this on a
-running service is a separate operator action; installing the code does not opt
-existing services in. Offline fixtures cover the policy and receipt boundaries,
-not live model compliance or a measured throughput improvement.
+Use `autowork scorecard --days 7 <target>` to compare dispatch-to-integration time,
+repeated attempts, regressions and owner attention; inspect decision records to see
+how often review was actually skipped. Set `PI_AUTOWORK_REVIEW=1` to require a model
+review for every task. Saved explicit service settings remain in effect; services
+with no explicit review setting use `auto` when they load this code. Reloading a
+running service is a separate operator action. Offline fixtures cover the default,
+policy and receipt boundaries, not live model compliance or a measured throughput
+improvement.
 
 ## Cost and owner attention
 

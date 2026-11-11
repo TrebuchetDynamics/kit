@@ -923,6 +923,95 @@ class MainCheckTests(unittest.TestCase):
                     for child in children:
                         child.wait(timeout=10)
 
+    def test_main_follows_head_unless_more_than_eighty_percent_complete(self):
+        from pi_autowork.coordinator import Coordinator
+
+        for completed in (7, 8, 9):
+            with self.subTest(completed=completed), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / 'repo'
+                repo.mkdir()
+                affected_check_fixture(repo)
+                old = git(repo, 'rev-parse', 'HEAD')
+                state = root / 'state'
+                state.mkdir()
+                release, ready = root / 'release', root / 'ready'
+                checker = root / 'checker.py'
+                checker.write_text(
+                    'import json, os, subprocess, time\nfrom pathlib import Path\n'
+                    'child = subprocess.Popen(["sleep", "60"], start_new_session=True)\n'
+                    f'Path(os.environ["AUTOWORK_MODULE_PROGRESS"]).write_text(json.dumps(dict(total=10, completed={completed})))\n'
+                    f'Path({str(ready)!r}).write_text(json.dumps([os.getpid(), child.pid]))\n'
+                    f'while not Path({str(release)!r}).exists(): time.sleep(.01)\n'
+                    'child.terminate()\nchild.wait()\n')
+                runner = Coordinator.__new__(Coordinator)
+                runner.state, runner.repo, runner.base, runner.stop = state, str(repo), 'HEAD', False
+                runner.job_environment = lambda **values: dict(os.environ, **values)
+                runner.main_check_port_lease = lambda: None
+                runner.check_main_wait = lambda record: False
+                runner.check_main_reuse_result = lambda *args: False
+
+                def scratch(purpose, rev):
+                    path = root / (f'pi-scratch-main-check-{rev}')
+                    git(repo, 'worktree', 'add', '--detach', str(path), rev)
+                    return str(path)
+
+                runner.scratch_checkout = scratch
+                previous = dict(state='red', green='last-green', failures=['existing.failure'],
+                                red_since='first-red', flaky_history={'flaky': ['revision']})
+                main_check.write(state, previous)
+
+                def until(predicate):
+                    deadline = time.monotonic() + 15
+                    while not predicate():
+                        self.assertLess(time.monotonic(), deadline, (state / 'main-check.log').read_text())
+                        time.sleep(.02)
+
+                cmd = f'{sys.executable} {checker}'
+                with patch.dict(os.environ, PI_AUTOWORK_MAIN_CHECK=cmd, PI_AUTOWORK_CHECK_SLOTS='0'):
+                    try:
+                        runner.check_main()
+                        until(ready.exists)
+                        original = main_check.read(state)
+                        processes = json.loads(ready.read_text())
+                        git(repo, 'commit', '--allow-empty', '-qm', 'main moved')
+                        head = git(repo, 'rev-parse', 'HEAD')
+                        runner.check_main()
+                        if completed > 8:
+                            self.assertEqual(main_check.read(state)['pid'], original['pid'])
+                            self.assertTrue(all(main_check.alive(pid) for pid in processes))
+                            release.touch()
+
+                        def replaced():
+                            runner.check_main()
+                            return main_check.read(state).get('rev') == head
+
+                        until(replaced)
+                        current = main_check.read(state)
+                        self.assertEqual(current['state'], 'running')
+                        self.assertIn(f'running on {head[:7]}', main_check.line(current))
+                        self.assertFalse(Path(original['path']).exists())
+                        self.assertNotIn(original['path'], git(repo, 'worktree', 'list', '--porcelain'))
+                        self.assertFalse(Path(original['tmp']).exists())
+                        self.assertTrue(all(not main_check.alive(pid) for pid in [original['pid'], *processes]))
+                        evidence = repo / '.git/autowork-execution/main-evidence' / old
+                        if completed > 8:
+                            self.assertEqual(current['green'], old)
+                            self.assertEqual(json.loads((evidence / 'main_check.json').read_text())['rev'], old)
+                        else:
+                            for key in ('green', 'failures', 'red_since', 'flaky_history'):
+                                self.assertEqual(current[key], previous[key])
+                            self.assertFalse(evidence.exists())
+                            self.assertFalse((state / 'main-check.exit').exists())
+                    finally:
+                        release.touch()
+                        record = main_check.read(state)
+                        if main_check.alive(record.get('pid'), record.get('start_time')):
+                            os.kill(record['pid'], signal.SIGTERM)
+                        until(lambda: not main_check.alive(record.get('pid'), record.get('start_time')))
+                        runner.check_main_reap(record)
+                        runner.finish_main_check(record)
+
     def test_a_live_check_flags_its_execution_timeout_but_not_slot_waiting(self):
         record = dict(state='running', rev='abcdef123', started=0,
                       pid=os.getpid(), start_time=main_check.start_time(os.getpid()))

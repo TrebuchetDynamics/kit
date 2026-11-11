@@ -526,6 +526,13 @@ def progress_summary(runner, view=None):
     if runner.gate:
         return 'Waiting for resources', fit_line(runner.gate, 120), 'Your action: inspect Details'
     if blocker or decision or runner.questions:
+        # Finished candidates in review, a check or the merge queue are work in flight: the
+        # summary said "No task executing" beside eight of them (2026-11-10).
+        flight = sum(row.kind == 'working' and row.task not in runner.display_deleted
+                     for row in (runner.snapshot.rows if runner.snapshot else ()))
+        if flight:
+            return ('Checking', f'{flight} finished candidate(s) in review, check or merge queue',
+                    'Your action: none for work in flight; other tasks need attention → Tasks')
         return 'Needs attention', 'No task executing · open Tasks for the exact cause', 'Your action: Tasks → select a blocked task'
     return 'Waiting', f'{waiting} waiting · {total} open tasks', 'Your action: Tasks → inspect dependencies or add work'
 

@@ -3,7 +3,7 @@ schema = 1
 id = "SPEED-004"
 title = "The default model-review setting is auto, and code and test changes keep their review"
 short = "Model review default is auto"
-status = "open"
+status = "done"
 section = "Next"
 rank = 28000
 depends_on = []
@@ -15,5 +15,8 @@ scope = "pi-autowork/src/pi_autowork/review_policy.py reads PI_AUTOWORK_REVIEW w
 acceptance = ["With PI_AUTOWORK_REVIEW unset, a prose-only fixture that meets the existing auto conditions skips the model review and a code or test fixture still requires it.", "Explicit `1` and `0` behave as before; existing review-policy tests pass with assertions unchanged except for the default.", "README and the service settings text name `auto` as the default."]
 checks = ["python3 scripts/check.py pi-autowork/tests/runner/test_review_policy.py", "python3 scripts/affected_tests.py --run --base <captured-task-base>", "python3 skills/docs-sync/scripts/docs.py check .", "autowork tasks validate ."]
 exclusions = ["No model calls, service start/stop/restart, installs, pushes or edits to another task's record.", "No weakened or deleted test; no change to owner-only gates, live authorization or receipt checks."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/SPEED-004.toml"
 +++
 - Sources: Owner decisions of 2026-11-10 (grilling rounds 1 and 2, accepted). Measure for every change: `autowork scorecard` accepted-to-delivered median and p95, baseline saved outside the repository on 2026-11-10.
+- Blocker resolution: 2026-11-10: the landing check failed in test_check.OfflineCheckTests.test_component_layout_preserves_baseline_inventory_and_partitions because the attempt renamed the baseline test test_the_default_reason_names_what_decides_it in pi-autowork/tests/runner/test_review_policy.py. tests/fixtures/python-layout.json lists baseline test names; a listed name must stay. Keep that method name, change only its body where the new default needs it, and add new tests under new names. Do not edit tests/fixtures/python-layout.json.

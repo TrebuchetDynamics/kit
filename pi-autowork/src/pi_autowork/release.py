@@ -258,13 +258,23 @@ def launch(component, script, argv):
         env['PI_AUTOWORK_SCRIPT'] = script
         os.execv(sys.executable, [sys.executable, str(Layout(Path(component).resolve().parent).entrypoint('cli')), *argv])
     bootstrap_settings(script, argv)
+    from pi_autowork import private_pi
+    state_root = private_pi.state_root(env)
+    env.update(private_pi.environment(state_root))
+    installed_release = state_root / 'installed'
+    if installed_release.is_dir() and (not env.get('PI_AUTOWORK_TOOLSET') or
+            (not env.get('PI_AUTOWORK_COMPONENT') and
+             Path(script).resolve() == installed_release / 'pi-autowork/bin/pi-autowork.sh')):
+        env['PI_AUTOWORK_TOOLSET'] = str(installed_release)
+        env['PI_AUTOWORK_PACKAGE'] = str(installed_release)
+        env['PI_AUTOWORK_PACKAGE_INSTALLED'] = '1'
     reselect = env.pop('PI_AUTOWORK_RESELECT', '')
     package = env.get('PI_AUTOWORK_PACKAGE') if reselect != 'auto' else None
     selected = package if reselect else env.get('PI_AUTOWORK_TOOLSET')
     revision = env.pop('PI_AUTOWORK_NEXT_REVISION', 'HEAD')
     if not package or reselect:
         try:
-            installed = installed_toolset(env.get('PI_BIN', 'pi'))
+            installed = installed_release if installed_release.is_dir() else installed_toolset(env.get('PI_BIN', 'pi'))
         except (OSError, subprocess.SubprocessError):
             installed = None
         fallback = Path(script).resolve().parent.parent
@@ -272,8 +282,8 @@ def launch(component, script, argv):
             fallback = Path(component).resolve().parent
         selected = Path(selected).resolve() if selected else installed or fallback
         env['PI_AUTOWORK_PACKAGE_INSTALLED'] = '1' if (
-            installed and selected == installed.resolve()
-            and package_source(env.get('PI_BIN', 'pi'), selected)) else '0'
+            selected == installed_release.resolve() or (installed and selected == installed.resolve()
+            and package_source(env.get('PI_BIN', 'pi'), selected))) else '0'
     selected = Path(selected).resolve()
     env['PI_AUTOWORK_PACKAGE'] = str(Path(package).resolve()) if package else str(selected)
     env['PI_AUTOWORK_SCRIPT'] = script  # stable launcher, never a prunable snapshot
