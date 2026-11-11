@@ -1115,17 +1115,9 @@ class FleetApp(App):
     CSS = '''
     Header { background: $panel; }
     #workspace-body { height: 1fr; layout: vertical; }
-    #project-context { height: auto; }
-    #work-context { height: 1fr; }
+    #project-context { width: 100%; height: auto; }
+    #work-context { width: 100%; height: 1fr; }
     #nav-footer { dock: bottom; height: 1; background: $panel; color: $text-muted; }
-    .wide #workspace-body { layout: horizontal; }
-    .wide #project-context { width: 42; height: 1fr; padding-right: 1; }
-    .wide #work-context { width: 1fr; height: 1fr; }
-    .wide #runners, .wide #lanes, .wide #log { border: round $border; }
-    .wide #runners:focus, .wide #lanes:focus, .wide #log:focus { border: round $accent; }
-    .wide #runners, .wide #lanes { min-height: 4; max-height: 35%; }
-    .wide #overview { max-height: 16; }
-    .wide #detail-scroll { height: 1fr; min-height: 6; }
 
     #modelbar { height: 1; padding: 0 1; background: $surface; }
     #empty-state { display: none; height: 1fr; align-horizontal: center; align-vertical: middle; }
@@ -1241,7 +1233,7 @@ class FleetApp(App):
         yield Static(id='modelbar')
         with Vertical(id='empty-state'):
             yield Static(id='empty-card', markup=False)
-        with Horizontal(id='workspace-body'):
+        with Vertical(id='workspace-body'):
             with Vertical(id='project-context'):
                 yield DataTable(id='runners', cursor_type='row', zebra_stripes=True)
                 yield Static(id='overview')
@@ -1252,13 +1244,12 @@ class FleetApp(App):
                 yield RichLog(id='log', wrap=True, highlight=False, markup=False)
         yield MenuBar(id='nav-footer')
 
-    # One short project list at every width. Full counts and source observations
-    # remain in the selected summary and scrollable Details.
+    # Restore the full-width fleet table; compact terminals keep the count summary.
     # Every open task is in one count bucket. Decision is Needs-decision membership,
     # not necessarily an unanswered owner question.
-    RUNNER_COLUMNS = ('Project', 'Status', 'Tasks')
-    RUNNER_TEXT = ()
-    LANE_COLUMNS = ('Task', 'Status')
+    RUNNER_COLUMNS = ('Runner', 'State', 'Active', 'Mergeable', 'Waiting', 'Blocker', 'Decision', 'Total')
+    RUNNER_TEXT = ('Needs', 'Now')
+    LANE_COLUMNS = ('Task', 'Status', 'Try', 'For', 'Quiet')
     LANE_TEXT = ('Doing',)
     STATUS_STYLE = {fleet_view.ACTIVE: 'bold green', fleet_view.MERGEABLE: 'bold cyan',
                     fleet_view.WAITING: 'bold yellow', fleet_view.BLOCKER: 'bold red'}
@@ -1379,7 +1370,6 @@ class FleetApp(App):
 
     def on_resize(self, event):
         self.screen_stack[0].set_class(event.size.height < 22, 'short')
-        self.screen_stack[0].set_class(event.size.width >= 130 and event.size.height >= 26, 'wide')
         self._shown = {}  # the columns fit the new width
         if self.query_one('#runners', DataTable).columns:  # the first resize comes before on_mount
             # App.size may still be the previous viewport during the resize event.
@@ -1402,8 +1392,7 @@ class FleetApp(App):
         named goes first when fewer than ``minimum`` columns would be left for each. Redrawn only
         when something changed, since a clear-and-rewrite every refresh made the panes flicker."""
         limits = limits or {}
-        budget = budget or ((42 if table.id == 'runners' else self.size.width - 42)
-                  if self.screen_stack[0].has_class('wide') and table.id in ('runners', 'lanes') else self.size.width)
+        budget = budget or self.size.width
         width = lambda column: min(limits.get(column, self.size.width),
                                    max([cell_len(column), *(cell_len(row[column][0]) for row in rows)])) + 2
         left = budget - sum(width(c) for c in fixed) - 4  # border and scrollbar
@@ -1511,15 +1500,16 @@ class FleetApp(App):
         for selector in ('#runners', '#overview', '#lanes', '#log'):
             self.query_one(selector).display = not welcome
         keep = self.selected
-        # Keep the overview readable at every width; diagnostics live in Details.
-        rows = [{'_key': row['Runner'][0], 'Project': row['Runner'],
-                 'Status': self.execution_state(runner), 'Tasks': row['Total']}
-                for runner, row in zip(self.runners, fleet_view.runner_rows(self.runners))]
-        total_width = max([len('Tasks'), *(cell_len(row['Tasks'][0]) for row in rows)])
-        wide = self.screen_stack[0].has_class('wide')
-        name_room = 12 if wide else min(40, max(8, self.size.width - 20 - total_width - 10))
-        self.fill(table, rows, self.RUNNER_COLUMNS, (),
-                  limits={'Project': name_room, 'Status': 15 if wide else 24})
+        compact = self.size.width < 120
+        rows = fleet_view.runner_rows(self.runners)
+        for runner, row in zip(self.runners, rows):
+            row['State'] = self.execution_state(runner)
+        total_width = max([len('Total'), *(cell_len(row['Total'][0]) for row in rows)])
+        name_room = min(32, max(8, self.size.width - 20 - total_width - 10))
+        self.fill(table, rows,
+                  ('Runner', 'State', 'Total') if compact else self.RUNNER_COLUMNS,
+                  () if compact else self.RUNNER_TEXT,
+                  limits={'Runner': name_room, 'State': 20})
         names = [r.name for r in self.runners]
         if names:
             row = names.index(keep) if keep in names else 0
@@ -1634,7 +1624,7 @@ class FleetApp(App):
         view = fleet_view.presentation(runner)
         text = Text()
         def line(value, style=''):
-            text.append((value if self.screen_stack[0].has_class('wide') else self.fit(value, max(1, self.size.width - 2))) + '\n', style)
+            text.append(self.fit(value, max(1, self.size.width - 2)) + '\n', style)
         label, style = self.execution_state(runner, view)
         context = f' · Next: {self.next_hint(runner)}' if self.size.height < 22 else f' · service {runner.service or "not observed"}'
         phase, evidence, intervention = fleet_view.progress_summary(runner, view)
@@ -1669,10 +1659,6 @@ class FleetApp(App):
             line('Main: ' + check if check else 'Main: no check result observed',
                  'bold red' if runner.main_check.get('state') in ('red', 'broken') else '')
             line('Publish: ' + ('automatic push enabled' if runner.push else 'local only · automatic push disabled'), 'dim')
-            if self.screen_stack[0].has_class('wide'):
-                line('Next: ' + self.next_hint(runner), 'cyan')
-                if view.error_count or view.source_note_count or view.inventory_freshness != 'fresh' or view.execution_freshness != 'fresh':
-                    line(diagnostics + ' · ' + provenance, 'yellow' if view.error_count else 'dim')
         text.rstrip()
         publish_text(self.query_one('#overview', Static), text)
 
@@ -1698,8 +1684,7 @@ class FleetApp(App):
         self.query_one('#modelbar').display = not welcome.display
         self.query_one('#workspace-body').display = not welcome.display
         self.query_one('#nav-footer').display = not welcome.display
-        wide = self.screen_stack[0].has_class('wide')
-        self.query_one('#overview').display = not welcome.display and (not self.details_open or wide)
+        self.query_one('#overview').display = not welcome.display and not self.details_open
         self.query_one('#detail-scroll').display = self.details_open and runner is not None
         self.query_one('#log').display = not welcome.display and not self.details_open
         self.show_overview(runner)
@@ -1855,7 +1840,7 @@ class FleetApp(App):
         self._lane_targets = targets
         table.border_title = (f'2 · Current work · {len(runner.lanes)} observed · Enter log' if runner.lanes
                               else '2 · Current work · no workers observed')
-        budget = self.size.width - 42 if self.screen_stack[0].has_class('wide') else self.size.width
+        budget = self.size.width
         compact = budget < 120
         for row in rows:
             status, style = row['Status']
