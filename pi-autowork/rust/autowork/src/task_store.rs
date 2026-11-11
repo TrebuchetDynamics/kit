@@ -46,6 +46,10 @@ pub struct Record {
     fields: toml::Table,
 }
 impl Record {
+    /// Exact typed frontmatter, without authoring defaults or normalization.
+    pub fn fields(&self) -> &toml::Table {
+        &self.fields
+    }
     pub fn field(&self, key: &str) -> Option<&toml::Value> {
         self.fields.get(key)
     }
@@ -115,7 +119,7 @@ pub struct Snapshot {
     tasks: BTreeMap<String, Record>,
     goals: BTreeMap<String, Record>,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Reason {
     pub code: String,
     pub detail: String,
@@ -170,13 +174,19 @@ pub(crate) fn git_command(repo: &Path, args: &[&str], index: Option<&Path>) -> C
     }
     command
 }
+// Only the journaled commit invocation may execute ordinary Git hooks.
+fn git_plumbing_command(repo: &Path, args: &[&str], index: Option<&Path>) -> Command {
+    let mut command = git_command(repo, &[], index);
+    command.args(["-c", "core.hooksPath=/dev/null"]).args(args);
+    command
+}
 pub(crate) fn git_env(
     repo: &Path,
     args: &[&str],
     input: &[u8],
     index: Option<&Path>,
 ) -> Result<Vec<u8>> {
-    run(git_command(repo, args, index), input)
+    run(git_plumbing_command(repo, args, index), input)
 }
 fn git(repo: &Path, args: &[&str]) -> Result<Vec<u8>> {
     git_env(repo, args, &[], None)
@@ -834,26 +844,70 @@ impl Snapshot {
                 selected.push(task);
             }
         }
-        selected.sort_by_key(|t| {
-            let g = self.goals.get(t.string("goal"));
-            (
-                !g.is_some_and(Record::focus),
-                if t.string("section") == "Now" { 0 } else { 1 },
-                t.number("rank"),
-                g.map_or(100, |g| g.number("priority")),
-                match g.map_or("unmet", |g| g.string("status")) {
-                    "unverified" => 0,
-                    "partial" => 1,
-                    "unmet" => 2,
-                    _ => 3,
-                },
-                &t.id,
-            )
-        });
+        selected.sort_by_key(|t| self.selection_key(t));
         Ok(Selection {
             task_ids: selected.into_iter().map(|t| t.id.clone()).collect(),
             blocked,
         })
+    }
+    fn selection_key<'a>(&self, task: &'a Record) -> (bool, i64, i64, i64, i64, &'a str) {
+        let goal = self.goals.get(task.string("goal"));
+        (
+            !goal.is_some_and(Record::focus),
+            if task.string("section") == "Now" {
+                0
+            } else {
+                1
+            },
+            task.number("rank"),
+            goal.map_or(100, |g| g.number("priority")),
+            match goal.map_or("unmet", |g| g.string("status")) {
+                "unverified" => 0,
+                "partial" => 1,
+                "unmet" => 2,
+                _ => 3,
+            },
+            &task.id,
+        )
+    }
+    /// Explain an order already evaluated once for this snapshot and local date.
+    pub fn selection_reasons(&self, selection: &Selection, id: &str) -> Vec<Reason> {
+        if let Some(reason) = selection.blocked.get(id) {
+            return vec![reason.clone()];
+        }
+        let Some(position) = selection.task_ids.iter().position(|t| t == id) else {
+            return vec![Reason {
+                code: "UNKNOWN_TASK".into(),
+                detail: id.into(),
+            }];
+        };
+        let mut reasons = vec![Reason {
+            code: "POSITION".into(),
+            detail: (position + 1).to_string(),
+        }];
+        if position > 0 {
+            let ahead = &self.tasks[&selection.task_ids[position - 1]];
+            let a = self.selection_key(ahead);
+            let b = self.selection_key(&self.tasks[id]);
+            let rule = if a.0 != b.0 {
+                "FOCUS"
+            } else if a.1 != b.1 {
+                "SECTION"
+            } else if a.2 != b.2 {
+                "RANK"
+            } else if a.3 != b.3 {
+                "GOAL_PRIORITY"
+            } else if a.4 != b.4 {
+                "GOAL_STATUS"
+            } else {
+                "TASK_ID"
+            };
+            reasons.push(Reason {
+                code: format!("AFTER_{rule}"),
+                detail: ahead.id.clone(),
+            });
+        }
+        reasons
     }
     fn blocking(&self, task: &Record, today: &str) -> Option<Reason> {
         let reason = |code: &str, detail: &str| {
@@ -946,6 +1000,34 @@ pub struct PendingSnapshot {
 #[derive(Clone, Debug)]
 pub struct CommittedRevision(pub String);
 
+/// Inspection only: the temporary tree is not a selectable or durable revision.
+#[derive(Debug, Serialize)]
+pub struct PendingPreview {
+    pub state: &'static str,
+    pub base_head: String,
+    pub branch: String,
+    pub tree: String,
+    pub token: Option<String>,
+    pub files: Vec<String>,
+    pub diff: String,
+}
+
+impl PendingSnapshot {
+    pub(crate) fn computed_token(&self) -> Result<String> {
+        json_hash(
+            &serde_json::json!({"base_head":self.base_head,"branch":self.branch,
+            "tree":self.tree,"captured_bytes":self.captured_bytes}),
+        )
+    }
+}
+
+pub fn valid_publication_token(token: &str) -> bool {
+    token.len() == 64
+        && token
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 pub struct TaskService {
     repo: PathBuf,
 }
@@ -1004,18 +1086,26 @@ impl TaskService {
     }
     /// Read exact current bytes under the task lock; apply rechecks the same digest.
     pub fn record_for_edit(&self, id: &str, expected_digest: &str) -> Result<Vec<u8>> {
-        if id.is_empty()
-            || !id
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        {
-            return refuse("invalid task ID");
+        self.record_in_for_edit("items", id, expected_digest)
+    }
+    /// Goal metadata edits use current working bytes, never a committed reconstruction.
+    pub fn goal_record_for_edit(&self, id: &str, expected_digest: &str) -> Result<Vec<u8>> {
+        self.record_in_for_edit("goals", id, expected_digest)
+    }
+    fn record_in_for_edit(
+        &self,
+        directory: &str,
+        id: &str,
+        expected_digest: &str,
+    ) -> Result<Vec<u8>> {
+        if !valid_id(id) {
+            return refuse("invalid record ID");
         }
         let _lock = self.lock()?;
         let records = self.working_records()?;
         let bytes = records
-            .get(&format!("tasks/items/{id}.md"))
-            .ok_or_else(|| StoreError("unknown task".into()))?;
+            .get(&format!("tasks/{directory}/{id}.md"))
+            .ok_or_else(|| StoreError("unknown record".into()))?;
         if digest(bytes)? != expected_digest {
             return refuse("stale expected record revision");
         }
@@ -1115,7 +1205,88 @@ impl TaskService {
         let lock = self.lock()?;
         self.capture_locked(&lock)
     }
+    /// Build the same snapshot identity without adding objects to the repository.
+    pub fn preview_pending(&self) -> Result<PendingPreview> {
+        let lock = self.lock()?;
+        let scratch = Scratch::new()?;
+        let objects = scratch.0.join("objects");
+        fs::create_dir_all(objects.join("info"))?;
+        let alternate = git_text(
+            &self.repo,
+            &[
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-path",
+                "objects",
+            ],
+        )?;
+        fs::write(objects.join("info/alternates"), format!("{alternate:?}\n"))?;
+        let pending = self.capture_objects_locked(&lock, Some(&objects))?;
+        let run = |args: &[&str]| {
+            let mut command = git_plumbing_command(&self.repo, args, None);
+            command.env("GIT_OBJECT_DIRECTORY", &objects);
+            run(command, &[])
+        };
+        let names = run(&[
+            "diff",
+            "--name-only",
+            "--no-renames",
+            "-z",
+            &pending.base_head,
+            &pending.tree,
+            "--",
+        ])?;
+        let mut files = names
+            .split(|b| *b == 0)
+            .filter(|p| !p.is_empty())
+            .map(|p| String::from_utf8(p.to_vec()).map_err(|e| StoreError(e.to_string())))
+            .collect::<Result<Vec<_>>>()?;
+        files.sort();
+        let diff = run(&[
+            "diff",
+            "--binary",
+            "--full-index",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-renames",
+            "--no-color",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            &pending.base_head,
+            &pending.tree,
+            "--",
+        ])?;
+        if diff.len() > 256 * 1024 {
+            return refuse("pending publication diff exceeds 256 KiB; not truncated");
+        }
+        if git_text(&self.repo, &["rev-parse", "HEAD"])? != pending.base_head
+            || git_text(&self.repo, &["symbolic-ref", "--quiet", "HEAD"])? != pending.branch
+            || self.working_records()? != pending.captured_bytes
+        {
+            return refuse("preview inputs changed; retry");
+        }
+        Ok(PendingPreview {
+            state: if files.is_empty() {
+                "clean"
+            } else {
+                "pending_commit"
+            },
+            base_head: pending.base_head,
+            branch: pending.branch,
+            tree: pending.tree,
+            token: (!files.is_empty()).then_some(pending.token),
+            files,
+            diff: text(diff)?,
+        })
+    }
     pub(crate) fn capture_locked(&self, lock: &TaskLock) -> Result<PendingSnapshot> {
+        self.capture_objects_locked(lock, None)
+    }
+    fn capture_objects_locked(
+        &self,
+        lock: &TaskLock,
+        objects: Option<&Path>,
+    ) -> Result<PendingSnapshot> {
         if lock
             .git_dir
             .join("autowork-rust-tasks.transaction")
@@ -1130,32 +1301,28 @@ impl TaskService {
         snapshot(&self.repo, &base_head, captured_bytes.clone(), &evidence)?;
         let scratch = Scratch::new()?;
         let index = scratch.0.join("index");
-        git_env(&self.repo, &["read-tree", &base_head], &[], Some(&index))?;
+        let capture_git = |args: &[&str], input: &[u8]| {
+            let mut command = git_plumbing_command(&self.repo, args, Some(&index));
+            if let Some(objects) = objects {
+                command.env("GIT_OBJECT_DIRECTORY", objects);
+            }
+            run(command, input)
+        };
+        capture_git(&["read-tree", &base_head], &[])?;
         for path in base_records
             .keys()
             .filter(|p| !captured_bytes.contains_key(*p))
         {
-            git_env(
-                &self.repo,
-                &["update-index", "--force-remove", "--", path],
-                &[],
-                Some(&index),
-            )?;
+            capture_git(&["update-index", "--force-remove", "--", path], &[])?;
         }
         for (path, bytes) in &captured_bytes {
             if base_records.get(path) == Some(bytes) {
                 continue;
             }
-            let oid = text(git_env(
-                &self.repo,
-                &["hash-object", "-w", "--stdin"],
-                bytes,
-                None,
-            )?)?;
+            let oid = text(capture_git(&["hash-object", "-w", "--stdin"], bytes)?)?;
             let entry = git_text(&self.repo, &["ls-tree", &base_head, "--", path])?;
             let mode = entry.split_whitespace().next().unwrap_or("100644");
-            git_env(
-                &self.repo,
+            capture_git(
                 &[
                     "update-index",
                     "--add",
@@ -1163,28 +1330,24 @@ impl TaskService {
                     &format!("{mode},{},{}", oid.trim(), path),
                 ],
                 &[],
-                Some(&index),
             )?;
         }
-        let tree = text(git_env(&self.repo, &["write-tree"], &[], Some(&index))?)?
-            .trim()
-            .to_owned();
+        let tree = text(capture_git(&["write-tree"], &[])?)?.trim().to_owned();
         if git_text(&self.repo, &["rev-parse", "HEAD"])? != base_head
             || git_text(&self.repo, &["symbolic-ref", "--quiet", "HEAD"])? != branch
             || self.working_records()? != captured_bytes
         {
             return refuse("capture inputs changed; retry");
         }
-        let token = json_hash(
-            &serde_json::json!({"base_head":base_head,"branch":branch,"tree":tree,"captured_bytes":captured_bytes}),
-        )?;
-        Ok(PendingSnapshot {
+        let mut pending = PendingSnapshot {
             base_head,
             branch,
             tree,
             captured_bytes,
-            token,
-        })
+            token: String::new(),
+        };
+        pending.token = pending.computed_token()?;
+        Ok(pending)
     }
     fn working_records(&self) -> Result<BTreeMap<String, Vec<u8>>> {
         let mut records = BTreeMap::new();

@@ -2989,45 +2989,86 @@ fcntl.flock = observed_flock
     def test_ten_empty_intervals_keep_one_session_and_release_its_lease(self):
         self.write_todo(todo([]))
         self.git(self.repo, 'commit', '-qam', 'nothing queued')
-        runner = self.start_runner('--interval', '1')
         log = lambda: ''.join(p.read_text() for p in self.state.glob('*/runner.log'))
-        deadline = time.monotonic() + 90
+        common = Path(self.git(self.repo, 'rev-parse', '--absolute-git-dir'))
+        journal = common / 'autowork-execution/journal.jsonl'
+        identity, output_path = self.root / 'runner-process.json', self.root / 'runner-output'
+        started, stages = time.monotonic(), {}
 
-        def wait_for_intervals(count):
-            while log().count('Queue empty; checking again') < count:
-                self.assertLess(time.monotonic(), deadline, log())
-                self.assertIsNone(runner.poll(), log())
-                time.sleep(0.05)
+        def lease_events():
+            # The writer appends JSONL: a concurrently written trailing line is not a milestone.
+            lines = journal.read_text().splitlines(keepends=True) if journal.exists() else []
+            return [e['event'] for line in lines if line.endswith('\n')
+                    and (e := json.loads(line))['event'].startswith('coordinator_')]
 
-        try:
-            wait_for_intervals(1)
-            sessions = list(self.state.glob('*/session.json'))
-            self.assertEqual(len(sessions), 1, log())
-            session_file = sessions[0]
-            session = json.loads(session_file.read_text())
-            path = Path(session['path'])
-            admin = Path(self.git(path, 'rev-parse', '--absolute-git-dir'))
-            # Not the index: any `git status` may refresh its stat data (racily clean entries), which
-            # depends on the host's timing; HEAD, its log and the session file show a recreated session.
-            unchanged = [admin / 'HEAD', admin / 'logs/HEAD', session_file]
-            stamps = [p.stat().st_mtime_ns for p in unchanged]
-            wait_for_intervals(10)
-            self.assertEqual(json.loads(session_file.read_text()), session)
-            self.assertEqual([p.stat().st_mtime_ns for p in unchanged], stamps)
-            self.assertEqual(log().count(' started from main'), 1, log())
-            common = Path(self.git(self.repo, 'rev-parse', '--absolute-git-dir'))
-            journal = [json.loads(l) for l in (common / 'autowork-execution/journal.jsonl').read_text().splitlines()]
-            lease_events = [e['event'] for e in journal if e['event'].startswith('coordinator_')]
-            self.assertEqual(lease_events[:20], ['coordinator_claimed', 'coordinator_released'] * 10)
-            # Continuous idle runs search once, not once per interval. Discovery has
-            # settled before releasing the lease and must not become a code worker.
-            self.assertEqual([r['role'] for r in self.runs()], ['maintainer'])
-            self.assertTrue(self.runs()[0]['message'].startswith('You are discovering independent maintenance work'))
-        finally:
-            if runner.poll() is None:
-                runner.send_signal(signal.SIGINT)
-            out, err = runner.communicate(timeout=60)
-        self.assertEqual(runner.returncode, 130, out + err)
+        # Reuse the guard to reap even setsid fake children on assertion failure.
+        # File output cannot block the runner while the observer is descheduled.
+        with output_path.open('w') as output:
+            guard = subprocess.Popen(
+                [sys.executable, str(ROOT / 'pi-autowork/pi_autowork/pi_process.py'),
+                 '--identity', str(identity), '--deadline', str(90 + 9 * 30 + 60), '--',
+                 'bash', str(RUNNER), '--interval', '1'],
+                cwd=self.repo, env=self.env, stdout=output, stderr=subprocess.STDOUT)
+            runner_fd = None
+
+            def wait_for_interval(count, timeout=30):
+                # Historical suite load completed eight cycles in 90 s, with 5–16 s gaps.
+                # Bound startup separately, then each real idle/released-lease milestone.
+                deadline = time.monotonic() + timeout
+                while True:
+                    text, events = log(), lease_events()
+                    details = (f'interval {count}; stages={stages}; leases={events}; load={os.getloadavg()}\n'
+                               f'{text}\n{output_path.read_text()}')
+                    self.assertIsNone(guard.poll(), details)
+                    if (text.count('Queue empty; checking again') >= count
+                            and events[:2 * count] == ['coordinator_claimed', 'coordinator_released'] * count):
+                        stages[count] = round(time.monotonic() - started, 3)
+                        return
+                    self.assertLess(time.monotonic(), deadline, details)
+                    time.sleep(0.05)
+
+            try:
+                wait_for_interval(1, timeout=90)
+                owned = json.loads(identity.read_text())
+                runner_fd = os.pidfd_open(owned['pi_pid'])
+                ticks = Path(f'/proc/{owned["pi_pid"]}/stat').read_text().rsplit(')', 1)[1].split()[19]
+                self.assertEqual(owned['pi_start_time'], ticks)
+                sessions = list(self.state.glob('*/session.json'))
+                self.assertEqual(len(sessions), 1, log())
+                session_file = sessions[0]
+                session = json.loads(session_file.read_text())
+                path = Path(session['path'])
+                admin = Path(self.git(path, 'rev-parse', '--absolute-git-dir'))
+                # Not the index: `git status` may refresh racily clean stat data.
+                unchanged = [admin / 'HEAD', admin / 'logs/HEAD', session_file]
+                stamps = [p.stat().st_mtime_ns for p in unchanged]
+                for count in range(2, 11):
+                    wait_for_interval(count)
+                self.assertEqual(json.loads(session_file.read_text()), session)
+                self.assertEqual([p.stat().st_mtime_ns for p in unchanged], stamps)
+                self.assertEqual(log().count(' started from main'), 1, log())
+                self.assertEqual(lease_events()[:20], ['coordinator_claimed', 'coordinator_released'] * 10)
+                # Discovery settles before release and must not become a code worker.
+                self.assertEqual([r['role'] for r in self.runs()], ['maintainer'])
+                self.assertTrue(self.runs()[0]['message'].startswith('You are discovering independent maintenance work'))
+                signal.pidfd_send_signal(runner_fd, signal.SIGINT)
+                guard.wait(timeout=60)
+                self.assertEqual(guard.returncode, 130, output_path.read_text())
+            finally:
+                if runner_fd is not None:
+                    os.close(runner_fd)
+                if guard.poll() is None:
+                    guard.terminate()
+                try:
+                    guard.wait(timeout=10)
+                finally:
+                    if guard.poll() is None:
+                        guard.kill()
+                        guard.wait()
+                print(f'IDLE_STAGES {stages}; load={os.getloadavg()}; '
+                      f'python={sys.executable} {sys.version}', flush=True)
+                self.assertTrue(identity.is_file(), output_path.read_text())
+                self.assertTrue(json.loads(identity.read_text())['cleanup_complete'], output_path.read_text())
         self.assertFalse(path.exists())
         self.assertFalse(session_file.exists())
         self.assertEqual(self.branches(), ['main'])
@@ -4307,8 +4348,7 @@ class SetupTests(Fixture):
         self.assertIn(f'Toolset:    {selected} at ', result.stdout)
 
     def installed_package(self):
-        """A disposable autowork Pi package whose local origin holds one newer,
-        compatible release, so the update check passes and `pi update` applies."""
+        """A disposable installed Pi package with a local origin, ready for publish()."""
         package = self.root / 'pi-package'
         for part in ('skills', 'adapters', 'scripts', 'pi-autowork'):
             shutil.copytree(ROOT / part, package / part, ignore=shutil.ignore_patterns('__pycache__'))
@@ -4320,9 +4360,13 @@ class SetupTests(Fixture):
         self.origin = self.root / 'origin.git'
         self.git(self.root, 'clone', '-q', '--bare', str(package), str(self.origin))
         self.git(package, 'remote', 'add', 'origin', str(self.origin))
-        self.publish(lambda tree: (tree / 'RELEASE').write_text('2\n'), 'release 2')
-        self.env.update(FAKE_PI_TOOLSET=str(package), PI_AUTOWORK_UPDATE_INTERVAL='1',
-                        FAKE_PI_SOURCE='git:github.com/TrebuchetDynamics/kit')
+        # Discovery must not inherit a parent's checkout override or immutable release pin.
+        for key in ('PI_AUTOWORK_TOOLSET', 'PI_AUTOWORK_PACKAGE', 'PI_AUTOWORK_PACKAGE_INSTALLED',
+                    'PI_AUTOWORK_COMPONENT', 'PI_AUTOWORK_SCRIPT', 'PI_AUTOWORK_RESELECT',
+                    'PI_AUTOWORK_NEXT_REVISION', 'FAKE_PI_LIST', 'FAKE_PI_UPDATE'):
+            self.env.pop(key, None)
+        self.env.update(PI_BIN=str(self.bin / 'pi'), FAKE_PI_TOOLSET=str(package),
+                        PI_AUTOWORK_UPDATE_INTERVAL='1', FAKE_PI_SOURCE='git:github.com/TrebuchetDynamics/kit')
         return package
 
     def publish(self, change, message):
@@ -4334,41 +4378,142 @@ class SetupTests(Fixture):
         self.git(tree, 'commit', '-qm', message)
         self.git(tree, 'push', '-q', 'origin', 'HEAD:main')
 
+    def hold_update(self):
+        """Keep fake Pi at a checkpoint before it installs the real fetched candidate."""
+        fake = self.bin / 'pi'
+        fake.write_text(fake.read_text().replace("    note({'update': args[1:]})",
+            "    note({'update': args[1:]})\n"
+            "    open(os.environ['FAKE_PI_ROOT'] + '/update-ready', 'w').close()\n"
+            "    while not os.path.exists(os.environ['FAKE_PI_ROOT'] + '/release-update'): time.sleep(0.05)"))
+
     def run_until(self, script, text, timeout=60):
-        runner = subprocess.Popen(['bash', str(script), '--interval', '1'], cwd=self.repo, env=self.env,
-                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        self.addCleanup(lambda: runner.poll() is None and runner.kill())
-        deadline = time.monotonic() + timeout
-        while not any(text in p.read_text() for p in self.state.glob('*/runner.log')):
-            if time.monotonic() > deadline or runner.poll() is not None:
-                runner.kill()
-                self.fail(f'{text!r} never logged: {runner.communicate()[0][-2000:]}')
-            time.sleep(0.2)
+        self.update_output = self.root / 'update-output'
+        self.update_identity = self.root / 'update-process.json'
+        self.update_started = time.monotonic()
+        # Reuse the subreaper used by the idle fixture; file output cannot fill an undrained pipe.
+        with self.update_output.open('w') as output:
+            runner = subprocess.Popen(
+                [sys.executable, str(ROOT / 'pi-autowork/pi_autowork/pi_process.py'),
+                 '--identity', str(self.update_identity), '--deadline', '600', '--',
+                 'bash', str(script), '--interval', '1'], cwd=self.repo, env=self.env,
+                stdout=output, stderr=subprocess.STDOUT)
+        self.addCleanup(self.reap_update_runner, runner)
+        self.observe_update(runner, lambda log: text in log, repr(text), timeout)
         return runner
 
+    def reap_update_runner(self, runner):
+        if runner.poll() is None:
+            runner.terminate()
+        try:
+            runner.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            runner.kill()
+            runner.wait()
+        self.assertTrue(self.update_identity.is_file(), self.update_output.read_text()[-2000:])
+        self.assertTrue(json.loads(self.update_identity.read_text())['cleanup_complete'],
+                        self.update_output.read_text()[-2000:])
+
+    def observe_update(self, runner, ready, description, timeout=60):
+        deadline = time.monotonic() + timeout
+        while True:
+            log = ''.join(p.read_text() for p in self.state.glob('*/runner.log'))
+            if ready(log):
+                self.assertIsNone(runner.poll(), log)
+                return log
+            if time.monotonic() > deadline or runner.poll() is not None:
+                diagnostics = ''.join(f'--- {p.relative_to(self.root)} ---\n{p.read_text()[-2000:]}\n'
+                                      for pattern in ('*/engine.err', '*/maintenance-update.json')
+                                      for p in self.state.glob(pattern))
+                if self.update_identity.exists():
+                    pid = json.loads(self.update_identity.read_text()).get('pi_pid')
+                    try:
+                        env = Path(f'/proc/{pid}/environ').read_bytes().split(b'\0')
+                        diagnostics += repr([e for e in env if e.startswith(
+                            (b'PI_AUTOWORK_PACKAGE', b'PI_BIN=', b'FAKE_PI_', b'PI_AUTOWORK_UPDATE_INTERVAL='))])
+                    except OSError:
+                        pass
+                self.retain_evidence()
+                self.fail(f'{description} never observed after {time.monotonic() - self.update_started:.3f}s; '
+                          f'guard={runner.poll()}; load={os.getloadavg()}\n'
+                          f'--- runner.log ---\n{log[-4000:]}\n{diagnostics}\n'
+                          f'--- output ---\n{self.update_output.read_text()[-4000:]}')
+            time.sleep(0.05)
+
+    def interrupt_update_runner(self, runner):
+        owned = json.loads(self.update_identity.read_text())
+        fd = os.pidfd_open(owned['pi_pid'])
+        try:
+            ticks = Path(f'/proc/{owned["pi_pid"]}/stat').read_text().rsplit(')', 1)[1].split()[19]
+            self.assertEqual(owned['pi_start_time'], ticks)
+            signal.pidfd_send_signal(fd, signal.SIGINT)
+        finally:
+            os.close(fd)
+        runner.wait(timeout=60)
+        return self.update_output.read_text()
+
     def test_an_idle_runner_updates_its_toolset_and_restarts_on_the_new_code(self):
+        started, stages = time.monotonic(), {}
+        # Deterministic isolation regression: inherited pins must not bypass package discovery.
+        self.env.update(PI_BIN='/bin/false', FAKE_PI_LIST='User packages:\n',
+                        PI_AUTOWORK_TOOLSET=str(ROOT), PI_AUTOWORK_PACKAGE=str(ROOT),
+                        PI_AUTOWORK_PACKAGE_INSTALLED='0', PI_AUTOWORK_COMPONENT=str(ROOT / 'pi-autowork'),
+                        PI_AUTOWORK_SCRIPT=str(RUNNER), PI_AUTOWORK_RESELECT='1',
+                        PI_AUTOWORK_NEXT_REVISION='not-a-revision')
         package = self.installed_package()
         before = self.git(package, 'rev-parse', '--short', 'HEAD')
-        runner = self.run_until(package / 'pi-autowork/bin/pi-autowork.sh', 'restarting on it')
-        deadline = time.monotonic() + 30
-        while next(self.state.glob('*/runner.log')).read_text().count('Started (PID') < 2:
-            self.assertLess(time.monotonic(), deadline, 'the runner did not start again')
-            time.sleep(0.2)
-        while not self.done('A', 'B', 'C'):  # the restarted runner carries on with the queue
-            self.assertLess(time.monotonic(), deadline + 60, 'the restarted runner did not finish the queue')
-            time.sleep(0.2)
-        runner.send_signal(signal.SIGINT)
-        out, _ = runner.communicate(timeout=60)
+        self.hold_update()
+        self.plan({'worker:A': ['released']})
+        self.write_todo(todo([]))
+        self.git(self.repo, 'commit', '-qm', 'start idle before publishing the update')
+        runner = self.run_until(package / 'pi-autowork/bin/pi-autowork.sh', 'Queue empty; checking again')
+        owned = json.loads(self.update_identity.read_text())
+        env = dict(entry.split(b'=', 1) for entry in Path(f'/proc/{owned["pi_pid"]}/environ').read_bytes().split(b'\0')
+                   if b'=' in entry)
+        self.assertEqual(env[b'PI_AUTOWORK_PACKAGE'], os.fsencode(package))
+        self.assertEqual(env[b'PI_AUTOWORK_PACKAGE_INSTALLED'], b'1')
+        initial = json.loads(next(self.state.glob('*/runner.json')).read_text())
+        self.assertEqual(initial['toolset_rev'], before)
+        stages['installed package ready'] = round(time.monotonic() - started, 3)
+        # Publish only after discovery and the original runner's idle checkpoint.
+        self.publish(lambda tree: (tree / 'RELEASE').write_text('2\n'), 'release 2')
+        candidate = self.git(self.origin, 'rev-parse', '--short', 'main')
+        self.observe_update(runner, lambda _: (self.root / 'update-ready').exists(), 'Pi update held')
+        stages['update held'] = round(time.monotonic() - started, 3)
+        # Reuse the broken-release barrier: work in flight prevents another one-second
+        # maintenance probe from racing consumption/activation of the first update.
+        self.write_todo(todo([('A', None), ('B', None), ('C', 'A')]))
+        self.git(self.repo, 'commit', '-qm', 'queue work while the update is held', retry_index_lock=True)
+        self.observe_update(runner, lambda _: (self.root / 'ready-A').exists(), 'old-code worker ready')
+        stages['worker held'] = round(time.monotonic() - started, 3)
+        (self.root / 'release-update').touch()
+        self.observe_update(runner, lambda log: f'Toolset updated to {candidate}; restarting on it' in log,
+                            'qualified update to the published revision')
+        stages['update'] = round(time.monotonic() - started, 3)
+        self.observe_update(runner, lambda log: log.count('Started (PID') >= 2,
+                            'second startup after exec', timeout=30)
+        stages['restart'] = round(time.monotonic() - started, 3)
+        (self.root / 'release-A').touch()
+        # Bound each done-and-merged milestone, not the sum of earlier tasks under load.
+        for task in 'ABC':
+            self.observe_update(runner, lambda log: f'{task}: done' in log and self.done(task),
+                                f'{task} done and merged after restart')
+            stages[task] = round(time.monotonic() - started, 3)
+        self.assertTrue(self.done('A', 'B', 'C'))
+        out = self.interrupt_update_runner(runner)
         self.assertEqual(runner.returncode, 130, out)
         after = self.git(package, 'rev-parse', '--short', 'HEAD')
         self.assertIn(f'Toolset updated to {after}; restarting on it', out)
+        self.assertEqual(after, candidate)
         self.assertNotEqual(before, after)
         starts = re.findall(r'^\[(\d{2}:\d{2})\] Started \(PID (\d+)\)\. Stop with Ctrl\+C\.$',
                             out, re.MULTILINE)
         self.assertGreaterEqual(len(starts), 2, out)
-        self.assertEqual({pid for _, pid in starts}, {str(runner.pid)}, out)  # exec keeps the PID
+        self.assertEqual({pid for _, pid in starts},
+                         {str(json.loads(self.update_identity.read_text())['pi_pid'])}, out)  # exec keeps the PID
         updates = [json.loads(l) for l in self.log.read_text().splitlines() if '"update"' in l]
         self.assertEqual(updates[0]['update'], ['git:github.com/TrebuchetDynamics/kit'])
+        print(f'IDLE_UPDATE_STAGES {stages}; load={os.getloadavg()}; '
+              f'python={sys.executable} {sys.version}', flush=True)
 
     def test_a_release_that_cannot_read_current_state_is_never_installed(self):
         package = self.installed_package()
@@ -4377,25 +4522,70 @@ class SetupTests(Fixture):
             state.write_text(state.read_text().replace('STATE_SCHEMA_READS = (1,)', 'STATE_SCHEMA_READS = (2,)'))
         self.publish(schema_2_only, 'reads only schema 2')
         runner = self.run_until(package / 'pi-autowork/bin/pi-autowork.sh', 'Toolset update deferred')
-        time.sleep(3)
-        runner.send_signal(signal.SIGINT)
-        out, _ = runner.communicate(timeout=60)
+        log = next(self.state.glob('*/runner.log')).read_text()
+        idle = log.count('Queue empty; checking again')
+        self.observe_update(runner, lambda log: log.count('Queue empty; checking again') >= idle + 3,
+                            'three later idle cycles')
+        out = self.interrupt_update_runner(runner)
+        self.assertEqual(runner.returncode, 130, out)
         self.assertIn('Toolset update deferred: release', out)
         self.assertIn('cannot read this state (schema 1; it reads [2])', out)
         self.assertEqual(out.count('Toolset update deferred'), 1, out)  # said once, not every interval
         self.assertFalse([l for l in self.log.read_text().splitlines() if '"update"' in l])  # pi update never ran
 
     def test_a_broken_toolset_update_keeps_the_running_code(self):
+        started, stages = time.monotonic(), {}
+        # Poison inherited discovery deliberately; installed_package must own both inputs.
+        self.env.update(PI_BIN='/bin/false', FAKE_PI_LIST='User packages:\n')
         package = self.installed_package()
+        before = self.git(package, 'rev-parse', '--short', 'HEAD')
         self.publish(lambda tree: (tree / 'pi-autowork/bin/pi-autowork.sh').write_text(
             (tree / 'pi-autowork/bin/pi-autowork.sh').read_text() + '\nif then fi\n'), 'broken release')
-        runner = self.run_until(package / 'pi-autowork/bin/pi-autowork.sh', 'does not parse')
-        time.sleep(3)  # later idle cycles neither restart nor repeat the warning
-        runner.send_signal(signal.SIGINT)
-        out, _ = runner.communicate(timeout=60)
+        # Hold the real Pi update until A is in flight: otherwise the one-second update
+        # cadence can launch another maintenance job before activation observes the first.
+        self.hold_update()
+        self.plan({'worker:A': ['released']})
+        self.write_todo(todo([]))
+        self.git(self.repo, 'commit', '-qm', 'start with an idle update checkpoint')
+        launcher = self.root / 'delayed-observer.sh'
+        # Controlled delayed-drain experiment: more than a Linux pipe holds before any log.
+        launcher.write_text("python3 -c 'import os; os.write(1, b\"x\" * 262144)'\n"
+                            f'exec bash {shlex.quote(str(package / "pi-autowork/bin/pi-autowork.sh"))} "$@"\n')
+        runner = self.run_until(launcher, 'Queue empty; checking again')
+        self.observe_update(runner, lambda _: (self.root / 'update-ready').exists(), 'Pi update ready')
+        stages['update held'] = round(time.monotonic() - started, 3)
+        self.write_todo(todo([('A', None), ('B', None), ('C', 'A')]))
+        self.git(self.repo, 'commit', '-qm', 'queue work while the update is held')
+        self.observe_update(runner, lambda _: (self.root / 'ready-A').exists(), 'old-code worker ready')
+        stages['worker held'] = round(time.monotonic() - started, 3)
+        (self.root / 'release-update').touch()
+        self.observe_update(runner, lambda log: 'does not parse' in log, 'malformed release rejection')
+        stages['rejected'] = round(time.monotonic() - started, 3)
+        self.assertNotEqual(self.git(package, 'rev-parse', '--short', 'HEAD'), before)
+        self.assertNotEqual(subprocess.run(['bash', '-n', str(package / 'pi-autowork/bin/pi-autowork.sh')],
+                                           capture_output=True).returncode, 0)
+        # Work begun on the old release must finish, and its dependent must run after rejection.
+        (self.root / 'release-A').touch()
+        for task in 'ABC':
+            self.observe_update(runner, lambda log: f'{task}: done' in log, f'{task} done on old code')
+            stages[task] = round(time.monotonic() - started, 3)
+        log = next(self.state.glob('*/runner.log')).read_text()
+        idle = log.count('Queue empty; checking again')
+        self.observe_update(runner, lambda log: log.count('Queue empty; checking again') >= idle + 3,
+                            'three later idle cycles after old-code work')
+        stages['later idle cycles'] = round(time.monotonic() - started, 3)
+        self.assertTrue(self.done('A', 'B', 'C'))
+        owned = json.loads(next(self.state.glob('*/runner.json')).read_text())
+        self.assertEqual(owned['toolset_rev'], before)
+        out = self.interrupt_update_runner(runner)
         self.assertEqual(runner.returncode, 130, out)
+        self.assertTrue(out.startswith('x' * 262144))
+        self.assertIn(f'keeping the running {before}', out)
         self.assertNotIn('restarting on it', out)
-        self.assertEqual(out.count('does not parse'), 1, out)
+        self.assertEqual(out.count('Started (PID'), 1, out[-4000:])
+        self.assertEqual(out.count('does not parse'), 1, out[-4000:])
+        print(f'BROKEN_UPDATE_STAGES {stages}; load={os.getloadavg()}; '
+              f'python={sys.executable} {sys.version}', flush=True)
 
     def test_setup_errors(self):
         # Read the generated unit and the actual startup exit together: these

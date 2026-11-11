@@ -1,0 +1,26 @@
++++
+schema = 1
+id = "TOOLSET-503"
+title = "Inspect Rust tasks and runtime status without taking write ownership"
+short = "Read Rust tasks and runtime status"
+status = "done"
+goal = "RUST-OCTET"
+section = "Next"
+rank = 18000
+depends_on = []
+touches = ["pi-autowork/rust/autowork/src/main.rs", "pi-autowork/rust/autowork/src/task_store.rs", "pi-autowork/rust/autowork/src/state.rs", "pi-autowork/rust/autowork/tests/cli.rs", "pi-autowork/rust/autowork/README.md"]
+resources = []
+kind = "implementation"
+ownership = "worker"
+scope = "Implement the native read-only inspection slice in docs/plans/rust-octet-autowork.md#selected-inspection-contract. Add tasks list/goals/show/why with --repo and committed --rev (HEAD default), using existing TaskStore APIs. Add status --repo using a separate short SQLite read transaction over the existing journal, not StateStore::open. Advertise task_inspection/status API generation 1 and only the implemented subset. Preserve selection versus admission, runtime projection versus closure/liveness, private common-directory identity and unchanged writer authority. Implement the documented absent/unsupported/corrupt/foreign/busy outcomes, safe WAL reader coordination and secret-free projection whitelist. Update the component README. Reuse existing fixtures and repair bounded defects in declared paths if they stop the focused checks; no new dependencies, database schema or live setup."
+acceptance = ["Given committed fixtures plus divergent dirty/staged task bytes, tests/cli.rs::task_inspection_is_pinned_and_selection_only proves list/goals arrays and show/why objects read one resolved --rev, expose record revisions and typed task fields, preserve selection-only source metadata and unknown-ID explanations, and leave records/index/refs unchanged. Unsupported mutation verbs and --worktree fail honestly; capabilities reports only the implemented native subset. Existing selection, hold and verified-dependency semantics remain enforced rather than manufacturing dispatch permission.", "Given a disposable StateStore writer holding its lock and committing transitions, tests/cli.rs::status_reads_without_writer_claim proves status succeeds with a consistent latest-generation projection and event high-water mark from one read transaction, without acquiring writer ownership or changing metadata epoch, logical journal state or task closure. A missing journal reports absent without creating its directory/database. Runtime status never claims current process liveness, idle-service state or verified acceptance.", "Given unsafe private paths, a foreign/corrupt/newer-schema journal, busy reads and fixture secret markers in private payloads, tests/cli.rs::inspection_refuses_unsafe_sources proves structured bounded failures, retained state and an allowlisted status response without raw events, sessions, model text, environment or credentials. Existing bootstrap_without_pi, reports_runtime_contract and crate_has_one_product_owner assertions still pass. Test synchronization uses explicit fixture coordination, not timing sleeps; SQLite-managed WAL sidecars are not falsely claimed byte-immutable."]
+checks = ["RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml --test cli --test task_store --test state_recovery", "RUSTUP_TOOLCHAIN=1.95.0 cargo fmt --manifest-path pi-autowork/rust/autowork/Cargo.toml --check"]
+exclusions = ["No live models, credential imports/changes, general shell execution, task mutations, service operations, installed-runner handoff, migration, installer changes, push or deployment in this offline slice.", "No upstream edits, new dependency/lock/schema changes, bypass of writer/private-path checks, immutable SQLite reads of changing state, automatic recovery or fabricated goal qualification."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-503.toml"
++++
+- Sources: docs/plans/rust-octet-autowork.md#next-implementation-frontier; pi-autowork/task-store.md#selection; pi-autowork/rust/autowork/README.md#durable-runtime-journal
+- Next action: Add the failing task_inspection_is_pinned_and_selection_only CLI case using a disposable committed repository, then exercise the concurrent writer/status seam.
+- Planner calls: One cohesive inspection owner changes the CLI registry once. Task and runtime reads have separate source identities; neither grants mutation or runtime admission. Existing dependencies are already landed, so no artificial overlap prerequisites are added.
+- Produces: Native committed task inspection commands and generation-1 journal projection JSON for subsequent UI/service/Paseo planning.
+- Repo obligations triggered: pi-autowork/task-store.md#selection supplies list/why source and selection-only metadata; retain that contract without claiming all Python verbs. Update pi-autowork/rust/autowork/README.md for new commands and WAL/privacy limits. tests/cli.rs bootstrap empty-PATH, pinned contracts and exact target/module inventory remain unchanged in meaning. No generated output, dependency, schema, installation or client update is required. AGENTS.md requires focused affected checks at landing; new test names are proposed and UNRUN.

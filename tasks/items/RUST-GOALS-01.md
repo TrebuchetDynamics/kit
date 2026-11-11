@@ -3,7 +3,7 @@ schema = 1
 id = "RUST-GOALS-01"
 title = "Expose committed goal reads and pending ordinary metadata edits"
 short = "Expose committed goal reads and pendi..."
-status = "open"
+status = "done"
 goal = "RUST-OCTET"
 section = "Now"
 rank = 2000
@@ -16,6 +16,8 @@ scope = "Add goals --repo PATH list/show ID with --rev COMMIT default HEAD, rout
 acceptance = ["Offline list/show fixtures preserve exact committed goal content, pinned historical revisions and typed metadata while ignoring pending bytes and Git redirection. Unknown IDs/revisions fail without creating runtime/task state.", "Offline add/field fixtures prove typed validation, sequential pending-edit preservation, stale base/record refusal, unknown-note preservation and correct pending identity. Protected goal progress/authority cannot be changed or created as met; rejected edits preserve bytes and existing task/status commands still pass."]
 checks = ["RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --offline --manifest-path pi-autowork/rust/autowork/Cargo.toml --test cli --test task_store"]
 exclusions = ["No live models, credentials, upstream edits, general shell, service operations, installation, migration, runtime retirement or authority expansion."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/RUST-GOALS-01.toml"
 +++
 - Sources: docs/plans/rust-octet-autowork.md#round-four-batch-goal-command-parity
 - Owner decision: 2026-11-10: pruebas

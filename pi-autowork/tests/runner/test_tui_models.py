@@ -151,6 +151,10 @@ async def login_pilot(size):
             await receive(dict(type='info', message='Provider prerequisite: authenticate first', links=[dict(label='Setup guide', url='https://example.com/setup')]))
             if method == 'oauth':
                 await receive(dict(type='url', url='https://example.com/authorize?state=private'))
+            await receive(dict(type='prompt', kind='text', message='Host (blank for github.com)'))
+            await self.answer_event.wait()
+            assert self.answers[-1] == '', 'Provider text default must arrive unchanged'
+            self.answer_event.clear()
             await receive(dict(type='prompt', kind='secret', message='Enter fixture credential'))
             await self.answer_event.wait()
             if self.answers[-1] == 'invalid-fixture-secret':
@@ -184,6 +188,12 @@ async def login_pilot(size):
                 visible(field, size)
                 visible(screen.query_one('#auth-status'), size)
                 assert field.password and field.value == ''
+                await pilot.press('enter')  # Blank text selects the provider-defined default.
+                await settle(app, pilot)
+                assert active[-1].answers == ['']
+                await pilot.press('enter')  # Blank secrets must still be refused.
+                await pilot.pause()
+                assert active[-1].answers == [''] and field.display
                 await pilot.press(*'fixture-secret-value')
                 await pilot.pause()
                 assert 'fixture-secret-value' not in str(field.render())
@@ -191,7 +201,7 @@ async def login_pilot(size):
                 await settle(app, pilot)
                 assert app.screen is picker and len(loads) == 2
                 assert picker.models == MODELS and app.new_model == ''
-                assert active[-1].answers == ['fixture-secret-value']
+                assert active[-1].answers == ['', 'fixture-secret-value']
 
                 # OAuth requires an explicit browser action; Escape preserves model/profile.
                 app.new_model = 'fixture/alpha'
@@ -218,6 +228,8 @@ async def login_pilot(size):
                 screen = app.screen
                 screen.query_one('#auth-method', Select).value = 'api_key'
                 await pilot.click('#auth-connect')
+                await settle(app, pilot)
+                await pilot.press('enter')
                 await settle(app, pilot)
                 screen.query_one('#auth-answer', Input).value = 'invalid-fixture-secret'
                 await pilot.press('enter')
@@ -372,6 +384,70 @@ async def existing_pilot(size):
             assert env.read_bytes() == before
 
 
+async def repository_identity_pilot(size):
+    from pi_autowork import tui
+    from textual.widgets import Select
+    loads, bridges = [], []
+    provider = dict(id='fixture', methods=['oauth'], state='not stored')
+    def catalog():
+        loads.append(True)
+        return dict(models=MODELS[:], providers=[provider])
+    class FakeBridge:
+        def __init__(self, agent_dir):
+            self.cancelled = False
+            bridges.append(self)
+        async def run(self, *args):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                self.cancelled = True
+    original = tui.ProviderAuth
+    with patch.object(tui, 'ProviderAuth', side_effect=lambda p, d, **kw: original(p, d, FakeBridge, **kw)):
+        async with fixture_app(size, service=True, loader=catalog) as (app, pilot, ready, calls):
+            with patch.object(app, 'execute') as execute:
+                for stage in ('selection', 'confirmation', 'authentication'):
+                    runner = app.current()
+                    app.action_pick_model('model')
+                    await settle(app, pilot)
+                    picker = app.screen
+                    assert picker.identity_valid()
+                    if stage == 'confirmation':
+                        picker.choose_model(MODELS[1])
+                        await settle(app, pilot)
+                        assert isinstance(app.screen, tui.Confirm)
+                    elif stage == 'authentication':
+                        picker.action_login()
+                        await settle(app, pilot)
+                        auth = app.screen
+                        assert not bridges, 'Opening a dialog must not start authentication'
+                        auth.query_one('#auth-method', Select).value = 'oauth'
+                        await pilot.click('#auth-connect')
+                        await settle(app, pilot)
+                    before = len(loads)
+                    # Mutate the captured object too: identity must be an immutable snapshot.
+                    runner.repo = ready.repo + '-replacement'
+                    assert not picker.identity_valid(), 'Same name/profile is not the same repository'
+                    if stage == 'selection':
+                        picker.loaded_models(catalog())
+                        before += 1
+                        assert picker.shown == []
+                        picker.choose_model(MODELS[1])
+                        assert app.screen is picker
+                        picker.dismiss(MODELS[1])  # A late selection callback must also be refused.
+                    elif stage == 'confirmation':
+                        await pilot.press('y')
+                    else:
+                        await auth.receive(dict(type='success'))
+                        await settle(app, pilot)
+                        assert app.screen is picker and bridges[-1].cancelled
+                        picker.action_login()
+                        assert app.screen is picker
+                        await pilot.press('escape')
+                    await settle(app, pilot)
+                    assert len(loads) == before and not execute.called
+                    runner.repo = ready.repo
+
+
 async def providers_pilot(size):
     from pi_autowork import tui
     from textual.widgets import Input, Label, OptionList, Select
@@ -524,8 +600,7 @@ class TuiModelsTests(unittest.TestCase):
     def test_session_choice_filter_and_read_only_modelbar(self):
         self.run_case('session')
 
-    def test_login_uses_pi_terminal_and_selected_agent_directory(self):
-        """Historical test identity; the current login uses the SDK inside the TUI."""
+    def test_authentication_inside_tui_uses_selected_profile_masks_and_refreshes(self):
         self.run_case('login')
 
     def test_model_loading_empty_and_error_status(self):
@@ -537,6 +612,9 @@ class TuiModelsTests(unittest.TestCase):
     def test_existing_service_model_consent_and_settings_are_preserved(self):
         self.run_case('existing')
 
+    def test_same_name_and_profile_cannot_retarget_repository_callbacks(self):
+        self.run_case('repository')
+
     def test_provider_selection_scopes_search_and_preserves_cancelled_choice(self):
         self.run_case('providers')
 
@@ -545,7 +623,8 @@ async def main(case):
     for size in ((80, 24), (60, 18), (120, 32)):
         await {'session': session_pilot, 'login': login_pilot,
                'status': status_pilot, 'start': start_pilot,
-               'existing': existing_pilot, 'providers': providers_pilot, 'free': free_models_pilot}[case](size)
+               'existing': existing_pilot, 'repository': repository_identity_pilot,
+               'providers': providers_pilot, 'free': free_models_pilot}[case](size)
         print('PASS', case, size)
     print('MODEL PILOT OK', case)
 

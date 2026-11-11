@@ -29,6 +29,7 @@ class ProviderAuth(ModalScreen[bool]):
         self.provider, self.agent_dir, self.bridge_factory = provider, agent_dir, bridge_factory
         self.bridge, self.worker, self.url = None, None, ''
         self.cancelled = False
+        self.prompt_kind = None
         self.identity_valid = identity_valid or (lambda: True)
 
     def compose(self):
@@ -84,6 +85,7 @@ class ProviderAuth(ModalScreen[bool]):
         self.query_one('#auth-status', Static).update(message)
 
     def clear_prompt(self):
+        self.prompt_kind = None
         field = self.query_one('#auth-answer', Input)
         field.value = ''
         field.display = False
@@ -136,6 +138,7 @@ class ProviderAuth(ModalScreen[bool]):
             self.clear_prompt()
         elif kind == 'prompt':
             self.clear_prompt()
+            self.prompt_kind = event.get('kind')
             self.query_one('#auth-prompt', Static).update(event.get('message', 'Enter provider information'))
             if event.get('kind') == 'select':
                 field = self.query_one('#auth-choice', Select)
@@ -157,13 +160,13 @@ class ProviderAuth(ModalScreen[bool]):
             return
         choice = self.query_one('#auth-choice', Select)
         answer = choice.value if choice.display else self.query_one('#auth-answer', Input).value
-        if answer is Select.NULL or not str(answer).strip():
+        if not isinstance(answer, str) or (self.prompt_kind != 'text' and not answer.strip()):
             self.query_one('#auth-status', Static).update('Enter a value before submitting.')
             return
         self.clear_prompt()
         self.query_one('#auth-status', Static).update('Connecting to Pi provider… Esc cancels.')
         try:
-            await self.bridge.answer(str(answer))
+            await self.bridge.answer(answer)
         except (OSError, RuntimeError):
             self.show_error('The Pi authentication connection closed. Retry Connect.')
 

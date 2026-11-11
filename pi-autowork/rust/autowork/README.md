@@ -2,7 +2,8 @@
 
 This Linux Rust candidate provides an owned-agent runtime, durable journal and
 serialized local delivery coordinator, not the installed Python runner.
-`version` and `capabilities` work without a model. `run` requires explicit model
+`version`, `capabilities`, `tasks` inspection/publication and `status` work without a model.
+`run` requires explicit model
 routes and an isolated repository. It does not install a service, import global
 authentication, push, deploy or replace an existing runner.
 
@@ -42,14 +43,36 @@ exercise local integration and task-proposal publication in disposable repositor
 Neither set qualifies a live provider, deployment, devices, migration or sustained
 service operation.
 
-## Read-only status and pending task commands
+## Wire formats
+
+One global `--format` option selects the wire contract of `status`, `tasks`, `goals`
+and `capabilities`. It may appear before or after the subcommand.
+
+| Format | Selected by | `status` | `tasks` | `goals` |
+| --- | --- | --- | --- | --- |
+| `public-v1` | default | committed tasks plus persisted runs of every generation, from a quiescent journal | `list`, `show`, `add`, `field`, `place`, `preview` | `list`, `show`, `add`, `field` |
+| `inspection-v1` | `--format inspection-v1` | typed latest-generation journal projection, read beside a writer | `list`, `goals`, `show`, `why`, `commit` | unsupported |
+
+A command outside the selected format is refused, never answered in the other
+format's shape. `capabilities` lists both under `formats`. `--repo` and `--rev` are
+accepted before or after the `tasks` or `goals` subcommand; `--rev` given twice is
+refused, and a pending edit accepts only `--rev HEAD`. `status --json` is a
+compatibility marker: output is always JSON and the flag selects nothing.
+
+The `public-v1` pending edits take only this runtime's task lock. They do not detect
+another runtime's active owner, so `capabilities` reports them as
+`unqualified-on-active-repositories`: use them in a repository no runner is working.
+
+## Read-only status and pending task/goal commands (`public-v1`)
 
 `autowork-next status --repo /path/to/repo --json` returns schema version 1,
 committed task counts, dependency readiness and persisted journal observations.
 Absent, corrupt, foreign or actively written journals report unavailable. Reads
 create no state, migrations or reconciliation effects. A quiescent journal is
 read under its existing lock through immutable SQLite access; this is an observed
-snapshot, not model or service qualification.
+snapshot, not model or service qualification. The immutable read requires a
+write-ahead log that is provably absent or an empty regular file: a permission or
+I/O error on it reports unavailable.
 
 `tasks --repo /path/to/repo list` and `tasks --repo /path/to/repo show ID`
 return schema-versioned JSON from committed records only. Add `--rev COMMIT`
@@ -74,6 +97,37 @@ unselectable until the existing coordinator publishes the validated snapshot.
 Protected fields, Owner decision changes and `--decision` are refused by this
 ordinary planning seam; no command grants live execution or publication.
 
+### Goal commands
+
+`goals --repo /path/to/repo list` and `goals --repo /path/to/repo show ID` use
+committed snapshots only, with `--rev COMMIT` (default `HEAD`). The schema-versioned
+response contains `goals` or `goal`, the resolved `revision` and `source: "committed"`.
+Each row preserves all typed goal frontmatter, including its own `source`, integer
+`priority`, boolean `focus` and optional `depends_on`, plus exact `content`, `path`,
+`record_revision` and `contract_hash`. Pending bytes and Git environment redirection
+cannot affect these reads. Unknown IDs/revisions fail without creating state.
+
+`goals --repo /path/to/repo --expected-revision COMMIT` accepts:
+
+- `add ID --record /path/to/goal.md`: validate a schema-1 goal with a new ID and
+  `status = "unmet"`. Existing destinations and invented authority notes are refused.
+- `field ID --record-revision SHA256 priority '2'`: edit only `title`, `source`,
+  `priority`, `focus` or `depends_on`, using JSON values of the schema's types.
+
+These writes reuse the task service's full-HEAD base check, exact working-record
+SHA-256 check and apply-time compare-and-swap. They preserve current notes and
+other pending task/goal edits. Use the returned `base_revision` and
+`record_revisions` for sequential edits; `tasks preview` captures their shared
+pending identity. Nothing commits automatically or becomes selectable. Goal
+status/progress, closure, qualification and owner/live authority are not writable;
+existing protected notes remain unchanged. The pending-edit active-owner limitation
+above also applies to goals.
+
+Offline CLI and task-store fixtures cover committed goal reads, historical pins,
+typed edits, pending identity, note preservation, stale base/record refusal and
+protected goal progress/authority. They do not qualify concurrent runtimes or live
+execution.
+
 ## Revision-bound task store
 
 [`task_store.rs`](src/task_store.rs) implements the current
@@ -84,6 +138,34 @@ records and evidence. `Snapshot::revision()`, `records()`, `tasks()` and `goals(
 expose immutable views. Record revisions hash exact bytes; contract hashes retain
 the current canonical JSON rules. Free Markdown notes and historical IDs are not
 rewritten. Missing task fields remain drafts; malformed records refuse the store.
+
+### Committed inspection CLI (generation 1, `inspection-v1`)
+
+```sh
+autowork-next --format inspection-v1 tasks list --repo /path/to/repo
+autowork-next --format inspection-v1 tasks goals --repo /path/to/repo --rev HEAD
+autowork-next --format inspection-v1 tasks show TASK-ID --repo /path/to/repo --rev COMMIT
+autowork-next --format inspection-v1 tasks why TASK-ID --repo /path/to/repo --rev COMMIT
+```
+
+`capabilities` advertises `contracts.task_inspection = 1` for these four inspection
+verbs, plus the separate `commit` subset described below. Task-authoring verbs
+(such as `field`) and `--worktree` are unsupported. Each inspection command resolves
+`--rev` once (default `HEAD`); dirty and staged records cannot affect the result.
+No task lock, proof commit, index update or ref write occurs. List/goals return
+arrays; show/why return objects. Record rows expose exact typed frontmatter,
+`body`, `record_revision`, `contract_hash`, `missing_fields`, `receipt_valid`,
+`path` and a separate `snapshot` object with committed `source`, `ref`, `revision`
+and `revision_ephemeral: false`. A goal's frontmatter `source` remains unchanged.
+An unknown show ID fails; unknown why IDs return an `UNKNOWN_TASK` reason.
+
+List rows and why objects add `position`, `blocked_by`, `eligible`, `first`,
+`reasons` and the [selection-only source metadata](../../task-store.md#selection).
+`POSITION` and `AFTER_*` reasons describe the existing selector's order; blocked
+rows retain its hold, draft and dependency reasons. These outputs do not evaluate
+admission or runtime availability. An owner-only or unauthorized live task may be
+selectable without permission to dispatch it. No Python command parity, task
+closure, goal qualification or live ownership is implied.
 
 `Snapshot::select(&Scope)` orders eligible IDs by focus, section, rank, goal
 priority, goal status and ID. An empty scope includes all tasks, including planning
@@ -96,8 +178,10 @@ legacy waiver prose alone qualifies nothing. Selection does not evaluate runtime
 pauses, leases, resources or caller authority. The coordinator must retain those
 admission gates and protect active contracts before applying a proposal.
 
-`TaskService::new(repo_root)` binds writes to one checkout. `apply(base, proposal)`
-requires the full HEAD commit in both base fields, plus each changed record's
+`TaskService::new(repo_root)` binds writes to one checkout. `record_for_edit` and
+`goal_record_for_edit` read exact current working-record bytes under the task lock
+with an expected digest; `apply` rechecks that digest before writing.
+`apply(base, proposal)` requires the full HEAD commit in both base fields, plus each changed record's
 SHA-256 revision (an empty string means a new path). It validates the whole proposed
 store before writing, compares inputs again, and preserves the proposed bytes
 without normalization. Planner changes cannot alter existing ownership, closure,
@@ -171,6 +255,52 @@ content is refused. Use distinct keys for individual runtime stream records.
 Events, per-generation projections and effect records commit in one transaction.
 `events()` returns ordered journal records; `projection(task, generation)` returns
 the corresponding last event and durable status.
+
+### Journal inspection CLI (generation 1, `inspection-v1`)
+
+```sh
+autowork-next --format inspection-v1 status --repo /path/to/repo
+```
+
+`capabilities` advertises `contracts.status = 1`. `read_status(common_dir)` uses a
+separate SQLite read-only connection, never `StateStore::open`. It validates the
+same private-path, local-filesystem and common-directory identity boundaries,
+and reads schema 1, metadata, latest per-task generations and the event high-water
+mark in one short transaction. The transaction ends before JSON rendering. It
+never takes `writer.lock`, advances the owner epoch, claims work, reconciles,
+checkpoints, migrates or creates an application directory/database.
+
+The JSON allowlist is `schema_version: 1`, `source: "runtime-journal"`,
+`repository` (common-directory device/inode, without its private path),
+`journal_state`, `journal_schema`, `event_high_water_mark` and `projections`.
+Each projection contains only `task_id`, `attempt_id`, `generation`, `role`,
+`contract_hash`, `source_revision`, durable `status` and `event_id`. Raw events,
+owner/process records, sessions, evidence references, environment, model text,
+credential values and resolved secret paths are not returned.
+
+A missing journal returns `journal_state: "absent"`, null journal schema/high-water
+mark and an empty projection array without creating state. It does not mean idle,
+stopped or complete. Unsafe paths, incompatible schemas, foreign identity,
+corruption and SQLite lock contention fail with nonzero exit and a bounded JSON
+stderr object: `status: "unavailable"`, a fixed `code` (`unsafe_source`,
+`unsupported_schema`, `foreign_journal`, `corrupt_journal` or `busy`) and a
+secret-free `error`. SQLite busy handling waits at most 200 ms per contended
+operation; no fallback turns failure into an empty success. Retained state is not
+reset or repaired.
+
+Ordinary SQLite read-only WAL coordination can create/change WAL shared-memory
+sidecars. Status allows that coordination; it does not use `immutable=1` or claim
+byte-identical sidecars. It makes no application-authored or logical journal
+writes. Runtime projections do not establish current PID liveness, a live lease,
+idle-service state, verified task acceptance or task closure. Git inspection and
+journal inspection have independent source identities, not a cross-store atomic
+snapshot. Clients must check the advertised API generations.
+
+`cli::task_inspection_is_pinned_and_selection_only`,
+`cli::status_reads_without_writer_claim` and
+`cli::inspection_refuses_unsafe_sources` exercise these public seams with committed
+disposable repositories, a coordinated writer, private payload markers and
+SQLite-managed locks. They require no model, service or installed-runner handoff.
 
 Before a child or Git mutation, commit `RecordKind::Intent(Child | Git)` with its
 stable `RuntimeEvent.operation_id`. Only then perform the external effect. Record
@@ -363,6 +493,68 @@ existing writer or against a production repository.
   under the canonical checkout's `.worktrees/` and are retained for inspection.
 
 ### Checks, review and local publication
+
+#### Preview and publish pending records (generation 1)
+
+Use only a disposable offline repository with no other Python or Rust writer.
+The caller must establish exclusive ownership. This command does not import legacy
+ownership, establish service liveness or qualify an installed-runner handoff.
+
+```sh
+autowork-next --format inspection-v1 tasks commit --dry-run --repo /absolute/disposable-repository
+autowork-next --format inspection-v1 tasks commit --repo /absolute/disposable-repository --expect-token TOKEN
+```
+
+`capabilities` advertises `contracts.task_publication = 1`. Preview validates one
+stable set of working task/goal records against HEAD's existing receipt evidence.
+It includes added, changed and deleted records under `tasks/items/` and
+`tasks/goals/`, not pending receipt edits or unrelated staged/dirty files.
+It holds the task lock and refuses interrupted Python or Rust task transactions
+without recovery. A temporary index and object database use repository objects as
+read-only alternates. Cleanup leaves repository objects, index and refs unchanged.
+Preview does not open `StateStore`, claim a writer epoch, run hooks or call agents.
+The task lock file can be created as part of ordinary lock coordination.
+
+Preview JSON contains `state` (`clean` or `pending_commit`), `base_head`, full
+`branch` ref, `tree`, `token`, sorted `files` and the exact binary-capable `diff`.
+External diff and text conversion are disabled. Diffs over 256 KiB are refused,
+not truncated. A clean preview has empty files/diff and a null token. A pending
+token binds the original HEAD, branch, tree and all captured record bytes, just
+like `PendingSnapshot`. Its temporary tree is not a durable or selectable revision.
+Invalid/linked records, detached HEAD, unstable inputs and `--rev` other than
+literal `HEAD` refuse without changing record bytes. No working-tree selection
+interface is supplied.
+
+Explicit publication needs the matching 64-character lowercase SHA-256 token for
+nonempty edits. It re-captures records and uses `Coordinator::commit_proposal`, the
+private state writer lock, pause/stop gates, source/branch/record/index checks,
+ordinary owned Git hooks and compare-and-swap branch publication. Commit messages
+remain fixed. Unrelated staged blobs and working bytes are preserved. No model
+routes, credentials, task selection or agent execution are involved. An empty edit
+set without a matching retained operation returns `state: clean`, `commit: null`.
+A successful result returns `state: committed`, the local `commit`, the reviewed
+`token`, `publication: local_only`, and false execution/closure evaluation flags.
+It does not supply task acceptance, receipts, goal proof, integration or live authority.
+
+After interruption, supply the **original** token again. Recovery locates only its
+retained publication and original snapshot, including when HEAD already advanced.
+A verified settled operation returns the same commit without another hook call.
+Other unresolved effects, task journals, active writer ownership and conflicting
+external bytes refuse safely. Failed or uncertain started hooks are never replayed.
+Retain the private journal, owned publication workspace and effect evidence for
+reconciliation. This command never invokes general coordinator recovery to clear
+an unrelated operation. Do not delete evidence or journals to force a retry.
+
+The three `cli.rs` cases `pending_publication_preview_is_exact`,
+`pending_publication_commits_only_reviewed_records` and
+`pending_publication_recovers_without_dispatch` exercise this subset with disposable
+repositories, staged/dirty sentinels and hooks. Existing task-store/cycle guards
+cover shared validation and Git effects. These offline checks do not qualify live
+providers, service operation, Python-writer takeover or installed consumption.
+The [Python task-store contract](../../task-store.md#writing-and-autowork-tasks)
+is unchanged. Native task authoring and broader command parity remain unsupported.
+
+#### Delivery checks and review
 
 The frozen `CheckRegistry` admits only `git-diff-check` and, with explicit
 `--fixture-checks`/`enable_fixture_checks`, the same built binary's `fixture-pass`

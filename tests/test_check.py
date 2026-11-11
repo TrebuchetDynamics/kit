@@ -17,6 +17,25 @@ SCRIPT = ROOT / 'scripts/check.py'
 
 
 class TextualDependencyTests(unittest.TestCase):
+    def test_fast_ci_prepares_pinned_textual_before_offline_suites(self):
+        import yaml
+
+        steps = yaml.safe_load((ROOT / '.github/workflows/test.yml').read_text())['jobs']['fast']['steps']
+        dependency = next(i for i, step in enumerate(steps)
+                          if 'pip install -r requirements-test.txt' in step.get('run', ''))
+        self.assertIn('uv==0.11.3', steps[dependency]['run'])
+        acceptance = (ROOT / 'pi-autowork/tests/runner/test_tui_architecture.py').read_text()
+        pin = re.search(r"['\"](textual==[0-9.]+)['\"]", acceptance).group(1)
+        cached = next(i for i, step in enumerate(steps) if 'uv run ' in step.get('run', ''))
+        self.assertIn('--python 3.12', steps[cached]['run'])
+        self.assertIn('--with ' + pin, steps[cached]['run'])
+        self.assertIn('import textual', steps[cached]['run'])
+        self.assertFalse(steps[cached].get('continue-on-error', False))
+        suites = next(i for i, step in enumerate(steps) if 'python scripts/check.py' in step.get('run', ''))
+        self.assertLess(dependency, cached)
+        self.assertLess(cached, suites)
+        self.assertFalse(steps[suites].get('continue-on-error', False))
+
     def test_optional_checks_skip_only_unavailable_dependencies(self):
         # Replay the saved uv diagnostic at each public unittest seam. A zero
         # exit represents an executed pilot; its original marker checks still apply.
@@ -264,18 +283,27 @@ class OfflineCheckTests(unittest.TestCase):
         renames = {(row['source'], row['old']): row for row in fixture['renames']}
         inputs, removed = {}, set()
         for snapshot in fixture['snapshots']:
-            inputs.update(snapshot['inputs'])
             for path, delta in snapshot['delta'].items():
                 methods = required.setdefault(path, set())
                 for name in delta['removed']:
-                    source = fixture['modules'][path]['source']
+                    source = fixture['modules'][path]['source'] or path
                     proof = renames[source, name]
                     self.assertIn(proof['new'], delta['added'])
                     self.assertRegex(proof['commit'], r'^[0-9a-f]{40}$')
+                    if 'before_input' in proof:
+                        self.assertEqual(inputs[path], proof['before_input'])
+                        self.assertEqual(snapshot['inputs'][path], proof['after_input'])
+                        self.assertEqual(snapshot['revision'], proof['commit'])
+                        self.assertRegex(proof['parent'], r'^[0-9a-f]{40}$')
+                        for input_path, mode, blob in (proof['before_input'], proof['after_input']):
+                            self.assertEqual(input_path, proof['path'])
+                            self.assertEqual(mode, '100644')
+                            self.assertRegex(blob, r'^[0-9a-f]{40}$')
                     methods.remove(name)
                     removed.add((source, name))
                 self.assertFalse(methods & set(delta['added']), (path, 'duplicate addition'))
                 methods.update(delta['added'])
+            inputs.update(snapshot['inputs'])
             fingerprint = hashlib.sha256(json.dumps(
                 {p: sorted(ids) for p, ids in sorted(required.items())}, sort_keys=True).encode()).hexdigest()
             self.assertEqual(fingerprint, snapshot['method_inventory_sha256'], snapshot['role'])

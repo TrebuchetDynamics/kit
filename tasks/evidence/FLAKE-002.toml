@@ -1,0 +1,9 @@
+schema = 1
+task = "FLAKE-002"
+candidate = "38dceef713988430e76448c63043c01c95879723"
+integration = "8f3aad622ba1e73ceceb416adae7b5bbcf82feba"
+tree = "46e5dd4f99e0624314a758b48e41d1e3cd7f2eff"
+contract_hash = "cb4b128632b05b35e0f3f89c7a01cad0d57222e2f2e0877c5b3eaf03c1e8508b"
+checks = ["<path>", "<path>", "--verify", "<path>", "FLAKE-002"]
+result = "pass"
+review = "passed"

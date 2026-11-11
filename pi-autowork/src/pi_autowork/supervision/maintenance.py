@@ -331,7 +331,8 @@ def poll_publication(owner):
         if owner.integ and not dirty(owner.integ):
             behind = int(git(owner.repo, 'rev-list', '--count', f'{owner.base}..{upstream}') or 0)
             if behind:
-                if not owner.merge_planning(upstream) or owner.fast_forward_main():
+                if (not (owner.merge_planning(upstream) or owner.resolve_upstream_merge(upstream))
+                        or owner.fast_forward_main()):
                     git(owner.integ, 'merge', '--abort')
                     record.update(phase='done')
                     write(owner, 'publication', record)
