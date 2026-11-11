@@ -417,7 +417,8 @@ def update_package(pi, state_root, state, package, toolset, wait):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return dict(ok=False, reason='another runner is updating the toolset', retry=True)
-        source = release.package_source(pi, package)
+        independent = Path(package).resolve() == (Path(state_root) / 'installed').resolve()
+        source = git(package, 'remote', 'get-url', 'origin') if independent else release.package_source(pi, package)
         if not source:
             return dict(ok=False, current=True, reason='no registered Git package')
         check = release.check(state_root, state, package, wait=float(wait), current_toolset=toolset, source=source)
@@ -438,7 +439,9 @@ def update_package(pi, state_root, state, package, toolset, wait):
         attempts['count'] += 1
         atomic_write(attempts_path, json.dumps(attempts) + '\n')
         with open(Path(state) / 'engine.err', 'a') as err:
-            result = subprocess.run(['timeout', '--foreground', '--kill-after=5', '300', pi, 'update', source],
+            argv = (['git', '-C', package, 'merge', '--ff-only', expected] if independent
+                    else [pi, 'update', source])
+            result = subprocess.run(['timeout', '--foreground', '--kill-after=5', '300', *argv],
                                     stdout=err, stderr=err)
         installed = git(package, 'rev-parse', 'HEAD')
         if result.returncode or not expected or expected != installed:

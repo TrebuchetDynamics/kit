@@ -1014,6 +1014,22 @@ class AutoworkCommandTests(unittest.TestCase):
                                   fleet_view.blocker_parts(view)):
                     self.assertIn('--workers must be 1 to 16', displayed)
 
+    def test_status_names_the_private_pi_refill_without_falling_back(self):
+        private = self.state / 'pi-agent'
+        for refused in (False, True):
+            if refused:
+                private.mkdir()
+                (private / 'auth.json').write_text('{"fixture":"disposable-login"}')
+                (private / 'login-refused').touch()
+            result = self.aw('status', str(self.repo))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lines = [line for line in result.stdout.splitlines() if 'Private Pi' in line]
+            self.assertEqual(len(lines), 1)
+            self.assertIn('login was refused' if refused else 'directory is missing', lines[0])
+            self.assertIn('autowork update --only autowork', lines[0])
+            self.assertNotIn('disposable-login', result.stdout + result.stderr + self.log.read_text())
+            self.assertNotIn(str(Path(self.env['HOME']) / '.pi'), result.stdout + result.stderr)
+
     def test_logs_status_and_help(self):
         self.aw('start', str(self.repo))
         self.assertEqual(self.aw('logs', 'india').stdout.strip(),

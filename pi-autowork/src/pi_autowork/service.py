@@ -277,6 +277,10 @@ def run(action, *, repo, base, script, workers, state_root, hermes_jobs, argv0):
         owner = ''
     if owner and owner != str(repo):
         die(2, f'{unit} already runs {owner}; two repositories cannot share the name {instance}. Remove that service first.')
+    from . import private_pi
+    installed = Path(state_root) / 'installed/pi-autowork/bin/pi-autowork.sh'
+    if installed.is_file():
+        script = str(installed)
     # Earlier releases named instances after the escaped path; replace such a unit.
     legacy = _escape('--path', str(repo))
 
@@ -343,6 +347,10 @@ def run(action, *, repo, base, script, workers, state_root, hermes_jobs, argv0):
         lines.append(f'PI_AUTOWORK_WORKERS={workers}')
     lines += [f'{name}={env[name]}' for name in ENV_NAMES
               if env.get(name) or (name == 'PI_AUTOWORK_HERMES_OBSERVERS' and name in env)]
+    lines = [line for line in lines if not line.startswith(('PI_CODING_AGENT_DIR=', 'PI_AUTOWORK_TOOLSET='))]
+    lines.append(f'PI_CODING_AGENT_DIR={private_pi.directory(state_root)}')
+    if installed.is_file():
+        lines.append(f'PI_AUTOWORK_TOOLSET={Path(state_root) / "installed"}')
     written = {line.split('=', 1)[0] for line in lines}
     # A model chosen with `autowork model` survives a reinstall unless this one sets its own.
     try:

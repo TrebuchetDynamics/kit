@@ -637,16 +637,27 @@ def items(hermes_args, output=None, mode='install'):
     # `pi config` filters outlive the install, so enable the package resources here.
     pi.steps.append(Step('enable the package skills and commands in Pi settings',
                          run=enable_pi_package))
-    # The command follows the package the runners update, once it is installed.
-    def command():
-        installed = pi_package()
-        return installed / 'pi-autowork/bin/autowork' if installed else ROOT / 'pi-autowork/bin/autowork'
+    def install_runner():
+        sys.path.insert(0, str(ROOT / 'pi-autowork/src'))
+        from pi_autowork import private_pi
+        root = private_pi.state_root()
+        private_pi.fill(root, pi_settings_path().parent, refresh=mode == 'update')
+        installed = private_pi.install(root, ROOT)
+        config = Path(os.environ.get('XDG_CONFIG_HOME') or HOME / '.config')
+        unit = Path(os.environ.get('PI_AUTOWORK_UNIT_DIR') or config / 'systemd/user') / 'pi-autowork@.service'
+        if unit.is_file():
+            text = unit.read_text()
+            updated = re.sub(r'(?m)^ExecStart=/bin/bash .+ --repo \$\{PI_AUTOWORK_REPO\}$',
+                             lambda _: f'ExecStart=/bin/bash {installed}/pi-autowork/bin/pi-autowork.sh --repo ${{PI_AUTOWORK_REPO}}', text)
+            if updated != text:
+                unit.write_text(updated)
+        return link(installed / 'pi-autowork/bin/autowork', 'autowork')
     return [
         pi,
         Item('autowork', 'autowork command and TUI', note='TUI and web view need uv',
              steps=[Step('install pinned Pi RPC Python runtime',
                          [sys.executable, str(ROOT / 'scripts/install-pi-rpc.py')]),
-                    Step(f'link {BIN}/autowork to the autowork release', run=lambda: link(command(), 'autowork'))]),
+                    Step(f'fill private runner Pi directory and link {BIN}/autowork to the installed release', run=install_runner)]),
         Item('tx', 'tx tmux session launcher', note='keeps your existing ~/.tmux.conf',
              steps=[Step(f'install {BIN}/tx and completions', run=install_tx)]),
         hermes_item(hermes_args),
