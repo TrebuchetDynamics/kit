@@ -42,3 +42,42 @@ test('process bounds stdout, stderr, time and cancellation', async () => {
   controller.abort();
   await assert.rejects(result, /cancelled/);
 });
+test('timeout and abort kill descendants holding inherited output pipes without delaying settlement', { skip: process.platform !== 'linux' }, async () => {
+  const fs = require('node:fs/promises');
+  const os = require('node:os');
+  const path = require('node:path');
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 't3-descendants-'));
+  const descendants = [];
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const running = async pid => {
+    try { return !/^\d+ \(.*\) Z /.test(await fs.readFile(`/proc/${pid}/stat`, 'utf8')); }
+    catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+  };
+  try {
+    for (const mode of ['timeout', 'abort']) {
+      const ready = path.join(temporary, mode);
+      const descendant = `require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setTimeout(()=>{},2500)`;
+      // The immediate child exits; its grandchild still owns stdout AND stderr.
+      const parent = `require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:['ignore',1,2]});process.exit(0)`;
+      const controller = new AbortController();
+      const start = performance.now();
+      const result = c.run(process.execPath, ['-e', parent], controller.signal, { timeout: mode === 'timeout' ? 700 : 5000 });
+      const rejection = assert.rejects(result, mode === 'timeout' ? /timed out/ : /cancelled/);
+      let pid;
+      for (let i = 0; i < 100; i++) {
+        try { pid = Number(await fs.readFile(ready, 'utf8')); break; }
+        catch (error) { if (error.code !== 'ENOENT') throw error; await delay(10); }
+      }
+      assert.ok(pid, 'descendant must start before cancellation');
+      descendants.push(pid);
+      if (mode === 'abort') controller.abort();
+      await rejection;
+      assert.ok(performance.now() - start < 1400, 'inherited pipes must not delay settlement until descendant exit');
+      for (let i = 0; i < 50 && await running(pid); i++) await delay(10);
+      assert.equal(await running(pid), false, 'descendant must be killed, not merely disconnected');
+    }
+  } finally {
+    for (const pid of descendants) { try { process.kill(pid, 'SIGKILL'); } catch {} }
+    await fs.rm(temporary, { recursive: true, force: true });
+  }
+});

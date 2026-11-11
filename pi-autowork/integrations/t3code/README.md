@@ -92,7 +92,10 @@ visible to environment readers under the host contract.
 Only opaque configured repository identifiers cross the RPC selection boundary.
 The server rechecks configuration per request. It executes fixed argv arrays with
 no shell, strips ambient Git/Autowork authority overrides, allows at most two active
-snapshot reads, and stops children on caller cancellation or plugin deactivation.
+snapshot reads, and kills each invocation’s Linux process group on timeout, caller
+cancellation or plugin deactivation. Failed reads destroy their output streams and
+settle immediately so inherited pipes cannot retain a snapshot slot. Deliberately
+detached descendants are outside this process-group cleanup boundary.
 Each command has an 8-second deadline and 192 KB combined-output limit; returned
 snapshots must fit 240 KB. At most 100 tasks, 128 blockers and 60 log lines are shown.
 Larger/unsupported responses fail explicitly rather than claiming the repository
@@ -105,7 +108,8 @@ text. UI errors provide generic configuration/retry guidance instead of host pat
 
 Offline checks cover the real pinned SDK types and preset, generated bundle
 registration/rendering, a fake executable's literal argv, missing executables,
-output/time bounds, cancellation, malformed payloads and redaction. **Native loading
+output/time bounds, cancellation (including grandchildren holding inherited output
+pipes after their parent exits), malformed payloads and redaction. **Native loading
 in an actual experimental T3 host, browser accessibility/visual inspection, remote
 sessions and sustained live CLI operation remain unqualified.** No model execution,
 runner control, service installation or live acceptance is implied by these checks.

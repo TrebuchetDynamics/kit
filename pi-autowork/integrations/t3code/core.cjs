@@ -32,10 +32,31 @@ function run(executable, args, signal, limits = {}) {
   return new Promise((resolve, reject) => {
     if (signal.aborted) return reject(new Error('Read cancelled'));
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_') && !key.startsWith('PI_AUTOWORK_') && !['NODE_OPTIONS', 'PYTHONPATH', 'PYTHONHOME', 'AUTOWORK_WORKER'].includes(key)));
-    const child = spawn(executable, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'], env });
-    let bytes = 0; let output = ''; let failure = '';
+    // Linux Autowork reads may spawn descendants which inherit the output pipes.
+    // Give this invocation its own process group so cancellation reaches that tree.
+    const grouped = process.platform !== 'win32';
+    const child = spawn(executable, args, { shell: false, detached: grouped, stdio: ['ignore', 'pipe', 'pipe'], env });
+    let bytes = 0; let output = ''; let settled = false;
+    /** @param {Error | null} error */
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+      if (error) reject(error); else resolve(output);
+    };
     /** @param {string} message */
-    const stop = (message) => { failure ||= message; child.kill('SIGKILL'); };
+    const stop = (message) => {
+      if (settled) return;
+      if (grouped && child.pid !== undefined) {
+        try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
+      } else child.kill('SIGKILL');
+      // A descendant could detach itself. Never wait on inherited pipe handles
+      // to settle the request or release the snapshot concurrency slot.
+      child.stdout.destroy();
+      child.stderr.destroy();
+      finish(new Error(message));
+    };
     const abort = () => stop('Read cancelled');
     const timer = setTimeout(() => stop('Autowork read timed out'), limits.timeout ?? 8000);
     signal.addEventListener('abort', abort, { once: true });
@@ -44,9 +65,8 @@ function run(executable, args, signal, limits = {}) {
     child.stderr.on('data', chunk => { bytes += chunk.length; if (bytes > (limits.maxBytes ?? 192000)) stop('Autowork output limit exceeded'); });
     child.stdout.on('error', () => stop('Autowork output unavailable'));
     child.stderr.on('error', () => stop('Autowork output unavailable'));
-    const cleanup = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); };
-    child.on('error', () => { cleanup(); reject(new Error('Cannot execute configured Autowork')); });
-    child.on('close', code => { cleanup(); if (failure || code !== 0) reject(new Error(failure || 'Autowork read failed; check installed CLI compatibility')); else resolve(output); });
+    child.on('error', () => stop('Cannot execute configured Autowork'));
+    child.on('close', code => finish(code === 0 ? null : new Error('Autowork read failed; check installed CLI compatibility')));
     if (signal.aborted) abort();
   });
 }
