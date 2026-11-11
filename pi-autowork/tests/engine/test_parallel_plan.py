@@ -14,6 +14,33 @@ import task_store
 
 
 class RunnableTests(unittest.TestCase):
+    def test_deferred_records_never_reach_dispatch(self):
+        import parallel_dispatch as dispatch
+        for section in ('Now', 'Next'):
+            with tempfile.TemporaryDirectory() as folder:
+                repo = Path(folder)
+                store_fixture.write_todo(repo, f'''# Work
+## {section}
+- [ ] HELD — deferred work
+  Scope: held.py
+  Acceptance: works
+  Checks: test
+  Touches: held.py
+  Owner decision: 2000-01-01: deferred: indefinitely
+- [ ] CHILD — dependent
+  Scope: child.py
+  Acceptance: works
+  Checks: test
+  Touches: child.py
+  Dependencies: HELD
+''')
+                candidates = dispatch.contracts(repo)
+                self.assertNotIn('HELD', [t['id'] for t in candidates])
+                result = dispatch.admit(candidates, [], {}, [],
+                                        everything=candidates,
+                                        parked=[], protected=[])
+                self.assertEqual(result['dispatch'], [])
+
     def test_all_contracts_in_order_and_sequential_first_unchanged(self):
         with tempfile.TemporaryDirectory() as folder:
             repo = Path(folder)

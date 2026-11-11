@@ -34,6 +34,22 @@ class BlockersReportTests(unittest.TestCase):
     def git(self, *args):
         return subprocess.check_output(['git', '-C', str(self.repo), *args], text=True).strip()
 
+    def test_deferred_wait_and_root_require_known_associations(self):
+        deferred = {'A'}
+        for identity, expected in (('A', True), ('UNKNOWN', False), ('B', False)):
+            for cause in ('task_wait', 'claim', 'validation'):
+                with self.subTest(identity=identity, cause=cause):
+                    self.assertEqual(blockers_report._deferred_wait(
+                        dict(blocked_by=[identity], cause=cause, root_kind='outside'), deferred),
+                        expected and cause == 'task_wait')
+            for identity_field in (dict(task=identity), dict(id='Live authorization: ' + identity)):
+                for kind in ('outside', 'claim', 'held'):
+                    self.assertEqual(blockers_report._deferred_root(
+                        dict(identity_field, kind=kind), deferred, {'A': None, 'B': None}),
+                        expected and kind == 'outside')
+        self.assertFalse(blockers_report._deferred_root(
+            dict(task='A', kind='outside', tasks=['B']), deferred, {'A': None, 'B': None}))
+
     def test_full_copyable_report_without_writes_or_truncation(self):
         reason = 'Waiting for an external dependency: ' + 'full detail ' * 40 + 'END-OF-REASON'
         self.runner.blocker = 'dispatch stopped by the main check'
@@ -324,6 +340,16 @@ class BlockersReportTests(unittest.TestCase):
         data['tasks'][0] = ['T-2', 'waiting', 'session_claim', 'LIVE-WRITER-777 must release the checkout']
         (self.state / 'status.json').write_text(json.dumps(data))
         self.assertIn('LIVE-WRITER-777', blockers_report.summary(blockers_report.build(self.runner)))
+
+    def test_deferred_root_requires_known_outside_identity(self):
+        for root in ({'id': 'T-1', 'kind': 'claim'},
+                     {'id': 'UNKNOWN', 'kind': 'outside'},
+                     {'id': 'T-1', 'kind': 'held'},
+                     {'id': 'T-1', 'kind': 'outside', 'tasks': ['OTHER']}):
+            self.assertFalse(blockers_report._deferred_root(root, {'T-1'}, {'T-1'}))
+        for identity in ('T-1', 'Live authorization: T-1'):
+            self.assertTrue(blockers_report._deferred_root(
+                {'id': identity, 'kind': 'outside'}, {'T-1'}, {'T-1'}))
 
     def test_compact_wait_requires_deferral_evidence_not_just_an_open_task_id(self):
         for row in ({'blocked_by': ['OTHER']}, {'blocked_by': []}, {'blocked_by': 'T-1'},

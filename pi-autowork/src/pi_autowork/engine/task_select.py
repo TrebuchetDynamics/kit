@@ -42,6 +42,9 @@ def blocking(store: TaskStore, task: TaskRecord, done: Iterable[str] = ()) -> Re
         return Reason('DONE')
     if task.status == 'superseded':
         return Reason('SUPERSEDED')
+    from pi_autowork.engine.task_queue import deferred_since
+    if deferred_since(task):
+        return Reason('DEFERRED')
     if task.section not in SECTION_RANK:
         return Reason('NEEDS_DECISION', task.section or '')
     if task.draft:

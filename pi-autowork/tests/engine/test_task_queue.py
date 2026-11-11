@@ -131,3 +131,30 @@ class ContractViewTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DeferredDecisionTests(unittest.TestCase):
+    def test_latest_dated_decision_controls_explicit_deferral(self):
+        from types import SimpleNamespace
+        task = SimpleNamespace(body='- Owner decision: 2026-11-10: deferred: ok\n',
+                               id='T', status='open', section='Now')
+        self.assertEqual(task_queue.deferred_since(task), '2026-11-10')
+        self.assertEqual(task_queue.deferred(SimpleNamespace(tasks={'T': task})), {'T'})
+        task.body += '- Owner decision: 2026-11-09: proceed\n'
+        self.assertEqual(task_queue.deferred_since(task), '2026-11-10')
+        task.body += '- Owner decision: 2026-11-11: proceed\n'
+        self.assertIsNone(task_queue.deferred_since(task))
+        self.assertEqual(task_queue.deferred(SimpleNamespace(tasks={'T': task})), set())
+
+    def test_same_day_last_valid_note_wins_without_expiry(self):
+        from types import SimpleNamespace
+        task = SimpleNamespace(body="- Owner decision: 2000-01-01: deferred: indefinitely\n")
+        self.assertEqual(task_queue.deferred_since(task), '2000-01-01')
+        task.body += '- Owner decision: 9999-02-30: proceed\n'
+        self.assertEqual(task_queue.deferred_since(task), '2000-01-01')
+        task.body += '- Owner decision: 2000-01-01: proceed\n'
+        self.assertIsNone(task_queue.deferred_since(task))
+        task.body += '- Owner decision: 2000-01-01: Deferred: again\n'
+        self.assertEqual(task_queue.deferred_since(task), '2000-01-01')
+        task.body = ''
+        self.assertIsNone(task_queue.deferred_since(task))

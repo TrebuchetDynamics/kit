@@ -36,12 +36,12 @@ def needs_person(root):
     """Whether a root genuinely needs an owner decision. A held root is judged by the shared
     failure policy, not by its display kind: an exhausted technical hold is still visible, but it
     is Agent repair or engine recovery, not a question."""
-    return failure_policy.disposition(root)['resolution_owner'] == failure_policy.OWNER
+    return not root.get('deferred') and failure_policy.disposition(root)['resolution_owner'] == failure_policy.OWNER
 
 
 def requires_action(root):
     """A dependency cannot clear by ordinary waiting, regardless of who repairs its root."""
-    return (root.get('kind') in ACTION_ROOTS
+    return (not root.get('deferred') and root.get('kind') in ACTION_ROOTS
             and not (root.get('kind') == 'held' and root.get('cause') in ('overlap', 'task_wait')))
 
 
@@ -265,7 +265,7 @@ def update(state_dir, snapshot, *, now=None, runner=None, stall_after=STALL_AFTE
         waiting = sum(t.get('state') == 'waiting' for t in snapshot.get('tasks', [])) \
             + int(runner.get('stuck_integrations') or 0)
         roots.insert(0, dict(id=runner['blocker'], kind='runner', blocks=waiting, cause=None, reason=''))
-    stuck = [r for r in roots if r.get('kind') in ACTION_ROOTS]
+    stuck = [r for r in roots if r.get('kind') in ACTION_ROOTS and not r.get('deferred')]
     technical = [r for r in stuck if not needs_person(r)]
     waiting_ids = {t.get('task') for t in snapshot.get('tasks', []) if t.get('state') in ('waiting', 'held')}
     owner_ids = {task for root in stuck if needs_person(root)

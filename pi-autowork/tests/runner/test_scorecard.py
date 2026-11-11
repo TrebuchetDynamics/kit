@@ -65,6 +65,40 @@ class ScorecardTests(unittest.TestCase):
                                             'task_id': task, 'previous_state': before, 'state': after}) + '\n'
                                 for age, task, before, after in events))
 
+    def test_deferred_text_and_json_keep_old_notes_and_use_utc_calendar_ages(self):
+        # 00:30 UTC: yesterday's note is one calendar day old, not 24 hours old.
+        self.now = 1794270600  # 2026-11-10T00:30:00Z
+        files = store(OLD='open', YESTERDAY='open', FUTURE='open', CLOSED='done', PLAIN='open')
+        for task, day in [('OLD', '2025-11-10'), ('YESTERDAY', '2026-11-09'),
+                          ('FUTURE', '2026-11-11'), ('CLOSED', '2026-11-09')]:
+            files[f'tasks/items/{task}.md'] += f'- Owner decision: {day}: Deferred until needed.\n'
+        self.commit_files(files, age_days=400)
+        self.journal()
+        expected = {'OLD': 365, 'YESTERDAY': 1, 'FUTURE': 0}
+        payload = json.loads(self.scorecard_command('--json'))
+        entries = payload['runners']['fixture']['deferred']
+        self.assertEqual({entry['id']: entry['age_days'] for entry in entries}, expected)
+        self.assertEqual(len(entries), len(expected))
+        text = self.scorecard_command()
+        for task, age in expected.items():
+            self.assertIn(f'fixture: Deferred {task} · {age} days', text)
+        self.assertNotIn('Deferred CLOSED', text)
+        self.assertNotIn('Deferred PLAIN', text)
+
+    def test_deferred_entry_disappears_after_later_decision_or_note_removal(self):
+        self.now = 1794270600
+        note = '- Owner decision: 2025-11-10: Deferred pending priority.\n'
+        self.commit_files({path: body + note for path, body in store(LATER='open', REMOVE='open').items()
+                           if path.startswith('tasks/items/')}
+                          | {'tasks/goals/G.md': GOAL}, age_days=400)
+        initial = json.loads(self.scorecard_command('--json'))['runners']['fixture']['deferred']
+        self.assertEqual({entry['id'] for entry in initial}, {'LATER', 'REMOVE'})
+        self.commit_files({'tasks/items/LATER.md': record('LATER', 'open') + note +
+                           '- Owner decision: 2026-11-09: Proceed now.\n',
+                           'tasks/items/REMOVE.md': record('REMOVE', 'open')}, age_days=1)
+        self.assertEqual(json.loads(self.scorecard_command('--json'))['runners']['fixture']['deferred'], [])
+        self.assertNotIn('Deferred ', self.scorecard_command())
+
     def test_a_week_of_one_runner(self):
         self.commit_files(store(OLD_1='done', T_2='open', T_3='open', T_4='open'), age_days=10)
         # Closed this week, however: a task already done before the window does not count.

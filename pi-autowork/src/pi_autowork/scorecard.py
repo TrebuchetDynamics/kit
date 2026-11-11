@@ -10,6 +10,7 @@ Read from each repository's engine journal and Git history, without a model call
 - questions: distinct owner questions (`### Q-…`) added to BLOCKERS.md in the window.
 """
 import csv
+import datetime
 import io
 import json
 import math
@@ -260,7 +261,12 @@ def _collect(repo, days, now):
         lifecycle = []
     usage = accounting.measure(repo, since, now, tasks=snapshot.tasks if snapshot else (),
                                verified=verified_ids, lifecycle=lifecycle)
-    row = {'repo': str(repo), 'closed': len(completed), 'verified_closed': verified,
+    from pi_autowork.engine import task_queue
+    deferred = [dict(id=t.id, age_days=max(0, (datetime.datetime.fromtimestamp(now, datetime.timezone.utc).date()
+                    - datetime.date.fromisoformat(day)).days))
+                for t in (snapshot.tasks.values() if snapshot else ())
+                if t.status == 'open' and (day := task_queue.deferred_since(t))]
+    row = {'deferred': deferred, 'repo': str(repo), 'closed': len(completed), 'verified_closed': verified,
             'manual_closed': len(completed) - verified - unverified,
             'unverified_closed': unverified, 'integrations': attempts,
             'held_share': round(held / attempts, 2) if attempts else None,
@@ -631,6 +637,9 @@ def table(rows, days):
             lines.append(f"  usage: {cost}; owner attention: {attention}; "
                          f"{usage['unattributed']['runs']} unattributed run(s)")
     total = sum(r['closed'] for r in rows.values())
+    for name, row in rows.items():
+        for task in row.get('deferred', []):
+            lines.append(f"{name}: Deferred {task['id']} · {task['age_days']} days")
     asked = sum(r['questions'] for r in rows.values())
     lines.append(f'{len(rows)} runner(s): {total} task(s) closed, {asked} question(s) for the owner')
     return lines
