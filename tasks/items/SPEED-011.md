@@ -3,7 +3,7 @@ schema = 1
 id = "SPEED-011"
 title = "Planner instructions keep resources for exclusive things and use touches for file overlap"
 short = "Resources only for exclusive things"
-status = "open"
+status = "done"
 section = "Next"
 rank = 33000
 depends_on = []
@@ -15,5 +15,7 @@ scope = "Tasks that name the same resource run one at a time. On 2026-11-10 the 
 acceptance = ["The three documents state the rule with one example of a correct resource and one of a file overlap that belongs in touches.", "A fixture proves validate prints the warning for a broad resource name shared by two tasks and stays ok:true, and prints none for `live` or a named port, install or device.", "No scheduling behaviour changes: tasks that share a declared resource still run one at a time."]
 checks = ["python3 scripts/check.py pi-autowork/tests/runner/test_task_commands.py", "python3 scripts/affected_tests.py --run --base <captured-task-base>", "python3 skills/docs-sync/scripts/docs.py check .", "autowork tasks validate ."]
 exclusions = ["No model calls, service start/stop/restart, installs, pushes or edits to another task's record.", "No weakened or deleted test; no change to owner-only gates, live authorization or receipt checks."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/SPEED-011.toml"
 +++
 - Sources: Owner decisions of 2026-11-10 (grilling round 3, accepted). Measure for every change: `autowork scorecard` accepted-to-delivered median and p95, baseline saved outside the repository on 2026-11-10.
