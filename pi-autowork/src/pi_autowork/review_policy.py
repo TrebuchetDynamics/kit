@@ -1,4 +1,4 @@
-"""Conservative opt-in prose-review pilot, based on committed changes and gate evidence.
+"""Conservative prose-review policy, based on committed changes and gate evidence.
 
 This is deliberately not a general source-code risk classifier. Unknown scope, executable
 content, explicit review language, and checks not proved by the receipt retain model review.
@@ -33,12 +33,12 @@ def git(checkout, *args):
 
 
 def decide(checkout, task, *, evidence=None, env=None):
-    """Return a reasoned decision; only explicit ``auto`` invokes the bounded classifier.
+    """Return a reasoned decision; default ``auto`` invokes the bounded classifier.
 
     ``0`` retains the existing operator opt-out. The caller supplies a validated producing
     gate receipt, not a worker report or a boolean claiming the gate passed.
     """
-    mode = (os.environ if env is None else env).get('PI_AUTOWORK_REVIEW', '1')
+    mode = (os.environ if env is None else env).get('PI_AUTOWORK_REVIEW', 'auto')
     # A reason that only restates "review is required" named nothing to act on, and four tasks
     # repeated it without a decision (2026-10-31). Name the setting that decides it, its value
     # and the policy revision that would judge the diff.

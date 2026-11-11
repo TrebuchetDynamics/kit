@@ -71,7 +71,7 @@ Environment (optional):
   PI_AUTOWORK_TASK_TIMEOUT  seconds per worker (default 5400)
   PI_AUTOWORK_VERIFY_TIMEOUT seconds for verifying one task (default 1800)
   PI_AUTOWORK_VALIDATE      command run before the Pi reviewer on every integrated task
-  PI_AUTOWORK_REVIEW        1 reviews all (default); auto skips only checked low-risk prose;
+  PI_AUTOWORK_REVIEW        auto skips only checked low-risk prose (default); 1 reviews all;
                             0 explicitly skips model review (not the selective policy)
   PI_AUTOWORK_MAX_RETRIES   provider/crash retries per Pi run (default 3)
   PI_AUTOWORK_MAX_FAILURES  consecutive failed tasks before stopping (default 3); a service

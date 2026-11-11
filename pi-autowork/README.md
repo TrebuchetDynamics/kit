@@ -1266,8 +1266,8 @@ are control-flow checks, not live-service qualification or a measured latency be
 
 ## Selective review pilot
 
-Model review remains on by default. `PI_AUTOWORK_REVIEW=auto` is an opt-in,
-conservative pilot: skip the model only for small **ordinary prose** changes whose
+`PI_AUTOWORK_REVIEW=auto` is the default. This conservative policy skips the
+model only for small **ordinary prose** changes whose
 committed task checks are already proved by a successful, source/log-bound gate.
 It does not skip the gate, change full-main checks, grant publication, or treat a
 timeout as a pass. Review findings about style, preferred abstractions, repetitive
@@ -1296,7 +1296,8 @@ command, with a complete successful
 result and no recorded skips; uncovered commands, affected-only selections,
 missing/legacy evidence and unknown inventory retain review. Optimistic landing
 without a pre-landing gate therefore still invokes the reviewer in `auto` mode.
-Unknown setting values also retain review. Explicit `PI_AUTOWORK_REVIEW=0` remains
+Unknown setting values also retain review. Explicit `PI_AUTOWORK_REVIEW=1` reviews
+every task. Explicit `PI_AUTOWORK_REVIEW=0` remains
 the broader operator opt-out; it is not the selective policy and is not recommended
 as a fleet-wide speed shortcut.
 
@@ -1308,14 +1309,14 @@ verdict is invalidated by tree, policy, mode or validation-command drift; it can
 reuse the broader docs/task drift allowance.
 A skip is a policy decision, not an independent model approval.
 
-For a pilot, record `autowork scorecard --days 7 <target>` before enabling `auto` in
-one repository's saved service settings and reloading at a safe point. After a
-week compare dispatch-to-integration time, repeated attempts, regressions and
-owner attention; inspect decision records to see how often review was actually
-skipped. Return to `PI_AUTOWORK_REVIEW=1` if quality worsens. Enabling this on a
-running service is a separate operator action; installing the code does not opt
-existing services in. Offline fixtures cover the policy and receipt boundaries,
-not live model compliance or a measured throughput improvement.
+Use `autowork scorecard --days 7 <target>` to compare dispatch-to-integration time,
+repeated attempts, regressions and owner attention; inspect decision records to see
+how often review was actually skipped. Set `PI_AUTOWORK_REVIEW=1` to require a model
+review for every task. Saved explicit service settings remain in effect; services
+with no explicit review setting use `auto` when they load this code. Reloading a
+running service is a separate operator action. Offline fixtures cover the default,
+policy and receipt boundaries, not live model compliance or a measured throughput
+improvement.
 
 ## Cost and owner attention
 
