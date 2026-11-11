@@ -116,6 +116,9 @@ def _pending_tasks(snapshot, known=()):
         if task in known or record.section not in ('Now', 'Next'):
             continue
         contract = task_queue.contract(record, snapshot)
+        if task_queue.deferred_since(record):
+            result.append(dict(id=task, reason='deferred by owner', blocked_by=[task]))
+            continue
         if gate := parallel_plan.authorization_wait(contract):
             result.append(gate)
             continue
@@ -300,7 +303,7 @@ def _snapshot(repo, common, now):
                              pending.get(task, {}).get('reason', ''))
             previous_blockers = [owner[1]] if owner else []
         obsolete = previous_blockers and all(by in done for by in previous_blockers)
-        source = item if dependency or authorization or obsolete or item.get('root_kind') or task not in pending else pending[task]
+        source = item if task in deferred or dependency or authorization or obsolete or item.get('root_kind') or task not in pending else pending[task]
         rows.append(dict(task=task, state='waiting', slot=None,
                          elapsed_seconds=max(0, now - observations[0]) if observations else 0,
                          reason=source['reason'], worktree=None, checks=None,

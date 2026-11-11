@@ -114,6 +114,31 @@ class StatusWaitTests(unittest.TestCase):
         self.assertEqual((root['id'], root['kind']), ('A', 'claim'))
         self.assertEqual(root['held_by'], 'an interactive session; until 2999-01-01')
 
+    def test_explicit_deferral_does_not_hide_ownership_claim(self):
+        todo = self.todo.replace('Status: open', 'Status: open\n  Held by: an interactive session; until 2999-01-01', 1)
+        todo = todo.replace('Task B\n', 'Task B\n  Dependencies: A.\n').replace(
+            '  Checks: python3 -V\n  Dependencies: None.', '  Checks: python3 -V')
+        todo += '\n' if not todo.endswith('\n') else ''
+        todo = todo.replace('Held by: an interactive session; until 2999-01-01', 'Held by: an interactive session; until 2999-01-01\n  Owner decision: 2026-11-10: deferred: later')
+        store_fixture.write_todo(self.repo, todo)
+        (self.common / 'journal.jsonl').write_text(json.dumps(dict(
+            timestamp=1000, event='dispatch_observed', waiting=[])) + '\n')
+        with patch.object(execution, 'external_workers', return_value=[]):
+            root = status.snapshot(self.repo, now=2000)['roots'][0]
+        self.assertEqual((root['id'], root['kind']), ('A', 'claim'))
+        self.assertEqual(root['held_by'], 'an interactive session; until 2999-01-01')
+
+        self.assertFalse(root.get('deferred', False))
+        from pi_autowork import health
+        with patch.object(execution, 'external_workers', return_value=[]):
+            value = status.snapshot(self.repo, now=2000)
+        state_dir = self.repo / 'health-state'
+        state_dir.mkdir()
+        health.update(state_dir, value, now=2000)
+        observation = json.loads((state_dir / 'status.json').read_text())
+        self.assertTrue(any(r['kind'] == 'claim' and r['id'] == 'A' for r in observation['roots']))
+        self.assertGreater(observation['stopped'], 0)
+
     def test_answer_pins_current_records_and_keeps_admitted_identity_separate(self):
         todo = self.todo.replace('Status: open', 'Status: open\n  Held by: first session', 1)
         todo = todo.replace('Dependencies: None.', 'Dependencies: A.', 2)

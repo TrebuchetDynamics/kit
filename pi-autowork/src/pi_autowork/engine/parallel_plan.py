@@ -368,6 +368,9 @@ def plan(tasks, running=(), *, all_tasks=(), parked=(), protected_files=None, dr
     dispatch, waiting, stopped, reserved = [], [], ('', None), []
     for task in tasks:
         tid = task['id']
+        if task.get('deferred'):
+            waiting.append({'id': tid, 'reason': 'deferred by owner', 'blocked_by': [tid], 'deferred': True})
+            continue
         if gate := authorization_wait(task):
             waiting.append(gate)
             continue

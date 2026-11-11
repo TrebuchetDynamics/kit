@@ -15,7 +15,7 @@ import subprocess
 import tomllib
 
 from pi_autowork.engine import task_select
-from pi_autowork.engine.task_store import (Ownership, LiveAuthorization, Kind, StoreError, TaskStore,
+from pi_autowork.engine.task_store import (Ownership, LiveAuthorization, Kind, StoreError, TaskStore, TaskRecord,
                                            _Document, _blobs, _git)
 
 NOTE = re.compile(r'^- ([A-Za-z][A-Za-z \'-]*): (.*)$', re.M)
@@ -215,7 +215,7 @@ def contract_text(record):
 
 def contract(record, snapshot):
     return {'id': record.id, 'title': record.title, 'section': record.section,
-            'ownership': record.ownership.value,
+            'ownership': record.ownership.value, 'deferred': bool(deferred_since(record)),
             'contract': contract_text(record), 'fields': fields(record),
             'record_revision': record.record_revision, 'contract_hash': record.contract_hash,
             'rev': snapshot.rev, 'priority': {'state': 'store', 'rev': snapshot.rev}}
@@ -228,7 +228,7 @@ def reason(snapshot, task_id, plan=None):
         return 'missing from tasks/'
     blocked = task_select.blocking(snapshot, record)
     if blocked is not None:
-        words = {'DONE': 'completed', 'SUPERSEDED': 'superseded', 'NEEDS_DECISION': 'decision-held',
+        words = {'DEFERRED': 'deferred by owner', 'DONE': 'completed', 'SUPERSEDED': 'superseded', 'NEEDS_DECISION': 'decision-held',
                  'DRAFT': 'needs Scope, Acceptance, Checks and Touches (draft: {})',
                  'NO_GOAL': 'no goal {}', 'GOAL_MET': 'goal {} is met',
                  'GOAL_DEPENDENCY_UNMET': 'goal dependency {} is unmet',
@@ -300,7 +300,7 @@ def _dated(text):
         return False  # 2026-02-30 is no date
 
 
-def deferred_since(record):
+def deferred_since(record: TaskRecord) -> str | None:
     """Date of the latest dated owner decision when it explicitly defers work."""
     decisions = []
     for label, value in NOTE.findall(record.body):

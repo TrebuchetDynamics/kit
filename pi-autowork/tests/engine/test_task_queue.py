@@ -145,3 +145,16 @@ class DeferredDecisionTests(unittest.TestCase):
         task.body += '- Owner decision: 2026-11-11: proceed\n'
         self.assertIsNone(task_queue.deferred_since(task))
         self.assertEqual(task_queue.deferred(SimpleNamespace(tasks={'T': task})), set())
+
+    def test_same_day_last_valid_note_wins_without_expiry(self):
+        from types import SimpleNamespace
+        task = SimpleNamespace(body="- Owner decision: 2000-01-01: deferred: indefinitely\n")
+        self.assertEqual(task_queue.deferred_since(task), '2000-01-01')
+        task.body += '- Owner decision: 9999-02-30: proceed\n'
+        self.assertEqual(task_queue.deferred_since(task), '2000-01-01')
+        task.body += '- Owner decision: 2000-01-01: proceed\n'
+        self.assertIsNone(task_queue.deferred_since(task))
+        task.body += '- Owner decision: 2000-01-01: Deferred: again\n'
+        self.assertEqual(task_queue.deferred_since(task), '2000-01-01')
+        task.body = ''
+        self.assertIsNone(task_queue.deferred_since(task))

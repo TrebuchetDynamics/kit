@@ -2105,6 +2105,17 @@ class AdmitTests(unittest.TestCase):
                               [{'task_id': t} for t in occupying], everything=list(candidates) + list(running)
                               + list(parked), parked=list(parked), protected=None)
 
+    def test_explicit_deferral_refuses_fresh_and_restart_admission(self):
+        for section in ('Now', 'Next'):
+            for restart in (False, True):
+                with self.subTest(section=section, restart=restart):
+                    task = contract('HELD', 'held.py')
+                    task.update(section=section, deferred=True)
+                    result = self.admit([task], restartable={'HELD'} if restart else (),
+                                        occupying={'HELD'} if restart else ())
+                    self.assertEqual(result['dispatch'], [])
+                    self.assertEqual(result['waiting'][0]['reason'], 'deferred by owner')
+
     def test_an_interrupted_candidate_resumes_first_beside_cold_overlap(self):
         """Resume priority is preserved without holding a two-task file overlap."""
         fresh, interrupted = contract('FRESH', 'lib/x.dart'), contract('OLD', 'lib/x.dart, test/x_test.dart')
