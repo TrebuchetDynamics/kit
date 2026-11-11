@@ -16,6 +16,9 @@ struct Cli {
     /// `inspection-v1` is the typed inspection and local publication surface.
     #[arg(long, global = true, value_enum, default_value = "public-v1")]
     format: Format,
+    /// Exclude Python and native writers; refuse any retained Python execution state.
+    #[arg(long, global = true)]
+    offline: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -173,7 +176,7 @@ async fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     let cli = Cli::parse();
-    match dispatch(cli.command, cli.format).await {
+    match dispatch(cli.command, cli.format, cli.offline).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             let diagnostic = if let Some(error) =
@@ -189,7 +192,11 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn dispatch(command: Command, format: Format) -> Result<(), Box<dyn std::error::Error>> {
+async fn dispatch(
+    command: Command,
+    format: Format,
+    offline: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     match command {
         Command::Version => println!(
             "{}",
@@ -235,9 +242,7 @@ async fn dispatch(command: Command, format: Format) -> Result<(), Box<dyn std::e
                         "status": "committed tasks plus persisted runs of every generation",
                         "tasks": ["list", "show", "add", "field", "place", "preview"],
                         "goals": ["list", "show", "add", "field"],
-                        // Pending edits check only this runtime's task lock; another
-                        // runtime's active owner is not detected.
-                        "pending_edits": "unqualified-on-active-repositories"
+                        "pending_edits": "exclusive-offline-only"
                     },
                     "inspection-v1": {
                         "status": "latest-generation journal projection",
@@ -266,6 +271,7 @@ async fn dispatch(command: Command, format: Format) -> Result<(), Box<dyn std::e
             command,
         } => {
             use autowork_next::task_store::{Record, Scope, TaskStore};
+            let mut admission = None;
             let repo = repo.ok_or_else(|| io::Error::other("tasks requires --repo PATH"))?;
             let inspection_only = matches!(
                 command,
@@ -278,6 +284,9 @@ async fn dispatch(command: Command, format: Format) -> Result<(), Box<dyn std::e
                     | TaskCommand::Place { .. }
                     | TaskCommand::Preview
             );
+            if public_only || matches!(command, TaskCommand::Commit { .. }) {
+                admission = Some(admit_pending(&repo, offline)?);
+            }
             if format == Format::PublicV1 {
                 if inspection_only {
                     return Err(io::Error::other(
@@ -329,7 +338,7 @@ async fn dispatch(command: Command, format: Format) -> Result<(), Box<dyn std::e
                     return Ok(());
                 }
                 let common = git_common(&repo)?;
-                let state = StateStore::open(&common)?;
+                let state = StateStore::open_offline(&common, admission.as_mut().unwrap())?;
                 let binary = std::env::current_exe()?;
                 // No routes and no dispatch: this runtime only satisfies the shared constructor.
                 let runtime = runtime::Runtime::new(
@@ -455,6 +464,11 @@ async fn dispatch(command: Command, format: Format) -> Result<(), Box<dyn std::e
                     key,
                     value,
                 },
+            };
+            let _admission = if !matches!(action, TaskCommand::List | TaskCommand::Show { .. }) {
+                Some(admit_pending(&repo, offline)?)
+            } else {
+                None
             };
             let rev = rev.as_deref().unwrap_or("HEAD");
             if !matches!(action, TaskCommand::List | TaskCommand::Show { .. }) && rev != "HEAD" {
@@ -590,6 +604,20 @@ fn git_common(repo: &std::path::Path) -> Result<String, Box<dyn std::error::Erro
         .strip_suffix('\n')
         .ok_or_else(|| io::Error::other("invalid Git directory"))?
         .to_owned())
+}
+
+fn admit_pending(
+    repo: &std::path::Path,
+    offline: bool,
+) -> Result<autowork_next::state::OfflineAdmission, Box<dyn std::error::Error>> {
+    if !offline {
+        return Err(
+            io::Error::other("pending commands require --offline exclusive exclusion").into(),
+        );
+    }
+    Ok(autowork_next::state::OfflineAdmission::acquire(
+        std::path::Path::new(&git_common(repo)?),
+    )?)
 }
 
 fn status(repo: &std::path::Path) -> Result<serde_json::Value, Box<dyn std::error::Error>> {

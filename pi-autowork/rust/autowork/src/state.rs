@@ -393,10 +393,68 @@ fn read_snapshot(
     Ok((status, history))
 }
 
+/// Exclusive offline boundary for pending CLI edits. Python execution history is
+/// deliberately unsupported: even an idle-looking retained attempt is refused.
+pub struct OfflineAdmission {
+    _python: Vec<File>,
+    repository: Repository,
+    native: Option<File>,
+}
+impl OfflineAdmission {
+    pub fn acquire(common_dir: &Path) -> Result<Self> {
+        let repository = Repository::inspect(common_dir)?;
+        require_local(&repository.common_dir)?;
+        let directory = repository.common_dir.join("autowork-execution");
+        match fs::DirBuilder::new().mode(0o700).create(&directory) {
+            Ok(()) => (),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (),
+            Err(error) => return Err(error.into()),
+        }
+        private_path(&directory, true)?;
+        require_local(&directory)?;
+        let names = ["dispatch.lock", "integration.lock", "writer.lock"];
+        let mut locks = Vec::new();
+        for name in names {
+            let lock = private_file(&directory.join(name))?;
+            require_local(&directory.join(name))?;
+            lock.try_lock_exclusive()
+                .map_err(|_| StateError("offline exclusion unavailable".into()))?;
+            locks.push(lock);
+        }
+        for entry in fs::read_dir(&directory)? {
+            require(
+                names
+                    .iter()
+                    .any(|name| entry.as_ref().is_ok_and(|entry| entry.file_name() == *name)),
+                "Python execution state requires its owning runtime",
+            )?;
+        }
+        let native_dir = repository.common_dir.join("autowork-rust");
+        match fs::DirBuilder::new().mode(0o700).create(&native_dir) {
+            Ok(()) => (),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (),
+            Err(error) => return Err(error.into()),
+        }
+        private_path(&native_dir, true)?;
+        require_local(&native_dir)?;
+        let native = private_file(&native_dir.join("writer.lock"))?;
+        require_local(&native_dir.join("writer.lock"))?;
+        native
+            .try_lock_exclusive()
+            .map_err(|_| StateError("repository journal writer is owned".into()))?;
+        Ok(Self {
+            _python: locks,
+            repository,
+            native: Some(native),
+        })
+    }
+}
+
 pub struct StateStore {
     connection: Mutex<Connection>,
     // Drop the connection before releasing the cooperative repository lock.
     _writer: File,
+    _offline: Vec<File>,
     repository: Repository,
     repo_id: String,
     owner: Owner,
@@ -407,8 +465,39 @@ pub struct StateStore {
 impl StateStore {
     /// The caller resolves Git's common-dir; no Git subprocess or Python state is used.
     pub fn open(common_dir: impl AsRef<Path>) -> Result<Self> {
+        Self::open_admitted(common_dir, None)
+    }
+
+    pub fn open_offline(
+        common_dir: impl AsRef<Path>,
+        admission: &mut OfflineAdmission,
+    ) -> Result<Self> {
+        Self::open_admitted(common_dir, Some(admission))
+    }
+
+    fn open_admitted(
+        common_dir: impl AsRef<Path>,
+        admission: Option<&mut OfflineAdmission>,
+    ) -> Result<Self> {
         let repository = Repository::inspect(common_dir.as_ref())?;
         require_local(&repository.common_dir)?;
+        let mut offline_locks = Vec::new();
+        let writer = match admission {
+            Some(admission) => {
+                require(
+                    admission.repository == repository,
+                    "foreign offline exclusion",
+                )?;
+                offline_locks = std::mem::take(&mut admission._python);
+                Some(
+                    admission
+                        .native
+                        .take()
+                        .ok_or_else(|| StateError("consumed offline exclusion".into()))?,
+                )
+            }
+            None => None,
+        };
         let directory = repository.common_dir.join("autowork-rust");
         match fs::DirBuilder::new().mode(0o700).create(&directory) {
             Ok(()) => File::open(&repository.common_dir)?.sync_all()?,
@@ -417,7 +506,10 @@ impl StateStore {
         }
         private_path(&directory, true)?;
         require_local(&directory)?;
-        let writer = private_file(&directory.join("writer.lock"))?;
+        let writer = match writer {
+            Some(writer) => writer,
+            None => private_file(&directory.join("writer.lock"))?,
+        };
         require_local(&directory.join("writer.lock"))?;
         writer
             .try_lock_exclusive()
@@ -527,6 +619,7 @@ impl StateStore {
         Ok(Self {
             connection: Mutex::new(connection),
             _writer: writer,
+            _offline: offline_locks,
             repository,
             repo_id,
             owner,

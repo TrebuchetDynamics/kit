@@ -59,9 +59,15 @@ accepted before or after the `tasks` or `goals` subcommand; `--rev` given twice 
 refused, and a pending edit accepts only `--rev HEAD`. `status --json` is a
 compatibility marker: output is always JSON and the flag selects nothing.
 
-The `public-v1` pending edits take only this runtime's task lock. They do not detect
-another runtime's active owner, so `capabilities` reports them as
-`unqualified-on-active-repositories`: use them in a repository no runner is working.
+Pending commands require explicit `--offline` exclusion, including preview and
+publication dry runs. Before task locks, scratch objects or journal construction,
+they acquire Python dispatch/integration/writer locks and the native writer lease.
+Any retained Python execution entry beyond those three lock files is refused,
+even when it appears idle: its owning runtime must reconcile it. Unsafe paths or
+busy locks also refuse. This conservative boundary supports repositories without
+Python execution history; it is not an active-runner handoff or owner release.
+Publication transfers the native lease into StateStore, retaining writer epochs,
+CAS and recovery checks. Queries and status require no exclusion.
 
 ## Read-only status and pending task/goal commands (`public-v1`)
 
@@ -84,7 +90,7 @@ IDs and invalid revisions fail explicitly. These reads ignore pending edits and
 create no task locks or runtime state; Git environment overrides cannot redirect
 them to another repository.
 
-`tasks --repo /path/to/repo --expected-revision COMMIT` accepts:
+`--offline tasks --repo /path/to/repo --expected-revision COMMIT` accepts:
 
 - `add ID --record /path/to/record.md`: validate a complete task record through the
   existing task service. A new ID needs an absent destination.
@@ -92,7 +98,7 @@ them to another repository.
   working-record revision prevent stale edits. Existing unknown notes survive.
 - `place ID --record-revision SHA256 Next`: change the scheduling section.
 
-`tasks --repo /path/to/repo preview` captures the pending-edit identity. Mutation
+`--offline tasks --repo /path/to/repo preview` captures the pending-edit identity. Mutation
 results include their base revision and resulting record hashes. Follow-up edits
 use those hashes and preserve earlier pending edits. They remain uncommitted and
 unselectable until the existing coordinator publishes the validated snapshot.
@@ -109,7 +115,7 @@ Each row preserves all typed goal frontmatter, including its own `source`, integ
 `record_revision` and `contract_hash`. Pending bytes and Git environment redirection
 cannot affect these reads. Unknown IDs/revisions fail without creating state.
 
-`goals --repo /path/to/repo --expected-revision COMMIT` accepts:
+`--offline goals --repo /path/to/repo --expected-revision COMMIT` accepts:
 
 - `add ID --record /path/to/goal.md`: validate a schema-1 goal with a new ID and
   `status = "unmet"`. Existing destinations and invented authority notes are refused.
@@ -122,7 +128,7 @@ other pending task/goal edits. Use the returned `base_revision` and
 `record_revisions` for sequential edits; `tasks preview` captures their shared
 pending identity. Nothing commits automatically or becomes selectable. Goal
 status/progress, closure, qualification and owner/live authority are not writable;
-existing protected notes remain unchanged. The pending-edit active-owner limitation
+existing protected notes remain unchanged. The pending-edit offline exclusion
 above also applies to goals.
 
 Offline CLI and task-store fixtures cover committed goal reads, historical pins,
@@ -224,7 +230,10 @@ supplies the consumer repository's resolved Git common directory, not its checko
 the Kit source directory or an Octet session directory. The journal launches no
 processes. It uses only `<common_dir>/autowork-rust/journal.sqlite3` and its own lock,
 SQLite sidecars and migration backup. It does not read, import or write Python
-runtime state. Native sessions and source revisions remain separate inputs.
+runtime state. The pending CLI's separate `OfflineAdmission` boundary creates and
+holds Python exclusion lock files; `open_offline` transfers those locks and the
+native lease into the store for its lifetime. It never imports Python attempts or
+receipts. Native sessions and source revisions remain separate inputs.
 
 The directory must be owned by the current user with no group/other permissions.
 Journal and lock files must also be private, regular and single-linked. The store
@@ -503,8 +512,8 @@ The caller must establish exclusive ownership. This command does not import lega
 ownership, establish service liveness or qualify an installed-runner handoff.
 
 ```sh
-autowork-next --format inspection-v1 tasks commit --dry-run --repo /absolute/disposable-repository
-autowork-next --format inspection-v1 tasks commit --repo /absolute/disposable-repository --expect-token TOKEN
+autowork-next --offline --format inspection-v1 tasks commit --dry-run --repo /absolute/disposable-repository
+autowork-next --offline --format inspection-v1 tasks commit --repo /absolute/disposable-repository --expect-token TOKEN
 ```
 
 `capabilities` advertises `contracts.task_publication = 1`. Preview validates one

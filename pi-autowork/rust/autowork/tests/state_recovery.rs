@@ -524,3 +524,29 @@ fn status_snapshot_retains_reconciled_older_generation_without_accepting_it() {
     assert_eq!(latest["projections"][0]["status"], "ready");
     assert_eq!(latest["event_high_water_mark"], 4);
 }
+
+#[test]
+fn offline_exclusion_remains_held_for_the_published_store_lifetime() {
+    use autowork_next::state::OfflineAdmission;
+    use fs2::FileExt;
+    let repo = Repo::new();
+    let other = Repo::new();
+    let mut admission = OfflineAdmission::acquire(&repo.common()).unwrap();
+    assert!(StateStore::open_offline(other.common(), &mut admission).is_err());
+    assert!(!other.database().exists());
+    let store = StateStore::open_offline(repo.common(), &mut admission).unwrap();
+    assert!(StateStore::open_offline(repo.common(), &mut admission).is_err());
+    drop(admission);
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(repo.common().join("autowork-execution/writer.lock"))
+        .unwrap();
+    assert!(lock.try_lock_exclusive().is_err());
+    assert!(StateStore::open(repo.common()).is_err());
+    store
+        .claim(0, identity(&store, 1), "source-commit")
+        .unwrap();
+    drop(store);
+    lock.try_lock_exclusive().unwrap();
+}

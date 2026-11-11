@@ -20,6 +20,7 @@ const INSPECTION: [&str; 2] = ["--format", "inspection-v1"];
 
 fn cli(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_autowork-next"))
+        .arg("--offline")
         .args(INSPECTION)
         .args(args)
         .env_clear()
@@ -100,6 +101,7 @@ impl Repo {
             .env_clear()
             .env("TMPDIR", self.0.join("scratch"))
             .env("PATH", "/usr/bin:/bin")
+            .arg("--offline")
             .args(INSPECTION)
             .args(args)
             .arg("--repo")
@@ -289,6 +291,8 @@ fn pending_publication_preview_is_exact() {
         ]),
         journal_image(&sql),
     );
+    assert!(!repo.cli(&["tasks", "commit", "--dry-run"]).status.success());
+    drop(store);
     let preview = repo.json(&["tasks", "commit", "--dry-run"]);
     assert_eq!(preview["state"], "pending_commit");
     assert_eq!(preview["base_head"], repo.git(&["rev-parse", "HEAD"]));
@@ -409,7 +413,6 @@ fn pending_publication_preview_is_exact() {
             .next()
             .is_none()
     );
-    drop(store);
     let clean = Repo::new();
     let preview = clean.json(&["tasks", "commit", "--dry-run"]);
     assert_eq!(preview["state"], "clean");
@@ -583,6 +586,7 @@ fn pending_publication_commits_only_reviewed_records() {
 
 fn interrupt_publication(repo: &Repo, fault: autowork_next::execution::FaultPoint) {
     use autowork_next::{execution::*, runtime::Runtime, task_store::TaskService};
+    let token = preview_token(repo);
     let state = StateStore::open(repo.0.join(".git")).unwrap();
     let binary = PathBuf::from(env!("CARGO_BIN_EXE_autowork-next"));
     let runtime = Runtime::new(
@@ -611,11 +615,7 @@ fn interrupt_publication(repo: &Repo, fault: autowork_next::execution::FaultPoin
     )
     .unwrap();
     coordinator.inject_fault(fault);
-    assert!(
-        coordinator
-            .publish_pending(Some(&preview_token(repo)))
-            .is_err()
-    );
+    assert!(coordinator.publish_pending(Some(&token)).is_err());
 }
 
 #[test]
@@ -1161,6 +1161,7 @@ impl TaskCliRepo {
     }
     fn run(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_autowork-next"))
+            .arg("--offline")
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("TMPDIR", std::env::temp_dir())
@@ -1782,7 +1783,7 @@ fn goal_pending_edits_validate_types_preserve_notes_and_refuse_authority() {
         repo.value(&["goals", "--repo", path, "show", "G-1"])["goal"]["content"],
         original
     );
-    assert!(!repo.0.join(".git/autowork-rust").exists());
+    assert!(!repo.0.join(".git/autowork-rust/journal.sqlite3").exists());
 }
 
 #[test]
@@ -1852,10 +1853,185 @@ fn wire_formats_are_explicit_and_never_answer_in_the_other_shape() {
     assert_eq!(capabilities["commands"]["status"], "read-only-json-v1");
     assert_eq!(
         capabilities["formats"]["public-v1"]["pending_edits"],
-        "unqualified-on-active-repositories"
+        "exclusive-offline-only"
     );
     assert_eq!(
         capabilities["formats"]["inspection-v1"]["tasks"],
         json!(["list", "goals", "show", "why", "commit"])
     );
+}
+
+#[test]
+fn pending_cli_requires_exclusion_before_task_or_journal_effects() {
+    use fs2::FileExt;
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    let actions = [
+        vec!["tasks", "add", "T-2", "--record", "/missing-record"],
+        vec![
+            "tasks",
+            "field",
+            "T-1",
+            "--record-revision",
+            "missing",
+            "title",
+            "\"new\"",
+        ],
+        vec![
+            "tasks",
+            "place",
+            "T-1",
+            "--record-revision",
+            "missing",
+            "Next",
+        ],
+        vec!["tasks", "preview"],
+        vec!["--format", "inspection-v1", "tasks", "commit", "--dry-run"],
+        vec!["--format", "inspection-v1", "tasks", "commit"],
+        vec!["goals", "add", "G-2", "--record", "/missing-record"],
+        vec![
+            "goals",
+            "field",
+            "G-1",
+            "--record-revision",
+            "missing",
+            "title",
+            "\"new\"",
+        ],
+    ];
+    for mode in [
+        "missing",
+        "python-lock-dispatch",
+        "python-lock-integration",
+        "python-lock-writer",
+        "python-attempt",
+        "native",
+        "unsafe-owner",
+    ] {
+        for action in &actions {
+            let repo = TaskCliRepo::new();
+            let path = repo.0.to_str().unwrap();
+            let original = fs::read(repo.0.join("tasks/items/T-1.md")).unwrap();
+            let base = repo.git(&["rev-parse", "HEAD"]);
+            let objects = repo.git(&[
+                "cat-file",
+                "--batch-all-objects",
+                "--batch-check=%(objectname)",
+            ]);
+            let scratch = repo.0.join("scratch");
+            fs::create_dir(&scratch).unwrap();
+            let mut python_lock = None;
+            let native = if mode == "native" {
+                Some(StateStore::open(repo.0.join(".git")).unwrap())
+            } else {
+                None
+            };
+            let python = repo.0.join(".git/autowork-execution");
+            if mode.starts_with("python") || mode == "unsafe-owner" {
+                fs::DirBuilder::new().mode(0o700).create(&python).unwrap();
+                if mode == "python-attempt" {
+                    fs::write(python.join("active.json"), "retained contract and receipt").unwrap();
+                } else {
+                    let lock = fs::OpenOptions::new()
+                        .create(true)
+                        .truncate(false)
+                        .read(true)
+                        .write(true)
+                        .mode(0o600)
+                        .open(python.join(if mode == "python-lock-dispatch" {
+                            "dispatch.lock"
+                        } else if mode == "python-lock-integration" {
+                            "integration.lock"
+                        } else {
+                            "writer.lock"
+                        }))
+                        .unwrap();
+                    if mode.starts_with("python-lock-") {
+                        lock.lock_exclusive().unwrap();
+                        python_lock = Some(lock);
+                    } else {
+                        fs::set_permissions(
+                            python.join("writer.lock"),
+                            fs::Permissions::from_mode(0o644),
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+            let before_journal = native.as_ref().map(|_| {
+                journal_image(
+                    &Connection::open(repo.0.join(".git/autowork-rust/journal.sqlite3")).unwrap(),
+                )
+            });
+            let mut command = Command::new(env!("CARGO_BIN_EXE_autowork-next"));
+            command
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .env("TMPDIR", &scratch);
+            if mode != "missing" {
+                command.arg("--offline");
+            }
+            let result = command
+                .args(action)
+                .args(["--repo", path])
+                .output()
+                .unwrap();
+            assert!(!result.status.success(), "mode={mode} action={action:?}");
+            let diagnostic = String::from_utf8_lossy(&result.stderr);
+            let expected = match mode {
+                "missing" => "require --offline",
+                "python-attempt" => "Python execution state requires its owning runtime",
+                "native" => "repository journal writer is owned",
+                "unsafe-owner" => "private, owned and not aliases",
+                _ => "offline exclusion unavailable",
+            };
+            assert!(
+                diagnostic.contains(expected),
+                "mode={mode} action={action:?}: {diagnostic}"
+            );
+            assert!(
+                !String::from_utf8_lossy(&result.stderr).contains("unexpected argument"),
+                "{result:?}"
+            );
+            assert!(
+                !repo.0.join(".git/autowork-tasks.lock").exists(),
+                "mode={mode} action={action:?}"
+            );
+            assert!(fs::read_dir(&scratch).unwrap().next().is_none());
+            assert_eq!(
+                fs::read(repo.0.join("tasks/items/T-1.md")).unwrap(),
+                original
+            );
+            assert_eq!(repo.git(&["rev-parse", "HEAD"]), base);
+            assert_eq!(
+                repo.git(&[
+                    "cat-file",
+                    "--batch-all-objects",
+                    "--batch-check=%(objectname)"
+                ]),
+                objects
+            );
+            if let Some(before) = before_journal {
+                assert_eq!(
+                    journal_image(
+                        &Connection::open(repo.0.join(".git/autowork-rust/journal.sqlite3"))
+                            .unwrap()
+                    ),
+                    before
+                );
+            } else {
+                assert!(!repo.0.join(".git/autowork-rust/journal.sqlite3").exists());
+            }
+            if mode == "missing" {
+                assert!(!python.exists());
+                assert!(!repo.0.join(".git/autowork-rust").exists());
+            }
+            if mode == "python-attempt" {
+                assert_eq!(
+                    fs::read_to_string(python.join("active.json")).unwrap(),
+                    "retained contract and receipt"
+                );
+            }
+            drop(python_lock);
+        }
+    }
 }
