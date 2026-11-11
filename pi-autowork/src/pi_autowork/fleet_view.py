@@ -1039,7 +1039,14 @@ def lanes(runner, now=None):
             # Both the merged and base suites publish here; a dead invocation is never a live wait.
             progress = main_check.slot_status(Path(runner.state_dir) / 'full-check' / f'{task}.status.json')
             if progress.get('state') == 'waiting' and main_check.alive(progress.get('pid')):
-                phase, detail = 'waiting for a check slot', f"{progress.get('ahead', 0)} ahead"
+                phase, detail = 'waiting for a check slot', main_check.queue_detail(progress)
+        if slot['state'] in ('dispatched', 'running'):
+            from pi_autowork.engine import autowork_run
+            directory = Path(common, 'autowork-execution', 'slot-data', str(task),
+                             f'attempt-{slot.get("data_attempt", slot.get("attempt", 1))}', 'worker-checks')
+            queued = autowork_run.waiting_records(directory)
+            if queued:
+                phase, detail = 'waiting for a check slot', main_check.queue_detail(queued[0])
         if phase == 'implemented' and task in batch:
             # A finished commit a running batch (or merge-train car) is checking: it read as idle
             # "Implemented" for the whole check, so six tasks under check looked forgotten.

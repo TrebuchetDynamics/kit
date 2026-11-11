@@ -138,6 +138,7 @@ class IntegrationTests(unittest.TestCase):
     def test_acceptance_gaps_hold_without_writes_and_keep_legacy_reports(self):
         self.set_todo(self.todo.replace('Acceptance: offline fixture',
                                         'Acceptance: offline fixture; second criterion'))
+        self.baseline = self.git('rev-parse', 'HEAD')
         self.worker()
         module = self.module()
         original = state.slots(self.common)[0]
@@ -191,13 +192,141 @@ class IntegrationTests(unittest.TestCase):
         module = self.module()
         result = module.integrate(self.repo, self.owner, 'A', ['true'], 10)
         self.assertEqual(result['outcome'], 'HELD')
-        self.assertIn('checks is empty but the contract declares checks: true', result['reason'])
+        self.assertIn("missing declared check evidence: ['true']", result['reason'])
         self.assertEqual(self.record('A').status, 'open')
         path = self.repo / 'tasks/items/A.md'
         path.write_text(task_store.edit(path.read_text(), {'checks': []}))
         self.git('commit', '-qam', 'no declared checks for A')
         report = execution.read(dispatch.data_dir(self.common, state.slots(self.common)[0]) / 'report.json')
         self.assertEqual(module.report_mismatch(self.repo, report, 'A', commit, ['A.txt']), '')
+
+    def test_missing_declared_checks_holds_without_mutating_candidate(self):
+        root, commit = self.worker()
+        slot = state.slots(self.common)[0]
+        path = dispatch.data_dir(self.common, slot) / 'report.json'
+        report = execution.read(path)
+        execution.save(path, dict(report, checks=[]))
+        before = self.task_text('A')
+        head = self.git('rev-parse', 'HEAD')
+        receipts = list(self.repo.glob('tasks/evidence/*'))
+        result = self.module().integrate(self.repo, self.owner, 'A', ['true'], 30)
+        self.assertEqual((result['outcome'], result.get('cause')), ('HELD', 'validation'))
+        self.assertIn('true', result['reason'])
+        self.assertEqual(self.task_text('A'), before)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        self.assertEqual(self.git('rev-parse', 'HEAD', cwd=root), commit)
+        self.assertEqual(list(self.repo.glob('tasks/evidence/*')), receipts)
+
+    def test_coordinator_full_check_requires_actual_gate(self):
+        path = self.repo / 'tasks/items/A.md'
+        path.write_text(path.read_text().replace('checks = ["true"]', 'checks = ["true", "false"]'))
+        self.git('add', 'tasks/items/A.md')
+        self.git('commit', '-qm', 'declare coordinator check')
+        self.baseline = self.git('rev-parse', 'HEAD')
+        self.worker()
+        module = self.module()
+        slot = state.slots(self.common)[0]
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='false'):
+            self.assertFalse(module.report_matches(self.repo, self.common, slot))
+            result = module.integrate(self.repo, self.owner, 'A', ['false'], 30)
+        self.assertEqual(result['cause'], 'validation')
+        self.assertIn('integration validation failed', result['reason'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.baseline)
+
+    def test_batch_verdict_requires_actual_coordinator_gate(self):
+        from pi_autowork import worker
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='false'), \
+                patch.object(worker, 'link_ignored'), \
+                patch.object(worker, 'batched_verdict', return_value=(True, '')), \
+                patch.object(worker, 'review_gate_evidence', return_value=None), \
+                patch.object(worker, 'full_suite_gate', return_value=(False, 'gate failed')) as gate:
+            self.assertEqual(worker.verify(self.repo / 'runtime', 'A'), 1)
+            gate.assert_called_once()
+
+    def test_production_wrapper_success_requires_bound_gate_evidence(self):
+        self.worker()
+        module = self.module()
+        launcher = Path(module.__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+        argv = ['/bin/bash', str(launcher), '--verify', str(self.repo / 'runtime'), 'A']
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='true', PI_AUTOWORK_VALIDATE='true'), \
+                patch.object(module.execution, 'bounded_command', return_value={'outcome': 'EXECUTED'}):
+            result = module.integrate(self.repo, self.owner, 'A', argv, 30)
+        self.assertEqual(result.get('cause'), 'validation')
+        self.assertIn('missing bound full-check evidence', result['reason'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.baseline)
+
+    def test_exhausted_report_resume_missing_checks_stays_engineering(self):
+        self.worker()
+        slot = state.slots(self.common)[0]
+        state.write_slot(self.common, dict(slot, report_resume_attempt=slot['attempt']))
+        path = dispatch.data_dir(self.common, slot) / 'report.json'
+        execution.save(path, dict(execution.read(path), checks=[]))
+        result = self.module().integrate(self.repo, self.owner, 'A', ['true'], 30)
+        self.assertEqual(result.get('cause'), 'validation')
+        self.assertEqual(state.slots(self.common)[0]['cause'], 'validation')
+
+    def test_production_wrapper_owns_only_repository_full_check(self):
+        module = self.module()
+        launcher = Path(module.__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+        argv = ['/bin/bash', str(launcher), '--verify', '/tmp/fixture-state', 'A']
+        (self.repo / 'AGENTS.md').write_text('Full check: python3 scripts/check.py\n')
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='python3 scripts/check.py'):
+            self.assertEqual(module.coordinator_full_check(argv, self.repo), 'python3 scripts/check.py')
+            self.assertEqual(module.coordinator_full_check(['/bin/bash', '/tmp/fake.sh', *argv[2:]], self.repo), '')
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='arbitrary command'):
+            self.assertEqual(module.coordinator_full_check(argv, self.repo), '')
+
+    def test_optimistic_wrapper_does_not_exempt_an_unrun_declared_check(self):
+        module = self.module()
+        launcher = Path(module.__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+        argv = ['/bin/bash', str(launcher), '--verify', '/tmp/fixture-state', 'A']
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='false',
+                        PI_AUTOWORK_VALIDATE='false', PI_AUTOWORK_OPTIMISTIC='1'):
+            self.assertEqual(module.coordinator_full_check(argv, self.repo), '')
+            # A direct actual gate still owns its command, irrespective of optimistic policy.
+            self.assertEqual(module.coordinator_full_check(['false'], self.repo), 'false')
+
+    def test_no_declared_checks_still_verifies(self):
+        path = self.repo / 'tasks/items/A.md'
+        path.write_text(path.read_text().replace('checks = ["true"]', 'checks = []'))
+        self.git('add', 'tasks/items/A.md')
+        self.git('commit', '-qm', 'fixture with no declared checks')
+        self.baseline = self.git('rev-parse', 'HEAD')
+        self.worker()
+        slot = state.slots(self.common)[0]
+        path = dispatch.data_dir(self.common, slot) / 'report.json'
+        execution.save(path, dict(execution.read(path), checks=[]))
+        contracts = {'A': {'contract': task_queue.contract_text(self.record('A'))}}
+        files, report = self.module().verify(self.repo, self.common, slot, contracts)
+        self.assertEqual(report['checks'], [])
+        self.assertEqual(files, ['A.txt'])
+
+    def test_current_contract_cannot_erase_admitted_checks(self):
+        self.worker()
+        slot = state.slots(self.common)[0]
+        data = dispatch.data_dir(self.common, slot)
+        execution.save(data / 'report.json', dict(execution.read(data / 'report.json'), checks=[]))
+        (data / 'contract.txt').write_text('Checks: \n')
+        contracts = {t['id']: t for t in dispatch.contracts(self.repo)}
+        contracts['A']['fields']['Checks'] = ''
+        with self.assertRaises(self.module().Hold) as caught:
+            self.module().verify(self.repo, self.common, slot, contracts)
+        self.assertEqual(caught.exception.cause, 'validation')
+        self.assertIn('true', str(caught.exception))
+
+    def test_declared_check_evidence_shapes(self):
+        module = self.module()
+        report = {'task': 'A', 'commit': self.baseline, 'changed_files': [],
+                  'blockers': [], 'checks': [], 'acceptance': self.acceptance()}
+        self.assertEqual(module.report_mismatch(self.repo, report, 'A', self.baseline, [], ()), '')
+        for checks in ([], None, ['true'], [{'command': 'true', 'result': 'fail'}],
+                       [{'command': 'other', 'result': 'pass'}]):
+            with self.subTest(checks=checks):
+                self.assertTrue(module.report_mismatch(
+                    self.repo, dict(report, checks=checks), 'A', self.baseline, [], ('true',)))
+        report['checks'] = [{'command': 'true', 'result': 'pass'}]
+        self.assertEqual(module.report_mismatch(
+            self.repo, report, 'A', self.baseline, [], ('true',)), '')
 
     def retain_evidence(self):
         """Retain command receipts, child output and slot state before fixture cleanup."""
@@ -1114,7 +1243,7 @@ finally:
         ]
         for impact, expected in cases:
             with self.subTest(impact=impact):
-                execution.save(path, dict(report, checks=[check], **({'doc_impact': impact} if impact else {})))
+                execution.save(path, dict(report, checks=[*report['checks'], check], **({'doc_impact': impact} if impact else {})))
                 _, assessed = module.verify(self.repo, self.common, slot, contracts)
                 evidence = assessed['doc_impact']
                 self.assertEqual(evidence['status'], expected)
@@ -2160,6 +2289,7 @@ finally:
                     self.set_todo(self.todo + f'\n- [ ] {task} — Task {task}\n  Scope: fixture\n'
                                   f'  Touches: {task}.txt\n  Acceptance: fixture\n  Checks: true\n'
                                   '  Dependencies: None.\n  Status: open\n')
+                self.baseline = self.git('rev-parse', 'HEAD')
                 self.worker(task, files={'go.mod': 'x\n'})  # an undeclared protected file (TOOLSET-161-17)
                 slot = next(s for s in state.slots(self.common) if s['task_id'] == task)
                 contract = self.entry(task)

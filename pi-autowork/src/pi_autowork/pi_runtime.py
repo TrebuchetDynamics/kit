@@ -173,6 +173,14 @@ def run_json(s, directory, message, session, target, limit, extra, role=None):
             s.pi, '--mode', 'json', '--provider', provider(target), '--model', model_name(target),
             '--session-dir', str(s.state / 'sessions'), '--session-id', session, '--no-approve',
             *s.skill_args, *extra, '--', message]
+    queue = os.environ.get('AUTOWORK_WORKER_CHECK_DIR') if role == 'worker' else None
+    if queue:
+        from pi_autowork.layout import LAYOUT
+        from pi_autowork.processes import start_time
+        argv = [sys.executable, str(LAYOUT.entrypoint('pi_autowork.pi_process')),
+                '--identity', raw + '.guard.json', '--deadline', str(limit),
+                '--check-queue', queue, '--parent-pid', str(os.getpid()),
+                '--parent-start', str(start_time(os.getpid())), '--', *argv[7:]]
     try:
         with open(raw, 'wb') as out, open(err, 'wb') as errors:
             # Same process group as the caller: a stop sent to the group reaches Pi too.
@@ -195,7 +203,7 @@ def run_json(s, directory, message, session, target, limit, extra, role=None):
         return run
     finally:
         # Keep only the compact record; the raw stream holds prompts, code and tool output.
-        for path in (raw, err):
+        for path in (raw, err, raw + '.guard.json'):
             try:
                 os.unlink(path)
             except OSError:

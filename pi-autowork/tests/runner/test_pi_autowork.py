@@ -183,10 +183,19 @@ def acceptance():
     import tomllib
     contract = tomllib.loads(open(record_path(task)).read().split('+++')[1])
     return [{'item': item, 'result': 'met', 'evidence': 'offline fixture'} for item in contract['acceptance']]
+def declared_checks():
+    import tomllib
+    contract = tomllib.loads(open(record_path(task)).read().split('+++')[1])
+    checks = []
+    for command in contract['checks']:
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        checks.append({'command': command, 'result': 'pass' if result.returncode == 0 else 'fail',
+                       'summary': f'exit {result.returncode}: ' + result.stdout + result.stderr})
+    return checks
 def report(commit, blockers=()):
     with open(field('Report file'), 'w') as out:
         json.dump({'task': task, 'commit': commit, 'changed_files': [task + '.txt'] if commit else [],
-                   'checks': [{'command': f'test -s {task}.txt', 'result': 'pass', 'summary': 'ok'}] if commit else [],
+                   'checks': declared_checks() if commit else [],
                    'acceptance': acceptance(), 'blockers': list(blockers), 'changelog': 'Complete ' + task}, out)
 def work():
     open(task + '.txt', 'w').write('done ' + task + '\n')
@@ -442,7 +451,7 @@ elif behavior == 'extra':  # also changes a file its Touches did not foresee
     with open(field('Report file'), 'w') as out:
         json.dump({'task': task, 'commit': git('rev-parse', 'HEAD').stdout.strip(),
                    'changed_files': [task + '-extra.txt', task + '.txt'],
-                   'checks': [{'command': 'true', 'result': 'pass'}], 'acceptance': acceptance(), 'blockers': [],
+                   'checks': declared_checks(), 'acceptance': acceptance(), 'blockers': [],
                    'changelog': ''}, out)
     finish(text='done')
 elif behavior == 'live':  # offline work done; a device check is left for a live task
@@ -475,11 +484,14 @@ elif behavior == 'needs_vendor':  # builds only with the ignored vendor/ tree of
         report(None, ['missing ignored dependency vendor/sdk.txt'])
         finish(text='blocked')
 elif behavior == 'sleep':
-    def stopped(*_):
-        signal.signal(signal.SIGINT, signal.SIG_IGN)  # repeats arrive from the group and timeout
-        note({'signal': 'INT', 'task': task})
-        sys.exit(130)
-    signal.signal(signal.SIGINT, stopped)
+    def stopped(signum, _):
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(sig, signal.SIG_IGN)  # group and ownership cleanup may both signal
+        note({'signal': signal.Signals(signum).name, 'task': task})
+        sys.exit(128 + signum)
+    # The coordinator takes SIGINT; stop() terminates its worker tree with SIGTERM.
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, stopped)
     open(os.path.join(os.environ['FAKE_PI_ROOT'], 'sleeping-' + task), 'w').write(str(os.getpid()))
     time.sleep(60)
     finish()
@@ -1576,7 +1588,8 @@ class EngineTests(Fixture):
     def test_a_full_check_that_crashes_once_is_run_again(self):
         marker = self.root / 'crashed-once'
         self.env['PI_AUTOWORK_VALIDATE'] = (f'if [ ! -e {marker} ]; then touch {marker}; '
-                                            'echo "Segmentation fault (core dumped)"; exit 139; fi')
+                                            'echo "Segmentation fault (core dumped)"; exit 139; fi; '
+                                            'test -f tasks/items/A.md && echo "fixture full check passed"')
         result = self.run_runner('--until-empty')
         self.assertTrue(marker.exists())
         self.assertTrue(self.done('A', 'B', 'C'), result.stdout)  # the rerun passed: nothing held
@@ -2159,7 +2172,7 @@ sys.exit(result.returncode)
         self.assertEqual(second.returncode, 3, second.stderr)
         # Hermes Autowork's sequential claim goes through the same engine and is refused.
         sleeper = subprocess.Popen(['sleep', '30'])
-        self.addCleanup(sleeper.kill)
+        self.addCleanup(lambda: (sleeper.poll() is None and sleeper.kill(), sleeper.wait()))
         claim = subprocess.run([sys.executable, str(ENGINE_DIR / 'owner_cycle.py'), str(self.repo), '--apply',
                                 '--owner-pid', str(sleeper.pid)], capture_output=True, text=True)
         self.assertEqual(json.loads(claim.stdout)['outcome'], 'BUSY', claim.stdout)
@@ -2181,6 +2194,11 @@ sys.exit(result.returncode)
             self.assertRegex(status.stdout, rf'{task}\s+paused\s+{reason}{suffix}')
         signals = [json.loads(l) for l in self.log.read_text().splitlines() if '"signal"' in l]
         self.assertEqual(sorted(s['task'] for s in signals), ['A', 'B'], out + self.log.read_text()[-1500:])
+        self.assertEqual([s['signal'] for s in signals], ['SIGTERM', 'SIGTERM'])
+        for task in ('A', 'B'):
+            pid = int((self.root / ('sleeping-' + task)).read_text())
+            with self.assertRaises(ProcessLookupError, msg=f'{task} worker survived shutdown'):
+                os.kill(pid, 0)
         result = self.run_runner('--until-empty')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(self.done('A', 'B', 'C'))

@@ -4045,7 +4045,7 @@ class Coordinator:
             return 'PAUSED', result  # after a failure streak: settle running work, start nothing new
         if not self.draining or resumes:
             # Workers leave the full check to the gate the runner runs on the merged tree (TOOLSET-227-a8).
-            os.environ['AUTOWORK_RUNNER_FULL_CHECK'] = main_check.full_check(self.integ) if self.integ else ''
+            os.environ['AUTOWORK_RUNNER_FULL_CHECK'] = main_check.runner_full_check(self.integ) if self.integ else ''
             os.environ.update(AUTOWORK_TELEMETRY_HOST='pi', AUTOWORK_TELEMETRY_MODEL=chosen,
                               AUTOWORK_TELEMETRY_TOOLSET=self.toolset_rev)
             result = self.engine('--apply', '--parallel', str(self.workers), '--max-workers', '16',

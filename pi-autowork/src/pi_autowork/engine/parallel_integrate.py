@@ -1,6 +1,7 @@
 """Serialized, validated local integration. Worker reports are evidence, not acceptance."""
 import hashlib
 import math
+import shlex
 from datetime import datetime
 import json
 import os
@@ -127,7 +128,21 @@ def live_items(value):
     return texts
 
 
-def verify(repo, common, slot, contracts):
+def coordinator_full_check(argv, repo=None):
+    """Exempt only a command this integration will actually execute as its gate."""
+    command = os.environ.get('AUTOWORK_RUNNER_FULL_CHECK', '').strip()
+    try:
+        direct = command and shlex.split(command) == list(argv)
+        from pi_autowork import main_check
+        wrapper = (repo is not None and command == main_check.runner_full_check(repo) and len(argv) == 5 and argv[0] == '/bin/bash'
+                   and Path(argv[1]).resolve() == Path(__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+                   and argv[2] == '--verify')
+        return command if direct or (command and wrapper) else ''
+    except ValueError:
+        return ''
+
+
+def verify(repo, common, slot, contracts, coordinator_check=""):
     task = contracts.get(slot['task_id'])
     if task is None:
         raise ValueError('task contract is no longer eligible')
@@ -162,12 +177,18 @@ def verify(repo, common, slot, contracts):
         raise ReportedBlocker(**state.blocker_updates(repo, slot, blockers))
     for field in ('pending_live', 'unrelated_failures', 'environment_failures'):
         report[field] = live_items(report.get(field))
-    record = task_queue.record(repo, slot['task_id'])
-    if mismatch := closure_documents.acceptance_mismatch(report, record.acceptance):
+    # Validate the immutable admitted contract, never worker-written contract.txt.
+    admitted = task_queue.record(repo, slot['task_id'], slot['baseline'])
+    if admitted is None:
+        raise Hold('report', 'missing immutable admitted task contract')
+    if mismatch := closure_documents.acceptance_mismatch(report, admitted.acceptance):
         raise Hold('acceptance', 'acceptance hold: ' + mismatch, report=report)
-    mismatch = report_mismatch(repo, report, slot['task_id'], commit, files)
+    mismatch = report_mismatch(repo, report, slot['task_id'], commit, files,
+                               tuple(c for c in admitted.checks if c != coordinator_check), admitted.acceptance)
     if mismatch:
-        raise Hold('report', 'report.json does not match worker commit/files or reports failure: ' + mismatch)
+        cause = ('validation' if mismatch.startswith('missing declared check evidence:')
+                 or mismatch == 'a check did not pass' else 'report')
+        raise Hold(cause, 'report.json does not match worker commit/files or reports failure: ' + mismatch)
     verify_scope(repo, common, slot, contracts, files)
     report['doc_impact'] = assess_doc_impact(repo, slot, task, files, report)
     return files, report
@@ -288,7 +309,7 @@ def assess_doc_impact(repo, slot, task, files, report):
             'resume': resume if status == 'pending' else '', 'inputs': inputs}
 
 
-def report_mismatch(repo, report, task, commit, files):
+def report_mismatch(repo, report, task, commit, files, declared_checks=None, acceptance=None):
     """What in report.json disagrees with the worker's commit, or ''. A commit written as an
     abbreviated SHA that names the same commit is the same commit."""
     if report.get('task') != task:
@@ -313,12 +334,17 @@ def report_mismatch(repo, report, task, commit, files):
     checks = report.get('checks')
     if not isinstance(checks, list) or any(not isinstance(c, dict) or c.get('result') != 'pass' for c in checks):
         return 'a check did not pass'
-    record = task_queue.record(repo, task)
-    if record is None:
-        return 'task contract missing'
-    if record.checks and not checks:
-        return 'checks is empty but the contract declares checks: ' + '; '.join(record.checks)
-    return closure_documents.acceptance_mismatch(report, record.acceptance)
+    if declared_checks is None or acceptance is None:
+        record = task_queue.record(repo, task)
+        if record is None:
+            return 'task contract missing'
+        declared_checks = record.checks if declared_checks is None else declared_checks
+        acceptance = record.acceptance if acceptance is None else acceptance
+    missing = [command for command in declared_checks
+               if not any(c.get('command') == command for c in checks)]
+    if missing:
+        return 'missing declared check evidence: ' + repr(missing)
+    return closure_documents.acceptance_mismatch(report, acceptance)
 
 
 def passed(check):
@@ -348,8 +374,10 @@ def report_matches(repo, common, slot):
     if not isinstance(report, dict):
         return False
     try:
-        return not report_mismatch(repo, report, slot['task_id'], slot['commit'],
-                                   changed(repo, slot['baseline'], slot['commit']))
+        admitted = task_queue.record(repo, slot['task_id'], slot['baseline'])
+        return admitted is not None and not report_mismatch(
+            repo, report, slot['task_id'], slot['commit'],
+            changed(repo, slot['baseline'], slot['commit']), admitted.checks, admitted.acceptance)
     except ValueError:
         return False
 
@@ -898,7 +926,7 @@ def integrate(repo, owner_pid, task, argv, timeout, reviewer=None, base=None, ba
                                 cause='conflict', conflict_files=conflicts)
                 raise ValueError(f'integrate the highest-priority reported task first: {first}')
             try:
-                files, report = verify(repo, common, slot, contracts)
+                files, report = verify(repo, common, slot, contracts, coordinator_full_check(argv, repo))
                 require_no_writers(repo, files)
                 if slot['state'] == 'integrating':
                     # Pre-upgrade intents can recover without the reported transition.
@@ -961,6 +989,11 @@ def integrate(repo, owner_pid, task, argv, timeout, reviewer=None, base=None, ba
                             receipt_context={'integration_commit': merge, **state.journal.context(common, slot)},
                             receipt_writer=save_receipt, run_id=run_id,
                             check_slot_wait=True)
+                # A wrapper's exit alone cannot stand in for its source/log-bound gate.
+                if coordinator_full_check(argv, repo) and len(argv) == 5 and argv[2] == '--verify' and passed(check):
+                    from pi_autowork import worker
+                    if worker.integration_gate_evidence(argv[3], task, root) is None:
+                        raise Hold('validation', 'integration validation failed: missing bound full-check evidence')
                 queued += (check or {}).get('command_receipt', {}).get('check_slot_wait_seconds', 0)
                 if (check or {}).get('outcome') == 'TIMED_OUT':
                     # The host's speed, not the task (TOOLSET-196-fb): its own cause, reverified
@@ -981,7 +1014,7 @@ def integrate(repo, owner_pid, task, argv, timeout, reviewer=None, base=None, ba
                     # A rank, title or note edit keeps the validation; a contract change does not.
                     if fresh_contracts.get(task, {}).get('contract_hash') != contracts[task].get('contract_hash'):
                         raise Hold('contract_changed', 'task contract changed during validation')
-                    verify(repo, common, slot, fresh_contracts)
+                    verify(repo, common, slot, fresh_contracts, coordinator_full_check(argv, repo))
                     verify_scope(repo, common, slot, fresh_contracts, changed(repo, baseline, merge))
                     require_no_writers(repo, changed(repo, baseline, merge))
                     if git(repo, 'symbolic-ref', 'HEAD') != canonical_branch:

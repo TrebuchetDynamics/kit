@@ -9,10 +9,11 @@ last green revision, and the DOCS-MAINTAINER adds one repair task for it. Standa
 import argparse
 import ast
 import concurrent.futures
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import fcntl
 import json
 import os
+import pwd
 from pathlib import Path
 import re
 import runpy
@@ -73,6 +74,15 @@ def affected_checker(repo, declared):
     return None
 
 
+def runner_full_check(repo):
+    """The full command actually promised before landing, respecting optimistic custom gates."""
+    from pi_autowork import optimistic
+    declared = full_check(repo)
+    if optimistic.enabled() and not affected_checker(repo, declared):
+        return ''
+    return declared
+
+
 def landing_check(repo, base, declared):
     """The landing command and checked scope. Main retains its declared full command."""
     checker = affected_checker(repo, declared)
@@ -107,11 +117,7 @@ def slot_home():
     Not XDG_RUNTIME_DIR: a cron job or a systemd unit without it derived a second pool, with its
     own PI_AUTOWORK_CHECK_SLOTS, so the swap-safe limit was never host-wide.
     """
-    uid = os.getuid()
-    for candidate in (Path(f'/run/user/{uid}'), Path('/var/tmp')):
-        if candidate.is_dir():
-            return candidate / f'autowork-checks-{uid}'
-    raise ValueError('no per-user runtime directory for the check slots')
+    return Path(pwd.getpwuid(os.getuid()).pw_dir) / '.local/state/pi-autowork/check-slots'
 
 
 def slot_root():
@@ -148,7 +154,7 @@ def ticket_rank(name, now=None):
 
 
 @contextmanager
-def check_slot(waiting, background=False):
+def check_slot(waiting, background=False, holder=None):
     """Admission to host-wide flock slots: reviews before background main checks, each in
     arrival order; dead tickets are cleaned on the next poll.
 
@@ -156,7 +162,7 @@ def check_slot(waiting, background=False):
     The command inherits the lease: killing its supervisor does not release a still-live check.
     Normal completion unlocks it even if a background descendant kept an inherited fd.
     """
-    count = int(os.environ.get('PI_AUTOWORK_CHECK_SLOTS') or max(1, (os.cpu_count() or 1) // 8))
+    count = int(os.environ.get('PI_AUTOWORK_CHECK_SLOTS') or 2)
     if count < 0:
         raise ValueError('PI_AUTOWORK_CHECK_SLOTS must be nonnegative')
     if count == 0:
@@ -194,6 +200,8 @@ def check_slot(waiting, background=False):
                         else:
                             if ahead == 0 and lease is None:
                                 lease = fd
+                                os.ftruncate(fd, 0)
+                                os.write(fd, json.dumps(holder or dict(runner=str(Path.cwd()), pid=os.getpid())).encode())
                         if fd != lease:
                             os.close(fd)
                     if lease is not None:
@@ -214,6 +222,69 @@ def check_slot(waiting, background=False):
                 fcntl.flock(mutex, fcntl.LOCK_UN)
             if lease is not None:
                 os.close(lease)  # on abnormal exit, a surviving command still owns its inherited fd
+
+
+def slot_holders():
+    """Read names only for currently locked slots; stale metadata is never a holder."""
+    holders = []
+    root = slot_root()
+    for path in sorted(root.glob('slot-*')):
+        with path.open('r+') as stream:
+            try:
+                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                try:
+                    row = json.load(stream)
+                    holders.append(row.get('runner') or f"pid {row.get('pid', '?')}")
+                except (ValueError, AttributeError):
+                    holders.append(f'{path.name} (holder unknown)')
+    return holders
+
+
+def queue_detail(progress):
+    return (f"{progress.get('ahead', 0)} ahead; queued for a fleet slot; holders: "
+            + ', '.join(progress.get('holders') or ['unknown']))
+
+
+def full_suite_command(cmd, checkout):
+    """Focused owned-checker invocations use no slot, including affected selection.
+
+    A conservative affected selection that expands to the whole inventory still takes a slot.
+    Unknown declared commands retain full-suite admission.
+    """
+    if any(token in cmd for token in (';', '&', '|', '<', '>', '$(', '`')):
+        return True  # a compound shell command can contain another full suite
+    parts = shlex.split(cmd)
+    if len(parts) < 2 or Path(parts[1]).name != 'check.py':
+        return True
+    checker = affected_checker(checkout, shlex.join(parts[:2]))
+    if checker is None:
+        return True
+    parser = argparse.ArgumentParser(add_help=False, exit_on_error=False)
+    parser.add_argument('paths', nargs='*')
+    for option in ('--jobs', '--timeout', '--exclude', '--affected', '--shard', '-k'):
+        parser.add_argument(option)
+    parser.add_argument('--list', action='store_true')
+    try:
+        args, unknown = parser.parse_known_args(parts[2:])
+    except argparse.ArgumentError:
+        return True
+    if unknown:
+        return True  # unknown execution flags cannot exempt a full suite
+    if args.k or args.list or (args.shard and args.shard != '1/1'):
+        return False
+    if args.paths:
+        api = runpy.run_path(str(checker))
+        if 'discover_tests' in api:
+            root = Path(checkout).resolve()
+            inventory = set(api['discover_tests'](root))
+            paths = [(root / path).resolve() for path in args.paths]
+            selected = {test for test in inventory if any(test == path or path in test.parents for path in paths)}
+            return bool(inventory) and selected == inventory
+        return False
+    if args.affected:
+        return runpy.run_path(str(checker))['affected_selection'](checkout, args.affected)['full']
+    return True
 
 
 class Stopped(Exception):
@@ -256,10 +327,14 @@ def run_command(cmd, checkout, limit, progress, output=None, stop=None, backgrou
         if not queued:
             transition(True)
         queued = True
-        notify('waiting', ahead=ahead)
+        notify('waiting', ahead=ahead, holders=slot_holders())
 
     try:
-        with check_slot(wait, background) as lease:
+        admission = (check_slot(wait, background, holder=dict(
+            runner=os.environ.get('AUTOWORK_CHECK_RUNNER') or f'{Path(checkout)} ({Path(progress).parent})',
+            pid=os.getpid()))
+            if full_suite_command(cmd, checkout) else nullcontext(None))
+        with admission as lease:
             if queued:
                 transition(False)
             notify('running', started=time.time())
@@ -680,7 +755,9 @@ def line(record, now=None):
             return f'main check interrupted on {rev[:7]}' + superseded
         progress = record.get('check_slot') or {}
         if progress.get('state') == 'waiting':
-            return f"main check waiting for a check slot, {progress.get('ahead', 0)} ahead on {rev[:7]}" + superseded
+            return (f"main check waiting for a check slot, {progress.get('ahead', 0)} ahead on {rev[:7]}"
+                    + '; queued for a fleet slot; holders: '
+                    + ', '.join(progress.get('holders') or ['unknown']) + superseded)
         started = progress.get('started', record.get('started', now))
         # Admission, not queueing, starts the execution budget. Finished slot progress
         # means the supervisor may be rerunning failures, outside that command's timeout.

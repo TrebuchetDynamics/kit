@@ -41,6 +41,8 @@ def work():
     if mode in ('wait','hang'):
         stop.wait(30)
     tool_rc=0
+    if mode=='fleet_queue':
+        subprocess.run([sys.executable, os.environ['FAKE_CHECK_WRAPPER'], sys.executable, '-c', 'pass'], check=True)
     if mode=='command_hang':
         tool_rc=subprocess.Popen(['/bin/sh','-c','sleep 3']).wait()
     emit(dict(type='tool_execution_end',toolCallId='t1',toolName='read',result={'content':[]},isError=False))
@@ -249,6 +251,47 @@ class SdkTests(unittest.TestCase):
         spec=replace(self.spec,environment=tuple(dict(self.env,FAKE_BEHAVIOR=mode).items()))
         return asyncio.run(pi_rpc.PiRpcRuntime(spec).execute())
 
+    def test_real_sdk_stream_excludes_fleet_queue_time_from_task_budget(self):
+        import fcntl
+        import threading
+        import time
+        pool, records = self.root / 'pool', self.root / 'checks'
+        pool.mkdir(mode=0o700)
+        records.mkdir()
+        environment = dict(self.env, FAKE_BEHAVIOR='fleet_queue',
+            FAKE_CHECK_WRAPPER=str(Path(__file__).resolve().parents[2] / 'engine/autowork_run.py'),
+            PI_AUTOWORK_CHECK_ROOT=str(pool), PI_AUTOWORK_CHECK_SLOTS='1',
+            AUTOWORK_WORKER_CHECK_DIR=str(records))
+        with (pool / 'slot-0').open('a') as lease:
+            fcntl.flock(lease, fcntl.LOCK_EX)
+            def release():
+                end = time.monotonic() + 5
+                while not list(records.glob('*.json')) and time.monotonic() < end:
+                    time.sleep(.01)
+                time.sleep(1.2)
+                fcntl.flock(lease, fcntl.LOCK_UN)
+            thread = threading.Thread(target=release)
+            thread.start()
+            try:
+                with patch.dict(os.environ, environment, clear=True):
+                    result = pi_runtime.run_pi(self.settings, self.root, 'fixture', 'queue-rpc',
+                                               'offline/fixture', 1, [], role='worker')
+            finally:
+                thread.join(timeout=7)
+        self.assertEqual(result['rc'], 0, result)
+        self.assertTrue(result['settled'])
+        self.assertTrue(result['cleanup_complete'], result)
+        self.assertTrue(list(records.glob('*.json')))
+
+    def test_queue_aware_sdk_stream_still_times_out_executing_work(self):
+        records = self.root / 'checks'
+        records.mkdir()
+        environment = dict(self.env, FAKE_BEHAVIOR='hang', AUTOWORK_WORKER_CHECK_DIR=str(records))
+        spec = replace(self.spec, timeout=.3, environment=tuple(environment.items()))
+        result = asyncio.run(pi_rpc.PiRpcRuntime(spec).execute())
+        self.assertEqual(result['failure_kind'], 'uncertain_acceptance')
+        self.assertNotEqual(result['rc'], 0)
+
     def test_real_sdk_waits_for_settlement_and_preserves_unicode_and_usage(self):
         result=self.execute('early')
         self.assertTrue(result['settled']); self.assertEqual(result['rc'],0)
@@ -286,6 +329,8 @@ class SdkTests(unittest.TestCase):
         self.env['FAKE_VERSION']='1.3.0'
         result=self.execute()
         self.assertEqual(result['failure_kind'],'toolchain')
+        self.assertFalse(result['retry_safe'])
+        self.assertFalse(result['settled'])
         self.assertFalse((self.root/'calls').exists())
 
     def test_live_progress_and_state_are_visible_before_settlement(self):

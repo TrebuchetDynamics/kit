@@ -428,7 +428,7 @@ def producing_gate_log(state, cached):
                 or not source.is_file() or source.stat().st_uid != os.getuid()):
             return None
         content = source.read_bytes()
-        if content and hashlib.sha256(content).hexdigest() == cached.get('log_sha256'):
+        if hashlib.sha256(content).hexdigest() == cached.get('log_sha256'):
             return source
     except (OSError, ValueError, KeyError, TypeError):
         pass
@@ -492,18 +492,12 @@ def full_suite_gate(state, task, checkout, base=None):
     return ok, reason
 
 
-class QuietWindowMissed(Exception):
-    """No quiet window came within PI_AUTOWORK_QUIET_WAIT."""
-
-
 def quiet_reruns(state, task, log, checkout, rev, tests, limit, *, cmd=None):
-    """The ``tests`` that pass when rerun one at a time with a host check slot held, once this
+    """The ``tests`` that pass when rerun one at a time, once this
     repository's main check is done. Rerun four at a time beside main's full suite, the runner's
     own engine tests ran out of their 120 s and held three candidates whose trees pass them.
-    The wait for that quiet window is bounded by PI_AUTOWORK_QUIET_WAIT (default 900 s): the
-    host's few check slots are shared by every runner's full suite, and a two-minute rerun queued
-    behind them held a review for three hours. Past the bound the tests rerun one at a time
-    without a slot."""
+    The wait for main is bounded by PI_AUTOWORK_QUIET_WAIT (default 900 s).
+    Focused reruns take no fleet full-suite slot."""
     receipt = log.with_suffix('.quiet.json')
     receipt.unlink(missing_ok=True)
     wait = setting('PI_AUTOWORK_QUIET_WAIT', 900, float)
@@ -514,11 +508,6 @@ def quiet_reruns(state, task, log, checkout, rev, tests, limit, *, cmd=None):
             break
         check_stop()
         time.sleep(5)
-
-    def waiting(_ahead):
-        check_stop()
-        if time.monotonic() >= deadline:
-            raise QuietWindowMissed
 
     def rerun(only):
         main_check.rerun_failures(str(log), checkout, str(receipt), rev, cmd=cmd, only=set(only), workers=1)
@@ -541,13 +530,7 @@ def quiet_reruns(state, task, log, checkout, rev, tests, limit, *, cmd=None):
         return flaky
 
     try:
-        try:
-            with main_check.check_slot(waiting):
-                return reruns()
-        except QuietWindowMissed:
-            print(f'pi-autowork: no quiet check slot for {task} within {wait:g} s; '
-                  'rerunning its failures one at a time without one', file=sys.stderr)
-            return reruns()
+        return reruns()
     except main_check.Stopped:
         raise
     except Exception as error:  # like the first reruns: without a receipt, none is excused
@@ -828,6 +811,17 @@ def batched_verdict(state, task, checkout):
         value = json.loads(record.read_text())
     except (OSError, ValueError):
         return None
+    if not batch_verdict_valid(task, checkout, value):
+        record.unlink(missing_ok=True)
+        return None
+    if value.get('ok'):
+        landing_receipt(state, task, checkout, value.get('selection'), batch=value)
+    record.unlink(missing_ok=True)
+    return bool(value.get('ok')), value.get('reason') or ''
+
+
+def batch_verdict_valid(task, checkout, value):
+    """Recheck a published or consumed verdict against its original admission and current tree."""
     binding = value.get('binding')
     context = binding.get('closure_context') if binding else None
     if binding and (('closure_context' in binding and (
@@ -840,13 +834,11 @@ def batched_verdict(state, task, checkout):
             or binding.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', 'auto')
             or binding.get('policy_version') != review_policy.version()
             or binding.get('optimistic') != optimistic.enabled()):
-        record.unlink(missing_ok=True)
-        return None
+        return False
     if value.get('commit') != git(checkout, 'rev-parse', 'HEAD^2') or not same_code(checkout, value.get('tree'), 'HEAD^{tree}'):
         # The session moved since by more than planning files: today's full verification. The record
         # can never match again; left, it held new batches back for two hours.
-        record.unlink(missing_ok=True)
-        return None
+        return False
     policy = value.get('review_policy')
     # A skipped model review cannot inherit same_code's broad docs/tasks drift allowance.
     # Nor may an old skip survive a policy/configuration change or be advertised as a review.
@@ -857,20 +849,16 @@ def batched_verdict(state, task, checkout):
                 or policy.get('version') != review_policy.version()
                 or policy.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', 'auto')
                 or policy.get('command') != main_check.full_check(checkout)))):
-        record.unlink(missing_ok=True)
-        return None
-    if value.get('ok'):
-        landing_receipt(state, task, checkout, value.get('selection'))
-    record.unlink(missing_ok=True)
-    return bool(value.get('ok')), value.get('reason') or ''
+        return False
+    return True
 
 
-def landing_receipt(state, task, checkout, selection):
+def landing_receipt(state, task, checkout, selection, *, batch=None):
     """Keep the accepted landing scope after a one-use batch verdict is consumed."""
     target = Path(state) / 'landing-check' / f'{safe_name(task)}.json'
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(dict(task=task, commit=git(checkout, 'rev-parse', 'HEAD'),
-                                     tree=git(checkout, 'rev-parse', 'HEAD^{tree}'), selection=selection)))
+                                     tree=git(checkout, 'rev-parse', 'HEAD^{tree}'), selection=selection, batch=batch)))
 
 
 def gate_selection(state, checkout):
@@ -896,6 +884,31 @@ def review_gate_evidence(state, checkout):
                 and producing_gate_log(state, record)):
             return record
     except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    return None
+
+
+def integration_gate_evidence(state, task, checkout):
+    """Accept an exact gate or the producing gate of a still-bound consumed batch verdict."""
+    exact = review_gate_evidence(state, checkout)
+    if exact is not None or dirty(checkout):
+        return exact
+    try:
+        receipt = json.loads((Path(state) / 'landing-check' / f'{safe_name(task)}.json').read_text())
+        value = receipt['batch']
+        binding = value['binding']
+        if (receipt['task'] != task or receipt['commit'] != git(checkout, 'rev-parse', 'HEAD')
+                or receipt['tree'] != git(checkout, 'rev-parse', 'HEAD^{tree}')
+                or value.get('ok') is not True or not batch_verdict_valid(task, checkout, value)):
+            return None
+        tree = binding['gate_tree']
+        record = json.loads((Path(state) / 'full-check' / f'tree-{tree}.json').read_text())
+        if (record.get('tree') == tree and record.get('ok') is True
+                and record.get('selection') == binding.get('selection')
+                and main_check.receipt_command_matches(record, binding['command'])
+                and producing_gate_log(state, record)):
+            return record
+    except (OSError, ValueError, KeyError, AttributeError, TypeError):
         pass
     return None
 
@@ -932,6 +945,9 @@ def verify(state, task):
     batched = None if batch_gate else batched_verdict(state, task, checkout)
     if batched is not None:
         ok, reason = batched
+        # A batch verdict cannot replace the gate promised by this integration.
+        if ok and os.environ.get('AUTOWORK_RUNNER_FULL_CHECK') and integration_gate_evidence(state, task, checkout) is None:
+            ok, reason = full_suite_gate(state, task, checkout)
         if ok:
             print(f'pi-autowork: {task} passed batch verification', file=sys.stderr)
             return 0
@@ -954,7 +970,8 @@ def verify(state, task):
     try:
         if batch_gate:  # a batch already passed the full check on a tree containing this one
             return batch_review(state, task, checkout, json.loads(batch_gate))
-        if optimistic.enabled() and not main_check.affected_checker(checkout, main_check.full_check(checkout)):
+        if (not os.environ.get('AUTOWORK_RUNNER_FULL_CHECK') and optimistic.enabled()
+                and not main_check.affected_checker(checkout, main_check.full_check(checkout))):
             # Optimistic landing (TOOLSET-344-7dadea23): its own checks and the review decide;
             # main's full check runs after it lands, and a regression there reverts it.
             if not review_decision(state, task, checkout)['required']:

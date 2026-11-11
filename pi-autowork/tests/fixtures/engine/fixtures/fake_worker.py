@@ -74,7 +74,9 @@ if spec.get('commit', True) and spec.get('files'):
                             capture_output=True, text=True).stdout.strip()
     if spec.get('report', True):
         report.write_text(json.dumps({'task': task, 'commit': commit, 'changed_files': sorted(spec['files']),
-                                      'checks': [{'command': 'true', 'result': 'pass', 'summary': 'fixture'}],
+                                      'checks': [{'command': command, 'result': 'pass', 'summary': 'fixture'}
+                                                 for command in tomllib.loads((worktree / 'tasks/items' / (task + '.md'))
+                                                                             .read_text().split('+++')[1])['checks']],
                                       'acceptance': [{'item': item, 'result': 'met', 'evidence': 'offline fixture'}
                                                      for item in tomllib.loads((worktree / 'tasks/items' / (task + '.md'))
                                                                                .read_text().split('+++')[1])['acceptance']],

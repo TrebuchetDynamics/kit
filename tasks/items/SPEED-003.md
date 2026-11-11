@@ -3,7 +3,7 @@ schema = 1
 id = "SPEED-003"
 title = "Two fleet-wide full-check slots replace the per-runner load gate for workers"
 short = "Fleet check slots replace load gate"
-status = "open"
+status = "done"
 section = "Now"
 rank = 18000
 depends_on = []
@@ -15,5 +15,10 @@ scope = "Eight runners share one 24-CPU machine. On 2026-11-10 the load average 
 acceptance = ["A fixture with three competing full-suite requests from different state directories proves at most two run at once, the third waits and then runs, and a slot left by a dead process is reclaimed.", "A regression proves a ready worker task is dispatched when the load average is above the CPU count, and the `resource gate: load average` reason is no longer produced for worker dispatch.", "Status and the fleet view show a waiting full check as queued for a fleet slot with the holder named; README documents the limit and its setting."]
 checks = ["python3 scripts/check.py pi-autowork/tests/engine/test_parallel_dispatch.py pi-autowork/tests/runner/test_main_check.py", "python3 scripts/affected_tests.py --run --base <captured-task-base>", "python3 skills/docs-sync/scripts/docs.py check .", "autowork tasks validate ."]
 exclusions = ["No model calls, service start/stop/restart, installs, pushes or edits to another task's record.", "No weakened or deleted test; no change to owner-only gates, live authorization or receipt checks."]
+closure = "manual"
+closure_actor = "repository-maintainer"
+closure_timestamp = "2026-11-11T14:31:28.499005+00:00"
+closure_reason = "Implemented shared fleet slots, queue budgets and holder reporting; focused regressions and independent reviews passed. Broad initial failures repaired with targeted reruns; no claim of a fresh whole-suite or live qualification."
+closure_evidence = "git:491461ee576d12f6e5d9e69122d0a14eeb0c8cb5"
 +++
 - Sources: Owner decisions of 2026-11-10 (grilling rounds 1 and 2, accepted). Measure for every change: `autowork scorecard` accepted-to-delivered median and p95, baseline saved outside the repository on 2026-11-10.

@@ -1204,6 +1204,31 @@ Contracts verified against [Hermes subscription proxy documentation](https://her
 and [Pi compatible endpoints](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md#configure-a-compatible-endpoint)
 (Pi 1.3.0 installed documentation); earlier Pi versions are not newly qualified.
 
+## Fleet full-check capacity
+
+Every runner of the same user shares **two full-suite slots** by default.
+`PI_AUTOWORK_CHECK_SLOTS` sets the fleet limit; configure the same value for all
+runners. The private lock pool is `~/.local/state/pi-autowork/check-slots`.
+`PI_AUTOWORK_CHECK_ROOT` can select another shared private directory for isolated
+fixtures or a whole fleet; use the same directory for every participating process.
+XDG runtime directories and repository state directories do not create extra pools.
+
+Main checks, batch/landing full checks and worker full suites through
+`autowork-run` use this pool. Focused checker invocations take no slot; affected
+checks take one only when conservative selection expands to the full inventory.
+The repository's existing main-check lock still prevents duplicate main checks.
+A queued full check names the current holders in its progress record and runner
+status/fleet view. Queue time does not consume check, worker command or worker
+task execution budgets and does not create an owner question. Kernel `flock` leases are reclaimed when the
+last holder exits, including a killed process; a surviving check child retains its
+lease until it exits. Reviews precede background main checks, with the existing
+30-minute aging rule preventing background starvation. Native Hermes workers use
+Kit's finite process guard for this queue-aware task deadline; parent-death and
+cleanup checks remain enforced.
+
+Worker admission retains its memory and disk checks. Load average does not block
+ready workers: the fleet slots bound expensive suites while model workers wait.
+
 ## Affected landing checks
 
 When a repository declares `python3 scripts/check.py` as its full check, batch and
