@@ -248,13 +248,12 @@ class HoldCausesTests(unittest.TestCase):
             'blocker': ('ask_owner', 'IDLE', 'held'),
             'timeout': ('reverify', 'IDLE', 'held'),
             'no_change': ('engineering_stuck', 'IDLE', 'held'),
-            'acceptance': ('engineering_stuck', 'IDLE', 'held'),
             'reviewed_twice': ('engineering_stuck', 'IDLE', 'held'),
             'task_wait': ('wait_for_task', 'RESUMED', 'interrupted'),
             'scope_request': ('rerun', 'RESUMED', 'interrupted'),
             'runner_merged': ('rerun', 'REQUEUED', None),
             **{cause: ('rerun', 'RETRIED', 'running') for cause in
-               ('crash', 'empty', 'diverged', 'launch', 'contract_changed', 'moved')},
+               ('crash', 'empty', 'diverged', 'launch', 'contract_changed', 'moved', 'acceptance')},
         }
         self.assertEqual(set(state.HOLD_CAUSES), set(cases))
         for cause, (rule, outcome, target) in cases.items():

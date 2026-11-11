@@ -61,7 +61,10 @@ HOLD_CAUSES = {
     # becomes a visible engineering hold. None is a product decision (failure_policy).
     'timeout': 'reverify',
     'no_change': 'engineering_stuck',
-    'acceptance': 'engineering_stuck',
+    # A report without a met result for every acceptance item gets the ordinary one fresh
+    # attempt, whose prompt names the required results. As engineering_stuck the hold had
+    # no exit: no retry, and set-aside refused it (eleven kit tasks, 2026-11-11).
+    'acceptance': 'rerun',
     'reviewed_twice': 'engineering_stuck',
     'task_wait': 'wait_for_task',
     'scope_request': 'rerun',
