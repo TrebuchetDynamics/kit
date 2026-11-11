@@ -1,0 +1,25 @@
+schema = 1
+task = "CLOSE-EVIDENCE-002"
+candidate = "f1c954089aa982254d2062f8142c5b78a591f90a"
+integration = "24583fcf372dae3b3ccfb93085f3d105d1a69c95"
+tree = "101ef153364bc97e4d4592209fc2242db5bf2c37"
+contract_hash = "a5ad90ac838698e7e5cd00d94d53501586427067c97c4d56e03113267b0b1991"
+checks = ["<path>", "<path>", "--verify", "<path>", "CLOSE-EVIDENCE-002"]
+result = "pass"
+review = "passed"
+model_review = "not_recorded"
+
+[[acceptance]]
+item = "A fixture with a held commit whose report has no acceptance list proves the runner resumes the same attempt once with the missing items named, and the task integrates after the worker reports every item as met with evidence."
+result = "met"
+evidence = "test_parallel_adversarial.AdversarialWorkerTests.test_acceptance_hold_resumes_once_and_keeps_an_unresolved_candidate passed. Its met case removes the acceptance list, invokes Coordinator.settle_resume_report, verifies that the runner did not rewrite the report, checks exact missing items in the resumed worker prompt, dispatches attempt 1 on the retained branch/commit, receives the worker-written complete report, and integrates. Reuses recover_reports/resume_report and paused-attempt dispatch rather than adding another recovery mechanism."
+
+[[acceptance]]
+item = "A fixture whose resumed worker still reports an item as not_met or not_checked proves the task is held with those items named, no second resume and no fresh attempt starts, and the retained commit is kept."
+result = "met"
+evidence = "The same fixture's not_met and not_checked cases passed. Each asserts HELD/acceptance with every unresolved item and verdict named, engineering repair_required without an owner question, exhausted retry eligibility, refused second resume, two further dispatch passes with no worker started, and unchanged attempt number and retained commit."
+
+[[acceptance]]
+item = "Existing acceptance-mismatch and report-resume tests pass with assertions unchanged, and pi-autowork/README.md states the one-resume rule."
+result = "met"
+evidence = "Declared integration/state check passed 65 tests; combined adversarial check passed 112 tests; closure_documents passed 6 tests. Existing acceptance-mismatch/report-resume assertions are unchanged (only an obsolete integration-test comment was corrected). README recovery and Verified acceptance evidence sections now state one same-attempt resume and no automatic further resume or fresh attempt. Docs check and README rule/anchor readback passed. Acceptance validation and failure_policy classification are reused unchanged; no inferred results, new dependencies, or model calls were added."
