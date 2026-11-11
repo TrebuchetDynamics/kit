@@ -95,7 +95,7 @@ notes, one per line as `- Label: value`.
 | `depends_on`, `verified_depends_on` | Task IDs that must be done first; the verified subset additionally requires verification or an explicit owner exception. |
 | `touches`, `resources` | The write set and the shared resources (see [Bound the write set](#bound-the-write-set)). |
 | `kind` | `implementation`, `plan` or `inspection`. |
-| `ownership` | `worker`, `coordinator` or `owner`. Only `worker` tasks run in the runner. |
+| `ownership` | `worker`, `coordinator` or `owner`. Workers run worker tasks and coordinator tasks whose two-hour claim has expired. |
 | `live` | `denied` (default) or `authorized`; a task with the `live` resource runs only when authorized. |
 | `scope`, `acceptance`, `checks`, `exclusions` | The bounded outcome, its observable criteria, the commands that prove them, and what it must not do. |
 
@@ -104,6 +104,15 @@ Body notes carry what is not contract: `Sources`, `Owner decision`, `Held by`,
 like. A note never grants authority; only the typed fields `live`, `resources` and
 `ownership` do. A record missing contract fields is a visible draft and is never
 selected.
+
+When a planner or skill writes `ownership = "coordinator"`, the claim lasts two
+hours from the committer time of the last commit that changed the task file.
+Before expiry, admission waits with `awaiting coordinator action`. At expiry,
+parallel admission and sequential fallback treat it as worker work, without
+rewriting the record. Status and fleet rows say `coordinator claim expired` and
+show the ordinary ready dispatch wait. This applies to existing records too.
+Unrelated commits and uncommitted edits do not renew the claim. Owner-only work,
+Needs decision, live authorization and verification gates remain unchanged.
 
 For an explicitly attributed regression, put `- Regression of: <ID>; commit <sha>; severity low|medium|high; found by owner|check` in the later task's body, naming the original task and its receipt's full integration SHA; discovery is the note's first commit, not a later edit to the same files.
 

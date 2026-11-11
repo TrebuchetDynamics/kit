@@ -8,7 +8,7 @@ Files are UTF-8 Markdown with TOML between opening/closing +++ lines. See the
 component's task-store.md for the schema and the precise runnable/hash boundary.
 """
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
 from enum import Enum
 import hashlib
@@ -502,6 +502,7 @@ class TaskStore:
     rev: str
     tasks: Mapping[str, TaskRecord]
     goals: Mapping[str, GoalRecord]
+    coordinator_changed_at: Mapping[str, int] = field(default_factory=lambda: MappingProxyType({}))
 
     @classmethod
     def at(cls, repo: str | Path, rev: str, *, env=None) -> 'TaskStore':
@@ -587,7 +588,14 @@ class TaskStore:
         for record in (*goals.values(), *tasks.values()):
             if Path(record.path).stem != record.id:
                 documents[record.path].fail('filename must match id', 'id')
-        return cls(pinned, MappingProxyType(tasks), MappingProxyType(goals))
+        coordinator_changed_at = {}
+        for task in tasks.values():
+            if task.status == 'open' and task.ownership == Ownership.COORDINATOR:
+                stamp = _git(repo, 'log', '-1', '--format=%ct', pinned, '--', task.path, env=env).strip()
+                if stamp:
+                    coordinator_changed_at[task.id] = int(stamp)
+        return cls(pinned, MappingProxyType(tasks), MappingProxyType(goals),
+                   MappingProxyType(coordinator_changed_at))
 
     @staticmethod
     def pending(repo: str | Path) -> tuple[str, ...]:

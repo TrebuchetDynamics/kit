@@ -721,12 +721,19 @@ once to Active, Mergeable, Waiting, Blocker or Decision, whose sum is Total.
 Ordinary ready worker tasks are Waiting (`ready; awaiting dispatch`). Ready
 owner-only tasks are Blocker (`owner action required`), not a worker dispatch wait
 or another approval request. Ready coordinator-owned tasks are Waiting
-(`awaiting coordinator action`). Committed Needs decision takes precedence as
+(`awaiting coordinator action`) for two hours after the committer time of the last
+commit that changed their task file. The claim then expires: parallel admission
+and sequential fallback treat them as worker tasks without rewriting the record.
+Their ready wait becomes `coordinator claim expired; ready; awaiting dispatch`.
+This also applies to existing records. Unrelated commits and uncommitted edits do
+not renew the claim. Owner-only and live-authorization gates remain unchanged.
+Committed Needs decision takes precedence as
 Decision. Stopped dependency waits are Blocker. Uncommitted records and
 planning-branch records do not enlarge this inventory.
 
 Ownership comes from the committed record, even without runtime data. Compatible
-idle waiting text cannot replace an owner-action or coordinator reason. Compatible
+idle waiting text cannot replace an owner-action or coordinator-claim reason,
+including an expired claim's ready wait. Compatible
 in-flight evidence still supplies the runtime state under the identity guards below.
 An existing question adds context but is not required to show owner action.
 A saved yes records direction, not completed action or live authorization. These

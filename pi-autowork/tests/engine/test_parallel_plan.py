@@ -1,10 +1,12 @@
 """Offline selection/planning contracts; no worker launch or repository writes."""
 from copy import deepcopy
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
@@ -166,6 +168,51 @@ class RunnableTests(unittest.TestCase):
                     self.assertEqual(fallback['outcome'], 'WAITING')
                     self.assertEqual(fallback['reason'], 'awaiting coordinator action')
                     self.assertNotIn('task', fallback)
+
+    def test_expired_coordinator_claim_dispatches_without_changing_the_record(self):
+        from types import SimpleNamespace
+        import parallel_dispatch as dispatch
+        import parallel_plan
+        import parallel_status
+
+        stamp = 1700000000
+        for ownership, resources in (('coordinator', []), ('coordinator', ['live']), ('owner', [])):
+            with self.subTest(ownership=ownership, resources=resources), tempfile.TemporaryDirectory() as folder:
+                repo = Path(folder)
+                store_fixture.write_todo(repo, '''## Now
+- [ ] T-1 — Reconcile result
+  Scope: reconcile.py
+  Acceptance: reconciled
+  Checks: test reconciliation
+  Touches: reconcile.py
+''')
+                path = repo / 'tasks/items/T-1.md'
+                path.write_text(task_store.edit(path.read_text(), dict(ownership=ownership, resources=resources))
+                                + '\n- Ownership: worker\n')
+                subprocess.run(['git', '-C', str(repo), 'commit', '-qam', 'typed claim'],
+                               env={**os.environ, 'GIT_COMMITTER_DATE': f'@{stamp} +0000'}, check=True)
+                subprocess.run(['git', '-C', str(repo), 'commit', '--allow-empty', '-qm', 'unrelated'], check=True)
+                path.write_text(path.read_text() + '\n- Note: uncommitted edits do not renew a claim\n')
+                pending = path.read_bytes()
+                for age in (7200, 7201):
+                    with self.subTest(age=age), mock.patch('time.time', return_value=stamp + age):
+                        tasks = dispatch.contracts(repo)
+                        self.assertEqual(tasks[0]['ownership'], ownership)
+                        self.assertNotEqual(tasks[0]['fields']['Ownership'], 'worker')
+                        result = dispatch.admit(tasks, [], set(), [], everything=tasks, parked=[], protected=[])
+                        fallback = dispatch.fallback(repo, SimpleNamespace(tasks='T-1', plan=None), 'no host')
+                        if ownership == 'coordinator' and not resources:
+                            self.assertEqual(tasks[0]['coordinator_changed_at'], stamp)
+                            self.assertEqual(result, dict(dispatch=tasks, waiting=[]))
+                            self.assertEqual(fallback['outcome'], 'SEQUENTIAL_FALLBACK')
+                            self.assertEqual(fallback['task']['id'], 'T-1')
+                            self.assertEqual(parallel_status.pending_tasks(repo)[0]['reason'],
+                                             parallel_plan.COORDINATOR_EXPIRED_REASON)
+                        else:
+                            self.assertEqual(result['dispatch'], [])
+                            self.assertIn('Live authorization', result['waiting'][0]['reason'])
+                            self.assertEqual(fallback['outcome'], 'WAITING')
+                        self.assertEqual(path.read_bytes(), pending)
 
     def test_authorization_status_tracks_current_contract_without_dispatch(self):
         import json

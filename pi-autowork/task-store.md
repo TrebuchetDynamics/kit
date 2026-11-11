@@ -47,8 +47,9 @@ default. Completion receipts stay machine-owned; Git records completed work.
 
 - `TaskStore.at(repo, rev)` resolves a Git revision to a commit SHA once, then
   reads `tasks/items/<ID>.md` and `tasks/goals/<ID>.md` with `git ls-tree` and one
-  `git cat-file --batch` call at that SHA, whatever the number of files. Explicit
-  coordinator-verified closures read receipts and referenced Git objects in two additional
+  `git cat-file --batch` call at that SHA, whatever the number of files.
+  Open coordinator-owned records also read their last-change commit time from pinned Git history.
+  Explicit coordinator-verified closures read receipts and referenced Git objects in two additional
   batches, and check integration ancestry at the same pinned revision. The returned `rev` is that pinned SHA, not the input
   branch name. Working-tree edits never become records. Git replacement refs
   are disabled so they cannot substitute content for the pinned object IDs.
@@ -158,6 +159,17 @@ ownership never grants worker authority. This property does **not** evaluate
 prerequisite completion, dependency cycles, resource availability, worker leases,
 or the caller's rights. Consumers must gate those separately. In particular a
 check string is not permission to execute that command with coordinator rights.
+
+When assigning `ownership = "coordinator"`, planners and skills must account for
+its two-hour claim. Admission waits with `awaiting coordinator action` until two
+hours after the committer time of the last commit that changed that task file.
+At that boundary, admission treats the task as worker work without rewriting the
+record or changing its fingerprints. The rule also applies to existing records.
+Unrelated commits and uncommitted edits do not renew the claim. Missing commit-time
+evidence keeps it waiting. Status and fleet rows disclose `coordinator claim expired`
+with the ordinary ready dispatch wait. Owner-only tasks, Needs decision, dependencies,
+live authorization and receipt checks retain their gates. `task.runnable` remains
+a record-only property, not the time-dependent admission decision.
 
 ## Fingerprints
 
