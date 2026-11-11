@@ -131,7 +131,20 @@ The closure fields and `verified_depends_on` are optional. All other fields exce
 other than `schema` and `id` produce a visible draft rather than a store error.
 Empty acceptance/checks/touches also produce draft reasons in `missing_fields`.
 Explicit empty arrays are valid for dependencies, resources and exclusions.
-Resource strings are tokens such as `live`, `exclusive` or `test-db`, not prose.
+`touches` is the only declaration of file overlap. `resources` names only things
+that cannot be shared, such as a port, an install, a device or a live service.
+For example, `resources = ["port:8080"]` reserves an exclusive port; overlapping
+source edits belong in `touches = ["pi-autowork/src/"]`, not a broad resource such
+as `autowork-python-layout`. Resource strings are tokens, not prose; `exclusive`
+runs alone and `live` requires authorization. Tasks sharing a declared resource
+still run one at a time.
+
+`autowork tasks validate` returns advisory `warnings` while keeping `ok: true` for
+a valid store. It warns once per resource that no task in the store uses together
+with a live, port, install or device word in its resource tokens (case-insensitive,
+including plural ports, installs and devices). A named `port:8080`, `python-install`
+or `device:phone` supplies that context; a co-declared `live` also supplies it.
+The warning does not remove a resource, change scheduling or grant live authority.
 A string item that itself encodes a JSON array is refused in every task list field,
 including `verified_depends_on`; diagnostics name the task path and field. Store
 validation does not silently flatten or repair such records.

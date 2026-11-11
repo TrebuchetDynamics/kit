@@ -281,6 +281,14 @@ correction; it writes nothing.
 A repository's tasks live in `tasks/`, its only task store (format:
 [the task store reference](../../pi-autowork/task-store.md)). Apply the
 [shared task rules](../shared/TODO-WORKCENTER.md) for `touches` and `resources`.
+`touches` is the only declaration of file overlap. `resources` names only things
+that cannot be shared, such as a port, an install, a device or a live service.
+For example, reserve an exclusive port with `resources = ["port:8080"]`; declare
+overlapping source edits with `touches = ["pi-autowork/src/"]`, not a broad resource
+such as `autowork-python-layout`. Tasks sharing a declared resource still run one
+at a time. `autowork tasks validate` warns, without failing, about a resource that
+no task uses with a live, port, install or device word in its resources; the warning
+does not change scheduling.
 
 - `tasks/goals/<ID>.md`: optional multi-task outcomes, one goal per file, with `title`, `priority` (1 first),
   `source` (the accepted plan or spec heading, `path#anchor`), `status`
