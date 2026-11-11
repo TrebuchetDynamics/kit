@@ -134,7 +134,7 @@ def coordinator_full_check(argv, repo=None):
     try:
         direct = command and shlex.split(command) == list(argv)
         from pi_autowork import main_check
-        wrapper = (repo is not None and command == main_check.full_check(repo) and len(argv) == 5 and argv[0] == '/bin/bash'
+        wrapper = (repo is not None and command == main_check.runner_full_check(repo) and len(argv) == 5 and argv[0] == '/bin/bash'
                    and Path(argv[1]).resolve() == Path(__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
                    and argv[2] == '--verify')
         return command if direct or (command and wrapper) else ''
@@ -992,7 +992,7 @@ def integrate(repo, owner_pid, task, argv, timeout, reviewer=None, base=None, ba
                 # A wrapper's exit alone cannot stand in for its source/log-bound gate.
                 if coordinator_full_check(argv, repo) and len(argv) == 5 and argv[2] == '--verify' and passed(check):
                     from pi_autowork import worker
-                    if worker.review_gate_evidence(argv[3], root) is None:
+                    if worker.integration_gate_evidence(argv[3], task, root) is None:
                         raise Hold('validation', 'integration validation failed: missing bound full-check evidence')
                 queued += (check or {}).get('command_receipt', {}).get('check_slot_wait_seconds', 0)
                 if (check or {}).get('outcome') == 'TIMED_OUT':

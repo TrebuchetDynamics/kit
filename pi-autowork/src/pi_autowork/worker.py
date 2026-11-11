@@ -428,7 +428,7 @@ def producing_gate_log(state, cached):
                 or not source.is_file() or source.stat().st_uid != os.getuid()):
             return None
         content = source.read_bytes()
-        if content and hashlib.sha256(content).hexdigest() == cached.get('log_sha256'):
+        if hashlib.sha256(content).hexdigest() == cached.get('log_sha256'):
             return source
     except (OSError, ValueError, KeyError, TypeError):
         pass
@@ -811,6 +811,17 @@ def batched_verdict(state, task, checkout):
         value = json.loads(record.read_text())
     except (OSError, ValueError):
         return None
+    if not batch_verdict_valid(task, checkout, value):
+        record.unlink(missing_ok=True)
+        return None
+    if value.get('ok'):
+        landing_receipt(state, task, checkout, value.get('selection'), batch=value)
+    record.unlink(missing_ok=True)
+    return bool(value.get('ok')), value.get('reason') or ''
+
+
+def batch_verdict_valid(task, checkout, value):
+    """Recheck a published or consumed verdict against its original admission and current tree."""
     binding = value.get('binding')
     context = binding.get('closure_context') if binding else None
     if binding and (('closure_context' in binding and (
@@ -823,13 +834,11 @@ def batched_verdict(state, task, checkout):
             or binding.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', 'auto')
             or binding.get('policy_version') != review_policy.version()
             or binding.get('optimistic') != optimistic.enabled()):
-        record.unlink(missing_ok=True)
-        return None
+        return False
     if value.get('commit') != git(checkout, 'rev-parse', 'HEAD^2') or not same_code(checkout, value.get('tree'), 'HEAD^{tree}'):
         # The session moved since by more than planning files: today's full verification. The record
         # can never match again; left, it held new batches back for two hours.
-        record.unlink(missing_ok=True)
-        return None
+        return False
     policy = value.get('review_policy')
     # A skipped model review cannot inherit same_code's broad docs/tasks drift allowance.
     # Nor may an old skip survive a policy/configuration change or be advertised as a review.
@@ -840,20 +849,16 @@ def batched_verdict(state, task, checkout):
                 or policy.get('version') != review_policy.version()
                 or policy.get('mode') != os.environ.get('PI_AUTOWORK_REVIEW', 'auto')
                 or policy.get('command') != main_check.full_check(checkout)))):
-        record.unlink(missing_ok=True)
-        return None
-    if value.get('ok'):
-        landing_receipt(state, task, checkout, value.get('selection'))
-    record.unlink(missing_ok=True)
-    return bool(value.get('ok')), value.get('reason') or ''
+        return False
+    return True
 
 
-def landing_receipt(state, task, checkout, selection):
+def landing_receipt(state, task, checkout, selection, *, batch=None):
     """Keep the accepted landing scope after a one-use batch verdict is consumed."""
     target = Path(state) / 'landing-check' / f'{safe_name(task)}.json'
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(dict(task=task, commit=git(checkout, 'rev-parse', 'HEAD'),
-                                     tree=git(checkout, 'rev-parse', 'HEAD^{tree}'), selection=selection)))
+                                     tree=git(checkout, 'rev-parse', 'HEAD^{tree}'), selection=selection, batch=batch)))
 
 
 def gate_selection(state, checkout):
@@ -879,6 +884,31 @@ def review_gate_evidence(state, checkout):
                 and producing_gate_log(state, record)):
             return record
     except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    return None
+
+
+def integration_gate_evidence(state, task, checkout):
+    """Accept an exact gate or the producing gate of a still-bound consumed batch verdict."""
+    exact = review_gate_evidence(state, checkout)
+    if exact is not None or dirty(checkout):
+        return exact
+    try:
+        receipt = json.loads((Path(state) / 'landing-check' / f'{safe_name(task)}.json').read_text())
+        value = receipt['batch']
+        binding = value['binding']
+        if (receipt['task'] != task or receipt['commit'] != git(checkout, 'rev-parse', 'HEAD')
+                or receipt['tree'] != git(checkout, 'rev-parse', 'HEAD^{tree}')
+                or value.get('ok') is not True or not batch_verdict_valid(task, checkout, value)):
+            return None
+        tree = binding['gate_tree']
+        record = json.loads((Path(state) / 'full-check' / f'tree-{tree}.json').read_text())
+        if (record.get('tree') == tree and record.get('ok') is True
+                and record.get('selection') == binding.get('selection')
+                and main_check.receipt_command_matches(record, binding['command'])
+                and producing_gate_log(state, record)):
+            return record
+    except (OSError, ValueError, KeyError, AttributeError, TypeError):
         pass
     return None
 
@@ -916,7 +946,7 @@ def verify(state, task):
     if batched is not None:
         ok, reason = batched
         # A batch verdict cannot replace the gate promised by this integration.
-        if ok and os.environ.get('AUTOWORK_RUNNER_FULL_CHECK') and review_gate_evidence(state, checkout) is None:
+        if ok and os.environ.get('AUTOWORK_RUNNER_FULL_CHECK') and integration_gate_evidence(state, task, checkout) is None:
             ok, reason = full_suite_gate(state, task, checkout)
         if ok:
             print(f'pi-autowork: {task} passed batch verification', file=sys.stderr)

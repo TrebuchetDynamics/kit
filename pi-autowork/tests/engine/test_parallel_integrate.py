@@ -276,6 +276,16 @@ class IntegrationTests(unittest.TestCase):
         with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='arbitrary command'):
             self.assertEqual(module.coordinator_full_check(argv, self.repo), '')
 
+    def test_optimistic_wrapper_does_not_exempt_an_unrun_declared_check(self):
+        module = self.module()
+        launcher = Path(module.__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+        argv = ['/bin/bash', str(launcher), '--verify', '/tmp/fixture-state', 'A']
+        with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='false',
+                        PI_AUTOWORK_VALIDATE='false', PI_AUTOWORK_OPTIMISTIC='1'):
+            self.assertEqual(module.coordinator_full_check(argv, self.repo), '')
+            # A direct actual gate still owns its command, irrespective of optimistic policy.
+            self.assertEqual(module.coordinator_full_check(['false'], self.repo), 'false')
+
     def test_no_declared_checks_still_verifies(self):
         path = self.repo / 'tasks/items/A.md'
         path.write_text(path.read_text().replace('checks = ["true"]', 'checks = []'))

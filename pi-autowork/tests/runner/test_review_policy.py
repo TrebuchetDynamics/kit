@@ -281,6 +281,57 @@ Accepted documentation task.
                 self.candidate()
                 self.assertTrue(self.decide()['required'])
 
+    def test_silent_gate_has_bound_evidence_but_modified_or_missing_log_does_not(self):
+        self.candidate()
+        state = self.root / 'state'
+        with patch.dict(os.environ, PI_AUTOWORK_VALIDATE='true',
+                        PI_AUTOWORK_CHECK_ROOT=str(self.root / 'slots')):
+            self.assertEqual(worker.full_suite_gate(state, 'T-1', str(self.repo)), (True, ''))
+            evidence = worker.review_gate_evidence(state, str(self.repo))
+            self.assertIsNotNone(evidence)
+            log = Path(evidence['log'])
+            self.assertEqual(log.read_bytes(), b'')
+            log.write_text('substituted output')
+            self.assertIsNone(worker.review_gate_evidence(state, str(self.repo)))
+            log.unlink()
+            self.assertIsNone(worker.review_gate_evidence(state, str(self.repo)))
+
+    def test_consumed_batch_evidence_keeps_admission_and_producing_gate_bindings(self):
+        self.candidate()
+        state = self.root / 'state'
+        with patch.dict(os.environ, PI_AUTOWORK_VALIDATE='true',
+                        PI_AUTOWORK_CHECK_ROOT=str(self.root / 'slots')):
+            self.assertEqual(worker.full_suite_gate(state, 'batch', str(self.repo)), (True, ''))
+            evidence = worker.review_gate_evidence(state, str(self.repo))
+            value = {'ok': True, 'binding': {'gate_tree': evidence['tree'], 'command': 'true',
+                                           'selection': None}}
+            worker.landing_receipt(state, 'T-1', str(self.repo), None, batch=value)
+            # The existing batch validator owns admission/closure validation. The handoff
+            # must call it again, then separately require the original producing gate.
+            with patch.object(worker, 'review_gate_evidence', return_value=None), \
+                    patch.object(worker, 'batch_verdict_valid', return_value=True) as validate:
+                self.assertEqual(worker.integration_gate_evidence(state, 'T-1', str(self.repo)), evidence)
+                validate.assert_called_once_with('T-1', str(self.repo), value)
+                validate.return_value = False
+                self.assertIsNone(worker.integration_gate_evidence(state, 'T-1', str(self.repo)))
+                validate.return_value = True
+                for key, changed in (('command', 'false'), ('gate_tree', 'unknown'),
+                                     ('selection', {'base': 'wrong', 'head': 'wrong'})):
+                    altered = {'ok': True, 'binding': dict(value['binding'], **{key: changed})}
+                    worker.landing_receipt(state, 'T-1', str(self.repo), None, batch=altered)
+                    self.assertIsNone(worker.integration_gate_evidence(state, 'T-1', str(self.repo)))
+                worker.landing_receipt(state, 'T-1', str(self.repo), None, batch=value)
+                receipt_path = state / 'landing-check/T-1.json'
+                receipt = json.loads(receipt_path.read_text())
+                receipt_path.write_text(json.dumps(dict(receipt, commit='another integration')))
+                self.assertIsNone(worker.integration_gate_evidence(state, 'T-1', str(self.repo)))
+                receipt_path.write_text(json.dumps(receipt))
+                self.put('docs/usage.md', 'Unchecked worktree edit.\n')
+                self.assertIsNone(worker.integration_gate_evidence(state, 'T-1', str(self.repo)))
+                self.git('checkout', '--', 'docs/usage.md')
+                Path(evidence['log']).unlink()
+                self.assertIsNone(worker.integration_gate_evidence(state, 'T-1', str(self.repo)))
+
     def test_dirty_checkout_cannot_reuse_a_committed_gate(self):
         self.candidate()
         state = self.root / 'state'

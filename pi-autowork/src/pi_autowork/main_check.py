@@ -74,6 +74,15 @@ def affected_checker(repo, declared):
     return None
 
 
+def runner_full_check(repo):
+    """The full command actually promised before landing, respecting optimistic custom gates."""
+    from pi_autowork import optimistic
+    declared = full_check(repo)
+    if optimistic.enabled() and not affected_checker(repo, declared):
+        return ''
+    return declared
+
+
 def landing_check(repo, base, declared):
     """The landing command and checked scope. Main retains its declared full command."""
     checker = affected_checker(repo, declared)
