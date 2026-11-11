@@ -3,7 +3,7 @@ schema = 1
 id = "SPEED-012"
 title = "Each runner uses a private Pi directory that a change to the interactive Pi home cannot break"
 short = "Runners keep a private Pi directory"
-status = "open"
+status = "done"
 section = "Next"
 rank = 34000
 depends_on = []
@@ -15,5 +15,7 @@ scope = "On 2026-11-10 the interactive Pi home was removed and all eight runners
 acceptance = ["A fixture with a disposable interactive Pi home and state root proves install fills the private directory with owner-only permissions, and a runner job environment points Pi at it.", "A fixture proves that deleting the interactive Pi home afterwards leaves the runner's Pi environment, toolset path and the autowork command link usable.", "A fixture proves a missing private directory gives one status line naming the refill command and no silent fallback; no test reads a real login, and no login value appears in any log or report the tests inspect.", "docs/installation.md and pi-autowork/README.md describe the private directory, what is copied and how to refill it."]
 checks = ["python3 scripts/check.py pi-autowork/tests/runner/test_autowork_command.py tests/test_install_menu.py", "python3 scripts/affected_tests.py --run --base <captured-task-base>", "python3 skills/docs-sync/scripts/docs.py check .", "autowork tasks validate ."]
 exclusions = ["No real credentials, login, provider or model call in any test; disposable fixtures only.", "No change to the interactive Pi home, to another runner's state or to live services; no weakened or deleted test."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/SPEED-012.toml"
 +++
 - Sources: Owner decisions of 2026-11-10 (grilling round 3, accepted). Measure for every change: `autowork scorecard` accepted-to-delivered median and p95, baseline saved outside the repository on 2026-11-10.
