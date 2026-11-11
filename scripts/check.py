@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 from fnmatch import fnmatchcase
 import importlib.util
 import math
+import json
+import threading
 import runpy
 import os
 import shutil
@@ -421,12 +423,36 @@ def main(argv=None):
     env['PYTHONPATH'] = os.pathsep.join(support_paths + ([existing_pythonpath] if existing_pythonpath else []))
     passed = failed = gated = 0
     work = list(units(root, tests, args.pattern, args.shard))
+    # Report actual completions, not buffered directory output; split modules count once.
+    progress = os.environ.get('AUTOWORK_MODULE_PROGRESS')
+    remaining = defaultdict(int)
+    progress_lock = threading.Lock()
+    for directory, names in work:
+        remaining[(directory, names[0].split('.')[0])] += 1
+
+    def completed(future=None, module=None):
+        if not progress:
+            return
+        with progress_lock:
+            if module is not None:
+                remaining[module] -= 1
+            path = Path(progress)
+            temporary = path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(dict(total=len(remaining),
+                                                completed=sum(n == 0 for n in remaining.values()))) + '\n')
+            temporary.replace(path)
+
+    completed()
     # Modules (and shards of split ones) are independent processes; output is still printed
     # whole, by directory and in order. Shards of split modules are the longest, so they start
     # first.
     order = sorted(range(len(work)), key=lambda i: len(work[i][1]) == 1 and '.' not in work[i][1][0])
     with ThreadPoolExecutor(max_workers=args.jobs or default_jobs()) as pool:
         futures = {i: pool.submit(run_unit, *work[i], env, args.timeout, args.pattern) for i in order}
+        for i, future in futures.items():
+            directory, names = work[i]
+            module = (directory, names[0].split('.')[0])
+            future.add_done_callback(lambda done, module=module: completed(done, module))
         plugin = pool.submit(paseo_check, root, env) if not args.paths and not args.pattern and selection is None else None
         runs = [(work[i][0], futures[i]) for i in range(len(work))]
         for directory, modules in groups.items():

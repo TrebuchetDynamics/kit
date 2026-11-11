@@ -564,18 +564,22 @@ class Check(unittest.TestCase):
         self.assertIn('1 test directories passed', result.stdout)
 
     def test_selected_split_module_runs_only_its_shards(self):
+        progress = self.root / 'modules.json'
         body = ''.join(f'''    def test_{n}(self):
+        self.assertNotIn('AUTOWORK_MODULE_PROGRESS', os.environ)
+        self.assertEqual(json.loads(Path({str(progress)!r}).read_text()), dict(total=1, completed=0))
         Path('ran-{n}').write_text(str(os.getpid()))
 ''' for n in range(24))
-        module = self.write('pi-autowork/tests/runner/test_pi_autowork.py', 'import os, unittest\nfrom pathlib import Path\n'
+        module = self.write('pi-autowork/tests/runner/test_pi_autowork.py', 'import json, os, unittest\nfrom pathlib import Path\n'
                             'class Runner(unittest.TestCase):\n' + body)
         self.write('skills/docs-sync/scripts/test_unselected.py', "raise RuntimeError('not selected')\n")
         for paths in (['pi-autowork/tests/runner/test_pi_autowork.py'], ['pi-autowork/tests'], [str(module), 'pi-autowork/tests']):
             with self.subTest(paths=paths):
                 for marker in module.parent.glob('ran-*'):
                     marker.unlink()
-                result = self.run_check(*paths)
+                result = self.run_check(*paths, env=dict(os.environ, AUTOWORK_MODULE_PROGRESS=str(progress)))
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(json.loads(progress.read_text()), dict(total=1, completed=1))
                 self.assertIn('Offline inventory: 1 modules in 1 directories', result.stdout)
                 self.assertIn('1 test directories passed; 0 failed', result.stdout)
                 pids = [(module.parent / f'ran-{n}').read_text() for n in range(24)]
@@ -583,12 +587,14 @@ class Check(unittest.TestCase):
                 self.assertNotIn('not selected', result.stdout)
         for marker in module.parent.glob('ran-*'):
             marker.unlink()
-        filtered = self.run_check('pi-autowork/tests/runner/test_pi_autowork.py', '-k', 'test_23')
+        filtered = self.run_check('pi-autowork/tests/runner/test_pi_autowork.py', '-k', 'test_23',
+                                  env=dict(os.environ, AUTOWORK_MODULE_PROGRESS=str(progress)))
         self.assertEqual(filtered.returncode, 0, filtered.stdout + filtered.stderr)
         self.assertEqual([p.name for p in module.parent.glob('ran-*')], ['ran-23'])
         self.assertIn('Ran 1 test', filtered.stdout)
         module.write_text(module.read_text() + '    def test_failure(self): self.fail("shard failure")\n')
-        failed = self.run_check('pi-autowork/tests/runner/test_pi_autowork.py')
+        failed = self.run_check('pi-autowork/tests/runner/test_pi_autowork.py',
+                                env=dict(os.environ, AUTOWORK_MODULE_PROGRESS=str(progress)))
         self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
         self.assertIn('shard failure', failed.stdout)
         for path in ('tests/missing.py', 'vendor', '../outside',
