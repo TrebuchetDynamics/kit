@@ -1070,7 +1070,9 @@ class Coordinator:
         Do not replace TMPDIR or sanitize the marker in descendants: checks and fake
         agents they launch are runner work too, wherever their working directory is.
         """
-        return dict(os.environ, AUTOWORK_EXECUTION_COMMON=str(self.cfg['git_common']),
+        from . import private_pi
+        return dict(os.environ, **private_pi.environment(self.cfg.get('state_root', private_pi.state_root())),
+                    AUTOWORK_EXECUTION_COMMON=str(self.cfg['git_common']),
                     AUTOWORK_MAIN_EVIDENCE=str(Path(self.cfg['git_common']) / 'autowork-execution/main-evidence'),
                     **overrides)
 

@@ -5,6 +5,9 @@ The Hermes item runs only as a dry run here: the real setup changes live profile
 import json
 import os
 import pty
+import shutil
+import stat
+from types import SimpleNamespace
 import selectors
 from pathlib import Path
 import subprocess
@@ -201,6 +204,60 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
         self.assertRegex(result.stdout, r'hermes\s+planned')
         self.assertFalse(marker.exists())
 
+    def test_runner_install_survives_removing_interactive_pi(self):
+        sys.path.insert(0, str(ROOT / 'pi-autowork/src'))
+        from pi_autowork.coordinator import Coordinator
+        from pi_autowork import service
+        interactive = self.home / '.pi/agent'
+        interactive.mkdir(parents=True)
+        login = 'disposable-fixture-login'
+        (interactive / 'auth.json').write_text(json.dumps({'fixture': login}))
+        (interactive / 'settings.json').write_text(json.dumps({'defaultModel': 'fixture', 'packages': ['unwanted']}))
+        (interactive / 'sessions').mkdir()
+        root = self.home / '.local/state/pi-autowork'
+        unit_path = self.home / '.config/systemd/user/pi-autowork@.service'
+        unit_path.parent.mkdir(parents=True)
+        unit_path.write_text(service.UNIT.format(env_dir=self.home / '.config/pi-autowork', script=interactive / 'removed.sh'))
+        result = self.install('--only', 'autowork')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(root / 'installed/pi-autowork/bin/pi-autowork.sh'), unit_path.read_text())
+        private = root / 'pi-agent'
+        self.assertEqual({p.name for p in private.iterdir()}, {'settings.json', 'auth.json'})
+        self.assertEqual(json.loads((private / 'settings.json').read_text()), {'defaultModel': 'fixture'})
+        self.assertEqual((private / 'auth.json').read_bytes(), (interactive / 'auth.json').read_bytes())
+        self.assertEqual(stat.S_IMODE(private.stat().st_mode), 0o700)
+        self.assertTrue(all(stat.S_IMODE(p.stat().st_mode) == 0o600 for p in private.iterdir()))
+        (interactive / 'settings.json').write_text('{"defaultModel":"updated-fixture"}')
+        again = self.install('--only', 'autowork')
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertEqual(json.loads((private / 'settings.json').read_text())['defaultModel'], 'fixture')
+        refreshed = self.install('update', '--only', 'autowork')
+        self.assertEqual(refreshed.returncode, 0, refreshed.stdout + refreshed.stderr)
+        self.assertEqual(json.loads((private / 'settings.json').read_text())['defaultModel'], 'updated-fixture')
+        shutil.rmtree(interactive.parent)
+        owner = SimpleNamespace(cfg={'state_root': str(root), 'git_common': str(self.home / 'git')})
+        environment = Coordinator.job_environment(owner)
+        self.assertEqual(environment['PI_CODING_AGENT_DIR'], str(private))
+        self.fake('systemctl', LOGGING + '[[ $2 == is-enabled || $2 == is-active ]] && exit 1\nexit 0\n')
+        self.fake('loginctl', '#!/bin/sh\necho yes\n')
+        with patch.dict(os.environ, self.env, clear=True):
+            service.run('install', repo=str(self.home), base='main', script='removed-interactive-launcher',
+                        workers=8, state_root=str(root), hermes_jobs='', argv0='fixture')
+        saved = (self.home / '.config/pi-autowork' / f'{self.home.name}.env').read_text()
+        self.assertIn(f'PI_CODING_AGENT_DIR={private}', saved)
+        self.assertIn(f'PI_AUTOWORK_TOOLSET={root / "installed"}', saved)
+        unit = (self.home / '.config/systemd/user/pi-autowork@.service').read_text()
+        self.assertIn(str(root / 'installed/pi-autowork/bin/pi-autowork.sh'), unit)
+        link = self.home / '.local/bin/autowork'
+        installed = root / 'installed'
+        self.assertTrue((installed / '.git').is_dir())  # not tied to the removed package's Git directory
+        self.assertTrue((installed / 'pi-autowork/bin/pi-autowork.sh').is_file())
+        readback = subprocess.run([str(link), 'capabilities'], env=self.env, capture_output=True, text=True)
+        self.assertEqual(readback.returncode, 0, readback.stderr)
+        self.assertEqual(json.loads(readback.stdout)['toolset'], str(installed))
+        self.assertNotIn(login, result.stdout + result.stderr + again.stdout + again.stderr + refreshed.stdout + refreshed.stderr
+                         + readback.stdout + readback.stderr + self.log.read_text())
+
     def test_all_installs_every_available_item_in_order(self):
         result = self.install('--all')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -217,7 +274,7 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
                                                'codex plugin remove kit@autowork-marketplace',
                                                'codex plugin add kit@autowork-marketplace'])
         link = self.home / '.local/bin/autowork'
-        self.assertEqual(Path(os.readlink(link)), self.home / 'pkg/kit/pi-autowork/bin/autowork')  # the package's
+        self.assertEqual(Path(os.readlink(link)), self.home / '.local/state/pi-autowork/installed/pi-autowork/bin/autowork')
         self.assertEqual((self.home / '.local/bin/tx').read_bytes(), (ROOT / 'tmux/tx').read_bytes())
         self.assertTrue((self.home / '.local/share/bash-completion/completions/tx').is_file())
         self.assertTrue((self.home / '.tmux.conf').is_file())  # none existed
@@ -990,7 +1047,8 @@ fi
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('pi install'), [])
         self.assertEqual(self.calls('pi update'), [])
-        self.assertEqual(Path(os.readlink(self.home / '.local/bin/autowork')), package / 'pi-autowork/bin/autowork')
+        self.assertEqual(Path(os.readlink(self.home / '.local/bin/autowork')),
+                         self.home / '.local/state/pi-autowork/installed/pi-autowork/bin/autowork')
 
     def test_install_clears_empty_pi_filters_that_hide_skills_and_commands(self):
         settings = self.home / '.pi/agent/settings.json'

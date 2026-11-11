@@ -27,11 +27,37 @@ source checks, TUI code stamps and review fingerprints inspect actual implementa
 Runtime state lives outside the repository, under
 `${XDG_STATE_HOME:-~/.local/state}/pi-autowork/<repository key>/`.
 
-Automatic toolset updates use the exact Git package source registered in `pi list`,
-including its ref. A local-path package is owner-managed, even when its checkout
-has a Git remote. Local, missing or unreadable package declarations do not trigger
-an update fetch or `pi update`. Running processes keep their selected immutable
-release until a supported reload or restart selects a committed replacement.
+### Private Pi configuration and installed runner
+
+`install.sh` (the `autowork` component) creates a fleet-wide `pi-agent/` under
+`${PI_AUTOWORK_STATE_DIR:-${XDG_STATE_HOME:-~/.local/state}/pi-autowork}`.
+It copies the interactive Pi home's `auth.json` login and `models.json` provider
+configuration, plus only `defaultProvider`, `defaultModel` and
+`defaultThinkingLevel` from `settings.json`. No sessions, package registrations,
+extensions or other interactive settings are copied. The directory is 0700 and
+copied files are 0600; keep them outside repositories, worktrees, logs and reports.
+The interactive source is `${PI_CODING_AGENT_DIR:-~/.pi/agent}` and is not changed
+by this copy. Runner jobs always set `PI_CODING_AGENT_DIR` to the private directory;
+they do not fall back to the interactive home.
+
+The command link and installed systemd launcher use the independent Git checkout
+in the state root's `installed/`, not the interactive Pi package clone. Immutable
+process releases remain under `releases/`. Removing the interactive home leaves
+these paths usable; the Pi executable and Node still need to be on PATH.
+Automatic updates of this installed checkout fetch its origin and fast-forward
+only after the existing fleet/schema check. For legacy package launches, updates
+still require a registered Git package source in `pi list`, including its ref;
+local-path declarations remain owner-managed. Running processes keep their
+selected release until a supported reload or restart.
+
+Ordinary installation keeps existing private files. To refresh the copied settings
+and login, run `autowork update --only autowork` from an interactive shell with a
+working Pi home (set `PI_CODING_AGENT_DIR` there for a custom source).
+`autowork status` names this command when the private directory/login is missing
+or the runner has observed a refused login. Status is read-only and makes no
+provider call. See [installation and recovery](../docs/installation.md#private-runner-pi-directory).
+Disposable offline fixtures verify permissions, job configuration, command-link
+survival and missing/refused-login diagnosis, not live provider acceptance.
 
 | Module | Role |
 | --- | --- |
@@ -277,7 +303,7 @@ and the explicit agent commands below do.
 | Command | What it does |
 |---|---|
 | `autowork` | The live TUI on a terminal (help otherwise) |
-| `autowork start [dir]` | Safely select an existing local main branch when needed, then install (if needed) and start the repository's service. Requires a valid committed `tasks/` store on main/master, saying what is missing (`autowork tasks prepare` converts legacy planning or reports the next step). Services run from the Pi package installed from `git:github.com/TrebuchetDynamics/kit`; a service on another copy (a package under an older name) is moved onto it and restarted, and the others follow at their next restart |
+| `autowork start [dir]` | Safely select an existing local main branch when needed, then install (if needed) and start the repository's service. Requires a valid committed `tasks/` store on main/master, saying what is missing (`autowork tasks prepare` converts legacy planning or reports the next step). Services prefer the independent installed runner under the shared state root; legacy package installations are used only when that installation is absent |
 | `autowork stop [target]` | Stop the service; workers pause and resume on the same attempt. A deliberate stop is terminal: a restart will not revive the previous release or its push grant until `autowork start` |
 | `autowork restart [target] [--stop-workers [--now]]` | Reload in place; running workers keep running. `--stop-workers` waits for in-flight merges, then restarts the service and pauses workers; `--now` interrupts immediately instead |
 | `autowork pause` / `resume [target]` | Stop the service and keep it off, also after a reboot (disable), or start it again (enable); only a paused service is listed as `paused`, any other stopped one as `not running` |

@@ -88,6 +88,41 @@ a stale registration with a missing directory is reinstalled. They do not run
 remain enabled. `./install.sh update --only pi` explicitly updates an existing
 package, or installs it when absent.
 
+### Private runner Pi directory
+
+The `autowork` installer component keeps one fleet-wide Pi directory at
+`${PI_AUTOWORK_STATE_DIR:-${XDG_STATE_HOME:-~/.local/state}/pi-autowork}/pi-agent`.
+It has mode 0700; copied files have mode 0600. The first install copies `auth.json`
+(the model login), `models.json` (provider/model configuration), and only
+`defaultProvider`, `defaultModel` and `defaultThinkingLevel` from `settings.json`.
+The source is `${PI_CODING_AGENT_DIR:-~/.pi/agent}`. Sessions, extensions, package
+registrations and other interactive settings are not copied. The interactive
+source is not changed by this component. Keep the private directory outside Git
+repositories and worktrees; never include its contents in logs or reports.
+
+The component also creates an independent Git installation under the same state
+root, in `installed/`. The `autowork` command link and installed service launcher
+point there. Runners select immutable releases from that installation and set
+`PI_CODING_AGENT_DIR` to `pi-agent`, even if an older saved service named the
+interactive home. Removing the interactive Pi home or its Kit package clone does
+not remove the runner configuration or release source. Pi and Node must still be
+available on the service PATH.
+
+Ordinary installs keep existing private files. To refill them after a login change,
+run this command from an interactive shell with the working interactive Pi home:
+
+```sh
+autowork update --only autowork
+```
+
+This refreshes the allowlisted files and restarts active services through the normal
+safe restart path. A custom interactive home must be selected with
+`PI_CODING_AGENT_DIR` on that command. `autowork status` reports a missing private
+directory/login or a login refusal observed by a runner and names the same refill
+command. Status does not contact a provider, and runners never silently fall back
+to the interactive home. Offline fixtures cover copying, permissions, removal and
+status; they do not qualify a live login or model call.
+
 ### Octet native binaries
 
 Default, `--all`/`--full` and `update` include `octet`, even without an existing

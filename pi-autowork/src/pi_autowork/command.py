@@ -96,7 +96,11 @@ PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
 
 
 def package_script():
-    """pi-autowork.sh in the Pi package installed from PI_SOURCE (`pi list`), or None."""
+    """Prefer the independent installed runner over the interactive Pi package."""
+    from pi_autowork import private_pi
+    installed = private_pi.state_root() / 'installed/pi-autowork/bin/pi-autowork.sh'
+    if installed.is_file():
+        return str(installed)
     try:
         lines = subprocess.run([os.environ.get('AUTOWORK_PI', 'pi'), 'list'], capture_output=True, text=True,
                                timeout=60).stdout.splitlines()
@@ -467,6 +471,10 @@ def saved_service_diagnosis(name, paths):
 
 
 def cmd_status(args, paths):
+    from pi_autowork import private_pi
+    fault = private_pi.problem(paths['state_root'])
+    if fault:
+        print(fault, flush=True)
     target = args.target or '.'
     if '/' in target or target in ('.', '..') or Path(target).is_dir():
         # Preserve the requested observation target even without .git or with
