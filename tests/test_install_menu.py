@@ -115,7 +115,8 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
     def calls(self, prefix=''):
         return [c for c in self.log.read_text().splitlines() if c.startswith(prefix)]
 
-    def test_restart_services_uses_immediate_active_only_restart_and_tries_every_service(self):
+    def test_restart_services_uses_safe_runner_restart_and_tries_every_service(self):
+        # Retain the baseline test ID while checking the supported immediate restart.
         listed = subprocess.CompletedProcess([], 0,
             'pi-autowork@repo.service loaded active running Runner\n'
             'hermes-gateway.service loaded active running Hermes\n'
