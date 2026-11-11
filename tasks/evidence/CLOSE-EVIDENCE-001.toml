@@ -1,0 +1,9 @@
+schema = 1
+task = "CLOSE-EVIDENCE-001"
+candidate = "6e8d02add57fe1d30ab22a2a110bdd0abcd649c6"
+integration = "945581bb62cee25e37635f7d799dcb4765ddf000"
+tree = "32902604c5842eb75fc9dc7b037975acade367c9"
+contract_hash = "3eafed153b01840c34b9f8473f628932b849c21b23deeefc75f839a0aea2c7ac"
+checks = ["<path>", "<path>", "--verify", "<path>", "CLOSE-EVIDENCE-001"]
+result = "pass"
+review = "passed"
