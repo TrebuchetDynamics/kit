@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the tests a push can affect, before the push; the full suite stays CI's job.
 
-    git push                      # the hook runs `scripts/affected_tests.py --base <pushed-from> --run`
+    git push                      # the hook runs `scripts/affected_tests.py --base <pushed-from> --run --defer-full`
     python3 scripts/pre_push_check.py --install   # write or chain the hook into .git/hooks/pre-push
     KIT_PRE_PUSH=0 git push       # skip the tests this once (so does `git push --no-verify`)
 
@@ -10,8 +10,9 @@ leaves documents to them. Git hands a pre-push hook one line per ref: local ref,
 The base of the change is the remote's current sha when this repository knows it, else
 the merge-base with origin/main (the selector's own default). Deleted refs and refs with
 nothing new are skipped. The selection follows the working tree, as the selector does, so
-uncommitted edits are tested too; a change to the check, CI or packaging selects the whole
-suite, and that is the one case a push takes minutes.
+uncommitted edits are tested too. Whole-suite selections (check, CI, packaging or unresolved
+mappings) are reported and deferred to CI, not run in the push hook. Targeted selections
+still run locally and failures refuse the push.
 Changed local objects must peel to the checked-out HEAD before checks; HEAD must still
 match afterward. This revision guard does not qualify an immutable candidate tree.
 """
@@ -119,7 +120,8 @@ def run_core():
 
 
 def run_affected(base):
-    command = [sys.executable, str(ROOT / 'scripts/affected_tests.py'), '--run', *(['--base', base] if base else [])]
+    command = [sys.executable, str(ROOT / 'scripts/affected_tests.py'), '--run', '--defer-full',
+               *(['--base', base] if base else [])]
     print('pre-push: ' + ' '.join(command[1:]), flush=True)
     return subprocess.run(command, cwd=ROOT, env=test_environment()).returncode
 
