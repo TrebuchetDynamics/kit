@@ -1576,7 +1576,8 @@ class EngineTests(Fixture):
     def test_a_full_check_that_crashes_once_is_run_again(self):
         marker = self.root / 'crashed-once'
         self.env['PI_AUTOWORK_VALIDATE'] = (f'if [ ! -e {marker} ]; then touch {marker}; '
-                                            'echo "Segmentation fault (core dumped)"; exit 139; fi')
+                                            'echo "Segmentation fault (core dumped)"; exit 139; fi; '
+                                            'test -f tasks/items/A.md && echo "fixture full check passed"')
         result = self.run_runner('--until-empty')
         self.assertTrue(marker.exists())
         self.assertTrue(self.done('A', 'B', 'C'), result.stdout)  # the rerun passed: nothing held

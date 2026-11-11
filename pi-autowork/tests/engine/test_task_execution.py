@@ -232,6 +232,8 @@ class RecoveryTests(ExecutionFixtureMixin, unittest.TestCase):
         import parallel_integrate as integrate
         import parallel_state as state
         from task_execution import git, save
+        # This process-attribution scenario needs an executable declared check.
+        self.set_todo(self.todo_text.replace('Checks: run fixture', 'Checks: python3 fixture.py'))
         self.commit_fixture()
         for key, value in [('user.name', 'Fixture'), ('user.email', 'fixture@example.invalid')]:
             subprocess.run(['git', '-C', str(self.repo), 'config', key, value], check=True)
@@ -247,14 +249,15 @@ class RecoveryTests(ExecutionFixtureMixin, unittest.TestCase):
                 baseline = git(self.repo, 'rev-parse', 'HEAD')
                 root, branch, _ = dispatch.create_worktree(self.repo, common, task, baseline)
                 state.create_slot(self.repo, owner, task, worktree=str(root), branch=branch, baseline=baseline)
-                (root / 'fixture.py').write_text(f'# {task} repaired\n')
+                (root / 'fixture.py').write_text(f'assert {task!r}.startswith("T")\n')
                 git(root, 'add', 'fixture.py')
                 git(root, 'commit', '-qm', task)
+                subprocess.run([sys.executable, 'fixture.py'], cwd=root, check=True)
                 commit = git(root, 'rev-parse', 'HEAD')
                 slot = state.transition(self.repo, owner, task, 'reported', commit=commit)
                 save(dispatch.data_dir(common, slot) / 'report.json',
                                         dict(task=task, commit=commit, changed_files=['fixture.py'],
-                                             checks=[{'command': 'true', 'result': 'pass'}], blockers=[],
+                                             checks=[{'command': 'python3 fixture.py', 'result': 'pass'}], blockers=[],
                                              acceptance=[{'item': item, 'result': 'met', 'evidence': 'offline fixture'}
                                                          for item in dispatch.task_queue.record(self.repo, task).acceptance]))
                 # Neither a scratch name, another repository's marker, nor another unit
