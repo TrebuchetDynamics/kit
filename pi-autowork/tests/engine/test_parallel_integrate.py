@@ -3395,6 +3395,26 @@ sys.exit(1)
         self.module().close(self.repo, self.owner, task)  # finalize only the committed closure
         return result
 
+    def test_verified_closure_preserves_structured_owner_qualification(self):
+        import task_store
+        path = self.repo / 'tasks/items/A.md'
+        authority = dict(owner_qualification='Owner inspected this criterion',
+                         waiver_actor='owner', waiver_at='2026-11-04',
+                         waiver_for=self.record('A').acceptance[0])
+        path.write_text(task_store.edit(path.read_text(), authority))
+        self.git('commit', '-qam', 'Record owner qualification')
+        self.baseline = self.git('rev-parse', 'HEAD')
+        contract_hash = self.record('A').contract_hash
+        self.worker()
+        result = self.module().integrate(self.repo, self.owner, 'A', ['true'], 10)
+        self.assertEqual(result['outcome'], 'INTEGRATED', result)
+        self.close_committed()
+        record = self.record('A')
+        self.assertTrue(record.verified)
+        self.assertEqual(record.contract_hash, contract_hash)
+        for key, value in authority.items():
+            self.assertEqual(getattr(record, key), value)
+
     def test_closure_is_one_commit(self):
         import task_store
         path = self.repo / 'tasks/items/B.md'

@@ -229,7 +229,9 @@ def full_check_rule():
     return [f'  Do not run the full check (`{command}`): the runner runs it on the merged tree before',
             '  review, and that run is the one that counts. Run every other Checks command, and named tests',
             '  from the full suite when you need them. Leave the full check out of the report\'s "checks":',
-            '  the runner\'s gate records it.']
+            '  the runner\'s gate records it. An acceptance item that also asks for the full check is',
+            '  judged on its other parts: report it "met" when you verified those, and end its evidence',
+            '  with "full check: runner gate". Nothing lands unless that gate passes on the merged tree.']
 
 
 def check_only_blockers(blockers):

@@ -195,8 +195,11 @@ Missing values hash as null, preserving missing versus explicit empty authority,
 except `kind`, `ownership` and `live`, which hash as their defaults (`unknown`,
 `unknown`, `denied`): writing a default out grants nothing new and changes no contract.
 Nonempty `verified_depends_on` is also hashed; absent and empty both impose no extra
-evidence gate. Closure metadata and owner waiver/qualification records are not contract
-fields. Reopening clears them, and a new manual close clears prior owner exceptions.
+evidence gate. Nonempty structured grant and waiver fields are also hashed.
+Closure metadata and owner waiver/qualification text are not contract fields.
+Coordinator closure preserves owner authority and its contract hash. Reopening clears
+closure and waiver fields. A new manual close clears prior owner exceptions,
+including their structured waiver fields.
 Array order is preserved. Exclusions are included because changing a prohibition
 changes the work contract.
 
@@ -368,6 +371,8 @@ This is read-only evidence, never execution, consent or permission inference.
 
 `field` sets a typed header field, or any other label
 as a body note (`Held by`, `Owner decision`); it does not date arbitrary notes.
+Contract changes refuse while a worker holds the task or execution state cannot be read.
+A healthy live lease alone does not block edits to unrelated tasks.
 `done ID --by WHO --reason TEXT [--evidence REF]` manually closes **any task kind**.
 It writes `closure = "manual"`, actor, UTC timestamp, reason and the optional evidence
 reference into the task record. It writes no receipt, check result or verification claim.

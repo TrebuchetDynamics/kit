@@ -177,6 +177,9 @@ class DispatchTests(unittest.TestCase):
         self.assertIn('No person is attached to this session', plain)  # TOOLSET-282-43
         self.assertIn('Do not run the full check (`python3 scripts/check.py`)', gated)
         self.assertIn('Leave the full check out of the report', gated)
+        # 2026-11-11: nine tasks were held because an acceptance item named the full check the
+        # worker is told not to run, and each worker reported the item as not_checked.
+        self.assertIn('full check: runner gate', gated)
         for text in ('autowork-run', 'more than two minutes', 'focused tests directly',
                      'worker_check_slot_wait_seconds'):
             self.assertIn(text, gated)
