@@ -182,6 +182,11 @@ async def task_workspace_pilot():
             quota_row = replace(rows[0], why='Daily free-model quota exhausted (HTTP 429)')
             happened, next_step = tui_tasks.task_guidance(quota_row)
             assert 'daily free-model quota' in happened and 'Retry only after that' in next_step
+            # The list's Why column shows the row's own reason, not one generic sentence on every row.
+            table = screen.query_one('#tasks', DataTable)
+            labels = [str(column.label) for column in table.columns.values()]
+            listed = [str(cell) for cell in table.get_column_at(labels.index('Why'))]
+            assert any(rows[0].why[:12] in cell for cell in listed), (rows[0].why, listed)
             await pilot.press('space')
             assert app.focused is selected
             await pilot.resize_terminal(60, 18)

@@ -96,7 +96,8 @@ class RepositoryStatusTests(unittest.TestCase):
             from pi_autowork import cli
         for reply in ['not JSON', '[]', '{"outcome":"BUSY","reason":"writer lock busy"}']:
             with self.subTest(reply=reply), patch.object(cli, 'dirty', return_value=False), \
-                    patch.object(cli.subprocess, 'run', return_value=types.SimpleNamespace(stdout=reply)):
+                    patch.object(cli.subprocess, 'run', return_value=types.SimpleNamespace(
+                        stdout=reply, stderr='', returncode=0)):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
                     cli.status_view(str(self.root), 'main', str(ROOT), self.root / 'missing-state')
@@ -116,7 +117,8 @@ class RepositoryStatusTests(unittest.TestCase):
         output = io.StringIO()
         with patch.object(cli, 'dirty', return_value=False), \
                 patch.object(cli.subprocess, 'run', return_value=types.SimpleNamespace(
-                    stdout='{"outcome":"PARALLEL_STATUS","tasks":[]}')), contextlib.redirect_stdout(output):
+                    stdout='{"outcome":"PARALLEL_STATUS","tasks":[]}', stderr='', returncode=0)), \
+                contextlib.redirect_stdout(output):
             cli.status_view(str(self.root), 'main', str(ROOT), self.root)
         line, = [line for line in output.getvalue().splitlines() if line.startswith('Health:')]
         self.assertEqual(line, f'Health:     unavailable since {datetime.fromtimestamp(90000):%Y-%m-%d %H:%M}')

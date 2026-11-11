@@ -574,7 +574,7 @@ class TasksScreen(ReadScreen, Screen):
             state, why = task_list_status(row)
             cells.append({'_key': row.task, '#': (str(position[row.task]), 'dim'), 'Task': ((getattr(snapshot.store.tasks.get(row.task), 'title', '') if snapshot and snapshot.store else '') or row.short, 'bold'),
                           'State': (state, fleet_view.state_style(row)),
-                          'Why': (task_guidance(row)[0], 'yellow' if row.question else 'dim')})
+                          'Why': (why or task_guidance(row)[0], 'yellow' if row.question else 'dim')})
         state_room = min(14, max([len('State'), *(cell_len(c['State'][0]) for c in cells)]))
         rank_room = len(str(max(position.values(), default=0)))
         # At normal widths reserve useful reason text rather than two equally cramped
