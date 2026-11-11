@@ -187,7 +187,9 @@ in-scope task. Use existing fields and brief notes only where they add informati
   the write set, not the behavioral description.
 - **`acceptance`:** Name observable results and the tests or evidence that will
   prove them. **`checks`:** Give the exact commands separately. Mark future tests
-  unrun; a required command is not a passing result.
+  unrun; a required command is not a passing result. Write each acceptance item so
+  the worker can prove it: do not make an item depend on the repository's full
+  check, which the runner runs itself on the merged tree before every landing.
 - **Notes:** Give a concrete first action, source-backed decisions and required
   inputs in existing notes such as `Next action:`, `Decisions:` and `Sources:`.
   Add only what the typed fields do not already say. Link evidence and shared
