@@ -186,6 +186,8 @@ def verify(repo, common, slot, contracts, coordinator_check=""):
         cause = ('validation' if mismatch.startswith('missing declared check evidence:')
                  or mismatch == 'a check did not pass' else 'report')
         raise Hold(cause, 'report.json does not match worker commit/files or reports failure: ' + mismatch)
+    if mismatch := acceptance_mismatch(report, admitted.acceptance):
+        raise Hold('validation', mismatch)
     verify_scope(repo, common, slot, contracts, files)
     report['doc_impact'] = assess_doc_impact(repo, slot, task, files, report)
     return files, report
@@ -304,6 +306,35 @@ def assess_doc_impact(repo, slot, task, files, report):
         return pending(reason.strip())
     return {'status': status, 'reason': reason.strip(), 'paths': paths, 'checks': checks,
             'resume': resume if status == 'pending' else '', 'inputs': inputs}
+
+
+def acceptance_mismatch(report, criteria):
+    """Require exact per-item evidence against immutable admission inputs."""
+    entries = report.get('acceptance')
+    affected = [f'{i}: {text}' for i, text in enumerate(criteria, 1)]
+    prefix = 'acceptance evidence requires engineering validation: '
+    if not isinstance(entries, list):
+        return prefix + 'missing or malformed acceptance list; fresh evidence required for ' + repr(affected)
+    seen = set()
+    errors = []
+    for entry in entries:
+        index = entry.get('index') if isinstance(entry, dict) else None
+        if type(index) is not int or not 1 <= index <= len(criteria):
+            errors.append(f'invalid index {index!r}; admitted items {affected!r}')
+            continue
+        text = criteria[index - 1]
+        label = f'{index}: {text}'
+        if index in seen:
+            errors.append('duplicate ' + label)
+        seen.add(index)
+        if entry.get('criterion') != text:
+            errors.append('criterion mismatch ' + label)
+        result = entry.get('result')
+        evidence = entry.get('evidence')
+        if result != 'met' or not isinstance(evidence, str) or not evidence.strip():
+            errors.append(f'{label}: {result!r}; requires met with actual evidence')
+    errors.extend('missing ' + label for i, label in enumerate(affected, 1) if i not in seen)
+    return prefix + '; '.join(errors) if errors else ''
 
 
 def report_mismatch(repo, report, task, commit, files, declared_checks=()):

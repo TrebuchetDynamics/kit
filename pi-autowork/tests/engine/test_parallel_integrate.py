@@ -126,8 +126,69 @@ class IntegrationTests(unittest.TestCase):
         self.pin_contract(task, slot)
         data = dispatch.data_dir(self.common, slot)
         execution.save(data / 'report.json', {'task': task, 'commit': commit,
+                       'acceptance': [{'index': i, 'criterion': text, 'result': 'met',
+                                       'evidence': 'Fixture worker committed requested files; true passed.'}
+                                      for i, text in enumerate(self.record(task, base).acceptance if self.record(task, base) else (), 1)],
                        'changed_files': list(files or {task + '.txt': ''}), 'checks': [{'command': 'true', 'result': 'pass'}], 'blockers': [], 'changelog': 'fixture'})
         return root, commit
+
+    def test_absent_acceptance_holds_without_close_writes(self):
+        self.assert_acceptance_hold('absent')
+
+    def test_missing_acceptance_holds_without_close_writes(self):
+        self.assert_acceptance_hold('missing')
+
+    def test_not_met_acceptance_holds_without_close_writes(self):
+        self.assert_acceptance_hold('not_met')
+
+    def test_duplicate_acceptance_holds_without_close_writes(self):
+        self.assert_acceptance_hold('duplicate')
+
+    def test_invalid_acceptance_holds_without_close_writes(self):
+        self.assert_acceptance_hold('invalid')
+
+    def test_unreached_acceptance_holds_without_close_writes(self):
+        self.assert_acceptance_hold('not_checked')
+
+    def assert_acceptance_hold(self, mode):
+        root, commit = self.worker()
+        slot = state.slots(self.common)[0]
+        path = dispatch.data_dir(self.common, slot) / 'report.json'
+        report = execution.read(path)
+        if mode == 'absent':
+            del report['acceptance']
+        elif mode == 'missing':
+            report['acceptance'] = []
+        elif mode == 'duplicate':
+            report['acceptance'] *= 2
+        elif mode == 'invalid':
+            report['acceptance'][0]['index'] = True
+        else:
+            report['acceptance'][0].update(result=mode, evidence='Device unavailable')
+        report['pending_live'] = ['Device qualification remains pending']
+        execution.save(path, report)
+        before = self.task_text('A')
+        result = self.module().integrate(self.repo, self.owner, 'A', ['true'], 30)
+        self.assertEqual((result['outcome'], result.get('cause')), ('HELD', 'validation'))
+        self.assertIn('1: offline fixture', result['reason'])
+        self.assertEqual(self.task_text('A'), before)
+        self.assertFalse(list(self.repo.glob('tasks/evidence/*')))
+        self.assertEqual(execution.read(path), report)
+        self.assertEqual(self.git('rev-parse', 'HEAD', cwd=root), commit)
+
+    def test_acceptance_report_coverage(self):
+        validate = self.module().acceptance_mismatch
+        good = {'index': 1, 'criterion': 'offline fixture', 'result': 'met',
+                'evidence': 'Fixture worker committed A.txt and true passed.'}
+        self.assertEqual(validate({'acceptance': [good]}, ['offline fixture']), '')
+        cases = [None, [], [dict(good, result='not_met')],
+                 [dict(good, result='not_checked')], [good, good],
+                 [dict(good, index=True)], [dict(good, index=2)],
+                 [dict(good, criterion='invented')], [dict(good, evidence='')]]
+        for entries in cases:
+            with self.subTest(entries=entries):
+                report = {} if entries is None else {'acceptance': entries}
+                self.assertIn('offline fixture', validate(report, ['offline fixture']))
 
     def test_missing_declared_checks_holds_without_mutating_candidate(self):
         root, commit = self.worker()
@@ -1325,6 +1386,7 @@ finally:
         commit = self.git('rev-parse', 'HEAD', cwd=retry)
         slot = state.transition(self.repo, self.owner, 'A', 'reported', commit=commit)
         execution.save(dispatch.data_dir(self.common, slot) / 'report.json', {
+            'acceptance': [{'index': i, 'criterion': text, 'result': 'met', 'evidence': 'Retry committed A.txt; true passed.'} for i, text in enumerate(self.record('A', slot['baseline']).acceptance, 1)],
             'task': 'A', 'commit': commit, 'changed_files': ['A.txt'], 'checks': [{'command': 'true', 'result': 'pass'}], 'blockers': [],
             'changelog': 'fixture'})
         return commit
@@ -2386,6 +2448,7 @@ finally:
         commit = self.git('rev-parse', 'HEAD', cwd=retry)
         slot = state.transition(self.repo, self.owner, 'A', 'reported', commit=commit)
         execution.save(dispatch.data_dir(self.common, slot) / 'report.json', {
+            'acceptance': [{'index': i, 'criterion': text, 'result': 'met', 'evidence': 'Retry committed A.txt; true passed.'} for i, text in enumerate(self.record('A', slot['baseline']).acceptance, 1)],
             'task': 'A', 'commit': commit, 'changed_files': ['A.txt'], 'checks': [{'command': 'true', 'result': 'pass'}], 'blockers': [], 'changelog': 'fix'})
         self.worker('D')
         for task in ('A', 'D', 'B'):
