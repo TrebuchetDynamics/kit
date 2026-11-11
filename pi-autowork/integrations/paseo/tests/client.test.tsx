@@ -120,6 +120,58 @@ describe('canonical presentation', () => {
 });
 
 describe('native host-scoped surfaces', () => {
+  it('composes a quiet fleet list with navigation distinct from actions', async () => {
+    await mount();
+    const navigation = root.root.find(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'Autowork navigation');
+    const tabs = navigation.findAll(node => String(node.type) === 'Pressable');
+    expect(tabs).toHaveLength(6);
+    expect(button('Fleet')!.props.style.borderBottomColor).toBe(props.theme.colors.accent);
+    expect(tabs.every(node => node.props.style.backgroundColor !== props.theme.colors.accent)).toBe(true);
+    const list = root.root.find(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'Repository list');
+    expect(list.findAll(node => String(node.type) === 'View' && node.props.style?.borderBottomWidth === 1)).toHaveLength(1);
+    expect(list.findAll(node => String(node.type) === 'View' && node.props.style?.borderWidth === 1)).toHaveLength(0);
+    expect(root.root.findAll(node => String(node.type) === 'Text' && node.props.accessibilityRole === 'header').some(node => node.props.style.fontSize === 28)).toBe(true);
+    expect(env.invoke.mock.calls.some(([name]) => ['autowork.prepare', 'autowork.commit'].includes(name))).toBe(false);
+  });
+  it('reflows runner evidence and controls and retains long identities', async () => {
+    const value = fleet(); value.repos[0]!.label = 'Long repository identity '.repeat(12);
+    const original = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.fleet' ? Promise.resolve(value) : original(name, data));
+    await mount({ params: { view: 'runner' } });
+    const workspace = () => root.root.find(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'Runner workspace');
+    expect(workspace().props.style.flexDirection).toBe('column');
+    await rerender({ params: { view: 'runner' }, layout: { compact: false, platform: 'web' } });
+    expect(workspace().props.style.flexDirection).toBe('row');
+    const container = root.root.findAll(node => String(node.type) === 'ScrollView' && !node.props.horizontal)[0]!;
+    expect(container.props.contentContainerStyle).toMatchObject({ maxWidth: 1180, width: '100%', alignSelf: 'center' });
+    expect(text()).toContain(value.repos[0]!.label);
+    expect(button('Pause')).toBeTruthy();
+  });
+  it('keeps typography and surfaces on the supplied light theme', async () => {
+    const colors = { ...props.theme.colors, surface0: '#fafafa', surface1: '#f0f0f0', surface2: '#e6e6e6', foreground: '#161616', foregroundMuted: '#565656', border: '#ccc' };
+    await mount({ theme: { ...props.theme, colors } });
+    const rendered = root.root.findAll(node => String(node.type) === 'Text' && node.props.style?.color);
+    expect(rendered.length).toBeGreaterThan(10);
+    for (const node of rendered) expect(Object.values(colors)).toContain(node.props.style.color);
+    expect(rendered.some(node => node.props.style.color === colors.foreground)).toBe(true);
+    expect(rendered.some(node => node.props.style.color === colors.foregroundMuted)).toBe(true);
+  });
+  it('leads task rows with wrapping titles and opens evidence progressively', async () => {
+    const longTitle = 'Preserve the complete descriptive task title across compact and wide clients '.repeat(5);
+    const original = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [{ ...task, title: longTitle }] }) : original(name, data));
+    await mount({ params: { view: 'tasks' } });
+    const title = root.root.find(node => String(node.type) === 'Text' && node.children.includes(longTitle));
+    expect(title.props.style).toMatchObject({ fontWeight: '600', fontSize: 15 });
+    expect(title.props.numberOfLines).toBeUndefined();
+    expect(text()).not.toContain('Must preserve contract');
+    const numbers = root.root.findAll(node => String(node.type) === 'Text' && node.props.style?.fontVariant?.includes('tabular-nums'));
+    expect(numbers).toHaveLength(4);
+    await press('Open task T-1');
+    expect(text()).toContain('Contract and evidence');
+    await press('Contract and evidence');
+    expect(text()).toContain('Must preserve contract');
+  });
   it('keeps repository context through the overview round trip without dispatching changes', async () => {
     const value = fleet(); const base = value.repos[0]!;
     value.repos.push({ ...base, id: 'second', label: 'Second', path: '/repo/second' });
@@ -698,7 +750,7 @@ describe('native host-scoped surfaces', () => {
       expect(node.props.style.minHeight).toBeGreaterThanOrEqual(48);
       expect(node.props.style.minWidth).toBeGreaterThanOrEqual(48);
       expect(node.props.accessibilityRole).toBe('button'); expect(node.props.accessibilityLabel).toBeTruthy();
-      expect([props.theme.colors.surface2, props.theme.colors.accent]).toContain(node.props.style.backgroundColor);
+      expect([props.theme.colors.surface0, props.theme.colors.surface1, props.theme.colors.surface2, props.theme.colors.accent]).toContain(node.props.style.backgroundColor);
     }
   });
   it('pauses queries in AppState background and revokes pending confirmation', async () => {
@@ -996,12 +1048,14 @@ describe('management surface', () => {
     expect(text()).not.toContain('handler_error');
     expect(button('Retry')).toBeTruthy();
   });
-  it('puts controls before explanatory status and explains each maintenance action', async () => {
+  it('leads with observed evidence and keeps controls and maintenance in their own column', async () => {
     capture(grantAll());
     const value = fleet(); value.repos[0]!.runner!.blocker = 'Pi 1.5.0 is not qualified'; value.repos[0]!.runner!.stop_reason = 'Pi 1.5.0 is not qualified';
     capture(value);
     await mount({ params: { view: 'runner' } });
-    expect(text().indexOf('Controls')).toBeLessThan(text().indexOf('Why it stopped'));
+    expect(text().indexOf('Why it stopped')).toBeLessThan(text().indexOf('Controls'));
+    const workspace = root.root.find(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'Runner workspace');
+    expect(workspace.children).toHaveLength(2);
     expect(text()).toContain('Change the model and fallback; restarts the service.');
     expect(text()).toContain('Record attention minutes or a note in private runner state.');
     expect(text()).toContain('Clear technical holds and return commits to integration.');
@@ -1011,7 +1065,9 @@ describe('management surface', () => {
     env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'abcdef0123456789+working', tasks: [task, { ...task, id: 'T-DONE', title: 'Finished task', status: 'done', closure: { label: 'closed', provenance: 'manual', verified: false }, display: manualDisplay }] }) : initial(name, data));
     await mount({ params: { view: 'tasks' } });
     expect(text()).not.toContain('Finished task');
-    expect(text()).toContain('1 open task · 1 need decision · 0 blocked · 1 done');
+    for (const label of ['1 open tasks', '1 need decision', '0 blocked', '1 done']) {
+      expect(root.root.findAll(node => String(node.type) === 'View' && node.props.accessible && node.props.accessibilityLabel === label)).toHaveLength(1);
+    }
     expect(text()).toContain('abcdef01 · working tree'); expect(text()).not.toContain('abcdef0123456789');
     expect(root.root.findAll(node => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'Filter task')).toHaveLength(0);
     await press('Show completed'); expect(text()).toContain('Finished task'); expect(text()).toContain('Manual closure detail');
