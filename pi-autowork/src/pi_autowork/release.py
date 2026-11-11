@@ -260,9 +260,6 @@ def launch(component, script, argv):
     bootstrap_settings(script, argv)
     from pi_autowork import private_pi
     state_root = private_pi.state_root(env)
-    note = private_pi.ensure(state_root)
-    if note:
-        print(f'pi-autowork: {note}', file=sys.stderr, flush=True)
     env.update(private_pi.environment(state_root))
     installed_release = state_root / 'installed'
     if installed_release.is_dir() and (not env.get('PI_AUTOWORK_TOOLSET') or

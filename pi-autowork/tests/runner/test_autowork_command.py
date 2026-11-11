@@ -1039,30 +1039,24 @@ class AutoworkCommandTests(unittest.TestCase):
             self.assertNotIn('disposable-login', result.stdout + result.stderr + self.log.read_text())
             self.assertNotIn(str(Path(self.env['HOME']) / '.pi'), result.stdout + result.stderr)
 
-    def test_an_empty_private_pi_login_is_missing_and_is_filled_once(self):
+    def test_an_empty_private_pi_login_is_missing_and_the_installer_replaces_it(self):
         # 2026-11-11: Pi wrote `{}` as the login of an unfilled private directory; it passed
         # for a login, the installer never replaced it and nine runners lost their model.
         from pi_autowork import private_pi
-        root, home = self.base / 'fleet-state', self.base / 'owner-home'
-        private, interactive = root / 'pi-agent', home / '.pi/agent'
+        root, interactive = self.base / 'fleet-state', self.base / 'owner-home/.pi/agent'
+        private = root / 'pi-agent'
         private.mkdir(parents=True)
         interactive.mkdir(parents=True)
         (private / 'auth.json').write_text('{}')
         self.assertIn('login is missing', private_pi.problem(root))
-        self.assertIsNone(private_pi.ensure(root, home))  # no interactive login: nothing to copy
         (interactive / 'auth.json').write_text('{"fixture":"disposable-login"}')
-        note = private_pi.ensure(root, home)
-        self.assertIn('filled it from the interactive Pi home', note)
-        self.assertNotIn('disposable-login', note)
+        private_pi.fill(root, interactive)  # a first install, not a refresh
         self.assertIsNone(private_pi.problem(root))
         self.assertEqual(stat.S_IMODE(private.stat().st_mode), 0o700)
         self.assertEqual(stat.S_IMODE((private / 'auth.json').stat().st_mode), 0o600)
         (interactive / 'auth.json').write_text('{"fixture":"changed"}')
-        self.assertIsNone(private_pi.ensure(root, home))  # a present login is never replaced here
+        private_pi.fill(root, interactive)  # a present login is kept without refresh
         self.assertIn('disposable-login', (private / 'auth.json').read_text())
-        (private / 'login-refused').touch()
-        self.assertIsNone(private_pi.ensure(root, home))  # a refused login waits for the owner
-        self.assertIn('login was refused', private_pi.problem(root))
 
     def test_logs_status_and_help(self):
         self.aw('start', str(self.repo))

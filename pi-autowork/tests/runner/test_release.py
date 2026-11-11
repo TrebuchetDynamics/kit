@@ -384,7 +384,9 @@ class PackageUpdateTests(unittest.TestCase):
         cli.write_text('import os; print(os.environ["PI_AUTOWORK_PACKAGE_INSTALLED"])\n')
         env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[2]),
                    PI_BIN=str(self.pi), PI_AUTOWORK_RESELECT='auto',
-                   PI_AUTOWORK_ENV_DIR=str(self.root / 'settings'))
+                   PI_AUTOWORK_ENV_DIR=str(self.root / 'settings'),
+                   # disposable: the real state root may hold an installed release
+                   PI_AUTOWORK_STATE_DIR=str(self.root / 'empty-state'))
         for source, installed in ((str(self.package), '0'),
                                   ('../../git/autowork', '0'),
                                   ('git:github.com/TrebuchetDynamics/kit', '1')):
