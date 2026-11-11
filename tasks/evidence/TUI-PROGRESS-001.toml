@@ -1,9 +1,0 @@
-schema = 1
-task = "TUI-PROGRESS-001"
-candidate = "94a7c6067be321125749442faf54a432d91aada3"
-integration = "f7da95e2caf05391ccab4fd66edc0d877c51bdb7"
-tree = "d1cdbe6d3208e193a01de1cc27168fc20ca6447a"
-contract_hash = "8a3939b799feb6b702b6b404f44510ef4d1ed8c52b57cb7f542574067c1fecc4"
-checks = ["<path>", "<path>", "--verify", "<path>", "TUI-PROGRESS-001"]
-result = "pass"
-review = "passed"

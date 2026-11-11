@@ -131,7 +131,9 @@ for approval again. Preserve explicit exclusions, pauses and human-only requirem
    unmerged or recovery-bearing worktrees; report integration/cleanup pending.
    Close a task only after verified acceptance. A manual close uses
    `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]` and records
-   Manual, not Verified. Read-only runs do not write.
+   Manual, not Verified. After integration, the coordinator applies
+   [working-set reconciliation](../shared/TODO-WORKCENTER.md#reconcile-the-working-set)
+   separately from atomic closeout. Read-only runs do not write.
 
 ## Ownership, limits and continuation
 
