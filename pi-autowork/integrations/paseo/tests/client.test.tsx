@@ -120,6 +120,56 @@ describe('canonical presentation', () => {
 });
 
 describe('native host-scoped surfaces', () => {
+  it('keeps repository context through the overview round trip without dispatching changes', async () => {
+    const value = fleet(); const base = value.repos[0]!;
+    value.repos.push({ ...base, id: 'second', label: 'Second', path: '/repo/second' });
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.fleet' ? Promise.resolve(value) : initial(name, data));
+    await mount({ params: { view: 'tasks' } });
+    await press('Switch repository'); await press('Repository Second');
+    expect(text()).toContain('/repo/second');
+    expect(text()).toContain('Second · Tasks');
+    expect(button('Tasks')!.props.accessibilityState.selected).toBe(true);
+    await press('Back to Fleet');
+    expect(button('Back to Fleet')).toBeUndefined();
+    expect(button('Fleet')!.props.accessibilityState.selected).toBe(true);
+    await press('Tasks');
+    expect(text()).toContain('Second · Tasks');
+    expect(text()).toContain('/repo/second');
+    expect(env.invoke.mock.calls.some(([name]) => ['autowork.prepare', 'autowork.commit'].includes(name))).toBe(false);
+  });
+  it('explains workspace mismatch and refreshes only the known fleet', async () => {
+    await mount({ params: { directory: '/unknown-workspace' } });
+    expect(text()).toContain('No known repository matches this workspace.');
+    expect(text()).toContain('/unknown-workspace');
+    expect(text()).toContain('Open a workspace inside a known repository');
+    const reads = env.invoke.mock.calls.filter(([name]) => name === 'autowork.fleet').length;
+    await press('Refresh repositories');
+    expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.fleet')).toHaveLength(reads + 1);
+    expect(env.invoke.mock.calls.some(([name]) => ['autowork.tasks', 'autowork.prepare', 'autowork.commit'].includes(name))).toBe(false);
+  });
+  it('provides a recovery action for an empty task queue', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    env.invoke.mockImplementation((name, data) => name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [] }) : initial(name, data));
+    await mount({ params: { view: 'tasks' } });
+    expect(text()).toContain('No tasks observed.');
+    const reads = env.invoke.mock.calls.filter(([name]) => name === 'autowork.tasks').length;
+    await press('Refresh task queue');
+    expect(env.invoke.mock.calls.filter(([name]) => name === 'autowork.tasks')).toHaveLength(reads + 1);
+  });
+  it('shows a loading explanation until the first fleet observation arrives', async () => {
+    const initial = env.invoke.getMockImplementation()!;
+    let resolveFleet!: (value: ReturnType<typeof fleet>) => void;
+    const pending = new Promise<ReturnType<typeof fleet>>(resolve => { resolveFleet = resolve; });
+    env.invoke.mockImplementation((name, data) => name === 'autowork.fleet' ? pending : initial(name, data));
+    await mount();
+    expect(text()).toContain('Reading repositories…');
+    expect(button('Tasks')).toBeUndefined();
+    await act(async () => resolveFleet(fleet())); await flush();
+    expect(text()).not.toContain('Reading repositories…');
+    expect(button('Tasks')).toBeTruthy();
+  });
+
   it('renders canonical status, unknown transport and manual closure without inferring health', async () => {
     await mount();
     expect(text()).toContain('waiting'); expect(text()).not.toContain('Transport');
