@@ -153,6 +153,23 @@ export function runnerFacts(runner: Runner): { runtime: Array<[string, string]>;
   if (known(runner.gate)) policy.push(['Gate', runner.gate]);
   return { runtime, policy };
 }
+/** A stopped or deferred task says what happened and which action applies, from the CLI's own
+ * explanation. It never promotes an owner answer into authorization or completion. */
+export interface StopFacts { title: string; rows: Array<[string, string]> }
+export function stopFacts(display: Task['display'] | undefined, answerable: boolean): StopFacts | null {
+  if (answerable || !display) return null;
+  const happened = display.why.trim() || 'No canonical explanation observed.';
+  if (display.bucket === 'Deferred') return { title: 'Deferred', rows: [
+    ['What happened', happened],
+    ['Next action', 'No answer is due while the owner deferral is recorded. Placement, scope and closure are separate task edits.'],
+  ] };
+  const blocker = display.blocker.trim();
+  if (!blocker) return null;
+  return { title: `Stopped · ${blocker}`, rows: [
+    ['What happened', happened],
+    ['Next action', 'No owner question is recorded for this task; answering is not the action. A technical hold clears without one, and closing is a separate manual action that does not verify acceptance.'],
+  ] };
+}
 /** A single "why it stopped" line: blocker and stop reason often repeat each other. */
 export function whyStopped(runner: Runner): string[] {
   const reasons = [runner.blocker, runner.stop_reason].map(item => item.trim()).filter(Boolean);
