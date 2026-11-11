@@ -1,0 +1,25 @@
+schema = 1
+task = "SPEED-007"
+candidate = "e7f2a6a2bb81d3ddb93e4b6c2644aa625de9d554"
+integration = "9cc6bced14169fc7b8cd86fc5e269d13c18bb194"
+tree = "cdad47267308912dc13714aeab9be4aa2f4418c6"
+contract_hash = "4715e96512cef9ea27190cd9fba93872bec6f9dcf0c5c63a53578207f1e47a17"
+checks = ["<path>", "<path>", "--verify", "<path>", "SPEED-007"]
+result = "pass"
+review = "passed"
+model_review = "not_recorded"
+
+[[acceptance]]
+item = "A fixture proves a main check below 80 percent of its modules is stopped when main moves, its processes, scratch worktree and temporary directory are gone, and a check starts on the new head."
+result = "met"
+evidence = "test_main_follows_head_unless_more_than_eighty_percent_complete passes its 7/10 case (and boundary 8/10): original supervisor, checker and detached child are gone; scratch checkout is absent from disk and git worktree list; temporary directory is gone; replacement receipt is running at the new head."
+
+[[acceptance]]
+item = "A fixture proves a check above 80 percent finishes and records its result for its own revision, and the next check starts on the head."
+result = "met"
+evidence = "The same public Coordinator fixture passes its 9/10 case: original PID stays alive after main moves, explicit release allows completion, immutable evidence records the original revision green, and the next receipt runs at current head."
+
+[[acceptance]]
+item = "A stopped check changes neither the last green revision nor the red or regression state; status shows the check running on the head."
+result = "met"
+evidence = "Cancellation cases assert unchanged green, failures, red_since and flaky_history, no old-revision verdict evidence or exit receipt, and main_check.line reports running on the new head. Superseded records bypass finish_main_check_result, so no regression/revert policy executes."
