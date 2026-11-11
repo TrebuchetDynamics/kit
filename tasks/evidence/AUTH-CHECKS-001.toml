@@ -1,9 +1,0 @@
-schema = 1
-task = "AUTH-CHECKS-001"
-candidate = "60864a793effab8dbe5036b406a660f13e8ac4f9"
-integration = "018d4093a2c996c07faa38955bf7c4017f0e2c65"
-tree = "b5ecafa8e00e40a2f651fa88ce5e24bd7bb23ffa"
-contract_hash = "b59aa9b7f00bb992c3270a61decc95691b59ad1bfb37e3c4baa065f0068368c3"
-checks = ["<path>", "<path>", "--verify", "<path>", "AUTH-CHECKS-001"]
-result = "pass"
-review = "passed"

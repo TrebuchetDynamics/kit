@@ -38,10 +38,11 @@ Terminals may be small, remote, keyboard-only, or configured for native text cop
 
 ## Information architecture
 
-The fleet uses an adaptive workspace. Below 130 columns or 26 rows it remains
-a vertical stack. At 130×26 and above, a 42-column project/context pane sits beside
-the current-work and activity pane. Keep widget identities and action dispatch
-unchanged across both arrangements; resize reflows cached observations only.
+The fleet uses a full-width vertical stack at every terminal size: projects,
+selected summary, current work and activity. Do not turn the project list into a
+sidebar on wide terminals. Wide fleet tables show task-count columns and worker
+attempt, elapsed and quiet times. Compact tables keep identity, state and total.
+Resize reflows cached observations only; widget identities and actions stay unchanged.
 A fixed one-row footer exposes 1 Projects, 2 Work, 3 Activity, Help and Quit.
 Numbers move focus only on the fleet screen; they never intercept child prompts.
 The h Guide explains Model → Project → Tasks → Execution → Checks → Local merge,
@@ -53,12 +54,13 @@ Panel borders and an accent border on focus establish grouping without relying
 on color alone. This takes navigation cues from
 [Lazygit](https://github.com/jesseduffield/lazygit) and restrained hierarchy from
 [Glow](https://github.com/charmbracelet/glow), using existing Textual components. Number the three navigation regions: Projects,
-Current work and Recent activity. The project table keeps only Project/Status/Tasks
-at every width. The selected summary separates the next useful action from task
-counts; omit zero-error/freshness boilerplate when observations are healthy. Keep
-resource waits visible. Worker rows retain task/state/activity, with unjoined
-observations labelled Unconfirmed. Attempts, elapsed/quiet time and all original
-source status text remain in scrollable Details. The fleet menu shows the useful Next action,
+Current work and Recent activity. The full-width project table shows task-count
+columns at 120 columns and above; smaller terminals show Runner/State/Total.
+The selected summary separates the next useful action from task counts; omit
+zero-error/freshness boilerplate when observations are healthy. Keep resource
+waits visible. Worker rows retain task/state/activity and show attempt and elapsed/quiet
+times on wide terminals. Unjoined observations remain labelled Unconfirmed.
+Scrollable Details retains all original source status text. The fleet menu shows the useful Next action,
 Log, Tasks, Details and More, without duplicates. More exposes secondary actions
 and shortcuts at every size; direct keys remain available. Details holds complete
 task names/IDs, phases and wait reasons, source errors and grouped notes (including
@@ -167,7 +169,7 @@ result when present. Keep at least four journal rows and one selectable worker r
 At 60×18 and 80×24, bounded task/state cells keep the Details route visible for full
 identity and reasons. Errors and source notes are separate counts, not a warning wall.
 Unknown inventory is unavailable, never zero; superseded checks never qualify current main.
-At 80×24 preserve the stacked hierarchy; at 150×45 use the two-pane workspace with bounded table widths.
+Preserve the full-width stacked hierarchy at 80×24, 150×45 and larger sizes.
 Resize uses cached observations and performs no filesystem or service acquisition.
 Log's mode toggle also uses cached text only, preserving scroll/follow behavior and
 reader identity/epoch guards. Activity captures up to 400 lines from the last hour;
@@ -207,9 +209,8 @@ than invented SSH latency or flaky wall-clock performance assertions.
 No design-critical questions block this bounded redesign. Live SSH transport and
 assistive-technology qualification remain separate from offline terminal evidence.
 
-Project Details replaces the work/activity area with a wide scrollable reading
-view. It never renders long diagnostic prose in the project sidebar. On small
-terminals it uses the remaining full-width workspace and hides the summary.
+Project Details replaces the work/activity area with a full-width scrollable
+reading view below the project list. It hides the selected summary at every size.
 Refresh preserves this mode; i returns, and 2/3 return directly to work/activity.
 
 ## Reading hierarchy across screens

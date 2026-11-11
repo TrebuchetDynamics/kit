@@ -17,8 +17,10 @@ runtime state out of Git. Do not edit or patch upstream Hermes Agent.
   `uv`, so a bare `python3 scripts/check.py` runs the documented check on a host whose
   `python3` is not that interpreter.
   CI runs it on every push (two jobs), so a push does not wait for it. The pre-push hook (`python3 scripts/pre_push_check.py
-  --install` once per clone) runs the core contracts and only the affected tests; a
-  document edit costs seconds, not the suite. `KIT_PRE_PUSH=0` or `git push --no-verify`
+  --install` once per clone) runs the core contracts and targeted affected tests;
+  whole-suite selections print the reason and defer execution to CI, not a local pass.
+  Direct `scripts/affected_tests.py --run` retains its conservative full-suite fallback.
+  A document edit costs seconds, not the suite. `KIT_PRE_PUSH=0` or `git push --no-verify`
   leaves a push to CI.
 - Test only what your change can affect: `python3 scripts/affected_tests.py --run`
   selects and runs the test modules that import, run or read the files you changed

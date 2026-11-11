@@ -382,6 +382,31 @@ without relabelling unmet acceptance as verified. Only the engine's verified clo
 writes `closure = "coordinator_verified"` and its receipt with `status = "done"`
 in one commit; planning never fabricates or edits that receipt.
 
+## Reconcile the working set
+
+The directory is a working set, not a journal. Run this reconciliation before a
+writable planning/maintenance handoff and after integrated execution closeout,
+before selecting more work. The coordinator owns it; workers return evidence.
+Read-only reporting uses [Git history](#read-completed-work-from-git) instead.
+
+1. **Inventory.** Compare committed and working-tree task/goal records, dedicated
+   receipts/reports, fresh Git status and actual execution ownership. Include
+   staged, unstaged and untracked files. Resolve any difference before treating
+   HEAD's queue as the current author's intent.
+2. **Reconcile intent.** Reuse existing IDs; update only source-backed in-scope
+   deltas. Keep unfinished acceptance, explicit pauses and external inputs visible.
+   Reconcile landed work rather than leaving stale instructions to implement it again.
+3. **Prune.** Apply [completed-task retention](#completed-task-retention). Inspect
+   orphan receipts/reports too: absence of an item is an investigation lead, not
+   deletion proof. Finish with eligible records removed, not a cleanup recommendation.
+4. **Read back.** Validate the working tree and inspect its diff and surviving
+   references. Report open work and next selection separately from cleanup counts,
+   retained-proof blockers and integration status. An unchanged pass is a no-op.
+
+This is a scoped phase of existing workflows, not another planner, task board,
+approval ceremony or background garbage collector. Preserve the current file schema
+and CLI; moving done files into another folder only moves the backlog.
+
 ## Completed-task retention
 
 Keep `tasks/` focused on unfinished work. Delete eligible completed task records
@@ -432,6 +457,29 @@ Pruning is a separate reconciliation after closeout, not a replacement for it:
    evidence leave the store unchanged. Runtime closeout may create transient done
    records; this policy does not bypass runtime checks or make an older installed
    runner perform automatic garbage collection.
+
+## Read completed work from Git
+
+For “what was done”, use reachable history of both `tasks/items/` and
+`tasks/evidence/`; manual closes have no receipt. First choose the consumer branch
+and requested interval. These read-only examples use its HEAD; substitute the
+requested revision explicitly when needed:
+
+```sh
+git -C <repo> log HEAD --since=<date> --format='%H %ad %s' --date=iso-strict -- tasks/items/ tasks/evidence/
+git -C <repo> log HEAD --format='%H %s' -- tasks/items/<ID>.md
+git -C <repo> show <revision>:tasks/items/<ID>.md
+git -C <repo> show <revision>:tasks/evidence/<ID>.toml
+```
+
+Inspect the historical record's status, closure and evidence. A path log includes
+creation, edits, merges and pruning; its commits are not a completion count.
+A deletion commit is not the closure revision: inspect its relevant parent if the
+file is absent there, then pin the full SHA that actually contains the proof.
+Deduplicate by task ID and distinguish Manual, Verified and superseded/cancelled
+dispositions. Report missing/shallow history as incomplete coverage, not zero done.
+Never restore historical records to answer a query. Historical proof does not
+establish current source qualification, live acceptance or goal completion.
 
 ## Rolling planning
 

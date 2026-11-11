@@ -440,7 +440,7 @@ async def immediate_deletion():
                         assert 'T-1' in snap.store.tasks  # deletion has not changed HEAD
                         assert screen.query_one('#tasks').row_count == 0, 'successful delete retained row'
                         assert fleet_view.task_counts(app.current()) == (0, 0, 0, 0, 0, 0)
-                        assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:]] == ['0']
+                        assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:8]] == ['0'] * 6
                         assert app.current().snapshot is snap
                         assert 'deletion pending commit' in str(screen.query_one('#task-provenance').text)
                         assert 'Deletion pending commit' in str(screen.query_one('#task-freshness').render())
@@ -687,9 +687,9 @@ async def main():
             app.current().snapshot = original_snapshot
             app.show_detail()
             runners = app.query_one('#runners')
-            # Project summary is deliberately compact; complete counts stay in Details.
-            assert [str(c.label) for c in runners.columns.values()] == ['Project', 'Status', 'Tasks']
-            assert [str(c) for c in runners.get_row_at(0)[2:]] == ['3']
+            # Full-width fleet restores the count columns; Details retains source evidence.
+            assert [str(c.label) for c in runners.columns.values()][:8] == list(app.RUNNER_COLUMNS)
+            assert [str(c) for c in runners.get_row_at(0)[2:8]] == ['0', '0', '2', '1', '0', '3']
             assert fleet_view.task_counts(app.current()) == (0, 0, 2, 1, 0, 3)
             assert '1 on dependencies' in fleet_view.needs(app.current()), fleet_view.needs(app.current())
             assert 'Tasks      3 open · 0 active · 0 mergeable · 2 waiting · 1 blocker' in detail, detail
@@ -779,7 +779,7 @@ async def main():
                                             errors=('inventory read denied',))
                 await refresh(app, pilot)
                 shown = str(app.query_one('#detail').render())
-                assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:]] == ['?']
+                assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:8]] == ['?'] * 6
                 assert fleet_view.task_counts(app.current()) is None
                 assert 'unknown / unavailable' in shown and 'inventory read denied' in shown, shown
                 observed.snapshot = replace(original_runner.snapshot, captured_at=time.time() - 900, freshness='stale')

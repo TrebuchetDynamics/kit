@@ -331,6 +331,11 @@ the [runner guide](pi-autowork/README.md) and
 (`tasks/goals/<ID>.md`), edited only through `autowork tasks` (`list`, `goals`, `show`, `add`,
 `field`, `move`, `done`, …). The store is read from a commit, so a run's decisions are
 reproducible, and `/docs-sync` prepares or converts it.
+After verified closeout and integration, the coordinator removes eligible done
+records and unneeded dedicated receipts/reports. Git history is the archive, not
+a second done folder. Current proof or active-consumer needs remain protected by
+[the retention checks](skills/shared/TODO-WORKCENTER.md#completed-task-retention).
+`/pending` reads Git history when reporting completed work.
 If the wrapper is missing, follow the [task CLI policy](skills/shared/TODO-WORKCENTER.md#task-cli-policy)
 for the trusted Python entrypoint fallback. Missing or incompatible tooling leaves
 complete proposals **UNSAVED**, never a hand-edited or duplicate queue.

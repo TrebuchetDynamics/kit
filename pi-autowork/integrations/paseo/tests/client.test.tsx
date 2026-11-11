@@ -36,7 +36,7 @@ import { AutoworkScreen, WorkspacePanel } from '../client/screens';
 import { SettingsScreen } from '../client/settings';
 import { taskTone, closureTone } from '../client/presentation';
 import { Theme } from '../client/ui';
-import { canAnswer, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, selectionFacts, stateTone, taskMatches } from '../client/presentation';
+import { canAnswer, headline, mainCheckSummary, markdownSegments, observationRows, previewForApply, relativeTime, revisionParts, selectionFacts, stateTone, stopFacts, taskMatches } from '../client/presentation';
 
 const taskDisplay = { state: 'Waiting · Needs decision', bucket: 'Decision', why: 'in Needs decision',
   question: false, pending: false, blocker: '', closure: null, record_revision: 'working-rev' };
@@ -107,6 +107,15 @@ describe('canonical presentation', () => {
     expect(previewForApply({ revision: 'r', valid: true, files: [] })).toBeNull();
     expect(taskMatches(task, { task: 'T-1', goal: 'goal', runtime: 'waiting', section: 'Needs decision' }, 'waiting')).toBe(true);
     expect(taskMatches(task, { task: '', goal: 'other', runtime: '', section: '' }, 'waiting')).toBe(false);
+  });
+  it('names a stop cause and its applicable action without promoting an answer', () => {
+    const technical = { ...taskDisplay, state: 'Blocker', bucket: 'Blocker', why: 'validation failed', blocker: 'validation · needs you' };
+    const facts = stopFacts(technical, false);
+    expect(facts?.title).toBe('Stopped · validation · needs you');
+    expect(facts?.rows).toContainEqual(['What happened', 'validation failed']);
+    expect(facts?.rows.find(([name]) => name === 'Next action')?.[1]).toContain('closing is a separate manual action');
+    expect(stopFacts({ ...technical, bucket: 'Deferred', blocker: '', why: 'deferred by owner; no expiry' }, false)?.title).toBe('Deferred');
+    expect(stopFacts(technical, true)).toBeNull();
   });
   it('reads a selection explanation as facts', () => {
     const rows = selectionFacts({ task: 'T-1', eligible: false, first: false, reasons: [{ code: 'DONE', detail: '' }],
@@ -454,7 +463,9 @@ describe('native host-scoped surfaces', () => {
     expect(text()).toContain('technical hold');
     await press('Open task T-2');
     expect(button('Send answer')).toBeUndefined();
-    expect(text()).toContain('Blocked by technical');
+    expect(text()).toContain('Stopped · technical');
+    expect(text()).toContain('What happened');
+    expect(text()).toContain('Next action');
     expect(text()).toContain('No owner question is recorded for this task');
     expect(text()).not.toContain('not a current canonical owner question');
   });
@@ -949,6 +960,7 @@ describe('management surface', () => {
     capture(value);
     await mount({ params: { view: 'blockers' } });
     expect(text()).toContain('Decision needed · 1'); expect(text()).toContain('Keep WEB-ALL as one goal?'); expect(text()).toContain('unblocks 3 tasks');
+    expect(text()).toContain('does not start runners');
     expect(text()).not.toContain('**'); expect(text()).not.toContain('Existing answer');
     await press('Answer T-1');
     expect(button('Send answer')).toBeTruthy(); expect(text()).not.toContain('](docs/'); expect(text()).toContain('final reconciliation');
@@ -963,7 +975,8 @@ describe('management surface', () => {
     env.invoke.mockImplementation((name, data) => name === 'autowork.fleet' ? Promise.resolve(value) : name === 'autowork.tasks' ? Promise.resolve({ revision: 'rev', tasks: [blocked] }) : name === 'autowork.task' ? Promise.resolve(currentDetail) : initial(name, data));
     await mount({ params: { view: 'blockers' } });
     expect(text()).toContain('Blocked open task');
-    expect(text()).toContain('Blocked by needs decision');
+    expect(text()).toContain('Stopped · needs decision');
+    expect(text()).toContain('CLI explanation');
     expect(root.root.find(node => String(node.type) === 'View' && node.props.accessibilityLabel === 'status Blocker · supplied by CLI')).toBeTruthy();
     expect(text()).not.toContain('NEEDS_DECISION');
     await press('Open task T-BLOCK');
