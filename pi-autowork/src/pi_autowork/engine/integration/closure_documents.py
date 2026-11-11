@@ -149,12 +149,13 @@ def close_writes(repo, task, slot, info, checks, record, *, ports):
     notes. Nothing else; TODO.archive.md is not written."""
     if mismatch := acceptance_mismatch(slot.get('report') or {}, record.acceptance):
         raise ValueError('acceptance hold: ' + mismatch)
+    # Keep structured owner authority: its fields are part of the verified contract hash.
     # From the record as committed: a close records the verified contract, never a local edit.
     committed = ports.git(repo, 'show', f'HEAD:{ports.task_path(task)}', raw=True).decode()
     text = task_store.edit(committed, {'status': 'done', 'closure': 'coordinator_verified',
                                        'closure_evidence': receipt_path(task),
                                        **{key: None for key in ('closure_actor', 'closure_timestamp',
-                                                               'closure_reason', 'owner_waiver', 'owner_qualification')}})
+                                                               'closure_reason')}})
     writes = {ports.task_path(task): text, receipt_path(task): receipt_text(repo, task, slot, info, checks, record, ports=ports)}
     live = ports.live_items((slot.get('report') or {}).get('pending_live'))
     if live:

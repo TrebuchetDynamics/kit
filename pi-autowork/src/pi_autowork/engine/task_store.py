@@ -627,7 +627,7 @@ class TaskStore:
 TASK_ORDER = ('schema', 'id', 'title', 'short', 'status', 'goal', 'section', 'rank', 'depends_on',
               'touches', 'resources', 'kind', 'ownership', 'live', 'live_actor', 'live_at', 'live_scope',
               'scope', 'acceptance', 'checks', 'exclusions', 'verified_depends_on',
-              'waiver_actor', 'waiver_at', 'waiver_for', *_CLOSURE_FIELDS)
+              *_CLOSURE_FIELDS)
 GOAL_ORDER = ('schema', 'id', 'title', 'priority', 'source', 'status', 'focus', 'depends_on')
 _CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 _STRINGS = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'[^\'\n]*\'')  # TOML one-line strings

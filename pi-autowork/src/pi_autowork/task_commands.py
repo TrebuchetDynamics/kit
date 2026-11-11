@@ -100,9 +100,10 @@ def _serialized(function):
     return serialized
 
 
-def in_flight(repo, states=OCCUPYING):
+def in_flight(repo, states=OCCUPYING, *, report_live_leases=True):
     """(task IDs a worker slot in ``states`` or a live lease holds, problems reading that
-    state). Engine modules are imported here only: other commands need none of them."""
+    state). Engine modules are imported here only: other commands need none of them.
+    Suppress healthy lease notices for per-task guards, but always report read errors."""
     from pi_autowork.engine import parallel_state
     from pi_autowork.engine import task_execution
     held, problems = set(), []
@@ -114,14 +115,17 @@ def in_flight(repo, states=OCCUPYING):
         slots = []
     held |= {s['task_id'] for s in slots if s['state'] in states}
     try:
-        if parallel_state.live_coordinator(common):
+        if parallel_state.live_coordinator(common) and report_live_leases:
             problems.append('a live parallel coordinator lease')
     except ValueError as exc:
         problems.append(f'the coordinator lease cannot be read ({exc})')
     try:
         lease = task_execution.read(common / 'active.json') if (common / 'active.json').exists() else None
-        if lease and task_execution.active_owner(lease):
-            problems.append('a live sequential execution lease')
+        if lease is None and (common / 'active.json').exists():
+            raise ValueError('null sequential execution lease')
+        if lease is not None and task_execution.active_owner(lease):
+            if report_live_leases:
+                problems.append('a live sequential execution lease')
             if isinstance(lease.get('task_id'), str):
                 held.add(lease['task_id'])
     except ValueError as exc:
@@ -131,7 +135,9 @@ def in_flight(repo, states=OCCUPYING):
 
 def _unheld(repo, tid):
     """Refuse a contract change to a task an attempt holds: integration would set it aside."""
-    held, _ = in_flight(repo, ACTIVE)
+    held, problems = in_flight(repo, ACTIVE, report_live_leases=False)
+    if problems:
+        raise CommandError('cannot establish task ownership; ' + '; '.join(problems))
     if tid in held:
         raise CommandError(f'{tid} is held by a worker slot or a live lease; its contract cannot change now')
 
@@ -1055,7 +1061,8 @@ def cmd_done(repo, tid, by, reason, evidence=None):
                         closure_timestamp=datetime.now(timezone.utc).isoformat(),
                         closure_reason=' '.join(reason.split()),
                         closure_evidence=' '.join(evidence.split()) if evidence and evidence.strip() else None,
-                        owner_waiver=None, owner_qualification=None))
+                        owner_waiver=None, owner_qualification=None,
+                        **{key: None for key in task_store._WAIVER_FIELDS}))
 
 
 @_serialized
