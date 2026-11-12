@@ -182,6 +182,13 @@ async def task_workspace_pilot():
             quota_row = replace(rows[0], why='Daily free-model quota exhausted (HTTP 429)')
             happened, next_step = tui_tasks.task_guidance(quota_row)
             assert 'daily free-model quota' in happened and 'Retry only after that' in next_step
+            # A refused planning proposal is repaired by the runner: retry and clear-held cannot apply.
+            planning_row = replace(rows[0], state='Blocker · Planning repair',
+                                   why='Agent repair: planning failed: Needs decision items must name their question')
+            happened, next_step = tui_tasks.task_guidance(planning_row)
+            assert 'Needs decision items must name their question' in happened
+            assert 'retries this planning repair by itself' in next_step and 'no held commit' in next_step
+            assert not {'r', 'c', 'a'} & {action.key for action in screen.actions(planning_row)}
             # The list's Why column shows the row's own reason, not one generic sentence on every row.
             table = screen.query_one('#tasks', DataTable)
             labels = [str(column.label) for column in table.columns.values()]
