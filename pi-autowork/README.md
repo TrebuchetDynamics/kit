@@ -1,9 +1,103 @@
 # Pi Autowork component
 
+**Turn an accepted task queue into checked, locally integrated changes.**
+
+Autowork is Kit's optional Linux background runner. It reads committed tasks,
+works in separate Git worktrees, checks results and integrates verified work into
+`main` or `master`. Use the terminal dashboard to see progress and answer questions.
+The [Kit skills](../README.md#the-skills) also work without a background runner.
+
+**Accepted tasks → isolated workers → checks and review → local integration.**
+Remote publication is a separate, opt-in step.
+
+[Install](#install) · [First check](#first-check) · [Start and observe](#start-and-observe) ·
+[Commands](#the-autowork-command) · [Questions](#questions) ·
+[Health](#runner-health-reads) · [Recovery](#session-merge-recovery)
+
+## Install
+
+Use Linux with user systemd for the background service. Execution needs Python
+3.11+ and a configured Pi installation. The TUI and web view also need `uv`.
+Review the [RPC requirements](docs/pi-rpc.md#install-and-readiness) before unattended use.
+This runner uses Pi. Claude Code and Codex can use the
+[portable Kit skills](../README.md#install) without installing this service.
+
+> **Before installation:** Do not give unattended agents production credentials.
+> The installer copies the Pi login and selected model settings into a private
+> runner directory outside Git. Keep that directory out of logs and reports.
+> Every install/update restarts all active Kit user services, including Hermes
+> gateways, even when only Autowork is selected. Stopped and paused services stay
+> untouched. Review [installation and restart scope](../docs/installation.md#full-suite-from-a-checkout).
+> Automatic push is disabled without a saved or explicit `PI_AUTOWORK_PUSH=1` grant.
+> Existing saved grants remain in effect.
+
+From a Kit checkout, install only the runner component:
+
+```sh
+git clone https://github.com/TrebuchetDynamics/kit
+cd kit
+./install.sh --only autowork
+```
+
+Installation does not start a new repository runner. Existing private Pi files are
+kept. After a login change, use `autowork update --only autowork` to refresh them.
+See [private Pi configuration](#private-pi-configuration-and-installed-runner).
+
+## First check
+
+From your project, inspect the committed queue without starting work:
+
+```sh
+autowork tasks prepare --check .
+```
+
+The command reports readiness or the next required setup step. It writes nothing
+and calls no model. A missing queue is not ready: use `/docs-sync` in Pi to prepare
+accepted requirements, or see [task-store preparation](task-store.md#preparing-a-repository-autowork-tasks-prepare).
+Claude Code uses `/kit:docs-sync`; Codex uses `$kit:docs-sync`.
+
+## Start and observe
+
+Before starting, configure the project's checks and limits using the
+[runner setup guide](../docs/cross-host.md#run-autowork-continuously).
+Start requires a valid committed `tasks/` store on `main` or `master`.
+It can safely select an existing local main branch; unsafe switches refuse.
+
+```sh
+cd /path/to/my-project
+autowork start .
+autowork status .
+autowork tui
+```
+
+These are commands to run, not an execution receipt. Status shows recorded work
+and check evidence. A running service does not prove task completion or live
+qualification. An empty queue waits without a model call.
+
+| Need | Command | Effect |
+| --- | --- | --- |
+| Inspect the fleet | `autowork ls --long` | Read workers, blockers and model settings. |
+| Read the journal | `autowork logs -f .` | Follow the selected runner's log. |
+| Stop work | `autowork stop .` | Stop the service; retain attempts for resumption. |
+| Keep it off after reboot | `autowork pause .` | Stop and disable the service. |
+| Resume a paused service | `autowork resume .` | Enable and start it again. |
+
+Push needs a separate grant. See [service settings and publication](#safe-branch-selection-on-explicit-start)
+before enabling it. Task edits use `autowork tasks`, not hand-edited records.
+The [task-store guide](task-store.md#simple-task-authoring) covers authoring and priority changes.
+
 Execution defaults to SDK-backed Pi RPC. See [installation, lifecycle guarantees,
 controls and explicit JSON rollback](docs/pi-rpc.md), and the separate
 [qualification evidence](../docs/research/pi-rpc-qualification-2026-10-24.md).
 An already-running release is not automatically upgraded by this source change.
+
+## Reference
+
+The sections below retain the detailed operating and implementation contracts.
+Expand the section you need. Existing heading links remain available.
+
+<details>
+<summary><strong>Source layout, private Pi configuration and Rust candidate</strong></summary>
 
 [Source layout and compatibility](docs/source-layout.md) describes component ownership,
 selected-release loading, product tests and copied payloads.
@@ -101,6 +195,11 @@ See its [offline build checks](rust/autowork/README.md#build-and-offline-checks)
 and [dependency prerequisites](../docs/dependencies.md#rust-autowork-candidate).
 A source relocation grants no live-provider, service or migration qualification.
 
+</details>
+
+<details>
+<summary><strong>Reviewed Hermes observers: overlap policy and exact binding</strong></summary>
+
 ## Reviewed Hermes observers
 
 Startup and `--install-service` normally refuse active repository Hermes jobs
@@ -192,6 +291,11 @@ interactive-writer handoff require separate operational qualification.
 
 Source: `pi-autowork/src/pi_autowork/hermes_observers.py`, `cli.py`, and `service.py`.
 
+</details>
+
+<details>
+<summary><strong>Blockers report: read, answer, copy and export</strong></summary>
+
 ## Blockers report
 
 Select a runner, open **t Tasks**, then press **B Report** (or click **Report**).
@@ -255,6 +359,11 @@ repository; Tasks offers **g Discuss** and **v Investigate** for a selected task
 Both **b** and **B** in Tasks open this in-app report; neither launches an agent
 or suspends the TUI. Interactive repair is still the separate
 `autowork blockers [dir]` command, not this report.
+
+</details>
+
+<details>
+<summary><strong>Command reference, service lifecycle and dashboard controls</strong></summary>
 
 ## The autowork command
 
@@ -984,6 +1093,11 @@ reconciles the store; `autowork migrate` remains available as direct CLI convers
 
 The TUI and web view run Textual 8.2.8 (and textual-serve 1.1.3) through `uv`.
 
+</details>
+
+<details>
+<summary><strong>Autonomous planning, waiting and post-completion Docs Sync</strong></summary>
+
 ## Autonomous planning and waiting
 
 Continuous runners retry safe repository-discovery failures after the persistent
@@ -1050,6 +1164,11 @@ automatic replay. Refusals/no-change outcomes are recorded rather than spinning 
 run; technical retries keep the existing bounded recovery policy. A refused or failed
 pass is not a claim that cleanup happened. Offline tests exercise the real engine and
 Git with fake model output; installed-model execution needs separate qualification.
+
+</details>
+
+<details>
+<summary><strong>Questions, retained attempts and provenance</strong></summary>
 
 ## Questions
 
@@ -1134,6 +1253,11 @@ reason. This does not change its hold cause, retry budget or acceptance; malform
 foreign and earlier-attempt metadata supplies no diagnosis. Retained commits and explicit
 restart reasons take precedence over runtime failure text.
 
+</details>
+
+<details>
+<summary><strong>Nous Portal setup (opt-in)</strong></summary>
+
 ## Nous Portal setup (opt-in)
 
 Pi remains the executor; Hermes owns the Portal login and subscription proxy.
@@ -1208,6 +1332,11 @@ Contracts verified against [Hermes subscription proxy documentation](https://her
 [Hermes health implementation](https://github.com/NousResearch/hermes-agent/blob/3a9d585e4f1a60588237587a72d365d187094c74/hermes_cli/proxy/server.py)
 and [Pi compatible endpoints](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md#configure-a-compatible-endpoint)
 (Pi 1.3.0 installed documentation); earlier Pi versions are not newly qualified.
+
+</details>
+
+<details>
+<summary><strong>Check capacity, landing checks and acceptance evidence</strong></summary>
 
 ## Fleet full-check capacity
 
@@ -1388,6 +1517,11 @@ with no explicit review setting use `auto` when they load this code. Reloading a
 running service is a separate operator action. Offline fixtures cover the default,
 policy and receipt boundaries, not live model compliance or a measured throughput
 improvement.
+
+</details>
+
+<details>
+<summary><strong>Cost, owner attention and accounting</strong></summary>
 
 ## Cost and owner attention
 
@@ -1570,6 +1704,11 @@ Usage and attention logs live only in private runner state (`runs.jsonl` and
 `attention.jsonl` under the repository's state key), including optional notes.
 No usage records or attention logs belong in Git. These are offline accounting
 facilities, not evidence that a live task was delivered or that a bill was paid.
+
+</details>
+
+<details>
+<summary><strong>Runner health: identity, freshness and unavailable observations</strong></summary>
 
 ## Runner health reads
 
@@ -1760,6 +1899,11 @@ Saved rows lack pause metadata, so interrupted/released tasks retain those raw s
 instead of being labelled failed. Offline CLI fixtures cover active-first rows and
 the held-lock fallback.
 
+</details>
+
+<details>
+<summary><strong>Session merge recovery and isolated runtime comparison</strong></summary>
+
 ## Session merge recovery
 
 Before merging main, the coordinator tries to commit edits left in its own session.
@@ -1817,3 +1961,5 @@ Design: [coordinator redesign](../docs/plans/2026-10-16-pi-autowork-coordinator.
 Explicit dated `Owner decision: YYYY-MM-DD: deferred: …` notes display as
 Deferred in task inventory with no expiry. A later dated nondeferred decision
 restores presentation; deferral grants no execution or completion authority.
+
+</details>
