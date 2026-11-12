@@ -384,11 +384,32 @@ investigation, but not direct decision, section, hold or repair mutations.
 
 `delete ID` removes any task record, open or closed, from the working tree. It does not
 remove worktrees, commits, `tasks/evidence/ID.toml` receipts or goals, and it does not
-edit dependents: a task that still names the deleted ID in `depends_on` or
-`verified_depends_on` stays blocked until that reference is changed. A worker slot or
-live lease holding the task, unreadable runner state, and dependent tasks are reported
-as warnings; they do not refuse the deletion. The TUI's Tasks window exposes the same
-command as `x` Delete, including in the Closed view.
+edit dependents. It therefore refuses, writing nothing, while a surviving task names the
+ID in `depends_on` or `verified_depends_on`: that task would keep a dangling reference
+(`UNKNOWN_DEPENDENCY`). `--closure` prints those dependents and the holder warnings
+without writing; `--force` deletes anyway and names the dangling edges. `delete
+--ids-file FILE` (one ID per line, `#` comments, `-` for standard input) deletes a set
+under one lock and one validation, all or nothing; a dependent inside the set does not
+refuse it. A worker slot or live lease holding the task (reported with slot state,
+attempt, process and age) and unreadable runner state are warnings; they do not refuse
+the deletion. The TUI's Tasks window exposes the same command as `x` Delete, including
+in the Closed view.
+
+`prune` ([source](pi_autowork/task_prune.py)) is completed-task retention as one
+decision table. `autowork tasks prune` prints the plan and writes nothing: the finished
+records it would delete, the satisfied `depends_on` edges it would remove from inactive
+open tasks, the receipts it leaves, and one reason code for each retained record
+(`OWNERSHIP_UNKNOWN`, `RUNTIME_SLOT`, `UNCOMMITTED`, `NEEDS_DECISION`,
+`UNVERIFIED_CLOSURE`, `GOAL_PROOF`, `CITED_BY_OPEN_TASK`, `CURRENT_DOC`,
+`VERIFIED_DEPENDENCY`, `SUPERSEDED_DEPENDENCY`, `DEPENDENT_IN_FLIGHT`,
+`RETAINED_DEPENDENT`). `--apply` recomputes the plan under the task lock, refuses when
+`--expect-plan REVISION` names another plan, and writes the deletions and edge removals
+as one validated set in the working tree. `--summary` prints counts by reason. Open
+records are never candidates, and a citation in frozen history (`TODO.archive.md`,
+`docs/TODO-archive.md`, a `doc-ref-guard: record` document) never retains a record.
+
+Every read (`list`, `show`, `why`, `validate`, `goals`) takes `--store head|worktree`
+(`--worktree` is the same as `--store worktree`); the default is the committed store.
 
 `goal` adds a goal or changes its fields, needs `--evidence` for `--status met`, and moves
 focus from any other goal. Meeting a goal also requires every non-superseded owned task
@@ -540,8 +561,24 @@ this conversion-safety contract. It converts a legacy repository and finishes a 
 conversion through `autowork migrate`'s transaction; for `none` it lists tracked documents and the headings
 marked `Status: Accepted`. Everything else is judgement: it decides no intent, writes no
 goal, task or field, and grants nothing. `--check` writes no file, ref, index, lock or
-object; `--no-commit` stages a conversion without moving HEAD. It exits 1 when `ok` is false
-(a refusal or an invalid store) and, on an unchanged repository, reports the same result.
+object; `--no-commit` stages a conversion without moving HEAD. On a converted repository
+with uncommitted task files, every mode including `--check` reads the working tree;
+`read` is `HEAD` or `worktree`, `read_note` counts the uncommitted files, and the same
+line goes to standard error. Only an interrupted task edit makes `--check` fall back to
+HEAD, and the note says so. It exits 0 when prepared (diagnostics are not failures), 1
+when `ok` is false (a refusal or an invalid store), 3 for `MIGRATION_DEFERRED` and, only
+with `--fail-on-diagnostics`, 4 when actionable diagnostics remain. On an unchanged
+repository it reports the same result.
+
+Each diagnostic has a `class`, `actionable` or `advisory` (`GOAL_WITHOUT_WORK`,
+`IN_FLIGHT`, `NOT_RUNNABLE`). Legacy-name hits in frozen history, in `testdata/` or
+`fixtures/`, or in a path that the root `.autowork-legacy-allow` lists as `GLOB REASON`
+are counted under `suppressed` (`frozen`, `intentional`) and not listed; `--all` lists
+them. `--summary` replaces the lists with counts by code and by file, `--code CODE`
+keeps one code, and `--limit N` truncates with `diagnostics_truncated`. A
+`BROKEN_SOURCE` for a missing heading names the nearest existing anchors, and `IN_FLIGHT`
+names the holder's slot state, attempt, process and age. The conversion inventory
+(`consumers`, `documentation_drift`) and its refusals are unchanged by these classes.
 
 Without a store or pending conversion, a repository with exactly one of TODO.md and
 goals.json is a bootstrap, not a legacy migration: prepare reports `state: none` and

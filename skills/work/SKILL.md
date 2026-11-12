@@ -53,8 +53,8 @@ offline maintenance when the queue cannot run. Existing scope and safety limits 
    [Definition of Done](../shared/DEFINITION-OF-DONE.md) and Autowork's closure rules.
    Make task-store edits through `autowork tasks`. Retain incomplete work with its
    exact next action instead of claiming acceptance. After integrated closeout,
-   perform [working-set reconciliation](../shared/TODO-WORKCENTER.md#reconcile-the-working-set)
-   before selecting the next task automatically. One completed task
+   perform [working-set reconciliation](../shared/TODO-WORKCENTER.md#reconcile-the-working-set),
+   then select the next task automatically. One completed task
    is not a stop condition. An explicit one-task or named-task limit wins.
 6. **Stop with evidence.** Stop for a user stop, session interruption, a genuine
    scope-wide authority or ownership blocker, or a bounded search with no useful
