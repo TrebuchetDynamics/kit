@@ -168,6 +168,9 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     'skills/docs-sync/scripts/docs.py', 'skills/autoresearch/upstream/plan.md', 'skills/impeccable/LICENSE',
     'skills/test-optimizer/SKILL.md', 'skills/engineering/local/test-suite-optimization/PROTOCOL.md',
     'skills/apk-get/SKILL.md', 'skills/apk-get/BUILD.md', 'skills/apk-get/scripts/verify_apk.py',
+    'skills/state-machine/SKILL.md', 'skills/state-machine/PROTOCOL.md',
+    'skills/state-machine/references/sources-and-example.md',
+    'adapters/skills/state-machine/SKILL.md', 'adapters/skills/state-machine/agents/openai.yaml',
     'skills/shared/COMMUNICATION.md', 'skills/work/SKILL.md',
     'adapters/skills/work/SKILL.md', 'adapters/skills/work/agents/openai.yaml',
     'scripts/autowork_bootstrap.py', 'pi-autowork/src/autowork_bootstrap.py', 'pi-autowork/src/pi_autowork/__init__.py']) {
@@ -241,7 +244,7 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
-    assert.equal(skillCount, 35);
+    assert.equal(skillCount, 36);
     // Execute the packaged CommonJS helper under Autowork's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});

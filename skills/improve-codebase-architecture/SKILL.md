@@ -47,6 +47,9 @@ before naming anything; a decision an ADR records is not yours to re-open silent
    module: can it disappear, reuse an existing module or hide more complexity behind
    a smaller interface? Inspect duplicated rules, speculative adapters, leaking state,
    swallowed failures, repeated I/O, unbounded work and bad scaling at expected load.
+   For lifecycle rules scattered across seams, apply the
+   [state-machine analysis](../state-machine/PROTOCOL.md) within this review's scope.
+   Include its evidence in the existing report; keep fixes in step 4.
    Trace callers and failure paths, not just file shape. Demand the deletion test and
    a concrete failing case or measurable cost for each actionable finding. Keep style
    preferences and unverified hypotheses separate; fewer lines alone prove nothing.

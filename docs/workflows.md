@@ -249,6 +249,37 @@ the adapter. Claude-only hooks are not installed.
 `/autowork` is the repository development command. Its helpers and profile-local
 state live under `autowork/`; upgrades preserve existing work through migration.
 
+## State machine
+
+[State Machine](../skills/state-machine/SKILL.md) maps lifecycle rules scattered
+across functions, fields and services. It reports state predicates, transition
+rules, source-backed counterexamples and coverage gaps. The default is read-only
+and inline; it neither repairs code nor writes task or report files.
+
+| Host | Invocation |
+| --- | --- |
+| Hermes | `/state-machine` |
+| Claude Code | `/kit:state-machine` |
+| Codex | `$kit:state-machine` |
+| Pi | `/skill:state-machine` |
+| Octet | `/skill:state-machine` |
+
+In Pi, this is a native skill command, not a `/state-machine` extension alias.
+After updating the installed package, reload skills in the host before use.
+
+```text
+/skill:state-machine find all implicit state machines in this app; no writes
+/skill:state-machine inspect checkout retries and cancellation; read-only
+```
+
+Planning, implementation and review use the shared contract's stateful-work trigger.
+Bug Harvest, architecture review and Test Optimizer also link the
+[analysis method](../skills/state-machine/PROTOCOL.md) at their relevant steps.
+These are scoped reference loads, not automatic skill activation or wider authority.
+The [online sources and example](../skills/state-machine/references/sources-and-example.md)
+explain the method. Offline packaging checks do not prove exhaustive discovery or
+live bug-finding effectiveness.
+
 ## Test optimizer
 
 `/test-optimizer` actively reduces executed cases, test code and maintenance cost.

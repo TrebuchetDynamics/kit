@@ -251,6 +251,8 @@ states its own boundaries and what "done" means.
 
 **Improve the codebase**
 
+- `/skill:state-machine` (Pi) — map implicit states and unsafe transitions, read-only.
+  See [other hosts and usage](docs/workflows.md#state-machine).
 - `/bug-harvest` — hunt evidence-backed defects, one candidate at a time.
 - `/test-optimizer` — delete redundant tests and shrink the suite that remains.
 - `/unused-code` — remove code whose unreachability is proven.
