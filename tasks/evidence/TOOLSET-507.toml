@@ -1,0 +1,25 @@
+schema = 1
+task = "TOOLSET-507"
+candidate = "a94de7bb48ff17fe4aeefdd03195e6364ea4b619"
+integration = "7ad2ee661b61569d44ce06a8b3f5f4946dd879b8"
+tree = "04ca06da8d882fc92e696cb6265d3dd9949c7518"
+contract_hash = "15848dd4d991a90431ace1d72fc432b2a6f5a649c140353f170dbb824649810b"
+checks = ["<path>", "<path>", "--verify", "<path>", "TOOLSET-507"]
+result = "pass"
+review = "passed"
+model_review = "passed"
+
+[[acceptance]]
+item = "Duplicate alias additions and multi-alias renames fail before changing the original config; regression tests check byte equality and a successful reload after rejection."
+result = "met"
+evidence = "test_invalid_mutations_preserve_config_and_reload passes nine CLI/module cases, including prompted rename rejection. Every case asserts rejection diagnostics, original byte equality, successful tx which reload, and no staging residue. Config-module mutation functions own existing-name and single-replacement checks."
+
+[[acceptance]]
+item = "The config writer rejects an invalid complete candidate before publication and removes its staging file."
+result = "met"
+evidence = "config_write reuses config_load against its staging path before atomic mv, with subshell-local EXIT cleanup. test_writer_rejects_invalid_candidate_and_cleans_staging passes duplicate-alias, undefined-variable, and unparsable-row candidates; each preserves original bytes and leaves no staging file."
+
+[[acceptance]]
+item = "Valid add, edit, and remove operations preserve comments, variables, ordering, and CRLF behavior."
+result = "met"
+evidence = "test_append_and_rewrite_preserve_comments_vars_and_order passes CLI add, edit, partial removal, and whole-row removal under LF and CRLF. Byte assertions preserve comments, blank lines, variable references, spacing, row order, and paths with spaces."

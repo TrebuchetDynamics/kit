@@ -3,7 +3,7 @@ schema = 1
 id = "TOOLSET-507"
 title = "Preserve tx config when alias mutations are invalid"
 short = "Invalid alias updates preserve tx config"
-status = "open"
+status = "done"
 section = "Now"
 rank = 21000
 depends_on = []
@@ -15,6 +15,8 @@ scope = "Validate alias additions and renames inside the existing config module,
 acceptance = ["Duplicate alias additions and multi-alias renames fail before changing the original config; regression tests check byte equality and a successful reload after rejection.", "The config writer rejects an invalid complete candidate before publication and removes its staging file.", "Valid add, edit, and remove operations preserve comments, variables, ordering, and CRLF behavior."]
 checks = ["python3 -m unittest discover -s tests -p test_tx.py", "bash -n tmux/tx", "git diff --check -- tmux/tx tmux/README.md tests/test_tx.py"]
 exclusions = ["No installation, commit, push, unrelated completion or installation changes, concurrent-writer locking, or config grammar redesign."]
+closure = "coordinator_verified"
+closure_evidence = "tasks/evidence/TOOLSET-507.toml"
 +++
 - Sources: docs/plans/tx-architecture-2026-11-01.md; owner-approved architecture candidate 1 in the current conversation.
 - Owner decision: Implement only config integrity. Do not install or commit.
