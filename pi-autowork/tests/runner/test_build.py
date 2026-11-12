@@ -36,10 +36,10 @@ class LauncherTests(unittest.TestCase):
         self.launcher.write_bytes(LAUNCHER.read_bytes())
         self.launcher.chmod(self.launcher.stat().st_mode | stat.S_IXUSR)
 
-    def run_launcher(self, argv=('version',), **env):
+    def run_launcher(self, argv=('version',), *, launcher=None, **env):
         started = {key: value for key, value in os.environ.items() if key != 'AUTOWORK_TOOLSET'}
         started.update(PI_AUTOWORK_STATE_DIR=str(self.state), **env)
-        return subprocess.run([str(self.launcher), *argv], capture_output=True, text=True,
+        return subprocess.run([str(launcher or self.launcher), *argv], capture_output=True, text=True,
                               env=started, timeout=60)
 
     def test_the_installed_toolset_runs_by_default(self):
@@ -67,8 +67,7 @@ class LauncherTests(unittest.TestCase):
         link = self.base / 'bin/autowork'
         link.parent.mkdir()
         link.symlink_to(target)
-        result = subprocess.run([str(link), 'version'], capture_output=True, text=True,
-                                env=dict(os.environ, PI_AUTOWORK_STATE_DIR=str(self.state)), timeout=60)
+        result = self.run_launcher(launcher=link)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), 'ran installed version')
 
