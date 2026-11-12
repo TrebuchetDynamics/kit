@@ -845,6 +845,13 @@ malformed saved settings remain visible with errors, not treated as removal.
 Offline fake-systemctl tests cover this lifecycle. Real systemd uninstall still
 needs a separately authorized check on a disposable service instance.
 
+The fleet keeps the store requirement and the service lifecycle as two visible
+facts: a repository without a task store reads `Setup required — run /docs-sync`
+plus `runner paused` or `runner stopped` and how to start it, and the service
+column uses plain words (`stopped`, not systemd's `dead`). A missing store makes
+the primary action Details, not Play, because starting the service cannot create
+the store.
+
 Terminal text can be selected by dragging with the mouse, then copied with your
 terminal's copy shortcut (often Ctrl+Shift+C). Mouse capture is off by default;
 keyboard navigation and controls remain available. Use `autowork tui --mouse` to
@@ -892,8 +899,9 @@ freshness. Stale capture age and acquisition warnings remain visible. Press `i`
 edit messages, revision, generation, capture age, full diagnostics and all task
 keys. Compact banners/details are bounded so long text cannot push task rows off
 screen; their complete text remains scrollable in Info/Help. Pending paths and questions are independently observed working data.
-A valid empty store has zero counts. Unavailable or invalid inventory shows `?`
-and `unknown / unavailable`, not zero. Failed refreshes can retain last-good
+A valid empty store has zero counts. Unavailable or invalid inventory shows `—`
+in the fleet table and `Task count unavailable` in the project summary (the Tasks
+window shows `?`), never zero. Failed refreshes can retain last-good
 inventory with its original revision/capture age, visibly stale. Pending-path read
 failure means unknown, never clean. In the Tasks window, unavailable inventory
 shows `?` for every view count and an unavailable placeholder rather than a verified

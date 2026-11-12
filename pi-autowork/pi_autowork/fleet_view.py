@@ -34,6 +34,12 @@ GATE_WINDOW = 300
 DEFAULT_MODEL = 'openai-codex/gpt-6.1-sol'           # pi_runtime's defaults
 DEFAULT_FALLBACK = 'openrouter/deepseek/deepseek-v4.1-flash'
 MODEL_KEYS = {'model': 'PI_AUTOWORK_PRIMARY', 'fallback': 'PI_AUTOWORK_FALLBACK'}
+# systemd sub-states in plain words, so the fleet view never prints `service dead`.
+SERVICE_WORDS = {'running': 'running', 'dead': 'stopped', 'inactive': 'stopped', 'failed': 'failed',
+                 'start': 'starting', 'start-pre': 'starting', 'start-post': 'starting',
+                 'activating': 'starting', 'stop': 'stopping', 'stop-sigterm': 'stopping',
+                 'stop-sigkill': 'stopping', 'stop-post': 'stopping', 'deactivating': 'stopping',
+                 'reload': 'reloading', 'final-sigterm': 'stopping', 'auto-restart': 'restarting'}
 SETUP_LABELS = {
     'none': 'Setup required — run /docs-sync',
     'uncommitted': 'Setup required — run /docs-sync',
@@ -495,8 +501,13 @@ def progress_summary(runner, view=None):
         return 'Needs attention', runner.stop_reason, 'Your action: inspect Details'
     if runner.state in ('paused', 'not running'):
         return 'Stopped', 'Start the runner to execute tasks', 'Your action: start with Play'
-    if (view.counts is None or view.inventory_freshness != 'fresh'
-            or view.execution_freshness != 'fresh'):
+    if view.counts is None:
+        # Name the cause: `no tasks/ store` has its own repair, not just "inspect Details".
+        cause = fit_line(' '.join((runner.blocker or 'task inventory unreadable').split()), 120)
+        action = (_store_action(runner) if 'no tasks/ store' in cause
+                  else 'Your action: inspect Details')
+        return 'Unconfirmed', cause, action
+    if view.inventory_freshness != 'fresh' or view.execution_freshness != 'fresh':
         return 'Unconfirmed', 'Fresh task inventory or execution evidence unavailable', 'Your action: inspect Details'
     active, mergeable, waiting, blocker, decision, total = view.counts
     joined = set(runner.snapshot.joined_lanes) if runner.snapshot else set()
@@ -535,6 +546,26 @@ def progress_summary(runner, view=None):
                     'Your action: none for work in flight; other tasks need attention → Tasks')
         return 'Needs attention', 'No task executing · open Tasks for the exact cause', 'Your action: Tasks → select a blocked task'
     return 'Waiting', f'{waiting} waiting · {total} open tasks', 'Your action: Tasks → inspect dependencies or add work'
+
+
+def count_text(runner):
+    """Why the open-task count is unknown, in one line: a dash alone never says what to fix."""
+    cause = ' '.join((runner.blocker or '').split())
+    return 'Task count unavailable' + (f' — {cause}' if cause else '')
+
+
+def _store_action(runner):
+    """The concrete next step for a repository without a task store."""
+    repo = runner.repo or '.'
+    return f'Your action: create the task store (autowork migrate {repo}) and start it'
+
+
+def service_text(runner):
+    """The service's own sub-state in plain words; '' when no unit is observed."""
+    state = runner.service or ''
+    if not state:
+        return ''
+    return SERVICE_WORDS.get(state, state)
 
 
 def quiet(lane):
@@ -596,6 +627,12 @@ def _service_verdict(runner: Runner, *, setup=None) -> Verdict | None:
         return f'Needs attention — {runner.stop_reason}', 'bold red'
     setup = runner.setup_label if setup is None else setup
     if setup:
+        # A missing store and a stopped service are two different facts; showing only the
+        # first made a paused runner read as never installed (kit, 2026-11-12).
+        if runner.state == 'paused':
+            return setup + ' · runner paused, p resumes it', 'bold yellow'
+        if runner.state == 'not running':
+            return setup + ' · runner stopped, p starts it', 'bold yellow'
         return setup, 'bold yellow'
     if runner.state == 'restarting':
         return (f"Restarting {runner.restarting}" if runner.restarting.startswith('onto') else 'Restarting', 'bold cyan')
@@ -1774,8 +1811,9 @@ def runner_rows(runners):
         if len(runner.lanes) > 2:
             now += f' +{len(runner.lanes) - 2}'
         vector = task_counts(runner)
+        # Not a count: an em dash says "unavailable" without reading as a number.
         active, mergeable, waiting, blocker, decision, total = (
-            (str(n) for n in vector) if vector is not None else ('?',) * 6)
+            (str(n) for n in vector) if vector is not None else ('—',) * 6)
         shown = presentation(runner)
         rows.append({'Runner': (runner.name, ''),
                      'State': (shown.label, shown.style),
