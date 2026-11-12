@@ -3848,12 +3848,75 @@ fcntl.flock = observed_flock
         self.assertIn('A: failed', result.stdout)
 
     def test_a_refused_adoption_holds_technically_without_running_the_resolver(self):
-        self.plan({'verify:A': ['fail', 'fail', 'fail']})  # with its one rework after review
-        first = self.run_runner('--until-empty')
-        self.assertEqual(first.returncode, 1, first.stdout + first.stderr)
+        # A finite run can see a validation hold before the review helper exits;
+        # its queue is then empty, but review rework has not recorded reviewed_twice.
+        # Hold the rework review until B lands, without host-load sleeps.
+        self.plan({'verify:A': ['fail', 'fail', 'gated_fail']})
+        ready, release = self.root / 'review-ready', self.root / 'review-release'
+        fake = FAKE_PI.replace("    if behavior == 'tamper':", """    if behavior == 'gated_fail':
+        root = os.environ['FAKE_PI_ROOT']
+        open(os.path.join(root, 'review-ready'), 'w').close()
+        while not os.path.exists(os.path.join(root, 'review-release')):
+            time.sleep(0.05)
+        behavior = 'fail'
+    if behavior == 'tamper':""")
+        (self.bin / 'pi').write_text(fake)
         slot_path = self.repo / '.git/autowork-execution/slots/A.json'
+        identity = self.root / 'setup-process.json'
+        with (self.root / 'setup.log').open('w+') as output:
+            runner = subprocess.Popen([sys.executable, str(ROOT / 'pi-autowork/pi_autowork/pi_process.py'),
+                                       '--identity', str(identity), '--deadline', '120',
+                                       '--', 'bash', str(RUNNER), '--interval', '1'],
+                                      cwd=self.repo, env=self.env, stdout=output,
+                                      stderr=subprocess.STDOUT, start_new_session=True)
+            try:
+                deadline = time.monotonic() + 120
+
+                def wait_until(predicate):
+                    while not predicate():
+                        diagnostic = ((self.root / 'setup.log').read_text() + '\n'
+                                      + (slot_path.read_text() if slot_path.exists() else ''))
+                        self.assertIsNone(runner.poll(), diagnostic)
+                        self.assertLess(time.monotonic(), deadline, diagnostic)
+                        time.sleep(0.05)
+
+                wait_until(ready.exists)
+                wait_until(lambda: 'B' in self.closed())
+                self.assertEqual([r['run'] for r in self.runs('verify') if r['task'] == 'A'],
+                                 ['fail', 'fail', 'gated_fail'])
+                release.touch()
+                wait_until(lambda: slot_path.exists()
+                           and json.loads(slot_path.read_text()).get('cause') == 'reviewed_twice'
+                           and (self.root / 'setup.log').read_text().count('A: failed') == 3)
+                runner.send_signal(signal.SIGINT)
+                runner.wait(timeout=120)
+                self.assertEqual(runner.returncode, 130, (self.root / 'setup.log').read_text())
+            finally:
+                # Also stop an unreleased fake reviewer if an assertion above fails.
+                release.touch()
+                if runner.poll() is None:
+                    runner.send_signal(signal.SIGINT)
+                runner.wait(timeout=120)
+                self.assertTrue(json.loads(identity.read_text())['cleanup_complete'])
+        # Interrupt preserves a session for resumption. Close only its fully landed,
+        # idle fixture worktree so the conflict phase starts from canonical main.
+        for block in self.git(self.repo, 'worktree', 'list', '--porcelain').split('\n\n'):
+            lines = block.splitlines()
+            branch = next((line.removeprefix('branch refs/heads/') for line in lines
+                           if line.startswith('branch refs/heads/pi-autowork/')), None)
+            if branch:
+                self.git(self.repo, 'merge-base', '--is-ancestor', branch, 'main')
+                self.git(self.repo, 'worktree', 'remove', lines[0].removeprefix('worktree '))
+                self.git(self.repo, 'branch', '-d', branch)
+                for session in self.state.glob('*/session.json'):
+                    if json.loads(session.read_text()).get('branch') == branch:
+                        session.unlink()
         original = json.loads(slot_path.read_text())
-        self.assertEqual(original['cause'], 'reviewed_twice')
+        self.assertEqual(original['cause'], 'reviewed_twice', original)
+        self.assertEqual([r['run'] for r in self.runs('verify') if r['task'] == 'A'],
+                         ['fail', 'fail', 'gated_fail'])
+        self.assertEqual(len([r for r in self.runs('worker') if r['task'] == 'A']), 3)
+        self.assertEqual(self.runs('merge'), [])
         original.update(cause='conflict', reason='merge conflict', conflict_files=['A.txt'])
         (self.repo / 'A.txt').write_text('conflicting session change\n')
         self.git(self.repo, 'commit', '-qam', 'session conflict')
@@ -3861,7 +3924,8 @@ fcntl.flock = observed_flock
         base = self.git(self.repo, 'rev-parse', 'HEAD')
         slot_path.write_text(json.dumps(dict(original, attempt=1, merged_base=base, merged_count=1)))
         result = self.run_runner('--once')  # main has not moved past the adopted revision
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 1, (self.root / 'setup.log').read_text()
+                         + result.stdout + result.stderr)
         self.assertEqual(len(self.runs('merge')), before, result.stdout)
         self.assertEqual(json.loads(slot_path.read_text())['state'], 'held')
         blockers = self.repo / 'BLOCKERS.md'
