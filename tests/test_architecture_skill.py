@@ -1,5 +1,6 @@
 """Instruction contracts only; these do not prove live model adherence."""
 from pathlib import Path
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +17,19 @@ class ArchitectureSkillTests(unittest.TestCase):
                        'An unmeasured speed claim stays a hypothesis'):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
+
+    def test_portable_graphify_handoff_links_to_existing_adapter(self):
+        skill = ROOT / 'skills/improve-codebase-architecture/SKILL.md'
+        match = re.search(r'\[Graphify adapter\]\(([^)]+)\)', skill.read_text())
+        self.assertIsNotNone(match, 'portable handoff needs an explicit file link')
+        target = (skill.parent / match.group(1)).resolve()
+        self.assertEqual(target, ROOT / 'adapters/skills/graphify/SKILL.md')
+        self.assertTrue(target.is_file())
+
+    def test_host_contract_uses_discovered_locations_not_guessed_paths(self):
+        text = ' '.join((ROOT / 'adapters/skills/COMMON.md').read_text().split())
+        self.assertIn('host-discovered skill metadata or an explicit file link', text)
+        self.assertIn('Do not infer `skills/<command>/SKILL.md`', text)
 
     def test_fix_branch_preserves_review_default_and_existing_executor(self):
         text = (ROOT / 'skills/improve-codebase-architecture/SKILL.md').read_text()
