@@ -95,7 +95,7 @@ assert result['rc'] == 0 and result['settled'] and result['text'] == 'offline re
             'autonomous-codebase-improver', 'split-folder', 'unused-code',
             'test-optimizer', 'apk-get', 'graphify', 'writing-for-agents',
             'grilling', 'grill-with-docs', 'improve-codebase-architecture', 'ask-kit',
-            'responsive-screenshots'})
+            'responsive-screenshots', 'state-machine'})
         for source in folder.rglob('*.md'):
             text = source.read_text()
             if source.name == 'SKILL.md':

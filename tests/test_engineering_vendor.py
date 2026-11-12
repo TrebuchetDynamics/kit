@@ -122,7 +122,8 @@ class EngineeringVendorTests(unittest.TestCase):
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         with tempfile.TemporaryDirectory() as td:
             home=Path(td)
-            selected = [PACK, ROOT/'skills/test-optimizer', ROOT/'skills/shared']
+            selected = [PACK, ROOT/'skills/test-optimizer', ROOT/'skills/shared',
+                        ROOT/'skills/state-machine']
             self.assertTrue(all(p.is_dir() for p in selected))
             self.assertEqual(module.install(ROOT/'skills',[('fixture',home)],skills=selected,report=lambda _:None),0)
             optimizer = home/'skills/test-optimizer/SKILL.md'

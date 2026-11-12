@@ -61,7 +61,8 @@ class PiToolsetBundleTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('specialist_install', ROOT / 'scripts/install_skills.py')
         installer = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(installer)
-        selected = [ROOT / 'skills' / name for name in (*NAMES, 'shared', 'ponytail', 'engineering')]
+        selected = [ROOT / 'skills' / name
+                    for name in (*NAMES, 'shared', 'ponytail', 'engineering', 'state-machine')]
         self.assertTrue(all(p.is_dir() for p in selected))
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
