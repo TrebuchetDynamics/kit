@@ -1578,7 +1578,10 @@ class BatchLandingTests(unittest.TestCase):
                     self.assertTrue(runner.overlap_idles())
 
     def merge_train_runner(self, folder, ahead_running=True):
-        """A runner with a batch of A and B checking, its tip published, and C and D reported."""
+        """An explicitly opted-in train with A+B checking and C+D reported."""
+        options = patch.dict(os.environ, PI_AUTOWORK_TRAIN='1', PI_AUTOWORK_INDEPENDENT_HALVES='1')
+        options.start()
+        self.addCleanup(options.stop)
         runner, coordinator = self.runner(folder, {})  # no verdicts recorded yet
         rows = [{'task': t, 'state': 'reported', 'commit': f'{t.lower()}1'} for t in 'ABCD']
         runner.tasks = lambda snapshot=None: rows
@@ -1587,6 +1590,7 @@ class BatchLandingTests(unittest.TestCase):
         tip = Path(folder) / 'ahead.tip'
         tip.write_text(json.dumps({'tip': 'abc123', 'tasks': ['A', 'B']}))
         ahead = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)' if ahead_running else 'pass'])
+        self.addCleanup(ahead.wait)
         self.addCleanup(lambda: ahead.poll() is None and ahead.kill())
         if not ahead_running:
             ahead.wait()
@@ -1625,6 +1629,29 @@ class BatchLandingTests(unittest.TestCase):
                 runner.settle_batch_prefix()
                 self.assertEqual(seen, ['invalidated car', 'closed A'])
                 self.assertIs(runner.integration, producer)
+
+    def test_default_keeps_late_candidates_for_the_next_batch(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as folder:
+            runner, coordinator, rows = self.merge_train_runner(folder)
+            runner.start_batch = Mock()
+            ahead = runner.integration
+            with patch.dict(os.environ, PI_AUTOWORK_TRAIN='', PI_AUTOWORK_INDEPENDENT_HALVES=''):
+                runner.board_train(rows)
+                runner.start_batch.assert_not_called()
+                self.assertIs(runner.integration, ahead)
+                # Failed-batch halves and solo reviews must not sneak in a second producer.
+                split = runner.state / 'batch-split.json'
+                split.write_text(json.dumps([['C@c1', 'D@d1']]))
+                runner.integration['base'] = 'base0'
+                runner.board_train(rows)
+                self.assertEqual(json.loads(split.read_text()), [['C@c1', 'D@d1']])
+                runner.integration = dict(task='A', base='base0')
+                runner.board_train(rows)
+                runner.start_batch.assert_not_called()
+                split.unlink()
+                runner.integration = None
+                self.assertEqual(runner.batch_due([('C', 'c1'), ('D', 'd1')]), ['C', 'D'])
 
     def test_the_next_car_boards_on_the_tip_of_the_batch_still_checking(self):
         with tempfile.TemporaryDirectory() as folder:

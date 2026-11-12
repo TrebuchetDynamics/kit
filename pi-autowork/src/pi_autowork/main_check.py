@@ -153,6 +153,31 @@ def ticket_rank(name, now=None):
     return (0 if now - stamp >= BACKGROUND_WAIT * 10**9 else kind, stamp)
 
 
+def inherited_check_lease():
+    """Reuse an inherited locked pool descriptor, including those from older wrappers."""
+    # The descriptor is the capability; no environment marker can grant admission.
+    candidates = os.listdir('/proc/self/fd')
+    root = None
+    for value in candidates:
+        try:
+            fd = int(value)
+            path = Path(os.readlink(f'/proc/self/fd/{fd}'))
+            if fd < 3 or not path.name.startswith('slot-'):
+                raise ValueError('not a fleet slot')
+            root = root or slot_root().resolve()
+            info = Path(f'/proc/self/fdinfo/{fd}').read_text()
+            locks = [line.split() for line in info.splitlines() if line.startswith('lock:')]
+            held = any(len(row) > 5 and row[2] == 'FLOCK' and row[4] == 'WRITE'
+                       and row[5] != str(os.getpid()) for row in locks)
+            if (path.parent != root or not path.name.removeprefix('slot-').isdigit()
+                    or path.is_symlink() or not held):
+                raise ValueError('not a locked fleet slot')
+            return fd
+        except (OSError, ValueError):
+            continue  # Closed, unrelated or unlocked descriptors grant nothing.
+    return None
+
+
 @contextmanager
 def check_slot(waiting, background=False, holder=None):
     """Admission to host-wide flock slots: reviews before background main checks, each in
@@ -162,6 +187,10 @@ def check_slot(waiting, background=False, holder=None):
     The command inherits the lease: killing its supervisor does not release a still-live check.
     Normal completion unlocks it even if a background descendant kept an inherited fd.
     """
+    inherited = inherited_check_lease()
+    if inherited is not None:
+        yield inherited  # The outer owner releases it; nested wrappers must not unlock it.
+        return
     count = int(os.environ.get('PI_AUTOWORK_CHECK_SLOTS') or 2)
     if count < 0:
         raise ValueError('PI_AUTOWORK_CHECK_SLOTS must be nonnegative')
@@ -247,10 +276,11 @@ def queue_detail(progress):
 
 
 def full_suite_command(cmd, checkout):
-    """Focused owned-checker invocations use no slot, including affected selection.
+    """Whether execution needs fleet admission (the historical full-suite classifier).
 
-    A conservative affected selection that expands to the whole inventory still takes a slot.
-    Unknown declared commands retain full-suite admission.
+    Owned checker runs share capacity even when focused, filtered or sharded: a single
+    runner-fixture module can be as expensive as a suite. Listing starts no test processes.
+    Unknown declared commands retain admission.
     """
     if any(token in cmd for token in (';', '&', '|', '<', '>', '$(', '`')):
         return True  # a compound shell command can contain another full suite
@@ -271,20 +301,7 @@ def full_suite_command(cmd, checkout):
         return True
     if unknown:
         return True  # unknown execution flags cannot exempt a full suite
-    if args.k or args.list or (args.shard and args.shard != '1/1'):
-        return False
-    if args.paths:
-        api = runpy.run_path(str(checker))
-        if 'discover_tests' in api:
-            root = Path(checkout).resolve()
-            inventory = set(api['discover_tests'](root))
-            paths = [(root / path).resolve() for path in args.paths]
-            selected = {test for test in inventory if any(test == path or path in test.parents for path in paths)}
-            return bool(inventory) and selected == inventory
-        return False
-    if args.affected:
-        return runpy.run_path(str(checker))['affected_selection'](checkout, args.affected)['full']
-    return True
+    return not args.list
 
 
 class Stopped(Exception):

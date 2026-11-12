@@ -1209,18 +1209,25 @@ Contracts verified against [Hermes subscription proxy documentation](https://her
 and [Pi compatible endpoints](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md#configure-a-compatible-endpoint)
 (Pi 1.3.0 installed documentation); earlier Pi versions are not newly qualified.
 
-## Fleet full-check capacity
+<a id="fleet-full-check-capacity"></a>
 
-Every runner of the same user shares **two full-suite slots** by default.
+## Fleet check capacity
+
+Every runner of the same user shares **two check slots** by default.
 `PI_AUTOWORK_CHECK_SLOTS` sets the fleet limit; configure the same value for all
 runners. The private lock pool is `~/.local/state/pi-autowork/check-slots`.
 `PI_AUTOWORK_CHECK_ROOT` can select another shared private directory for isolated
 fixtures or a whole fleet; use the same directory for every participating process.
 XDG runtime directories and repository state directories do not create extra pools.
 
-Main checks, batch/landing full checks and worker full suites through
-`autowork-run` use this pool. Focused checker invocations take no slot; affected
-checks take one only when conservative selection expands to the full inventory.
+Main checks, batch/landing checks and worker checks through `autowork-run` use
+this pool. Focused, filtered, sharded and affected checker runs also take a slot;
+one runner-fixture module can be expensive. On Linux, the Kit checkout's direct
+`scripts/check.py` runs join the same pool. `--list` takes no slot. Standalone
+checker copies without the runtime depend on their Autowork wrapper for admission.
+An inherited locked slot is reused, not acquired twice, including descriptors from
+older wrappers. The descriptor is validated against the pool and its kernel lock;
+no environment-only marker grants admission.
 The repository's existing main-check lock still prevents duplicate main checks.
 A queued full check names the current holders in its progress record and runner
 status/fleet view. Queue time does not consume check, worker command or worker
@@ -1231,8 +1238,26 @@ lease until it exits. Reviews precede background main checks, with the existing
 Kit's finite process guard for this queue-aware task deadline; parent-death and
 cleanup checks remain enforced.
 
+Each owned checker dispatches at most two Python test processes, even with a larger
+`--jobs` request, and can reduce its default to one under load. Its optional Paseo
+check runs afterward because Vitest has its own workers. The default two slots thus
+permit at most four concurrent Python test processes from these checkers. Fixture
+children and arbitrary external commands are not OS-level process-limited by this
+policy. Unrelated applications can still load the host.
+
+By default, a repository runs one verification batch at a time. Workers can keep
+coding, but late candidates wait for the next batch instead of starting a speculative
+merge-train check. Existing `PI_AUTOWORK_TRAIN=1` explicitly opts into speculation;
+`PI_AUTOWORK_INDEPENDENT_HALVES=1` additionally permits independent failed-batch
+halves beside a running review. Both default off. Existing receipt reuse, review,
+affected selection and full-main qualification rules are unchanged.
+
+Already-running jobs keep their original settings and evidence. These source changes
+do not interrupt them or activate a new release. All participating runners must use
+the same slot limit and pool for a consistent fleet limit.
+
 Worker admission retains its memory and disk checks. Load average does not block
-ready workers: the fleet slots bound expensive suites while model workers wait.
+ready workers: the fleet slots bound check admission while model workers wait.
 
 ## Affected landing checks
 
