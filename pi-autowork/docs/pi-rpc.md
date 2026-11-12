@@ -5,9 +5,9 @@ Autowork now defaults to **RPC through `pi-agent-python-sdk` 0.2.6 and Pi
 not task authority: the existing engine still owns contracts, attempts, admission,
 worktrees, checks, independent review, integration and closure.
 
-Canonical implementations live in `pi-autowork/src/pi_autowork/`: `pi_runtime.py`, `pi_rpc.py`,
+Canonical implementations live in `pi-autowork/pi_autowork/`: `pi_runtime.py`, `pi_rpc.py`,
 `pi_process.py` and `pi_events.py`. Shared redaction and command-watchdog helpers
-live in `pi-autowork/src/pi_autowork/pi_run_support.py`, a dependency leaf used by both
+live in `pi-autowork/pi_autowork/pi_run_support.py`, a dependency leaf used by both
 transports, not a second runtime owner. RPC must not import `pi_runtime` back:
 `pi_runtime.run_pi` supplies a live `stop_requested` callback so cancellation stays
 with the caller without an import cycle. The old package paths are compatibility

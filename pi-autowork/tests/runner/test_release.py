@@ -65,7 +65,7 @@ class ReleaseCheckTests(unittest.TestCase):
 
     def test_late_imports_keep_the_selected_release_while_unused_releases_are_pruned(self):
         copy_sources(self.work)
-        actual = self.work / 'pi-autowork/src/pi_autowork/engine/parallel_state.py'
+        actual = self.work / 'pi-autowork/pi_autowork/engine/parallel_state.py'
         original = actual.read_text()
         actual.write_text(original + '\nRELEASE_MARKER = 1\n')
         for name, text in {'first.py': 'import pi_autowork\ndef run():\n    from pi_autowork.engine import parallel_state\n    return parallel_state.RELEASE_MARKER\n',

@@ -7,7 +7,7 @@ The runtime and task contracts in `docs/plans/tui-responsiveness.md` take preced
 over presentation choices. This brief covers the fleet, action menu, provider/model
 picker, and repository browser. It does not redesign the Paseo plugin or Rust UI.
 
-Evidence: `pi-autowork/src/pi_autowork/tui.py`, `tui_reads.py`,
+Evidence: `pi-autowork/pi_autowork/tui.py`, `tui_reads.py`,
 `pi-autowork/README.md`, and the fixture pilots in `pi-autowork/tests/runner/`,
 including the bounded `tui_operations_pilot.py`.
 Existing terminal captures show crowded commands and weak section separation.

@@ -18,7 +18,7 @@ class PortablePackageTests(unittest.TestCase):
         self.assertEqual(pi['pi']['skills'], ['./adapters/skills'])
         self.assertEqual(pi['pi']['extensions'], ['./adapters/pi.mjs'])
         self.assertNotIn('scripts', pi, 'installation must not run setup hooks')
-        for entry in ('scripts/autowork_bootstrap.py', 'pi-autowork/src/autowork_bootstrap.py', 'pi-autowork/src/pi_autowork/'):
+        for entry in ('scripts/autowork_bootstrap.py', 'pi-autowork/src/autowork_bootstrap.py', 'pi-autowork/pi_autowork/'):
             self.assertIn(entry, pi['files'])
         self.assertNotIn('pi-autowork/src/autowork_runtime/', pi['files'], 'native-only sources must not leak into npm')
         self.assertNotIn('pi-autowork/src/autowork_runtime/', pi['files'])
@@ -74,7 +74,7 @@ runtime = bootstrap.load(root, 'pi_autowork.pi_runtime')
 engine = bootstrap.load(root, 'pi_autowork.engine.task_store')
 import task_store
 assert task_store is engine
-assert Path(runtime.__file__).is_relative_to(root / 'pi-autowork/src')
+assert Path(runtime.__file__).is_relative_to(root / 'pi-autowork/pi_autowork')
 settings = runtime.Settings(Path.cwd() / 'state', {'PI_BIN': sys.argv[2], 'PI_AUTOWORK_TRANSPORT': 'json'})
 result = runtime.run_pi(settings, Path.cwd(), 'fixture', 'fixture', 'fixture/model', 10, [])
 assert result['rc'] == 0 and result['settled'] and result['text'] == 'offline reply', result

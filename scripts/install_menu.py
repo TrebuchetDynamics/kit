@@ -638,7 +638,7 @@ def items(hermes_args, output=None, mode='install'):
     pi.steps.append(Step('enable the package skills and commands in Pi settings',
                          run=enable_pi_package))
     def install_runner():
-        sys.path.insert(0, str(ROOT / 'pi-autowork/src'))
+        sys.path.insert(0, str(ROOT / 'pi-autowork'))
         from pi_autowork import private_pi
         root = private_pi.state_root()
         private_pi.fill(root, pi_settings_path().parent, refresh=mode == 'update')

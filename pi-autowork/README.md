@@ -104,19 +104,21 @@ selected-release loading, product tests and copied payloads.
 
 The `pi-autowork` runner. `scripts/pi-autowork.sh` is a thin entry point and the
 service command: it finds this component and runs the stable `pi_autowork/cli.py`
-adapter, which continues in the toolset release it resolves. Runner and legacy-reader
-implementations live in `pi-autowork/src/pi_autowork/`; the generic task lifecycle (admission,
-slots, integration, closure) lives in `pi-autowork/src/pi_autowork/engine/` and remains the only
-authority for task state. The original Python paths, `bin/autowork` and shell/service
-commands remain public entry points. Flat engine imports and canonical
-`pi_autowork.engine` imports share the same module objects, including exception types.
-Standalone `worktree_paths.py` and `checkout_lock.py`, test assets and fixture helpers
-remain under `pi-autowork/engine/`. A missing selected source refuses rather than
+entry, which continues in the toolset release it resolves. Runner and legacy-reader
+implementations live in `pi-autowork/pi_autowork/`; the generic task lifecycle (admission,
+slots, integration, closure) lives in `pi-autowork/pi_autowork/engine/` and remains the only
+authority for task state. One canonical runner package replaces the former `src/`
+copy and matching runner adapters. `bin/autowork`, supported Python command entries
+and shell/service commands retain their behavior; library-only file execution is
+retired. Flat engine imports and canonical `pi_autowork.engine` imports share the same
+module objects, including exception types. Standalone `worktree_paths.py` and
+`checkout_lock.py` remain under `pi-autowork/engine/`; test assets and helpers live in
+`pi-autowork/tests/`. A missing selected source refuses rather than
 borrowing another checkout. Git-free archives support help/read commands, not immutable
 runner launches, which still require a committed Git toolset.
 
-The Python module paths in this table are relative to `src/`; `bin/autowork` is
-relative to this component. Child commands and reloads use stable public adapters;
+The module paths in this table are relative to this component. Child commands and
+reloads use supported entrypoints;
 source checks, TUI code stamps and review fingerprints inspect actual implementations.
 Runtime state lives outside the repository, under
 `${XDG_STATE_HOME:-~/.local/state}/pi-autowork/<repository key>/`.
@@ -289,7 +291,7 @@ necessary. Offline coverage is in `tests/test_hermes_observers.py` and the runne
 service/command fixtures; live toolset activation, service restart and competing
 interactive-writer handoff require separate operational qualification.
 
-Source: `pi-autowork/src/pi_autowork/hermes_observers.py`, `cli.py`, and `service.py`.
+Source: `pi-autowork/pi_autowork/hermes_observers.py`, `cli.py`, and `service.py`.
 
 </details>
 
@@ -329,13 +331,13 @@ times where available; missing data or unknown freshness is not health evidence.
 The committed section reads the selected repository's HEAD on each report request,
 not a last-good inventory. Selection eligibility is never runtime admission.
 Full producer reasons replace matching truncated questions; unavailable full
-reasons remain explicitly truncated. Source: `pi-autowork/src/pi_autowork/blockers_report.py:build`.
+reasons remain explicitly truncated. Source: `pi-autowork/pi_autowork/blockers_report.py:build`.
 
 **a Answer** leaves the frozen report for that runner's Tasks in the **Decisions**
 view, where the answer form, its default destination section and the single dispatch
 live. The report itself stays read-only: it lists the recorded questions, and
 answering never happens inside a frozen capture. View-only navigation opens the same
-list without its actions. Source: `pi-autowork/src/pi_autowork/tui.py:BlockersScreen`.
+list without its actions. Source: `pi-autowork/pi_autowork/tui.py:BlockersScreen`.
 
 **c Copy** requests the plain text of the current summary/details view, without
 terminal padding. **F7** selects all; **Ctrl+C** requests copying a selection.
@@ -349,7 +351,7 @@ exact **app-host** path—not a file on the SSH client. In browser mode it reque
 a plain-text download; transfer completion is not proof the user saved/opened it.
 Export is explicit, never automatic; reports may contain sensitive operational
 context. Refresh, Details and Escape remain usable during a host save, and a
-refresh does not change the exported capture. Source: `pi-autowork/src/pi_autowork/tui.py:BlockersScreen`.
+refresh does not change the exported capture. Source: `pi-autowork/pi_autowork/tui.py:BlockersScreen`.
 
 **r** explicitly refreshes; **Esc** returns. Opening, refreshing and copying run no
 agent, runner command or task mutation; only explicit Export writes a report copy.
@@ -619,7 +621,7 @@ The projection grants no readiness, scheduling or current-main verification auth
 
 Below 120 columns the fleet shows Runner, State and Total; selecting a runner shows
 its complete task-count breakdown. Below 100 columns the repository browser stacks
-readiness below the directory tree. Source: `pi-autowork/src/pi_autowork/tui.py` (`FleetApp`,
+readiness below the directory tree. Source: `pi-autowork/pi_autowork/tui.py` (`FleetApp`,
 `BrowseScreen`); fixture coverage: `pi-autowork/tests/runner/test_tui_layout.py`
 and the bounded `test_tui_operations.py` / `tui_operations_pilot.py` beside it.
 Matched worker cells show committed task titles (or the captured short name when

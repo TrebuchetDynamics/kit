@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class SrcEntrypointTests(unittest.TestCase):
     def test_component_owns_selected_sources(self):
-        self.assertTrue((ROOT / 'pi-autowork/src/pi_autowork/engine/task_store.py').is_file())
+        self.assertTrue((ROOT / 'pi-autowork/pi_autowork/engine/task_store.py').is_file())
         self.assertFalse((ROOT / 'src').exists())
         result = subprocess.run(
             [sys.executable, '-B', '-m', 'unittest',
@@ -46,10 +46,10 @@ sys.path[:0] = [str(root / 'pi-autowork/engine'), str(root / 'pi-autowork')]
 a = importlib.import_module({first!r})
 b = importlib.import_module('pi_autowork.engine.task_store')
 assert a is b is importlib.import_module('task_store')
-assert Path(a.__file__) == root / 'pi-autowork/src/pi_autowork/engine/task_store.py'
+assert Path(a.__file__) == root / 'pi-autowork/pi_autowork/engine/task_store.py'
 sys.path.insert(0, str(Path.cwd()))  # late imports still belong to the activated release
 from pi_autowork import command, task_snapshot, fleet_view
-assert Path(command.__file__) == root / 'pi-autowork/src/pi_autowork/command.py'
+assert Path(command.__file__) == root / 'pi-autowork/pi_autowork/command.py'
 assert fleet_view.TaskRow is task_snapshot.TaskRow
 from pi_autowork import workspaces
 from pi_autowork.engine import worktree_paths
@@ -89,7 +89,7 @@ assert Path(json.loads(child.stdout)['toolset']) == root
                                         text=True, capture_output=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn('prepare_api', result.stdout)
-            (root / 'pi-autowork/src/pi_autowork/command.py').unlink()
+            (root / 'pi-autowork/pi_autowork/task_commands.py').unlink()
             for argv, environment in commands:
                 result = subprocess.run(argv, cwd=folder, env=environment,
                                         text=True, capture_output=True, timeout=30)

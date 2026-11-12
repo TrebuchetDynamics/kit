@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compatibility entry; implementation belongs to src/pi_autowork/engine/audit_profiles.py."""
+"""Compatibility entry; implementation belongs to pi_autowork/engine/audit_profiles.py."""
 import importlib.util as _util
 from pathlib import Path as _Path
 import sys as _sys

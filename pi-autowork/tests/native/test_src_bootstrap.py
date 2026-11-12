@@ -38,12 +38,12 @@ class SrcBootstrapTests(unittest.TestCase):
 
     def test_layout_is_frozen_bounded_and_reports_actual_owners(self):
         self.assertFalse((Path(__file__).resolve().parents[3] / 'src').exists())
-        self.write('pi-autowork/src/pi_autowork/nested/owner.py', 'VALUE = 1\n')
-        self.write('pi-autowork/src/pi_autowork/test_ignored.py', 'raise RuntimeError\n')
-        self.write('pi-autowork/src/pi_autowork/fixtures/ignored.py', 'raise RuntimeError\n')
+        self.write('pi-autowork/pi_autowork/nested/owner.py', 'VALUE = 1\n')
+        self.write('pi-autowork/pi_autowork/test_ignored.py', 'raise RuntimeError\n')
+        self.write('pi-autowork/pi_autowork/fixtures/ignored.py', 'raise RuntimeError\n')
         outside = self.base / 'outside.py'
         outside.write_text('raise RuntimeError\n')
-        (self.root / 'pi-autowork/src/pi_autowork/escape.py').symlink_to(outside)
+        (self.root / 'pi-autowork/pi_autowork/escape.py').symlink_to(outside)
         alias = self.base / 'linked'
         alias.symlink_to(self.root, target_is_directory=True)
         self.probe(f'''from pathlib import Path
@@ -66,6 +66,28 @@ assert all(p.name not in ('test_ignored.py', 'ignored.py', 'escape.py') for p in
 try: layout.root = Path('/')
 except FrozenInstanceError: pass
 else: raise AssertionError('mutable layout')
+''')
+
+    def test_runner_has_one_canonical_package_without_adapter_copies(self):
+        self.assertFalse((self.root / 'pi-autowork/src/pi_autowork').exists())
+        self.probe('''from pathlib import Path
+import ast
+import autowork_bootstrap as b
+root = Path.cwd()
+layout = b.activate(root)
+assert layout.package == root / 'pi-autowork/pi_autowork'
+from pi_autowork import maintainer
+assert Path(maintainer.__file__) == layout.package / 'maintainer.py'
+assert 'Compatibility entry;' not in Path(maintainer.__file__).read_text()
+original = ast.parse
+def inspect(source, filename='<unknown>', *args, **kwargs):
+    assert not Path(filename).is_relative_to(layout.package), filename
+    return original(source, filename, *args, **kwargs)
+ast.parse = inspect
+try:
+    assert layout.package / 'maintainer.py' in b.Layout.python_sources(root)
+finally:
+    ast.parse = original
 ''')
 
     def test_native_namespace_and_release_local_peers_preserve_patches(self):
@@ -111,9 +133,9 @@ assert one._AUTOWORK_LAYOUT.root == Path.cwd()
 ''')
 
     def test_runner_canonical_and_flat_import_orders_share_identity(self):
-        self.write('pi-autowork/src/pi_autowork/engine/__init__.py', '')
-        self.write('pi-autowork/src/pi_autowork/engine/example.py', 'class Error(Exception): pass\nVALUE = []\n')
-        self.write('pi-autowork/src/pi_autowork/command.py', 'def _compat_main(argv): return len(argv)\n')
+        self.write('pi-autowork/pi_autowork/engine/__init__.py', '')
+        self.write('pi-autowork/pi_autowork/engine/example.py', 'class Error(Exception): pass\nVALUE = []\n')
+        self.write('pi-autowork/pi_autowork/command.py', 'def _compat_main(argv): return len(argv)\n')
         for first in ('example', 'pi_autowork.engine.example'):
             with self.subTest(first=first):
                 self.probe(f'''from pathlib import Path
@@ -145,8 +167,8 @@ for name in ('worktree_paths', 'checkout_lock'):
         (self.root / 'pi-autowork/pi_autowork/main_check.py').symlink_to(outside / 'main_check.py')
         __import__('shutil').rmtree(self.root / 'pi-autowork/bin')
         (self.root / 'pi-autowork/bin').symlink_to(outside, target_is_directory=True)
-        self.write('pi-autowork/src/pi_autowork/engine/__init__.py', '')
-        self.write('pi-autowork/src/pi_autowork/engine/example.py', 'VALUE = 1\n')
+        self.write('pi-autowork/pi_autowork/engine/__init__.py', '')
+        self.write('pi-autowork/pi_autowork/engine/example.py', 'VALUE = 1\n')
         self.probe('''from pathlib import Path
 import sys, types
 import autowork_bootstrap as b
@@ -166,7 +188,7 @@ refuses(lambda: b.activate(root))
 del sys.modules['pi_autowork']
 b.activate(root)
 refuses(lambda: b.load(root.parent / 'other', 'pi_autowork.command'))
-(root / 'pi-autowork/src/pi_autowork/engine/example.py').unlink()
+(root / 'pi-autowork/pi_autowork/engine/example.py').unlink()
 refuses(lambda: b.load(root, 'pi_autowork.engine.example'))
 ''')
 

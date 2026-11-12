@@ -37,8 +37,9 @@ owners = {tui_tasks: ('TasksScreen', 'TaskScreen', 'DecisionScreen', 'NewTask',
                      'PickSection', 'CommitEdits', 'TextPrompt', 'pending_edits'),
           tui_common: ('ReadScreen', 'MenuBar', 'read_input', 'hotkeys', 'publish_text', 'action_text')}
 for owner, names in owners.items():
-    assert Path(owner.__file__) == root / 'pi-autowork/src/pi_autowork' / (owner.__name__.split('.')[-1] + '.py')
-    assert not (root / 'pi-autowork/pi_autowork' / Path(owner.__file__).name).exists()
+    assert Path(owner.__file__) == root / 'pi-autowork/pi_autowork' / (owner.__name__.split('.')[-1] + '.py')
+    assert not (root / 'pi-autowork/src/pi_autowork' / Path(owner.__file__).name).exists()
+    assert importlib.import_module(owner.__name__) is owner
     tree = ast.parse(Path(owner.__file__).read_text())
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -48,14 +49,11 @@ for owner, names in owners.items():
         value = getattr(owner, name)
         assert getattr(tui, name) is value
         assert value.__module__ == owner.__name__
-spec = importlib.util.spec_from_file_location('pi_autowork.tui', root / 'pi-autowork/pi_autowork/tui.py')
-adapter = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = adapter
-spec.loader.exec_module(adapter)
-assert sys.modules[spec.name] is not adapter
-assert Path(sys.modules[spec.name].__file__).resolve() == Path(tui.__file__).resolve()
+assert importlib.import_module('pi_autowork.tui') is tui
+assert sys.modules['pi_autowork.tui'] is tui
+assert Path(tui.__file__).resolve() == root / 'pi-autowork/pi_autowork/tui.py'
 for name in ('tui_common', 'tui_tasks'):
-    path = root / 'pi-autowork/src/pi_autowork' / (name + '.py')
+    path = root / 'pi-autowork/pi_autowork' / (name + '.py')
     original = path.read_bytes()
     path.unlink()
     sys.modules.pop('pi_autowork.' + name)

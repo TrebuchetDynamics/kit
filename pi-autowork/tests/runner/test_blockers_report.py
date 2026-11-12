@@ -10,8 +10,8 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
 from offline_textual import textual_unavailable
 
-SOURCE = Path(__file__).resolve().parents[2] / 'src'
-sys.path.insert(0, str(SOURCE))
+SOURCE = Path(__file__).resolve().parents[2] / 'pi_autowork'
+sys.path.insert(0, str(SOURCE.parent))
 from pi_autowork import fleet_view, blockers_report
 
 

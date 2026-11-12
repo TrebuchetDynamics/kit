@@ -2,7 +2,8 @@
 
 ## SDD maintainability refactor
 
-Status: Accepted behavior contract. Current Python owners use lowercase `src/`.
+Status: Accepted behavior contract. The canonical runner package is
+`pi-autowork/pi_autowork/`; native payloads and the bootstrap retain lowercase `src/`.
 The [one-product-root contract](pi-autowork-component-layout.md#one-product-root-contract)
 owns the planned destination, complete migration batch and test relocation. This
 page retains required behavior, not the completed audit or its task reports.
@@ -24,8 +25,9 @@ No relocation, runtime activation or live qualification is implied by documentat
 - Preserve selected-release locks, pruning and child inheritance, and the meanings
   of `PI_AUTOWORK_TOOLSET`, `COMPONENT`, `PACKAGE` and `SCRIPT`. Keep state schema
   literals at the public `parallel_state.py` path for older text-reading callers.
-- Public executable adapters preserve signatures, argv/stdin, exceptions,
+- Supported command entries preserve signatures, argv/stdin, exceptions,
   KeyboardInterrupt and exit behavior without executing a canonical body twice.
+  Compatibility-only library-file execution is retired; canonical imports remain.
   Do not spoof canonical implementation `__file__`. Launch main checks and TUI
   reloads through Layout's public entries; hash actual source bytes and modes.
 - Native `execute(namespace, source_relative)` compiles the owner with its real

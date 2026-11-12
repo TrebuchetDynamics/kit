@@ -233,7 +233,7 @@ class ClosureDocumentsTests(unittest.TestCase):
 
     def test_actual_src_leaf_rejects_reverse_imports_and_import_time_side_effects(self):
         leaf = importlib.import_module(LEAF)
-        path = ROOT / 'pi-autowork/src/pi_autowork/engine/integration/closure_documents.py'
+        path = ROOT / 'pi-autowork/pi_autowork/engine/integration/closure_documents.py'
         self.assertEqual(Path(leaf.__file__), path)
         self.assertEqual(path.with_name('__init__.py').read_bytes(), b'')
         package = LEAF.rpartition('.')[0]

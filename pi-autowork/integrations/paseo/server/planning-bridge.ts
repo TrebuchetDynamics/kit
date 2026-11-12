@@ -40,7 +40,7 @@ def main():
     planning = bootstrap.load(source, 'pi_autowork.planning')
     hubs = bootstrap.load(source, 'pi_autowork.planning_hub')
     for module, name in ((planning, 'planning'), (hubs, 'planning_hub')):
-        require(Path(module.__file__).resolve() == (source / 'pi-autowork/src/pi_autowork' / (name + '.py')).resolve(),
+        require(Path(module.__file__).resolve() == (source / 'pi-autowork/pi_autowork' / (name + '.py')).resolve(),
                 'controller source mismatch')
     hub = hubs.PlanningHub(max_text=MAX_TEXT)
     owned = {}

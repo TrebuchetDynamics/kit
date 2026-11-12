@@ -17,8 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
 from offline_textual import textual_unavailable
 
 PRODUCT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PRODUCT / 'src'))
-sys.path.insert(0, str(PRODUCT / 'src/pi_autowork/engine'))
+sys.path.insert(0, str(PRODUCT))
+sys.path.insert(0, str(PRODUCT / 'pi_autowork/engine'))
 from pi_autowork import fleet_view  # noqa: E402
 from pi_autowork.processes import start_time  # noqa: E402
 from support import store_fixture  # noqa: E402

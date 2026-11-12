@@ -51,7 +51,7 @@ class Layout:
 
     @property
     def package(self):
-        return self.src / 'pi_autowork'
+        return self.component / 'pi_autowork'
 
     @property
     def engine(self):
@@ -88,11 +88,10 @@ class Layout:
         return _inside(self.root, 'pi-autowork/engine/' + name + '.py')
 
     def implementation(self, relative):
-        """Actual source owner; unmigrated entries remain owners until their cut lands.
-
-        A native shim's literal execute source is authoritative, even when missing.
-        """
+        """Resolve native and flat engine adapters; canonical sources own themselves."""
         entry = _inside(self.root, relative)
+        if entry.is_relative_to(self.package) or entry.is_relative_to(self.runtime):
+            return entry
         if entry.is_file():
             import ast
             tree = ast.parse(entry.read_bytes(), str(entry))
@@ -102,7 +101,7 @@ class Layout:
                         and isinstance(node.args[1], ast.Constant)
                         and isinstance(node.args[1].value, str)):
                     return _inside(self.root, node.args[1].value, required=True)
-                if (Path(relative).parts[:2] in (('pi-autowork', 'pi_autowork'), ('pi-autowork', 'engine'))
+                if (Path(relative).parts[:2] == ('pi-autowork', 'engine')
                         and isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                         and node.func.attr in ('load', 'run') and len(node.args) >= 2
                         and isinstance(node.args[1], ast.Constant)
@@ -111,11 +110,10 @@ class Layout:
                     # A migrated public entry declares an owner, not a fallback.
                     return _runner_path(self, node.args[1].value)
         parts = Path(relative).parts
-        if len(parts) > 2 and parts[:2] in (('pi-autowork', 'pi_autowork'), ('pi-autowork', 'engine')):
-            tail = parts[2:] if parts[1] == 'pi_autowork' else ('engine', *parts[2:])
-            if parts[1] == 'engine' and Path(relative).stem in HOOKS:
+        if len(parts) > 2 and parts[:2] == ('pi-autowork', 'engine'):
+            if Path(relative).stem in HOOKS:
                 return entry
-            owner = _inside(self.root, str(Path('pi-autowork/src/pi_autowork', *tail)))
+            owner = _inside(self.root, str(Path('pi-autowork/pi_autowork/engine', *parts[2:])))
             if owner.is_file():
                 return owner
         return entry
@@ -127,7 +125,7 @@ class Layout:
         paths = set(layout.root.glob('*.py'))
         paths.update(layout.root / 'scripts' / name for name in (*NATIVE, 'autowork_bootstrap.py')
                      if name != '__init__.py')
-        for folder in (layout.src, layout.component / 'pi_autowork', layout.component / 'engine'):
+        for folder in (layout.src, layout.package, layout.component / 'engine'):
             paths.update(folder.rglob('*.py'))
         excluded = {'tests', 'test', 'fixtures', 'fixture', '__pycache__'}
         return tuple(sorted({layout.implementation(p.relative_to(layout.root).as_posix())
@@ -157,7 +155,7 @@ def _runner_path(layout, name):
         raise ImportError(f'not a canonical runner module: {name}')
     if len(parts) == 3 and parts[1] == 'engine' and parts[2] in HOOKS:
         return _inside(layout.root, f'pi-autowork/engine/{parts[2]}.py', required=True)
-    relative = Path('pi-autowork/src', *parts)
+    relative = Path('pi-autowork', *parts)
     if (layout.root / relative).is_dir():
         relative /= '__init__.py'
     else:

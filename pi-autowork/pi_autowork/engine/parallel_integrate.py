@@ -134,8 +134,9 @@ def coordinator_full_check(argv, repo=None):
     try:
         direct = command and shlex.split(command) == list(argv)
         from pi_autowork import main_check
+        from pi_autowork.layout import LAYOUT
         wrapper = (repo is not None and command == main_check.runner_full_check(repo) and len(argv) == 5 and argv[0] == '/bin/bash'
-                   and Path(argv[1]).resolve() == Path(__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+                   and Path(argv[1]).resolve() == LAYOUT.component / 'bin/pi-autowork.sh'
                    and argv[2] == '--verify')
         return command if direct or (command and wrapper) else ''
     except ValueError:

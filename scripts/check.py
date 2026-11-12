@@ -225,11 +225,11 @@ def source_guard(root):
     try:
         layout_api = runpy.run_path(str(bootstrap))['Layout']
         sources = layout_api.python_sources(root)
-        engine_names = {p.stem for folder in (root / 'pi-autowork/src/pi_autowork/engine', root / 'pi-autowork/engine')
+        engine_names = {p.stem for folder in (root / 'pi-autowork/pi_autowork/engine', root / 'pi-autowork/engine')
                         for p in folder.glob('*.py') if not p.name.startswith('test_')}
         for source in sources:
             tree = ast.parse(source.read_bytes(), str(source))
-            if source.is_relative_to(root / 'pi-autowork/src/pi_autowork'):
+            if source.is_relative_to(root / 'pi-autowork/pi_autowork'):
                 for node in ast.walk(tree):
                     names = ([alias.name for alias in node.names] if isinstance(node, ast.Import)
                              else [node.module or ''] if isinstance(node, ast.ImportFrom) and node.level == 0
@@ -438,7 +438,7 @@ def main(argv=None):
     env.setdefault('TMPDIR', tempfile.gettempdir())
     support_paths = [str(root / 'pi-autowork/tests'), str(root / 'tests'),
                      str(root / 'pi-autowork'), str(root / 'pi-autowork/src'),
-                     str(root / 'pi-autowork/src/pi_autowork/engine'),
+                     str(root / 'pi-autowork/pi_autowork/engine'),
                      str(root / 'pi-autowork/engine')]
     existing_pythonpath = env.get('PYTHONPATH')
     env['PYTHONPATH'] = os.pathsep.join(support_paths + ([existing_pythonpath] if existing_pythonpath else []))

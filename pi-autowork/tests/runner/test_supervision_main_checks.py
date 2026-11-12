@@ -97,7 +97,7 @@ class SupervisionMainCheckTests(unittest.TestCase):
                        'def deferred():\n    from .. import coordinator'):
             with self.subTest(source=source):
                 self.assertEqual(reverse_imports(source), {'pi_autowork.coordinator'})
-        package = ROOT / 'pi-autowork/src/pi_autowork/supervision'
+        package = ROOT / 'pi-autowork/pi_autowork/supervision'
         self.assertEqual((package / '__init__.py').read_bytes(), b'')
         self.assertEqual(reverse_imports((package / 'main_checks.py').read_text()), set())
 
@@ -116,7 +116,7 @@ assert not any(name.startswith('pi_autowork.engine') for name in sys.modules)
 assert leaf.__file__ == sys.argv[2]
 '''
         result = subprocess.run([sys.executable, '-B', '-c', script, str(ROOT / 'pi-autowork'),
-                                 str(ROOT / 'pi-autowork/src/pi_autowork/supervision/main_checks.py')],
+                                 str(ROOT / 'pi-autowork/pi_autowork/supervision/main_checks.py')],
                                 cwd=os.environ['TMPDIR'], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, '')

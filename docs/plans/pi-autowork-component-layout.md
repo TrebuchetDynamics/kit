@@ -1,6 +1,8 @@
 # Pi Autowork component layout
 
-Status: Accepted. This is the current placement contract, not a completed-task report.
+Status: Accepted. The owner approved one canonical runner package on 2026-11-11,
+retaining commands and Python imports while retiring compatibility-only library-file
+execution. This is the current placement contract, not a completed-task report.
 
 ## One-product-root contract
 
@@ -15,8 +17,7 @@ pi-autowork/
   src/
     autowork_bootstrap.py
     autowork_runtime/                 # native plugin, policy, install and update bodies
-    pi_autowork/                      # runner, engine, legacy, supervision
-  pi_autowork/                       # supported public Python compatibility entries
+  pi_autowork/                       # canonical runner, engine, legacy, supervision
   engine/                            # supported flat entries and standalone hooks
   bin/                               # autowork and canonical shell launcher
   scripts/                           # product tools and copied native payloads
@@ -31,7 +32,7 @@ pi-autowork/
   docs/                              # source-layout, RPC and planning-console runbooks
 ```
 
-No new distribution, import namespace, database, general registry or package framework. Keep the existing Paseo package/lock and Rust crate/lock. `Layout.root` continues to mean **Kit resource/release root**; `Layout.src` becomes `root/pi-autowork/src`. Derive locations from the selected release, never cwd. Keeping public adapters inside the component avoids replacing the two distinct loader models in a placement change. Delete the old root `src/` implementations; do not leave a second editable tree or a forwarding package there.
+No new distribution, import namespace, database, general registry or package framework. Keep the existing Paseo package/lock and Rust crate/lock. `Layout.root` continues to mean **Kit resource/release root**; `Layout.src` remains `root/pi-autowork/src` for native code and the bootstrap. `Layout.package` is `root/pi-autowork/pi_autowork`. Derive locations from the selected release, never cwd. Preserve the two distinct loader models, supported commands and flat engine imports. Canonical package initialization binds the selected release without starting work. Retire the duplicate runner adapters and `pi-autowork/src/pi_autowork`, not the native loader or standalone hooks.
 
 This improves locality. It does not by itself deepen modules, remove task-state complexity or fix the separately reproduced generic-commit race, retirement rollback, batch-cleanup refusal or dependency-display amplification. Those correctness changes are excluded.
 
@@ -43,8 +44,9 @@ Python layout. Paseo and Rust relocation keep their separate prerequisite gates.
 
 | Planning-baseline owner | Destination or retained boundary |
 | --- | --- |
-| `src/pi_autowork/**`, `src/autowork_runtime/**`, `src/autowork_bootstrap.py` | Same suffix under `pi-autowork/src/`; include every native install/update subtree. |
-| `pi-autowork/pi_autowork/**`, production `pi-autowork/engine/*` | Stay as public adapters; actual `checkout_lock.py`, `worktree_paths.py` and `agent_commit.sh` stay standalone in engine. |
+| Runner implementation, including former `pi-autowork/src/pi_autowork/**` | One canonical package at `pi-autowork/pi_autowork/**`; no forwarding runner copies. |
+| `src/autowork_runtime/**`, `src/autowork_bootstrap.py` | Same suffix under `pi-autowork/src/`; include every native install/update subtree. |
+| Production `pi-autowork/engine/*` | Keep flat import/command adapters; actual `checkout_lock.py`, `worktree_paths.py` and `agent_commit.sh` stay standalone in engine. |
 | `scripts/pi-autowork.sh` | Canonical body `pi-autowork/bin/pi-autowork.sh`; old path forwards. Preserve copied-launcher discovery, arguments, exit codes and selected release. |
 | `scripts/install-pi-rpc.py`, `bench_parallel.py`, `migrate-autowork.py`, `wire-owner-cron.py`, `heal-owner-cron.py`, `profile-consult.py` | Same basename under `pi-autowork/scripts/`; old documented or installed paths are thin forwarding entries, not copied business logic. |
 | `scripts/profile-audit-cron.py`, `skills/cron-autowork/scripts/autowork-start-notice.py` | Canonical payloads under `pi-autowork/scripts/`. Provision the real self-contained payload bytes. Keep old source paths only as compatibility dispatch, never copy a checkout-dependent shim into a profile. |
