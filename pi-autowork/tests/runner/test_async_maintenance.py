@@ -10,7 +10,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(ROOT / 'pi-autowork'))
+sys.path[:0] = [str(ROOT / 'pi-autowork'), str(ROOT / 'tests')]
+from src_fixture import copy_sources
 from pi_autowork import coordinator  # noqa: E402
 from pi_autowork.supervision import maintenance  # noqa: E402
 
@@ -445,12 +446,9 @@ class AsyncMaintenanceTests(unittest.TestCase):
         self.owner.reexec.assert_not_called()
 
     def test_consumed_update_receipt_pins_activation_after_package_head_moves(self):
+        copy_sources(self.repo)
         script = self.repo / 'pi-autowork/bin/pi-autowork.sh'
-        command = self.repo / 'pi-autowork/pi_autowork/command.py'
-        script.parent.mkdir(parents=True)
-        command.parent.mkdir(parents=True)
         script.write_text('#!/bin/bash\ntrue\n')
-        command.write_text('pass\n')
         self.git(self.repo, 'add', '.')
         self.git(self.repo, 'commit', '-qm', 'qualified package A')
         qualified = self.git(self.repo, 'rev-parse', 'HEAD')

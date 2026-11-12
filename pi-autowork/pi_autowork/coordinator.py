@@ -3690,13 +3690,20 @@ class Coordinator:
             candidate = release.prepare(self.cfg['state_root'], self.package, revision=revision)
             rev = git(candidate, 'rev-parse', '--short', 'HEAD')
             shell = subprocess.run(['bash', '-n', str(candidate / 'pi-autowork/bin/pi-autowork.sh')], capture_output=True)
-            for path in Layout.python_sources(candidate):
+            selected = Layout(candidate)
+            sources = set(Layout.python_sources(candidate))
+            # Removing adapters must not let a missing import payload disappear
+            # from discovery. Preserve the running release's canonical imports.
+            for path in LAYOUT.package.rglob('*.py'):
+                required = selected.package / path.relative_to(LAYOUT.package)
+                sources.add(selected.implementation(required.relative_to(selected.root)))
+            for path in sorted(sources):
                 compile(path.read_bytes(), str(path), 'exec')
             if shell.returncode == 0:
                 subprocess.run([sys.executable, '-B', str(Layout(candidate).entrypoint('command')), 'capabilities'],
                                cwd=candidate, capture_output=True, check=True, timeout=30)
                 return self.reexec(f'Toolset updated to {rev}; restarting on it', revision=candidate.name)
-        except (OSError, ImportError, RuntimeError, SyntaxError, subprocess.SubprocessError) as exc:
+        except (OSError, ImportError, RuntimeError, SyntaxError, ValueError, subprocess.SubprocessError) as exc:
             LOG.say(f'Cannot prepare toolset {rev}: {exc}')
         LOG.say(f'Toolset changed to {rev}, but its runner does not parse; keeping the running {self.toolset_rev}')
         self.package_rev = rev

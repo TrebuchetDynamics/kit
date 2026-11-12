@@ -79,8 +79,9 @@ remain covered by the existing entrypoint tests. Library-only file execution is
 retired; import those modules instead. No library compatibility copies remain.
 
 Children, TUI reloads and main-check commands use `Layout.entrypoint`. Candidate
-updates validate source syntax and the public capabilities command before changing
-the selected release. State schemas, release locks, pruning and inherited release
+updates require the running release's canonical import paths to remain present and
+confined, then validate source syntax and the public capabilities command before
+changing the selected release. State schemas, release locks, pruning and inherited release
 selection remain unchanged.
 
 ## TUI screen owners

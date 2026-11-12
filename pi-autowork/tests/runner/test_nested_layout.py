@@ -30,13 +30,19 @@ class NestedLayoutTests(unittest.TestCase):
             cases = (candidate / 'pi-autowork/pi_autowork/legacy/reader.py',
                      candidate / 'pi-autowork/pi_autowork/engine/task_store.py',
                      candidate / 'pi-autowork/pi_autowork/worker.py',
-                     candidate / 'pi-autowork/pi_autowork/coordinator.py')
+                     candidate / 'pi-autowork/pi_autowork/coordinator.py',
+                     candidate / 'pi-autowork/pi_autowork/tui_common.py',
+                     candidate / 'pi-autowork/pi_autowork/tui_tasks.py')
             for path in cases:
                 original = path.read_bytes()
                 if path.name == 'reader.py':
                     path.write_text('if syntax error\n')
                 else:
                     path.unlink()
+                    if path.name == 'tui_tasks.py':
+                        foreign = Path(folder) / 'foreign.py'
+                        foreign.write_bytes(original)
+                        path.symlink_to(foreign)
                 runner.package_rev = 'old'
                 with self.subTest(path=path), patch.object(coordinator, 'git', return_value='new'), \
                         patch.object(coordinator.release, 'prepare', return_value=candidate), \
@@ -44,6 +50,7 @@ class NestedLayoutTests(unittest.TestCase):
                     runner.restart_if_updated()
                     reexec.assert_not_called()
                     self.assertEqual(runner.toolset_rev, 'running')
+                path.unlink(missing_ok=True)
                 path.write_bytes(original)
 
 

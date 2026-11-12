@@ -250,7 +250,7 @@ class ClosureDocumentsTests(unittest.TestCase):
                     'pi_autowork.engine.task_store', 'pi_autowork.engine.check_receipt'), name)
         code = f'''
 import os, sys
-sys.path.insert(0, {str(ROOT / 'pi-autowork/src')!r})
+sys.path.insert(0, {str(ROOT / 'pi-autowork')!r})
 def audit(event, args):
     if event == 'open':
         mode, flags = args[1:3]

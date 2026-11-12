@@ -131,8 +131,8 @@ class EvidenceOnlyTests(unittest.TestCase):
     def test_only_the_dispatch_writer_imports_or_reads_provenance(self):
         engine = Path(__file__).resolve().parents[3] / 'pi-autowork/pi_autowork/engine'
         allowed = {'parallel_dispatch.py', 'provenance.py'}
-        package = engine.parents[1]
-        for path in sorted([*engine.rglob('*.py'), *package.rglob('*.py')]):
+        from pi_autowork.layout import LAYOUT
+        for path in LAYOUT.python_sources(LAYOUT.root):
             if '__pycache__' in path.parts or path.name.startswith('test_') or path.name in allowed:
                 continue
             text = path.read_text()
