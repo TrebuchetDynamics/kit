@@ -91,6 +91,23 @@ controls and explicit JSON rollback](docs/pi-rpc.md), and the separate
 [qualification evidence](../docs/research/pi-rpc-qualification-2026-10-24.md).
 An already-running release is not automatically upgraded by this source change.
 
+### One runtime
+
+`autowork` runs one runtime: the installed toolset. A package copy (for example
+the Pi package clone) and a shell link therefore run the same code as the service.
+A development checkout is selected explicitly:
+
+```sh
+AUTOWORK_TOOLSET=/path/to/kit pi-autowork/bin/autowork tui
+```
+
+The launcher resolves `AUTOWORK_TOOLSET`, then the installed toolset, then its own
+checkout when no installation exists. `autowork version` (also `autowork --version`)
+prints the running revision and the installed revision. The TUI **Build** row shows
+both, and the overview warns when they differ. Run `autowork update` to install the
+newer revision. A release snapshot under the runner state directory still runs the
+revision the service selected, and an update does not change a running release.
+
 ## Reference
 
 The sections below retain the detailed operating and implementation contracts.
@@ -436,6 +453,7 @@ and the explicit agent commands below do.
 | `autowork tasks commit [target] [--dry-run] [--expect-pending REVISION]` | Preview the exact task diff and its `pending_revision`, or commit only `tasks/`. `--expect-pending` binds HEAD and captured task content under the task lock; drift requires a fresh preview. TUI and plugin confirmations use it. Unrelated staged edits stay; no push. |
 | `autowork migrate [target] [--dry-run] [--no-commit]` | Convert a TODO.md + goals.json repository to `tasks/` once, in one local commit (`--no-commit`: staged); an interrupted run resumes; it refuses while work is in flight |
 | `autowork scorecard [--days N] [--json \| --csv] [--baseline FILE] [target...]` | Per runner and overall over 1–30 days (default 7): labelled evaluation metrics, weekly breakdown and first-to-last-week changes; JSON retains closure, held-share, questions and task/attempt accounting details; no model call |
+| `autowork version` / `--version` | The running revision, the installed revision and the repair command when they differ; `autowork capabilities` reports the same as JSON (`installed`, `skew`) |
 
 ### Safe branch selection on explicit start
 
