@@ -149,6 +149,51 @@ class MaintainerTests(unittest.TestCase):
                                                     'B': 'PI_AUTOWORK_VERIFY: fail — x'})
         self.assertEqual(found, [('A', 'review findings', 'PI_AUTOWORK_VERIFY: fail — Back is not handled')])
 
+    def test_exhausted_validation_without_reviewer_file_gets_bounded_repair(self):
+        row = dict(task='A', state='held', cause='validation', attempt=2,
+                   reason='missing declared check evidence: Run checker three times')
+        found = maintainer.triggers([row])
+        self.assertEqual(found, [('A', 'review findings', row['reason'])])
+        with tempfile.TemporaryDirectory() as state:
+            current = {'A': dict(digest='unchanged-contract', fields={})}
+            self.assertEqual(maintainer.pending(state, found, entries=current), found)
+            maintainer.remember(state, trigger_key=maintainer.key(found), found=found,
+                                entries=current, outcome='no change')
+            self.assertEqual(maintainer.pending(state, found, entries=current), [])
+            maintainer.remember(state, trigger_key='other',
+                                found=[('MAIN', 'main red', 'test_other')], outcome='merged')
+            self.assertEqual(maintainer.pending(state, found, entries=current), [])
+        self.assertEqual(row['state'], 'held')  # A repair trigger is not a retry or a pass.
+
+    def test_acceptance_gap_gets_repair_after_its_normal_recovery_is_spent(self):
+        row = dict(task='A', state='held', cause='acceptance', attempt=1,
+                   reason='acceptance hold: source-bound qualification is not_met')
+        self.assertEqual(maintainer.triggers([row]), [])
+        # A report-resume flag does not prove that acceptance recovery is spent.
+        self.assertEqual(maintainer.triggers([dict(row, resume_used=True)]), [])
+        found = maintainer.triggers([dict(row, attempt=2)])
+        self.assertEqual(found, [('A', 'review findings', row['reason'])])
+
+    def test_technical_repair_leaves_live_workers_and_engine_recovery_alone(self):
+        rows = [dict(task='A', state='held', cause='validation', attempt=1, reason='first failure'),
+                dict(task='B', state='held', cause='validation', attempt=2,
+                     worker_live=True, reason='still writing'),
+                dict(task='C', state='held', cause='acceptance', attempt=2,
+                     worker_live=True, reason='still writing'),
+                dict(task='D', state='held', cause='conflict', attempt=2, reason='merge conflict'),
+                dict(task='E', state='held', cause='timeout', attempt=2, reason='timed out'),
+                dict(task='F', state='held', cause='validation', attempt=2)]
+        self.assertEqual(maintainer.triggers(rows), [])
+
+    def test_technical_repair_prompt_preserves_checks_and_authority(self):
+        text = maintainer.prompt([('A', 'review findings', 'missing declared check evidence')],
+                                 '/repo', 'autowork tasks')
+        for phrase in ('prose or placeholders in Checks', 'preserve every required check',
+                       'never invent passing evidence', 'Do not change a valid contract merely to reset attempts',
+                       'keep every Acceptance item', 'grant authority'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+
     def test_exhausted_review_gets_one_durable_engineering_repair_per_evidence(self):
         row = dict(task='A', state='held', cause='reviewed_twice', attempt=2,
                    commit='candidate-a', reason='same concrete defect')
