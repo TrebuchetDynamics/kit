@@ -1,9 +1,0 @@
-schema = 1
-task = "RUST-GOALS-01"
-candidate = "e2f64eef2d3117a779bd03f50931c6377aa43986"
-integration = "b421c7a9de37b8d265838e00d0d2d6086ac1e488"
-tree = "16df7593c5ef343748d2bfb88dcc2ca4d722107d"
-contract_hash = "de351c020023606c43dff9e2ec733663f3099e6512de46a10db288391fb1e777"
-checks = ["<path>", "<path>", "--verify", "<path>", "RUST-GOALS-01"]
-result = "pass"
-review = "passed"
