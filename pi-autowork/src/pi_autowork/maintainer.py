@@ -7,6 +7,8 @@ own evidence and run it again. One maintainer run handles pending items in a bat
 handled items stay handled across batches until their entry or reason class changes.
 An unchanged unsuccessful technical repair remains an engineering incident, not an owner question.
 Exhausted reviews use evidence-keyed receipts so cosmetic edits cannot buy another repair.
+Exhausted validation and acceptance holds also hand their retained finding to the bounded
+repair workflow when no reviewer finding file exists. A trigger is not a retry or a pass.
 
 This module holds the pure parts (triggers, item receipts, the prompt, the run
 record); the coordinator runs the job in a disposable checkout and merges what it
@@ -98,10 +100,15 @@ def triggers(rows, main=None, findings=None, reported_flakes=(), ledger_errors=(
             found.append((task, 'repeated quick hold', f"{hold['fingerprint']}; {hold['reason']}"))
         elif state == 'held' and not row.get('worker_live') and row.get('cause') in PLANNING_CAUSES:
             found.append((task, 'held: ' + row['cause'], reason[:400]))
-        elif (state == 'held' and not row.get('worker_live') and row.get('cause') == 'validation'
-              and int(row.get('attempt') or 0) >= 2 and (findings or {}).get(task)):
-            # Its last attempt was reviewed and found wanting: split or restate it by the findings.
-            found.append((task, 'review findings', ' '.join(findings[task].split())[:600]))
+        elif (state == 'held' and not row.get('worker_live')
+              and row.get('cause') in ('validation', 'acceptance')
+              and int(row.get('attempt') or 0) >= 2):
+            # Report/check validation can fail before a reviewer writes its findings.
+            # Keep that technical evidence actionable without clearing the hold or
+            # granting another execution attempt. Existing item receipts bound repair.
+            finding = (findings or {}).get(task) or reason
+            if finding:
+                found.append((task, 'review findings', ' '.join(finding.split())[:600]))
         elif state == 'waiting' and reason == 'ready for planning':
             found.append((task, 'plan', reason))
         elif state == 'waiting' and reason.startswith('not runnable'):
@@ -230,7 +237,14 @@ PROMPT = (
     'with the current revision bundle, commits and isolated reruns; never add a second task for those tests. '
     'Keep its accepted scope and task ID. Set Touches from the failing tests '
     'and the files those commits changed, and the full check as its Checks. For review findings (the last '
-    'attempt was reviewed and found wanting): split the task into what its commit already does and a follow-up '
+    'attempt failed validation, acceptance or review): inspect the retained report and check receipts even '
+    'when no reviewer finding file exists. Distinguish prose or placeholders in Checks from a real check '
+    'failure or missing execution. Normalize malformed commands only from the accepted task and captured '
+    'source revisions; preserve every required check, repetition, experiment and base-revision constraint. '
+    'Retain the original obligations in Acceptance or the concrete check commands; never invent passing evidence '
+    'or remove a failing check. Do not change a valid contract merely to reset attempts. If no safe '
+    'planning repair follows from evidence, leave the engineering hold unchanged. Otherwise '
+    'split the task into what its commit already does and a follow-up '
     'whose Acceptance lists the reviewer\'s findings, or restate it so the findings are explicit; keep every '
     'Acceptance item, and leave it as it is if a finding needs a product decision. Never change product scope or Acceptance, grant '
     'authority, credentials or spending, or decide a product question: leave such a task as it is. Use '
