@@ -2975,41 +2975,90 @@ fcntl.flock = observed_flock
         self.with_waiting_decision()
         self.plan({'worker:A': ['break_ledger']})  # maintainer defaults to making no change
         env = {**self.env, 'PI_AUTOWORK_STALL_AFTER': '1'}
-        runner = subprocess.Popen(['bash', str(RUNNER), '--interval', '1', '--workers', '1'], cwd=self.repo, env=env,
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        self.addCleanup(lambda: runner.poll() is None and runner.kill())
         log = lambda: ''.join(p.read_text() for p in self.state.glob('*/runner.log'))
-        deadline = time.monotonic() + 60
-        while 'DOCS-MAINTAINER: no change' not in log():
-            self.assertLess(time.monotonic(), deadline, log())
-            self.assertIsNone(runner.poll(), log())
-            time.sleep(0.2)
-        self.assertEqual(log().count('The engine needs attention'), 1, log())
-        self.assertIn('The engine needs attention: invalid task store', log())
-        self.assertEqual(log().count('DOCS-MAINTAINER: repairing the task docs of LEDGER'), 1, log())
-        listing = self.git(self.repo, 'worktree', 'list', '--porcelain')
-        session = next(Path(b.splitlines()[0].removeprefix('worktree ')) for b in listing.split('\n\n')
-                       if 'branch refs/heads/pi-autowork/' in b)
-        blocker_path = session / 'BLOCKERS.md'
-        blockers = blocker_path.read_text() if blocker_path.exists() else ''
-        self.assertNotIn('### Q-LEDGER', blockers)
-        self.assertIn('unknown goal PROOF', log())
-        # Technical failure does not create a question. An explicit correction on
-        # main must still reach the session even though A remains an in-flight slot.
-        (self.repo / 'tasks/goals/PROOF.md').write_text(task_store.render(dict(
-            schema=1, id='PROOF', title='Remaining proof', priority=2, source='docs/plan.md#proof',
-            status='unmet', focus=False, depends_on=[]), goal=True))
-        self.git(self.repo, 'add', 'tasks/goals/PROOF.md')
-        self.git(self.repo, 'commit', '-qm', 'owner records the goal PROOF-1 names')
-        deadline = time.monotonic() + 60
-        while not self.done('A', 'B', 'C'):
-            self.assertLess(time.monotonic(), deadline, log())
-            self.assertIsNone(runner.poll(), log())
-            time.sleep(0.2)
-        self.assertEqual(log().count('The engine needs attention'), 1, log())
-        runner.send_signal(signal.SIGINT)
-        runner.communicate(timeout=60)
-        self.assertEqual(runner.returncode, 130)
+        identity, output_path = self.root / 'attention-process.json', self.root / 'attention-output'
+        launcher = self.root / 'attention.sh'
+        # Controlled delayed-drain regression: both streams exceed pipe capacity before startup.
+        launcher.write_text("python3 -c 'import os; os.write(1, b\"x\" * 262144); os.write(2, b\"y\" * 262144)'\n"
+                            f'exec bash {shlex.quote(str(RUNNER))} "$@"\n')
+        started, stages = time.monotonic(), {}
+        # File output cannot stall the service while this observer is descheduled.
+        # The existing subreaper also owns setsid workers on assertion failure.
+        with output_path.open('w') as output:
+            guard = subprocess.Popen(
+                [sys.executable, str(ROOT / 'pi-autowork/pi_autowork/pi_process.py'),
+                 '--identity', str(identity), '--deadline', str(5 * 60 + 60), '--',
+                 'bash', str(launcher), '--interval', '1', '--workers', '1'],
+                cwd=self.repo, env=env, stdout=output, stderr=subprocess.STDOUT)
+            runner_fd = None
+
+            def wait(stage, predicate):
+                deadline = time.monotonic() + 60
+                while True:
+                    text = log()
+                    details = (f'{stage}; stages={stages}; load={os.getloadavg()}\n{text}\n'
+                               f'{output_path.read_text()[-6000:]}')
+                    self.assertIsNone(guard.poll(), details)
+                    if predicate(text):
+                        stages[stage] = round(time.monotonic() - started, 3)
+                        return
+                    self.assertLess(time.monotonic(), deadline, details)
+                    time.sleep(0.05)
+
+            try:
+                # "no change" is published before the diagnostic; it is not the barrier.
+                wait('attention reported', lambda text: 'The engine needs attention' in text)
+                owned = json.loads(identity.read_text())
+                runner_fd = os.pidfd_open(owned['pi_pid'])
+                ticks = Path(f'/proc/{owned["pi_pid"]}/stat').read_text().rsplit(')', 1)[1].split()[19]
+                self.assertEqual(owned['pi_start_time'], ticks)
+                self.assertEqual(log().count('The engine needs attention'), 1, log())
+                self.assertIn('The engine needs attention: invalid task store', log())
+                self.assertIn('DOCS-MAINTAINER: no change', log())
+                self.assertEqual(log().count('DOCS-MAINTAINER: repairing the task docs of LEDGER'), 1, log())
+                listing = self.git(self.repo, 'worktree', 'list', '--porcelain')
+                session = next(Path(b.splitlines()[0].removeprefix('worktree ')) for b in listing.split('\n\n')
+                               if 'branch refs/heads/pi-autowork/' in b)
+                blocker_path = session / 'BLOCKERS.md'
+                blockers = blocker_path.read_text() if blocker_path.exists() else ''
+                self.assertNotIn('### Q-LEDGER', blockers)
+                self.assertIn('unknown goal PROOF', log())
+                # Technical failure does not create a question. An explicit correction on
+                # main must reach the session even though A remains an in-flight slot.
+                self.assertFalse(self.done('A'))
+                (self.repo / 'tasks/goals/PROOF.md').write_text(task_store.render(dict(
+                    schema=1, id='PROOF', title='Remaining proof', priority=2, source='docs/plan.md#proof',
+                    status='unmet', focus=False, depends_on=[]), goal=True))
+                self.git(self.repo, 'add', 'tasks/goals/PROOF.md')
+                self.git(self.repo, 'commit', '-qm', 'owner records the goal PROOF-1 names')
+                wait('correction received', lambda _: (session / 'tasks/goals/PROOF.md').exists())
+                # Historical full runs advanced A/B throughout the old pooled 60 s window.
+                # Bound each real completion, not their aggregate; a stuck task still fails.
+                for task in 'ABC':
+                    wait(f'{task} done', lambda _, task=task: self.done(task))
+                self.assertTrue(self.done('A', 'B', 'C'))
+                self.assertEqual(log().count('The engine needs attention'), 1, log())
+                self.assertEqual(log().count('DOCS-MAINTAINER: repairing the task docs of LEDGER'), 1, log())
+                signal.pidfd_send_signal(runner_fd, signal.SIGINT)
+                guard.wait(timeout=60)
+                self.assertEqual(guard.returncode, 130, output_path.read_text()[-6000:])
+                self.assertTrue(output_path.read_text().startswith('x' * 262144 + 'y' * 262144))
+            finally:
+                if runner_fd is not None:
+                    os.close(runner_fd)
+                if guard.poll() is None:
+                    guard.terminate()
+                try:
+                    guard.wait(timeout=10)
+                finally:
+                    if guard.poll() is None:
+                        guard.kill()
+                        guard.wait()
+                print(f'ATTENTION_STAGES {stages}; load={os.getloadavg()}; '
+                      f'python={sys.executable} {sys.version}', flush=True)
+                self.assertTrue(identity.is_file(), output_path.read_text()[-6000:])
+                self.assertTrue(json.loads(identity.read_text())['cleanup_complete'],
+                                output_path.read_text()[-6000:])
 
     def test_ten_empty_intervals_keep_one_session_and_release_its_lease(self):
         self.write_todo(todo([]))
