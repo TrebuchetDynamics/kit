@@ -453,7 +453,15 @@ config_render_alias_line() {
 }
 
 config_append_alias() {
-  local keys=$1 target=$2 i
+  local keys=$1 target=$2 i part
+  local -a parts
+  validate_alias_list "$keys" "add"
+  IFS=',' read -ra parts <<< "$keys"
+  for part in "${parts[@]}"; do
+    if [[ -n "${ALIAS_TO_PATH[$part]+x}" ]]; then
+      die "add: duplicate alias '$part' (already maps to ${ALIAS_TO_PATH[$part]})"
+    fi
+  done
   for i in "${!CFG_KIND[@]}"; do
     if [[ "${CFG_KIND[i]}" == alias && "${CFG_TARGET[i]}" == "$target" ]]; then
       config_render_alias_line "$i" "${CFG_KEYS[i]},$keys"

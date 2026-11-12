@@ -228,7 +228,7 @@ tx add .
 tx add ~/git/agent
 ```
 
-If the target directory already has a config row, the new alias is appended to that row's comma-separated alias list.
+If the target directory already has a config row, the new alias is appended to that row's comma-separated alias list. Each alias must be unique, both within an addition and across the config.
 
 Aliases must be unique. `tx edit` accepts exactly one new alias, not a comma-separated
 list. Config updates validate the complete replacement before publishing it. If
@@ -245,6 +245,10 @@ tx edit asul azul
 tx remove oldalias
 tx ga
 ```
+
+`tx edit` renames exactly one alias to one new alias, including when prompted. Comma-separated replacement names and names already in use are rejected.
+
+Alias mutations validate the complete staged config before replacing the original file. Rejected updates leave the original config unchanged and remove the staging file. Valid updates preserve comments, variables, row order, spacing, and existing CRLF line endings.
 
 The installer writes shell completion files for Bash, Fish, and Zsh. It also appends a small Bash source line to `~/.bashrc` when that file exists, so new Bash shells complete aliases automatically. For the current shell, run:
 
