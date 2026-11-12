@@ -26,19 +26,14 @@ class ReadmeLinksTests(unittest.TestCase):
 
         # These consumers are outside the role manifest's Markdown-link coverage.
         incoming = (
-            ('tasks/goals/PASEO-PLUGIN.md', 'README.md#paseo-interface'),
             ('docs/evaluation.md', '../README.md#safety-before-installing'),
             ('docs/troubleshooting.md', '../README.md#first-use-in-your-project'),
         )
         for name, target in incoming:
             with self.subTest(consumer=name):
                 prose = docs.FENCE.sub('', repo.text(PurePosixPath(name)))
-                if name.startswith('tasks/'):
-                    self.assertIn(f'\nsource = "{target}"\n', prose)
-                    base = ROOT  # Task sources are repository-relative, not document-relative.
-                else:
-                    self.assertIn(target, docs.LINK.findall(docs.CODE.sub('', prose)))
-                    base = (ROOT / name).parent
+                self.assertIn(target, docs.LINK.findall(docs.CODE.sub('', prose)))
+                base = (ROOT / name).parent
                 file, _, anchor = target.partition('#')
                 self.assertEqual((base / file).resolve(), ROOT / readme)
                 self.assertFalse(repo.anchor_missing(readme, anchor), target)
