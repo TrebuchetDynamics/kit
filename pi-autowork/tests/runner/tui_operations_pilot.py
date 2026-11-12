@@ -190,7 +190,7 @@ async def evidence():
             runner.snapshot = replace(runner.snapshot, counts=None, freshness='unavailable')
             app.show_detail()
             await pilot.pause()
-            assert 'unknown' in painted(app.query_one('#overview')).lower()
+            assert 'unavailable' in painted(app.query_one('#overview')).lower()
             await click_menu(app, pilot, 'More')
             app.screen.query_one('#action-filter', Input).value = 'Stop'
             await pilot.pause()

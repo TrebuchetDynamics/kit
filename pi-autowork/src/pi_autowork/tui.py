@@ -1566,6 +1566,9 @@ class FleetApp(App):
 
     def primary_action(self, runner):
         view = fleet_view.presentation(runner)
+        if runner.setup_label:
+            # Starting a runner without a task store only reproduces the refusal.
+            return 'i', 'Details'
         if not self.view_only and runner.state in ('paused', 'not running'):
             return 'p', 'Play'
         if self.answerable_questions(runner) or view.label == 'Waiting':
@@ -1626,14 +1629,16 @@ class FleetApp(App):
         def line(value, style=''):
             text.append(self.fit(value, max(1, self.size.width - 2)) + '\n', style)
         label, style = self.execution_state(runner, view)
-        context = f' · Next: {self.next_hint(runner)}' if self.size.height < 22 else f' · service {runner.service or "not observed"}'
+        service = fleet_view.service_text(runner)
+        context = (f' · Next: {self.next_hint(runner)}' if self.size.height < 22
+                   else f' · service {service or "not observed"}')
         phase, evidence, intervention = fleet_view.progress_summary(runner, view)
         line(f'{runner.name} · {label}' + context, style)
         counts = view.counts
         diagnostics = f'{view.error_count} errors · {view.source_note_count} notes'
         provenance = f'Inventory {view.inventory_freshness} · execution {view.execution_freshness}'
         if counts is None:
-            count_line = 'Tasks unknown / unavailable'
+            count_line = fleet_view.count_text(runner)
         else:
             active, mergeable, waiting, blocker, decision, total = counts
             count_line = f'{total} open · {active} in progress · {mergeable} ready to merge'
@@ -1740,7 +1745,7 @@ class FleetApp(App):
         detail_row(text, 'Next', self.next_hint(runner))
         vector = fleet_view.task_counts(runner)
         if vector is None:
-            detail_row(text, 'Tasks', 'unknown / unavailable', 'bold yellow')
+            detail_row(text, 'Tasks', fleet_view.count_text(runner), 'bold yellow')
         else:
             active, mergeable, waiting, blocker, decision, total = vector
             detail_row(text, 'Tasks', f'{total} open · {active} active · {mergeable} mergeable · {waiting} waiting · {blocker} blocker'
