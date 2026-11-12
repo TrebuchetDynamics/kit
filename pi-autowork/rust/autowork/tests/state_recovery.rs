@@ -478,16 +478,23 @@ fn status_formats_reject_private_sidecar_and_event_identity_corruption() {
     let payload: String = connection
         .query_row("SELECT payload FROM events", [], |row| row.get(0))
         .unwrap();
-    let mut event: serde_json::Value = serde_json::from_str(&payload).unwrap();
-    event["event"]["attempt_id"] = "foreign-attempt".into();
-    connection
-        .execute("UPDATE events SET payload=?1", [event.to_string()])
-        .unwrap();
-    assert!(read_persisted_runs(repo.common()).is_err());
-    assert_eq!(
-        read_status(&repo.common()).err().unwrap().code(),
-        "corrupt_journal"
-    );
+    for (field, value) in [
+        ("attempt_id", "foreign-attempt"),
+        ("operation_id", ""),
+        ("timestamp", ""),
+    ] {
+        let mut event: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        event["event"][field] = value.into();
+        connection
+            .execute("UPDATE events SET payload=?1", [event.to_string()])
+            .unwrap();
+        assert!(read_persisted_runs(repo.common()).is_err(), "{field}");
+        assert_eq!(
+            read_status(&repo.common()).err().unwrap().code(),
+            "corrupt_journal",
+            "{field}"
+        );
+    }
     connection
         .execute("UPDATE events SET payload=?1", [payload])
         .unwrap();
@@ -498,6 +505,11 @@ fn status_formats_reject_private_sidecar_and_event_identity_corruption() {
         read_status(&repo.common()).err().unwrap().code(),
         "unsafe_source"
     );
+    fs::set_permissions(&wal, fs::Permissions::from_mode(0o000)).unwrap();
+    assert!(read_persisted_runs(repo.common()).is_err());
+    assert!(read_status(&repo.common()).is_err());
+    fs::set_permissions(&wal, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(read_persisted_runs(repo.common()).is_ok());
 }
 
 #[test]

@@ -1864,6 +1864,7 @@ fn wire_formats_are_explicit_and_never_answer_in_the_other_shape() {
 #[test]
 fn pending_cli_requires_exclusion_before_task_or_journal_effects() {
     use fs2::FileExt;
+    use std::io::BufRead;
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     let actions = [
         vec!["tasks", "add", "T-2", "--record", "/missing-record"],
@@ -1904,6 +1905,9 @@ fn pending_cli_requires_exclusion_before_task_or_journal_effects() {
         "python-lock-integration",
         "python-lock-writer",
         "python-attempt",
+        "python-stale",
+        "python-foreign",
+        "python-dangling",
         "native",
         "unsafe-owner",
     ] {
@@ -1920,6 +1924,7 @@ fn pending_cli_requires_exclusion_before_task_or_journal_effects() {
             let scratch = repo.0.join("scratch");
             fs::create_dir(&scratch).unwrap();
             let mut python_lock = None;
+            let mut python_worker = None;
             let native = if mode == "native" {
                 Some(StateStore::open(repo.0.join(".git")).unwrap())
             } else {
@@ -1928,8 +1933,15 @@ fn pending_cli_requires_exclusion_before_task_or_journal_effects() {
             let python = repo.0.join(".git/autowork-execution");
             if mode.starts_with("python") || mode == "unsafe-owner" {
                 fs::DirBuilder::new().mode(0o700).create(&python).unwrap();
-                if mode == "python-attempt" {
-                    fs::write(python.join("active.json"), "retained contract and receipt").unwrap();
+                if mode == "python-dangling" {
+                    std::os::unix::fs::symlink("missing", python.join("coordinator.json")).unwrap();
+                } else if matches!(mode, "python-attempt" | "python-stale" | "python-foreign") {
+                    let bytes = match mode {
+                        "python-stale" => r#"{"owner":{"pid":99999999,"start_ticks":0}}"#,
+                        "python-foreign" => r#"{"workspace":"foreign","owner":{"pid":1}}"#,
+                        _ => "retained contract and receipt",
+                    };
+                    fs::write(python.join("active.json"), bytes).unwrap();
                 } else {
                     let lock = fs::OpenOptions::new()
                         .create(true)
@@ -1946,7 +1958,20 @@ fn pending_cli_requires_exclusion_before_task_or_journal_effects() {
                         }))
                         .unwrap();
                     if mode.starts_with("python-lock-") {
-                        lock.lock_exclusive().unwrap();
+                        if mode == "python-lock-writer" {
+                            let mut child = Command::new("/usr/bin/python3")
+                                .args(["-c", "import fcntl,sys; f=open(sys.argv[1],'r+'); fcntl.flock(f,fcntl.LOCK_EX); print('held',flush=True); sys.stdin.read()"])
+                                .arg(python.join("writer.lock"))
+                                .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+                            let mut ready = String::new();
+                            std::io::BufReader::new(child.stdout.take().unwrap())
+                                .read_line(&mut ready)
+                                .unwrap();
+                            assert_eq!(ready, "held\n");
+                            python_worker = Some(child);
+                        } else {
+                            lock.lock_exclusive().unwrap();
+                        }
                         python_lock = Some(lock);
                     } else {
                         fs::set_permissions(
@@ -1979,7 +2004,9 @@ fn pending_cli_requires_exclusion_before_task_or_journal_effects() {
             let diagnostic = String::from_utf8_lossy(&result.stderr);
             let expected = match mode {
                 "missing" => "require --offline",
-                "python-attempt" => "Python execution state requires its owning runtime",
+                "python-attempt" | "python-stale" | "python-foreign" | "python-dangling" => {
+                    "Python execution state requires its owning runtime"
+                }
                 "native" => "repository journal writer is owned",
                 "unsafe-owner" => "private, owned and not aliases",
                 _ => "offline exclusion unavailable",
@@ -2030,6 +2057,10 @@ fn pending_cli_requires_exclusion_before_task_or_journal_effects() {
                     fs::read_to_string(python.join("active.json")).unwrap(),
                     "retained contract and receipt"
                 );
+            }
+            if let Some(mut child) = python_worker {
+                drop(child.stdin.take());
+                assert!(child.wait().unwrap().success());
             }
             drop(python_lock);
         }

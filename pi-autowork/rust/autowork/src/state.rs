@@ -366,6 +366,8 @@ fn read_snapshot(
                 || event.role != identity.role
                 || event.contract_hash != identity.contract_hash
                 || event.source_revision != source
+                || event.operation_id.is_empty()
+                || event.timestamp.is_empty()
                 || event.to_json_line().is_err()
             {
                 return Err(InspectionError::CorruptJournal);
