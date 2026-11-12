@@ -1,4 +1,4 @@
-"""Compatibility entry; implementation belongs to src/pi_autowork/engine/progress_runtime.py."""
+"""Compatibility entry; implementation belongs to pi_autowork/engine/progress_runtime.py."""
 import importlib.util as _util
 from pathlib import Path as _Path
 import sys as _sys

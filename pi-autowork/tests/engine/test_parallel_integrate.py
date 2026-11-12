@@ -247,7 +247,8 @@ class IntegrationTests(unittest.TestCase):
     def test_production_wrapper_success_requires_bound_gate_evidence(self):
         self.worker()
         module = self.module()
-        launcher = Path(module.__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+        launcher = Path(__file__).resolve().parents[2] / 'bin/pi-autowork.sh'
+        self.assertTrue(launcher.is_file())
         argv = ['/bin/bash', str(launcher), '--verify', str(self.repo / 'runtime'), 'A']
         with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='true', PI_AUTOWORK_VALIDATE='true'), \
                 patch.object(module.execution, 'bounded_command', return_value={'outcome': 'EXECUTED'}):
@@ -268,7 +269,8 @@ class IntegrationTests(unittest.TestCase):
 
     def test_production_wrapper_owns_only_repository_full_check(self):
         module = self.module()
-        launcher = Path(module.__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+        launcher = Path(__file__).resolve().parents[2] / 'bin/pi-autowork.sh'
+        self.assertTrue(launcher.is_file())
         argv = ['/bin/bash', str(launcher), '--verify', '/tmp/fixture-state', 'A']
         (self.repo / 'AGENTS.md').write_text('Full check: python3 scripts/check.py\n')
         with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='python3 scripts/check.py'):
@@ -279,7 +281,8 @@ class IntegrationTests(unittest.TestCase):
 
     def test_optimistic_wrapper_does_not_exempt_an_unrun_declared_check(self):
         module = self.module()
-        launcher = Path(module.__file__).resolve().parents[3] / 'bin/pi-autowork.sh'
+        launcher = Path(__file__).resolve().parents[2] / 'bin/pi-autowork.sh'
+        self.assertTrue(launcher.is_file())
         argv = ['/bin/bash', str(launcher), '--verify', '/tmp/fixture-state', 'A']
         with patch.dict(os.environ, AUTOWORK_RUNNER_FULL_CHECK='false',
                         PI_AUTOWORK_VALIDATE='false', PI_AUTOWORK_OPTIMISTIC='1'):

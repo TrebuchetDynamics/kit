@@ -3469,13 +3469,13 @@ fcntl.flock = observed_flock
         sys.path.insert(0, str(ROOT / 'pi-autowork'))
         from pi_autowork import coordinator
         runner = object.__new__(coordinator.Coordinator)
-        source = (ROOT / 'pi-autowork/src/pi_autowork/worker.py').read_text()
+        source = (ROOT / 'pi-autowork/pi_autowork/worker.py').read_text()
         folder = self.root / 'fingerprint'
         folder.mkdir()
         path = folder / 'worker.py'
         path.write_text(source)
         policy = folder / 'review_policy.py'
-        policy.write_text((ROOT / 'pi-autowork/src/pi_autowork/review_policy.py').read_text())
+        policy.write_text((ROOT / 'pi-autowork/pi_autowork/review_policy.py').read_text())
         with patch.object(coordinator, '__file__', str(folder / 'coordinator.py')):
             original = runner.reviewer_version()
             for before, after, changes in (

@@ -65,8 +65,8 @@ changing live gates.
 | Hermes registration | [entry point](../__init__.py), [workflow aliases](../scripts/workflow_commands.py), [research aliases](../scripts/autoresearch_commands.py) | Provision bundled skills/shared resources, defaults and cron scripts; register commands and literal arguments |
 | Hermes diagnostics | [bundle](../scripts/bundle.py), [menu policy](../scripts/telegram_menu_policy.py) | Separate core registration from integration readiness and prioritize public commands |
 | Fleet installation | [orchestrator](../scripts/setup_bundle.py), [preflight](../scripts/setup_preflight.py), [finalization](../scripts/setup_runtime.py) | Validate prerequisites, install resources/configuration, inspect profiles and refresh supported gateways |
-| Autowork execution | [cycle](../pi-autowork/src/pi_autowork/engine/owner_cycle.py), [task execution](../pi-autowork/src/pi_autowork/engine/task_execution.py) | Select repository tasks, coordinate direct execution and protect live writers |
-| Task store | [TaskStore](../pi-autowork/src/pi_autowork/engine/task_store.py), [selection](../pi-autowork/src/pi_autowork/engine/task_select.py), [task CLI](../pi-autowork/src/pi_autowork/task_commands.py), [converter](../pi-autowork/src/pi_autowork/task_migrate.py) | Read pinned contracts, select tasks, validate edits and convert legacy repositories once |
+| Autowork execution | [cycle](../pi-autowork/pi_autowork/engine/owner_cycle.py), [task execution](../pi-autowork/pi_autowork/engine/task_execution.py) | Select repository tasks, coordinate direct execution and protect live writers |
+| Task store | [TaskStore](../pi-autowork/pi_autowork/engine/task_store.py), [selection](../pi-autowork/pi_autowork/engine/task_select.py), [task CLI](../pi-autowork/pi_autowork/task_commands.py), [converter](../pi-autowork/pi_autowork/task_migrate.py) | Read pinned contracts, select tasks, validate edits and convert legacy repositories once |
 | Continuous runner | [runner guide](../pi-autowork/README.md) | Coordinate bounded workers, verification, local integration and recovery |
 | Portable packages | [Claude marketplace](../.claude-plugin/marketplace.json), [Codex manifest](../.codex-plugin/plugin.json), [marketplace](../.agents/plugins/marketplace.json), [Pi manifest](../package.json), [Pi extension](../adapters/pi.mjs) | Discover explicit portable workflows without Hermes configuration dependencies |
 | Portable behavior | [host contract](../adapters/skills/COMMON.md) | Use the current host's tools and preserve its permissions, memory and credentials |
@@ -1180,7 +1180,7 @@ Existing goals, ownership, pending qualification and active contracts remain unc
 
 Status: Accepted
 
-`pi-autowork/src/pi_autowork/planning_authority.py` owns allowed paths, proposal size and secret
+`pi-autowork/pi_autowork/planning_authority.py` owns allowed paths, proposal size and secret
 checks and generates the console prompt block. TaskStore's `planner_authority` owns
 record schema/authority diffs: closure, owner attestations, holds, live authorization,
 ownership, task status and goal status. Console policy and proposal validation call

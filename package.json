@@ -18,12 +18,11 @@
   "files": [
     "scripts/autowork_bootstrap.py",
     "pi-autowork/src/autowork_bootstrap.py",
-    "pi-autowork/src/pi_autowork/",
+    "pi-autowork/pi_autowork/",
     "adapters/",
     "skills/",
     "scripts/pi-autowork.sh",
     "scripts/pi_autowork_touches.py",
-    "pi-autowork/pi_autowork/",
     "pi-autowork/engine/",
     "pi-autowork/bin/",
     "pi-autowork/README.md",

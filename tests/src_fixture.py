@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def copy_sources(destination, *, source=ROOT, entries=()):
     """Copy the complete Python source closure plus explicitly needed resources.
 
-    Keep old public entries, including standalone hooks, alongside src owners. Never
+    Copy the canonical runner, native payloads and standalone hooks together. Never
     borrow a missing source from the calling checkout when the selected copy is used.
     """
     source, destination = Path(source).resolve(), Path(destination)

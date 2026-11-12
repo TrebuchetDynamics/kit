@@ -173,7 +173,7 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     'adapters/skills/state-machine/SKILL.md', 'adapters/skills/state-machine/agents/openai.yaml',
     'skills/shared/COMMUNICATION.md', 'skills/work/SKILL.md',
     'adapters/skills/work/SKILL.md', 'adapters/skills/work/agents/openai.yaml',
-    'scripts/autowork_bootstrap.py', 'pi-autowork/src/autowork_bootstrap.py', 'pi-autowork/src/pi_autowork/__init__.py']) {
+    'scripts/autowork_bootstrap.py', 'pi-autowork/src/autowork_bootstrap.py', 'pi-autowork/pi_autowork/__init__.py']) {
     assert.equal(paths.has(path), true, path);
   }
 });
@@ -201,7 +201,7 @@ test('installed archive resolves portable references and commands without checko
     }
     await mkdir(join(source, 'pi-autowork/src/autowork_runtime'), {recursive: true});
     await writeFile(join(source, 'pi-autowork/src/autowork_runtime/private.py'), 'raise RuntimeError("native payload")\n');
-    await writeFile(join(source, 'pi-autowork/src/pi_autowork/fixture_reader.py'),
+    await writeFile(join(source, 'pi-autowork/pi_autowork/fixture_reader.py'),
       'def _compat_main(argv): return len(argv)\n');
     const archive = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--offline', '--json', '--pack-destination', scratch],
       {cwd: source, encoding: 'utf8'}))[0];

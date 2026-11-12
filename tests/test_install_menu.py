@@ -205,7 +205,7 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
         self.assertFalse(marker.exists())
 
     def test_runner_install_survives_removing_interactive_pi(self):
-        sys.path.insert(0, str(ROOT / 'pi-autowork/src'))
+        sys.path.insert(0, str(ROOT / 'pi-autowork'))
         from pi_autowork.coordinator import Coordinator
         from pi_autowork import service
         interactive = self.home / '.pi/agent'

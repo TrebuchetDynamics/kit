@@ -1,14 +1,331 @@
-"""Compatibility entry; implementation belongs to src/pi_autowork/pi_runtime.py."""
-import importlib.util as _util
-from pathlib import Path as _Path
-import sys as _sys
+"""Run one Pi job for pi-autowork: model choice, fallback, bounded retries, records.
 
-_root = _Path(__file__).resolve().parents[2]
-_spec = _util.spec_from_file_location('_autowork_entry_bootstrap', _root / 'scripts/autowork_bootstrap.py')
-_bootstrap = _util.module_from_spec(_spec)
-_spec.loader.exec_module(_bootstrap)
-if __name__ == '__main__':
-    _sys.exit(_bootstrap.run(_root, 'pi_autowork.pi_runtime', _sys.argv[1:]))
+A straight port of the runner's Bash `pi_job`/`run_pi`/`choose_model`; the formal
+worker-runtime boundary (launch/observe/stop/resume) is TOOLSET-117-cb. Behavior:
+
+- the primary model when authenticated and not cooling down, else the fallback
+  (`PI_AUTOWORK_NO_FALLBACK=1` disables it); a provider failure on the primary cools
+  it for PI_AUTOWORK_COOLDOWN seconds, recorded in STATE/provider.json;
+- RPC is the default: a scoped Linux guard owns an AsyncPiClient host and its Pi/tool
+  descendants. JSON under GNU timeout is explicit rollout rollback only; no automatic
+  transport fallback. Exit 124 is a timeout, not permission to replay uncertain input;
+- a provider failure or an unsettled/aborted run is retried up to
+  PI_AUTOWORK_MAX_RETRIES times, resuming the same session, with backoff;
+- every run appends one redacted line to STATE/runs.jsonl; the raw stream, which
+  holds prompts, code and tool output, is deleted. Cost and tokens are recorded there
+  to be measured, never enforced: there is no spending limit.
+
+    pi_runtime.py job STATE ROLE TASK DIR SESSION LIMIT MESSAGE [PI ARGS...]
+        -> {"ok": bool, "text": str, "notes": [...]}
+    pi_runtime.py choose STATE  -> {"chosen": model|null, "reason": str}; exit 1 if none
+    pi_runtime.py ready STATE MODEL
+"""
+if __name__ == '__main__' and not __package__:
+    import runpy
+    import sys
+    from pathlib import Path
+    _root = Path(__file__).resolve().parents[2]
+    _entry = runpy.run_path(str(_root / 'scripts/autowork_bootstrap.py'))
+    raise SystemExit(_entry['run'](_root, 'pi_autowork.pi_runtime', sys.argv[1:]))
+
+from datetime import datetime, timedelta
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+if __package__:
+    from . import accounting, portal, telemetry
+    from .pi_run_support import analyse, command_limit, redact, stop_stuck_commands
 else:
-    _sys.modules.pop(__name__, None)
-    _sys.modules[__name__] = _bootstrap.load(_root, 'pi_autowork.pi_runtime')
+    import accounting
+    import portal
+    import telemetry  # pi_runtime.py is also a standalone subprocess entry point.
+    from pi_run_support import analyse, command_limit, redact, stop_stuck_commands
+
+PROVIDER_FAILURE = re.compile(
+    r'429|rate.?limit|quota|usage limit|overloaded|5[0-9]{2}|unavailable|timed? ?out|ECONN|ENOTFOUND|EAI_AGAIN'
+    r'|network|fetch failed|401|403|unauthori[sz]ed|forbidden|credential|api key|not logged in|/login|oauth'
+    r'|expired|no such model|model .*not (found|available)', re.I)
+STOP = False
+
+
+class Settings:
+    def __init__(self, state, env=os.environ):
+        self.state = Path(state)
+        self.pi = env.get('PI_BIN', 'pi')
+        self.transport = env.get('PI_AUTOWORK_TRANSPORT', 'rpc')
+        self.rpc_python = env.get('PI_AUTOWORK_RPC_PYTHON', '')
+        self.primary = env.get('PI_AUTOWORK_PRIMARY', 'openai-codex/gpt-6.1-sol')
+        self.fallback = env.get('PI_AUTOWORK_FALLBACK', 'openrouter/deepseek/deepseek-v4.1-flash')
+        self.fallback_enabled = env.get('PI_AUTOWORK_NO_FALLBACK', '0') != '1'
+        self.cooldown = int(env.get('PI_AUTOWORK_COOLDOWN', '1800'))
+        self.backoff = int(env.get('PI_AUTOWORK_BACKOFF', '30'))
+        self.max_retries = int(env.get('PI_AUTOWORK_MAX_RETRIES', '3'))
+        self.skill_args = env.get('PI_AUTOWORK_SKILL_ARGS', '').split()
+        self.dry_run = env.get('PI_AUTOWORK_DRY_RUN', '0') == '1'
+        self.session_label = env.get('PI_AUTOWORK_SESSION', '')
+
+
+def provider(model):
+    return model.split('/', 1)[0]
+
+
+def model_name(model):
+    return model.split('/', 1)[1] if '/' in model else model
+
+
+def now_iso(offset_hours=0):
+    return (datetime.now().astimezone() - timedelta(hours=offset_hours)).isoformat(timespec='seconds')
+
+
+# --- Models ---------------------------------------------------------------------
+def auth_ready(s, model):
+    argv = [s.pi, 'auth', 'check', '--provider', provider(model), '--model', model_name(model)]
+    if s.dry_run:
+        argv.append('--no-refresh')
+    try:
+        ready = subprocess.run(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120).returncode == 0
+        from pi_autowork import private_pi
+        root = private_pi.state_root()
+        home = private_pi.directory(root)
+        if (not s.dry_run and s.state.resolve().parent == root.resolve()
+                and os.environ.get('PI_CODING_AGENT_DIR') == str(home) and home.is_dir()):
+            marker = home / 'login-refused'
+            if ready:
+                marker.unlink(missing_ok=True)
+            else:
+                fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                os.close(fd)
+        return ready
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _provider_file(s):
+    try:
+        return json.loads((s.state / 'provider.json').read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def primary_cooling(s):
+    return time.time() < float(_provider_file(s).get('primary_unavailable_until') or 0)
+
+
+def cool_primary(s, reason):
+    path = s.state / 'provider.json'
+    tmp = path.with_name(f'provider.json.{os.getpid()}')
+    tmp.write_text(json.dumps({'primary_unavailable_until': int(time.time()) + s.cooldown, 'reason': reason}))
+    os.replace(tmp, path)
+
+
+def choose(s):
+    """(model or None, fallback reason)."""
+    def ready(model):
+        try:
+            portal.check_model(model)
+        except portal.SetupError as error:
+            return False, str(error)
+        return auth_ready(s, model), ''
+
+    if not s.fallback_enabled:
+        usable, reason = ready(s.primary)
+        if usable:
+            return s.primary, ''
+        return None, reason or 'primary not authenticated and the fallback is disabled'
+    if not primary_cooling(s):
+        usable, reason = ready(s.primary)
+        if usable:
+            return s.primary, ''
+        reason = reason or 'primary not authenticated'
+        cool_primary(s, reason)
+    else:
+        reason = _provider_file(s).get('reason') or 'primary cooling down'
+    usable, fallback_reason = ready(s.fallback)
+    return (s.fallback if usable else None), fallback_reason or reason
+
+
+# --- One run --------------------------------------------------------------------
+def run_pi(s, directory, message, session, target, limit, extra, role=None, task=''):
+    if s.transport == 'json':
+        result = run_json(s, directory, message, session, target, limit, extra, role)
+        result['transport'] = 'json'
+        return result
+    if s.transport != 'rpc':
+        return dict(analyse(''), rc=1, seconds=0, error='invalid PI_AUTOWORK_TRANSPORT',
+                    failure_kind='toolchain', retry_safe=False, transport=s.transport)
+    if __package__:
+        from . import pi_rpc
+    else:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from pi_autowork import pi_rpc
+    return pi_rpc.run(s, directory, message, session, target, limit, extra, role, task,
+                      stop_requested=lambda: STOP)
+
+
+def run_json(s, directory, message, session, target, limit, extra, role=None):
+    runs = s.state / 'runs'
+    runs.mkdir(parents=True, exist_ok=True)
+    fd, raw = tempfile.mkstemp(prefix='run.', dir=runs)
+    os.close(fd)
+    err = raw + '.err'
+    start = time.monotonic()
+    argv = ['timeout', '--foreground', '-s', 'INT', '-k', '120', str(limit),
+            s.pi, '--mode', 'json', '--provider', provider(target), '--model', model_name(target),
+            '--session-dir', str(s.state / 'sessions'), '--session-id', session, '--no-approve',
+            *s.skill_args, *extra, '--', message]
+    queue = os.environ.get('AUTOWORK_WORKER_CHECK_DIR') if role == 'worker' else None
+    if queue:
+        from pi_autowork.layout import LAYOUT
+        from pi_autowork.processes import start_time
+        argv = [sys.executable, str(LAYOUT.entrypoint('pi_autowork.pi_process')),
+                '--identity', raw + '.guard.json', '--deadline', str(limit),
+                '--check-queue', queue, '--parent-pid', str(os.getpid()),
+                '--parent-start', str(start_time(os.getpid())), '--', *argv[7:]]
+    try:
+        with open(raw, 'wb') as out, open(err, 'wb') as errors:
+            # Same process group as the caller: a stop sent to the group reaches Pi too.
+            child = subprocess.Popen(argv, cwd=directory, stdin=subprocess.DEVNULL, stdout=out, stderr=errors)
+            watch, stopping = command_limit(role, limit), {}
+            while True:
+                try:
+                    rc = child.wait(timeout=5 if watch else None)
+                    break
+                except subprocess.TimeoutExpired:
+                    for minutes, line in stop_stuck_commands(child.pid, watch, stopping):
+                        print(f'pi-autowork: stopped a command that ran {minutes} min (limit '
+                              f'{int(watch // 60)} min): {line}', file=sys.stderr, flush=True)
+        run = analyse(Path(raw).read_text(errors='replace'))
+        run.update(rc=rc, seconds=int(time.monotonic() - start))
+        run['error'] = redact(str(run['error'] or ''))[:300]
+        if not run['error'] and rc != 0:
+            tail = Path(err).read_text(errors='replace').splitlines()[-5:]
+            run['error'] = redact(' '.join(tail) + (' ' if tail else ''))[:300]
+        return run
+    finally:
+        # Keep only the compact record; the raw stream holds prompts, code and tool output.
+        for path in (raw, err, raw + '.guard.json'):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
+def provider_failure(run):
+    return run['stop'] == 'error' or (not run['settled'] and bool(PROVIDER_FAILURE.search(run['error'] or '')))
+
+
+def record(s, role, task, outcome, model, fallback, run, result='', *, directory=None):
+    result = redact(result)[:300]
+    attempt_id = None
+    if directory is not None:
+        try:
+            engine = telemetry.engine()
+            slot = engine.execution.read(engine.slot_path(engine.common_dir(directory), task)) or {}
+            attempt_id = slot.get('attempt_id')
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    row = {'run_id': uuid.uuid4().hex, 'time': now_iso(), 'role': role,
+           'task': accounting.attributed_task(role, task),
+           'host': os.environ.get('AUTOWORK_TELEMETRY_HOST') or 'pi', 'attempt_id': attempt_id,
+           'outcome': outcome, 'provider': provider(model),
+           'model': model_name(model), 'seconds': run.get('seconds', 0), 'session': s.session_label,
+           'pi_retries': run.get('retries', 0), 'fallback_reason': fallback or None,
+           'tokens': run.get('tokens'), 'input_tokens': run.get('input_tokens'),
+           'output_tokens': run.get('output_tokens'), 'cost_usd': run.get('cost'),
+           'measured_cost_usd': run.get('measured_cost_usd', 0),
+           'cost_source': run.get('cost_source', 'missing'), 'billing': run.get('billing'),
+           'error': run.get('error') or None, 'result': result or None,
+           **{key: run.get(key) for key in ('transport', 'sdk_version', 'pi_version', 'session_id',
+                                          'generation', 'prompt_digest', 'failure_kind', 'cleanup_complete', 'cleanup_proof',
+                                          'startup_seconds', 'first_tool_seconds', 'tool_seconds',
+                                          'compactions', 'command_interruptions', 'usage_coverage', 'known_usage')}}
+    try:
+        accounting.append(s.state / 'runs.jsonl', row)
+    except OSError as exc:
+        print(f'pi-autowork: could not record usage: {exc}', file=sys.stderr)
+    if directory is not None:
+        telemetry.model_run(directory, role, task, model, outcome, run)
+
+
+# --- One job --------------------------------------------------------------------
+def job(s, role, task, directory, message, session, limit, extra):
+    attempt, note, notes = 0, '', []
+    while True:
+        chosen, reason = choose(s)
+        if chosen is None:
+            record(s, role, task, 'no_model', s.primary, reason, {'error': reason or 'no model ready'},
+                   directory=directory)
+            return dict(ok=False, text='', notes=notes, why='no_model', error=redact(reason or 'no model ready')[:300])
+        telemetry.model_run(directory, role, task, chosen, 'selected')
+        run = run_pi(s, directory, message + note, session, chosen, limit, extra, role=role, task=task)
+        kind = run.get('failure_kind')
+        # Cleanup uncertainty must survive STOP/timeout classification: callers
+        # must not dispose of scratch while owned descendants may remain.
+        if kind == 'cleanup_unproven' or (kind and not run.get('retry_safe', False)):
+            record(s, role, task, kind, chosen, reason, run, directory=directory)
+            return dict(ok=False, text='', notes=notes, why=kind, error=redact(str(run.get('error') or ''))[:300])
+        if STOP:
+            record(s, role, task, 'interrupted', chosen, reason, run, directory=directory)
+            return dict(ok=False, text='', notes=notes, why='interrupted')
+        if run['rc'] == 124:
+            record(s, role, task, 'timeout', chosen, reason, run, directory=directory)
+            return dict(ok=False, text='', notes=notes, why='timeout')
+        if run['rc'] != 0 or provider_failure(run) or not run['settled'] or run['aborted']:
+            kind = 'provider' if provider_failure(run) else 'crash'
+            attempt += 1
+            record(s, role, task, kind + '_failure', chosen, reason, run, directory=directory)
+            if attempt > s.max_retries:
+                return dict(ok=False, text='', notes=notes, why=kind + '_failure',
+                            error=redact(str(run.get('error') or ''))[:300])
+            if kind == 'provider' and chosen == s.primary and s.fallback_enabled:
+                cool_primary(s, run['error'] or 'provider failure')
+            else:
+                time.sleep(min(s.backoff * (1 << (attempt - 1)), 600))
+            note = (' A previous attempt in this session was interrupted by a model or provider failure: '
+                    'first reconcile its partial work, then continue.')
+            continue
+        result = next((line for line in run['text'].splitlines()
+                       if re.match(r'^PI_AUTOWORK_(RESULT|VERIFY):', line)), '')
+        record(s, role, task, 'finished', chosen, reason, run, result, directory=directory)
+        return dict(ok=True, text=run['text'], notes=notes)
+
+
+def _stop(*_):
+    global STOP
+    STOP = True  # the group signal also reaches Pi; wait for it to exit, then record
+
+
+def main(argv):
+    if len(argv) >= 8 and argv[0] == 'job':
+        signal.signal(signal.SIGINT, _stop)
+        signal.signal(signal.SIGTERM, _stop)
+        state, role, task, directory, session, limit, message, *extra = argv[1:]
+        print(json.dumps(job(Settings(state), role, task, directory, message, session, limit, extra)))
+        return 0
+    if len(argv) == 3 and argv[0] == 'ready':
+        return 0 if auth_ready(Settings(argv[1]), argv[2]) else 1
+    if len(argv) == 2 and argv[0] == 'choose':
+        chosen, reason = choose(Settings(argv[1]))
+        print(json.dumps({'chosen': chosen, 'reason': reason}))
+        return 0 if chosen else 1
+    print('usage: pi_runtime.py job STATE ROLE TASK DIR SESSION LIMIT MESSAGE [PI ARGS...] | choose STATE',
+          file=sys.stderr)
+    return 2
+
+
+def _compat_main(argv):
+    import sys
+    previous = sys.argv
+    sys.argv = [previous[0], *argv]
+    try:
+        sys.exit(main(sys.argv[1:]))
+    finally:
+        sys.argv = previous

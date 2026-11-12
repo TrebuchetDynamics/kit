@@ -345,8 +345,8 @@ def reuse_fingerprint(name, root, hermes, seconds):
                  source / 'skills/autowork/references/profile-feedback.md']
         # Include adapters, actual owners and their selected-release loader dependencies.
         paths += [source / name for name in ('scripts/autowork_bootstrap.py', 'pi-autowork/src/autowork_bootstrap.py',
-                  'pi-autowork/src/pi_autowork/__init__.py', 'pi-autowork/src/pi_autowork/layout.py',
-                  'pi-autowork/src/pi_autowork/engine/__init__.py')]
+                  'pi-autowork/pi_autowork/__init__.py', 'pi-autowork/pi_autowork/layout.py',
+                  'pi-autowork/pi_autowork/engine/__init__.py')]
         layout = _bootstrap.Layout(source)
         with os.scandir(layout.component / 'engine') as entries:
             for index, entry in enumerate(entries):

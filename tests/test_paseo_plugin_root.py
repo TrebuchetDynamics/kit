@@ -37,8 +37,9 @@ class PaseoRootSourceTests(unittest.TestCase):
     def test_retired_component_roots_and_production_test_imports(self):
         for name in ('src', 'integrations/paseo', 'rust/autowork'):
             self.assertFalse((ROOT / name).exists(), name)
-        for source in (ROOT / 'pi-autowork/src').rglob('*.py'):
-            self.assertNotRegex(source.read_text(), r'(?m)^\s*(?:from|import) (?:tests|support\.store_fixture|support\.offline_fixtures)\b', str(source))
+        for owner in ('pi-autowork/src', 'pi-autowork/pi_autowork'):
+            for source in (ROOT / owner).rglob('*.py'):
+                self.assertNotRegex(source.read_text(), r'(?m)^\s*(?:from|import) (?:tests|support\.store_fixture|support\.offline_fixtures)\b', str(source))
         workflow = (ROOT / '.github/workflows/paseo.yml').read_text()
         self.assertIn('working-directory: pi-autowork/integrations/paseo', workflow)
         self.assertIn('cache-dependency-path: pi-autowork/integrations/paseo/package-lock.json', workflow)

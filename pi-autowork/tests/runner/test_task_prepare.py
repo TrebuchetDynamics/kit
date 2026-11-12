@@ -27,7 +27,7 @@ LEGACY = ROOT / 'pi-autowork/tests/fixtures/task_migrate'
 sys.path.insert(0, str(ROOT / 'scripts'))
 sys.path.insert(0, str(ROOT / 'pi-autowork/engine'))
 sys.path.insert(0, str(ROOT / 'pi-autowork'))
-sys.path.insert(0, str(ROOT / 'pi-autowork/src'))
+sys.path.insert(0, str(ROOT / 'pi-autowork'))
 import autowork_bootstrap  # noqa: E402
 autowork_bootstrap.activate(ROOT)
 from pi_autowork import task_migrate  # noqa: E402
@@ -710,7 +710,7 @@ class PackageImportTests(unittest.TestCase):
     def test_optional_renderers_do_not_disable_graph_or_other_import_checks(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            package = root / 'pi-autowork/src/pi_autowork'
+            package = root / 'pi-autowork/pi_autowork'
             package.mkdir(parents=True)
             (package / 'planning_ui.py').write_text('')
             (package / 'tui_auth.py').write_text('')
@@ -739,7 +739,7 @@ class PackageImportTests(unittest.TestCase):
                 self.assertIn('import cycle', result.failures[0][1])
 
     def test_every_module_imports_in_isolation_and_all_import_edges_are_acyclic(self):
-        package = ROOT / 'pi-autowork/src/pi_autowork'
+        package = ROOT / 'pi-autowork/pi_autowork'
         modules = {}
         for path in sorted(package.rglob('*.py')):
             if 'engine' in path.relative_to(package).parts:

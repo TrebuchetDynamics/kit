@@ -6,8 +6,8 @@ import subprocess
 import sys
 
 MYPY = '1.19.1'
-ALLOWLIST = ('pi-autowork/src/pi_autowork/engine/task_select.py',
-             'pi-autowork/src/pi_autowork/planning_authority.py')
+ALLOWLIST = ('pi-autowork/pi_autowork/engine/task_select.py',
+             'pi-autowork/pi_autowork/planning_authority.py')
 
 
 def main(argv=None):

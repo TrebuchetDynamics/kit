@@ -14,8 +14,8 @@ from unittest import mock
 
 PRODUCT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PRODUCT / 'tests'))
-sys.path.insert(0, str(PRODUCT / 'src'))
-sys.path.insert(0, str(PRODUCT / 'src/pi_autowork/engine'))
+sys.path.insert(0, str(PRODUCT))
+sys.path.insert(0, str(PRODUCT / 'pi_autowork/engine'))
 from pi_autowork import fleet_view, portal  # noqa: E402
 from pi_autowork.processes import start_time  # noqa: E402
 from support import store_fixture  # noqa: E402
@@ -779,9 +779,9 @@ async def main():
                                             errors=('inventory read denied',))
                 await refresh(app, pilot)
                 shown = str(app.query_one('#detail').render())
-                assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:8]] == ['?'] * 6
+                assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:8]] == ['—'] * 6
                 assert fleet_view.task_counts(app.current()) is None
-                assert 'unknown / unavailable' in shown and 'inventory read denied' in shown, shown
+                assert 'Task count unavailable' in shown and 'inventory read denied' in shown, shown
                 observed.snapshot = replace(original_runner.snapshot, captured_at=time.time() - 900, freshness='stale')
                 await refresh(app, pilot)
                 shown = str(app.query_one('#detail').render())

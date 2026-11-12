@@ -214,7 +214,7 @@ class OfflineCheckTests(unittest.TestCase):
         self.write('tests/test_one.py', 'import unittest\n')
         self.write('tests/test_two.py', 'import unittest\n')
         self.affected_repo()
-        for path in ('unknown.dat', 'pi-autowork/src/pi_autowork/__init__.py', 'tests/conftest.py', 'pyproject.toml',
+        for path in ('unknown.dat', 'pi-autowork/pi_autowork/__init__.py', 'tests/conftest.py', 'pyproject.toml',
                      '.github/workflows/ci.yml', 'scripts/check.py'):
             with self.subTest(path=path):
                 base = self.git('rev-parse', 'HEAD')
@@ -264,7 +264,7 @@ class OfflineCheckTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('missing selected-release source', result.stdout)
         self.write('pi-autowork/src/autowork_runtime/bundle.py', 'VALUE = 1\n')
-        bad = self.write('pi-autowork/src/pi_autowork/consumer.py', 'import task_store\n')
+        bad = self.write('pi-autowork/pi_autowork/consumer.py', 'import task_store\n')
         result = self.run_check('tests/test_one.py')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('unqualified engine import', result.stdout)
@@ -339,7 +339,13 @@ class OfflineCheckTests(unittest.TestCase):
         self.assertEqual(len(mapping), len(set(mapping.values())), 'duplicate editable owners')
         for previous, current in mapping.items():
             with self.subTest(previous=previous, current=current):
-                self.assertTrue((ROOT / current).is_file())
+                # Keep the immutable relocation input; resolve its runner owners
+                # through the later approved consolidation, not an edited fixture.
+                owner = current.replace('pi-autowork/src/pi_autowork/',
+                                        'pi-autowork/pi_autowork/', 1)
+                self.assertTrue((ROOT / owner).is_file())
+                if owner != current:
+                    self.assertFalse((ROOT / current).exists())
                 if previous.startswith('src/') or (previous != current and Path(previous).name.startswith('test_')):
                     self.assertFalse((ROOT / previous).exists())
 

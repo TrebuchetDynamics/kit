@@ -15,6 +15,8 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / 'pi-autowork/tests'))
+from support import store_fixture
 
 
 class StartupInterruptTests(unittest.TestCase):
@@ -29,7 +31,7 @@ class StartupInterruptTests(unittest.TestCase):
         pi.chmod(0o755)
         repo = base / 'repo'
         subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
-        subprocess.run(['cp', '-r', str(ROOT / 'tasks'), str(repo / 'tasks')], check=True)
+        store_fixture.write_todo(repo, '# Tasks\n\n## Now\n- [ ] START-1: Startup fixture\n', commit=False)
         subprocess.run(['git', '-C', str(repo), 'add', '-A'], check=True)
         subprocess.run(['git', '-C', str(repo), '-c', 'user.name=T', '-c', 'user.email=t@example.invalid',
                         'commit', '-qm', 'plan'], check=True)

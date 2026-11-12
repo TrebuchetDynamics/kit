@@ -9,8 +9,8 @@ import threading
 import time
 from unittest.mock import Mock, patch
 
-SOURCE = Path(__file__).resolve().parents[2] / 'src'
-sys.path.insert(0, str(SOURCE))
+SOURCE = Path(__file__).resolve().parents[2] / 'pi_autowork'
+sys.path.insert(0, str(SOURCE.parent))
 from pi_autowork import tui, tui_tasks, fleet_view, blockers_report
 
 from textual.widgets import TextArea, Button

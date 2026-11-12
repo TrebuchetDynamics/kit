@@ -11,7 +11,7 @@ import threading
 import time
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from pi_autowork import fleet_view, task_snapshot, tui
 from test_tui_layout import run_pilot, settle
 from textual.widgets import DataTable, Input
@@ -190,7 +190,7 @@ async def evidence():
             runner.snapshot = replace(runner.snapshot, counts=None, freshness='unavailable')
             app.show_detail()
             await pilot.pause()
-            assert 'unknown' in painted(app.query_one('#overview')).lower()
+            assert 'unavailable' in painted(app.query_one('#overview')).lower()
             await click_menu(app, pilot, 'More')
             app.screen.query_one('#action-filter', Input).value = 'Stop'
             await pilot.pause()

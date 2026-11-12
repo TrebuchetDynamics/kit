@@ -113,7 +113,7 @@ class UnknownAttributionTests(OptimisticRepo):
 class MainCheckTests(unittest.TestCase):
     def test_coordinator_settle_and_main_check_phases_stay_bounded(self):
         """Keep these orchestration flows and their named phases small enough to review."""
-        source = Path(__file__).resolve().parents[3] / 'pi-autowork/src/pi_autowork/coordinator.py'
+        source = Path(__file__).resolve().parents[3] / 'pi-autowork/pi_autowork/coordinator.py'
         coordinator = next(node for node in ast.parse(source.read_text()).body
                            if isinstance(node, ast.ClassDef) and node.name == 'Coordinator')
         roots = ('settle', 'check_main', 'finish_main_check')

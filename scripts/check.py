@@ -225,11 +225,11 @@ def source_guard(root):
     try:
         layout_api = runpy.run_path(str(bootstrap))['Layout']
         sources = layout_api.python_sources(root)
-        engine_names = {p.stem for folder in (root / 'pi-autowork/src/pi_autowork/engine', root / 'pi-autowork/engine')
+        engine_names = {p.stem for folder in (root / 'pi-autowork/pi_autowork/engine', root / 'pi-autowork/engine')
                         for p in folder.glob('*.py') if not p.name.startswith('test_')}
         for source in sources:
             tree = ast.parse(source.read_bytes(), str(source))
-            if source.is_relative_to(root / 'pi-autowork/src/pi_autowork'):
+            if source.is_relative_to(root / 'pi-autowork/pi_autowork'):
                 for node in ast.walk(tree):
                     names = ([alias.name for alias in node.names] if isinstance(node, ast.Import)
                              else [node.module or ''] if isinstance(node, ast.ImportFrom) and node.level == 0
@@ -252,7 +252,9 @@ def affected_core(root):
         commands.append([sys.executable, str(docs), 'check', str(root)])
     if tasks.is_file() and (root / 'tasks').is_dir():
         commands.append([str(tasks), 'tasks', 'validate', '--worktree', str(root)])
-    return all(subprocess.run(command, cwd=root).returncode == 0 for command in commands)
+    # The launcher resolves the installed toolset by default; this check validates this tree.
+    env = dict(os.environ, AUTOWORK_TOOLSET=str(root))
+    return all(subprocess.run(command, cwd=root, env=env).returncode == 0 for command in commands)
 
 
 def typecheck(root, list_only=False):
@@ -432,13 +434,16 @@ def main(argv=None):
     env = without_push_guard({k: v for k, v in os.environ.items()
                               if k == 'AUTOWORK_PORT_BASE'
                               or (k not in LIVE_FLAGS and not k.startswith(('PI_AUTOWORK_', 'AUTOWORK_')))})
+    # `autowork` runs the installed toolset by default. The tests must exercise this
+    # checkout, so name it explicitly after the runner settings were removed above.
+    env['AUTOWORK_TOOLSET'] = str(root)
     # Three suites read os.environ['TMPDIR'] and their fixtures shell out to it. CI exports it and
     # every Autowork host sets one, but a bare interactive shell does not, and the resulting errors
     # read like a red tree rather than a missing setting.
     env.setdefault('TMPDIR', tempfile.gettempdir())
     support_paths = [str(root / 'pi-autowork/tests'), str(root / 'tests'),
                      str(root / 'pi-autowork'), str(root / 'pi-autowork/src'),
-                     str(root / 'pi-autowork/src/pi_autowork/engine'),
+                     str(root / 'pi-autowork/pi_autowork/engine'),
                      str(root / 'pi-autowork/engine')]
     existing_pythonpath = env.get('PYTHONPATH')
     env['PYTHONPATH'] = os.pathsep.join(support_paths + ([existing_pythonpath] if existing_pythonpath else []))

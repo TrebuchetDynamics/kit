@@ -8,7 +8,7 @@ FORBIDDEN = ('task_display', 'runner_display', 'record_display', 'closure_displa
 
 class DisplayAuthorityTests(unittest.TestCase):
     def test_display_words_never_reach_an_authority_module(self):
-        engine = ROOT / 'pi-autowork/src/pi_autowork/engine'
+        engine = ROOT / 'pi-autowork/pi_autowork/engine'
         offenders = sorted(path.relative_to(ROOT).as_posix() for path in engine.rglob('*.py')
                            if any(name in path.read_text() for name in FORBIDDEN))
         self.assertEqual(offenders, [])

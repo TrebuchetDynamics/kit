@@ -91,6 +91,23 @@ controls and explicit JSON rollback](docs/pi-rpc.md), and the separate
 [qualification evidence](../docs/research/pi-rpc-qualification-2026-10-24.md).
 An already-running release is not automatically upgraded by this source change.
 
+### One runtime
+
+`autowork` runs one runtime: the installed toolset. A package copy (for example
+the Pi package clone) and a shell link therefore run the same code as the service.
+A development checkout is selected explicitly:
+
+```sh
+AUTOWORK_TOOLSET=/path/to/kit pi-autowork/bin/autowork tui
+```
+
+The launcher resolves `AUTOWORK_TOOLSET`, then the installed toolset, then its own
+checkout when no installation exists. `autowork version` (also `autowork --version`)
+prints the running revision and the installed revision. The TUI **Build** row shows
+both, and the overview warns when they differ. Run `autowork update` to install the
+newer revision. A release snapshot under the runner state directory still runs the
+revision the service selected, and an update does not change a running release.
+
 ## Reference
 
 The sections below retain the detailed operating and implementation contracts.
@@ -104,19 +121,21 @@ selected-release loading, product tests and copied payloads.
 
 The `pi-autowork` runner. `scripts/pi-autowork.sh` is a thin entry point and the
 service command: it finds this component and runs the stable `pi_autowork/cli.py`
-adapter, which continues in the toolset release it resolves. Runner and legacy-reader
-implementations live in `pi-autowork/src/pi_autowork/`; the generic task lifecycle (admission,
-slots, integration, closure) lives in `pi-autowork/src/pi_autowork/engine/` and remains the only
-authority for task state. The original Python paths, `bin/autowork` and shell/service
-commands remain public entry points. Flat engine imports and canonical
-`pi_autowork.engine` imports share the same module objects, including exception types.
-Standalone `worktree_paths.py` and `checkout_lock.py`, test assets and fixture helpers
-remain under `pi-autowork/engine/`. A missing selected source refuses rather than
+entry, which continues in the toolset release it resolves. Runner and legacy-reader
+implementations live in `pi-autowork/pi_autowork/`; the generic task lifecycle (admission,
+slots, integration, closure) lives in `pi-autowork/pi_autowork/engine/` and remains the only
+authority for task state. One canonical runner package replaces the former `src/`
+copy and matching runner adapters. `bin/autowork`, supported Python command entries
+and shell/service commands retain their behavior; library-only file execution is
+retired. Flat engine imports and canonical `pi_autowork.engine` imports share the same
+module objects, including exception types. Standalone `worktree_paths.py` and
+`checkout_lock.py` remain under `pi-autowork/engine/`; test assets and helpers live in
+`pi-autowork/tests/`. A missing selected source refuses rather than
 borrowing another checkout. Git-free archives support help/read commands, not immutable
 runner launches, which still require a committed Git toolset.
 
-The Python module paths in this table are relative to `src/`; `bin/autowork` is
-relative to this component. Child commands and reloads use stable public adapters;
+The module paths in this table are relative to this component. Child commands and
+reloads use supported entrypoints;
 source checks, TUI code stamps and review fingerprints inspect actual implementations.
 Runtime state lives outside the repository, under
 `${XDG_STATE_HOME:-~/.local/state}/pi-autowork/<repository key>/`.
@@ -289,7 +308,7 @@ necessary. Offline coverage is in `tests/test_hermes_observers.py` and the runne
 service/command fixtures; live toolset activation, service restart and competing
 interactive-writer handoff require separate operational qualification.
 
-Source: `pi-autowork/src/pi_autowork/hermes_observers.py`, `cli.py`, and `service.py`.
+Source: `pi-autowork/pi_autowork/hermes_observers.py`, `cli.py`, and `service.py`.
 
 </details>
 
@@ -329,13 +348,13 @@ times where available; missing data or unknown freshness is not health evidence.
 The committed section reads the selected repository's HEAD on each report request,
 not a last-good inventory. Selection eligibility is never runtime admission.
 Full producer reasons replace matching truncated questions; unavailable full
-reasons remain explicitly truncated. Source: `pi-autowork/src/pi_autowork/blockers_report.py:build`.
+reasons remain explicitly truncated. Source: `pi-autowork/pi_autowork/blockers_report.py:build`.
 
 **a Answer** leaves the frozen report for that runner's Tasks in the **Decisions**
 view, where the answer form, its default destination section and the single dispatch
 live. The report itself stays read-only: it lists the recorded questions, and
 answering never happens inside a frozen capture. View-only navigation opens the same
-list without its actions. Source: `pi-autowork/src/pi_autowork/tui.py:BlockersScreen`.
+list without its actions. Source: `pi-autowork/pi_autowork/tui.py:BlockersScreen`.
 
 **c Copy** requests the plain text of the current summary/details view, without
 terminal padding. **F7** selects all; **Ctrl+C** requests copying a selection.
@@ -349,7 +368,7 @@ exact **app-host** path—not a file on the SSH client. In browser mode it reque
 a plain-text download; transfer completion is not proof the user saved/opened it.
 Export is explicit, never automatic; reports may contain sensitive operational
 context. Refresh, Details and Escape remain usable during a host save, and a
-refresh does not change the exported capture. Source: `pi-autowork/src/pi_autowork/tui.py:BlockersScreen`.
+refresh does not change the exported capture. Source: `pi-autowork/pi_autowork/tui.py:BlockersScreen`.
 
 **r** explicitly refreshes; **Esc** returns. Opening, refreshing and copying run no
 agent, runner command or task mutation; only explicit Export writes a report copy.
@@ -434,6 +453,7 @@ and the explicit agent commands below do.
 | `autowork tasks commit [target] [--dry-run] [--expect-pending REVISION]` | Preview the exact task diff and its `pending_revision`, or commit only `tasks/`. `--expect-pending` binds HEAD and captured task content under the task lock; drift requires a fresh preview. TUI and plugin confirmations use it. Unrelated staged edits stay; no push. |
 | `autowork migrate [target] [--dry-run] [--no-commit]` | Convert a TODO.md + goals.json repository to `tasks/` once, in one local commit (`--no-commit`: staged); an interrupted run resumes; it refuses while work is in flight |
 | `autowork scorecard [--days N] [--json \| --csv] [--baseline FILE] [target...]` | Per runner and overall over 1–30 days (default 7): labelled evaluation metrics, weekly breakdown and first-to-last-week changes; JSON retains closure, held-share, questions and task/attempt accounting details; no model call |
+| `autowork version` / `--version` | The running revision, the installed revision and the repair command when they differ; `autowork capabilities` reports the same as JSON (`installed`, `skew`) |
 
 ### Safe branch selection on explicit start
 
@@ -619,7 +639,7 @@ The projection grants no readiness, scheduling or current-main verification auth
 
 Below 120 columns the fleet shows Runner, State and Total; selecting a runner shows
 its complete task-count breakdown. Below 100 columns the repository browser stacks
-readiness below the directory tree. Source: `pi-autowork/src/pi_autowork/tui.py` (`FleetApp`,
+readiness below the directory tree. Source: `pi-autowork/pi_autowork/tui.py` (`FleetApp`,
 `BrowseScreen`); fixture coverage: `pi-autowork/tests/runner/test_tui_layout.py`
 and the bounded `test_tui_operations.py` / `tui_operations_pilot.py` beside it.
 Matched worker cells show committed task titles (or the captured short name when
@@ -843,6 +863,13 @@ malformed saved settings remain visible with errors, not treated as removal.
 Offline fake-systemctl tests cover this lifecycle. Real systemd uninstall still
 needs a separately authorized check on a disposable service instance.
 
+The fleet keeps the store requirement and the service lifecycle as two visible
+facts: a repository without a task store reads `Setup required — run /docs-sync`
+plus `runner paused` or `runner stopped` and how to start it, and the service
+column uses plain words (`stopped`, not systemd's `dead`). A missing store makes
+the primary action Details, not Play, because starting the service cannot create
+the store.
+
 Terminal text can be selected by dragging with the mouse, then copied with your
 terminal's copy shortcut (often Ctrl+Shift+C). Mouse capture is off by default;
 keyboard navigation and controls remain available. Use `autowork tui --mouse` to
@@ -890,8 +917,9 @@ freshness. Stale capture age and acquisition warnings remain visible. Press `i`
 edit messages, revision, generation, capture age, full diagnostics and all task
 keys. Compact banners/details are bounded so long text cannot push task rows off
 screen; their complete text remains scrollable in Info/Help. Pending paths and questions are independently observed working data.
-A valid empty store has zero counts. Unavailable or invalid inventory shows `?`
-and `unknown / unavailable`, not zero. Failed refreshes can retain last-good
+A valid empty store has zero counts. Unavailable or invalid inventory shows `—`
+in the fleet table and `Task count unavailable` in the project summary (the Tasks
+window shows `?`), never zero. Failed refreshes can retain last-good
 inventory with its original revision/capture age, visibly stale. Pending-path read
 failure means unknown, never clean. In the Tasks window, unavailable inventory
 shows `?` for every view count and an unavailable placeholder rather than a verified

@@ -17,8 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
 from offline_textual import textual_unavailable
 
 PRODUCT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PRODUCT / 'src'))
-sys.path.insert(0, str(PRODUCT / 'src/pi_autowork/engine'))
+sys.path.insert(0, str(PRODUCT))
+sys.path.insert(0, str(PRODUCT / 'pi_autowork/engine'))
 from pi_autowork import fleet_view  # noqa: E402
 from pi_autowork.processes import start_time  # noqa: E402
 from support import store_fixture  # noqa: E402
@@ -422,6 +422,44 @@ class FleetViewTests(unittest.TestCase):
                 self.assertEqual(fleet_view.needs(runner), label)
                 self.assertTrue(all(call == mock.call(str(self.base), mode='check', inventory=False)
                                     for call in prepare.call_args_list), 'display must remain read-only')
+
+    def test_setup_required_still_names_a_paused_or_stopped_service(self):
+        """A missing store hid the service lifecycle: a paused runner read as never set up."""
+        for state, tail, needs in (('paused', ' · runner paused, p resumes it', 'Setup required — run /docs-sync'),
+                                   ('not running', ' · runner stopped, p starts it', 'Setup required — run /docs-sync')):
+            runner = fleet_view.Runner('repo', repo=str(self.base), state=state, service='dead', mode='service')
+            with self.subTest(state=state), mock.patch(
+                    'pi_autowork.task_prepare.prepare', return_value={'state': 'none'}):
+                self.assertEqual(fleet_view.verdict(runner),
+                                 ('Setup required — run /docs-sync' + tail, 'bold yellow'))
+                self.assertEqual(fleet_view.needs(runner), needs)
+
+    def test_service_substates_speak_plain_words(self):
+        for raw, words in (('dead', 'stopped'), ('inactive', 'stopped'), ('failed', 'failed'),
+                           ('running', 'running'), ('start', 'starting'), ('', '')):
+            with self.subTest(raw=raw):
+                self.assertEqual(fleet_view.service_text(fleet_view.Runner('a', service=raw)), words)
+
+    def test_unknown_task_counts_render_as_unavailable_not_a_number(self):
+        from pi_autowork import task_snapshot
+        snapshot = task_snapshot.TaskSnapshot('/repo', '/repo/.git', 'abc', 1, time.time())
+        runner = fleet_view.Runner('repo', repo='/repo', state='paused', snapshot=snapshot)
+        row = fleet_view.runner_rows([runner])[0]
+        for column in ('Active', 'Mergeable', 'Waiting', 'Blocker', 'Decision', 'Total'):
+            self.assertEqual(row[column][0], '—', column)
+
+    def test_unavailable_inventory_names_the_store_and_its_repair(self):
+        from types import SimpleNamespace
+        runner = fleet_view.Runner(
+            'repo', repo='/repo', state='idle',
+            blocker='no tasks/ store: run `autowork migrate /repo` to convert this repository once')
+        view = SimpleNamespace(counts=None, inventory_freshness='fresh', execution_freshness='fresh')
+        phase, evidence, action = fleet_view.progress_summary(runner, view)
+        self.assertEqual(phase, 'Unconfirmed')
+        self.assertIn('no tasks/ store', evidence)
+        self.assertIn('autowork migrate /repo', action)
+        runner.blocker = 'acquisition error: unreadable snapshot'
+        self.assertNotIn('migrate', fleet_view.progress_summary(runner, view)[2])
 
     def test_fleet_lookups_skip_the_legacy_reference_inventory_of_a_converted_store(self):
         """The inventory read every tracked file and ran git grep per repository on every listing."""

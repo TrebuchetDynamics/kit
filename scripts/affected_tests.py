@@ -155,10 +155,11 @@ def dependency_graph(files, tests=(), *, conservative=False):
         except OSError:
             continue
         deps = set()
-        # Public adapter -> canonical owner, even while independent migrations land.
+        # Flat engine entries and canonical imports share one implementation.
         canonical = module_name(path)
-        if path.startswith('pi-autowork/') and not path.startswith('pi-autowork/src/'):
-            deps |= {p for p in modules.get(canonical, ()) if p.startswith('pi-autowork/src/')}
+        if path.startswith('pi-autowork/engine/'):
+            deps |= {p for p in modules.get(canonical, ())
+                     if p.startswith('pi-autowork/pi_autowork/engine/')}
         if conservative and path.endswith('.py'):
             # Loading a package member executes every ancestor package initializer,
             # including unchanged initializers that import a changed dependency.
