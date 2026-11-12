@@ -329,6 +329,11 @@ def task_guidance(row):
     if 'owner action' in reason or 'owner-performed' in reason:
         return ('This task needs a check performed outside the runner.',
                 'Open the task and read the required action. A saved answer is not completion evidence.')
+    if 'planning repair' in reason or 'planning failed' in reason:
+        rule = row.why.split('planning failed:', 1)[1].strip() if 'planning failed:' in row.why else ''
+        return ("The planner's proposal was refused by a task-format rule" + (f': {rule}' if rule else '.'),
+                'The runner retries this planning repair by itself. No worker attempt waits to retry and no held '
+                'commit waits to clear. Open the task to read the refusal and the retained proposal.')
     if any(word in reason for word in ('no result', 'overflow', 'crashed', 'launch failed')):
         return ('The previous attempt ended without a usable result.',
                 'Retry a fresh attempt. If it fails again, inspect the worker log or change the model.')
@@ -605,6 +610,9 @@ class TasksScreen(ReadScreen, Screen):
                                           agent=self.app.agent)
         if 'owner action' in row.why.casefold() or 'owner-performed' in row.why.casefold():
             # A manual qualification is not a failed worker or a held commit.
+            actions = [action for action in actions if action.key not in ('r', 'c', 'a')]
+        if 'planning repair' in f'{row.why} {row.state}'.casefold():
+            # A refused planning proposal has no exhausted attempt and no held commit.
             actions = [action for action in actions if action.key not in ('r', 'c', 'a')]
         return actions
 
