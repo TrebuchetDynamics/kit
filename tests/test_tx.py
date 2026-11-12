@@ -129,12 +129,74 @@ class TxConfigModuleTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), '/tmp/agent')
 
     def test_append_and_rewrite_preserve_comments_vars_and_order(self):
-        config = '# keep\nWORK=/tmp\n# row\nga,g=$WORK/agent\n'
-        result = self.source(
-            config,
-            'config_load; config_append_alias h "$TARGET"; config_rewrite_alias edit g g2; cat "$TX_CONFIG"')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, '# keep\nWORK=/tmp\n# row\nga,g2,h=$WORK/agent\n')
+        with tempfile.TemporaryDirectory(prefix='autowork-tx-preserve-') as folder:
+            path = Path(folder) / 'session.config'
+            target = Path(folder) / 'agent with spaces'
+            target.mkdir()
+            env = {**os.environ, 'TX_CONFIG': str(path), 'TX_COLOR': 'never'}
+            for newline in ('\n', '\r\n'):
+                with self.subTest(newline=newline):
+                    prefix = f'# keep\nWORK={folder}\n\n# row\n'
+                    row = '  ga,g = $WORK/agent with spaces  '
+                    tail = '\nlast=/other\n'
+                    path.write_bytes((prefix + row + tail).replace('\n', newline).encode())
+                    for args, keys in ((('add', 'h', str(target)), 'ga,g,h'),
+                                       (('edit', 'g', 'g2'), 'ga,g2,h'),
+                                       (('remove', 'g2'), 'ga,h'),
+                                       (('remove', 'h'), 'ga'),
+                                       (('remove', 'ga'), None)):
+                        result = subprocess.run(['bash', str(TX), *args], env=env,
+                                                capture_output=True, text=True, timeout=30)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        expected = prefix + (f'  {keys} = $WORK/agent with spaces  \n' if keys else '') + 'last=/other\n'
+                        self.assertEqual(path.read_bytes(), expected.replace('\n', newline).encode())
+
+    def test_invalid_mutations_preserve_config_and_reload(self):
+        with tempfile.TemporaryDirectory(prefix='autowork-tx-reject-') as folder:
+            path = Path(folder) / 'session.config'
+            original = f'# keep\nWORK={folder}\nga,g=$WORK\nother=/other\n'.encode()
+            env = {**os.environ, 'TX_CONFIG': str(path), 'TX_COLOR': 'never'}
+            source = f'source {shlex.quote(str(TX))}; config_load; '
+            cases = [
+                (['bash', str(TX), 'add', 'h,h', folder], None),
+                (['bash', str(TX), 'add', 'h,ga', folder], None),
+                (['bash', str(TX), 'edit', 'ga', 'h,i'], None),
+                (['bash', str(TX), 'edit', 'ga'], 'h,other\n'),
+                (['bash', str(TX), 'edit', 'ga', 'other'], None),
+                (['bash', '-c', source + 'config_append_alias h,h /other'], None),
+                (['bash', '-c', source + 'config_append_alias ga /other'], None),
+                (['bash', '-c', source + 'config_rewrite_alias edit ga h,i'], None),
+                (['bash', '-c', source + 'config_rewrite_alias edit ga other'], None),
+            ]
+            for command, input_text in cases:
+                with self.subTest(command=command, input=input_text):
+                    path.write_bytes(original)
+                    result = subprocess.run(command, input=input_text, env=env,
+                                            capture_output=True, text=True, timeout=30)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertRegex(result.stderr, 'duplicate alias|exactly one new alias')
+                    self.assertEqual(path.read_bytes(), original)
+                    reload = subprocess.run(['bash', str(TX), 'which', 'ga'], env=env,
+                                            capture_output=True, text=True, timeout=30)
+                    self.assertEqual(reload.returncode, 0, reload.stderr)
+                    self.assertEqual(reload.stdout.strip(), folder)
+                    self.assertEqual(list(Path(folder).glob('session.config.tmp.*')), [])
+
+    def test_writer_rejects_invalid_candidate_and_cleans_staging(self):
+        with tempfile.TemporaryDirectory(prefix='autowork-tx-writer-') as folder:
+            path = Path(folder) / 'session.config'
+            original = b'# keep\nga=/original\n'
+            env = {**os.environ, 'TX_CONFIG': str(path), 'TX_COLOR': 'never'}
+            for candidate in ('ga=/duplicate', 'new=$UNDEFINED/path', 'not a config row'):
+                with self.subTest(candidate=candidate):
+                    path.write_bytes(original)
+                    script = (f'source {shlex.quote(str(TX))}; config_load; '
+                              f'CFG_LINES+=({shlex.quote(candidate)}); config_write')
+                    result = subprocess.run(['bash', '-c', script], env=env,
+                                            capture_output=True, text=True, timeout=30)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(path.read_bytes(), original)
+                    self.assertEqual(list(Path(folder).glob('session.config.tmp.*')), [])
 
 
 if __name__ == '__main__':
