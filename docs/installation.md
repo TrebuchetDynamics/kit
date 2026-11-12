@@ -66,9 +66,12 @@ Successful components remain installed; retry just Hermes with
 Every nonempty install/update ends with a restart phase, even when files are
 unchanged or a component failed. It restarts all active user-systemd
 `pi-autowork@*.service`, `hermes-gateway*.service` and `kit-*.service` units,
-regardless of the selected components. Autowork uses `restart --stop-workers --if-active`
-to wait for its merge-safe restart guard, then uses systemd's active-only restart.
-An intervening explicit stop is preserved. Other units use `try-restart`.
+regardless of the selected components. Autowork uses
+`restart --stop-workers --now --if-active`, without waiting for a coordinator safe
+point, integration review or maintenance task. This can interrupt checks and lose
+an unread integration result. It uses the supported worker stop/resume path, not a
+separate kill command. An intervening explicit stop or pause is preserved through
+marker checks and systemd's active-only restart. Other units use `try-restart`.
 Stopped/paused services and unrelated host services stay untouched. Failures are
 reported in the summary and make the installer exit nonzero. Hosts without Linux
 user systemd report that restarts are unavailable. Preview/list/menu cancellation
@@ -121,8 +124,8 @@ run this command from an interactive shell with the working interactive Pi home:
 autowork update --only autowork
 ```
 
-This refreshes the allowlisted files and restarts active services through the normal
-safe restart path. A custom interactive home must be selected with
+This refreshes the allowlisted files and restarts active services through the
+installer's immediate, active-only restart phase. A custom interactive home must be selected with
 `PI_CODING_AGENT_DIR` on that command. `autowork status` reports a missing private
 directory/login or a login refusal observed by a runner and names the same refill
 command. Status does not contact a provider, and runners never silently fall back

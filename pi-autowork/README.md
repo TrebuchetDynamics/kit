@@ -45,7 +45,7 @@ See [private Pi configuration](#private-pi-configuration-and-installed-runner).
 
 ## First check
 
-From your project, inspect the committed queue without starting work:
+From your project, inspect task-store readiness without starting work:
 
 ```sh
 autowork tasks prepare --check .
@@ -427,9 +427,10 @@ and the explicit agent commands below do.
 | `autowork blockers [dir]` | `/autowork blockers` in an agent (`AUTOWORK_AGENT`, else `claude`, else `pi`); records the session's elapsed owner minutes privately when the agent exits |
 | `autowork plan [dir]` | Embedded Pi RPC planning: autonomous discovery, task discussion/investigation, saved sessions, roadmap and explicit Review → Apply. `--interactive` chats/steers; `--list`, `--session ID`, `--history`, `--preview`, `--apply REV` resume/review locally. No service start or push; [planning guide](docs/planning-console.md). `--legacy` retains the former external-agent planner and its owner-time accounting |
 | `autowork attention MINUTES [--task ID] [--note TEXT] [target]` | Record other owner time (finite, nonnegative minutes); defaults to this repository, optionally attributed to one task. Notes stay private |
-| `autowork tasks list\|validate\|new-id [target]`, `autowork tasks show\|why TASK [target]` | Read the `tasks/` store at HEAD (`validate --worktree`: uncommitted edits too) |
-| `autowork tasks add\|field\|place\|move\|hold\|release\|decide\|done\|supersede\|delete\|goal ... [target]` | Edit task and goal files in the working tree, never committing: an owner answer (`field TASK "Owner decision" TEXT`, `"Blocker resolution"`), a dated direction (`decide TASK TEXT`, optionally `--section`), a section (`place`, optionally `--decision`), the priority (`move TASK up\|down` changes its rank), a hold (`hold --by`, `release`), a manual close (`done ID --by WHO --reason TEXT [--evidence REF]`, not verification), a new task or goal, or a full record removal (`delete ID`; busy or still-depended-on tasks warn but are removed). Each write validates the whole store |
-| `autowork tasks prepare [target] [--check\|--no-commit]` | What Docs Sync runs first: detect the store's state, convert or finish converting a TODO.md + goals.json repository, and report diagnostics with the command that repairs each, as JSON; `--check` writes nothing ([task store](task-store.md#preparing-a-repository-autowork-tasks-prepare)) |
+| `autowork tasks list\|validate\|new-id [target]`, `autowork tasks show\|why TASK [target]` | Read the `tasks/` store at HEAD, or the working tree with `--store worktree` (`--worktree`) |
+| `autowork tasks add\|field\|place\|move\|hold\|release\|decide\|done\|supersede\|delete\|goal ... [target]` | Edit task and goal files in the working tree, never committing: an owner answer (`field TASK "Owner decision" TEXT`, `"Blocker resolution"`), a dated direction (`decide TASK TEXT`, optionally `--section`), a section (`place`, optionally `--decision`), the priority (`move TASK up\|down` changes its rank), a hold (`hold --by`, `release`), a manual close (`done ID --by WHO --reason TEXT [--evidence REF]`, not verification), a new task or goal, or a full record removal (`delete ID`, or `delete --ids-file FILE` for a set in one transaction; a busy task warns but is removed, a still-depended-on task refuses without `--force`, and `--closure` prints the dependents). Each write validates the whole store |
+| `autowork tasks prune [target] [--apply [--expect-plan REVISION]] [--summary]` | Completed-task retention as one decision table: print which finished records would be deleted and one reason per retained record (default), or apply it with the satisfied dependency edges in one transaction ([task store](task-store.md)) |
+| `autowork tasks prepare [target] [--check\|--no-commit] [--summary] [--code CODE] [--limit N] [--all] [--fail-on-diagnostics]` | What Docs Sync runs first: detect the store's state, convert or finish converting a TODO.md + goals.json repository, and report diagnostics with the command that repairs each, as JSON; `--check` writes nothing and, like the other modes, reads uncommitted task files (`read: HEAD\|worktree`) ([task store](task-store.md#preparing-a-repository-autowork-tasks-prepare)) |
 | `autowork tasks commit [target] [--dry-run] [--expect-pending REVISION]` | Preview the exact task diff and its `pending_revision`, or commit only `tasks/`. `--expect-pending` binds HEAD and captured task content under the task lock; drift requires a fresh preview. TUI and plugin confirmations use it. Unrelated staged edits stay; no push. |
 | `autowork migrate [target] [--dry-run] [--no-commit]` | Convert a TODO.md + goals.json repository to `tasks/` once, in one local commit (`--no-commit`: staged); an interrupted run resumes; it refuses while work is in flight |
 | `autowork scorecard [--days N] [--json \| --csv] [--baseline FILE] [target...]` | Per runner and overall over 1–30 days (default 7): labelled evaluation metrics, weekly breakdown and first-to-last-week changes; JSON retains closure, held-share, questions and task/attempt accounting details; no model call |
@@ -651,10 +652,9 @@ actions. The palette includes provider/model selection on the fleet and provider
 and refresh while the model picker is open. Read-only mode omits actions that
 change runner or repository state.
 
-The fleet uses a two-pane workspace on terminals at least 130 columns and 26
-rows: project/context on the left, current work/activity on the right. Smaller
-terminals keep a vertical stack. Borders identify panels and highlight keyboard
-focus; the fixed footer shows **1 Projects**, **2 Work**, **3 Activity**, Help and
+The fleet keeps projects, selected summary, current work and activity stacked
+at full width, including on wide terminals. There is no project sidebar.
+The fixed footer shows **1 Projects**, **2 Work**, **3 Activity**, Help and
 Quit. Press **h Guide** for the setup/execution/review/publication flow and how to
 interpret waiting, attention and unconfirmed states. Task progress is separate
 from the service being alive. The number keys move focus only on the fleet screen; arrows select and
@@ -662,9 +662,10 @@ Enter opens the selected log. Resizing does not acquire new state or dispatch an
 action.
 
 The fleet has three numbered regions: **Projects**, **Current work** and
-**Recent activity**. The project list shows Project, Status and Tasks at every
-width. The selected summary identifies the next useful action; detailed counts,
-source status, attempts and elapsed/quiet times remain under **i Details**.
+**Recent activity**. At 120 columns and above, the fleet table shows Runner,
+State, Active, Mergeable, Waiting, Blocker, Decision and Total, plus Needs and Now
+when space permits. Smaller terminals show Runner, State and Total. Wide worker
+tables show attempt, elapsed and quiet times. **i Details** retains full source evidence.
 Unconfirmed worker observations retain that label and never count as verified
 active tasks. Repeated memory waits in the dashboard show their latest value,
 range, number of updates and first/last timestamps. Full-screen **Log**, including
@@ -1338,18 +1339,25 @@ and [Pi compatible endpoints](https://github.com/earendil-works/pi/blob/main/pac
 <details>
 <summary><strong>Check capacity, landing checks and acceptance evidence</strong></summary>
 
-## Fleet full-check capacity
+<a id="fleet-full-check-capacity"></a>
 
-Every runner of the same user shares **two full-suite slots** by default.
+## Fleet check capacity
+
+Every runner of the same user shares **two check slots** by default.
 `PI_AUTOWORK_CHECK_SLOTS` sets the fleet limit; configure the same value for all
 runners. The private lock pool is `~/.local/state/pi-autowork/check-slots`.
 `PI_AUTOWORK_CHECK_ROOT` can select another shared private directory for isolated
 fixtures or a whole fleet; use the same directory for every participating process.
 XDG runtime directories and repository state directories do not create extra pools.
 
-Main checks, batch/landing full checks and worker full suites through
-`autowork-run` use this pool. Focused checker invocations take no slot; affected
-checks take one only when conservative selection expands to the full inventory.
+Main checks, batch/landing checks and worker checks through `autowork-run` use
+this pool. Focused, filtered, sharded and affected checker runs also take a slot;
+one runner-fixture module can be expensive. On Linux, the Kit checkout's direct
+`scripts/check.py` runs join the same pool. `--list` takes no slot. Standalone
+checker copies without the runtime depend on their Autowork wrapper for admission.
+An inherited locked slot is reused, not acquired twice, including descriptors from
+older wrappers. The descriptor is validated against the pool and its kernel lock;
+no environment-only marker grants admission.
 The repository's existing main-check lock still prevents duplicate main checks.
 A queued full check names the current holders in its progress record and runner
 status/fleet view. Queue time does not consume check, worker command or worker
@@ -1360,8 +1368,26 @@ lease until it exits. Reviews precede background main checks, with the existing
 Kit's finite process guard for this queue-aware task deadline; parent-death and
 cleanup checks remain enforced.
 
+Each owned checker dispatches at most two Python test processes, even with a larger
+`--jobs` request, and can reduce its default to one under load. Its optional Paseo
+check runs afterward because Vitest has its own workers. The default two slots thus
+permit at most four concurrent Python test processes from these checkers. Fixture
+children and arbitrary external commands are not OS-level process-limited by this
+policy. Unrelated applications can still load the host.
+
+By default, a repository runs one verification batch at a time. Workers can keep
+coding, but late candidates wait for the next batch instead of starting a speculative
+merge-train check. Existing `PI_AUTOWORK_TRAIN=1` explicitly opts into speculation;
+`PI_AUTOWORK_INDEPENDENT_HALVES=1` additionally permits independent failed-batch
+halves beside a running review. Both default off. Existing receipt reuse, review,
+affected selection and full-main qualification rules are unchanged.
+
+Already-running jobs keep their original settings and evidence. These source changes
+do not interrupt them or activate a new release. All participating runners must use
+the same slot limit and pool for a consistent fleet limit.
+
 Worker admission retains its memory and disk checks. Load average does not block
-ready workers: the fleet slots bound expensive suites while model workers wait.
+ready workers: the fleet slots bound check admission while model workers wait.
 
 ## Affected landing checks
 

@@ -121,6 +121,8 @@ class OfflineCheckTests(unittest.TestCase):
         return target
 
     def run_check(self, *args, env=None):
+        env = dict(os.environ if env is None else env)
+        env.setdefault('PI_AUTOWORK_CHECK_ROOT', str(self.root / 'check-pool'))
         return subprocess.run([sys.executable, str(self.script), *args],
                               cwd=self.root, env=env, text=True,
                               capture_output=True, timeout=15)
@@ -543,7 +545,7 @@ class Check(unittest.TestCase):
         self.sleeper('tests/test_slow.py', 1.5, 'first')
         self.sleeper('skills/docs-sync/scripts/test_fast.py', 1.5, 'second')
         started = time.monotonic()
-        result = self.run_check()
+        result = self.run_check('--jobs', '2')
         elapsed = time.monotonic() - started
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertLess(elapsed, 2.8, 'directories did not overlap')
@@ -557,7 +559,7 @@ class Check(unittest.TestCase):
         self.sleeper('tests/test_slow.py', 1.5, 'first')
         self.sleeper('tests/test_also_slow.py', 1.5, 'second')
         started = time.monotonic()
-        result = self.run_check()
+        result = self.run_check('--jobs', '2')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertLess(time.monotonic() - started, 2.8, 'modules did not overlap')
         self.assertLess(result.stdout.index('OUTPUT-second'), result.stdout.index('OUTPUT-first'))  # module order
@@ -649,7 +651,8 @@ class Check(unittest.TestCase):
         checker = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(checker)
         # (cpus, load, jobs for a niced check from the load average, jobs from busy CPUs, rounded up)
-        for cpus, load, jobs, unniced in ((22, 0.5, 8, 8), (22, 16.2, 6, 5), (22, 30.0, 4, 4), (2, 0.0, 4, 4)):
+        # Keep the baseline method identity; the accepted range is now one to two.
+        for cpus, load, jobs, unniced in ((22, 0.5, 2, 2), (22, 16.2, 2, 2), (22, 30.0, 1, 1), (2, 0.0, 2, 2)):
             # A niced check (a worker's own) counts the whole load average, as before.
             with self.subTest(cpus=cpus, load=load), mock.patch.object(checker.os, 'cpu_count', return_value=cpus), \
                     mock.patch.object(checker.os, 'getpriority', return_value=10), \
@@ -681,11 +684,67 @@ class Check(unittest.TestCase):
         started = time.monotonic()
         sequential = self.run_check('--jobs', '1')
         self.assertGreaterEqual(time.monotonic() - started, 2)
-        concurrent = self.run_check()
+        concurrent = self.run_check('--jobs', '2')
         for result in (sequential, concurrent):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         strip = lambda text: [line for line in text.splitlines() if not line.startswith(('Ran ', '---', 'OK'))]
         self.assertEqual(strip(sequential.stdout), strip(concurrent.stdout))
+
+    def test_explicit_jobs_cannot_oversubscribe_a_check(self):
+        self.sleeper('tests/test_one.py', 0, 'one')
+        spec = importlib.util.spec_from_file_location('check_capacity', self.script)
+        checker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(checker)
+        with mock.patch.object(checker, 'ThreadPoolExecutor', wraps=checker.ThreadPoolExecutor) as pool, \
+                mock.patch.object(checker, 'run_unit', return_value=(True, '')):
+            self.assertEqual(checker.main(['tests/test_one.py', '--jobs', '32']), 0)
+        self.assertEqual(pool.call_args.kwargs['max_workers'], 2)
+
+    def test_provision_keeps_the_inherited_fleet_lease(self):
+        self.write('requirements-test.txt', '')
+        spec = importlib.util.spec_from_file_location('check_provision', self.script)
+        checker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(checker)
+        capacity = mock.Mock()
+        capacity.inherited_check_lease.return_value = 17
+        with mock.patch.dict(os.environ, {}, clear=True), \
+                mock.patch.object(checker.sys, 'version_info', (3, 14)), \
+                mock.patch.object(checker.shutil, 'which', return_value='/fixture/uv'), \
+                mock.patch.object(checker, 'check_capacity', return_value=capacity), \
+                mock.patch.object(checker.subprocess, 'run', return_value=mock.Mock(returncode=0)) as run:
+            self.assertEqual(checker.provision(self.root), 0)
+        self.assertEqual(run.call_args.kwargs['pass_fds'], (17,))
+
+    def test_direct_focused_checker_joins_the_fleet_pool(self):
+        from src_fixture import copy_sources
+        from pi_autowork import main_check
+        copy_sources(self.root)
+        marker = self.root / 'ran'
+        self.write('tests/test_one.py', 'import unittest\nfrom pathlib import Path\n'
+                   'class One(unittest.TestCase):\n'
+                   f'    def test_one(self): Path({str(marker)!r}).touch()\n')
+        log = self.root / 'checker.log'
+        with mock.patch.dict(os.environ, PI_AUTOWORK_CHECK_ROOT=str(self.root / 'pool'),
+                             PI_AUTOWORK_CHECK_SLOTS='1'):
+            for wrapped in (False, True):
+                with self.subTest(wrapped=wrapped):
+                    marker.unlink(missing_ok=True)
+                    command = [sys.executable, str(self.script), 'tests/test_one.py', '-k', 'one']
+                    if wrapped:
+                        command = [sys.executable, str(ROOT / 'pi-autowork/engine/autowork_run.py'), *command]
+                    with log.open('w') as output, main_check.check_slot(lambda _: self.fail('private pool busy')):
+                        child = subprocess.Popen(command, cwd=self.root, env=os.environ,
+                                                 stdout=output, stderr=subprocess.STDOUT)
+                        self.addCleanup(child.wait)
+                        self.addCleanup(lambda c=child: c.poll() is None and c.kill())
+                        deadline = time.monotonic() + 15
+                        while 'queued for a fleet slot' not in log.read_text():
+                            self.assertIsNone(child.poll(), log.read_text())
+                            self.assertLess(time.monotonic(), deadline, log.read_text())
+                            time.sleep(.02)
+                        self.assertFalse(marker.exists())
+                    self.assertEqual(child.wait(timeout=15), 0, log.read_text())
+                    self.assertTrue(marker.exists())
 
     def test_jobs_must_be_a_positive_integer(self):
         for value in ('0', '-1', 'x'):

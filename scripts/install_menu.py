@@ -750,8 +750,8 @@ def choose_text(all_items, chosen, read=input, write=print):
 def restart_services(output):
     """Restart every active Kit service, including on unchanged/partial installs.
 
-    Never revive stopped services or bypass the runner's merge-safe restart guard.
-    Other host services are deliberately outside the installer's authority.
+    Interrupt runner work through the supported immediate restart command, without
+    reviving stopped/paused services. Other host services stay outside this scope.
     """
     ctl = os.environ.get('PI_AUTOWORK_SYSTEMCTL', 'systemctl')
     if platform.system() != 'Linux' or not shutil.which(ctl):
@@ -770,7 +770,7 @@ def restart_services(output):
         if unit.startswith('pi-autowork@'):
             # Use the checkout entrypoint even if the autowork component was skipped.
             argv = ['bash', str(ROOT / 'pi-autowork/bin/autowork'), 'restart',
-                    '--stop-workers', '--if-active', unit[len('pi-autowork@'):-len('.service')]]
+                    '--stop-workers', '--now', '--if-active', unit[len('pi-autowork@'):-len('.service')]]
         else:
             argv = [ctl, '--user', 'try-restart', unit]
         output.line('  $ ' + shlex.join(argv), 'command')

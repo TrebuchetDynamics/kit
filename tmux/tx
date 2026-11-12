@@ -157,10 +157,14 @@ is_reserved_alias() {
 validate_alias_list() {
   local keys=$1 context=${2:-alias} part
   local -a parts
+  local -A seen=()
+  [[ -n "$keys" ]] || die "$context: alias is required"
   IFS=',' read -ra parts <<< "$keys"
   for part in "${parts[@]}"; do
     [[ -n "$part" ]] || die "$context: empty alias in '$keys' (check for stray commas)"
     [[ "$part" =~ ^[A-Za-z0-9_-]+$ ]] || die "$context: invalid alias '$part'"
+    [[ -z "${seen[$part]+x}" ]] || die "$context: duplicate alias '$part'"
+    seen[$part]=1
     if is_reserved_alias "$part"; then
       die "$context: alias '$part' is reserved (used by a subcommand)"
     fi
@@ -243,6 +247,14 @@ colorize_status() {
   esac
 }
 
+completion_aliases() {
+  config_load
+  local alias
+  for alias in "${!ALIAS_TO_PATH[@]}"; do
+    printf '%s\n' "$alias"
+  done | LC_ALL=C sort
+}
+
 completion_commands() {
   local record name flags handler usage summary public aliases
   for record in "${COMMANDS[@]}"; do
@@ -271,7 +283,7 @@ print_completion() {
     bash)
       cat <<'EOF'
 _tx_completion() {
-  local cur cmd tx_bin commands aliases
+  local cur cmd tx_bin commands aliases alias_commands alias_command
   COMPREPLY=()
   tx_bin="${COMP_WORDS[0]}"
   cur="${COMP_WORDS[COMP_CWORD]}"
@@ -283,10 +295,13 @@ _tx_completion() {
   fi
   cmd="${COMP_WORDS[1]}"
   alias_commands="$($tx_bin __complete_alias_commands 2>/dev/null)"
-  case "$cmd" in
-    $alias_commands)
+  for alias_command in $alias_commands; do
+    if [[ "$cmd" == "$alias_command" ]]; then
       COMPREPLY=( $(compgen -W "$aliases" -- "$cur") )
-      ;;
+      return 0
+    fi
+  done
+  case "$cmd" in
     completion)
       COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
       ;;
@@ -379,7 +394,7 @@ config_load() {
     if [[ "$line" =~ ^([[:space:]]*)([A-Z_][A-Z0-9_]*)(=)(.*)$ ]]; then
       key=${BASH_REMATCH[2]}
       val=${BASH_REMATCH[4]}
-      vars[$key]=$(expand_vars "$val" vars)
+      vars[$key]=$(expand_vars "$val" vars) || die "config:$lineno: invalid variable value"
       config_append_line var '' '' '' '' ''
       continue
     fi
@@ -416,15 +431,19 @@ config_load() {
 
 load_config() { config_load; }
 
-config_write() {
-  ensure_config_parent
+config_write() (
+  ensure_config_parent || return
   local i tmp
-  tmp=$(mktemp "${CONFIG_PATH}.tmp.XXXXXX")
+  tmp=$(mktemp "${CONFIG_PATH}.tmp.XXXXXX") || return
+  trap 'rm -f -- "$tmp"' EXIT
   for i in "${!CFG_LINES[@]}"; do
-    printf '%s\n' "${CFG_LINES[i]}" >> "$tmp"
+    printf '%s\n' "${CFG_LINES[i]}" >> "$tmp" || return
   done
-  mv "$tmp" "$CONFIG_PATH"
-}
+  # This writer already runs in isolation. Validation must exit this process,
+  # even when its caller uses a conditional that disables errexit.
+  CONFIG_PATH="$tmp" config_load
+  mv -- "$tmp" "$CONFIG_PATH"
+)
 
 config_render_alias_line() {
   local i=$1 keys=$2 cr=''
@@ -452,6 +471,15 @@ config_rewrite_alias() {
   local mode=$1 alias=$2 replacement=${3:-}
   local i part keys found=0 cr='' joined
   local -a parts kept
+
+  if [[ "$mode" == "edit" ]]; then
+    [[ "$replacement" != *,* ]] || die "edit: expected exactly one new alias"
+    validate_alias_list "$replacement" "edit"
+    [[ "$replacement" != "$alias" ]] || die "edit: new alias matches old alias: $alias"
+    if [[ -n "${ALIAS_TO_PATH[$replacement]+x}" ]]; then
+      die "edit: duplicate alias '$replacement' (already maps to ${ALIAS_TO_PATH[$replacement]})"
+    fi
+  fi
 
   for i in "${!CFG_KIND[@]}"; do
     [[ "${CFG_KIND[i]}" == alias ]] || continue
@@ -508,8 +536,7 @@ EOF
 
 add_alias() {
   [[ $# -ge 1 && $# -le 2 ]] || die "add: expected alias[,alias2] and optional directory, or a directory to prompt for aliases"
-  local keys target part prompt_for_alias=0 first_path existing=""
-  local -a parts
+  local keys target prompt_for_alias=0 first_path existing=""
 
   first_path=$(expand_tilde "$1")
   if [[ $# -eq 1 && ( "$1" == "." || -d "$first_path" ) ]]; then
@@ -535,12 +562,6 @@ add_alias() {
 
   if [[ -f "$CONFIG_PATH" ]]; then
     config_load
-    IFS=',' read -ra parts <<< "$keys"
-    for part in "${parts[@]}"; do
-      if [[ -n "${ALIAS_TO_PATH[$part]+x}" ]]; then
-        die "add: duplicate alias '$part' (already maps to ${ALIAS_TO_PATH[$part]})"
-      fi
-    done
     existing=${PATH_TO_ALIASES[$target]-}
   else
     init_config >/dev/null
@@ -577,11 +598,6 @@ edit_alias() {
   else
     printf 'Rename %s to: ' "$old_alias" >&2
     IFS= read -r new_alias || die "edit: alias prompt cancelled"
-  fi
-  validate_alias_list "$new_alias" "edit"
-  [[ "$new_alias" != "$old_alias" ]] || die "edit: new alias matches old alias: $old_alias"
-  if [[ -n "${ALIAS_TO_PATH[$new_alias]+x}" ]]; then
-    die "edit: duplicate alias '$new_alias' (already maps to ${ALIAS_TO_PATH[$new_alias]})"
   fi
   local target=${ALIAS_TO_PATH[$old_alias]}
   config_rewrite_alias edit "$old_alias" "$new_alias"

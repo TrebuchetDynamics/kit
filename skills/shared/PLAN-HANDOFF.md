@@ -10,7 +10,9 @@ no extra plan or goal is required. Use an existing specification for shared inte
 without copying the task contract. Goal and custom short label are optional;
 missing bounded write scope stays draft until the coordinator resolves it.
 When a separate plan is justified, its accepted section names its status
-(`Status: Accepted`), scope, acceptance and sources. Preserve existing task/goal IDs and completed history.
+(`Status: Accepted`), scope, acceptance and sources. Preserve existing task/goal IDs;
+Git owns completed history. Before a writable handoff, perform scoped
+[working-set reconciliation](TODO-WORKCENTER.md#reconcile-the-working-set).
 Planning saves accepted work as complete records in `tasks/` through `autowork tasks`
 ([work center](TODO-WORKCENTER.md)); a goal without tasks is not an executable task.
 

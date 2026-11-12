@@ -33,6 +33,26 @@ class SkillStandardTests(unittest.TestCase):
                 self.assertRegex(description, r'\.$')
                 self.assertEqual(description.count('.'), 1, description)
 
+    def test_relative_links_resolve_from_each_skill_file(self):
+        """A moved file must fail here, not as a dead end in the middle of a workflow."""
+        link = re.compile(r'\]\(([^)\s]+)\)')
+        files = (self.skills('adapters/skills') + self.skills('skills')
+                 + [ROOT / 'adapters/skills/COMMON.md']
+                 + sorted((ROOT / 'skills/docs-sync/references').glob('*.md')))
+        for path in files:
+            fenced = False
+            for number, line in enumerate(path.read_text().splitlines(), 1):
+                if line.lstrip().startswith(('```', '~~~')):
+                    fenced = not fenced
+                if fenced:
+                    continue
+                for target in link.findall(re.sub(r'`[^`]*`', '', line)):
+                    target = target.split('#', 1)[0]
+                    if not target or re.match(r'[a-z][a-z0-9+.-]*:', target) or target.startswith('<'):
+                        continue
+                    with self.subTest(file=str(path.relative_to(ROOT)), line=number, link=target):
+                        self.assertTrue((path.parent / target).exists(), f'{target} does not resolve')
+
     def test_lgtm_is_a_yes_skill_not_a_second_approval_round(self):
         skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())
         adapter = ' '.join((ROOT / 'adapters/skills/lgtm/SKILL.md').read_text().split())

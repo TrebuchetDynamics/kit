@@ -1054,13 +1054,19 @@ class TaskCommandTests(unittest.TestCase):
         self.assertIn(f'- Superseded by: {successor}; replaced', record['notes'])
 
     def test_delete_removes_any_task_and_warns_without_refusing(self):
+        # The inventory baseline pins this name: holder warnings never refuse; dependents need force.
         dependent = self.add('Dependent', '--depends-on', 'T-1')
         path = self.repo / 'tasks/items/T-1.md'
-        with patch.object(commands, 'in_flight', return_value=({'T-1'}, ['a live coordinator lease'])):
-            warnings = commands.cmd_delete(self.repo, 'T-1')
+        fact = dict(holder='slot', state='running', attempt=1, attempt_id='ab12', owner_pid=7, age_seconds=60)
+        with patch.object(commands, 'in_flight_facts', return_value=({'T-1': fact}, ['a live coordinator lease'])):
+            with self.assertRaises(commands.CommandError):
+                commands.cmd_delete(self.repo, 'T-1')
+            self.assertTrue(path.exists())
+            warnings = commands.cmd_delete(self.repo, 'T-1', force=True)
         self.assertFalse(path.exists())
         self.assertTrue((self.repo / f'tasks/items/{dependent}.md').exists())
-        self.assertTrue(any('T-1' in warning and 'held' in warning for warning in warnings), warnings)
+        self.assertTrue(any('T-1' in warning and 'held' in warning and 'pid 7' in warning
+                            for warning in warnings), warnings)
         self.assertIn('a live coordinator lease', warnings)
         self.assertTrue(any(dependent in warning for warning in warnings), warnings)
         self.commit()
@@ -1068,8 +1074,13 @@ class TaskCommandTests(unittest.TestCase):
         self.assertEqual(self.tasks('show', 'T-1', ok=False).returncode, 1)
 
     def test_delete_cli_reports_dependents_and_proceeds(self):
+        # The inventory baseline pins this name: it proceeds only with --force.
         dependent = self.add('Dependent', '--depends-on', 'T-1')
-        result = self.tasks('delete', 'T-1')
+        refused = self.tasks('delete', 'T-1', ok=False)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn(dependent, refused.stderr)
+        self.assertTrue((self.repo / 'tasks/items/T-1.md').exists())
+        result = self.tasks('delete', 'T-1', '--force')
         self.assertIn('deleted', result.stdout)
         self.assertIn(dependent, result.stdout)
         self.assertFalse((self.repo / 'tasks/items/T-1.md').exists())

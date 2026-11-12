@@ -21,11 +21,18 @@ safety and evidence; use `wiki-docs` for raw-source-to-wiki compilation.
 
 Every Bootstrap/Maintain delivers corrected applicable docs and, for every
 evidenced unmet goal or requirement, complete task records in `tasks/`. Findings
-alone are insufficient. Safe completed-task pruning is mandatory within scope on
-Bootstrap/Maintain; it is part of maintenance, not a separate cleanup approval.
-Apply [completed-task retention](../shared/TODO-WORKCENTER.md#completed-task-retention):
-delete eligible finished records and their unneeded dedicated receipts/reports,
-retaining only those with a concrete current dependency, proof or ownership need.
+alone are insufficient. The [pruning procedure](references/pruning.md) is mandatory
+within scope on every Bootstrap/Maintain, for
+[completed-task retention](../shared/TODO-WORKCENTER.md#completed-task-retention).
+A bare invocation prints the `autowork tasks prune` plan and stops: it deletes no
+record. `/docs-sync tasks`, or a request that names pruning or task cleanup, applies
+the plan; that is maintenance, not a separate cleanup approval. Retain only records
+with a concrete current dependency, proof or ownership need.
+
+This skill neither grants nor removes delivery authority: the repository's
+`AGENTS.md` governs commit, integration and push. Report counts, the first failure
+and a path; prefer `--summary`, and never paste full machine output. Classify each
+diagnostic with the [triage table](references/diagnostics.md) before a repair.
 
 After a workflow update, verify the installed copies first, then maintain each
 project's tasks with freshly loaded instructions; installation does not rewrite
@@ -50,7 +57,8 @@ under the ownership and review rules below.
 Bare `/docs_sync` or `/docs-sync` means Bootstrap + Maintain: inspect, prepare the
 task store ([prepare the store first](#prepare-the-store-first)), build every
 applicable core owner, correct supported drift, and run goal-gap analysis. Arguments
-narrow scope. Explicit Audit/read-only scope changes no files, including `tasks/`
+narrow scope: `/docs-sync docs` maintains documents only, and `/docs-sync tasks`
+maintains the task store, including the prune apply. Explicit Audit/read-only scope changes no files, including `tasks/`
 and BLOCKERS.md. Task-addition/brainstorming persistence is narrow Maintain, not
 bootstrap. Preserve live IDs, focus, completed implementation, required proof,
 active holds and unrelated edits; Git preserves past task history, not an ever-growing
@@ -422,8 +430,8 @@ repository. Read first, then write:
 
 | Need | Command |
 | --- | --- |
-| Detect, convert, recover, diagnose | `autowork tasks prepare [--check\|--no-commit]` |
-| Inspect | `autowork tasks list`, `autowork tasks show ID [--worktree]`, `autowork tasks why ID` |
+| Detect, convert, recover, diagnose | `autowork tasks prepare [--check\|--no-commit] [--summary] [--code CODE] [--limit N]` |
+| Inspect | `autowork tasks list`, `autowork tasks show ID`, `autowork tasks why ID`; each takes `--store head\|worktree` |
 | Add or change a goal | `autowork tasks goal ID --title T --source path#anchor --priority N [--status S] [--focus/--no-focus] [--depends-on G] [--evidence TEXT]` |
 | Add a task | `autowork tasks add --title T [--goal G] [--short S] [--section Next] [--scope TEXT] [--acceptance A ...] [--checks C ...] [--touches P ...] [--depends-on ID ...] [--resources R ...] [--exclusions E ...] [--kind K] [--ownership O] [--sources path#anchor]` |
 | Set a typed field or note | `autowork tasks field ID LABEL VALUE` (for example `rank`, `touches`, `checks`, `kind`, `ownership`, `resources`, `exclusions`, `depends_on`, or a note label such as `Sources`) |
@@ -431,7 +439,8 @@ repository. Read first, then write:
 | Reorder | `autowork tasks move ID up\|down`, or `field ID rank N` |
 | Close manually (any task kind, not verified) | `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]` |
 | Retire for a successor | `autowork tasks supersede ID --by OTHER --reason TEXT` |
-| Prune eligible finished work after retention checks | `autowork tasks delete ID` (receipts/dependencies are not removed automatically) |
+| Prune finished work | `autowork tasks prune` (plan), then `autowork tasks prune --apply --expect-plan REV`; see [pruning](references/pruning.md) |
+| Delete one record or a set | `autowork tasks delete ID [--closure\|--force]`, `autowork tasks delete --ids-file FILE`; refuses while a surviving task depends on it |
 | Check the result | `autowork tasks validate --worktree .` |
 | Read the goals | `autowork tasks goals [--worktree]` |
 | Commit only the task edits | `autowork tasks commit [--message TEXT] [--dry-run]` |
@@ -589,7 +598,9 @@ confirm with `autowork tasks why ID` that it is not selected.
 
 ### Prune completed task history
 
-Before the final validation, perform the mandatory
+Before the final validation, perform
+[working-set reconciliation](../shared/TODO-WORKCENTER.md#reconcile-the-working-set),
+including the mandatory
 [completed-task retention pass](../shared/TODO-WORKCENTER.md#completed-task-retention)
 for the maintained scope. Confirm actual closure, integration and inactive ownership;
 reconcile satisfied ordinary dependencies and still-required proof before deleting

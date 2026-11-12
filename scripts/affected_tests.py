@@ -10,7 +10,8 @@ when it reaches a changed file through what it imports (``import parallel_integr
 document it reads), followed transitively. Each selection prints the chain that selected it.
 A change to the check itself, CI or packaging selects the whole suite, as does `--full`; any
 other changed file no test reaches does too, except a document (Markdown or text), which the
-core contracts cover and which selects nothing.
+core contracts cover and which selects nothing. With `--run --defer-full`, whole-suite
+execution is left to CI instead; targeted selections still run and failures still fail.
 
 Workers and reviewers ran whole test directories, or the full check, for a change that two
 modules could reach; this runs those two.
@@ -269,7 +270,10 @@ def main(argv=None):
     parser.add_argument('--base', help='revision the change starts from (default: merge-base with origin/main)')
     parser.add_argument('--run', action='store_true', help='run the selected modules with scripts/check.py')
     parser.add_argument('--json', action='store_true', help='print the selection as JSON')
-    parser.add_argument('--full', action='store_true', help='select the whole suite')
+    execution = parser.add_mutually_exclusive_group()
+    execution.add_argument('--full', action='store_true', help='select the whole suite')
+    execution.add_argument('--defer-full', action='store_true',
+                           help='with --run, leave whole-suite selections to CI (used by pre-push)')
     parser.add_argument('-k', dest='pattern', help='passed to scripts/check.py with --run')
     args = parser.parse_args(argv)
     base = args.base or default_base()
@@ -277,17 +281,23 @@ def main(argv=None):
     if args.full:
         changed = ['scripts/check.py']
     tests, reasons, full = select(changed, base, conservative=True)
+    deferred = bool(args.run and args.defer_full and full)
     if args.json:
-        print(json.dumps({'base': base, 'changed': changed, 'full': full, 'tests': tests, 'reasons': reasons}, indent=2))
+        print(json.dumps({'base': base, 'changed': changed, 'full': full, 'tests': tests,
+                          'reasons': reasons, 'deferred': deferred}, indent=2))
     else:
         print(f'{len(changed)} changed file(s) since {base[:12]}; '
               + (f'the whole suite ({len(tests)} modules)' if full else f'{len(tests)} test module(s) affected'))
+        if full and reasons:
+            print('  ' + next(iter(reasons.values())))
+        if deferred:
+            print('  full-suite execution deferred to CI (--defer-full); no test modules run locally')
         if not full:
             for test in tests:
                 print(f'  {test}  ({reasons[test]})')
         if not tests:
             print('  no test module reaches these changes')
-    if not args.run or not tests:
+    if not args.run or not tests or deferred:
         return 0
     command = [sys.executable, str(ROOT / 'scripts' / 'check.py'), *([] if full else tests),
                *(['-k', args.pattern] if args.pattern else [])]
