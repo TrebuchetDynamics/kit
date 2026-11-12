@@ -5,7 +5,7 @@ interface. Autowork coordinates repository planning, documentation and developme
 This document specifies current product contracts and accepted planned directions,
 not a delivery ledger. Operator procedures belong in [installation](installation.md),
 [cross-host setup](cross-host.md) and [removal/recovery](uninstall.md); current work
-and goal status belong in the [task store](../tasks/). Git history records past work.
+and goal status belong in the task store. Git history records past work.
 Dated headings remain stable requirement anchors, not claims of fresh qualification.
 
 ## Accepted requirements
@@ -129,7 +129,7 @@ publication, money, destructive or deployment authority.
 
 ## Planned work and verification
 
-The [task store](../tasks/) owns priorities, unresolved decisions and goal evidence.
+The task store owns priorities, unresolved decisions and goal evidence.
 Eligibility does not establish live ownership, execution, review or qualification.
 [Testing](testing.md) owns executable checks and their limits. Clean installation,
 actual model execution, Telegram delivery and task acceptance are separate outcomes;

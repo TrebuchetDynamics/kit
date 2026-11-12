@@ -464,7 +464,7 @@ instrument.
 | [Dependencies, reproducibility and licensing](docs/dependencies.md) | [Assessment and 30-day evaluation](docs/evaluation.md) |
 
 **Run and inspect:** [`autowork` runner controls](pi-autowork/README.md#the-autowork-command) ·
-[`tx` tmux sessions](tmux/README.md) · [Work queue](tasks/) · [Changelog](CHANGELOG.md) ·
+[`tx` tmux sessions](tmux/README.md) · [Changelog](CHANGELOG.md) ·
 [Memory and retained data](docs/memory.md) · [Adding skills](docs/contributing.md)
 
 All skills use the [shared writing rules](skills/shared/COMMUNICATION.md): ASD-STE100
