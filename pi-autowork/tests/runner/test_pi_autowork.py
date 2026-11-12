@@ -1803,6 +1803,8 @@ class EngineTests(Fixture):
         right after it on that verdict."""
         import parallel_state
 
+        # Speculative verification remains supported only under an explicit opt-in.
+        self.env.update(PI_AUTOWORK_TRAIN='1', PI_AUTOWORK_INDEPENDENT_HALVES='1')
         for order, pair, rider in (('together', ('A', 'B'), 'D'), ('A-first', ('B', 'D'), 'C')):
             with self.subTest(reports=order):
                 gate = self.root / order

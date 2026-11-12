@@ -20,6 +20,18 @@ from pi_autowork import main_check  # noqa: E402
 from test_optimistic import Repo as OptimisticRepo, git  # noqa: E402
 
 
+def setUpModule():
+    global _pool, _environment
+    _pool = tempfile.TemporaryDirectory(prefix='main-check-fixtures-')
+    _environment = patch.dict(os.environ, PI_AUTOWORK_CHECK_ROOT=_pool.name)
+    _environment.start()
+
+
+def tearDownModule():
+    _environment.stop()
+    _pool.cleanup()
+
+
 def affected_check_fixture(root):
     """Private checker repo: two selected shards, an unselected module and directory."""
     source = Path(__file__).resolve().parents[3]
@@ -370,24 +382,49 @@ class MainCheckTests(unittest.TestCase):
             self.assertTrue(main_check.full_suite_command(full + ' --timeout 60', root))
             self.assertTrue(main_check.full_suite_command(full + ' --shard 1/1', root))
             self.assertTrue(main_check.full_suite_command(full + ' .', root))
-            self.assertFalse(main_check.full_suite_command(full + ' --shard 1/2', root))
+            self.assertTrue(main_check.full_suite_command(full + ' --shard 1/2', root))
             self.assertTrue(main_check.full_suite_command(focused + '; ' + full, root))
             self.assertTrue(main_check.full_suite_command(fallback, root))
-            for command in (focused, affected):
-                self.assertFalse(main_check.full_suite_command(command, root))
-                pool = main_check.slot_root()
-                with (pool / 'slot-0').open('a') as held:
-                    fcntl.flock(held, fcntl.LOCK_EX)
-                    end = time.monotonic() + 2
-                    self.assertEqual(main_check.run_command(
-                        command, root, .5, root / 'progress.json',
-                        stop=lambda: time.monotonic() > end), (0, False))
-                    # Workers use the identical classifier and shared pool.
-                    wrapper = Path(__file__).resolve().parents[2] / 'engine/autowork_run.py'
-                    result = subprocess.run([sys.executable, str(wrapper), *shlex.split(command)],
-                                            cwd=root, env=os.environ, capture_output=True, timeout=3)
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertNotIn(b'queued', result.stderr)
+            # Historical method name retained; focused execution now requires admission.
+            for command in (focused, affected, full + ' -k one', full + ' --shard 2/3'):
+                self.assertTrue(main_check.full_suite_command(command, root))
+            self.assertFalse(main_check.full_suite_command(full + ' --list', root))
+
+    def test_nested_checkers_reuse_only_a_locked_pool_descriptor(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+                os.environ, PI_AUTOWORK_CHECK_ROOT=tmp, PI_AUTOWORK_CHECK_SLOTS='1'):
+            code = ('from pi_autowork import main_check; '
+                    'exec("with main_check.check_slot(lambda _: (_ for _ in ()).throw(AssertionError(\'queued twice\'))):\\n '
+                    'print(\'reused\', flush=True)")')
+            with main_check.check_slot(lambda _: self.fail('private pool busy')) as lease:
+                # Another command/thread in this process is not an inherited child lease.
+                self.assertIsNone(main_check.inherited_check_lease())
+                class Queued(Exception):
+                    pass
+                def waiting(_):
+                    raise Queued
+                with self.assertRaises(Queued), main_check.check_slot(waiting):
+                    pass
+                env = dict(os.environ, PYTHONPATH=str(Path(main_check.__file__).resolve().parents[1]))
+                child = subprocess.run([sys.executable, '-c', code], env=env, pass_fds=(lease,),
+                                       capture_output=True, text=True, timeout=10)
+                self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+                self.assertIn('reused', child.stdout)
+                # An environment-only marker cannot replace the actual locked descriptor.
+                env['AUTOWORK_CHECK_LEASE_FD'] = str(lease)
+                refused = subprocess.run([sys.executable, '-c', code], env=env,
+                                         capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn('queued twice', refused.stderr)
+                # Returning from a nested context must not unlock its parent's lease.
+                with (Path(tmp) / 'slot-0').open('r+') as independent:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(independent, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    with patch.dict(os.environ, AUTOWORK_CHECK_LEASE_FD=str(independent.fileno())):
+                        self.assertIsNone(main_check.inherited_check_lease())
+                with patch.dict(os.environ, AUTOWORK_CHECK_LEASE_FD='999999'):
+                    self.assertIsNone(main_check.inherited_check_lease())
 
     def test_dead_fleet_holder_is_reclaimed_without_unlinking_the_slot(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(

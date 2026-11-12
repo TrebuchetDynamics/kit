@@ -641,14 +641,16 @@ class Coordinator:
 
     def board_train(self, rows):
         """While a batch runs its long check, start the next car on its published tip with the
-        fresh candidates it does not hold (PI_AUTOWORK_TRAIN=0 turns this off)."""
+        fresh candidates it does not hold. Speculation is opt-in: the default queues them
+        for the next batch instead of duplicating verification on overlapping trees."""
+        if worker.setting('PI_AUTOWORK_TRAIN', 0) < 1:
+            return
         job = self.integration
         if (job and job['task'] != self.BATCH and not self.train and not self.stop and not self.reexec_due()
-                and job.get('base') and worker.setting('PI_AUTOWORK_INDEPENDENT_HALVES', 1) >= 1):
+                and job.get('base') and worker.setting('PI_AUTOWORK_INDEPENDENT_HALVES', 0) >= 1):
             self.board_single(rows, job)
             return
-        if (self.train or not job or job['task'] != self.BATCH or self.stop or self.reexec_due()
-                or worker.setting('PI_AUTOWORK_TRAIN', 1) < 1):
+        if self.train or not job or job['task'] != self.BATCH or self.stop or self.reexec_due():
             return
         if (self.state / 'batch-split.json').exists():
             # A failed batch is being halved to find the candidate that breaks it. A car on a half's
@@ -656,7 +658,7 @@ class Coordinator:
             # culprit was never checked without the others. The next half is checked on the same
             # base instead, beside this one, and lands if it passes whatever this half does
             # (TOOLSET-340-64b75d92: six clean candidates waited 1-2.5 h behind one bad one).
-            if not job.get('base') or worker.setting('PI_AUTOWORK_INDEPENDENT_HALVES', 1) < 1:
+            if not job.get('base') or worker.setting('PI_AUTOWORK_INDEPENDENT_HALVES', 0) < 1:
                 return  # taken off the split only when it starts: otherwise it waits its turn
             if half := self.next_half(rows):
                 self.start_batch([t for t, _ in half], on=job['base'], revisions=[f'{t}@{c}' for t, c in half],

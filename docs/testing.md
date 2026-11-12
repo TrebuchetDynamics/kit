@@ -277,11 +277,19 @@ bytes. Real subprocess fixtures cover successful and failing unittest runs emitt
 invalid bytes, retaining their exit verdicts, sibling output and aggregate summary. Replacement is display recovery, not byte-exact log preservation.
 
 The checker runs top-level and maintained bundled workflow tests in separate
-Python processes, with a 600-second timeout per directory (the Autowork suite
-alone takes about 150 seconds on an idle machine). The directories run at the same
-time by default, and each one's output is printed whole and in the usual order, so a
-full run takes about as long as the Autowork suite; `--jobs N` limits how many run at
-once and `--jobs 1` runs them one after another. `--exclude PATH` (repeatable) leaves
+Python processes, with a 1,800-second timeout per test process by default. It uses
+one or two processes according to available capacity. `--jobs N` requests a process
+count, capped at two; `--jobs 1` runs them one after another. Output stays grouped
+in directory order. The optional Paseo check runs after the Python processes finish,
+so Vitest workers do not multiply concurrent Python work.
+
+On Linux, this checkout's checker uses the existing fleet check pool for focused,
+filtered, sharded and full runs. `--list` takes no slot. An inherited locked slot
+is reused, including descriptors from older wrappers. An environment-only marker
+grants no admission. Provisioning and test subprocesses retain the lease;
+test fixtures do not inherit runner settings. Standalone copies
+without the runtime still run, and Autowork wrappers admit them through their pool.
+`--exclude PATH` (repeatable) leaves
 a module or directory out of the selection, and `--shard I/N` keeps every N-th test id
 from the I-th, so several machines can share one selection; a module whose tests cannot
 be listed without importing runs whole on the first shard. `--list` prints the

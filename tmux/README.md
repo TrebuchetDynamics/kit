@@ -230,6 +230,10 @@ tx add ~/git/agent
 
 If the target directory already has a config row, the new alias is appended to that row's comma-separated alias list. Each alias must be unique, both within an addition and across the config.
 
+Aliases must be unique. `tx edit` accepts exactly one new alias, not a comma-separated
+list. Config updates validate the complete replacement before publishing it. If
+validation fails, the original config file remains unchanged.
+
 Inspect, rename, remove, and use:
 
 ```sh
@@ -251,6 +255,12 @@ The installer writes shell completion files for Bash, Fish, and Zsh. It also app
 ```sh
 source ~/.local/share/bash-completion/completions/tx
 ```
+
+Type `tx samp` and press Tab to complete configured aliases such as `sample`.
+If several aliases share the prefix, Tab extends the common prefix; press Tab
+again to list matches. Alias arguments also complete after `kill`, `remove`,
+`edit`, and `which`. Completion reads the config each time, including aliases
+whose sessions are stopped or whose directories do not yet exist.
 
 Manual completion output is also available:
 

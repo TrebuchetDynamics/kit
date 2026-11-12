@@ -106,7 +106,7 @@ def shard_spec(value):
     return index - 1, count
 
 
-def run_unit(directory, names, env, timeout, pattern=None):
+def run_unit(directory, names, env, timeout, pattern=None, lease=None):
     """Use the module runner so multiprocessing spawn has a real entry point.
 
     Returns (passed, output); the caller prints output so concurrent processes
@@ -115,7 +115,8 @@ def run_unit(directory, names, env, timeout, pattern=None):
     with subprocess.Popen(command, cwd=directory, env=env, text=True,
                           encoding='utf-8', errors='replace',
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          start_new_session=os.name == 'posix') as process:
+                          start_new_session=os.name == 'posix',
+                          pass_fds=(() if lease is None else (lease,))) as process:
         try:
             output, _ = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -147,18 +148,18 @@ def busy_cpus(sample=0.5):
 
 
 def default_jobs():
-    """The CPUs the host has idle, 4 to 8: tests with fixed timing limits failed when 16
-    processes ran at once on a host already at a load of 25 on 22 CPUs. Niced work does not
-    count against a check that is not niced itself (the integration check every finished task
-    waits on); a niced one, a worker's own check, counts the whole load as before."""
+    """Use one or two test processes, never a four-process floor on an overloaded host.
+
+    Fleet admission bounds concurrent checks; this bounds the work each admits.
+    """
     try:
         if os.getpriority(os.PRIO_PROCESS, 0) == 0:
             idle = (os.cpu_count() or 1) - math.ceil(busy_cpus())
         else:
             idle = (os.cpu_count() or 1) - int(os.getloadavg()[0])
     except (OSError, ValueError):
-        idle = 4
-    return max(4, min(8, idle))
+        idle = 1
+    return max(1, min(2, idle))
 
 
 PUSH_GUARD = 'pi-autowork-push-disabled'
@@ -268,7 +269,7 @@ def typecheck(root, list_only=False):
     return result.returncode == 0
 
 
-def paseo_check(root, env, list_only=False):
+def paseo_check(root, env, list_only=False, lease=None):
     """The Paseo plugin's own check (strict TypeScript and vitest) when its dependencies
     are installed; otherwise a stated skip. Returns False only when the check fails."""
     folder = root / PASEO
@@ -285,12 +286,21 @@ def paseo_check(root, env, list_only=False):
     if list_only:
         return True
     result = subprocess.run([npm, 'run', 'check'], cwd=folder, env=env, text=True, encoding='utf-8',
-                            errors='replace', stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                            errors='replace', stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            pass_fds=(() if lease is None else (lease,)))
     print(f'CHECK {PASEO} (npm run check)\n' + result.stdout[-6000:], flush=True)
     return result.returncode == 0
 
 
 PROVISIONED = 'AUTOWORK_CHECK_PROVISIONED'
+
+
+def check_capacity(root):
+    """Use this checkout's existing fleet pool; standalone checker copies stay portable."""
+    bootstrap = root / 'scripts/autowork_bootstrap.py'
+    if sys.platform == 'linux' and bootstrap.is_file():
+        return runpy.run_path(str(bootstrap))['load'](root, 'pi_autowork.main_check')
+    return None
 
 
 def provision(root):
@@ -315,7 +325,10 @@ def provision(root):
         return None
     command = [uv, 'run', '--python', '3.12', '--no-project', '--with-requirements',
                str(requirements), 'python', str(Path(__file__).resolve()), *sys.argv[1:]]
-    return subprocess.run(command, env=dict(os.environ, **{PROVISIONED: '1'})).returncode
+    capacity = check_capacity(root)
+    lease = capacity.inherited_check_lease() if capacity is not None else None
+    return subprocess.run(command, env=dict(os.environ, **{PROVISIONED: '1'}),
+                          pass_fds=(() if lease is None else (int(lease),))).returncode
 
 
 def main(argv=None):
@@ -331,7 +344,7 @@ def main(argv=None):
                         help='run shard I of N of the selected tests (round-robin by test id), for CI matrices')
     parser.add_argument('--timeout', type=float, default=1800, help='seconds allowed per test process (default: 1800)')
     parser.add_argument('--jobs', type=positive_int,
-                        help='test processes run at once (default: idle CPUs, 4 to 8; 1 runs them in order)')
+                        help='test processes run at once (default: idle CPUs, 1 to 2; capped at 2)')
     args = parser.parse_args(argv)
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error('--timeout must be positive')
@@ -340,6 +353,14 @@ def main(argv=None):
         code = provision(root)
         if code is not None:
             return code
+    capacity = None if args.list else check_capacity(root)
+    lease = capacity.inherited_check_lease() if capacity is not None else None
+    if capacity is not None and lease is None and int(os.environ.get('PI_AUTOWORK_CHECK_SLOTS') or 2) != 0:
+        # Reuse queue accounting and cancellation, including worker timeout exclusions.
+        wrapper = runpy.run_path(str(root / 'scripts/autowork_bootstrap.py'))['load'](
+            root, 'pi_autowork.engine.autowork_run')
+        return wrapper.main([sys.executable, str(Path(__file__).resolve()),
+                             *(sys.argv[1:] if argv is None else argv)])
     tests = discover_tests(root)
     selection = None
     if args.affected:
@@ -447,13 +468,13 @@ def main(argv=None):
     # whole, by directory and in order. Shards of split modules are the longest, so they start
     # first.
     order = sorted(range(len(work)), key=lambda i: len(work[i][1]) == 1 and '.' not in work[i][1][0])
-    with ThreadPoolExecutor(max_workers=args.jobs or default_jobs()) as pool:
-        futures = {i: pool.submit(run_unit, *work[i], env, args.timeout, args.pattern) for i in order}
+    jobs = min(args.jobs or default_jobs(), 2)
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = {i: pool.submit(run_unit, *work[i], env, args.timeout, args.pattern, lease) for i in order}
         for i, future in futures.items():
             directory, names = work[i]
             module = (directory, names[0].split('.')[0])
             future.add_done_callback(lambda done, module=module: completed(done, module))
-        plugin = pool.submit(paseo_check, root, env) if not args.paths and not args.pattern and selection is None else None
         runs = [(work[i][0], futures[i]) for i in range(len(work))]
         for directory, modules in groups.items():
             print(f'CHECK {directory.relative_to(root)} ({len(modules)} modules)', flush=True)
@@ -467,7 +488,8 @@ def main(argv=None):
                 passed += 1
             else:
                 failed += 1
-    if plugin is not None and not plugin.result():
+    # Vitest has its own workers: do not multiply them by concurrent Python workers.
+    if not args.paths and not args.pattern and selection is None and not paseo_check(root, env, lease=lease):
         failed += 1
     print(f'Offline result: {passed} test directories passed; {failed} failed; '
           f'{excluded} modules excluded.', flush=True)
