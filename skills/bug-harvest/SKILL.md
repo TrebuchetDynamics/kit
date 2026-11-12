@@ -28,6 +28,10 @@ when one exists, record its [declared graph
 state](../shared/COMMON-CONTRACT.md#graph-state), and confirm every graph lead in live
 source.
 
+For a lifecycle or event-ordering lead, apply the
+[state-machine analysis](../state-machine/PROTOCOL.md) before choosing the repro.
+Keep the campaign's one-candidate and stop limits.
+
 For the selected bug, record symptom, evidence, reproducer, expected post-fix
 signal and likely files. Confirm the failure, identify its root cause, make the
 smallest safe fix, add discriminating regression protection, rerun the repro and

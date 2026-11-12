@@ -42,6 +42,11 @@ unique-risk exceptions. If the method is unclear, consult the menu in
 [engineering cycle](../shared/ENGINEERING-CYCLE.md).
 Stop when the gap is resolved; do not load every protocol or invent a skill quota.
 
+For a stateful design, debugging or review gap, read the
+[state-machine analysis](../state-machine/PROTOCOL.md) directly. It is a local
+reference, not a `route.py` protocol. Keep its map and counterexamples in the
+current workflow's artifact and preserve that workflow's authority.
+
 ### Optional phase bundles
 
 Request a phase bundle only when several methods are needed. Existing phase
