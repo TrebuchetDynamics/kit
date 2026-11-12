@@ -77,7 +77,7 @@ import subprocess
 import sys
 import time
 
-from pi_autowork import accounting, fleet_view, health, planning_commands, portal, scorecard, service, task_commands, task_migrate, task_prepare, task_prune  # noqa: E402
+from pi_autowork import accounting, build, fleet_view, health, planning_commands, portal, scorecard, service, task_commands, task_migrate, task_prepare, task_prune  # noqa: E402
 
 COMPONENT = LAYOUT.component
 TOOLSET = COMPONENT.parent
@@ -653,13 +653,21 @@ def capabilities():
     verbs = next(a for a in commands['tasks']._actions if isinstance(a, argparse._SubParsersAction)).choices
     release = subprocess.run(['git', '-C', str(TOOLSET), 'rev-parse', 'HEAD'], capture_output=True,
                              text=True).stdout.strip() or None
+    runtimes = build.report()
     return dict(tool='autowork', executable=str(Path(sys.argv[0]).resolve()), toolset=str(TOOLSET),
-                release=release, commands=sorted(commands), tasks=sorted(verbs),
+                release=release, installed=runtimes['installed'], skew=build.skew(runtimes),
+                commands=sorted(commands), tasks=sorted(verbs),
                 prepare_api=task_prepare.API, prepare_outcomes=list(task_prepare.OUTCOMES))
 
 
 def cmd_capabilities(args, paths):
     print(json.dumps(capabilities(), indent=2))
+    return 0
+
+
+def cmd_version(args, paths):
+    """The running runtime and the installed one, so a stale copy is visible."""
+    print(build.line())
     return 0
 
 
@@ -875,6 +883,7 @@ def _shape_prepare(out, args):
 def parser():
     top = argparse.ArgumentParser(prog='autowork', description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
+    top.add_argument('--version', action='store_true', help='the running runtime and the installed toolset')
     sub = top.add_subparsers(dest='command')
     ls = sub.add_parser('ls', help='every runner, one line each')
     ls.add_argument('--long', '-v', action='store_true', help='add workers in flight and blockers')
@@ -947,6 +956,7 @@ def parser():
     task_commands.add_parser(sub)
     task_migrate.add_parser(sub)
     sub.add_parser('capabilities', help="this executable's release, commands and prepare API, as JSON")
+    sub.add_parser('version', help='the running runtime and the installed toolset')
     sub.add_parser('help', help='this help')
     return top
 
@@ -957,7 +967,7 @@ COMMANDS = {'ls': cmd_ls, 'status': cmd_status, 'logs': cmd_logs, 'start': cmd_s
             'pause': cmd_pause, 'resume': lambda a, p: cmd_pause(a, p, resume=True),
             'model': cmd_model, 'models': cmd_models, 'setup-portal': cmd_setup_portal, 'scorecard': cmd_scorecard,
             'retry': cmd_retry, 'clear-held': cmd_clear_held, 'update': cmd_update, 'tasks': cmd_tasks,
-            'capabilities': cmd_capabilities, 'attention': cmd_attention,
+            'capabilities': cmd_capabilities, 'version': cmd_version, 'attention': cmd_attention,
             'migrate': lambda a, p: task_migrate.run(a, resolve(a.repo, p)[0])}
 
 
@@ -983,6 +993,9 @@ def main(argv=None):
         args.extra = [*args.extra, *extra]
     elif extra:
         top.error('unrecognized arguments: ' + ' '.join(extra))
+    if getattr(args, 'version', False):
+        print(build.line())
+        return 0
     if args.command in (None, 'help'):
         top.print_help()
         return 0

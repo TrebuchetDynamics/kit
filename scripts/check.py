@@ -252,7 +252,9 @@ def affected_core(root):
         commands.append([sys.executable, str(docs), 'check', str(root)])
     if tasks.is_file() and (root / 'tasks').is_dir():
         commands.append([str(tasks), 'tasks', 'validate', '--worktree', str(root)])
-    return all(subprocess.run(command, cwd=root).returncode == 0 for command in commands)
+    # The launcher resolves the installed toolset by default; this check validates this tree.
+    env = dict(os.environ, AUTOWORK_TOOLSET=str(root))
+    return all(subprocess.run(command, cwd=root, env=env).returncode == 0 for command in commands)
 
 
 def typecheck(root, list_only=False):
@@ -432,6 +434,9 @@ def main(argv=None):
     env = without_push_guard({k: v for k, v in os.environ.items()
                               if k == 'AUTOWORK_PORT_BASE'
                               or (k not in LIVE_FLAGS and not k.startswith(('PI_AUTOWORK_', 'AUTOWORK_')))})
+    # `autowork` runs the installed toolset by default. The tests must exercise this
+    # checkout, so name it explicitly after the runner settings were removed above.
+    env['AUTOWORK_TOOLSET'] = str(root)
     # Three suites read os.environ['TMPDIR'] and their fixtures shell out to it. CI exports it and
     # every Autowork host sets one, but a bare interactive shell does not, and the resulting errors
     # read like a red tree rather than a missing setting.

@@ -32,7 +32,7 @@ import tempfile
 import time
 import uuid
 
-from pi_autowork import fleet_view, portal, tui_reads, blockers_report, command_results  # noqa: E402
+from pi_autowork import build, fleet_view, portal, tui_reads, blockers_report, command_results  # noqa: E402
 from pi_autowork.planning_ui import PlanScreen, DecisionPrompt, QuestionPicker  # noqa: E402
 from pi_autowork import pi_auth
 from pi_autowork.tui_auth import ProviderAuth
@@ -1654,6 +1654,7 @@ class FleetApp(App):
                 count_line = 'Last observed: ' + count_line
         check = self.main_check_text(runner, view)
         why = view.explanation
+        skew_text = build.warning()
         if self.size.height < 22:
             if counts is None:
                 line(count_line + ' · ' + diagnostics, 'yellow')
@@ -1663,6 +1664,8 @@ class FleetApp(App):
             else:
                 line(count_line + ' · ' + provenance, 'dim')
             line('Main: ' + check if check else 'Why: ' + why)
+            if skew_text:
+                line('Build: ' + skew_text, 'bold yellow')
         else:
             line('Now: ' + phase + ' · ' + count_line, 'bold cyan')
             if view.execution_freshness != 'fresh' or view.inventory_freshness != 'fresh' or view.error_count:
@@ -1672,6 +1675,8 @@ class FleetApp(App):
             line('Main: ' + check if check else 'Main: no check result observed',
                  'bold red' if runner.main_check.get('state') in ('red', 'broken') else '')
             line('Publish: ' + ('automatic push enabled' if runner.push else 'local only · automatic push disabled'), 'dim')
+            if skew_text:
+                line('Build: ' + skew_text, 'bold yellow')
         text.rstrip()
         publish_text(self.query_one('#overview', Static), text)
 
@@ -1814,6 +1819,8 @@ class FleetApp(App):
         if runner.model:
             detail_row(text, 'Model', f'{runner.model.rsplit("/", 1)[-1]} · fallback {runner.fallback.rsplit("/", 1)[-1]}', 'dim')
         detail_row(text, 'Push', 'enabled' if runner.push else 'disabled', 'dim')
+        runtimes = build.report()
+        detail_row(text, 'Build', build.line(runtimes), 'bold yellow' if build.skew(runtimes) else 'dim')
         if runner.toolset_problem:
             detail_row(text, 'Toolset', runner.toolset_problem, 'bold red')
         elif runner.toolset:  # a development checkout instead of the Pi package: say so

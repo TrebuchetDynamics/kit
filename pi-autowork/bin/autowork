@@ -1,9 +1,22 @@
 #!/bin/sh
-# autowork: run, watch and control pi-autowork runners. Follows symlinks to its
-# release, so a link in ~/.local/bin runs the release the runners update.
+# autowork: run, watch and control pi-autowork runners.
+#
+# Follow symlinks, then run one runtime: an explicit AUTOWORK_TOOLSET checkout, else
+# the installed toolset, else this checkout (first run, before installation).
+# A package copy (for example the Pi package clone) therefore never runs its own
+# older code while an installation exists. Developers select their checkout with:
+#   AUTOWORK_TOOLSET=/path/to/kit pi-autowork/bin/autowork
 self=$0
 while [ -L "$self" ]; do
   link=$(readlink "$self")
   case $link in /*) self=$link ;; *) self=$(dirname "$self")/$link ;; esac
 done
-exec python3 "$(cd "$(dirname "$self")/.." && pwd)/pi_autowork/command.py" "$@"
+root=$(cd "$(dirname "$self")/.." && pwd)
+state=${PI_AUTOWORK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/pi-autowork}
+installed=$state/installed/pi-autowork
+if [ -n "${AUTOWORK_TOOLSET:-}" ]; then
+  root=$AUTOWORK_TOOLSET/pi-autowork
+elif [ "$root" != "$installed" ] && [ -f "$installed/pi_autowork/command.py" ]; then
+  root=$installed
+fi
+exec python3 "$root/pi_autowork/command.py" "$@"
