@@ -38,7 +38,9 @@
                                   edit task files in the working tree (never commits): an
                                   owner answer ("Owner decision", "Held by", "Blocker
                                   resolution" notes), a new section or rank (the priority)
-    autowork tasks prepare [target] [--check|--no-commit]
+    autowork tasks prune [target] [--apply [--expect-plan REV]] [--summary]
+                                  completed-task retention: the plan (default) or its apply
+    autowork tasks prepare [target] [--check|--no-commit] [--summary]
                                   detect, convert, recover and diagnose the store (Docs Sync's
                                   first step; --check writes nothing)
     autowork migrate [target] [--dry-run] [--no-commit]
@@ -67,7 +69,7 @@ import subprocess
 import sys
 import time
 
-from pi_autowork import accounting, fleet_view, health, planning_commands, portal, scorecard, service, task_commands, task_migrate, task_prepare  # noqa: E402
+from pi_autowork import accounting, fleet_view, health, planning_commands, portal, scorecard, service, task_commands, task_migrate, task_prepare, task_prune  # noqa: E402
 
 COMPONENT = LAYOUT.component
 TOOLSET = COMPONENT.parent
@@ -804,18 +806,62 @@ def force_prepare(repo):
 
 def cmd_tasks(args, paths):
     """`autowork tasks ...` on the tasks/ store of a runner name, path or `.`."""
+    try:
+        task_commands.normalize(args)
+    except task_commands.CommandError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     repo = resolve(args.repo, paths)[0]
-    if args.verb != 'prepare':
+    if args.verb not in ('prepare', 'prune'):
         return task_commands.run(args, repo)
     try:
+        if args.verb == 'prune':
+            task_commands.emit(json.dumps(task_prune.cmd_prune(
+                repo, apply=args.apply, expect=args.expect_plan, summary=args.summary), indent=2))
+            return 0
         out = task_prepare.prepare(repo, 'check' if args.check else 'stage' if args.no_commit
                                    else 'force' if args.force else 'commit', force=force_prepare)
     except (task_commands.CommandError, task_commands.StoreError, task_commands.WriteError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    print(json.dumps(out, indent=2))
-    # 3: deferred (the runner converts after its drain), not prepared and not an error.
-    return 0 if out['ok'] else 3 if out.get('outcome') == 'MIGRATION_DEFERRED' else 1
+    code = _shape_prepare(out, args)
+    task_commands.emit(json.dumps(out, indent=2))
+    return code
+
+
+def _shape_prepare(out, args):
+    """Apply the report filters in place; return the exit code.
+
+    0: prepared (diagnostics, advisories included, are not failures); 1: refused or invalid;
+    3: deferred (the runner converts after its drain), not prepared and not an error;
+    4: only with --fail-on-diagnostics, a prepared store that still has actionable diagnostics.
+    """
+    diagnostics = out.get('diagnostics', [])
+    suppressed = out.get('suppressed')
+    if suppressed is not None:
+        items = suppressed.pop('items')
+        if args.all:
+            diagnostics = sorted(diagnostics + items, key=lambda d: (d['id'], d['code'], d['detail']))
+    actionable = sum(d.get('class') == 'actionable' for d in diagnostics)
+    if args.code:
+        diagnostics = [d for d in diagnostics if d['code'] in args.code]
+    out['diagnostic_summary'] = task_prepare.summarize(diagnostics)
+    if args.summary:
+        out.pop('diagnostics', None)
+        for key in ('consumers', 'documentation_drift', 'git_metadata', 'order', 'documents', 'accepted'):
+            if isinstance(out.get(key), list):
+                out[key] = len(out[key])
+    else:
+        shown = diagnostics[:args.limit] if args.limit is not None else diagnostics
+        if len(shown) < len(diagnostics):
+            out['diagnostics_truncated'] = len(diagnostics) - len(shown)
+        out['diagnostics'] = shown
+    if out.get('read'):
+        print(f"read: {out['read']} ({out.get('read_note', '')}); {len(diagnostics)} diagnostics, "
+              f'{actionable} actionable', file=sys.stderr)
+    if not out['ok']:
+        return 3 if out.get('outcome') == 'MIGRATION_DEFERRED' else 1
+    return 4 if args.fail_on_diagnostics and actionable else 0
 
 
 def parser():

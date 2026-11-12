@@ -69,6 +69,11 @@ history, never written. Explicit read-only runs write nothing.
    ownership, authority and stop conditions. Do not run a duplicate
    validate-only, planning/docs audit, full suite or optional skill loader first.
    Keep detailed inputs in the existing task receipt and routine status compact.
+   A gate verdict covers only its commit range. A main check on one revision bases
+   on that revision's first parent, so multi-commit work needs the explicit base:
+   `--base "$(git merge-base origin/main HEAD)"`. A receipt whose `base` is not the
+   pre-work revision is not a verdict. Report counts, the first failure and a path;
+   prefer `--summary`, and never paste full machine output.
    Preserve stale/held/incomplete/interrupted/owned refusals;
    prepare only the missing input; preserve existing evidence.
    No Kanban lookup, historical card, native continuation or review transition is required.

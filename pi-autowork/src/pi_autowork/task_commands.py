@@ -25,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 from pi_autowork import landing, task_handoff, task_status
 from pi_autowork.engine import task_select  # noqa: E402
@@ -100,20 +101,30 @@ def _serialized(function):
     return serialized
 
 
-def in_flight(repo, states=OCCUPYING, *, report_live_leases=True):
-    """(task IDs a worker slot in ``states`` or a live lease holds, problems reading that
-    state). Engine modules are imported here only: other commands need none of them.
-    Suppress healthy lease notices for per-task guards, but always report read errors."""
+def _age(started_at):
+    return max(0, int(time.time() - started_at)) if isinstance(started_at, (int, float)) else None
+
+
+def in_flight_facts(repo, states=OCCUPYING, *, report_live_leases=True):
+    """({task ID: who holds it}, problems reading that state). Each holder is
+    dict(holder='slot'|'lease', state, attempt, attempt_id, owner_pid, age_seconds); an
+    unknown value is None. Engine modules are imported here only: other commands need none
+    of them. Suppress healthy lease notices for per-task guards, but always report read errors."""
     from pi_autowork.engine import parallel_state
     from pi_autowork.engine import task_execution
-    held, problems = set(), []
+    held, problems = {}, []
     common = parallel_state.common_dir(Path(repo))
     try:
         slots = parallel_state.slots(common) if (common / 'slots').is_dir() else []
     except ValueError as exc:
         problems.append(f'worker slots cannot be read ({exc})')
         slots = []
-    held |= {s['task_id'] for s in slots if s['state'] in states}
+    for slot in slots:
+        if slot['state'] in states:
+            worker = slot.get('worker') if isinstance(slot.get('worker'), dict) else {}
+            held[slot['task_id']] = dict(holder='slot', state=slot['state'], attempt=slot.get('attempt'),
+                                         attempt_id=slot.get('attempt_id'), owner_pid=worker.get('pid'),
+                                         age_seconds=_age(slot.get('started_at')))
     try:
         if parallel_state.live_coordinator(common) and report_live_leases:
             problems.append('a live parallel coordinator lease')
@@ -127,10 +138,37 @@ def in_flight(repo, states=OCCUPYING, *, report_live_leases=True):
             if report_live_leases:
                 problems.append('a live sequential execution lease')
             if isinstance(lease.get('task_id'), str):
-                held.add(lease['task_id'])
+                held.setdefault(lease['task_id'], dict(
+                    holder='lease', state='running', attempt=lease.get('attempt'),
+                    attempt_id=lease.get('attempt_id'), owner_pid=lease['owner']['pid'],
+                    age_seconds=_age(lease.get('started_at'))))
     except ValueError as exc:
         problems.append(f'the sequential execution lease cannot be read ({exc})')
     return held, problems
+
+
+def in_flight(repo, states=OCCUPYING, *, report_live_leases=True):
+    """(task IDs a worker slot in ``states`` or a live lease holds, problems reading that
+    state): `in_flight_facts` without the holder details."""
+    held, problems = in_flight_facts(repo, states, report_live_leases=report_live_leases)
+    return set(held), problems
+
+
+def holder_text(fact):
+    """One line of facts an operator can judge: `slot running, attempt 1 (ab12cd34), pid 4242, 3h old`."""
+    age = fact.get('age_seconds')
+    parts = [f"{fact['holder']} {fact['state']}"]
+    if fact.get('attempt') is not None:
+        attempt = f"attempt {fact['attempt']}"
+        if fact.get('attempt_id'):
+            attempt += f" ({str(fact['attempt_id'])[:8]})"
+        parts.append(attempt)
+    if fact.get('owner_pid') is not None:
+        parts.append(f"pid {fact['owner_pid']}")
+    if age is not None:
+        parts.append(f'{age // 86400}d old' if age >= 172800 else f'{age // 3600}h old' if age >= 7200
+                     else f'{age // 60}m old')
+    return ', '.join(parts)
 
 
 def _unheld(repo, tid):
@@ -478,13 +516,13 @@ def cmd_show(repo, tid, rev='HEAD', worktree=False):
                 record_revision=t.record_revision, path=t.path, rev=store.rev, notes=t.body)
 
 
-def cmd_why(repo, tid, rev='HEAD'):
-    store = TaskStore.at(repo, rev)
+def cmd_why(repo, tid, rev='HEAD', worktree=False):
+    store = _read(repo, rev, worktree)
     first, reasons = task_select.why(store, tid)
     return dict(task=tid, eligible=bool(reasons) and reasons[0].code == 'POSITION', first=first,
                 reasons=[dict(code=r.code, detail=r.detail) for r in reasons],
                 closure=store.tasks[tid].closure_info if tid in store.tasks else None,
-                selection=_selection_source(store, rev))
+                selection=_selection_source(store, rev, worktree))
 
 
 def cmd_validate(repo, rev='HEAD', worktree=False):
@@ -502,7 +540,8 @@ def cmd_validate(repo, rev='HEAD', worktree=False):
         'use touches for file overlap and resources only for exclusive things.'
         for resource, users in sorted(resource_users.items()) if resource not in exclusive_resources
     ]
-    return dict(ok=True, tasks=len(store.tasks), goals=len(store.goals), drafts=drafts,
+    return dict(ok=True, read='worktree' if worktree else rev, tasks=len(store.tasks), goals=len(store.goals),
+                drafts=drafts,
                 pending=list(TaskStore.pending(repo)), warnings=warnings)
 
 
@@ -1090,32 +1129,72 @@ def cmd_supersede(repo, tid, by, reason):
     _set(repo, tid, {'status': 'superseded'}, note)
 
 
-@_serialized
-def cmd_delete(repo, tid):
-    """Remove any task record from the store, whatever its status or holder.
+def read_ids(source):
+    """Task IDs from a file (`-`: standard input): one per line; blank lines and # comments skipped."""
+    try:
+        text = sys.stdin.read() if source == '-' else Path(source).read_text(encoding='utf-8')
+    except (OSError, UnicodeError) as exc:
+        raise CommandError(f'cannot read --ids-file {source}: {exc}') from None
+    ids = [line.split('#', 1)[0].strip() for line in text.splitlines()]
+    ids = list(dict.fromkeys(tid for tid in ids if tid))
+    if not ids:
+        raise CommandError(f'--ids-file {source} names no task')
+    return ids
 
-    Returns the warnings that did not stop the deletion: busy worker/lease state and
-    other tasks that still name it as a dependency. Worktrees, commits, evidence and
-    goals stay; a dependent task keeps its dangling reference until it is edited.
+
+def dependents(store, ids):
+    """{deleted ID: the surviving tasks that name it in depends_on or verified_depends_on}."""
+    ids = set(ids)
+    found = {}
+    for t in store.tasks.values():
+        if t.id in ids:
+            continue
+        for dep in sorted(ids & {*t.depends_on, *t.verified_depends_on}):
+            found.setdefault(dep, []).append(t.id)
+    return {dep: sorted(users) for dep, users in sorted(found.items())}
+
+
+@_serialized
+def cmd_delete(repo, ids, *, force=False, closure=False):
+    """Remove task records from the store in one transaction: one lock, one validation.
+
+    ``ids`` is one ID or several. A task outside the set that still names a deleted one as
+    a dependency refuses the whole set, since it would keep a dangling reference
+    (UNKNOWN_DEPENDENCY); ``force`` deletes anyway. ``closure`` writes nothing and returns
+    dict(ids, dependents, warnings). Otherwise returns the warnings that did not stop the
+    deletion: busy worker/lease state and, when forced, the dependents left dangling.
+    Worktrees, commits, evidence and goals stay.
     """
+    ids = [ids] if isinstance(ids, str) else list(dict.fromkeys(ids))
     store = worktree_store(repo)
-    _task(store, tid)
-    path = _path(repo, tid)
-    before = path.read_bytes()
-    held, problems = in_flight(repo)
-    warnings = []
-    if tid in held:
-        warnings.append(f'{tid} is held by a worker slot or a live execution lease')
+    for tid in ids:
+        _task(store, tid)
+    held, problems = in_flight_facts(repo)
+    warnings = [f'{tid} is held ({holder_text(held[tid])})' for tid in ids if tid in held]
     warnings.extend(problems)
-    dependents = sorted(t.id for t in store.tasks.values()
-                        if t.id != tid and (tid in t.depends_on or tid in t.verified_depends_on))
-    if dependents:
-        warnings.append('other tasks still depend on it: ' + ', '.join(dependents))
-    _write(repo, path, before, None)
+    users = dependents(store, ids)
+    if closure:
+        return dict(ids=ids, dependents=users, warnings=warnings)
+    if users:
+        named = '; '.join(f'{dep} <- {", ".join(tasks)}' for dep, tasks in users.items())
+        if not force:
+            raise CommandError(
+                f'other tasks still depend on what would be deleted: {named}; nothing written. Remove those '
+                'edges first (`autowork tasks field ID depends_on ...`), include the dependents in the same '
+                'set, let `autowork tasks prune` decide, or pass --force to leave dangling references')
+        warnings.append(f'dangling dependencies left behind: {named}')
+    _write_many(repo, [(path, path.read_bytes(), None) for path in (_path(repo, tid) for tid in ids)])
     return warnings
 
 
 # --- CLI -------------------------------------------------------------------------------
+
+def _store_flags(p):
+    """Every read names its source the same way: the committed store (default) or the working tree."""
+    p.add_argument('--worktree', action='store_true', help='read uncommitted edits too (same as --store worktree)')
+    p.add_argument('--store', choices=('head', 'worktree'),
+                   help='which store to read: head (the default; --rev picks the commit) or worktree')
+
 
 def add_parser(sub):
     tasks = sub.add_parser('tasks', help='read and edit the tasks/ store')
@@ -1124,7 +1203,7 @@ def add_parser(sub):
         p = verbs.add_parser(name)
         p.add_argument('repo', nargs='?', default='.')
         if name in ('validate', 'list'):
-            p.add_argument('--worktree', action='store_true', help='read uncommitted edits too')
+            _store_flags(p)
         if name == 'new-id':
             p.add_argument('--prefix')
         if name != 'new-id':
@@ -1134,8 +1213,7 @@ def add_parser(sub):
         p.add_argument('task')
         p.add_argument('repo', nargs='?', default='.')
         p.add_argument('--rev', default='HEAD')
-        if name == 'show':
-            p.add_argument('--worktree', action='store_true', help='read uncommitted edits too')
+        _store_flags(p)
     p = verbs.add_parser('prepare', help='detect, convert, recover and diagnose the store (Docs Sync runs it first)')
     p.add_argument('repo', nargs='?', default='.')
     mode = p.add_mutually_exclusive_group()
@@ -1146,6 +1224,14 @@ def add_parser(sub):
                       help="the owner's force: convert now; stop this repository's service, live workers and "
                            'other lease holders, set every attempt aside with its work kept, commit planning '
                            'edits, convert and start the service again')
+    p.add_argument('--summary', action='store_true',
+                   help='counts per diagnostic code and per file instead of every diagnostic and list')
+    p.add_argument('--code', action='append', metavar='CODE', help='only diagnostics with this code (repeatable)')
+    p.add_argument('--limit', type=int, metavar='N', help='at most N diagnostics; the rest are counted')
+    p.add_argument('--all', action='store_true',
+                   help='also list legacy-name hits in frozen history, fixtures and .autowork-legacy-allow')
+    p.add_argument('--fail-on-diagnostics', action='store_true',
+                   help='exit 4 when a prepared store still has actionable diagnostics (default: exit 0)')
     p = verbs.add_parser('add')
     p.add_argument('repo', nargs='?', default='.')
     for flag in ('--goal', '--title', '--short'):
@@ -1194,8 +1280,22 @@ def add_parser(sub):
     p.add_argument('task'); p.add_argument('repo', nargs='?', default='.')
     p.add_argument('--by', action='append', required=True)
     p.add_argument('--reason', required=True)
-    p = verbs.add_parser('delete', help='remove any task record; worktrees, commits, evidence and goals stay')
-    p.add_argument('task'); p.add_argument('repo', nargs='?', default='.')
+    p = verbs.add_parser('delete', help='remove task records; refuses while another task depends on one; '
+                                        'worktrees, commits, evidence and goals stay')
+    p.add_argument('task', nargs='?'); p.add_argument('repo', nargs='?', default='.')
+    p.add_argument('--ids-file', metavar='FILE', help='delete every ID in FILE (one per line, - for stdin) '
+                                                      'under one lock and one validation, instead of TASK')
+    p.add_argument('--force', action='store_true', help='delete even though surviving tasks depend on it')
+    p.add_argument('--closure', action='store_true', help='print the dependents and holder warnings; write nothing')
+    p = verbs.add_parser('prune', help='completed-task retention: plan (default) or apply the decision table')
+    p.add_argument('repo', nargs='?', default='.')
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument('--plan', action='store_true', help='read only (the default): what would be deleted, '
+                                                          'and one reason per retained finished record')
+    mode.add_argument('--apply', action='store_true', help='delete the eligible records and remove the '
+                                                           'satisfied dependency edges, in one transaction')
+    p.add_argument('--expect-plan', metavar='REVISION', help='with --apply: require the plan_revision --plan printed')
+    p.add_argument('--summary', action='store_true', help='counts per reason instead of every record')
     p = verbs.add_parser('goal', help='add a goal, or change its title, source, priority, status, focus or dependencies')
     p.add_argument('goal'); p.add_argument('repo', nargs='?', default='.')
     p.add_argument('--title', default=argparse.SUPPRESS)
@@ -1208,7 +1308,7 @@ def add_parser(sub):
     p.add_argument('--evidence', default=argparse.SUPPRESS, help='for --status met: the executed, passing check')
     p = verbs.add_parser('goals', help='every goal record as JSON, in priority order')
     p.add_argument('repo', nargs='?', default='.')
-    p.add_argument('--worktree', action='store_true', help='read uncommitted edits too')
+    _store_flags(p)
     p.add_argument('--rev', default='HEAD')
     p = verbs.add_parser('handoff', help='read the exact pending diff and decision handoff; no writes or runner actions')
     p.add_argument('repo', nargs='?', default='.')
@@ -1312,6 +1412,33 @@ def _input_values(args):
             setattr(args, key, value)
 
 
+def emit(text):
+    """Print the result. A reader that closed early (`| head`) keeps the command's own exit
+    status: without this, Python reports the failed flush at exit as status 120."""
+    try:
+        print(text)
+        sys.stdout.flush()
+    except BrokenPipeError:
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+
+
+def normalize(args):
+    """`delete --ids-file FILE [repo]` has no TASK: argparse put the repository there.
+    `--store worktree` is `--worktree`."""
+    if getattr(args, 'store', None) == 'worktree':
+        args.worktree = True
+    elif getattr(args, 'store', None) == 'head' and getattr(args, 'worktree', False):
+        raise CommandError('--store head and --worktree name different stores')
+    if getattr(args, 'verb', None) == 'delete':
+        if args.ids_file:
+            if args.task is not None and args.repo != '.':
+                raise CommandError('delete takes TASK or --ids-file FILE, not both')
+            if args.task is not None:
+                args.repo, args.task = args.task, None
+        elif args.task is None:
+            raise CommandError('delete needs TASK or --ids-file FILE')
+
+
 def run(args, repo):
     """Print the result as JSON (reads) or one line (writes); return the exit code. Writes
     hold the repository's task lock, so two writers never interleave."""
@@ -1320,6 +1447,8 @@ def run(args, repo):
         if args.verb in WRITES:
             with locked(repo, recover=not (args.verb == 'commit' and args.dry_run)):
                 if getattr(args, 'expect', None):
+                    if args.verb == 'delete' and args.ids_file:
+                        raise CommandError('--expect names one record; it cannot be combined with --ids-file')
                     goal = args.verb == 'goal'
                     expect(repo, args.goal if goal else args.task, args.expect, goal)
                 out = _run(args, repo)
@@ -1328,7 +1457,7 @@ def run(args, repo):
     except (CommandError, StoreError, WriteError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    print(out if isinstance(out, str) else json.dumps(out, indent=2))
+    emit(out if isinstance(out, str) else json.dumps(out, indent=2))
     return 0
 
 
@@ -1339,7 +1468,7 @@ def _run(args, repo):
     elif verb == 'show':
         out = cmd_show(repo, args.task, args.rev, args.worktree)
     elif verb == 'why':
-        out = cmd_why(repo, args.task, args.rev)
+        out = cmd_why(repo, args.task, args.rev, args.worktree)
     elif verb == 'validate':
         out = cmd_validate(repo, args.rev, args.worktree)
     elif verb == 'new-id':
@@ -1383,8 +1512,12 @@ def _run(args, repo):
         cmd_supersede(repo, args.task, args.by, args.reason)
         out = f'ok {args.task} superseded'
     elif verb == 'delete':
-        warnings = cmd_delete(repo, args.task)
-        out = f'ok {args.task} deleted' + ''.join(f'; warning: {warning}' for warning in warnings)
+        ids = read_ids(args.ids_file) if args.ids_file else [args.task]
+        result = cmd_delete(repo, ids, force=args.force, closure=args.closure)
+        if args.closure:
+            return result
+        out = (f'ok {ids[0]} deleted' if len(ids) == 1 else f'ok {len(ids)} tasks deleted') \
+            + ''.join(f'; warning: {warning}' for warning in result)
     elif verb == 'goal':
         out = f'{cmd_goal(repo, args.goal, args.title, args.source, args.priority, args.status, args.focus, args.depends_on, args.evidence)} goal {args.goal}'
     return out
