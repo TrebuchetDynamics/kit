@@ -85,7 +85,7 @@ more verified software per dollar and per hour of owner attention than manually
 supervising coding agents. Success is enough trustworthy data to decide whether
 Autowork is worth operating and improving, not a better dashboard. The targets below
 are proposals to judge the result by, not acceptance criteria for the instrumentation.
-Goal `EVALUATION` in [`tasks/`](../tasks/) retains the current outcome:
+The current outcome targets are:
 
 1. Lifecycle telemetry uses the existing private journal and receipts.
 2. Cost and owner attention are attributed per task.
