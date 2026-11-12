@@ -180,10 +180,28 @@ class BootstrapTests(Repo):
     def test_without_accepted_intent_no_queue_is_created(self):
         self.write('README.md', '# Tool\n\nIt might do things.\n')
         self.commit()
-        report = self.prepare()
-        self.assertEqual((report['state'], report['accepted']), ('none', []))
+        before = self.snapshot()
+        report = self.prepare('--check')
+        self.assertEqual((report['state'], report['outcome'], report['accepted']), ('none', 'NO_STORE', []))
         self.assertIn('no heading is marked Status: Accepted', report['next'])
+        self.assertEqual(self.snapshot(), before, 'Audit creates no folder or marker')
         self.assertFalse((self.repo / 'tasks').exists())
+        # Apply the skill's file-writing step, not a model invocation or fabricated record.
+        self.write('tasks/.gitkeep', '')
+        self.tasks('validate', '--worktree')
+        self.assertEqual(self.prepare('--no-commit')['outcome'], 'NO_STORE',
+                         'an uncommitted marker is not yet a committed store')
+        self.commit('empty task store')
+        store = TaskStore.at(self.repo, 'HEAD')
+        self.assertEqual((dict(store.tasks), dict(store.goals)), ({}, {}))
+        self.assertEqual(self.store_bytes(), {'tasks/.gitkeep': b''})
+        before = self.snapshot()
+        for _ in range(2):
+            report = self.prepare('--check')
+            self.assertEqual((report['outcome'], report['tasks'], report['goals'], report['order']),
+                             ('READY', 0, 0, []))
+            self.tasks('validate', '--worktree')
+            self.assertEqual(self.snapshot(), before, 'repeat checks leave the empty store unchanged')
 
     def test_a_lone_legacy_file_is_reported_for_bootstrap_without_writes(self):
         self.write('docs/plan.md', PLAN)
@@ -985,6 +1003,15 @@ class DocsSyncInstructionTests(unittest.TestCase):
                                     if 'autowork tasks prepare .' in text else text.index('### Prepare the store'))
                     self.assertIn('TOOLCHAIN_MISMATCH', text)
                     self.assertIn('MIGRATION_DEFERRED', text)
+                normalized = ' '.join(text.split())
+                for rule in ('`tasks/.gitkeep`', 'even without accepted intent',
+                             'marker is not a task record', 'placeholder tasks or goals',
+                             'Audit/read-only', 'docs-only', 'explicit no-store',
+                             'toolchain mismatch', 'conversion refusal', 'invalid store',
+                             'uncommitted marker alone can still report `NO_STORE`',
+                             'local-only, not `READY`'):
+                    self.assertIn(rule, normalized)
+                self.assertNotIn('create no queue', text)
                 self.assertNotIn("owner's `autowork migrate`", text)
                 self.assertNotIn('until the owner runs `autowork migrate', text)
                 self.assertNotIn('do not convert it yourself', text)

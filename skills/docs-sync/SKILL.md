@@ -349,7 +349,7 @@ converts or initializes anything by hand:
 | --- | --- | --- |
 | `READY` | A valid store (working tree when task files are uncommitted) | Work the diagnostics, then reconcile |
 | `MIGRATED` | Converted TODO.md + goals.json now, one local commit | Reconcile; report the conversion commit |
-| `NO_STORE` | No store; `documents` and `accepted` headings listed | Bootstrap tasks from the accepted request or existing requirements; no separate plan or goal is required |
+| `NO_STORE` | No store; `documents` and `accepted` headings listed | Bootstrap `tasks/` as described below, even when it must remain empty; add records only from accepted intent |
 | `MIGRATION_DEFERRED` | Work was in flight; nothing was written to the repository, and the request is recorded. The repository's runner (on this release) starts nothing new, lets live workers finish, sets the remaining attempts aside with their work kept, and converts. Exit status 3 | Report it as pending, not done; continue document work; run prepare again later |
 | `MIGRATION_BLOCKED` | A safety refusal (planning drift, an invalid queue, remaining legacy consumers, a preservation-path collision), or a deferral without commit authority | Resolve from evidence within scope, or report the exact missing authority |
 | `INVALID_STORE` | Refused with `path:line` errors | Fix that line from its accepted source or Git history, then rerun |
@@ -363,10 +363,24 @@ The `state` values remain:
 | --- | --- | --- |
 | `legacy` | Converted TODO.md + goals.json through `autowork migrate`'s proven transaction: same task set, IDs, dependencies, ranks and selection order; TODO.archive.md kept | Reconcile on the converted store and report the conversion commit |
 | `conversion_pending` | Finished an interrupted or staged conversion, or refused | Resolve the named path, then rerun |
-| `none` | Nothing; listed `documents` and `accepted` headings | Bootstrap tasks from accepted intent, adding goals only for shared outcomes; with none, report the missing intent and create no queue |
+| `none` | Nothing; listed `documents` and `accepted` headings | Bootstrap `tasks/`; add tasks from accepted intent and goals only for shared outcomes. With no accepted intent, keep the store empty and report the missing input |
 | `uncommitted` | Read the working-tree store | Continue; commit the task files with the docs when authorized |
 | `converted` | Read the committed store | Reconcile |
 | `invalid` | Refused with `path:line` errors | Fix that line from its accepted source or Git history, then rerun |
+
+On `NO_STORE`, writable Bootstrap creates `tasks/` even without accepted intent.
+Use a file-writing tool to create an empty `tasks/.gitkeep` only when that path is
+absent. Git does not retain empty directories. This marker is not a task record;
+all task and goal records still require `autowork tasks`. Do not create placeholder
+tasks or goals, restore removed records, or put markers under `items/` or `goals/`.
+Accepted gaps use ordinary authoring below; without accepted intent, report the
+missing input and leave the store empty. Audit/read-only, docs-only and explicit
+no-store scopes create nothing. Never use a marker to bypass a toolchain mismatch,
+conversion refusal or invalid store. Preserve existing store contents on repeat passes.
+Validate with `autowork tasks validate --worktree .`. Include the marker in the
+scoped commit when authorized, then rerun prepare. An uncommitted marker alone can
+still report `NO_STORE`; without commit authority, report bootstrap as local-only,
+not `READY`. An empty store proves no goal met and starts no runner.
 
 Without commit authority, run `prepare --no-commit`: a conversion is staged and HEAD
 does not move; report it as pending, not landed (work in flight is then
