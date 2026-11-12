@@ -49,9 +49,20 @@ code; report the `LEGACY_CONSUMER` diagnostics with path, line and legacy names,
 reconcile within scope. Plain prepare lists every refusal and, if `runner.running` is
 false, names `autowork tasks prepare --force` as the route without a runner drain; the
 suggestion alone grants no force authority. Force never discards work or data; report a `MIGRATION_BLOCKED` it still
-returns rather than deleting anything. Its `state` is `none` for a new repository:
-bootstrap tasks from accepted intent; group shared outcomes only when useful.
-With no accepted intent, report the missing input and create no queue.
+returns rather than deleting anything. On `NO_STORE`, writable Bootstrap creates
+`tasks/` even without accepted intent. Use a file-writing tool to create an empty
+`tasks/.gitkeep` only when absent, so Git retains the folder. This marker is not a
+task record; all task and goal records still require `autowork tasks`. Add tasks
+only from accepted intent; group shared outcomes only when useful. With no accepted
+intent, report the missing input and leave the store empty. Do not create placeholder
+tasks or goals, restore removed records, or put markers under `items/` or `goals/`.
+Audit/read-only, docs-only and explicit no-store scopes create nothing. Never use a
+marker to bypass a toolchain mismatch, conversion refusal or invalid store. Preserve
+existing store contents on repeat passes. Validate with `autowork tasks validate
+--worktree .`; include the marker in the scoped commit when authorized, then rerun
+prepare. An uncommitted marker alone can still report `NO_STORE`; without commit
+authority, report bootstrap as local-only, not `READY`. An empty store proves no
+goal met and starts no runner.
 Its `diagnostics` name defects with the `autowork tasks` command that
 repairs each: repair only from accepted evidence, never grant ownership, `live` or
 resources, never close work to silence one, and leave `IN_FLIGHT` contracts alone.

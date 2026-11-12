@@ -125,9 +125,20 @@ Goals and tasks come from the CLI, never from hand-seeded records. Start with
 `autowork tasks prepare .`: it converts a TODO.md + goals.json repository itself
 (one proven local commit; `--no-commit` stages it), finishes an interrupted
 conversion, and for a repository with no task store reports `state: none` with
-the headings marked `Status: Accepted`. Never hand-convert. Use the accepted request
-or existing requirements for intent; with neither, report the missing intent
-instead of creating tasks. For accepted work,
+the headings marked `Status: Accepted`. Never hand-convert. On `NO_STORE`, writable
+Bootstrap creates `tasks/` even without accepted intent. Use a file-writing tool to
+create an empty `tasks/.gitkeep` only when absent, so Git retains the folder. This
+marker is not a task record; all task and goal records still require `autowork tasks`.
+Do not create placeholder tasks or goals, restore removed records, or put markers
+under `items/` or `goals/`. Use the accepted request or existing requirements for
+intent; with neither, report the missing input and leave the store empty.
+Audit/read-only, docs-only and explicit no-store scopes create nothing. Never use
+a marker to bypass a toolchain mismatch, conversion refusal or invalid store.
+Preserve existing store contents on repeat passes. Validate with `autowork tasks
+validate --worktree .`, include the marker in the scoped commit when authorized,
+then rerun prepare. An uncommitted marker alone can still report `NO_STORE`;
+without commit authority, report bootstrap as local-only, not `READY`. An empty
+store proves no goal met and starts no runner. For accepted work,
 `autowork tasks add` can initialize `tasks/` directly. Follow
 [ordinary authoring](../../shared/TODO-WORKCENTER.md#ordinary-authoring), not a
 mandatory goal or separate plan. Reuse an existing accepted source when available.
