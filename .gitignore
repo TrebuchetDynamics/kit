@@ -24,3 +24,7 @@ node_modules/
 
 # Local Rust candidate build artifacts.
 /pi-autowork/rust/autowork/target/
+.claude-plugin/
+.codex-plugin/
+.agents/plugins/
+.mypy_cache/
