@@ -4886,6 +4886,62 @@ class ServiceTests(Fixture):
             self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
             self.assertNotIn('bad unit file setting', check.stdout + check.stderr)
 
+        # EnvironmentFile expands a glob even when %i contains systemd's literal
+        # backslash escapes. Exercise libc glob, rather than Python's different
+        # backslash rules, against the actual saved registration.
+        import ctypes
+        class Glob(ctypes.Structure):
+            _fields_ = [('count', ctypes.c_size_t), ('paths', ctypes.POINTER(ctypes.c_char_p)),
+                        ('offs', ctypes.c_size_t), ('flags', ctypes.c_int),
+                        ('padding', ctypes.c_void_p * 5)]
+        libc = ctypes.CDLL(None)
+        self.envs = self.root / 'envs space [literal]*?'
+        self.envs.mkdir()
+        self.env['PI_AUTOWORK_ENV_DIR'] = str(self.envs)
+        for name in ('navegador rust', 'café', r'folder\name', 'project[*?]', 'percent%repo'):
+            with self.subTest(name=name):
+                target = self.root / name
+                self.repo.rename(target)
+                self.repo = target
+                instance = subprocess.run(['systemd-escape', '--', name], check=True,
+                                          capture_output=True, text=True).stdout.strip()
+                registration = self.envs / f'{instance}.env'
+                registration.write_text(f'PI_AUTOWORK_REPO={self.repo}\nPI_AUTOWORK_PRIMARY=provider/model\n')
+                result = self.run_runner('--install-service')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                dropin = self.units / f'pi-autowork@{instance}.service.d/10-environment-file.conf'
+                settings = dropin.read_text()
+                if shutil.which('systemd-analyze'):
+                    verify = self.root / 'verify' / f'pi-autowork@{instance}.service'
+                    verify.write_text((self.units / 'pi-autowork@.service').read_text() + '\n' + settings)
+                    checked = subprocess.run(['systemd-analyze', '--user', 'verify', str(verify)],
+                                             capture_output=True, text=True)
+                    self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+                    self.assertNotIn('not absolute', checked.stderr)
+                    self.assertNotIn('Failed to resolve unit specifiers', checked.stderr)
+                # EnvironmentFile takes a raw path, without string unquoting;
+                # percent specifiers expand before globbing.
+                pattern = settings.split('EnvironmentFile=\nEnvironmentFile=', 1)[1].splitlines()[0]
+                pattern = pattern.replace('%%', '%')
+                matched = Glob()
+                try:
+                    self.assertEqual(libc.glob(pattern.encode(), 0, None, ctypes.byref(matched)), 0)
+                    self.assertEqual(matched.count, 1)
+                    self.assertEqual(os.fsdecode(matched.paths[0]), str(registration))
+                finally:
+                    libc.globfree(ctypes.byref(matched))
+                value = shlex.split(next(line.split('=', 1)[1] for line in settings.splitlines()
+                                        if line.startswith('Environment=')))[0].replace('%%', '%')
+                self.assertEqual(value, f'PI_AUTOWORK_ENV_FILE={registration}')
+                self.assertIn('PI_AUTOWORK_PRIMARY=provider/model\n', registration.read_text())
+                self.assertIn(f'--user restart pi-autowork@{instance}.service', self.calls.read_text())
+                self.assertEqual(self.runs(), [])
+                custom = dropin.parent / '90-owner.conf'
+                custom.write_text('# owner settings\n')
+                self.assertEqual(self.run_runner('--remove-service').returncode, 0)
+                self.assertFalse(dropin.exists())
+                self.assertEqual(custom.read_text(), '# owner settings\n')
+
     def test_observer_policy_survives_install_reinstall_and_fresh_start(self):
         home = Path(self.env['PI_AUTOWORK_HERMES_HOME'])
         store = home / 'cron/jobs.json'
@@ -4974,6 +5030,8 @@ class ServiceTests(Fixture):
         self.assertEqual(self.run_runner('--install-service').returncode, 0)
         registration = self.envs / 'project.env'
         saved = registration.read_bytes()
+        dropin = self.units / 'pi-autowork@project.service.d/10-environment-file.conf'
+        saved_dropin = dropin.read_bytes()
         for failure, state in (('disable', 'active'), ('show', 'inactive'), ('reset-failed', 'failed'),
                                ('', 'active'), ('', 'activating'), ('', 'deactivating')):
             with self.subTest(failure=failure, state=state):
@@ -4982,6 +5040,7 @@ class ServiceTests(Fixture):
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertNotIn('Removed ', result.stdout)
                 self.assertEqual(registration.read_bytes(), saved)
+                self.assertEqual(dropin.read_bytes(), saved_dropin)
         self.env.update(FAKE_FAIL='', FAKE_SERVICE_STATE='failed')
         legacy = self.legacy()
         for name in ('project', legacy):
