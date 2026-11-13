@@ -411,19 +411,26 @@ def cmd_model(args, paths):
         updates['PI_AUTOWORK_PRIMARY'] = args.model
     if args.fallback:
         updates['PI_AUTOWORK_FALLBACK'] = args.fallback
-    if not updates:
+    if not updates and not args.no_fallback:
+        fallback = ('disabled' if settings.get('PI_AUTOWORK_NO_FALLBACK') == '1' else
+                    settings.get('PI_AUTOWORK_FALLBACK') or fleet_view.DEFAULT_FALLBACK)
         print(f'{name}: model {settings.get("PI_AUTOWORK_PRIMARY") or fleet_view.DEFAULT_MODEL}, '
-              f'fallback {settings.get("PI_AUTOWORK_FALLBACK") or fleet_view.DEFAULT_FALLBACK}')
+              f'fallback {fallback}')
         return 0
     agent_dir = portal.service_agent_dir(settings)
     for model in updates.values():
         portal.check_model(model, agent_dir)
-    known = set(pi_models(agent_dir=agent_dir))
+    known = set(pi_models(agent_dir=agent_dir)) if updates else set()
     unknown = [m for m in updates.values() if m not in known]
     if unknown:
         raise Fail(f"not in Pi's model list: {', '.join(unknown)} (see: autowork models)")
+    if args.fallback or args.no_fallback:
+        updates['PI_AUTOWORK_NO_FALLBACK'] = '1' if args.no_fallback else '0'
     fleet_view.write_env(env_file, updates)
-    print(f'{name}: ' + ', '.join(f'{"model" if k.endswith("PRIMARY") else "fallback"} {v}' for k, v in updates.items()))
+    print(f'{name}: ' + ', '.join(
+        f'{"model" if k.endswith("PRIMARY") else "fallback"} {v}'
+        if k != 'PI_AUTOWORK_NO_FALLBACK' else f'fallback {"disabled" if v == "1" else "enabled"}'
+        for k, v in updates.items()))
     if service_state(paths, name) == 'active':
         code, text = restart(paths, name, repo)
         print(f'{text} New runs use the new model.' if not code else text)
@@ -934,7 +941,9 @@ def parser():
     model = sub.add_parser('model', help="show or set a service's Pi model")
     model.add_argument('target', nargs='?')
     model.add_argument('model', nargs='?', help='provider/model, from: autowork models')
-    model.add_argument('--fallback', help='the fallback provider/model')
+    fallback = model.add_mutually_exclusive_group()
+    fallback.add_argument('--fallback', help='the fallback provider/model; enables fallback')
+    fallback.add_argument('--no-fallback', action='store_true', help='disable fallback for this service')
     setup = sub.add_parser('setup-portal', help='propose a Nous loopback proxy provider; never starts it')
     setup.add_argument('--provider', required=True, help='explicit Pi provider entry to prepare')
     setup.add_argument('--model', required=True, help='exact upstream model ID from your Portal plan')

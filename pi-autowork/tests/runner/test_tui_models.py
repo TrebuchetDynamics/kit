@@ -56,6 +56,18 @@ async def fixture_app(size, *, service=False, loader=None, view_only=False):
                 assert calls == [], calls
 
 
+async def finish_primary(app, pilot, *, confirm=True):
+    """Explicitly disable fallback, then accept the staged summary if requested."""
+    from pi_autowork import tui
+    assert isinstance(app.screen, tui.PickModel) and app.screen.allow_none
+    await pilot.click('#model-none')
+    await settle(app, pilot)
+    assert isinstance(app.screen, tui.Confirm)
+    if confirm:
+        await pilot.press('y')
+        await settle(app, pilot)
+
+
 async def session_pilot(size):
     from pi_autowork import tui
     from textual.widgets import Input, Label, OptionList, Static
@@ -104,6 +116,7 @@ async def session_pilot(size):
         assert picker.query_one('#models', OptionList).option_count == 1
         await pilot.press('enter')
         await settle(app, pilot)
+        await finish_primary(app, pilot)
         assert len(app.screen_stack) == 1 and app.new_model == 'fixture/beta'
         assert 'fixture/beta' in text(bar), text(bar)
         # Cancelling a later choice preserves the selected session model.
@@ -121,7 +134,7 @@ async def session_pilot(size):
         await pilot.press('m')
         app.action_pick_model('model')
         await pilot.pause()
-        assert len(app.screen_stack) == 1 and len(loads) == 3
+        assert len(app.screen_stack) == 1 and len(loads) == 4
     # A read-only empty fleet still explains model choice without enabling it.
     async with fixture_app(size, view_only=True) as (app, pilot, ready, calls):
         visible(app.query_one('#modelbar'), size)
@@ -325,6 +338,7 @@ async def start_pilot(size):
             await pilot.pause()
             await pilot.press('enter')
             await settle(app, pilot)
+            await finish_primary(app, pilot)
             assert isinstance(app.screen, tui.Confirm), type(app.screen).__name__
             assert not execute.called
             await pilot.press('n')
@@ -358,10 +372,11 @@ async def existing_pilot(size):
             await pilot.pause()
             await pilot.press('enter')
             await settle(app, pilot)
+            await finish_primary(app, pilot, confirm=False)
             assert isinstance(app.screen, tui.Confirm) and not execute.called
             await pilot.press('y')
             await settle(app, pilot)
-            assert execute.call_args.args[0].argv == ['fixture-autowork', 'model', 'fixture', 'fixture/beta']
+            assert execute.call_args.args[0].argv == ['fixture-autowork', 'model', 'fixture', 'fixture/beta', '--no-fallback']
             execute.reset_mock()
             # Existing env files retain their own settings even after a session choice.
             env = Path(app.env_dir) / (fleet_view.instance(ready.repo) + '.env')
@@ -414,6 +429,7 @@ async def repository_identity_pilot(size):
                     if stage == 'confirmation':
                         picker.choose_model(MODELS[1])
                         await settle(app, pilot)
+                        await finish_primary(app, pilot, confirm=False)
                         assert isinstance(app.screen, tui.Confirm)
                     elif stage == 'authentication':
                         picker.action_login()
@@ -499,6 +515,7 @@ async def providers_pilot(size):
         assert picker.shown == ['fixture/shared']
         await pilot.press('enter')
         await settle(app, pilot)
+        await finish_primary(app, pilot)
         assert len(app.screen_stack) == 1 and app.new_model == 'fixture/shared'
 
         app.action_pick_model('model')
@@ -540,6 +557,7 @@ async def providers_pilot(size):
         options.highlighted = 0
         await pilot.press('enter')
         await settle(app, pilot)
+        await finish_primary(app, pilot)
         assert len(app.screen_stack) == 1 and app.new_model == 'nous-local/openai/unique'
 
 
@@ -583,7 +601,111 @@ async def free_models_pilot(size):
         await pilot.pause()
         await pilot.press('enter')
         await settle(app, pilot)
+        await finish_primary(app, pilot)
         assert app.new_model == free
+
+
+async def independent_fallback_pilot(size):
+    from pi_autowork import tui
+    from textual.widgets import Input, Select
+    primary, fallback = 'first/paid/model-a', 'second/nested/model-b'
+    async with fixture_app(size, loader=lambda: [primary, fallback]) as (app, pilot, ready, calls):
+        async def select(model):
+            picker = app.screen
+            assert isinstance(picker, tui.PickModel) and not picker.free_only
+            picker.query_one('#provider', Select).value = model.partition('/')[0]
+            await pilot.pause()
+            picker.query_one('#filter', Input).value = model.partition('/')[2]
+            picker.query_one('#filter', Input).focus()
+            await pilot.pause()
+            await pilot.press('enter')
+            await settle(app, pilot)
+        app.action_pick_model('model')
+        await settle(app, pilot)
+        await select(primary)
+        assert app.new_model == '' and app.new_fallback == ''
+        visible(app.screen.query_one('#model-none'), size)
+        await pilot.press('escape')
+        await settle(app, pilot)
+        assert app.new_model == '' and app.new_fallback == ''
+        app.action_pick_model('model')
+        await settle(app, pilot)
+        await select(primary)
+        await select(fallback)
+        assert isinstance(app.screen, tui.Confirm)
+        assert primary in app.screen.question and fallback in app.screen.question
+        await pilot.press('n')
+        await settle(app, pilot)
+        assert app.new_model == '' and app.new_fallback == ''
+        app.action_pick_model('model')
+        await settle(app, pilot)
+        await select(primary)
+        await select(fallback)
+        await pilot.press('y')
+        await settle(app, pilot)
+        assert (app.new_model, app.new_fallback) == (primary, fallback)
+        # The start action receives the whole configuration, including explicit enablement.
+        app.action_browse()
+        await settle(app, pilot)
+        app.screen.show_repository(ready.repo)
+        await settle(app, pilot)
+        with patch.object(app, 'execute') as execute:
+            app.start_repository(ready)
+            await settle(app, pilot)
+            assert primary in app.screen.question and fallback in app.screen.question
+            await pilot.press('y')
+            await settle(app, pilot)
+            action = execute.call_args.args[0]
+            assert action.env['PI_AUTOWORK_PRIMARY'] == primary
+            assert action.env['PI_AUTOWORK_FALLBACK'] == fallback
+            assert action.env['PI_AUTOWORK_NO_FALLBACK'] == '0'
+            # Existing service edits apply both settings with a single command.
+            app.current().service = 'running'
+            execute.reset_mock()
+            app.action_pick_model('model')
+            await settle(app, pilot)
+            await select(primary)
+            await select(fallback)
+            assert not execute.called
+            await pilot.press('y')
+            await settle(app, pilot)
+            assert execute.call_args.args[0].argv == [
+                'fixture-autowork', 'model', 'fixture', primary, '--fallback', fallback]
+            execute.reset_mock()
+            await pilot.press('f')
+            await settle(app, pilot)
+            await select(fallback)
+            assert not execute.called
+            await pilot.press('y')
+            await settle(app, pilot)
+            assert execute.call_args.args[0].argv == [
+                'fixture-autowork', 'model', 'fixture', '--fallback', fallback]
+            execute.reset_mock()
+            await pilot.press('f')
+            await settle(app, pilot)
+            assert isinstance(app.screen, tui.PickModel) and app.screen.allow_none
+            await pilot.click('#model-none')
+            await settle(app, pilot)
+            await pilot.press('y')
+            await settle(app, pilot)
+            assert execute.call_args.args[0].argv == ['fixture-autowork', 'model', 'fixture', '--no-fallback']
+            # Late view-only and target changes invalidate the fallback and summary stages.
+            for stage in ('fallback', 'summary'):
+                execute.reset_mock()
+                app.action_pick_model('model')
+                await settle(app, pilot)
+                await select(primary)
+                if stage == 'summary':
+                    await select(fallback)
+                    app.view_only = True
+                    await pilot.press('y')
+                else:
+                    app.current().repo += '-changed'
+                    app.screen.dismiss(fallback)
+                await settle(app, pilot)
+                assert not execute.called
+                app.view_only = False
+                app.current().repo = ready.repo
 
 
 class TuiModelsTests(unittest.TestCase):
@@ -593,6 +715,9 @@ class TuiModelsTests(unittest.TestCase):
                                  'python', __file__, '--pilot', case], capture_output=True, text=True, timeout=90)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('MODEL PILOT OK ' + case, result.stdout)
+
+    def test_independent_primary_and_fallback_are_staged_and_applied_atomically(self):
+        self.run_case('independent')
 
     def test_free_models_can_be_found_before_login_and_selected_after_configuration(self):
         self.run_case('free')
@@ -624,7 +749,8 @@ async def main(case):
         await {'session': session_pilot, 'login': login_pilot,
                'status': status_pilot, 'start': start_pilot,
                'existing': existing_pilot, 'repository': repository_identity_pilot,
-               'providers': providers_pilot, 'free': free_models_pilot}[case](size)
+               'providers': providers_pilot, 'free': free_models_pilot,
+               'independent': independent_fallback_pilot}[case](size)
         print('PASS', case, size)
     print('MODEL PILOT OK', case)
 

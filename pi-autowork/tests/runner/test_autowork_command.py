@@ -939,6 +939,29 @@ class AutoworkCommandTests(unittest.TestCase):
         bad = self.aw('model', 'india', 'nobody/nothing')
         self.assertIn("not in Pi's model list: nobody/nothing", bad.stderr)
 
+    def test_fallback_can_be_disabled_and_reenabled_without_losing_saved_models(self):
+        self.aw('start', str(self.repo))
+        env_file = self.env_dir / 'india.env'
+        disabled = self.aw('model', 'india', '--no-fallback')
+        self.assertEqual(disabled.returncode, 0, disabled.stderr)
+        self.assertEqual(fleet_view.read_env(env_file)['PI_AUTOWORK_NO_FALLBACK'], '1')
+        self.assertIn('fallback disabled', self.aw('model', 'india').stdout)
+        before = env_file.read_bytes()
+        bad = self.aw('model', 'india', 'nobody/nothing', '--fallback', 'openai-codex/gpt-6-luna')
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertEqual(env_file.read_bytes(), before)
+        both = self.aw('model', 'india', '--fallback', 'openai-codex/gpt-6-luna', '--no-fallback')
+        self.assertNotEqual(both.returncode, 0)
+        self.assertEqual(env_file.read_bytes(), before)
+        enabled = self.aw('model', 'india', 'openai-codex/gpt-6.1-sol',
+                          '--fallback', 'openai-codex/gpt-6-luna')
+        self.assertEqual(enabled.returncode, 0, enabled.stderr)
+        settings = fleet_view.read_env(env_file)
+        self.assertEqual(settings['PI_AUTOWORK_NO_FALLBACK'], '0')
+        self.assertEqual(settings['PI_AUTOWORK_PRIMARY'], 'openai-codex/gpt-6.1-sol')
+        self.assertEqual(settings['PI_AUTOWORK_FALLBACK'], 'openai-codex/gpt-6-luna')
+        self.assertEqual(settings['PI_AUTOWORK_REPO'], str(self.repo))
+
     def test_ls_reports_failed_discovery_instead_of_successful_empty_fleet(self):
         probe = self.base / 'bin/systemctl'
         for body in ['#!/bin/sh\nexit 1\n', '#!/missing/interpreter\n']:

@@ -239,8 +239,9 @@ class PickModel(ReadScreen, ModalScreen[str]):
     #model-status { height: auto; max-height: 3; }
     '''
 
-    def __init__(self, title, models, current, loader=None, identity=None, agent_dir=None, identity_valid=None):
+    def __init__(self, title, models, current, loader=None, identity=None, agent_dir=None, identity_valid=None, allow_none=False):
         super().__init__()
+        self.allow_none = allow_none
         self.title_text, self.models, self.current = title, models, current
         self.loader, self.identity, self.agent_dir = loader, identity, agent_dir
         self.identity_valid = identity_valid or (lambda: True)
@@ -252,7 +253,9 @@ class PickModel(ReadScreen, ModalScreen[str]):
     def compose(self) -> ComposeResult:
         from textual.widgets import Input
         with Vertical():
-            yield ViewHeader(self.title_text, '1 Choose provider   2 Search or filter free models   3 Select a model')
+            yield ViewHeader(self.title_text, '1 Choose provider   2 Search models   3 Select a model'
+                             if self.allow_none else
+                             '1 Choose provider   2 Search or filter free models   3 Select a model')
             yield Label(Text(f'Current: {self.current}' if self.current else 'Choose a model available through Pi.'))
             yield Select([], prompt='1. Choose a Pi provider', id='provider', disabled=True)
             yield Input(placeholder='2. Search this provider\'s models', id='filter')
@@ -261,7 +264,10 @@ class PickModel(ReadScreen, ModalScreen[str]):
             with Horizontal(id='model-actions'):
                 yield Button('Configure provider', id='model-login', disabled=not self.agent_dir)
                 yield Button('Refresh models', id='model-refresh', disabled=self.loader is None)
-                yield Button('Free models', id='model-free')
+                if self.allow_none:
+                    yield Button('No fallback', id='model-none')
+                else:
+                    yield Button('Free models', id='model-free')
             yield Label('Choose a provider → Configure provider · Esc back')
 
     def on_mount(self):
@@ -388,7 +394,10 @@ class PickModel(ReadScreen, ModalScreen[str]):
         self.app.push_screen(ProviderAuth(provider, self.agent_dir, identity_valid=self.identity_valid), authenticated)
 
     def on_button_pressed(self, event):
-        if event.button.id == 'model-free':
+        if event.button.id == 'model-none':
+            if self.allow_none and not self.app.view_only and self.identity_valid():
+                self.dismiss('')
+        elif event.button.id == 'model-free':
             self.free_only = not self.free_only
             event.button.label = 'All models' if self.free_only else 'Free models'
             self.query_one('#filter', Input).placeholder = ('Search free models across providers' if self.free_only
@@ -1157,6 +1166,7 @@ class FleetApp(App):
         Binding('s', 'run("s")', 'Stop', show=False),
         Binding('r', 'run("r")', 'Restart', show=False),
         Binding('m', 'pick_model("model")', 'Model', show=False),
+        Binding('f', 'pick_model("fallback")', 'Fallback', show=False),
         Binding('t', 'run("t")', 'Tasks', show=False),
         Binding('i', 'toggle_details', 'Details', show=False),
         Binding('u', 'run("u")', 'Uninstall', show=False),
@@ -1186,6 +1196,8 @@ class FleetApp(App):
         if not self.view_only:
             yield SystemCommand('Choose provider and model', 'Select a Pi model for a runner',
                                 lambda: self.action_pick_model('model'))
+            yield SystemCommand('Choose fallback provider and model', 'Select or disable the independent fallback',
+                                lambda: self.action_pick_model('fallback'))
             yield SystemCommand('Browse repositories', 'Find and prepare a repository', self.action_browse)
         if runner is not None:
             yield SystemCommand('Open activity log', 'Read recent runner output', lambda: self.action_run('l'))
@@ -1216,6 +1228,7 @@ class FleetApp(App):
         self._report_pending = None
         self.details_open = False
         self.new_model = ''
+        self.new_fallback = ''
         self.new_model_agent_dir = portal.service_agent_dir(os.environ)
 
     def check_action(self, action, parameters):
@@ -1690,10 +1703,18 @@ class FleetApp(App):
         if not self.view_only:
             modelbar.append('[m] Choose model', style=Style(bold=True, color='cyan', meta={'@click': 'app.pick_model("model")'}))
             modelbar.append(' · ')
+            modelbar.append('[f] Fallback', style=Style(bold=True, color='cyan', meta={'@click': 'app.pick_model("fallback")'}))
+            modelbar.append(' · ')
         else:
             modelbar.append('Model (read only) · ', style='dim')
         model = runner.model if runner and runner.has_service else self.new_model
         modelbar.append(model or 'Select a Pi model for a new runner', style='bold' if model else 'dim')
+        if model:
+            fallback = runner.fallback if runner and runner.has_service else self.new_fallback
+            if runner and runner.has_service and fleet_view.read_env(
+                    Path(self.env_dir) / f'{runner.name}.env').get('PI_AUTOWORK_NO_FALLBACK') == '1':
+                fallback = ''
+            modelbar.append(' · fallback ' + (fallback or 'disabled'), style='dim')
         publish_text(self.query_one('#modelbar', Static), modelbar)
         welcome = self.query_one('#empty-state')
         welcome.display = (runner is None and self.fleet_snapshot is not None
@@ -1814,7 +1835,7 @@ class FleetApp(App):
         repair = fleet_view.maintainer_line(runner)
         if repair:
             detail_row(text, 'Maintainer', repair, 'cyan')
-        # Short model names; fallback remains read-only in the fleet.
+        # Short model names; full identifiers remain in the model picker.
         detail_row(text, 'Repository', tilde(runner.repo) or '(unknown)', 'dim')
         if runner.model:
             detail_row(text, 'Model', f'{runner.model.rsplit("/", 1)[-1]} · fallback {runner.fallback.rsplit("/", 1)[-1]}', 'dim')
@@ -1936,6 +1957,8 @@ class FleetApp(App):
                        if runner else [('m', 'Choose provider and model')])
             if not any(key == 'm' for key, label in actions):
                 actions += [('m', 'Choose provider and model')]
+            if not any(key == 'f' for key, label in actions):
+                actions += [('f', 'Choose fallback provider and model')]
             actions += [('n', 'Browse repositories')]
         actions += [('q', 'Quit')]
         keys = {key for key, label in actions}
@@ -1947,7 +1970,7 @@ class FleetApp(App):
             if key not in ('n', 'q') and ((current.name, current.repo) if current else None) != identity:
                 self.notify('Runner selection changed. Reopen More for the current runner.', severity='warning')
                 return
-            action = {'m': 'pick_model("model")', 'i': 'toggle_details',
+            action = {'m': 'pick_model("model")', 'f': 'pick_model("fallback")', 'i': 'toggle_details',
                       'n': 'browse', 'q': 'quit'}.get(key, f'run("{key}")')
             await self.run_action(action)
         self.push_screen(ActionMenu(actions), chosen)
@@ -2064,60 +2087,97 @@ class FleetApp(App):
         else:
             self.execute(action)
 
+    def choose_model_configuration(self, title, current, fallback, *, load, identity, agent_dir, valid, chosen,
+                                   fallback_only=False):
+        """Stage both choices; publish them together only after summary consent."""
+        def usable():
+            return not self.view_only and valid()
+
+        def select_fallback(primary):
+            if primary is None or not usable():
+                chosen(None)
+                return
+            def selected(value):
+                if value is None or not usable():
+                    chosen(None)
+                    return
+                summary = f'{title}\nPrimary: {primary}\nFallback: {value or "disabled (only the primary model)"}'
+                def confirmed(yes):
+                    chosen((primary, value) if yes and usable() else None)
+                self.push_screen(Confirm(summary + '\nApply these model settings?'), confirmed)
+            self.push_screen(PickModel(title + ': fallback provider and model', [], fallback,
+                                       loader=load, identity=identity, agent_dir=agent_dir,
+                                       identity_valid=valid, allow_none=True), selected)
+
+        if fallback_only:
+            select_fallback(current)
+        else:
+            self.push_screen(PickModel(title + ': primary provider and model', [], current,
+                                       loader=load, identity=identity, agent_dir=agent_dir,
+                                       identity_valid=valid), select_fallback)
+
     def action_pick_model(self, which):
         if self.view_only:
             return
         runner = self.current()
         if runner is None or not runner.has_service:
-            if which == 'model':
-                self.pick_new_model()
+            self.pick_new_model(fallback_only=which == 'fallback' and bool(self.new_model))
             return
         name, repo = runner.name, runner.repo
         settings_path = Path(self.env_dir) / f'{name}.env'
+        settings = fleet_view.read_env(settings_path)
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
-        agent_dir = portal.service_agent_dir(fleet_view.read_env(settings_path))
+        agent_dir = portal.service_agent_dir(settings)
         def valid():
             selected = self.current()
             return (selected is not None and (selected.name, selected.repo) == (name, repo) and
                     portal.service_agent_dir(fleet_view.read_env(settings_path)) == agent_dir)
-        default_models = list_models is fleet_view.models
         def load():
-            if default_models:
+            if list_models is fleet_view.models:
                 return self.model_catalog(lambda: list_models(pi=pi, agent_dir=agent_dir), agent_dir, pi)
             return list_models()
-        current = runner.model if which == 'model' else runner.fallback
-        title = f'{runner.name}: {"model" if which == "model" else "fallback model"}'
-
-        def chosen(model):
-            if not model or model == current or self.view_only or not valid():
+        current = runner.model
+        fallback = '' if settings.get('PI_AUTOWORK_NO_FALLBACK') == '1' else runner.fallback
+        running = runner.service == 'running'
+        def chosen(configuration):
+            if configuration is None or self.view_only or not valid():
                 return
-            argv = [self.command, 'model', name] + ([model] if which == 'model' else ['--fallback', model])
-            action = fleet_view.Action('m', f'{which} {model}', argv,
-                                       confirm=f'Set {runner.name}\'s {which} to {model}'
-                                               + ('? Its service restarts; workers resume on the same attempt.'
-                                                  if runner.service == 'running' else '?'))
-            self.push_screen(Confirm(action.confirm),
-                             lambda yes: yes and valid() and not self.view_only and self.execute(action))
-        self.push_screen(PickModel(title, [], current, loader=load, identity=(name, repo, str(settings_path), agent_dir),
-                                   agent_dir=agent_dir, identity_valid=valid), chosen)
+            primary, fallback = configuration
+            argv = [self.command, 'model', name]
+            if which == 'model':
+                argv.append(primary)
+            argv += ['--fallback', fallback] if fallback else ['--no-fallback']
+            self.execute(fleet_view.Action('m', f'model settings for {name}', argv))
+        self.choose_model_configuration(f'{name}: model settings' + (' (service restarts)' if running else ''),
+            current, fallback, load=load, identity=(name, repo, str(settings_path), agent_dir),
+            agent_dir=agent_dir, valid=valid, chosen=chosen, fallback_only=which == 'fallback')
 
-    def pick_new_model(self, on_chosen=None):
+    def pick_new_model(self, on_chosen=None, *, fallback_only=False):
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
         agent_dir = self.new_model_agent_dir
+        selected = self.current()
+        target = (selected.name, selected.repo) if selected else None
+        origin = self.screen
+        path = getattr(origin, 'chosen_path', None)
+        def valid():
+            current = self.current()
+            return (origin.is_mounted and getattr(origin, 'chosen_path', None) == path and
+                    self.new_model_agent_dir == agent_dir and
+                    ((current.name, current.repo) if current else None) == target)
         def load():
             return (self.model_catalog(lambda: list_models(pi=pi, agent_dir=agent_dir), agent_dir, pi)
                     if list_models is fleet_view.models else list_models())
-        def chosen(model):
-            if model and not self.view_only and self.new_model_agent_dir == agent_dir:
-                self.new_model = model
+        def chosen(configuration):
+            if configuration is not None and not self.view_only and valid():
+                self.new_model, self.new_fallback = configuration
                 self.show_detail()
                 if on_chosen:
-                    on_chosen(model)
+                    on_chosen(configuration)
             elif on_chosen:
                 on_chosen(None)
-        self.push_screen(PickModel('Choose a Pi model for a new runner', [], self.new_model,
-                                   loader=load, identity=('new-runner', agent_dir),
-                                   agent_dir=agent_dir, identity_valid=lambda: self.new_model_agent_dir == agent_dir), chosen)
+        self.choose_model_configuration('New runner model settings', self.new_model, self.new_fallback,
+            load=load, identity=('new-runner', target, agent_dir), agent_dir=agent_dir,
+            valid=valid, chosen=chosen, fallback_only=fallback_only)
 
     @staticmethod
     def model_catalog(load_models, agent_dir, pi):
@@ -2177,13 +2237,15 @@ class FleetApp(App):
                     self.starting_repositories.discard(ready.repo)
             else:
                 self.starting_repositories.discard(ready.repo)
-        def model_chosen(model):
-            if not model or self.view_only or not browser.is_mounted or self.screen is not browser:
+        def model_chosen(configuration):
+            if not configuration or self.view_only or not browser.is_mounted or self.screen is not browser:
                 self.starting_repositories.discard(ready.repo)
                 return
-            action.env.update(PI_AUTOWORK_PRIMARY=model, PI_AUTOWORK_NO_FALLBACK='1',
+            model, fallback = configuration
+            action.env.update(PI_AUTOWORK_PRIMARY=model, PI_AUTOWORK_FALLBACK=fallback,
+                              PI_AUTOWORK_NO_FALLBACK='0' if fallback else '1',
                               PI_CODING_AGENT_DIR=self.new_model_agent_dir)
-            action.confirm += f' Model: {model}. Only this model will be used (no fallback).'
+            action.confirm += f' Primary: {model}. Fallback: {fallback or "disabled"}.'
             self.push_screen(Confirm(action.confirm), go)
 
         async def prepare_model():
@@ -2198,7 +2260,7 @@ class FleetApp(App):
                 elif saved:
                     self.push_screen(Confirm(action.confirm), go)
                 elif self.new_model:
-                    model_chosen(self.new_model)
+                    model_chosen((self.new_model, self.new_fallback))
                 else:
                     self.pick_new_model(model_chosen)
             except OSError as error:
