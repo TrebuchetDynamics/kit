@@ -38,10 +38,11 @@ Terminals may be small, remote, keyboard-only, or configured for native text cop
 
 ## Information architecture
 
-The fleet uses a full-width vertical stack at every terminal size: projects,
-selected summary, current work and activity. Do not turn the project list into a
-sidebar on wide terminals. Wide fleet tables show task-count columns and worker
-attempt, elapsed and quiet times. Compact tables keep identity, state and total.
+At 110 terminal columns and above, Projects and the selected summary occupy a
+36–40-column sidebar on the left. Current work sits above Recent activity on the
+right, with activity filling the remaining height. Smaller terminals stack these
+regions at full width. Project selection keeps Project, Status and Tasks columns.
+Worker tables show attempt, elapsed and quiet times when their pane has room.
 Resize reflows cached observations only; widget identities and actions stay unchanged.
 A fixed one-row footer exposes 1 Projects, 2 Work, 3 Activity, Help and Quit.
 Numbers move focus only on the fleet screen; they never intercept child prompts.
@@ -54,8 +55,8 @@ Panel borders and an accent border on focus establish grouping without relying
 on color alone. This takes navigation cues from
 [Lazygit](https://github.com/jesseduffield/lazygit) and restrained hierarchy from
 [Glow](https://github.com/charmbracelet/glow), using existing Textual components. Number the three navigation regions: Projects,
-Current work and Recent activity. The full-width project table shows task-count
-columns at 120 columns and above; smaller terminals show Runner/State/Total.
+Current work and Recent activity. The project table keeps compact identity, status
+and total; the selected summary and Details retain the detailed task counts.
 The selected summary separates the next useful action from task counts; omit
 zero-error/freshness boilerplate when observations are healthy. Keep resource
 waits visible. Worker rows retain task/state/activity and show attempt and elapsed/quiet
@@ -169,7 +170,9 @@ result when present. Keep at least four journal rows and one selectable worker r
 At 60×18 and 80×24, bounded task/state cells keep the Details route visible for full
 identity and reasons. Errors and source notes are separate counts, not a warning wall.
 Unknown inventory is unavailable, never zero; superseded checks never qualify current main.
-Preserve the full-width stacked hierarchy at 80×24, 150×45 and larger sizes.
+Preserve full-width stacking at 80×24 and the project/work split at 150×45 and
+larger sizes. Crossing the 110-column boundary must refit both tables without
+horizontal overflow or changing selection.
 Resize uses cached observations and performs no filesystem or service acquisition.
 Log's mode toggle also uses cached text only, preserving scroll/follow behavior and
 reader identity/epoch guards. Activity captures up to 400 lines from the last hour;
@@ -209,8 +212,9 @@ than invented SSH latency or flaky wall-clock performance assertions.
 No design-critical questions block this bounded redesign. Live SSH transport and
 assistive-technology qualification remain separate from offline terminal evidence.
 
-Project Details replaces the work/activity area with a full-width scrollable
-reading view below the project list. It hides the selected summary at every size.
+Project Details replaces the work/activity area with a scrollable reading view,
+beside the project list on wide terminals and below it on narrow terminals.
+It hides the selected summary at every size.
 Refresh preserves this mode; i returns, and 2/3 return directly to work/activity.
 
 ## Reading hierarchy across screens

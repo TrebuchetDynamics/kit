@@ -200,7 +200,7 @@ survival and missing/refused-login diagnosis, not live provider acceptance.
 | `bin/autowork`, `pi_autowork/command.py` | The `autowork` command (below), standard library only |
 | `pi_autowork/command_results.py` | Headless command-output and answer-receipt interpretation; no command execution, task mutation or UI effects |
 | `pi_autowork/tui_reads.py` | UI-loop read coordinator: four physical workers, coalesced requests, lifetime/identity/epoch-bound publication and cancellation-safe resource slots |
-| `pi_autowork/tui.py` | The `autowork` TUI (Textual, run through `uv`): live runners with what each needs (the owner's open BLOCKERS.md questions, else its first blocker), worker lanes, model and log, stacked full width so it reads on an 80-column terminal, a directory browser that starts services, and keys that run `autowork` commands; `--view-only` disables the keys |
+| `pi_autowork/tui.py` | The `autowork` TUI (Textual, run through `uv`): live runners with what each needs (the owner's open BLOCKERS.md questions, else its first blocker), worker lanes, model and log, a project sidebar on wide terminals and full-width stacking below 110 columns, a directory browser that starts services, and keys that run `autowork` commands; `--view-only` disables the keys |
 | `pi_autowork/tui_web.py` | `autowork web`: serves the TUI to a browser with textual-serve, on 127.0.0.1 by default |
 | `pi_autowork/questions.py` | The owner's questions block in `BLOCKERS.md`, built from the engine status without a model |
 | `pi_autowork/release.py` | Safe-checkpoint test before a self-update: fleet idle, and the new release reads current state |
@@ -672,8 +672,9 @@ actions. The palette includes provider/model selection on the fleet and provider
 and refresh while the model picker is open. Read-only mode omits actions that
 change runner or repository state.
 
-The fleet keeps projects, selected summary, current work and activity stacked
-at full width, including on wide terminals. There is no project sidebar.
+At 110 columns and above, Projects and the selected summary sit on the left;
+Current work sits above Recent activity on the right. The project sidebar is
+36–40 columns wide. Smaller terminals stack these regions at full width.
 The fixed footer shows **1 Projects**, **2 Work**, **3 Activity**, Help and
 Quit. Press **h Guide** for the setup/execution/review/publication flow and how to
 interpret waiting, attention and unconfirmed states. Task progress is separate
@@ -682,10 +683,10 @@ Enter opens the selected log. Resizing does not acquire new state or dispatch an
 action.
 
 The fleet has three numbered regions: **Projects**, **Current work** and
-**Recent activity**. At 120 columns and above, the fleet table shows Runner,
-State, Active, Mergeable, Waiting, Blocker, Decision and Total, plus Needs and Now
-when space permits. Smaller terminals show Runner, State and Total. Wide worker
-tables show attempt, elapsed and quiet times. **i Details** retains full source evidence.
+**Recent activity**. The project table shows Project, Status and Tasks; the
+selected summary and Details retain the detailed task counts. Worker tables
+show attempt, elapsed and quiet times when their pane has enough room.
+**i Details** retains full source evidence.
 Unconfirmed worker observations retain that label and never count as verified
 active tasks. Repeated memory waits in the dashboard show their latest value,
 range, number of updates and first/last timestamps. Full-screen **Log**, including

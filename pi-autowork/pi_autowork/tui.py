@@ -1127,13 +1127,16 @@ class WorkflowGuide(ModalScreen):
 
 class FleetApp(App):
     TITLE = 'autowork'
-    # Stacked, each part full width: a side-by-side split left a ~30-column pane on an
-    # 80-column terminal, which wrapped the detail and cut the log.
+    # Keep project selection beside work on wide terminals; stack on narrow ones.
     CSS = '''
     Header { background: $panel; }
     #workspace-body { height: 1fr; layout: vertical; }
     #project-context { width: 100%; height: auto; }
     #work-context { width: 100%; height: 1fr; }
+    .wide #workspace-body { layout: horizontal; }
+    .wide #project-context { width: 25%; min-width: 36; max-width: 40; height: 1fr; }
+    .wide #work-context { width: 1fr; height: 1fr; }
+    .wide #overview { max-height: 100%; }
     #nav-footer { dock: bottom; height: 1; background: $panel; color: $text-muted; }
 
     #modelbar { height: 1; padding: 0 1; background: $surface; }
@@ -1141,13 +1144,13 @@ class FleetApp(App):
     #empty-card { width: 72; max-width: 100%; height: auto; padding: 1 2; border: round $accent; background: $surface; content-align: center middle; }
     #runners, #lanes { background: $surface; }
     #runners, #lanes, #log { border-title-color: $text; border-title-style: bold; }
-    #runners { border-top: solid $panel; }
+    #runners { border: round $accent; }
     #runners { height: auto; min-height: 3; max-height: 6; }
     #overview { height: auto; max-height: 6; margin: 0; padding: 0 1; background: $surface; }
     #detail-scroll { display: none; height: 1fr; min-height: 4; border: round $accent; }
     #detail { height: auto; padding: 0 1; }
-    #lanes { height: auto; min-height: 3; max-height: 6; border-top: solid $panel; }
-    #log { height: 1fr; min-height: 4; border-top: solid $panel; }
+    #lanes { height: auto; min-height: 3; max-height: 6; border: round $accent; }
+    #log { height: 1fr; min-height: 4; border: round $accent; }
     .short #runners, .short #lanes { max-height: 3; }
     .short #overview { max-height: 3; margin: 0; }
     .short #detail-scroll { height: 1fr; }
@@ -1265,11 +1268,10 @@ class FleetApp(App):
                 yield RichLog(id='log', wrap=True, highlight=False, markup=False)
         yield MenuBar(id='nav-footer')
 
-    # Restore the full-width fleet table; compact terminals keep the count summary.
+    # Compact project selection; the selected overview and Details retain all counts.
     # Every open task is in one count bucket. Decision is Needs-decision membership,
     # not necessarily an unanswered owner question.
-    RUNNER_COLUMNS = ('Runner', 'State', 'Active', 'Mergeable', 'Waiting', 'Blocker', 'Decision', 'Total')
-    RUNNER_TEXT = ('Needs', 'Now')
+    RUNNER_COLUMNS = ('Project', 'Status', 'Tasks')
     LANE_COLUMNS = ('Task', 'Status', 'Try', 'For', 'Quiet')
     LANE_TEXT = ('Doing',)
     STATUS_STYLE = {fleet_view.ACTIVE: 'bold green', fleet_view.MERGEABLE: 'bold cyan',
@@ -1280,7 +1282,7 @@ class FleetApp(App):
         self.reader = self.reads.owner(self.read_done)
         table = self.query_one('#runners', DataTable)
         table.border_title = '1 · Projects — select a project'
-        table.add_columns(*self.RUNNER_COLUMNS, *self.RUNNER_TEXT)
+        table.add_columns(*self.RUNNER_COLUMNS)
         self.query_one('#lanes', DataTable).add_columns(*self.LANE_COLUMNS, *self.LANE_TEXT)
         self.query_one('#detail-scroll', VerticalScroll).border_title = 'Project details · i back · PgUp/PgDn scroll'
         self.query_one('#log', RichLog).border_title = '3 · Recent activity · Enter full log'
@@ -1391,6 +1393,7 @@ class FleetApp(App):
 
     def on_resize(self, event):
         self.screen_stack[0].set_class(event.size.height < 22, 'short')
+        self.screen_stack[0].set_class(event.size.width >= 110, 'wide')
         self._shown = {}  # the columns fit the new width
         if self.query_one('#runners', DataTable).columns:  # the first resize comes before on_mount
             # App.size may still be the previous viewport during the resize event.
@@ -1508,6 +1511,14 @@ class FleetApp(App):
         if isinstance(screen, (TasksScreen, TaskScreen)):
             screen.refresh_tasks(getattr(screen, 'follow', None))
 
+    def pane_width(self, *, projects=False):
+        """Budget the pending layout too: widget regions lag a terminal resize."""
+        width = self.size.width
+        if width < 110:
+            return width
+        sidebar = min(40, max(36, width // 4))
+        return sidebar if projects else width - sidebar
+
     def render_fleet(self):
         self.show_navigation()
         table = self.query_one('#runners', DataTable)
@@ -1521,16 +1532,18 @@ class FleetApp(App):
         for selector in ('#runners', '#overview', '#lanes', '#log'):
             self.query_one(selector).display = not welcome
         keep = self.selected
-        compact = self.size.width < 120
+        budget = self.pane_width(projects=True)
         rows = fleet_view.runner_rows(self.runners)
         for runner, row in zip(self.runners, rows):
-            row['State'] = self.execution_state(runner)
-        total_width = max([len('Total'), *(cell_len(row['Total'][0]) for row in rows)])
-        name_room = min(32, max(8, self.size.width - 20 - total_width - 10))
-        self.fill(table, rows,
-                  ('Runner', 'State', 'Total') if compact else self.RUNNER_COLUMNS,
-                  () if compact else self.RUNNER_TEXT,
-                  limits={'Runner': name_room, 'State': 20})
+            row['Project'] = row['Runner']
+            row['Status'] = self.execution_state(runner)
+            row['Tasks'] = row['Total']
+        task_width = max([len('Tasks'), *(cell_len(row['Tasks'][0]) for row in rows)])
+        state_room = min(15, budget - task_width - len('Project') - 10,
+                         max([len('Status'), *(cell_len(row['Status'][0]) for row in rows)]))
+        name_room = max(1, min(32, budget - state_room - task_width - 10))
+        self.fill(table, rows, self.RUNNER_COLUMNS, (),
+                  limits={'Project': name_room, 'Status': state_room}, budget=budget)
         names = [r.name for r in self.runners]
         if names:
             row = names.index(keep) if keep in names else 0
@@ -1881,7 +1894,7 @@ class FleetApp(App):
         self._lane_targets = targets
         table.border_title = (f'2 · Current work · {len(runner.lanes)} observed · Enter log' if runner.lanes
                               else '2 · Current work · no workers observed')
-        budget = self.size.width
+        budget = self.pane_width()
         compact = budget < 120
         for row in rows:
             status, style = row['Status']
@@ -1892,7 +1905,7 @@ class FleetApp(App):
         state_room = max(12, budget - name_room - 8) if compact else 32
         if self.fill(table, rows, ('Task', 'Status') if compact else self.LANE_COLUMNS,
                      () if compact else self.LANE_TEXT,
-                     limits={'Task': name_room, 'Status': state_room}) and rows:
+                     limits={'Task': name_room, 'Status': state_room}, budget=budget) and rows:
             keys = list(targets)
             fallback = next((i for i, key in enumerate(keys) if targets[key] == selected), 0)
             table.move_cursor(row=keys.index(keep) if keep in keys else fallback)
