@@ -13,6 +13,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -2222,16 +2223,17 @@ def readiness(path):
 def how_to_fix(ready):
     """One line per missing piece, for the TUI and `autowork start`."""
     hints = []
+    repo = shlex.quote(ready.repo)
     for problem in ready.problems:
         if problem == 'legacy planning':
-            hints.append(f'Run `autowork tasks prepare --force {ready.repo}` to convert now '
+            hints.append(f'Run `autowork tasks prepare --force {repo}` to convert now '
                          '(Force here asks for confirmation); plain Prepare may defer or refuse.')
         elif problem == 'tasks':
-            hints.append(f'Run `autowork tasks prepare {ready.repo}` to convert legacy planning; '
+            hints.append(f'Run `autowork tasks prepare {repo}` to convert legacy planning; '
                          'with no accepted intent, plan the work with /docs-sync (`autowork plan`, '
                          'or Plan here). No tasks are invented.')
         elif problem.startswith('task store preparation:'):
-            hints.append(f'Run `autowork tasks prepare {ready.repo}` and resolve its outcome through '
+            hints.append(f'Run `autowork tasks prepare {repo}` and resolve its outcome through '
                          '/docs-sync (`autowork plan`, or Plan here).')
         elif problem.startswith('commit tasks/ on '):
             hints.append(problem)

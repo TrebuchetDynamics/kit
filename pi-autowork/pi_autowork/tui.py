@@ -697,6 +697,7 @@ class BrowseScreen(ReadScreen, Screen):
         self.chosen_path = None
         self.starting = False
         self.navigating = False
+        self.selection_epoch = 0
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -707,6 +708,7 @@ class BrowseScreen(ReadScreen, Screen):
             yield Button('Parent', id='browse-up', tooltip='Open the parent directory (Alt+Up)')
             yield Button('Home', id='browse-home', tooltip='Open your home directory (Alt+Home)')
         yield Static('Enter opens a folder · Ctrl+L edits the path · Alt+↑ goes up', id='browse-status', markup=False)
+        yield Button('Plan tasks…', id='prepare-plan')
         with Horizontal(id='browser-body'):
             yield RepoTree(self.root or str(Path.home()), id='tree')
             with VerticalScroll(id='info-scroll'):
@@ -714,6 +716,7 @@ class BrowseScreen(ReadScreen, Screen):
 
     def on_mount(self):
         self.set_class(self.size.width < 100, 'compact')
+        self.query_one('#prepare-plan', Button).display = False
         self.title = f'start a runner: {self.root or Path.home()}'
         self.query_one('#menubar', MenuBar).show([('p', 'Start'), ('g', 'Plan'), ('ctrl+l', 'Path'), ('esc', 'Back')], explicit_keys=True)
         self.query_one('#tree', RepoTree).focus()
@@ -741,6 +744,11 @@ class BrowseScreen(ReadScreen, Screen):
         self.navigate_to(Path.home())
 
     def on_button_pressed(self, event):
+        if event.button.id == 'prepare-plan':
+            event.stop()
+            if self.prepare_result and self.prepare_result[0] == self.chosen_path:
+                self.plan(self.chosen_path)
+            return
         if event.button.id in ('browse-up', 'browse-home'):
             event.stop()
             (self.action_parent if event.button.id == 'browse-up' else self.action_home)()
@@ -767,6 +775,8 @@ class BrowseScreen(ReadScreen, Screen):
     def navigate_to(self, value):
         """Change the browser root after a read-only, off-loop directory check."""
         value = str(value).strip()
+        self.selection_epoch += 1
+        self.query_one('#prepare-plan', Button).display = False
         self.invalidate_read()
         self.navigating = bool(value)
         if not value:
@@ -829,8 +839,12 @@ class BrowseScreen(ReadScreen, Screen):
             self.invalidate_read()
         path = str(path)
         if self.chosen_path != path:
+            self.selection_epoch += 1
             self.chosen = None
             self.starting = False
+            self.query_one('#prepare-plan', Button).display = False
+            if not self.preparing:
+                self.query_one('#browse-status', Static).update('Enter opens a folder · Ctrl+L edits the path · Alt+↑ goes up')
         self.chosen_path = path
         self.query_one('#info', Static).update(f'{path}\nReading readiness…')
         def load():
@@ -856,6 +870,28 @@ class BrowseScreen(ReadScreen, Screen):
         tree.update_readiness(self.chosen)
         info = Text()
         info.append(str(path) + '\n', style='bold')
+        self.query_one('#prepare-plan', Button).display = bool(
+            not self.preparing and not self.navigating and self.prepare_result
+            and self.prepare_result[0] == str(path) and self.prepare_result[1]['outcome'] == 'NO_STORE')
+        if self.preparing:
+            info.append('\nPreparing repository…\n', style='yellow')
+        if self.prepare_result and self.prepare_result[0] == str(path):
+            report = self.prepare_result[1]
+            info.append(report['outcome'] + '\n', style='bold')
+            if report['outcome'] == 'NO_STORE':
+                info.append('No task store exists. Prepare cannot invent tasks or goals.\n'
+                            'No tasks were created; the service was not started.\n'
+                            'Choose Plan tasks… or press g to open planning, then describe the work.\n'
+                            'Opening Plan does not start a model; review and apply its proposals separately.\n')
+            for refusal in report.get('refusals', []):
+                info.append(str(refusal) + '\n')
+            if report.get('forced'):
+                info.append('Forced conversion:\n', style='bold')
+                step = report['forced'].get('step', {})
+                for key in ('stopped', 'set_aside', 'landed', 'committed', 'commit'):
+                    if key in step:
+                        info.append(f'{key}: {step[key]}\n')
+            info.append((report.get('next') or 'Resolve the reported problem, then run Prepare again.') + '\n')
         if self.chosen.ready:
             info.append('ready', style='bold green')
             info.append(f' on {self.chosen.branch}. Press p to play (start) its service.\n')
@@ -869,22 +905,6 @@ class BrowseScreen(ReadScreen, Screen):
                 info.append(f'Press p to confirm start: safely select local {self.chosen.start_branch}, then recheck readiness.\n')
             else:
                 info.append('Press p for Prepare, Prepare and start, Plan (an agent plans the tasks), or Force.\n')
-        if self.preparing:
-            info.append('\nPreparing repository…\n', style='yellow')
-        if self.prepare_result and self.prepare_result[0] == str(path):
-            report = self.prepare_result[1]
-            info.append('\n' + report['outcome'] + '\n', style='bold')
-            for refusal in report.get('refusals', []):
-                info.append(str(refusal) + '\n')
-            if report.get('forced'):
-                info.append('Forced conversion:\n', style='bold')
-                step = report['forced'].get('step', {})
-                for key in ('stopped', 'set_aside', 'landed', 'committed', 'commit'):
-                    if key in step:
-                        info.append(f'{key}: {step[key]}\n')
-            info.append((report.get('next') or 'Resolve the reported problem, then run Prepare again.') + '\n')
-            if report['outcome'] == 'NO_STORE':
-                info.append('Plan accepted intent with /docs-sync; no goals or tasks were created.\n')
         self.query_one('#info', Static).update(info)
 
     def action_start(self):
@@ -917,7 +937,8 @@ class BrowseScreen(ReadScreen, Screen):
 
     def plan(self, path):
         """Open embedded planning, independent of execution readiness or service state."""
-        if not self.app.view_only and not self.preparing:
+        if (not self.app.view_only and not self.preparing and not self.navigating
+                and self.is_current and self.chosen and str(path) in (self.chosen_path, self.chosen.repo)):
             self.app.open_plan(str(path))
 
     def confirm_force(self, path):
@@ -928,11 +949,16 @@ class BrowseScreen(ReadScreen, Screen):
             lambda yes: yes and self.prepare(path, False, force=True))
 
     def prepare(self, path, start, force=False):
-        if self.app.view_only or self.preparing:
+        path = str(path)
+        if (self.app.view_only or self.preparing or self.navigating
+                or not self.is_current or self.chosen_path != path):
             return
         self.preparing = True
+        self.prepare_epoch = self.selection_epoch
         self.prepare_result = None
-        self.show_repository(path)
+        self.query_one('#prepare-plan', Button).display = False
+        self.query_one('#browse-status', Static).update('Preparing repository… Please wait.')
+        self.render_repository(path)
         self.run_worker(lambda: self.run_prepare(path, start, force), thread=True, group='prepare')
 
     def run_prepare(self, path, start, force=False):
@@ -947,7 +973,7 @@ class BrowseScreen(ReadScreen, Screen):
             except ValueError:
                 report = dict(outcome='PREPARE_FAILED', next=(result.stdout or '') + (result.stderr or ''))
             ok = result.returncode == 0 and report.get('ok') and report['outcome'] in ('READY', 'MIGRATED')
-        except OSError as error:
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
             report, ok = dict(outcome='PREPARE_FAILED', next=str(error)), False
         self.app.call_from_thread(self.prepared, path, report, bool(start and ok))
 
@@ -956,9 +982,23 @@ class BrowseScreen(ReadScreen, Screen):
         self.prepare_result = (str(path), report)
         if not self.is_mounted:  # leaving the browser does not undo a CLI conversion in flight
             return
-        self.app.invalidate_reads()
-        if self.chosen_path == str(path):
-            self.show_repository(path, lambda ready: start and ready.ready and self.start(ready))
+        if self.is_current and self.chosen_path == str(path) and not self.navigating:
+            self.app.invalidate_reads()
+            outcome = report['outcome']
+            status = ('No tasks created; service not started. Choose Plan tasks…' if outcome == 'NO_STORE'
+                      else f'Prepare: {outcome}. ' + ('Checking readiness before starting…' if start else 'Review details below.'))
+            self.query_one('#browse-status', Static).update(status)
+            self.render_repository(path)
+            self.query_one('#info-scroll', VerticalScroll).scroll_home(animate=False)
+            epoch = getattr(self, 'prepare_epoch', self.selection_epoch)
+            def checked(ready):
+                if (start and ready.ready and not self.app.view_only and self.is_current
+                        and not self.navigating and self.selection_epoch == epoch):
+                    self.query_one('#browse-status', Static).update('Preparation complete. Starting service…')
+                    self.start(ready)
+                elif start:
+                    self.query_one('#browse-status', Static).update('Preparation complete; service not started. Recheck readiness and choose Start.')
+            self.show_repository(path, checked)
 
 
 def save_report(text, directory):

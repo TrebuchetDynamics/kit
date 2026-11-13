@@ -2,6 +2,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -206,6 +207,131 @@ async def delayed_pilot(size):
             assert Path(browser.root) == home, 'A dismissed browser must ignore pending navigation'
 
 
+async def prepare_pilot(size):
+    from pi_autowork import tui
+    for choice in ('prepare', 'prepare-start'):
+        async with fixture_app(size) as (app, pilot, browser, home, start, target):
+            release, started = threading.Event(), threading.Event()
+            calls = []
+            def command(argv, **kwargs):
+                calls.append(argv)
+                started.set()
+                assert release.wait(5), 'Test did not release preparation'
+                return subprocess.CompletedProcess(argv, 0, json.dumps(dict(
+                    outcome='NO_STORE', ok=True, next='Plan the accepted intent.')), '')
+            def missing(path):
+                return fleet_view.Readiness(str(path), repo=str(path), problems=['tasks'], branch='main')
+            with patch.object(fleet_view, 'readiness', side_effect=missing), \
+                 patch.object(app, 'runner_cmd', side_effect=command), \
+                 patch.object(browser, 'start') as launch, \
+                 patch.object(tui.PlanScreen, '_load_project'):
+                browser.show_repository(start)
+                await settle(app, pilot)
+                await pilot.press('p')
+                await settle(app, pilot)
+                assert isinstance(app.screen, tui.PrepareRepository)
+                # Exercise the real button and dismiss callback, including its thread timing.
+                try:
+                    await pilot.click('#' + choice)
+                    assert await asyncio.to_thread(started.wait, 2)
+                    assert 'Preparing' in text(browser.query_one('#browse-status'))
+                    visible(browser.query_one('#browse-status'), size)
+                    browser.prepare(str(start), True)
+                    browser.action_start()
+                    assert len(calls) == 1, 'Repeated clicks dispatched preparation twice'
+                finally:
+                    release.set()
+                for worker in list(app.workers):
+                    if worker.group == 'prepare':
+                        await worker.wait()
+                await settle(app, pilot)
+                assert not browser.preparing and not launch.called
+                assert app.screen is browser, 'Prepare must not open a planner automatically'
+                status = text(browser.query_one('#browse-status'))
+                assert 'not started' in status and 'Plan' in status, status
+                info = text(browser.query_one('#info'))
+                assert 'NO_STORE' in info and 'cannot invent tasks or goals' in info, info
+                button = browser.query_one('#prepare-plan')
+                visible(button, size)
+                assert calls == [[app.command, 'tasks', 'prepare', str(start)]], calls
+                # Results remain actionable, but read-only mode still prevents planning.
+                app.view_only = True
+                await pilot.click('#prepare-plan')
+                assert app.screen is browser
+                app.view_only = False
+                await pilot.pause(.2)  # allow the button's active effect to finish before another click
+                await pilot.click('#prepare-plan')
+                await pilot.pause()
+                assert isinstance(app.screen, tui.PlanScreen)
+                app.pop_screen()
+                await settle(app, pilot)
+                assert 'not started' in text(browser.query_one('#browse-status'))
+
+
+async def prepare_guards_pilot(size):
+    from pi_autowork import tui
+    async with fixture_app(size) as (app, pilot, browser, home, start, target):
+        def missing(path):
+            return fleet_view.Readiness(str(path), repo=str(path), problems=['tasks'])
+        with patch.object(fleet_view, 'readiness', side_effect=missing), \
+             patch.object(app, 'runner_cmd') as command, patch.object(browser, 'start') as launch:
+            browser.show_repository(start)
+            await settle(app, pilot)
+            await pilot.press('p')
+            await settle(app, pilot)
+            await pilot.press('escape')
+            assert not command.called and app.screen is browser
+            app.view_only = True
+            browser.prepare(str(start), True)
+            assert not command.called and not browser.preparing
+            app.view_only = False
+            browser.show_repository(target)
+            await settle(app, pilot)
+            browser.prepare(str(start), True)  # stale consent must not mutate its old selection
+            assert not command.called
+            for error in (OSError('fixture unavailable'), subprocess.TimeoutExpired('fixture', 1),
+                          ValueError('fixture invalid environment')):
+                command.side_effect = error
+                browser.prepare(str(target), True)
+                for worker in list(app.workers):
+                    if worker.group == 'prepare':
+                        await worker.wait()
+                await settle(app, pilot)
+                assert not browser.preparing and not launch.called
+                assert 'PREPARE_FAILED' in text(browser.query_one('#browse-status'))
+                assert str(error) in text(browser.query_one('#info'))
+            for changed in ('selection', 'view-only'):
+                release, started = threading.Event(), threading.Event()
+                def complete(argv, **kwargs):
+                    started.set()
+                    assert release.wait(5)
+                    return subprocess.CompletedProcess(argv, 0, '{"outcome":"READY","ok":true}', '')
+                command.side_effect = complete
+                browser.prepare(str(target), True)
+                try:
+                    assert await asyncio.to_thread(started.wait, 2)
+                    if changed == 'selection':
+                        # Returning to the original path does not restore consent to start it.
+                        browser.show_repository(start)
+                        await settle(app, pilot)
+                        browser.show_repository(target)
+                        await settle(app, pilot)
+                    else:
+                        app.view_only = True
+                    with patch.object(fleet_view, 'readiness', side_effect=lambda path:
+                            fleet_view.Readiness(str(path), repo=str(path), ready=True)):
+                        release.set()
+                        for worker in list(app.workers):
+                            if worker.group == 'prepare':
+                                await worker.wait()
+                        await settle(app, pilot)
+                    assert not browser.preparing and not launch.called
+                    assert 'not started' in text(browser.query_one('#browse-status'))
+                finally:
+                    release.set()
+                    app.view_only = False
+
+
 class TuiNavigationTests(unittest.TestCase):
     def run_case(self, case):
         self.assertIsNotNone(shutil.which('uv'), 'Navigation acceptance requires uv and pinned Textual cache')
@@ -222,6 +348,12 @@ class TuiNavigationTests(unittest.TestCase):
 
     def test_navigation_is_async_latest_wins_and_dismissal_cancels(self):
         self.run_case('delayed')
+
+    def test_prepare_and_start_no_store_explain_result_and_offer_explicit_plan(self):
+        self.run_case('prepare')
+
+    def test_prepare_cancel_read_only_stale_selection_and_errors(self):
+        self.run_case('prepare_guards')
 
 
 async def main(case):

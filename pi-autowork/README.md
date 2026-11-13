@@ -375,6 +375,11 @@ agent, runner command or task mutation; only explicit Export writes a report cop
 Native terminal drag selection remains available.
 The directory browser's **g Plan** opens the embedded planning console for any
 repository; Tasks offers **g Discuss** and **v Investigate** for a selected task.
+**Prepare** and **Prepare and start** show progress and a persistent result above
+the directory tree. If preparation returns **NO_STORE**, no task store exists:
+no tasks were created and the service was not started. Prepare cannot invent work. Choose
+**Plan tasks…** to describe the work in the planning console. Opening it starts no
+model; proposals still require Review and Apply.
 Both **b** and **B** in Tasks open this in-app report; neither launches an agent
 or suspends the TUI. Interactive repair is still the separate
 `autowork blockers [dir]` command, not this report.
