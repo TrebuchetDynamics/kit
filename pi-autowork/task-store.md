@@ -165,6 +165,12 @@ to `UNKNOWN`, missing resources expose no claims, and missing live authorization
 is `DENIED`. Unrecognized enum values or malformed authority fields invalidate
 the store rather than granting permission.
 
+Planning proposals may declare a new pending live obligation with `resources = ["live"]`,
+explicit `live = "denied"` and `ownership = "owner"`, without live grant fields.
+This records work awaiting owner action and grants no execution authority. Proposals
+cannot add or remove the live resource on an existing task, change existing ownership
+or live authorization, or invent grants, closure, evidence, attestations or holds.
+
 `task.draft` reports incomplete contracts. `task.runnable` means the contract is
 complete, open, in Now/Next, has a known kind and worker ownership, and has explicit
 live authorization if it claims the `live` resource. Coordinator/owner/unknown

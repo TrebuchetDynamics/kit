@@ -65,6 +65,8 @@ def policy_text() -> str:
         'docs/plans/**/*.md and docs/specs/**/*.md.\n'
         '- No deletions, credentials, evidence, symlinks or executable files.\n'
         '- Preserve closure, owner attestations, holds and live permissions.\n'
+        '- New live obligations require explicit live = "denied" and ownership = "owner"; '
+        'include no live grant fields. Existing live resource gates stay unchanged.\n'
         '- Use schema-1 TOML task records (read the bundled pi-autowork/task-store.md).\n'
         f'- At most {MAX_FILES} files, {MAX_FILE // 1024} KiB per file, '
         f'{MAX_TOTAL // (1024 * 1024)} MiB total.\n'
