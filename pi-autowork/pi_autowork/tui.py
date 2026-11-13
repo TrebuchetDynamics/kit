@@ -239,11 +239,13 @@ class PickModel(ReadScreen, ModalScreen[str]):
     #model-status { height: auto; max-height: 3; }
     '''
 
-    def __init__(self, title, models, current, loader=None, identity=None, agent_dir=None, identity_valid=None, allow_none=False):
+    def __init__(self, title, models, current, loader=None, identity=None, agent_dir=None, identity_valid=None, allow_none=False,
+                 catalog_loader=None):
         super().__init__()
         self.allow_none = allow_none
         self.title_text, self.models, self.current = title, models, current
         self.loader, self.identity, self.agent_dir = loader, identity, agent_dir
+        self.catalog_loader = catalog_loader
         self.identity_valid = identity_valid or (lambda: True)
         self.providers, self.auth_error = {}, ''
         self.free_only, self.free_models, self.usable_models = False, set(), set()
@@ -268,15 +270,42 @@ class PickModel(ReadScreen, ModalScreen[str]):
                     yield Button('No fallback', id='model-none')
                 else:
                     yield Button('Free models', id='model-free')
-            yield Label('Choose a provider → Configure provider · Esc back')
+            yield Label('Provider: Tab to focus · Enter opens · ↑/↓ then Enter · Esc back')
 
     def on_mount(self):
         self.shown = []
         self.query_one('#filter', Input).focus()
         if self.loader:
-            self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
+            self.start_model_reads()
         else:
             self.loaded_models(self.models)
+
+    def start_model_reads(self):
+        if self.catalog_loader is None:
+            self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
+            return
+        # Independent coordinator resources retain their physical slots until the
+        # underlying readers finish, including after refresh or screen dismissal.
+        self._model_parts, self._model_pending = {}, {'catalog', 'available'}
+        for kind, loader in (('catalog', self.catalog_loader), ('available', self.loader)):
+            self.read('model-' + kind, self.identity, loader,
+                      lambda value, kind=kind: self.model_part(kind, value),
+                      lambda error, kind=kind: self.model_part(kind, None, error))
+
+    def model_part(self, kind, value, error=None):
+        self._model_pending.discard(kind)
+        self._model_parts[kind] = (value, error)
+        catalog, catalog_error = self._model_parts.get('catalog', ({}, None))
+        available, available_error = self._model_parts.get('available', ([], None))
+        catalog, available = catalog or {}, available or []
+        public = catalog.get('models', [])
+        self.loaded_models(dict(
+            models=sorted(set(public) | set(available)), usable_models=available,
+            free_models=catalog.get('free_models', []), providers=catalog.get('providers', []),
+            auth_error=str(catalog_error) if catalog_error else catalog.get('auth_error', ''),
+            model_error=('Available Pi models could not be loaded. Refresh models to retry.'
+                         if available_error else catalog.get('model_error', '')),
+            loading=bool(self._model_pending)))
 
     def load_failed(self, error):
         self.catalog_loading, self.load_error = False, str(error)
@@ -293,8 +322,9 @@ class PickModel(ReadScreen, ModalScreen[str]):
         if not self.identity_valid():
             self.catalog_loading = False
             self.load_error = 'Pi profile or runner changed. Close and reopen the model picker.'
-            self.models, self.shown = [], []
+            self.models, self.shown, self.usable_models = [], [], set()
             self.query_one('#models', OptionList).clear_options()
+            self.query_one('#provider', Select).disabled = True
             self.query_one('#model-status', Static).update(self.load_error)
             return
         self.catalog_loading, self.load_error = False, ''
@@ -305,10 +335,11 @@ class PickModel(ReadScreen, ModalScreen[str]):
             self.usable_models = set(models.get('usable_models', models['models']))
             self.auth_error = models.get('auth_error', '')
             self.load_error = models.get('model_error', '')
+            self.catalog_loading = models.get('loading', False)
             models = models['models']
-        self.models = models
-        if not self.providers:
+        else:
             self.usable_models = set(models)
+        self.models = models
         providers = sorted(set(self.providers) | {model.partition('/')[0] for model in models})
         selector = self.query_one('#provider', Select)
         available = {model.partition('/')[0] for model in self.usable_models}
@@ -359,7 +390,7 @@ class PickModel(ReadScreen, ModalScreen[str]):
         if self.free_only:
             status = (f'{len(self.shown)} free models across providers. Login may be required; limits apply.'
                       if self.shown else 'No free models match. Clear the search or Refresh models.')
-        elif self.shown and any(m not in self.usable_models for m in self.shown):
+        elif not self.load_error and self.shown and any(m not in self.usable_models for m in self.shown):
             status = f'{len(self.shown)} catalog models. Select one to configure its provider if needed.'
         if self.auth_error:
             status = self.auth_error
@@ -370,10 +401,11 @@ class PickModel(ReadScreen, ModalScreen[str]):
             return
         self.invalidate_read()
         self.catalog_loading, self.load_error = True, ''
+        self.usable_models = set()
         self.query_one('#provider', Select).disabled = True
         self.query_one('#models', OptionList).clear_options()
         self.query_one('#model-status', Static).update('Refreshing models from Pi…')
-        self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
+        self.start_model_reads()
 
     def action_login(self):
         if not self.agent_dir or not self.is_current or not self.identity_valid() or self.app.view_only:
@@ -389,7 +421,8 @@ class PickModel(ReadScreen, ModalScreen[str]):
             return
         self.invalidate_read()
         def authenticated(success):
-            if success and self.is_mounted and self.is_current and self.identity_valid() and not self.app.view_only:
+            if ((success or self.catalog_loading) and self.is_mounted and self.is_current
+                    and self.identity_valid() and not self.app.view_only):
                 self.refresh_models()
         self.app.push_screen(ProviderAuth(provider, self.agent_dir, identity_valid=self.identity_valid), authenticated)
 
@@ -2141,7 +2174,7 @@ class FleetApp(App):
             self.execute(action)
 
     def choose_model_configuration(self, title, current, fallback, *, load, identity, agent_dir, valid, chosen,
-                                   fallback_only=False):
+                                   fallback_only=False, catalog_load=None):
         """Stage both choices; publish them together only after summary consent."""
         def usable():
             return not self.view_only and valid()
@@ -2160,14 +2193,14 @@ class FleetApp(App):
                 self.push_screen(Confirm(summary + '\nApply these model settings?'), confirmed)
             self.push_screen(PickModel(title + ': fallback provider and model', [], fallback,
                                        loader=load, identity=identity, agent_dir=agent_dir,
-                                       identity_valid=valid, allow_none=True), selected)
+                                       identity_valid=valid, allow_none=True, catalog_loader=catalog_load), selected)
 
         if fallback_only:
             select_fallback(current)
         else:
             self.push_screen(PickModel(title + ': primary provider and model', [], current,
                                        loader=load, identity=identity, agent_dir=agent_dir,
-                                       identity_valid=valid), select_fallback)
+                                       identity_valid=valid, catalog_loader=catalog_load), select_fallback)
 
     def action_pick_model(self, which):
         if self.view_only:
@@ -2187,7 +2220,7 @@ class FleetApp(App):
                     portal.service_agent_dir(fleet_view.read_env(settings_path)) == agent_dir)
         def load():
             if list_models is fleet_view.models:
-                return self.model_catalog(lambda: list_models(pi=pi, agent_dir=agent_dir), agent_dir, pi)
+                return list_models(pi=pi, agent_dir=agent_dir)
             return list_models()
         current = runner.model
         fallback = '' if settings.get('PI_AUTOWORK_NO_FALLBACK') == '1' else runner.fallback
@@ -2203,7 +2236,9 @@ class FleetApp(App):
             self.execute(fleet_view.Action('m', f'model settings for {name}', argv))
         self.choose_model_configuration(f'{name}: model settings' + (' (service restarts)' if running else ''),
             current, fallback, load=load, identity=(name, repo, str(settings_path), agent_dir),
-            agent_dir=agent_dir, valid=valid, chosen=chosen, fallback_only=which == 'fallback')
+            agent_dir=agent_dir, valid=valid, chosen=chosen, fallback_only=which == 'fallback',
+            catalog_load=(lambda: self.model_catalog(None, agent_dir, pi))
+                         if list_models is fleet_view.models else None)
 
     def pick_new_model(self, on_chosen=None, *, fallback_only=False):
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
@@ -2218,7 +2253,7 @@ class FleetApp(App):
                     self.new_model_agent_dir == agent_dir and
                     ((current.name, current.repo) if current else None) == target)
         def load():
-            return (self.model_catalog(lambda: list_models(pi=pi, agent_dir=agent_dir), agent_dir, pi)
+            return (list_models(pi=pi, agent_dir=agent_dir)
                     if list_models is fleet_view.models else list_models())
         def chosen(configuration):
             if configuration is not None and not self.view_only and valid():
@@ -2230,14 +2265,16 @@ class FleetApp(App):
                 on_chosen(None)
         self.choose_model_configuration('New runner model settings', self.new_model, self.new_fallback,
             load=load, identity=('new-runner', target, agent_dir), agent_dir=agent_dir,
-            valid=valid, chosen=chosen, fallback_only=fallback_only)
+            valid=valid, chosen=chosen, fallback_only=fallback_only,
+            catalog_load=(lambda: self.model_catalog(None, agent_dir, pi))
+                         if list_models is fleet_view.models else None)
 
     @staticmethod
     def model_catalog(load_models, agent_dir, pi):
         # A failed/empty available-model list must not hide configurable providers.
         model_error = ''
         try:
-            models = load_models()
+            models = load_models() if load_models is not None else []
         except Exception:
             models = []
             model_error = 'Pi model catalog unavailable. Configure a provider or retry Refresh models.'

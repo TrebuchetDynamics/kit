@@ -270,6 +270,118 @@ async def login_pilot(size):
                 assert app.new_model == 'fixture/alpha'
 
 
+async def incremental_catalog_pilot(size):
+    from pi_autowork import tui
+    from textual.widgets import Select
+    provider = dict(id='fixture', state='not stored', methods=['api_key'])
+    public = dict(providers=[provider], models=[dict(id=MODELS[0], free=True)])
+
+    async def until(predicate):
+        async def wait():
+            while not predicate():
+                await asyncio.sleep(0.01)
+        await asyncio.wait_for(wait(), 10)
+        await pilot.pause()
+
+    # Exercise the production loader selection, not just PickModel's test seam.
+    entered, release = threading.Event(), threading.Event()
+    def unavailable(**kwargs):
+        entered.set()
+        assert release.wait(10), 'test did not release available-model reader'
+        raise RuntimeError('fixture availability failed')
+    with patch.object(fleet_view, 'models', unavailable), \
+         patch.object(tui.pi_auth, 'discovery', return_value=public) as discovery:
+        async with fixture_app(size, loader=unavailable) as (app, pilot, ready, calls):
+            app.action_pick_model('model')
+            picker = app.screen
+            try:
+                await until(lambda: entered.is_set() and bool(picker.providers))
+                selector = picker.query_one('#provider', Select)
+                visible(selector, size)
+                assert not selector.disabled and picker.models == [MODELS[0]]
+                assert picker.catalog_loading and not picker.usable_models
+                selector.focus()
+                await pilot.press('enter')
+                assert selector.expanded
+                await pilot.press('end', 'enter')
+                assert picker.provider == 'fixture' and picker.shown == [MODELS[0]]
+                with patch.object(picker, 'action_login') as login:
+                    picker.choose_model(MODELS[0])
+                    login.assert_called_once()
+                assert app.new_model == ''
+                # Cancelling auth must resume availability checks invalidated by
+                # suspension, even when authentication itself did not succeed.
+                with patch.object(tui, 'ProviderAuth', side_effect=lambda *a, **kw: tui.Confirm('Fixture auth')):
+                    picker.action_login()
+                    await pilot.pause()
+                    assert isinstance(app.screen, tui.Confirm)
+                    await pilot.press('escape')
+                    await until(lambda: discovery.call_count == 2
+                                and 'catalog' not in picker._model_pending)
+                    assert app.screen is picker and not picker.usable_models
+            finally:
+                release.set()
+            await settle(app, pilot)
+            assert picker.models == [MODELS[0]] and not picker.usable_models
+            assert not picker.query_one('#provider', Select).disabled
+            assert picker.load_error and not picker.catalog_loading
+            assert 'could not be loaded' in text(picker.query_one('#model-status'))
+            assert discovery.call_count == 2
+            await pilot.press('escape')
+
+    # Refresh publishes new public metadata without overlapping a retired physical
+    # availability read. Neither its late result nor a changed profile may select.
+    entered, release = threading.Event(), threading.Event()
+    second_entered, second_release = threading.Event(), threading.Event()
+    loads = []
+    def available(**kwargs):
+        loads.append(True)
+        signal, gate = (entered, release) if len(loads) == 1 else (second_entered, second_release)
+        signal.set()
+        assert gate.wait(10), 'test did not release available-model reader'
+        return MODELS[:]
+    with patch.object(fleet_view, 'models', available), \
+         patch.object(tui.pi_auth, 'discovery', return_value=public) as discovery:
+        async with fixture_app(size, loader=available) as (app, pilot, ready, calls):
+            app.new_model = MODELS[0]
+            app.action_pick_model('fallback')
+            picker = app.screen
+            assert picker.allow_none
+            try:
+                await until(lambda: entered.is_set() and bool(picker.providers))
+                picker.refresh_models()
+                await until(lambda: discovery.call_count == 2 and bool(picker.providers)
+                            and 'catalog' not in picker._model_pending)
+                assert len(loads) == 1 and not picker.usable_models
+                assert not picker.query_one('#provider', Select).disabled
+                release.set()
+                await until(second_entered.is_set)
+                assert picker.usable_models == set(), 'Retired result must not confer usability'
+                app.new_model_agent_dir = '/fixture/changed-profile'
+            finally:
+                release.set()
+                second_release.set()
+            await settle(app, pilot)
+            assert not picker.usable_models
+            assert picker.query_one('#provider', Select).disabled
+            assert 'changed' in picker.load_error
+            await pilot.press('escape')
+
+    with patch.object(fleet_view, 'models', return_value=MODELS[:]) as available, \
+         patch.object(tui.pi_auth, 'discovery', side_effect=tui.pi_auth.AuthError('fixture discovery failed')):
+        async with fixture_app(size, loader=available) as (app, pilot, ready, calls):
+            app.action_pick_model('model')
+            await settle(app, pilot)
+            picker = app.screen
+            assert picker.models == MODELS and picker.usable_models == set(MODELS)
+            assert not picker.query_one('#provider', Select).disabled
+            assert 'fixture discovery failed' in text(picker.query_one('#model-status'))
+            app.view_only = True
+            picker.choose_model(MODELS[0])
+            assert app.screen is picker and app.new_model == ''
+            await pilot.press('escape')
+
+
 async def status_pilot(size):
     from pi_autowork import tui
     from textual.widgets import Input, Select
@@ -728,6 +840,9 @@ class TuiModelsTests(unittest.TestCase):
     def test_authentication_inside_tui_uses_selected_profile_masks_and_refreshes(self):
         self.run_case('login')
 
+    def test_public_catalog_is_visible_during_slow_available_read_and_survives_failure(self):
+        self.run_case('incremental')
+
     def test_model_loading_empty_and_error_status(self):
         self.run_case('status')
 
@@ -750,7 +865,8 @@ async def main(case):
                'status': status_pilot, 'start': start_pilot,
                'existing': existing_pilot, 'repository': repository_identity_pilot,
                'providers': providers_pilot, 'free': free_models_pilot,
-               'independent': independent_fallback_pilot}[case](size)
+               'independent': independent_fallback_pilot,
+               'incremental': incremental_catalog_pilot}[case](size)
         print('PASS', case, size)
     print('MODEL PILOT OK', case)
 
