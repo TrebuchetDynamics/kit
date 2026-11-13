@@ -21,9 +21,18 @@ def history_text(messages):
                        for m in messages)
 
 
+def preview_status(preview):
+    if not preview.get('valid'):
+        return 'Validation failed. Send a corrected proposal, then Review again.'
+    if not preview.get('files'):
+        return 'No proposed file changes to apply. Send a proposal with changes, then Review again.'
+    return 'Ready to Apply. Apply creates a local commit, never a push.'
+
+
 def preview_text(preview):
     errors = preview.get('errors', [])
-    return ('UNACCEPTED PROPOSAL — review every change before Apply\n'
+    return (preview_status(preview) + '\n'
+            'UNACCEPTED PROPOSAL — review every change before Apply\n'
             'Review revision: ' + str(preview.get('revision', 'unavailable')) + '\n'
             'Validation: ' + ('valid' if preview.get('valid') else 'not valid') + '\n'
             + ''.join('Error: ' + str(error) + '\n' for error in errors)

@@ -12,7 +12,7 @@ from textual.widgets import Button, Header, Input, Label, OptionList, Select, St
 from textual.widgets.option_list import Option
 
 from .planning_hub import PlanningHub
-from .planning_views import history_text, preview_text, roadmap_text
+from .planning_views import history_text, preview_status, preview_text, roadmap_text
 from .tui_dialogs import Confirm
 from .tui_common import ViewHeader
 
@@ -126,11 +126,12 @@ class PlanScreen(Screen):
     #plan-tabs TabPane { padding: 0; }
     #plan-tabs TextArea { height: 1fr; }
     #plan-input { height: 4; }
+    #plan-apply-status { height: auto; max-height: 3; padding: 0 1; }
     #plan-controls { height: 3; }
     #plan-controls Button { min-width: 8; width: 1fr; padding: 0; }
     PlanScreen.compact #plan-state { height: 1; }
-    PlanScreen.compact #plan-tabs { min-height: 3; }
-    PlanScreen.compact #plan-input { height: 3; }
+    PlanScreen.compact #plan-tabs { min-height: 2; }
+    PlanScreen.compact #plan-input { height: 2; border-top: none; }
     PlanScreen.compact #plan-mode { width: 14; }
     PlanScreen.compact #plan-task { width: 12; }
     PlanScreen.compact #plan-new { width: 8; min-width: 8; }
@@ -183,6 +184,7 @@ class PlanScreen(Screen):
             with TabPane('History', id='plan-history-tab'):
                 yield TextArea(read_only=True, id='plan-history')
         yield TextArea(id='plan-input')
+        yield Static('Apply disabled: Review a proposal first.', id='plan-apply-status', markup=False)
         with Horizontal(id='plan-controls'):
             for label, key in [('Send', 'send'), ('Steer', 'steer'), ('Cancel', 'cancel'),
                                ('Review', 'review'), ('Apply', 'apply'), ('Back', 'back')]:
@@ -239,6 +241,19 @@ class PlanScreen(Screen):
         self.query_one('#plan-review', Button).disabled = self._busy or running or not self.session_id
         self.query_one('#plan-apply', Button).disabled = (self.readonly or self._busy or running or not self.preview
                                                        or not self.preview.get('valid') or not self.preview.get('files'))
+        if self.readonly:
+            status = 'Apply disabled: view-only mode.'
+        elif self._busy:
+            status = 'Apply disabled: waiting for the current operation.'
+        elif running:
+            status = 'Apply disabled: wait for or cancel the active turn, then Review.'
+        elif self.preview:
+            status = preview_status(self.preview)
+            if not self.preview.get('valid') or not self.preview.get('files'):
+                status = 'Apply disabled: ' + status
+        else:
+            status = 'Apply disabled: Review a proposal first.'
+        self.query_one('#plan-apply-status', Static).update(status)
 
     def _load_project(self):
         if self._busy:
@@ -398,11 +413,13 @@ class PlanScreen(Screen):
         def done(result):
             preview, roadmap, history = result
             self.preview = preview
-            self.query_one('#plan-proposal', TextArea).load_text(preview_text(preview))
+            proposal = self.query_one('#plan-proposal', TextArea)
+            proposal.load_text(preview_text(preview))
+            proposal.scroll_to(y=0, x=0, animate=False)
             self.query_one('#plan-roadmap', TextArea).load_text(roadmap_text(roadmap))
             self.query_one('#plan-history', TextArea).load_text(history_text(history))
             self.query_one('#plan-tabs', TabbedContent).active = 'plan-proposal-tab'
-            self.note('Reviewed ' + preview.get('revision', '') + ' · Apply is a local commit, never a push.')
+            self.note(preview_status(preview))
         self._operation(lambda: (planner.preview(sid), planner.roadmap(sid), planner.history(sid)), done)
 
     def action_apply(self):
