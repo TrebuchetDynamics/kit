@@ -108,8 +108,8 @@ inside `upstream/`, except its README audit: run this skill's
    such as title, scope, acceptance and checks, or label the example shortened
    and link the complete format. Align scope, acceptance, check paths and reported
    changed files. Label task/report examples illustrative, never execution receipts.
-   Explain reprioritization through `autowork tasks place` and `move`, not manual
-   TODO-block edits; keep internal helper paths, revision guards
+   Explain GitHub issue ordering and native dependencies, not manual
+   TODO-block edits or removed task CLI commands; keep internal helper paths, revision guards
    and migration commands in references rather than implying scripts are on PATH.
 5. **Describe authority and activation precisely.** Explain whether an empty queue
    permits discovery, task recording and implementation in the same invocation

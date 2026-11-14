@@ -4,26 +4,19 @@ Source: [command discovery](../__init__.py) and [native provisioning](../scripts
 
 ## Work on a repository task
 
-Read README.md and AGENTS.md, then the task store: `autowork tasks list` and
-`autowork tasks show ID`. A task's record owns its scope, acceptance, dependencies and
-progress; there is no other board.
-Select a ready task within the accepted scope, inspect actual workspace/process
-activity and preserve unrelated changes. Use an isolated branch/worktree when
-concurrent work needs isolation. No Hermes profile, Kanban card, native worker or
-additional public tracking file is required, including recovery of older work.
+Read README.md, AGENTS.md and the current GitHub issue, native dependencies and
+linked PRs. GitHub owns executable scope, acceptance, checks and progress; existing
+local task records are preserved migration evidence, not a second queue.
 
-Make a scoped change, run the task's acceptance checks and affected offline tests
-(`python3 scripts/check.py`; it does not run `node --test tests/portable_pi.test.mjs`),
-and submit normal repository review. Required independent review remains required;
-review-requested changes and integration use ordinary Git/project tools. Commit only
-attributable verified work under existing authority, then close the task with its
-evidence (`autowork tasks done ID --evidence ...`) only when its acceptance is verified.
-Do not equate a local commit or successful check with live qualification or publication.
+Select work within accepted scope, establish actual workspace/process ownership
+and preserve unrelated changes. Use an isolated worktree when concurrent writing
+needs it. `/work` supports explicit manual implementation; `/autowork` only
+redirects to GitHub/Orbi. Orbi remains paused pending live qualification.
 
-Autowork automates that same current-session path. Its private coordination receipts
-are not product requirements. Honor explicit task/caller limits and real runtime
-controls; recurring jobs cannot replenish exhausted allocations. Local advisory
-locks do not exclude manual writers ignoring them or provide cross-host exclusion.
+Make a scoped change, run affected acceptance checks and independent review, and
+commit only attributable verified work. Use the issue/PR's actual evidence for
+closure; a local commit is neither publication nor live acceptance. Honor caller
+limits and human-only gates. No removed executor or task CLI is required.
 
 ## Add or update a skill
 

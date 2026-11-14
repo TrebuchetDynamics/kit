@@ -1,136 +1,87 @@
 ---
 name: unblock
-description: "Resolve Autowork blockers and resume authorized work."
+description: "Resolve blocked GitHub work without releasing pauses."
 license: MIT
 ---
 
 # Unblock
 
-For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
+Apply the [shared Ponytail method](../shared/PONYTAIL.md),
+[communication rules](../shared/COMMUNICATION.md) and
+[GitHub handoff](../shared/PLAN-HANDOFF.md).
 
-Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
+`/unblock [repo|all]` diagnoses the current repository by default. `all` must
+name an explicit set of repositories; it is not permission to discover or operate
+an entire host fleet. Editing this skill does not invoke recovery.
 
-Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
-
-`/unblock [runner|repo|all]` resolves blockers and delegated decisions so Autowork
-can continue without an interview about routine engineering choices. A bare invocation targets the current repository's
-runner, not the skill directory. `all` targets registered runners with faults or
-blocked work; healthy runners are read-only. Named targets narrow this scope.
-Creating or editing this skill does not invoke recovery. State the target runners
-and expected task transitions first; recovering one repository is not fleet recovery.
-
-Invocation authorizes routine local repairs and supported service recovery for
-those targets, including reloading an active runner or restarting a failed runner
-that was previously enabled. Make all reversible recovery decisions within accepted
-task scope and the target repository's policy. Choose the smallest complete repair
-instead of offering a menu. Existing user restrictions and explicit pauses win.
-`read-only`, `audit` and `questions only` permit diagnosis, not mutation.
+The pi-autowork executor and task CLI are removed. Do not install, restart or use
+them as a recovery fallback. Preserve existing tasks, worktrees, attempts and
+recovery evidence. Orbi remains paused and live-unqualified. This invocation
+does not authorize enabling it, clearing a pause or starting another implementer.
 
 ## Recover, verify, continue
 
-1. **Bind and inventory.** Filter `autowork ls --json` to the targets. Read their
-   fresh status, recent logs, service state, running and installed revisions, and
-   pending service jobs. Reconcile `autowork tasks list REPO` with execution status
-   and questions in the runner's session. Include every open `Needs decision` task,
-   held task and ready task that did not start, even when absent from the dashboard's
-   roots or questions. Finish with task IDs and causes or exact missing reads;
-   a failed read is unavailable evidence, not zero workers.
-2. **Diagnose.** Apply the [Blockers discovery and filtering rules](../blockers/SKILL.md#1-gather-and-filter),
-   not their interview or no-service workflow. Read the target's instructions,
-   decisions and standing policy. Rank causes by independent work blocked. For each,
-   inspect its latest attempt or planner result and the failed operation's log.
-   A `ready for planning` label can hide a refused planner result; `waiting on you`
-   does not establish owner-only authority. Stop discovery when the evidence selects
-   a repair or a specific gate. Keep output bounded and task-scoped; use the host's
-   session controls for ownership checks, not a search through unrelated transcripts.
-3. **Resolve decisions.** Reuse an existing answer within its exact scope. For a
-   routine reversible choice covered by the target's policy, choose and record it
-   now as `Standing policy:` or a planner call, with the choice, reason and evidence.
-   Use `autowork tasks` and its installed verb help for record edits. Return a resolved
-   `Needs decision` task to `Now` or `Next` when its placement is authorized; preserve
-   explicit deferrals, acceptance, exclusions, ownership and functional dependencies.
-   A technical failure needs a repair, not another approval. Trace owner-only labels
-   to the actual restriction: a generated question or `ownership = "owner"` is not
-   its provenance. Reconcile an existing grant only from attributable evidence of
-   its actor, date and exact scope; an ambiguous “yes” supplies no missing scope.
-   When owner input really is required, ask the smallest concrete question with a
-   recommendation and its effect on the queue. Batch independent required inputs;
-   “owner gates remain unchanged” is not a question. Never invent an
-   `Owner decision:`, waiver or qualification; notes do not grant typed authority.
-   Finish with a disposition for every inventoried decision, not only the displayed
-   questions. In read-only mode, give the proposed dispositions without saving them.
-4. **Repair and deliver.** For implementation or test fixes, run
-   [/autowork](../autowork/SKILL.md) in this session on the existing task and candidate;
-   its no-service boundary governs that lane. For runner/process faults or activation
-   of a verified repair, use the [service recovery procedure](references/services.md).
-   Establish one writer per checkout. If another session owns the same repair, confirm
-   its scope and fresh activity, then send the finding and required continuation through
-   its available control channel. Retain a specific ownership wait if contact fails;
-   a dirty file or old claim alone does not prove an active repair. Continue independent
-   causes. Validate changed records and run affected checks and required review.
-   Commit only attributable changes through the repository's supported local path and
-   integrate when authorized. Finish with the repair delivered to the runner's input,
-   or the exact delivery restriction, not an unsaved answer or a Next action note.
-5. **Verify and continue.** Read back service state, running release, task selection
-   and latest attempt. Observe the expected transition: decision consumed, admission,
-   resumed planning, review or integration, or an evidenced idle queue. Selection from
-   `autowork tasks why ID REPO` alone does not prove runtime admission. Follow a consumed
-   answer through to execution or its next evidenced wait. Separate saved, committed,
-   consumed and executing changes; do not claim success from a reload or a vanished
-   question. A known pending sync, check or activation is unfinished recovery: use
-   its completion signal or a bounded wait, then inspect consumption. If the bound
-   expires, report the concrete operation and why it prevents verification; do not
-   substitute a planning closure or another actor's unrelated progress for this proof.
-   On failure, inspect the new evidence and change approach; do not loop unchanged retries,
-   erase attempt history or reset retry limits. Reconcile all inventoried causes before
-   stopping, including independent work behind an owner-only gate. Do not create backlog work
-   merely to make an idle runner busy.
+1. **Bind and inventory.** Read GitHub Issues, native dependencies, linked PRs,
+   CI/review results and actual ownership. Use read-only `orbi status` and
+   `orbi doctor` with the target's configuration if installed. A failed read is
+   unavailable evidence, not an empty queue. Include every unresolved decision,
+   not only the dashboard's displayed questions.
+2. **Diagnose.** Read repository policy, accepted scope, latest attempts and failed
+   operation logs. Distinguish dependency, active ownership, failed check,
+   missing external input and explicit pause. Apply [Blockers](../blockers/SKILL.md)
+   discovery before asking for an interview. Choose routine reversible repairs
+   within accepted scope; record the reason as `Standing policy:` where useful.
+   Never fabricate an owner answer, waiver, grant or live qualification.
+3. **Repair.** Use `/work` for authorized local implementation without an
+   additional permission ceremony. Establish one writer per checkout, preserve
+   existing candidates and coordinate with their actual owner. Re-read an issue
+   before editing its contract; never replace an active worker's instructions.
+   Publish only under existing publication authority. Service operations are a
+   separate scope: follow [service boundaries](references/services.md).
+4. **Verify.** Run affected checks and required review, then inspect consumption
+   of the repair. Observe the expected transition in the issue, PR, checks or
+   actual execution evidence; do not claim success from an edited label or a
+   saved plan. A known pending operation is unfinished recovery. Inspect its
+   completion signal within a bounded wait; do not loop unchanged retries.
+   Do not create backlog work merely to make an idle deployment busy.
 
-Apply the [Definition of Done](../shared/DEFINITION-OF-DONE.md) to local repairs.
-Required checks and independent review remain required; local integration,
-publication, installation and live acceptance are separate outcomes.
+For a genuine owner gate, ask the smallest concrete question, with a recommendation
+and the effect on dependent work. Continue independent authorized repairs.
+A planning closure or an evidenced wait is not recovery. Apply the
+[Definition of Done](../shared/DEFINITION-OF-DONE.md) to actual delivery claims.
 
 ## Common Rationalizations
 
 | Rationalization | Reality |
 | --- | --- |
-| “Waiting on you means I must ask.” | Inspect the actual choice and existing authority; decide routine recovery yourself. |
-| “Restarting fixes every stall.” | Repair the cause, then observe the expected task transition. |
-| “All decisions means every permission.” | Recovery authority preserves explicit stops, security and live boundaries. |
-| “One blocked task stops the fleet.” | Continue independent eligible repairs and preserve the exact gate. |
-| “Another session is fixing it.” | Confirm its activity and repair scope, then coordinate the continuation. |
-| “I saved the answer, so it is unblocked.” | Verify consumption and execution, or name the next evidenced wait. |
+| "Restarting fixes every stall." | Repair the cause and verify consumption; preserve pauses. |
+| "I saved the answer, so it is unblocked." | An issue edit is not executed recovery. |
+| "Orbi is paused, so use the old runner." | The executor is removed; there is no fallback. |
 
 ## Red Flags
 
-- Clearing leases, retry history or failed evidence to make a dashboard green.
-- Restarting again while a previous service job is still running.
-- Releasing an explicit pause or changing acceptance to remove a blocker.
-- Reporting only displayed questions while `Needs decision` tasks remain unexamined.
-- Repeating status reads after the failed operation and repair are known.
+- Clearing ownership, retry history or failed evidence to make status green.
+- Releasing an explicit pause or weakening acceptance to remove a blocker.
+- Starting a competing session for an owned issue.
+- Claiming live qualification from an offline test.
 
 ## Boundaries
 
-- Use `/blockers` for an owner-question interview without service controls,
-  `/pending` for a read-only queue report, and `/autowork` for normal task execution.
+- Use `/blockers` for an owner-question interview, `/pending` for a read-only
+  report and `/work` for manual implementation.
+- Read-only/audit/questions-only requests mutate no files, issues, labels or services.
 - Preserve deliberately paused, disabled or stopped services and other writers.
-  Do not kill competing sessions, delete runtime state or change host permissions,
-  approval policy, credentials, model/spend grants or security defaults.
-- This invocation grants no production/product live operations, remote publication,
-  fleet-wide package deployment, destructive recovery or new product scope.
-  Retain real external gates and continue independent repairs.
-- Use `/push` only under separate publication authority. A recovery skill cannot
-  promise perpetual operation or task completion after the current session ends.
+  Do not kill competing sessions, delete runtime state or change credentials,
+  approval policy, model/spend grants or security defaults.
+- Production operations, fleet deployment and remote publication need their own
+  applicable authority.
 
-**Done when:** each target has an observed outcome and its whole queue is accounted
-for. Report **Recovered** only for work that consumed the repair and continued;
-**Idle** only for a confirmed queue with no outstanding work; otherwise report
-**Blocked**, with the exact unanswered input, active owner or unfinished operation.
-Mixed results stay per-target. If no task resumed, say “No work resumed.” A changed
-label, a saved decision, a planning closure or an evidenced wait is not recovery.
+**Done when:** every scoped cause has an observed disposition.
+Report **Recovered** only when work consumed the repair and continued;
+**Idle** only for a confirmed queue with no outstanding work; otherwise
+**Blocked**, naming the missing input, active owner or unfinished operation.
+If no task resumed, say "No work resumed."
 
-**Receipt:** outcome per target; actual task transitions; repairs, checks and commits;
-before/after service and running release; installed changes; unresolved task IDs and
-the concrete question or completion event needed. Attribute progress by another
-session or the runner to that actor. Keep unanswered gates visible, not in a success
-summary.
+**Receipt:** outcomes per repository, actual transitions, repairs, checks and
+commits, plus exact remaining gates. Distinguish local commit, integration,
+publication, installed activation and live acceptance.

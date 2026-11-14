@@ -8,14 +8,15 @@
 > pauses and do not revive the retired executor.
 
 Status: owner-approved. This policy applies to this repository and to workspaces
-whose owner explicitly adopts it. Approval of Autowork delegates execution of the
-approved scope, not just preparation of a plan.
+whose owner explicitly adopts it. Approval of implementation delegates execution
+of the approved scope, not just preparation of a plan. `/autowork` is now only a
+GitHub/Orbi redirect; it grants no service activation. Orbi remains paused and
+live-unqualified, and the removed executor must not be restored.
 
 ## Approved work has full delegated authority
 
-Every Autowork invocation and recurring occurrence in this repository is
-fully authorized for its accepted scope. The owner reaffirmed this standing grant
-on 2026-11-07: Autowork must be fully authorized always. It covers selected accepted
+Explicitly approved implementation in this repository is fully authorized for
+its accepted scope. The owner's standing execution grant covers selected accepted
 tasks and bounded engineering prerequisites within the accepted direction, not
 unaccepted product strategies. No second execution approval is required.
 
@@ -27,7 +28,7 @@ real external inputs and explicit caller limits remain limitations, not reasons
 to repeat an already-settled authorization question. Standalone planning, interviews
 and read-only requests keep their own non-execution boundaries.
 
-Approved Autowork may take the actions needed to complete its accepted scope
+Approved implementation may take the actions needed to complete its accepted scope
 without another owner approval. This includes implementation, environment repair,
 testing, integration, publication and live operations when they are necessary to
 the approved outcome. The coordinator chooses implementation details and resolves
@@ -51,21 +52,15 @@ task in Now/Next is not itself evidence of owner approval or adoption of this po
    instructions. Identify the actual operation and target covered by approval.
 2. Inspect fresh task status and actual worker/session ownership. Do not change a
    running contract or overlap another writer.
-3. Before selection/admission, the coordinator must use
-   `autowork tasks` to reconcile a stale owner-only label to worker ownership and
-   record the existing live grant whenever this policy covers unattended execution.
-   Do this for newly discovered in-scope tasks too, before emitting a missing-authority
-   question. Preserve scope, acceptance, checks, dependencies,
-   resource declarations and explicit exclusions.
-4. For live work, record `live = "authorized"`, `live_actor`, `live_at` and
-   `live_scope` from the actual approval. Cite this policy and its owner adoption
-   in the task's source evidence; do not invent an actor, date or target. These are
-   records of existing authority, not requests for a second grant. Workers do not
-   edit task records or grant themselves authority.
-5. Validate the working-tree store, review and commit only attributable task edits,
-   then re-read the committed selection/admission result. Use the supported handoff
-   and preserve its freshness and live-attempt guards. A prose policy does not
-   bypass runtime validation or automatically rewrite an installed runner's records.
+3. Reconcile stale ownership/authority bookkeeping in the current GitHub issue
+   from actual approval evidence. Preserve scope, acceptance, checks, native
+   dependencies and explicit exclusions. Never edit a live worker's contract or
+   use the removed task CLI to modify preserved legacy records.
+4. For live work, record the actual approval's actor, date and exact target/scope.
+   Cite this policy and its owner adoption; do not invent evidence or grant
+   yourself authority. A note or readiness label is not a human-only acceptance.
+5. Read back the issue, dependencies and actual ownership. Follow supported
+   GitHub/Orbi gates; a prose policy bypasses no runtime checks or explicit pause.
 6. Execute and verify the approved work. Report actual implementation, integration,
    publication and live qualification separately. Approval is never completion
    evidence and does not waive required checks or independent review.
@@ -100,4 +95,5 @@ completion requirements. Never route around an access-control denial through a
 new tool, session or credential.
 
 This is an execution policy, not proof that a runner consumed it or that a task
-completed. Runtime admission still reads the committed typed task records.
+completed. GitHub readiness, runtime pickup, checks, review, merge and live
+acceptance remain distinct observed outcomes.

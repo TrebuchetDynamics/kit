@@ -1,6 +1,6 @@
 # Multi-agent orchestration for coding runners
 
-Status: research for the [more parallel workers plan](../plans/2026-10-19-more-parallel-workers.md).
+Status: research for the [more parallel workers plan](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/2026-10-19-more-parallel-workers.md).
 Gathered 2026-10-19 with ResearchForge (`rforge` v0.1.21): `rforge search batch` with eight
 queries across OpenAlex, arXiv and Semantic Scholar gave 450 records, 388 after
 deduplication, and 6 source failures. Abstracts were read from the arXiv API. The raw

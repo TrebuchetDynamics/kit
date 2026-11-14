@@ -86,11 +86,12 @@ Use findings to correct existing owners, not generate a competing graph wiki:
 Before creating a task, join accepted intent to a demonstrated gap in source/tests
 and check existing goals/tasks/owners for the same outcome. Graph findings without
 accepted intent remain proposals or owner questions, not executable work. Reuse
-IDs and preserve completed work, holds and focus; add tasks only through
-`autowork tasks` and do not invent task IDs from graph node IDs.
+issue identities and preserve completed work, pauses and focus; publish through
+[Plan Handoff](../../shared/PLAN-HANDOFF.md); do not invent task IDs or GitHub
+issue numbers from graph nodes.
 
 For graph-backed work, follow
-[ordinary authoring](../../shared/TODO-WORKCENTER.md#ordinary-authoring).
+[ordinary authoring](../../shared/PLAN-HANDOFF.md).
 Save a separate `Graph evidence:` note with nodes/paths, source locations,
 confidence, coverage and scope; keep `Sources:` for relevant intent links. If graph coverage is unavailable, say so and cite the
 verified source instead. Do not require graph metadata for untouched historical tasks.
@@ -122,9 +123,9 @@ correction or bounded task -> observable acceptance. Record material unsupported
 claims/coverage warnings and the queries actually run in existing authorized owners
 or private run receipts; do not add timestamp-only churn to task records.
 
-Run `autowork tasks validate --worktree .` and `autowork tasks why ID` for new tasks.
-Check dependency/ownership fields, duplicate outcomes and Now/Next eligibility.
-Unchanged evidence must keep `tasks/` byte-identical on repeat.
+Read back GitHub issues and native dependencies before readiness publication.
+Check actual ownership, duplicate outcomes and explicit pauses. Preserve existing
+legacy `tasks/` byte-identically; repeated evidence must not duplicate issues.
 Report graph freshness/coverage, actual commands/results, source corroboration,
 changed owners/tasks and outstanding uncertainty. Static policy tests and a real
 Graphify CLI smoke test do not prove model adherence or better live task quality.

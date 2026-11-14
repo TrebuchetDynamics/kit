@@ -17,7 +17,7 @@ contract and outstanding live proof, not completed rename-stage reports.
 | Local package metadata | `@trebuchet/kit` |
 | New settings writes | `plugins.entries.kit` |
 | Compatible settings input | Existing `plugins.entries.autowork` values remain readable |
-| Runner CLI and private state | `autowork`, `~/.local/state/pi-autowork/`; unchanged |
+| Former executor | CLI removed; existing `~/.local/state/pi-autowork/` remains preserved recovery evidence |
 
 No npm publication is required. Install from the Git source and existing host
 marketplaces. Neither registry publication nor a scope/deprecation operation is

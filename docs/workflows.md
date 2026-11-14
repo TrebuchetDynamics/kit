@@ -30,15 +30,11 @@ and a saved answer is not proof that a held task advanced. Static skill tests an
 offline command-routing fixtures verify these instructions and routing, not live
 model adherence, successful recovery or service delivery.
 
-## Unblock repairs stalled services autonomously
+## Unblock repairs blocked GitHub work
 
-`/unblock [runner|repo|all]` diagnoses and repairs the current repository's runner,
-named targets, or the affected fleet with `all`. It makes reversible recovery
-choices within accepted scope without an interview. The
-[Unblock workflow](../skills/unblock/SKILL.md) owns its service authority, verification
-steps and limits. Paused and deliberately stopped services stay stopped.
-Creating the skill or reading status does not invoke recovery. Offline routing and
-instruction checks do not prove live service recovery.
+`/unblock` diagnoses GitHub issues, PR/check failures and actual ownership. It
+repairs authorized local causes through `/work`; it never revives the removed
+executor or enables paused Orbi. See [Unblock](../skills/unblock/SKILL.md).
 
 ## Bundled Ponytail
 
@@ -53,9 +49,8 @@ available as `kit:ponytail` and `kit:ponytail-review` (and the other names).
 
 ## Commands
 
-Use `/autowork status` for the read-only runner fleet and `/autowork status NAME`
-for one repository's activity, workers, holds and waiting reasons. Use a registered
-runner name or a quoted absolute path; the gateway does not guess a repository.
+`/autowork status [NAME]` returns a static removed-executor notice. Use GitHub
+Issues/PRs and read-only `orbi status`/`orbi doctor` for current delivery status.
 Use `/autowork plugin status` for the bundle version and revision, the profile serving
 the chat, ready workflow commands, the last update, plugin load status and setup gaps. These are registered capabilities, not a claim
 that every tool is enabled in the current chat. Hermes's `/toolsets` lists tool
@@ -186,25 +181,16 @@ update in-scope component docs and route shared-doc gaps to the coordinator's
 DOCS-MAINTAINER. The Pi engine retains input-bound report evidence for that role;
 the maintainer's conditional closeout pass is separate work (TOOLSET-266-7a), not
 an extra model call or closure authority added by report assessment. See the
-[report format and binding](../skills/autowork/references/parallel-workers.md#documentation-impact-evidence).
+[report format and binding](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/parallel-workers.md#documentation-impact-evidence).
 
 ## Work: select a task and execute here
 
-[Work](../skills/work/SKILL.md) is manual, in-session Autowork. It needs no task
-argument. It automatically selects eligible tasks from `tasks/`, implements them,
-and continues after closeout. It reuses Autowork's implementation, verification,
-maintenance and closure rules rather than a second executor.
-
-When the queue is empty or gated, it inspects source, tests, docs and user flows,
-records useful offline work and executes it within the repository scope. Live and
-owner-only tasks stay pending. A named-task-only or one-task request narrows the
-loop. Existing holds, live writers, pauses and authorization gates stay in force.
-Read-only, no-commit and no-push restrictions travel with the request.
-
-The loop stops on a caller stop or an evidenced scope-wide blocker or exhausted
-search. It does not ask the user to pick routine work or stop after one completed
-task. Use `/pending` to inspect without execution. On portable hosts, `/autowork`
-keeps its runner-first route; `/work` starts no service or background job.
+`/work` explicitly implements accepted GitHub work in the current session. Inspect
+issues, native dependencies and actual ownership; respect supplied issue/scope,
+caller limits and pauses. Do not compete with an Orbi-owned worker. Run affected
+checks and required review, report actual delivery evidence, and retain unfinished
+qualification. The command starts no service or replacement session. See
+[Work](../skills/work/SKILL.md).
 
 ## Autoresearch
 
@@ -233,13 +219,11 @@ owners keep precedence.
 /autoresearch Goal: reduce parser time Scope: src/parser Metric: milliseconds Verify: python bench.py Iterations: 10
 ```
 
-The `tasks/` store is the central work queue for plans, orders and progress.
-Autoresearch updates it by default through `autowork tasks`; “do not implement” still saves
-the plan, while explicit read-only/chat-only/no-write/--dry-run writes nothing.
-Autowork reads those orders, executes ready tasks, and invokes bounded Autoresearch
-for unresolved research or decomposition questions. An empty queue starts with
-bounded inspection; an obvious repair needs no research pass. It retries selection in the
-same run. See [the task-record rules](../skills/shared/TODO-WORKCENTER.md).
+GitHub Issues own executable plans and progress. Autoresearch persists accepted
+findings through [Plan Handoff](../skills/shared/PLAN-HANDOFF.md); do-not-implement
+still permits that planning handoff, while explicit read-only/chat-only/no-write
+or dry-run writes nothing. Existing legacy records stay migration evidence.
+Manual implementation uses `/work`, never the removed executor.
 
 The [Hermes adapter](../skills/autoresearch/SKILL.md) connects research to docs-sync:
 findings update existing documents, matching tasks are reused, and accepted gaps
@@ -501,70 +485,40 @@ workers or independently registered slash commands. See [provenance and updates]
 ### Automatic planning during execution
 
 Planning resolves consequential design, dependency and product choices and saves
-an executable task with scope, decisions, acceptance and checks. Autowork executes
+an executable issue with scope, decisions, acceptance and checks. `/work` executes
 that task without another permission round: choose reversible details, implement,
 test, repair and finish authorized closeout. It can adapt a failed implementation
 on the same task while preserving accepted behavior and checks.
 
 Only a newly discovered consequential choice or missing decomposition invokes
 bounded Plan For Me, automatically and within existing authority. Save the decision
-in the task store and resume execution in the same run. Known recovery steps,
+in the current GitHub issue and resume only within the same accepted scope. Known recovery steps,
 ordinary candidate changes and debugging stay in execution. Named task-family
 scope, no-commit restrictions and live ownership remain. A planning receipt is not
 proof that a worker ran or a task completed.
 
 ### Direct repository execution
 
-The `tasks/` store is the work board.
-`owner_cycle.py` selects and coordinates a bounded task for the current session.
-Its `EXECUTE` result is a contract to implement, not completed implementation or a
-worker launch. Use its [current interface](../skills/autowork/references/owner-cycle.md)
-for actual owner identity, source-bound receipts and bounded command execution.
-
-No Kanban lookup, historical card, native continuation API or card review transition
-is required for selection, recovery or local integration. Preserve actual writers,
-useful candidates, explicit allocations, required checks/review and publication limits.
-Host-native delegation remains optional and needs existing authorization.
-
-Autowork works in the canonical checkout unless something is actually writing
-there. A running Autowork command for the repository blocks every worktree. Any
-other agent session (such as `pi`, `claude`, `codex`, `hermes` or `aider`) blocks
-only the checkouts it touches (its working directory, path arguments or open writable
-files), and only while it is active (terminal input or output in the last 30
-minutes, running commands, or an open writable repository file) or its activity
-cannot be determined, for example without a readable terminal. A launcher whose
-only child is the agent itself does not count as running commands. An idle
-session left open is listed under `idle_sessions` (an active or unknown-activity
-session in another checkout under `other_checkout_sessions`) and never blocks, killed or
-messaged. For an active one the helper returns `BUSY` with an `isolate` branch and
-`git worktree add` command; the task runs there, and `owner_cycle.py REPO
---writers` (read-only; `CLEAR`, `BUSY` or `ACTION_REQUIRED`, exit 1 unless `CLEAR`)
-gates merging the branch back.
+Use `/work` for explicitly requested manual implementation. GitHub Issues own
+scope and native dependencies. Coordinate actual ownership, use isolated task
+worktrees under the canonical `.worktrees/`, run affected checks and required
+review, and preserve candidates/recovery evidence. `/autowork` is only a
+GitHub/Orbi redirect, not an executor or parallel-worker API.
 
 ### Parallel workers
 
-Parallel mode is opt-in (`/autowork --parallel 2`, or `owner_cycle.py REPO --apply
---parallel 2 --owner-pid PID`). The coordinator session starts headless host workers,
-one task each in its own worktree `<repo>/.worktrees/autowork-<TASK>` on branch
-`autowork/<TASK>`, for tasks whose `Touches:` and `Resources:` fields prove them
-independent; dependencies and priority (section, then rank) still apply. `--wait` blocks inside
-the helper until a worker finishes. The coordinator reviews each worker's report,
-`--integrate TASK --timeout S --run CHECK...` merges and validates one branch at a
-time in a separate integration worktree and only fast-forwards the canonical checkout, and `--parallel-close`
-closes a task only after that validation passed. `--parallel-status` shows progress
-and timing at any point. A host without a worker template returns
-`SEQUENTIAL_FALLBACK` and runs the task the ordinary way. The full loop, admission
-rules and recovery are in
-[parallel workers](../skills/autowork/references/parallel-workers.md).
+Dispatch every delegated worker in a fresh context with explicit scope, completion
+criteria and write authority. Orbi remains paused pending live qualification;
+do not start it or a second implementer for an already-owned issue.
 
 ### Delivery batches and partial completion
 
-Autowork executes one coherent outcome in the current session: connected consumers,
+Explicit manual work executes one coherent outcome in the current session: connected consumers,
 runners and tests share a batch when their dependencies and authority permit it.
 One useful slice is not a one-file limit. The coordinator chooses routine batch
 boundaries and reuses valid exact-source evidence where repository policy allows;
 required review and changed-input checks still run. See
-[delivery batching](../skills/autowork/references/delivery-batches.md).
+[delivery batching](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/delivery-batches.md).
 
 A delivered slice is reported by its behavior and commit/integration stage, with
 parent status and remaining acceptance separately. An open parent is not evidence
@@ -763,7 +717,7 @@ question, and bind each reply to the choice it actually resolves. Both remove th
 opening skip pitch and blanket-yes shortcut. Stop/finish saves resolved progress
 without another question; resume reuses accepted decisions and corrections. This
 changes source instructions, not host enforcement or installed plugin caches.
-The [bounded interview specimens](../tests/fixtures/planning/README.md#consequential-question-interviews)
+The [bounded interview specimens](../tests/fixtures/planning/README.md)
 exercise decisions, artifacts and tool traces at both source entrypoints, including
 multi-turn continuation, vague/fully specified intent, ambiguous replies, shared
 constraints, stop/resume, delegation and builder follow-up. They are manual model
@@ -882,153 +836,9 @@ remain internal compatibility fields, not additional skills or commands.
 
 ## Tasks query skill
 
-Status: Accepted; since [Task Store v2](project.md#task-store-v2-2026-10-20) `/pending`
-answers from `autowork tasks list|show|why` and the history of `tasks/evidence/`, and
-the TODO.md query helper this plan describes is removed.
-
-Planning request (2026-10-16): add task queries to explain pending work casually in
-priority order, answer questions about a particular task, and find completed work
-by time or description. This section is the accepted implementation plan, not a
-claim that the command is installed. TOOLSET-142-85 supplies read-only retrieval;
-TOOLSET-143-62 exposes it through the native and portable skill entrypoints.
-
-### Approach and source evidence
-
-Planner's call: a conversational skill backed by a small standard-library query
-helper, reusing Docs Sync's parsing and priority functions. Pure prompt-only scans
-would duplicate ordering and archive rules; a new database, vector index or TUI
-panel adds no necessary capability. No new dependency or task store is needed.
-Keep task-query code under `skills/pending/` and import existing pure helpers without
-invoking their mutation commands. The portable adapter must resolve these bundled
-files from its installed location, not a developer checkout.
-
-`skills/docs-sync/scripts/goals.py` already records TODO priority, focus and
-dependency eligibility. Its `next` output excludes blocked work, so it cannot be
-the whole pending summary. `todo_archive.py` resolves the archive owner and parses
-both checkbox and legacy heading entries. The current ledger has no standard
-completion timestamp; archived bodies mix verified completion, local delivery and
-remaining live qualification. Never manufacture dates or treat archive presence as
-proof of shipping. Native skills are discovered automatically; Pi's workflow map
-and portable package inventories are explicit. Existing command collisions keep
-the earlier handler and leave the qualified skill available.
-
-
-Owner correction: the public commands are `/pending` and `/done`, not `/tasks`,
-which collides with Hermes. This supersedes the original command name only; retain
-the historical section anchor and task IDs. Both commands are read-only queries,
-not permission to execute or mark work done. No registration is changed by this plan.
-
-### User-facing behavior
-
-Planner's defaults:
-
-- `/pending` with no arguments: current repository, five pending items, grouped by existing
-  Now/Next/Needs decision sections and preserving human TODO order within them.
-  Include total pending and counts by recorded state, with a brief indication of
-  additional items. Do not invent P0/P1 labels or hide a high-priority blocked item.
-  Explain primary focus and the next eligible task separately when they change
-  what Autowork would pick. Report priority drift without reconciling it.
-- Each item leads with a plain-language outcome and why it matters, then what is
-  next or blocking it; retain the task ID and a source link for lookup. Be concise
-  and use the conversation's language. Say “marked in progress” when that is all
-  the evidence establishes; do not imply a live worker or verified progress.
-- A task ID selects its exact record. Explain scope, acceptance, dependencies,
-  recorded blocker, check/delivery evidence and remaining work as available, linking
-  the task and accepted plan. Resolve obvious short IDs only when unique; ambiguous
-  IDs or descriptions return ranked candidates rather than choosing silently.
-- Natural-language descriptions search title and task body in current and archived
-  records. Exact ID wins; then title matches, then body matches, with stable ID
-  tie-breaking. A description without a done/time qualifier includes both pending
-  and historical matches and labels their states. “More/all” expands the result
-  limit without mutating the queue.
-- `/done last week`, `/done yesterday` and `/done login` search completion evidence. Completed, superseded and reopened
-  work stay distinct. A reopened task can have a historical completion event while
-  remaining pending now. Never label a superseded task completed.
-
-`/done` with no arguments lists five latest recorded completed tasks for the current
-repository, newest known completion evidence first, with task ID, outcome, source
-and date provenance. It never marks anything done. Reopened/superseded work is not
-counted as currently done; exact-ID inspection can explain its historical events.
-Use the same helper under `skills/pending/scripts/`; the done skill is a thin
-history-mode entrypoint, not a duplicate query engine. Package that dependency
-closure for both entrypoints, including standalone/portable installed locations.
-Undated entries are listed separately with stable ID ordering, not labelled latest;
-if no dates can be established, say recency is unknown. Equal dated entries use
-stable ID tie-breaking. State when date coverage/local Git fallback is partial.
-No args returns up to five dated completions plus a concise undated/partial note;
-when only undated records exist, show up to five as undated, never fabricate order.
-
-`/pending <description>` defaults to unfinished matches; `/done <description>` to
-currently completed matches. Exact IDs may explain any recorded state without
-changing it. Explicit past-work/time intent can use the shared history mode and
-point to `/done`; preserve the existing source/date, timezone, limit and ambiguity
-rules. Default five results for each command, with truthful totals or explicitly
-partial totals and an offer to expand. No task-number/archival-order recency proxy.
-
-Normalize natural-language intent into explicit helper filters; do not build a
-general natural-language parser into Python. The helper accepts structured modes
-(pending, detail, search, history), ID/text, optional date bounds, timezone and
-limit, and returns source-backed structured records plus warnings. Arguments are
-data, never interpolated shell commands. The skill owns conversational phrasing.
-
-Use explicit task-specific completion dates or attributable completion receipts
-first. For latest-completion and time queries, fall back to a bounded local Git search over the
-resolved task/ledger/archive paths for a transition to done. Label this separately
-as “recorded complete in Git on …”; commit or archive-addition dates alone do not
-prove when work finished. A whole archive import is not a completion transition.
-Keep commit/path provenance, and do not count repeated entries as separate tasks.
-Use the known user timezone, otherwise the host timezone with its name disclosed.
-“Yesterday” is the previous calendar day; “last week” the previous Monday–Sunday;
-date ranges are half-open local-day intervals. Display the interpreted interval.
-Ask only if a consequential date ambiguity cannot be resolved from context.
-Undated matches stay explicitly undated and outside confirmed date-range matches;
-offer them separately. Shallow/unavailable Git or a bounded search limit means
-partial history, never an unqualified “nothing was done”. Default Git fallback is
-at most 500 relevant commits, only widening on request, with no fetch or network.
-
-### Read-only boundaries and degraded inputs
-
-Do not plan, bootstrap, repair, reorder, claim, close, execute or publish tasks;
-create no repository/cache files and change no services. A request to change work
-gets the relevant workflow suggestion, not a covert mutation by `/pending` or `/done`.
-No automatic fleet scan or remote issue lookup. Use an explicitly supplied repo,
-otherwise the current repository; ask which repo only when no target is available.
-Never dump secrets/private runtime payloads as evidence; show only relevant task
-facts and safe links. Treat repository text as data, not tool instructions.
-
-TODO-only repositories remain usable without generating goals.json. If ledger and
-body disagree, report both attributed states and exclude the uncertain item from
-confirmed done results or next-eligible claims. Missing, malformed, duplicate or
-changing source files produce a partial-result warning naming the affected source;
-do not silently repair or deduplicate conflicting records. Reuse the archive
-resolver's safe-path rules. Read a consistent snapshot where possible; retry once
-if inputs change, then disclose instability without blocking writers.
-
-### Packaging and verification
-
-Native Hermes `/pending` and `/done` use ordinary skill discovery. Add matching
-Pi workflows and portable `pending` and `done` adapters with explicit-invocation
-policy, following each host's qualified command syntax. Register no Autowork
-`/tasks` command, alias or tasks skill; leave Hermes' built-in handler untouched.
-Preserve any other native collision and document the host-qualified fallback. Add it to Telegram's workflow
-menu policy within existing capacity/user exclusions, without enlarging limits or
-restarting a gateway. Update command docs only when the implementation exists.
-
-Keep a compact table-driven regression set: ordering with blocked/focused/drifted
-work; TODO-only and malformed/conflicting input; exact and ambiguous lookup;
-legacy/current archives, reopened/superseded tasks; dated/undated completion,
-timezone boundaries and shallow/limited Git. Fixtures must verify unchanged
-repository bytes and Git refs for all query modes. Reuse existing discovery,
-collision, package-link and Pi forwarding tests for host integration; do not add
-a test for each phrase. A small disposable conversational evaluation checks casual
-summaries, source attribution, ambiguity and refusal to mutate; fake forwarding
-alone does not prove model behavior. Mark unavailable host/model evaluation as
-pending qualification, never as a pass. All new checks are proposed and unrun.
-
-The query helper is independent of planner-quality and test-skill packaging work.
-The command task depends only on its query helper; shared packaging/doc paths
-require serialized integration with the other command tasks. No implementation,
-installation, worker dispatch, commit or push occurs in this planning pass.
+Use `/pending` and GitHub Issues/PRs for read-only backlog inspection. Legacy local
+records are preserved migration evidence. The [earlier task-query requirements](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/workflows.md#tasks-query-skill)
+retain unresolved obligations; their executor interfaces no longer ship.
 
 ## Telegram reporting qualification
 
@@ -1044,287 +854,16 @@ or permission to resume a schedule.
 
 ## Scheduling behavior
 
-Schedule Autowork work with the host's own cron command; the bundle registers no
-scheduling skill. A job whose prompt loads `/autowork` runs the same workflow as a
-typed request. Keep setup confirmation, job execution and scheduled message delivery
-as separate receipts, and verify actual delivery on the intended chat or topic: a
-saved job is not a delivered message.
+Kit does not schedule or revive pi-autowork. Existing job IDs, settings, schedules,
+pause state and recovery evidence remain intact. `/autowork` is a GitHub/Orbi
+compatibility redirect, not a cron executor. Orbi remains paused and live-unqualified.
+Setup confirmation, actual execution and message delivery require separate evidence;
+a changed prompt or installed skill proves none of them.
 
-Each run of a Telegram-routed Autowork job with the start-notice script attached
-sends a start message before the agent begins, and the run's report when it finishes.
-The start message comes from the bundle's `autowork-start-notice.py` pre-run script,
-which the plugin copies into every profile's `scripts/` folder because Hermes runs
-cron scripts only from there. Attach it to a job yourself when you want the notice;
-the bundle no longer edits job configuration. A same-named script without the bundle
-marker is treated as the user's and never replaced. The script never fails a run; a
-missing token, ambiguous job match or unreachable Bot API is reported in the run's
-own prompt instead.
+## Removed executor interfaces
 
-## TUI confirmation layout and refresh
-
-Status: Accepted
-
-The owner supplied a terminal capture with clipped, offset restart confirmations,
-repeated fleet frames and detail/footer text showing through the dialog. Treat it
-as a rendering/layout defect report, not authority to restart the named runner or
-answer any displayed blocker. Public fixtures use generic runner/task identities.
-
-Source findings: `Confirm` has a fixed width of 76 cells, and task/model pickers
-use 70/80 cells. The existing pilot confirms controls on a wide 150-column screen;
-its 80-column case inspects detail without an open confirmation. Fleet/log timers
-continue every 3/5 seconds, and changing rows can clear/rebuild background tables.
-These are source-backed risks; copied scrollback alone does not establish the exact
-terminal driver, viewport, external-output interference or redraw root cause.
-No live reproduction or rendering fix is claimed by this plan.
-
-Planner's call: add a bounded successor to the delivered TUI slice, not reopen its
-historical acceptance or change service semantics. Fit every existing modal inside
-the viewport with relative bounds and readable wrapping/scrolling; keep both Yes
-and No reachable on narrow/short screens. Default focus is No, Escape/n cancels,
-and only explicit affirmative input invokes the bound action once. Preserve the
-chosen runner/action identity while background order/state changes; recheck action
-preconditions before execution and require renewed confirmation if they changed.
-
-Use Textual's screen lifecycle and event-loop rendering; coalesce/defer background
-widget rebuilds while covered rather than repeatedly clear/repaint behind a modal.
-Data collection can continue, with one coherent refresh on resume. Resize, modal
-open/close, log/worker screen return and interactive subprocess suspend/resume must
-restore a clean complete frame while preserving runner selection, filters and log
-position. Capture noninteractive child output into widgets, never raw terminal
-writes from worker threads. Do not hide the defect by stopping refresh permanently,
-restarting services, loosening view-only gates or blindly upgrading dependencies.
-Keep the current pinned Textual 8.2.8 unless a reproduced upstream defect justifies
-a separately recorded compatible version change.
-
-Extend the existing headless pilot with modal-open timer updates, fake runner
-reordering/removal, long generic labels and repeated resize through 40x20, 60x24,
-80x24 and 150x45. Assert modal/button bounds and focus, readable action identity,
-no duplicate screens/commands, cancel = zero commands, affirmative = one intended
-fake command, view-only = zero mutations, and correct restoration after dismissal.
-Add a controlled PTY/cell-render trace or equivalent terminal-level regression for
-residue/ghosting: headless state assertions alone cannot prove terminal repaint.
-Use fake collectors/command runners, never real systemctl, model calls, runner
-restarts or private fleet logs. Cases are planned and unrun; missing UI test tooling
-or skipped pilot cases are coverage gaps, not passes. Current interpreter lacks
-Textual; no dependency installation was performed during planning.
-
-Sources: `pi-autowork/pi_autowork/tui.py` (`Confirm`, modal pickers, FleetApp refresh
-and execute paths), `pi-autowork/tests/runner/tui_pilot.py`, `test_fleet_view.py`, and
-[Textual screens](https://textual.textualize.io/guide/screens/) /
-[layout](https://textual.textualize.io/guide/layout/) documentation. Retain task IDs,
-queue ordering and the separate stale-question/status and model-account plans.
-
-## TUI all-task browser
-
-Status: Accepted; since [Task Store v2](project.md#task-store-v2-2026-10-20) the Tasks
-window reads the store (`fleet_view.task_rows`), not the query helper named below.
-
-Owner request: add an all-task viewer to the Autowork TUI. Planner's defaults:
-`t` opens a full-screen, read-only task browser for the selected runner's repository;
-a scope selector offers All repositories already present in the fleet view. Include
-inactive/paused runners and recorded completed/archive history, not just active
-worker lanes. Do not scan the filesystem, discover extra profiles or start services.
-With no selected runner, default to All repositories; an empty fleet has an empty
-state, not an implicit repository scan. Keep the fleet home and its controls intact.
-
-Use the delivered `skills/pending/scripts/task_query.py` read-only API and its
-bundled Docs Sync/archive readers. Resolve the helper from the Autowork installation,
-never execute a script from the repository being queried; invoke its JSON CLI via
-`python -B` with an argument list and no shell. Inject this query runner separately
-from service-control commands so fake tests distinguish safe reads from mutations.
-Do not add another parser, task store, model
-call or dependency. A single `query(repo, mode='search', state='all', limit='all')`
-provides each repository's current+historical records without the five-item default
-or automatic Git-date history walk. Use its source/line attribution for recorded
-Now/Next/Needs decision ordering; unfinished tasks retain human TODO order, followed
-by done/superseded history in stable ID order. Unpositioned/ledger-only records keep
-an explicit unknown-placement label. Never sort by guessed completion date.
-
-Show repository, literal task ID, title, recorded status and section, plus a
-separate observed runtime phase only when existing engine evidence establishes it.
-Default to All states; filter All/Unfinished/Done/Superseded, Now/Next/Needs decision,
-and literal ID/title text. Use case-insensitive substring search, not regex or shell.
-For this first slice, no date filtering or Git-based completion ranking is added.
-Enter opens a scrollable detail pane with recorded scope, acceptance, checks,
-dependencies, blockers/remaining qualification and attributed source path/line.
-Missing fields stay missing; completion is recorded evidence, not independently
-verified acceptance. Reopened work remains unfinished; superseded is not done.
-
-Deduplicate by (resolved configured repository path, exact task ID), never ID alone;
-show disambiguating repository paths when display names collide. Counts derive from
-the same collected unique records and filters. Separate loaded total, matched total,
-displayed page and partial/unreadable repository coverage; incomplete results are
-not a fleet-wide zero or complete total. Planner's page size is 100 with explicit
-next/previous navigation, not a hidden cap; every matched task remains reachable.
-
-Collect with at most two background read jobs, not on the UI thread. Open/manual
-refresh (`r`) collects a new generation; filtering/paging uses in-memory results
-without repeated Git scans. No persistent cache or eager full-task query on every
-fleet tick. Preserve search, scope, filters and selected (repository, ID) across
-refresh; reject out-of-order responses after scope changes or screen closure.
-Keep source revision/observation time and warnings visible, mark retained results
-stale if refresh fails, and use existing freshness classification when available.
-Never combine a canonical task list with an unlabeled older session phase.
-
-Esc closes details before the browser and restores the fleet selection. Task text
-renders as literal text, never Rich markup, shell input or an auto-opened link.
-Typing/searching, Enter, resizing and global fleet action keys inside this screen
-must not start, stop, pause, restart, change models, set aside or complete tasks.
-Browsing remains available in view-only mode. At 40x20 use stacked list/detail and
-wrapped fields; at 80x24 and 150x45 show readable tables with reachable paging/filter
-controls. Reuse existing responsive screen conventions and TOOLSET-178-47 outputs
-when available, without waiting for its unrelated confirmation implementation.
-
-Planned proof: extend the existing fake-runner headless pilot and fleet/query
-fixtures for more than 100 records, search/status/section filtering, archived done,
-reopened/superseded, duplicate IDs across two repositories, duplicate path aliases,
-paused runners, TODO-only/missing/malformed/changing sources, partial fleet counts,
-source attribution, out-of-order refresh and narrow resize/back navigation. Assert
-zero control/provider/network calls and unchanged repository bytes, Git refs/index
-and runner state, including in view-only mode and while typing fleet shortcut
-letters. Run the existing query regression suite unchanged as well. New cases are
-planned, unrun; skipped pilot tooling is not a UI pass. This plan changes no runtime,
-queue states, schedules, services, provider accounts or credentials.
-
-Sources: existing FleetApp screens/bindings in `pi-autowork/pi_autowork/tui.py`,
-`pi-autowork/tests/runner/tui_pilot.py` and `pi-autowork/tests/runner/test_fleet_view.py`.
-Rejected: displaying only lane slots omits most tasks; a second ledger/parser
-would drift from /pending and /done; eager history queries on fleet timers would
-block/overload the UI. No task editing or new slash-command alias is in scope.
-
-## Focused TUI overview and runner workspace
-
-Status: Accepted
-
-Owner request: propose a better TUI after the supplied phone-terminal screenshot,
-then plan it rather than implement. The screenshot shows fleet, long runner details,
-worker table and raw logs competing in one view. It is historical visual evidence,
-not a live runtime assessment. Source inspection confirms FleetApp.compose stacks
-those four widgets; the fleet table has Runner/State/Needs/Tasks/Now columns and
-worker lanes add Task/Phase/Try/For/Doing. Existing pilots cover 150x45 and 80x30,
-not the full proposed narrow matrix. No new visual implementation has been rendered.
-
-### Design choice
-
-Planner's call: use progressive disclosure within the current Textual application,
-not a new dashboard/framework/theme or a side-by-side layout that shrinks columns.
-Keep fleet orientation and move detailed work/log inspection into a focused runner
-screen. Reject cosmetic colors-only changes (they leave the hierarchy problem),
-more simultaneous panels (more competing text) and a phone/web-specific replacement
-(unrequested frontend and operational scope). Terminal font scaling belongs to the
-client; do not pretend the TUI can guarantee physical phone readability at any zoom.
-
-The home answers: Is progress happening? What needs me? What happens next? Show:
-- Compact fleet list: Runner, Activity, Your action. No raw model/provider strings,
-  command output, per-task histories or long wait explanations in fleet cells.
-- Selected-runner summary: engine-backed execution / verification / waiting-to-land
-  counts with explicit coverage, one evidence-backed next action and source age.
-  Incomplete evidence is unknown/stale, never a healthy zero. Counts use one snapshot
-  and distinct task identities, not substring counting from transcripts.
-- Small contextual footer for inspection. Raw logs and long diagnostics are not
-  permanently embedded; errors and required owner actions remain visible in the
-  summary and reachable without reading logs.
-
-Illustrative wireframe only; names and counts below are examples, not observations:
-
-```text
-autowork                         Fleet
-Runner          Activity         Your action
-example-repo    Verifying        None
-another-repo    Working          1 decision
-
-example-repo
-2 active | 1 verifying | 4 mergeable
-Next: finish current review
-Evidence: current snapshot, observed age
-
-v details  Enter logs  b decisions
-? actions/help                         q quit
-```
-
-`v` is a new inspection shortcut for the selected runner's focused workspace.
-Keep Enter's existing fleet-log behavior and contextual worker inspection behavior;
-do not silently remap it to another command. The workspace has Overview, Work and
-Logs tabs, with visible labels and keyboard navigation (1/2/3 in that screen only,
-without intercepting input typing). Overview shows the same authoritative headline,
-then separate owner action / runner recovery / ordinary wait sections. Keep task IDs
-secondary but copyable and visible in details. Work shows phase, task, phase age and
-last activity separately; optional attempt/model/command details expand on selection.
-No transcripts saying committed become verified/delivered states. Logs opens the
-existing raw-log view; planned search/copy/anchor improvements stay with 132-af.
-Esc returns to fleet with the same runner, focus and scroll. The future `t` task
-browser remains 184-1d's independent read-only screen, not duplicated by Work.
-
-### Fit and safe interaction
-
-At 80x24 keep a single-column fleet with a scrollable bounded list, compact summary
-and reachable footer; no four competing scroll regions. Below 80 columns, use
-stacked labelled rows and move secondary fields into runner details rather than
-shrink type or require horizontal scrolling. At 40x20 the name, activity, owner
-attention indicator and navigation must remain reachable; long identities can wrap
-in details. Wide terminals may show more rows/detail, not restore the permanent
-log wall. Keep selection visible while navigating a fleet longer than the viewport.
-
-Use restrained semantic color with textual labels: working/verification, ordinary
-wait, real owner action, failure and unknown are distinct. Do not use color alone,
-an animated heartbeat as proof of progress, or task-level holds as a global failure.
-Current safety errors, stale evidence, real questions and paused/stopped status
-cannot disappear through disclosure or filtering.
-
-Preserve every supported start/stop/pause/restart/model/remove/set-aside/browse
-command and its existing shortcut/preconditions; show infrequent controls under
-labelled actions/help without making unsafe keys unguarded. Reuse existing action
-objects and confirmations, binding every action to the selected canonical repository
-and service identity, not a table row/name. Refresh/reorder/removal cannot retarget it.
-No control action on tab change, Enter on logs, navigation, refresh or resize.
-In view-only mode details/log/task inspection remains possible but every mutation
-path stays disabled. Specifically distinguish read-only Enter/log navigation from
-the current broad `run` action guard; never allow arbitrary `run` to solve that.
-TOOLSET-178-47 continues to own modal geometry/repaint; use its fixes when available
-without duplicating them or adding a dependency on unrelated live migration.
-
-Keep tab/runner/focus/scroll state across ticks and return; reject old async results
-for a different runner/screen generation. A refresh failure preserves last good data
-marked stale. A shorter screen alone must not reset phase ages or recreate sessions.
-Use existing bounded data refresh and Textual; no model/network requests, runtime
-repair, second parser, admission policy or state authority in the presentation layer.
-
-### Ownership and proof
-
-Create one bounded layout successor, depending on 129-c4 for the shared action
-headline. Its no-redesign limitation remains intact; this successor explicitly adds
-layout/navigation instead of silently expanding 129-c4. Consume 130-15's richer
-projection when delivered and label legacy unavailable fields honestly, without
-making the entire layout wait on its broad usage/uptime work. Preserve 132-af,
-178-47 and 184-1d as their existing log, confirmation and all-task-browser owners.
-No changes to task counts/order/status in order to make the screenshot look healthy.
-
-Planned verification: extend existing fleet fixtures and Textual pilot, not a new
-harness. Capture baseline/candidate controlled cell renders at 40x20, 60x24, 80x24,
-120x36 and 150x45 using the supported pinned UI environment. Cover a fleet longer
-than viewport, long labels, no runners, partial/stale data, verification-only work,
-zero real questions, a real owner question, partial task holds and unknown counts.
-Assert visible/reachable navigation and no clipping of required actions; stable
-selection/tab/anchors on refresh, resize, runner disappearance and back navigation;
-consistent home/detail state and source age; literal hostile text; no shortcut leaks
-while typing/filtering; view-only inspection and zero control/provider calls.
-Reuse confirmation negative tests and verify deliberate fake actions execute exactly
-once against their original target. A skipped pilot or headless-state-only check
-is not a visual/repaint pass. New cases and renderings are planned, unrun.
-
-Scope is planning and the later offline UI change only. No service migration,
-runner/model/profile/job change, frontend dependency, paid reference tool, commit,
-push, live operation or new telemetry project is authorized by this request.
-
-Sources: `pi-autowork/pi_autowork/tui.py` (FleetApp.compose, bindings, action guards),
-`pi-autowork/pi_autowork/fleet_view.py`, `pi-autowork/tests/runner/tui_pilot.py`,
-`pi-autowork/tests/runner/test_fleet_view.py`, and the existing task owners named above.
-
-Builder refinements: route read-only log opening through its own guarded action for
-keyboard and row activation. Nested inspection Esc returns to its originating
-workspace before fleet; retain log q/back. Reserve t and show it only when the task
-browser is delivered. Under height pressure retain selected identity, textual
-activity/attention, next action and navigation; collapse optional counts/metadata.
-Legacy Lane.minutes is attempt age, not phase age. Unavailable phase age/coverage
-stays unknown; UI observation age is not producer evidence freshness. These are
-planner/builder choices, not new owner requirements.
+The TUI, web UI and Paseo executor plugin are removed. Their
+[prior interface and qualification requirements](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/workflows.md#tui-confirmation-layout-and-refresh)
+remain immutable evidence. Physical-client, transport and model qualification
+are not satisfied by removal and must be reconciled if needed by the successor.
+Orbi remains paused and live-unqualified; see [cutover](github-native.md).

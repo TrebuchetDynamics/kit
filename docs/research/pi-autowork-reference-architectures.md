@@ -159,7 +159,7 @@ Keep project-specific facts in its existing instructions/configuration and pass 
 
 ## 8. File organization and adoption plan
 
-The companion [component-layout proposal](../plans/pi-autowork-component-layout.md) recommends one `pi-autowork/` component inside Autowork, containing Pi-specific coordinator/runtime code, tests and local documentation. Generic queue/admission/integration code remains shared under Autowork. Runtime state, worktrees, credentials and source-research clones do not move into that component.
+The companion [component-layout proposal](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/pi-autowork-component-layout.md) recommends one `pi-autowork/` component inside Autowork, containing Pi-specific coordinator/runtime code, tests and local documentation. Generic queue/admission/integration code remains shared under Autowork. Runtime state, worktrees, credentials and source-research clones do not move into that component.
 
 A skeptical builder review identified two acceptance gaps, now added to the proposal: coherent old/new-release switching for installed and copied launchers, and functional archive tests for the currently omitted Touches-inference helper. These are specification corrections, not implemented fixes or a new passing runtime test result.
 
@@ -250,7 +250,7 @@ This research does not approve code reuse, a file migration, a service restart, 
 ## Worker-runtime comparison (TOOLSET-117-cb)
 
 **Decision: retain the production CLI default.** The isolated
-[probe and reproduction guide](../../pi-autowork/spikes/runtime-comparison/README.md)
+[probe and reproduction guide](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork/spikes/runtime-comparison/README.md)
 implement `launch`, `observe`, `stop`, `resume`, capabilities and normalized execution
 events for the current CLI, AgwaB headless `runSubagent`, and first-party pi-durable.
 No coordinator import, service dependency, runtime selector or default changed.
@@ -267,7 +267,7 @@ Pi's matching source tag is
 [`v1.3.0`](https://github.com/earendil-works/pi/tree/71023aec1546d6d677a65669c5665c0927ce0dd0).
 The published durable tarball reports SHA-512 integrity
 `2aD0xead1LH0BBwUBxex28in/PpUJEwyaEiW/nLoTFUcZ/lDYEl6LHX6mGZKJG8tUHzERwJyysDgy0ruidt84w==`.
-The [compact result record](../../pi-autowork/spikes/runtime-comparison/results.json)
+The [compact result record](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork/spikes/runtime-comparison/results.json)
 binds each measurement to hashes of the probe and the shared engine/runtime source
 it exercised. Dependencies were cached locally only, with no upstream source patches.
 Top-level package pins do not pin all transitive dependencies.
@@ -581,7 +581,7 @@ narrative fidelity. New regression cases and implementation remain unrun.
 
 Further research on 2026-10-19 supports a small extension to the existing verifier,
 not a larger swarm. The implementation plan is
-[Evidence-bound claim verification](../plans/2026-10-16-pi-autowork-coordinator.md#evidence-bound-claim-verification-2026-10-19).
+[Evidence-bound claim verification](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/2026-10-16-pi-autowork-coordinator.md#evidence-bound-claim-verification-2026-10-19).
 The following distinctions change the design:
 
 - [in-toto Statement v1](https://github.com/in-toto/attestation/blob/06eafe3635bf8a425ad52cc82c6c90861e94a471/spec/v1/statement.md)

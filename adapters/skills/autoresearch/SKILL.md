@@ -28,8 +28,10 @@ as descriptions to adapt, not commands to execute blindly. Preserve user data an
 repository rules; do not install another agent runtime.
 
 Record findings, evidence, rejected approaches and remaining uncertainty in existing
-docs. Save accepted actionable work as task records in `tasks/` with `autowork tasks`
-([work center](../../../skills/shared/TODO-WORKCENTER.md)). Explicit read-only/no-write/dry-run writes nothing
+docs. Save accepted actionable work as complete GitHub issue batches through
+[Plan Handoff](../../../skills/shared/PLAN-HANDOFF.md), with native dependencies
+verified before readiness. Preserve legacy records; the task CLI is removed.
+Explicit read-only/no-write/dry-run writes nothing
 and runs no mutating experiment. Planning does not implement. A `ship` selector alone
 does not grant deployment or remote publication authority. Report measured results
 honestly; research output is not completed product work.

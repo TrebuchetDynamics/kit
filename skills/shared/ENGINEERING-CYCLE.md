@@ -1,27 +1,21 @@
 # Repository engineering cycle
 
 Optional routing reference: consult when a method is needed and its selection is
-unclear. Ready tasks use Autowork's execution contract directly. Autowork owns
-workflow authority; engineering protocols contribute techniques within that contract.
+unclear. GitHub Issues own executable work; `/work` implements explicitly accepted
+manual scope. `/autowork` is a compatibility redirect, not an executor. Orbi remains
+paused and live-unqualified. Engineering protocols add techniques, never authority.
 
-Use the existing docs-sync backlog and autowork executor. This is workflow guidance,
-not a scheduler, new database or `/cycle` command. Documentation work alone never
-launches autowork. Caller scope and saved stop/batch limits control continuation.
-Default interactive execution completes one slice, including authorized recovery
-and closeout. An explicit one-task limit stops new selection after that task;
-standing authority cannot override the caller's narrower stop. Explicit continuation or whole-spec scope
-permits further eligible batches only within its accepted bounds.
-Recurrence authorizes the saved occurrence, not wider scope. Reconcile consumed
-history first. There are no token, cost or time budgets: usage is measured, never a
-reason to stop.
-Design approval alone does not authorize execution. Preserve no-commit, no-push,
-no-deploy and other user boundaries throughout; skill defaults cannot expand them.
+Caller scope and saved stop/batch limits control continuation. Default interactive
+execution completes one slice including authorized recovery and closeout; an
+explicit one-task limit stops new selection. Continuation or whole-spec mandates
+permit only their named accepted scope. Preserve no-commit, no-push, no-deploy,
+read-only and human-only boundaries. A skill default cannot expand permission.
 
-Apply the [work center](TODO-WORKCENTER.md): `tasks/` holds the repository's tasks,
-goals and their order; reconcile user instructions into it before selection.
-Autoresearch persists findings there by default. Autowork invokes bounded planning when useful
-work has unresolved research or decomposition questions, then retries execution.
-An empty queue alone calls for bounded inspection, not mandatory Autoresearch.
+Apply [Plan Handoff](PLAN-HANDOFF.md): reconcile accepted scope and current issues,
+verify native dependencies, then publish readiness last. Autoresearch persists
+supported findings there. Use bounded planning only for actual research or
+consequential decomposition gaps, not routine debugging or a mandatory phase tour.
+Legacy task records and recovery state stay preserved migration evidence.
 
 ## One coordinator, supporting skills on demand
 
@@ -34,14 +28,14 @@ workflow or review loop; load detailed protocols only for the relevant choice.
 
 | Current need | Smallest workflow |
 | --- | --- |
-| Ready task with clear checks | Autowork executes; no research or documentation prepass. |
+| Ready task with clear checks | Explicit `/work` implementation; no research or documentation prepass. |
 | Known small repair, empty queue | Record one bounded task and execute; no research ceremony. |
 | Unresolved hypothesis, tradeoff or measured optimization | Bounded Autoresearch, then return findings to the same Autowork task. |
 | Affected docs, accepted decisions or task metadata | Narrow docs-sync Maintain; no repository bootstrap. |
 | User requirements that evidence cannot answer | plan-with-me; Grill Me only for requested/advisable adversarial questioning. |
 | Specific engineering method gap | Engineering reference adapter and the relevant protocol only. |
 | Slow, redundant or low-signal tests, or a suite past the [test budget](#test-budget) | Engineering `--protocol test-suite-optimization`: audit by default; authorized apply verifies one bounded batch. |
-| Material implementation or simplification choice | [Ponytail](../autowork/references/ponytail.md): smallest complete change, with concrete reuse and verification evidence. |
+| Material implementation or simplification choice | [Ponytail](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/ponytail.md): smallest complete change, with concrete reuse and verification evidence. |
 | Review of that implementation | Pinned Ponytail review criteria in the existing required review lane; no external plugin or extra reviewer. |
 | UI/design work | Impeccable when relevant; no design pass for unrelated changes. |
 
@@ -105,10 +99,10 @@ Use [autoresearch](../autoresearch/SKILL.md) for bounded measured experiments,
 diagnosis, adversarial analysis and research-driven planning. Its original command
 protocols are vendored with a pinned revision. `plan`/`learn`/`improve` and all
 research checkpoints route findings through docs-sync narrow Maintain: update
-existing document owners, deduplicate accepted tasks, place them in Now/Next with
-`autowork tasks`, and run `autowork tasks validate --worktree .`. TSV/handoff files are
-evidence, never a competing task queue. Autowork retains task ownership, execution,
-review and commit gates. Planning does not dispatch workers or create timers;
+existing document owners and deduplicate accepted GitHub Issues. Follow
+[Plan Handoff](PLAN-HANDOFF.md): native dependencies first, readiness last.
+TSV/handoff files are evidence, never a competing task queue. Preserve actual
+execution ownership, review and commit gates. Planning does not dispatch workers or create timers;
 already-authorized implementation can continue from a verified eligible handoff.
 
 ## Autonomous decisions are the default
@@ -163,7 +157,7 @@ namespace or assume another profile's home. Existing imports are left intact.
 | Missing owner intent that evidence cannot resolve | `interview-me` | Ask only the material owner question; routine engineering decisions use the autonomy rule above. |
 | Missing specification | `spec-driven-development` | Reuse the accepted spec/PRD; do not restart accepted design. |
 | Changed behavior or architectural decision | `documentation-and-adrs` | Amend affected docs/ADR with observed facts; docs-sync owns backlog reconciliation. |
-| Accepted work needs bounded tasks | `planning-and-task-breakdown` | Add dependencies, scope and checks to the task records in `tasks/` with `autowork tasks`. |
+| Accepted work needs bounded tasks | `planning-and-task-breakdown` | Publish complete GitHub issue batches with scope, checks and native dependencies through Plan Handoff. |
 | A consequential planning assumption needs scrutiny | `doubt-driven-development` | Test the artifact/contract; record corrections and unresolved risks. |
 | Implement an eligible slice | `incremental-implementation` | Keep one observable result, owned files and task ID. |
 | Changed logic or a bug | `test-driven-development` | Minimum sufficient red/green protection at the right seams within the [test budget](#test-budget). |
@@ -195,7 +189,7 @@ missing required acceptance or execution capability must still be reported.
 
 Load only relevant skills, not this whole table. Adapt upstream examples such as
 `tasks/todo.md`, new spec files and automatic commits to existing owners (task
-records in `tasks/items/`) and permissions; never create a competing backlog or duplicate accepted tasks.
+issues in GitHub) and permissions; never create a competing backlog or duplicate accepted tasks.
 
 For docs-sync, apply these skills through
 [decisive planning](../docs-sync/references/decisive-planning.md): evidence-backed
@@ -228,14 +222,14 @@ coverage. Mark unavailable required checks NOT_CHECKED, never pretend they passe
 
 ## One canonical backlog, one executor, one closure owner
 
-1. Planning reconciles accepted requirements into existing goal/task IDs and
-   complete task records. Use [plan handoff](PLAN-HANDOFF.md) and `autowork tasks
-   validate`; drafts, missing acceptance and unresolved dependencies do not become ready work.
+1. Planning reconciles accepted requirements into existing GitHub Issues and
+   complete batches. Use [plan handoff](PLAN-HANDOFF.md); drafts and missing
+   acceptance remain undispatched; native dependencies preserve prerequisite waits.
    A usable backlog skips another bootstrap or broad audit.
 2. For explicitly authorized whole-spec execution, restrict selection to accepted
-   IDs and dependency-ready tasks. Read `autowork tasks list` and the records, inspect
-   actual process/workspace ownership and source freshness, then execute in the
-   current session using Autowork's direct contract. No native card admission,
+   issues and dependency-ready work. Read issues, PRs and native dependencies,
+   inspect actual process/workspace ownership and source freshness, then use
+   `/work` for explicitly authorized current-session implementation. No native card admission,
    board lookup or mandatory worker is required. Optional delegation uses the
    current host's tools only when useful and authorized.
 3. Implement, run discriminating checks and update scoped documentation. Retain
@@ -256,7 +250,7 @@ coverage. Mark unavailable required checks NOT_CHECKED, never pretend they passe
    with a source-backed reason, `updated` with paths and passing readback/checks,
    or `pending` with the concrete gap and resume action. Workers update in-scope
    component docs and route shared docs to the coordinator/DOCS-MAINTAINER. See the
-   [parallel report contract](../autowork/references/parallel-workers.md#documentation-impact-evidence).
+   [parallel report contract](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/parallel-workers.md#documentation-impact-evidence).
    In sequential native/portable execution, resolve bundled Docs Sync in the actual
    host and run scoped Maintain only for a concrete delta, before final closure.
    No full bootstrap or global manifest is required. Do not change unrelated policy or Acceptance. Read back affected docs
@@ -265,24 +259,12 @@ coverage. Mark unavailable required checks NOT_CHECKED, never pretend they passe
    retains implementation and pending resume evidence, not a false documentation
    pass or implementation replay. Needed closeout stays within once/until-empty
    scope; stops and pauses launch no new work.
-   The Pi runtime's closeout Maintain pass belongs to DOCS-MAINTAINER (TOOLSET-266-7a),
-   not a second close authority inside its atomic transaction. Report evidence alone
-   neither launches that pass nor proves documentation acceptance.
-   After the required gates, the engine's verified close writes `status = "done"`
-   and the receipt in `tasks/evidence/<ID>.toml` in one commit; replaying it is a
-   no-op. Closing without the engine uses `autowork tasks done ID --evidence TEXT`.
-   A goal becomes met with `autowork tasks goal ID --status met --evidence TEXT`
-   naming an executed, passing check; never because its queue is empty. Neither
-   independently verifies review, source freshness or the truth of supplied
-   evidence. Run `autowork tasks validate --worktree .`, read back the changed
-   records and include them in the handoff and any authorized commit together.
+   Close only after the required checks, independent review and integration proof.
+   Record evidence on the existing issue/PR. Never mark a goal met from an empty
+   queue, a label or removal of its former executor. Preserve legacy records.
    These checks do not prove model adherence or live task completion.
-6. After integrated closeout, the coordinator performs
-   [working-set reconciliation](TODO-WORKCENTER.md#reconcile-the-working-set)
-   separately from the atomic close transaction. Re-read the eligible queue
-   (`autowork tasks list`) and actual ownership after reconciliation. Under an active Autowork
-   invocation/job, finish authorized closeout. Select another batch only when caller
-   scope permits it and saved stop/batch limits allow it.
+6. After integration, reconcile current GitHub Issues and actual ownership.
+   Select another batch only when caller scope and saved stop/batch limits permit.
    Default interactive, planning-only and explicit one-task requests report the next
    slice and stop; explicit continuation/whole-spec mandates use their named scope.
    Unresolved review/capability or ownership is recorded honestly;

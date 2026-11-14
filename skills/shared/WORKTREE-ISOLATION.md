@@ -18,9 +18,7 @@ Preserve existing worktrees, branches, indexes and live writers. Remove only
 scratch you created when it is no longer needed, without deleting receipts or
 launch inputs required for recovery.
 
-For explicitly scoped legacy recovery only, apply [worktree closeout](../autowork/references/worktree-closeout.md):
-integrate verified results into the canonical default branch (`main` or `master`),
-then remove finished owned task/integration worktrees. Keep active, dirty, locked,
-unmerged and recovery-bearing worktrees; report pending integration or cleanup.
-There is no cap on necessary active worktrees. `worktree_closeout.py` removes only
-worktrees that are integrated, clean, unlocked and unused; nothing else is deleted.
+For authorized cleanup, apply [worktree closeout](../git-commit-push/references/worktree-closeout.md).
+Keep active, dirty, locked, unmerged and recovery-bearing worktrees. Unknown
+ownership means retain. Existing legacy worktrees are preserved during executor
+removal; no bundled closeout helper remains and no cleanup is automatic.

@@ -39,9 +39,6 @@ Offline fixtures are not real native-install or model qualification.
 | Addy agent-skills (25 protocols) | Vendored commit and hashes in [UPSTREAM.json](../skills/engineering/UPSTREAM.json) | Updated only through a reviewed Toolset change; shared references included. Two defensive examples are paraphrased, with original and adapted hashes recorded; a refresh restores upstream bytes, so re-apply them by hand. |
 | Graphify | Dedicated setup helper | Not covered by a unified bundle lockfile. |
 | Octet native binaries | Official stable [installer](https://octet.skaft.org/install) from [skaft-software/octet](https://github.com/skaft-software/octet), run unmodified in binary mode | Mutable stable channel, not a Kit version pin; upstream verifies release identity, Sigstore provenance, checksums, archive safety and exact version. Kit reports the installed destination version. |
-| textual-serve 1.1.3 (MIT), `autowork web` only | Pinned in [`command.py`](../pi-autowork/pi_autowork/command.py) (`AUTOWORK_TEXTUAL_SERVE`), fetched by `uv run --with` like Textual | Not a runner dependency; only the browser view uses it. |
-| Textual 8.2.8 (MIT), the `autowork` TUI only | Pinned in [`command.py`](../pi-autowork/pi_autowork/command.py) (`AUTOWORK_TEXTUAL`); fetched by `uv run --with` into uv's cache on first use | Not a runner dependency: pi-autowork itself stays standard-library Python, and every other `autowork` command works without it. |
-| mypy 1.19.1 (test-only) | Pinned in [`requirements-test.txt`](../requirements-test.txt) and the `uv run --with` fallback in [`scripts/typecheck.py`](../scripts/typecheck.py) | Not a runtime dependency; it checks only the two allowlisted selection and authority modules. |
 
 Ordinary installation preserves existing resources, adding only missing Markdown
 files in the bundled `shared/` support directory (without overwriting local edits).
@@ -61,55 +58,12 @@ machines with the same Toolset checkout can therefore have different external
 versions. Native scans remain enabled; blocked imports mean incomplete setup.
 `--yes-deps` permits declared dependency installation, not a scanner bypass.
 
-## Rust Autowork candidate
+## Removed executor dependencies
 
-The separate [`pi-autowork/rust/autowork/Cargo.toml`](../pi-autowork/rust/autowork/Cargo.toml) builds
-`autowork-next`. It does not replace or install over the Python `autowork` runner.
-The accepted design is in [Rust Autowork with Octet](plans/rust-octet-autowork.md).
-`version` and `capabilities` need no model call. The crate's
-[guide](../pi-autowork/rust/autowork/README.md) describes its explicit isolated
-`run` route and offline authority/recovery fixtures. Unknown commands are rejected;
-this candidate is not a service cutover or live-provider qualification.
-
-Both public libraries, `octet-agent` and `octet-ai` 0.10.0, are Git dependencies at
-[`4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee`](https://github.com/skaft-software/octet/tree/4d7a3e3ff83b300a57b20f9ac70cfa20cb3242ee).
-There is no dependency on Octet's private application crate and no upstream patch.
-This source pin is independent of the mutable stable binary installer above.
-Octet is MIT-licensed, copyright 2026 Achuthan Mukundan and Skaft Software
-contributors. Its full license is retained in
-[`THIRD_PARTY_NOTICES.md`](../pi-autowork/rust/autowork/THIRD_PARTY_NOTICES.md).
-Retain that notice when distributing linked binaries. Other dependencies retain
-their respective licenses; this is not a complete transitive license inventory.
-
-[`Cargo.lock`](../pi-autowork/rust/autowork/Cargo.lock) records the complete resolved dependency
-graph, Git source identity and registry checksums. The initial direct resolutions
-are Tokio 1.54.1, serde 1.0.229, serde_json 1.0.154, clap 4.6.7, fs2 0.4.3,
-toml 1.2.1+spec-1.1.0, toml_edit 0.25.19+spec-1.1.0 and rusqlite 0.40.2.
-The `bundled` rusqlite feature builds SQLite from source; system SQLite is not
-required. Update the manifest and lock together, review upstream changes and
-licenses, then repeat the locked checks. Do not substitute a floating Octet branch.
-
-Build prerequisites are Linux, Rust/Cargo 1.95.0, Git, a C compiler and linker.
-Native dependencies include bundled SQLite and zstd. Initial resolution needs
-GitHub and crates.io access, or a previously populated Cargo cache.
-[`rust-toolchain.toml`](../pi-autowork/rust/autowork/rust-toolchain.toml) pins 1.95.0 when invoked
-inside the crate. From the repository root, select it explicitly:
-
-```sh
-RUSTUP_TOOLCHAIN=1.95.0 cargo build --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml
-RUSTUP_TOOLCHAIN=1.95.0 cargo test --locked --manifest-path pi-autowork/rust/autowork/Cargo.toml --test cli
-./pi-autowork/rust/autowork/target/debug/autowork-next version
-./pi-autowork/rust/autowork/target/debug/autowork-next capabilities
-```
-
-The binary paths above assume Cargo's default target directory. If
-`CARGO_TARGET_DIR` is set, use its `debug/autowork-next` instead.
-Pi and Python are not runtime prerequisites. The CLI tests clear `PATH` to prove
-bootstrap independence, assert revision and schema-1 worker/reviewer/planner
-contracts, check the fail-closed owned-agent route, and bound runtime event JSON.
-They do not prove native model execution, effect admission or live qualification.
-The request limit is 1 MiB. Each projected event is at most 16 KiB, including its
-JSONL newline. Native confirmation/reply channels are never wire fields.
+The pi-autowork Python/Rust executors, TUI/web dependencies and Paseo plugin no
+longer ship. Their [prior dependency and licensing record](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/dependencies.md#rust-autowork-candidate)
+remains evidence for retained installations, not a build/install recipe for Kit.
+This removal does not change upstream Octet or ordinary host dependencies.
 
 ## Updating
 

@@ -16,8 +16,9 @@ last, after complete issue content and native dependencies exist. Epics do not
 execute; explicit pauses and incomplete planning stay undispatched. CI, review
 and sensitive-change protections remain separate from dispatch.
 
-**The `pi-autowork` runner and its Paseo plugin are deprecated**, retained for
-migration/recovery only. Do not start them for new work or run them alongside Orbi.
+**The `pi-autowork` executor, CLI and Paseo plugin are removed.** Existing task
+records, worktrees and attempts/recovery evidence are preserved, not executed.
+**Orbi remains paused and live-unqualified** pending the pilot and cutover gates.
 See [GitHub-native setup and cutover](docs/github-native.md).
 
 [Install](#install) · [First use](#first-use-in-your-project) ·
@@ -48,7 +49,7 @@ three portable agents.
 | **Codex** | Marketplace plugin | `$kit:plan-with-me` |
 | **Hermes** | Optional native plugin | `/plan-with-me` |
 
-Paseo has a [separate plugin](#paseo). To use the skills inside Paseo, install
+To use the skills inside Paseo, install
 Kit in the coding-agent host, then run that agent in a Paseo workspace.
 
 ### Pi
@@ -77,9 +78,8 @@ codex plugin add kit@autowork-marketplace
 
 ### Paseo
 
-Use Kit skills inside a Paseo-hosted Pi, Claude Code or Codex session. The old
-[Autowork Paseo plugin](pi-autowork/integrations/paseo/README.md) is deprecated;
-keep existing installations only for legacy inspection/recovery, not Orbi control.
+Use Kit skills inside a Paseo-hosted Pi, Claude Code or Codex session.
+Kit no longer ships a Paseo executor plugin or an Orbi dashboard.
 
 ### Hermes (optional)
 
@@ -126,9 +126,9 @@ git clone https://github.com/TrebuchetDynamics/kit && cd kit
 
 `--full` (`--all`) and `--verbose` (`-v`) are the defaults. Missing hosts are skipped,
 while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
-installs nothing. The deprecated `autowork` recovery tools require explicit
-`--only autowork`; full installs omit them. Install/update restarts active host
-integrations, never legacy Autowork runners; paused/stopped services stay untouched.
+installs nothing. The old `autowork` installer component is removed.
+Install/update restarts active host integrations, never legacy Autowork runners;
+paused/stopped services stay untouched.
 See [restart scope and failure handling](docs/installation.md#full-suite-from-a-checkout).
 Hermes still runs its complete fleet setup and its own dependency and
 security prompts; use `--yes-deps` only when you intend to consent to them.
@@ -204,7 +204,7 @@ states its own boundaries and what "done" means.
 - `/docs-sync` — maintain docs and GitHub issue handoffs from current source.
 - `/pending` — read what is open, done and next without changing anything.
 - `/blockers` — resolve held work and the questions only the owner can answer.
-- `/unblock` — diagnose stalled runners and repair authorized causes autonomously.
+- `/unblock` — diagnose blocked GitHub work and repair authorized causes without releasing pauses.
 
 **Execute and deliver**
 
@@ -242,19 +242,21 @@ states its own boundaries and what "done" means.
 **Operate**
 
 - `/ask-kit` — ask which of the above fits.
-- `/autowork` runner — the optional section [below](#the-runner-autowork).
+- GitHub Issues and Orbi diagnostics — see [delivery setup](docs/github-native.md).
 
 ## Paseo interface
 
-The retained [Autowork integration](pi-autowork/integrations/paseo/README.md) is a
-legacy interface, not an Orbi dashboard. Its historical qualification does not
-qualify the new delivery system. Use GitHub and Orbi diagnostics for current work.
+The executor plugin is removed. Paseo remains a host for ordinary Kit agent
+sessions. Use GitHub and Orbi diagnostics for delivery status; historical plugin
+checks do not qualify the new delivery system.
 
 ## The runner (Autowork)
 
-Deprecated. Historical source, tests and recovery tooling remain in `pi-autowork/`.
-Do not enable its runner, plugin mutation controls or cron execution for new work.
-Pause existing schedulers before enabling Orbi; preserve attempts and worktrees.
+Removed, including source, launchers and integrations. Historical contracts and
+unresolved qualification are available at the
+[immutable pre-removal revision](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork).
+This is evidence, not an installation fallback. Preserve task data, attempts,
+worktrees and recovery state. Orbi stays paused until separately qualified.
 
 ## Your work queue
 
@@ -315,7 +317,7 @@ migration; do not rewire legacy Autowork cron execution for new work.
 | Claude Code | Plugin validation and an earlier isolated install are recorded; no live model workflow is demonstrated in that record. |
 | Codex | Earlier isolated installation and skill discovery, plus portable-package checks; the current package still needs renewed native/live qualification. |
 | Hermes | Offline tests, native registration/integration checks and gateway activation receipts. Live model behavior and Telegram delivery require separate live checks. |
-| Paseo | The plugin's offline checks (the real Paseo 0.15 compiler and an isolated runtime) and a live local daemon load with read-only reads are in [its qualification record](pi-autowork/integrations/paseo/docs/qualification.md). Physical client and live control qualification remain pending. |
+| Paseo | The executor plugin is removed. Its [prior qualification record](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork/integrations/paseo/docs/qualification.md) does not qualify Orbi; physical-client/live-control gaps remain historical evidence, not success claims. |
 
 Package contents have changed since some isolated-install runs. The
 [cross-host verification record](docs/cross-host.md#behavior-and-verification) names the
@@ -348,7 +350,7 @@ that the Orbi pilot or fleet is qualified.
 | [Troubleshooting](docs/troubleshooting.md) | [Removal and recovery](docs/uninstall.md) |
 | [Dependencies, reproducibility and licensing](docs/dependencies.md) | [Assessment and 30-day evaluation](docs/evaluation.md) |
 
-**Run and inspect:** [`autowork` runner controls](pi-autowork/README.md#the-autowork-command) ·
+**Run and inspect:** [GitHub/Orbi delivery](docs/github-native.md) ·
 [`tx` tmux sessions](tmux/README.md) · [Changelog](CHANGELOG.md) ·
 [Memory and retained data](docs/memory.md) · [Adding skills](docs/contributing.md)
 

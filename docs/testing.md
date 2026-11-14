@@ -1,117 +1,24 @@
 # Verification and compatibility
 
-## Rust candidate offline checks
+## Removed executor checks
 
-The separate native-Octet crate is owned by `pi-autowork/rust/autowork/`.
-Use Rust/Cargo 1.95.0 with the already-populated locked cache described in
-[dependencies](dependencies.md#rust-autowork-candidate):
-
-```sh
-export RUSTUP_TOOLCHAIN=1.95.0
-cargo metadata --locked --offline --no-deps --format-version 1 --manifest-path pi-autowork/rust/autowork/Cargo.toml
-cargo check --locked --offline --manifest-path pi-autowork/rust/autowork/Cargo.toml
-cargo test --locked --offline --manifest-path pi-autowork/rust/autowork/Cargo.toml
-```
-
-Repeat these commands from an unrelated disposable working directory using the
-absolute manifest path. `cli::crate_has_one_product_owner` checks Cargo's sole
-manifest owner, the `autowork-next` binary, integration-test targets, internal
-module ownership and absence of the retired root implementation. Preserve all
-existing test names, fixtures, lock bytes and the pinned Octet revision when moving
-the crate. The shared Python checker does not execute Cargo; run these checks
-separately. The [crate guide](../pi-autowork/rust/autowork/README.md) describes the
-bounded offline/fake-agent authority and recovery fixtures and their port ranges.
-Historical task-store, state, planning and fake-runtime reports still describe
-their original source revisions, not fresh checks of this layout. Neither those
-reports nor relocation checks qualify live models, devices or the Python service.
-
-## Read-only fleet blocker report
-
-`python3 -m unittest discover -s pi-autowork/tests/runner -p test_blockers_report.py`
-checks a real disposable committed TaskStore, full reasons/IDs/questions, selector
-decisions, unreadable/invalid sources, literal text and no repository/state writes.
-The real `health.update` fixture retains full held/root and waiting observations
-beyond the legacy compact-row limit, including all recorded affected IDs and
-integration-backlog pauses/reasons. Builder fixtures also retain full main-check
-revision/failure IDs and real question-reader acquisition errors without replacing
-current committed eligibility.
-Its pinned offline Textual pilot covers 80/120 columns, normal/view-only mode,
-keyboard/menu click, explicit refresh/back, read-only editing refusal, whole-report
-and selected-text copying, setup-only Backlog on `g` and control denial. An
-Event barrier proves Escape works before a stalled read returns and close/reopen
-does not overlap readers or publish the previous runner's result. Run the affected
-selector on the implementation base as well. Cache/dependency skips are not
-rendered passes. These fixtures do not prove an SSH terminal accepted its clipboard
-sequence or that an installed TUI loaded the new source.
-
-## Open task inventory and closed history
-
-`python3 scripts/check.py pi-autowork/tests/runner/test_task_history.py` uses a real
-committed store for open, legacy and explicit manual records; checks annotation
-separation, unchanged task bytes and verified versus unverified labels; and runs a
-pinned offline Textual pilot at 80/120 by 24 columns, normal/view-only. It checks
-Open/Closed counts, closed records with related questions, visible tabs, numeric/
-backward-tab navigation and denial of section/answer actions in history details.
-Twenty unmatched-runtime annotations exercise a bounded diagnostics pane without
-hiding the task rows; the pilot focuses it with **i**, copies its full text and
-checks view navigation while it has focus.
-Run affected modules from the implementation base as well. Historical receipts,
-statuses and missing closure metadata are not repaired by these tests. A skipped
-renderer dependency is not a rendered pass; remote-host adoption stays unqualified.
+Executor, task-store, Rust candidate, Textual and Paseo plugin checks no longer
+ship. Their [prior test contracts and qualification gaps](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/testing.md#rust-candidate-offline-checks)
+remain immutable evidence, not current test commands. Existing tasks, worktrees,
+attempts and recovery state are preserved. Removal does not satisfy outstanding
+live acceptance. Orbi remains paused and live-unqualified.
 
 ## Component inventory and source closure
 
-Product Python tests are direct children of `pi-autowork/tests/runner/`,
-`pi-autowork/tests/engine/` and `pi-autowork/tests/native/`. Shared Kit tests and
-`src_fixture.py` remain in `tests/`; product helpers and fixtures stay under
-`pi-autowork/tests/`. Use `python3 scripts/check.py PATH ...` for focused checks.
-
-`tests/test_check.py` reconciles the complete method identities in
-`tests/fixtures/python-layout.json`. The fixture is derived from immutable
-pre-migration, failed-integration-base, landed-integration-base and task-base Git
-inputs, not hashes regenerated from the migrated result. The chain also includes
-the held integration's actual first-parent input and the corrective task base;
-intentional scheduler test replacements retain their `fd36cedb` patch and blob
-provenance instead of restoring superseded scheduling rules. Its snapshot rows retain
-source blob IDs/modes and exact added/removed identities; each historical removal
-names its replacement and the commit that renamed it. Later additions are allowed,
-but lost baseline identities, changed exclusions and incomplete/duplicate shard
-coverage fail. The self-contained fixture also works in shallow CI checkouts.
-When an intentional later rename/removal needs reconciliation, preserve its Git
-provenance rather than deleting an expected ID or repinning to a passing tree.
-
-The extracted offline archive checks use paths with spaces and poisoned unrelated
-cwd/PYTHONPATH, including deterministic fake inference. Native copied-release
-fixtures remain separate; neither closure qualifies a model or installed service.
-See [source layout](../pi-autowork/docs/source-layout.md).
+Use `python3 scripts/check.py --list` for the maintained offline inventory and
+`python3 scripts/check.py PATH ...` for focused modules. Native Hermes source
+lives in `src/autowork_runtime/`; portable packages retain their host adapters.
+Source/layout checks do not qualify installed models or delivery.
 
 ## Skill task-persistence contracts
 
-`python3 scripts/check.py tests/test_planning_cli_contract.py` checks every
-first-party skill's explicit route to the shared task CLI policy, excluding pinned
-upstream methods. It checks unavailable-tool, authority and deletion guidance and
-uses a disposable repository to exercise the existing absolute Python entrypoint
-from an unrelated directory: capabilities, add, literal JSON field update with a
-record revision, readback and validation. The stale-read and completed-task safety
-contracts remain covered. These checks do not prove model adherence or live delivery.
-
-## Parallel offline acceptance
-
-`python3 -m unittest pi-autowork/tests/engine/test_parallel_e2e.py` exercises the
-real coordinator CLI and disposable Git worktrees with fake local workers. It
-checks A/B overlap, C starting only after A closes, merged-tree validation,
-cleanup, golden status text/JSON, journal metrics and capacity changes on refill.
-`python3 pi-autowork/scripts/bench_parallel.py` compares that pipeline with one and two slots;
-its overhead is elapsed time minus the controlled sleep critical path, including
-process startup, Git, validation and waits, not isolated coordinator CPU time.
-Neither test nor benchmark qualifies model-worker throughput or live hosts.
-Integration regressions additionally refuse changed checked/archived contracts
-and enforce retry-worker deadlines before returning WAITING.
-`python3 -m unittest pi-autowork/tests/engine/test_parallel_compat.py` compares
-sequential `owner_cycle.py` output, byte for byte, with a snapshot captured before
-any parallel code, and checks that a Claude Code coordinator without
-`--worker-command` or a missing worker CLI returns `SEQUENTIAL_FALLBACK` without
-claiming or starting anything.
+Planning checks enforce GitHub-native publication and preservation of legacy
+records, not local task CLI execution. See [Plan Handoff](../skills/shared/PLAN-HANDOFF.md).
 
 ## Tree guard and fix hotspots
 
@@ -132,60 +39,12 @@ so an unset value used to report as a red tree in an interactive shell and invit
 `--no-verify`. CI already exports one; the checker now supplies a real directory
 instead of relying on the host.
 
-### Prepare the pinned Textual cache
-
-The optional renderer checks use `uv run --offline --no-project --with textual==8.2.8`.
-They never install from the network during a check. Before offline execution,
-prepare the cache explicitly on a network-enabled host:
-
-```sh
-uv run --no-project --with textual==8.2.8 python3 -c 'import textual; print(textual.__version__)'
-```
-
-Use the same Python interpreter, platform and uv cache for preparation and tests.
-For workers with a shared cache, set `UV_CACHE_DIR` to that cache before both
-commands. Installing Textual in an unrelated virtual environment does not prepare
-this uv environment. Confirm preparation without network access:
-
-```sh
-uv run --offline --no-project --with textual==8.2.8 python3 -c 'import textual; print(textual.__version__)'
-python3 scripts/check.py pi-autowork/tests/runner/test_task_prepare.py tests/test_check.py pi-autowork/tests/runner/test_blockers_report.py pi-autowork/tests/runner/test_fleet_view.py pi-autowork/tests/runner/test_planning_ui.py pi-autowork/tests/runner/test_task_history.py pi-autowork/tests/runner/test_tui_controls.py pi-autowork/tests/runner/test_tui_layout.py pi-autowork/tests/runner/test_tui_mouse.py
-```
-
-An unavailable pinned cache produces explicit dependency skips, not rendered
-passes. The shared test helper recognizes uv's exit-1 resolver diagnostic
-(`textual was not found in the cache`, pinned `8.2.8`, and `network was disabled`)
-and the exit-2 offline unavailable-cache diagnostic. Other resolver errors, import
-errors and pilot assertions still fail. Import-graph and non-renderer checks remain
-enforced when optional renderer subtests skip. Deterministic subprocess fixtures
-exercise available, unavailable and failing outcomes without a network or renderer.
-They do not qualify rendering. Record actual pilot execution separately when the
-cache is available; otherwise report rendered behavior as unverified.
-
-The normal full-main gate remains required. Preserve its test results and skip
-counts. Neither fixture coverage nor dependency skips qualify live services,
-installed adoption or rendered behavior.
-
 ### Other offline checks
 
-Repository-status chat coverage runs through the normal offline entry point:
-
-```sh
-python3 scripts/check.py tests/test_bundle.py tests/test_bundle_repo_status.py pi-autowork/tests/runner/test_autowork_command.py tests/test_workflow_commands.py pi-autowork/tests/runner/test_release.py pi-autowork/tests/runner/test_fleet_view.py
-```
-
-It exercises the public maintenance dispatcher with real disposable
-Python subprocesses for bare fleet and literal named/absolute targets, retains the
-plugin setup overview, and tests argument refusal, failed/empty/timed-out reads and
-bounded literal gateway output. Native regressions additionally require status to
-leave release worktrees unchanged, service-discovery failure to remain unavailable,
-and unknown engine data not to become zero workers. The child uses the bundled
-reader rather than an inherited older launcher. A real native CLI subprocess with
-fixture providers also asserts that status never invokes authentication checks or
-refreshes. These offline cases do not qualify live Telegram
-routing or activate a gateway. A read-only invocation against installed local runner
-records additionally checks the source handler; it still does not prove the gateway
-loaded that revision.
+`tests/test_bundle_repo_status.py` checks the static removed-executor status
+notice without launching a subprocess. Native plugin status/list/update remain
+maintenance operations; their registration tests do not qualify live Telegram
+routing, gateway activation or model execution.
 
 README-audit fixtures exclude Markdown/HTML image examples in
 single-line backtick spans, including mixed prose and literal shorter backtick runs.
@@ -204,25 +63,10 @@ launch; valid facts retain interpreter selection, validation failure and missing
 parser fallback. Fixture metadata/configuration remain byte-identical. These are
 offline fixtures, not live setup or installed-profile qualification.
 
-Consultation stream-json regressions exercise real local
-subprocesses with Unicode NEL, line separator and paragraph separator inside
-reply and tool-event JSON strings. LF-only framing must retain exact replies and
-parseable sanitized receipts, preserve tool-limit observations and nonzero exit
-verdicts, and mask synthetic credentials. These fixtures do not establish native
-profile recovery or installed adoption.
-
 `python3 -m unittest discover -s skills/docs-sync/scripts -p test_docs_manifest.py -v`
 checks malformed array/object role statuses through `validate`, `check` and `stale`. Each command must return exit 1 with a role-specific diagnostic,
 retain independent field errors, emit no traceback and leave fixture files unchanged.
 Supported status values retain the existing positive and negative CLI coverage.
-
-`python3 -m unittest discover -s pi-autowork/tests/native -p test_profile_consult.py -v` includes
-real local subprocesses emitting valid stream-json replies and malformed stderr
-for zero and nonzero exit codes. Diagnostics retain replacement
-characters without discarding replies or changing failure verdicts. Malformed
-stdout remains refused. These fixtures do not launch models or qualify native
-profile recovery, installed adoption or delivery.
-
 
 Document-anchor CLI fixtures cover numeric-suffix collisions in both heading orders
 and chains of occupied suffixes. They check valid local links and
@@ -235,27 +79,16 @@ checks. Commented headings do not consume visible duplicate suffixes;
 visible headings, explicit anchors and literal comment markers in code spans remain
 supported. CLI fixtures also verify that checking leaves source files unchanged.
 
-The fake-Pi idle-update journey forces different human-readable log timestamps
-before and after an exec restart. It requires multiple startup records bearing the
-original runner PID, alongside the update, completed-queue and interrupt-exit
-assertions. Timestamp variation is not a process-identity change.
-Only display times are replaced; scheduling clocks and ISO timestamps stay real.
-This is offline control-flow evidence, not live Pi/model qualification.
-
 Collector response regressions also mask complete Cookie, Set-Cookie,
 Authorization and Proxy-Authorization lines, including comma/semicolon tails,
 case and indentation variants, through native and legacy response consumers. They preserve surrounding status/check lines and source bytes.
 This covers actual header lines, not comprehensive secret redaction; installed
 adoption and product recovery remain separate.
 
-Native response framing regressions preserve complete answers containing embedded
-Response headings, Unicode and long prompts. The collector shares the consultation
-cache's character-count parser, reads native documents up to 256 KiB, and redacts
-before capping display at 32,768 characters. Invalid or oversized frames produce
-explicit gaps; legacy compatibility tails retain their unknown-coverage boundary.
-`python3 -m unittest discover -s pi-autowork/tests/engine -p test_response_tail.py`
-and `python3 -m unittest discover -s pi-autowork/tests/native -p test_profile_consult.py` cover both
-callers. Frame validity does not prove execution/file association or completion.
+Removed executor/profile-consult framing checks remain
+[immutable evidence](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/testing.md#other-offline-checks),
+not current test commands or live qualification. Retained collector behavior must
+be checked through its maintained tests.
 
 Fleet execution metadata is bounded to twelve recent records per existing job,
 not twelve across a profile: frequent sync occurrences must not hide paused
@@ -267,7 +100,6 @@ newest completed responses and original run identity still need separate verific
 ```sh
 uv run --python 3.12 --no-project --with-requirements requirements-test.txt python scripts/check.py
 python3 scripts/check.py --list
-python3 scripts/typecheck.py
 python -m py_compile __init__.py scripts/bundle.py scripts/install-graphify.py
 node --test tests/portable_pi.test.mjs
 ```
@@ -280,15 +112,8 @@ The checker runs top-level and maintained bundled workflow tests in separate
 Python processes, with a 1,800-second timeout per test process by default. It uses
 one or two processes according to available capacity. `--jobs N` requests a process
 count, capped at two; `--jobs 1` runs them one after another. Output stays grouped
-in directory order. The optional Paseo check runs after the Python processes finish,
-so Vitest workers do not multiply concurrent Python work.
+in directory order. The removed executor's Paseo/renderer checks are not run.
 
-On Linux, this checkout's checker uses the existing fleet check pool for focused,
-filtered, sharded and full runs. `--list` takes no slot. An inherited locked slot
-is reused, including descriptors from older wrappers. An environment-only marker
-grants no admission. Provisioning and test subprocesses retain the lease;
-test fixtures do not inherit runner settings. Standalone copies
-without the runtime still run, and Autowork wrappers admit them through their pool.
 `--exclude PATH` (repeatable) leaves
 a module or directory out of the selection, and `--shard I/N` keeps every N-th test id
 from the I-th, so several machines can share one selection; a module whose tests cannot
@@ -302,41 +127,9 @@ integration suites are explicitly excluded with reasons; live opt-in flags are
 removed from test subprocesses. Passing this gate does not qualify model/native
 execution. Tests use temporary Git fixtures and may write offline scratch receipts.
 
-Autowork check receipts fingerprint the command executable using the check's
-working directory and execution environment, including relative or empty `PATH`
-entries. Receipts created before the `execution-cwd-v1` resolution policy cannot
-be reused; preserve them and run the check with a new receipt path. An unresolved
-executable also prevents reuse.
-
-Check receipts cache package metadata and interpreter hashes within a process.
-Filesystem stamps detect in-place upgrades; unsupported providers or uninspectable
-paths fall back to original discovery. Regressions cover add/edit/remove drift,
-interpreter replacement, caller mutation, legacy/ZIP/symlink metadata and unreadable
-search directories. Historical timing samples are not a current performance claim.
-
-Current Autowork executes repository tasks in the current session without Kanban
-setup or native-card transitions. Its direct-execution, recovery and isolated
-no-agent qualification are described in the
-[project verification contract](project.md#todo-first-delivery-qualification).
-Model-driven recovery and useful-action timing remain separate qualification
-requirements; no-agent execution is not a substitute. Current execution, parallel
-integration, profile collection and source-bound receipt checks remain in the
-maintained inventory. The coordinator owns the merged-tree full-suite gate.
 Historical suite inventories and timing reports belong in Git history, not a
 completed-task report. This cleanup migrates no installed profiles or schedules
 and supplies no live qualification.
-
-Selection reads every task and goal at one commit with a single `git cat-file --batch`;
-a 1000-task store reads and orders in about half a second (`test_task_select.py` prints the time and
-peak memory instead of asserting a wall clock).
-
-Offline task-store regressions cover pinned reads and whole-store refusal
-(`pi-autowork/tests/engine/test_task_store.py`), selection order and reasons
-(`test_task_select.py`), the `autowork tasks` writer (`pi-autowork/tests/runner/test_task_commands.py`),
-conversion (`pi-autowork/tests/runner/test_task_migrate.py`), preparation/bootstrap/recovery and
-read-only diagnostics (`pi-autowork/tests/runner/test_task_prepare.py`), admission and closure by contract hash
-(`test_parallel_dispatch.py`, `test_parallel_integrate.py`) and the runner's reopening of
-a close a merge left under another contract (`pi-autowork/tests/runner/test_task_reopen.py`).
 
 `tests/integration_plugin.py` additionally checks the actual Hermes manifest
 reader, native install security scan, loader, bundled skill reader, Telegram menu, CLI queue, gateway routing,
@@ -378,7 +171,7 @@ HERMES_HOME="/path/to/isolated-installed-profile" PYTHONPATH="$HERMES_SOURCE" "$
 ```
 
 Before a push, the pre-push hook runs the checker's core contracts (docs check and
-task-store validation, a few seconds) and then `scripts/affected_tests.py --run --defer-full`
+GitHub handoff contracts, a few seconds) and then `scripts/affected_tests.py --run --defer-full`
 from the sha the remote already has. Targeted tests run locally; their failures still refuse
 the push. Whole-suite selections (check, CI, packaging or an unresolved mapping such as
 `.gitignore`) print the reason and defer test execution to CI instead of blocking a push on
@@ -413,41 +206,17 @@ its own suites: the hook now prints the load average and cpu count when it refus
 so the failure can be attributed instead of bypassed. Run one failing module alone
 before you treat the tree as broken; a second failure there is the tree's.
 
-The offline suite runs in GitHub Actions as two jobs: `fast` runs every module except
-`pi-autowork/tests/runner/test_pi_autowork.py` (`scripts/check.py --exclude pi-autowork/tests/runner/test_pi_autowork.py`),
-and `runner` runs that module alone on three machines
-(`scripts/check.py pi-autowork/tests/runner/test_pi_autowork.py --shard I/3`), because its tests each start
-a real runner over a Git fixture and were three quarters of a 17-minute single job.
-CI byte-compiles only `__init__.py`, not the four files above. Live Telegram delivery and model
-execution require your configured Hermes installation.
+CI retains the `fast` and `runner` check contexts; runner-named shards now run
+maintained native tests, not the removed executor. Inspect
+[the workflow](../.github/workflows/test.yml) for its current inventory. Live
+Telegram delivery and model execution require separate qualification.
 
 ## Live qualification harness (A–E)
 
-The [authorized-autonomy audit](research/authorized-autonomy-audit-2026-11-04.md)
-adopted five reliability fixes, and their deterministic tests do not exercise the real
-process, filesystem and remote path. The qualification harness is one disposable-target
-scenario set for those five checks. It runs on demand, is not part of `scripts/check.py`,
-and its exact path and command live in the task record that creates it.
-
-| Scenario | What it drives | Evidence |
-| --- | --- | --- |
-| A | a real `git push` to a local bare remote whose pre-receive hook stalls past the 300 s timeout, then the remote reconciliation | the push outcome, the remote refs, and that the process did not raise |
-| B | a torn `BLOCKERS.md` (start marker, no end marker) and a failed replacement/commit, then the real recovery | the file bytes before and after, the commit, and the repaired block |
-| C | real dispatch in a disposable repository: a legacy prose grant, a structured grant, a foreign scope, and a worker edit to `tasks/` | the waiting and dispatched rows, and the held reason |
-| D | real dispatch with a paused or answered attempt and a full pool, plus an exclusive holder | the launched count, the reserve, and the typed waiting reason |
-| E | one real dispatch with a stub worker, then a resume | the `provenance.jsonl` records, the prompt hash, the append-only prefix, and the absence of prompt or environment text |
-
-Rules:
-
-- Each scenario builds a temporary Git repository and its own state, then removes
-  them. It uses no real remote, model, service, credential or production checkout.
-- The harness prints one JSON object per scenario and exits nonzero on any failure.
-  Its transcript is private; the command and its summary are the evidence.
-- A stub worker exercises the engine's launch path. A model-driven delivery and an
-  interrupted real runner remain the owner's live qualification, not
-  this harness.
-- A product defect found by a scenario is reported with its record, never fixed by
-  changing the harness's expectation.
+The [prior executor scenarios and remaining proof](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/testing.md#live-qualification-harness-ae)
+are retained immutable requirements evidence, not runnable Kit checks. Removal
+qualifies none of those scenarios. Reconcile still-required outcomes into GitHub
+Issues before a successor pilot; preserve original evidence and live/owner gates.
 
 ## Compatibility
 
@@ -495,7 +264,7 @@ cases skip when ruamel.yaml is unavailable). `test_complete_setup.py` separately
 checks orchestration after admission, including no installation calls on dry-run,
 and rejects missing declared native source/bootstrap payloads before stages run.
 The setup/provisioning and Graphify fixtures copy the same-release Python
-closure and exercise real `pi-autowork/src/autowork_runtime` bodies through the `scripts/`
+closure and exercise real `src/autowork_runtime` bodies through the `scripts/`
 entrypoints; external commands and gateway responses remain private fixtures.
 No passing preview is evidence of a live model or Telegram workflow.
 
@@ -524,49 +293,16 @@ receipt and activation/transport evidence before making those live claims.
 
 ## Task store checks
 
-```sh
-python3 scripts/check.py pi-autowork/tests/engine/test_task_store.py pi-autowork/tests/engine/test_task_select.py \
-  pi-autowork/tests/runner/test_task_commands.py pi-autowork/tests/runner/test_task_migrate.py pi-autowork/tests/runner/test_task_prepare.py \
-  pi-autowork/tests/runner/test_task_store_qualification.py
-```
-
-The fixtures use real disposable Git repositories: a malformed or conflicting record
-refuses the whole store with its `path:line`, a write that would break the store is
-undone, conversion proves the store selects what the old queue selected, and the
-qualification fixture runs one task end to end (refused before migration, selected,
-run and closed with one receipt after). Preparation cases additionally cover new
-repository bootstrap, conversion staging/recovery, unchanged-repeat behavior,
-read-only HEAD diagnostics and active-contract protection. These are offline
-fixtures, not proof of model adherence. The safe root gate remains:
-
-```sh
-uv run --python 3.12 --no-project --with-requirements requirements-test.txt python scripts/check.py
-```
-
-These offline checks do not qualify installed model behavior, native task
-execution, publication or Telegram reporting. Keep those live gates separate.
-At the repository root, `python3 -m unittest discover -s pi-autowork/tests/native -p test_owner_cron.py`
-checks prompt generation, repair-mode opt-in and preserved job settings without
-scheduling or executing a live repair.
+The task CLI and executor tests are removed. Existing task records remain
+read-only migration evidence; do not validate by installing the old executor or
+rewrite records to make a check green. See [migration](../skills/shared/TODO-WORKCENTER.md).
 
 ## Paseo plugin checks
 
-The Paseo plugin in `pi-autowork/integrations/paseo/` has its own Node 24+ dependency tree and CI
-job (`.github/workflows/paseo.yml`). From the repository root:
-
-```sh
-npm --prefix pi-autowork/integrations/paseo ci --ignore-scripts
-npm --prefix pi-autowork/integrations/paseo run check
-npm --prefix pi-autowork/integrations/paseo run package:check
-```
-
-These run the strict native-client and server TypeScript checks, the offline fixtures,
-the pinned Paseo 0.15 compiler and an isolated plugin runtime. `python3 scripts/check.py`
-runs the same `npm run check` when the dependencies are installed and reports a skip
-reason otherwise. None of this installs into or reloads a user daemon. See the
-[plugin qualification record](../pi-autowork/integrations/paseo/docs/qualification.md); physical
-Android and desktop clients, provider planning and real service controls remain
-separate live acceptance.
+The executor plugin and its build/test pipeline are removed. The
+[previous qualification record](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork/integrations/paseo/docs/qualification.md)
+retains physical-client and control gaps; those checks do not qualify Orbi or
+ordinary Paseo-hosted Kit sessions.
 
 ## Portable package checks
 
@@ -609,17 +345,7 @@ qualification to passed because its earlier implementation record was pruned.
 
 ## Pi provider setup in the TUI
 
-`python3 scripts/check.py pi-autowork/tests/runner/test_pi_auth.py pi-autowork/tests/runner/test_tui_models.py pi-autowork/tests/runner/test_tui_reads.py pi-autowork/tests/runner/test_tui_controls.py`
-runs the focused offline provider bridge and TUI checks. The bridge fixtures use the
-Pi 1.5.0 public SDK interaction shape in disposable profiles. They cover provider
-catalogs with no stored credentials, OAuth/API-key success, invalid fixture keys,
-missing providers/helpers, cancellation, secret-safe errors and subprocess cleanup.
-Text-default fixtures follow the tagged Pi 1.5.0 Copilot blank-host prompt and retain
-malformed-answer, nonblank-secret and command-key refusal. TUI fixtures reject stale
-catalog, authentication, model-choice and confirmation callbacks when a same-name
-runner changes repositories without changing its Pi profile.
-Pinned Textual 8.2.8 pilots cover 60×18, 80×24 and 120×32 terminals, masked input,
-explicit browser actions, automatic refresh and unchanged model/start confirmations.
-These checks use no live account login, credential migration, model or service call.
-Real provider acceptance and browser callback behavior require separate user-run
-qualification. Storing an API key is not evidence that the provider accepts it.
+The executor TUI and provider bridge are removed. The
+[prior provider qualification boundary](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/testing.md#pi-provider-setup-in-the-tui)
+remains evidence, not a supported setup path. Ordinary Pi provider configuration
+belongs to Pi; removal does not alter interactive credentials or model settings.

@@ -10,13 +10,15 @@ metadata:
 
 # Blockers
 
-For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
+For issue operations, load [Plan Handoff](../shared/PLAN-HANDOFF.md).
+The executor and task CLI are removed. Preserve existing task/attempt evidence;
+Orbi remains paused and live-unqualified. Never release that pause here.
 
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
 
-`/blockers [repo|runner name]` resolves held tasks and owner questions together.
+`/blockers [repo]` resolves held tasks and owner questions together.
 Apply established answers, repair authorized technical causes and verify progress,
 then ask only for unresolved owner
 decisions or unavailable inputs, easiest first. Save each resolution before moving
@@ -52,32 +54,13 @@ Only an explicitly fleet-wide request, or a genuinely unresolvable target after
 checking the profile and checkout, may name candidates, and then in prose rather
 than a runner-selection question.
 
-Resolve the target: the active profile's configured repository (the default), a
-path, or a runner name, whose repository is the `Repository:` line of
-`autowork status NAME`. The runner's questions live in its
-session worktree, which can be ahead of the main checkout; read them there, and save
-answers in the main checkout, which the runner merges into its session. Always inspect
-both the questions and engine task states: an empty questions block does not mean no
-held work. Initial discovery is without a model call:
-
-- The runner's questions block in `BLOCKERS.md`, between
-  `<!-- pi-autowork:questions:start -->` and `<!-- pi-autowork:questions:end -->`,
-  when present (TOOLSET-120-fc). Each entry already carries its type, effort,
-  `unblocks` count, `Needs:` and `Answer:`.
-- The engine's view even when the questions block exists:
-  `python3 <toolset>/pi-autowork/engine/owner_cycle.py REPO --parallel-status --json`. Use
-  `roots` whose `kind` is `held`, `claim`, `outside`, `cycle`, `runner` or `contract`
-  (a task that is not runnable, such as a draft or an authority gate: without it a
-  metadata-blocked queue seems to have no questions) and the `tasks` rows for each affected task's `reason`, plus its
-  worker's `report.json` blockers under
-  `.git/autowork-execution/slot-data/TASK/attempt-N/`. `blocks` counts waiting tasks
-  that depend on the root; check which IDs it counts, since it can include the root.
-  Inspect every held task row, including holds with zero dependents and no root entry.
-  A failed status read is unavailable evidence, not an empty queue; fall back to
-  current slot identities and latest attempt reports without inventing live counts.
-- Owner-maintained entries under `## Active` in `BLOCKERS.md` and the open tasks in
-  the `Needs decision` section of `autowork tasks list REPO`, with their `Question:`
-  notes (`autowork tasks show ID REPO`).
+Resolve the target from the active profile's configured repository or current
+checkout; ask only when it cannot be established. Read GitHub Issues, native
+blockedBy dependencies, linked PRs and checks, and actual Orbi ownership where
+available. Inspect retained attempts read-only as migration evidence, not a second
+queue. Include owner-maintained BLOCKERS.md entries and every unresolved issue
+decision, even when absent from a dashboard. A failed read is unavailable evidence,
+not an empty queue. Never use the removed executor CLI or edit its runtime state.
 
 ### Filter before asking
 
@@ -126,13 +109,10 @@ for features is not a request to approve publication. Waiting for overlapping fi
 or a running dependency is scheduling, never an owner question; a reservation wider
 than the task's evidence is still a repair to make.
 
-Resolve each runner question in the form the runner recognizes, so it leaves the
-block on the next cycle; a question you only filtered out keeps showing as "Waiting
-on you". A changed record ends a held-task question, a `Held by:` note a claim
-question. A task in `Needs decision` with a dated `Owner decision:` note is an answered
-outside dependency: the runner stops asking about it, and its dependents wait with
-it (`wait for deferred <ID>`). Dependents may stay in Now/Next; no dependency needs
-to be dropped and no separate answer field is required.
+Record each decision in its current GitHub issue, preserving native dependencies,
+explicit pauses and actual ownership. A saved answer does not prove the owning
+worker consumed it. Keep deferred work visible without repeatedly asking for the
+same answer, and never drop a dependency to make a question disappear.
 
 A questions-only/read-only invocation records proposed repairs in chat rather than
 editing files. With no genuine questions left, report what was reconciled and what
@@ -190,8 +170,8 @@ publication authority, and never turns an unobserved check into a pass.
 
 For each technical hold, keep the same task and candidate.
 Inspect its latest attempt, actual writer/session activity and exact qualification
-inputs; fix the smallest in-scope local cause using the existing Autowork execution
-workflow. Reuse retained code and valid checks, repair local metadata/scope omissions
+inputs; fix the smallest in-scope local cause using `/work` with established
+exclusive ownership. Reuse retained code and valid checks, repair local metadata/scope omissions
 within accepted intent, and rerun only missing or invalidated required checks. Keep
 required full-gate/review evidence, source bindings and negative safety assertions.
 Never patch a report or directly clear a slot/lease to manufacture progress.
@@ -211,78 +191,38 @@ process (killed, timed out, out of memory, crashed before any result) from a sui
 that completed with failing tests, and name the failing tests or the abort signal.
 A generic "crashed" message is not a diagnosis.
 
-Protect the agreed priority. Before releasing a hold or narrowing a reservation,
-check what the runner will select next (`autowork tasks list REPO`, `autowork tasks
-why ID REPO` and the parallel status) and whether that lets the priority repair, such as the fix for a
-broken main check, run. Do not free a slot only for lower-priority work to take it
-while the global blocker waits.
+Protect agreed priority, native dependencies and pauses. Before editing, re-read
+the issue and its actual ownership; never rewrite a running worker's contract.
+Use [issue edits](references/record-edits.md) for decisions, scope corrections and
+supersession. A note never grants live authority. Preserve prior candidates and
+failed evidence; retirement is not completion.
 
-A recovery counts only when delivered: validate it, commit only your own files
-(section 5), confirm the runner received that commit in its session, then observe
-the new state. A local uncommitted edit is not a delivered recovery.
-
-Write each answer or supported planning repair where the queue reads it, the task's
-record in `tasks/items/`, right away, through `autowork tasks` in the main checkout.
-An approved clerical record correction is planning: apply it the same way. An answer supplies only the selected intent or authority;
-execute its local repair only within the invocation's scope and ownership rules.
-It never implicitly authorizes service migration or broader live operations.
-
-- Edit that task's record: `autowork tasks field ID LABEL VALUE` for typed fields or
-  notes; `place` and `move` for section and rank; `supersede` to replace it; `release`
-  for an abandoned claim; `hold` only for an explicit user pause; and `done` never for
-  retirement. Load [record edits](references/record-edits.md) for the exact notes and
-  guards.
-- Authority lives only in typed fields; a note never grants it. Set
-  `live = "authorized"` only on the owner's own explicit answer in this conversation,
-  never from a worker's request, an earlier summary or a recommended choice.
-- Remove resolved owner entries from `BLOCKERS.md` `## Active`; never edit inside the
-  runner's marked block, which the runner rewrites itself.
-
-A running runner reconsiders a held task once its record changes (TOOLSET-120-fc),
-usually within seconds. Observe that in `autowork status NAME`; do not promise it,
-and never start a paused runner to consume an answer.
-Retries, restarts and `pi-autowork.sh --set-aside TASK` belong to the runner's own workflow;
-use its supported handoff rather than manual state mutation. When it cannot consume
-the repair safely, report the precise remaining execution condition instead. A kept branch
-does not prove a fresh worker received that candidate: name it in the task's
-record (a `Next action:` note) so the next attempt restores it instead of reimplementing. Never
-rewrite a running worker's contract.
+A recovery counts only when delivered: validate it, commit only attributable
+files, and observe consumption or report the precise pending operation. A local
+edit, new label or saved answer is not execution. Never enable a paused deployment
+to consume an answer. Keep existing local task records and recovery state intact.
 
 ## 5. Close out
 
-Commit only attributable, verified planning or local repair files, including their
-tests and affected docs, through the repository's scoped local-commit workflow.
-Use `docs(tasks): owner answers to blockers` for planning-only changes, so the
-runner's merge is not held by uncommitted edits. Where those files hold other uncommitted planning, stage only the
-answered tasks' records and hunks, check the staged diff, and leave the
-rest as it was. Never commit unrelated changes. This workflow never pushes; route
-separately requested publication through Git Commit Push with its existing authority.
-Run `autowork tasks validate --worktree .` on changed records and read the engine
-status before reporting. Keep apart:
-plan corrected, received by the runner, admitted, worker running, and work done; a
-successor can still wait on the same unfinished prerequisite. Planning readiness is
-not completed integration. One task starting does not unblock the queue: report how
-many tasks remain held and why, by cause.
+Commit only attributable, verified repair/document files and affected tests.
+Preserve unrelated dirty changes. Issue-only decisions need no local-main commit.
+This workflow never pushes; separately requested publication uses Git Commit Push
+under its existing authority. Read back issue state and report separately: plan
+corrected, repair delivered, consumed, executing and accepted. A successor may
+still wait on the original unfinished prerequisite.
 
 ## 6. Report to the owner
 
-The owner reads this on a phone. Write for them, not for the runner:
+The owner reads this on a phone. Start with how many questions genuinely need
+them, then group work as needs you, authorized technical recovery, and waits on
+other work. Name each remaining cause and its next action. Use fresh GitHub/PR
+and deployment evidence with its time; stale status is not a new owner question.
+Do not claim an issue edit resumed work. Keep internal receipt details out of the
+summary unless requested, while retaining them in their existing evidence owner.
 
-- **First line, the verdict:** how many questions need them now, and what the runner
-  shows them, read fresh (`autowork status NAME`, with its time). The two agree: when
-  the runner still lists a question this pass resolved, say it leaves on the runner's
-  next cycle; when one stays because nothing you may record removes it, say so and why.
-- **Then three groups, one plain line per task:** needs you (the question), the runner
-  handles it (technical recovery, a retry, a review), and waits on other work
-  (dependencies, overlapping files, a deferred task). Leave out empty groups.
-- Plain words: what the task is for and what happens next. No commit hashes, slot or
-  receipt terms, or internal roles (candidate, coordinator, combined source) unless
-  the owner asks; a repair is one line saying what changed.
-- When the runner's view is older than the checkout (a dependency it waits on is
-  already done), that is the runner's to catch up, not a question; say it in one line.
 ## Boundaries
 
 - Not plan review; use `/grilling`.
-- Not implementation; use `/autowork` once the answer arrives.
+- Not broad implementation; use `/work` for accepted implementation scope.
 
 **Done when:** each held task or owner question is answered, released within authority, or reported with the precise missing input.

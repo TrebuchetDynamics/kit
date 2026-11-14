@@ -99,14 +99,12 @@ Do not execute upstream host integration commands or install hooks from examples
 
 ## Adapt artifacts and authority
 
-Apply the [work center](../shared/TODO-WORKCENTER.md). The repository's `tasks/`
-store is the one work queue, edited through `autowork tasks`. Map upstream
-`tasks/todo.md` and `tasks/plan.md` onto existing task records in `tasks/items/` and
-linked plans;
-never create a competing backlog or duplicate task IDs. Reuse accepted specs,
-quality requirements and decisions. Docs Sync reconciles documentation; planning
-saves tasks;
-Autoresearch performs bounded research/planning; Autowork remains the executor.
+Apply [Plan Handoff](../shared/PLAN-HANDOFF.md). GitHub Issues own executable
+work. Map upstream task files onto existing issues and linked plans; never create
+a competing backlog or duplicate issues. Reuse accepted specs, quality requirements
+and decisions. Docs Sync reconciles documentation; planning publishes complete
+batches with native dependencies and readiness last. Autoresearch performs bounded
+research. `/work` is explicit manual execution; `/autowork` redirects to GitHub/Orbi.
 
 Carry existing user authorization through phases. Routine engineering choices and
 an agent-written plan do not require another approval. Ask only for a material

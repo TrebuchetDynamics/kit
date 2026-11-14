@@ -107,12 +107,13 @@ model. Command registration alone is not readiness for this exercise. In its CLI
 ```
 
 Answer the interview. Expected evidence: the existing/new design owner records
-your actual accepted decisions; `tasks/items/` contains a bounded task with acceptance,
-checks and dependencies, and `autowork tasks validate --worktree` passes. The final response
-names changed paths, task ID and the real backlog readiness state. Inspect the
-files and diff yourself. A question or an unexecuted proposal is not completion
-of this second milestone. Explicitly authorize a separate `/autowork` run only
-when you want implementation and its required supporting capabilities are ready.
+your actual accepted decisions; GitHub contains the complete bounded issue with
+acceptance, checks and verified native dependencies. Inspect issue bodies and
+readiness directly. For a no-dispatch exercise, request `ai-planning` explicitly;
+publication may otherwise be consumed by an existing deployment. The final response
+names changed paths, issue URLs and observed readiness, not presumed execution.
+Use `/work` for separately authorized manual implementation. Orbi remains paused
+and live-unqualified; this exercise does not enable it.
 
 These are operator-run live checks, not recorded model or Telegram test results.
 

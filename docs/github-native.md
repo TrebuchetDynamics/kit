@@ -82,13 +82,13 @@ existing edited issue; reconcile that issue fresh through supported GitHub tools
 ## Cutover
 
 1. Inventory old services, cron jobs, task data, worktrees, existing PRs and actual
-   workers. Pause/disable legacy schedulers using their supported controls, such as
-   `autowork pause REPO`. Verify processes stopped; preserve all recovery state.
-   Do not stop unrelated gateways. No repository may have both executors active.
-2. Deliver the planning/dispatch contract and workflow. The retained `pi-autowork/`
-   runner, Paseo integration and installation path are deprecated. Full Kit installs
-   omit the old runner and never restart it. Explicit `--only autowork` remains for
-   recovery tooling, not new execution; legacy installed software is not uninstalled.
+   workers. Installed-executor removal must verify legacy processes stopped and
+   registrations removed, while preserving recovery evidence. Do not reinstall the
+   removed CLI to inspect state. Do not stop unrelated gateways.
+2. The pi-autowork executor, source, CLI, Paseo plugin and installer component are
+   removed. Ordinary Kit/Pi/Hermes/Claude/Codex functionality remains. Source removal
+   alone does not prove host service removal; report actual host inventory separately.
+   **Orbi remains paused and live-unqualified.** Removal does not authorize enabling it.
 3. Reconcile unfinished local tasks against open/closed issues, PRs and merged
    evidence, following the [migration guide](../skills/shared/TODO-WORKCENTER.md).
    Preserve legacy IDs and immutable sources. Never redispatch completed or owned
@@ -153,8 +153,27 @@ human acceptance and never mark it from an automated review.
 
 If qualification fails, disable that deployment's timers and preserve its issues,
 PRs and recovery state. Report the exact missing input or failed gate. Do not
-silently resume Autowork; rollback requires reconciled ownership and explicit
-executor selection. Installing a CLI or passing offline tests is not live delivery.
+reinstall or resume the removed executor. Keep the replacement paused until
+ownership and qualification are reconciled. Installing a CLI or passing offline tests is not live delivery.
+
+## Remaining requirements after executor removal
+
+Removal is not completion, cancellation of product acceptance or live qualification.
+The original requirements are retained through immutable Git sources, not a new
+completed-task archive. Reconcile still-required outcomes into GitHub Issues
+without recreating the executor, duplicating finished work or losing source proof:
+
+- [Recovery, integration and independent-worker acceptance](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/2026-10-16-pi-autowork-coordinator.md)
+  and [safe landing/worktree ownership](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/2026-10-17-runner-landing-and-worktrees.md).
+- [Planning authority and preservation of accepted intent](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/planning-authority-2026-11-01.md)
+  and [decision/blocker coverage](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/decision-blocker-coverage.md).
+- [Interface freshness and physical-client qualification](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/tui-responsiveness.md)
+  and [Paseo qualification gaps](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork/integrations/paseo/docs/qualification.md).
+- [State-preserving uninstall requirements](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/autowork-uninstall-retirement.md)
+  and the [remaining original plan contracts](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans).
+
+These sources establish prior intent/evidence only. Preserve their still-applicable
+human/live gates and unresolved proof, while the new pilot and fleet stay paused.
 
 ## Upstream contracts
 
