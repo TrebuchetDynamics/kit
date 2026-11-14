@@ -8,18 +8,16 @@ hermes autowork doctor --core     # bundled skills and commands only
 hermes autowork doctor --json     # full stack, machine-readable
 ```
 
-In chat, `/autowork status [NAME]` returns the removed-executor notice; use GitHub
-Issues/PRs and read-only Orbi diagnostics for delivery status. `/autowork plugin status` shows plugin load/setup status,
-and `/autowork list` shows which of this
-bundle's plugins (or a skill) owns each command; Hermes' `/commands` lists only
-built-in and skill commands, not plugin commands. Diagnostics check registration only: they never prove that a model
-ran, a worker is available or a Telegram message was delivered.
+Use GitHub Issues/PRs and read-only Orbi diagnostics for delivery status.
+`hermes autowork doctor --json` reports command owners and registration/setup
+gaps; Hermes' `/commands` omits plugin commands. Diagnostics never prove that a
+model ran, a worker is available or a Telegram message was delivered.
 
 ## Commands
 
 ### A workflow command is not recognized
 
-- **Check:** `/autowork list` and `hermes autowork doctor --core`.
+- **Check:** `hermes autowork doctor --json` and `hermes autowork doctor --core`.
 - **Plugin not loaded or not enabled in this profile:** plugins are enabled per
   profile. Run `hermes -p PROFILE plugins enable kit`; see
   [first use](onboarding.md).
@@ -37,19 +35,19 @@ ran, a worker is available or a Telegram message was delivered.
 ### A command is missing from Telegram's picker but works when typed
 
 This is expected. Menu capacity is limited, and compatibility spellings such as
-`/autoresearch_plan` are deliberately not advertised. `/autowork list` shows them
+`/autoresearch_plan` are deliberately not advertised. `hermes autowork doctor --json` reports registration
 (Hermes' `/commands` omits plugin commands); see [workflow commands in the picker](onboarding.md#workflow-commands-in-telegrams-picker).
 
 ### Telegram still shows retired or old commands
 
 Handlers refresh on plugin reload, but the bot menu refreshes only when the
-gateway reconnects. `/autowork update` restarts the running root gateway once when it
+gateway reconnects. `hermes autowork update` restarts the running root gateway once when it
 changed anything and every profile activated cleanly, but only while no chat turn is
 in flight (`gateway_restart: requested`); otherwise it reports `deferred` and a
 waiter restarts at the first quiet moment within 6 hours, never forcing
 (`deferred_expired` if none came; `pending` while an earlier restart is
-outstanding). Profile-dedicated gateways are not detected. `/autowork update status`
-shows `gateway_restart_progress` with what it is waiting on. It also
+outstanding). Profile-dedicated gateways are not detected. Inspect the printed
+receipt and durable restart outcome, not a chat acknowledgement. The update also
 clears leftover per-chat lists that still contain retired commands for the owner and
 home chats configured in each profile's `.env` (`chat_menus_healed`). Otherwise
 restart the gateway through your normal service procedure. See [update all profiles](installation.md#update-all-profiles).
@@ -110,11 +108,11 @@ Hermes; see the [README](../README.md#first-use-in-your-project).
 
 ## Updates
 
-### `/autowork update` replied “requested” but nothing seems to change
+### Check the update result
 
-The reply only starts the background updater. Use `/autowork update status` for
-the durable result. If status says the process stopped without a receipt, inspect
-`maintenance/toolset-update/run.log` at the Hermes root and rerun.
+`hermes autowork update` waits and prints its receipt. Inspect its real exit code,
+`status`, `error` and `action`; `incomplete` can retain partial changes and backups.
+Repair the named cause before retrying. A pending/deferred restart is not activation.
 
 ### The update refuses, or reports `local_edits`
 
@@ -135,7 +133,7 @@ See [update all profiles](installation.md#update-all-profiles) for the full rule
 ### A restart rolled out changes no update released
 
 Profiles linked to a working checkout load its current files at every gateway
-restart. `/autowork update status` lists them; pin the ones that should change only
+restart. `hermes autowork doctor --json` lists them; pin the ones that should change only
 through updates with `hermes autowork pin NAME` (preview with `--dry-run`).
 See [linked profiles](installation.md#linked-profiles-and-pinned-clones).
 
@@ -149,8 +147,8 @@ setup from the new location (setup and update refuse a dangling link); see [upda
 
 ### `/docs_sync` changed documents but nothing was implemented
 
-By design: documentation and planning never start implementation. Run
-`/work` for explicitly authorized manual implementation; see [workflows](workflows.md#commands).
+By design: documentation and planning never start implementation. Publish complete issues for Orbi; retained fix/apply modes keep their own scope
+and PR/review gates; see [workflows](workflows.md#commands).
 
 ### A workflow asks for the old task CLI
 

@@ -18,11 +18,6 @@ class WorktreeCloseoutTests(unittest.TestCase):
 
     def test_legacy_closeout_is_retained_but_not_an_orbi_entrypoint(self):
         self.assertIn('worktree-closeout.md', (ROOT / 'skills/shared/WORKTREE-ISOLATION.md').read_text())
-        for path in ('skills/autowork/SKILL.md', 'adapters/skills/autowork/SKILL.md'):
-            with self.subTest(path=path):
-                text = (ROOT / path).read_text()
-                self.assertIn('Orbi', text)
-                self.assertNotIn('worktree_closeout.py', text)
         self.assertIn('Preserve task data, attempts,', (ROOT / 'README.md').read_text())
 
     def test_contract_preserves_live_and_unfinished_work(self):

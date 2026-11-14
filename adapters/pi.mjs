@@ -7,9 +7,7 @@ const workflows = {
   'plan-with-me': ['plan-with-me', 'Ask questions and plan together'],
   'plan-for-me': ['plan-for-me', 'Investigate, decide and save the plan'],
   'docs-sync': ['docs-sync', 'Keep documentation and the tasks/ store accurate'],
-  autowork: ['autowork', 'Inspect GitHub delivery through Orbi'],
   orbi: ['orbi', 'Prepare, start, inspect or stop one Orbi deployment'],
-  work: ['work', 'Auto-select and complete tasks in this session'],
   autoresearch: ['autoresearch', 'Run bounded research or experiments'],
   'apk-get': ['apk-get', 'Find the app, build an ARM64 release APK and upload with s3upload'],
   'test-optimizer': ['test-optimizer', 'Reduce redundant tests while preserving real regression protection'],
@@ -36,7 +34,6 @@ const workflows = {
   'grill-me': ['plan-with-me', 'Plan With Me challenge mode (compatibility)', 'challenge'],
   lgtm: ['lgtm', 'Continue the last approved action'],
   goal: ['goal', 'Keep one objective alive until evidence proves it done'],
-  blockers: ['blockers', 'Answer what blocks the queue, one picked option at a time'],
   unblock: ['unblock', 'Diagnose and repair stalled Autowork services'],
   'git-commit-push': ['git-commit-push', 'Commit and push, or pull and merge, owned changes'],
   push: ['push', 'Commit all, merge worktrees, sync and push main'],
@@ -53,11 +50,8 @@ export default function register(pi) {
     pi.registerCommand(command, {
       description,
       handler: async (args, ctx) => {
-        // `/autowork blockers` and `/plan-with-me blockers` are `/blockers`.
-        const [first, ...rest] = (args || '').trim().split(/\s+/);
-        const routed = ['autowork', 'plan-with-me'].includes(skill) && !mode && first === 'blockers';
-        const target = routed ? 'blockers' : skill;
-        if (routed) args = rest.join(' ');
+        const [first] = (args || '').trim().split(/\s+/);
+        const target = skill;
         const file = new URL(`${target}/SKILL.md`, skillsRoot);
         const body = await readFile(file, 'utf8');
         const planning = ['plan-for-me', 'plan-with-me'].includes(target)

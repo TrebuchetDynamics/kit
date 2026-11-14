@@ -172,31 +172,45 @@ class UpdateTests(unittest.TestCase):
         self.git(self.repo, 'pull', '--ff-only')
 
     def test_retired_skill_is_removed_even_when_the_shared_checkout_already_advanced(self):
-        gone = self.remote / 'skills/gone'
-        (gone / 'scripts').mkdir(parents=True)
-        (gone / 'SKILL.md').write_text('retired\n')
-        (gone / 'scripts/helper.sh').write_text('echo helper\n')
-        self.git(self.remote, 'add', '.'); self.git(self.remote, 'commit', '-m', 'add gone')
+        names = ('autowork', 'work', 'pending', 'blockers')
+        for name in names:
+            gone = self.remote / 'skills' / name
+            (gone / 'scripts').mkdir(parents=True)
+            (gone / 'SKILL.md').write_text('retired\n')
+            (gone / 'scripts/helper.sh').write_text('echo helper\n')
+        self.git(self.remote, 'add', '.'); self.git(self.remote, 'commit', '-m', 'add retired skills')
         self.git(self.repo, 'pull', '--ff-only')
-        for _, home in self.profiles:
-            (home / 'skills/gone/scripts').mkdir(parents=True)
-            (home / 'skills/gone/SKILL.md').write_text('retired\n')
-            (home / 'skills/gone/scripts/helper.sh').write_text('echo helper\n')
-            (home / 'skills/gone/scripts/__pycache__').mkdir()
-        edited = self.profiles[1][1] / 'skills/gone/SKILL.md'
-        edited.write_text('retired\nlocal lesson\n')
-        self.git(self.remote, 'rm', '-rq', 'skills/gone'); self.git(self.remote, 'commit', '-m', 'retire gone')
-        self.git(self.repo, 'pull', '--ff-only')  # old == new: the deletion is only in history
+        copies, edited = [], []
+        for index, (_, home) in enumerate(self.profiles):
+            for name in names:
+                # Categorized and edited copies still belong to the retired source.
+                folder = home / ('skills/custom' if index else 'skills') / name
+                (folder / 'scripts/__pycache__').mkdir(parents=True)
+                path = folder / 'SKILL.md'
+                path.write_text('retired\nlocal lesson\n' if index else 'retired\n')
+                (folder / 'scripts/helper.sh').write_text('echo helper\n')
+                copies.append(folder)
+                if index:
+                    edited.append(path)
+            (home / 'skills/unrelated').mkdir()
+            (home / 'skills/unrelated/SKILL.md').write_text('private skill\n')
+            (home / 'recovery.json').write_text('preserved evidence\n')
+        self.git(self.remote, 'rm', '-rq', *('skills/' + name for name in names))
+        self.git(self.remote, 'commit', '-m', 'retire skills')
+        self.git(self.repo, 'pull', '--ff-only')  # old == new: deletion exists only in history
         plan = self.plan()
         self.mod.apply(plan, self.root / 'backup')
-        self.assertFalse((self.home / 'skills/gone').exists())
-        work = self.profiles[1][1] / 'skills/gone'
-        self.assertFalse(edited.exists())  # removed too; its bytes are in the backup
-        self.assertFalse((work / 'scripts/helper.sh').exists())
-        self.assertEqual([(e['path'], e['action']) for e in plan['local_edits']], [(str(edited), 'removed')])
+        for folder in copies:
+            self.assertFalse(folder.exists(), folder)
+        self.assertEqual({(e['path'], e['action']) for e in plan['local_edits']},
+                         {(str(path), 'removed') for path in edited})
         manifest = json.loads((self.root / 'backup/manifest.json').read_text())
-        (saved,) = [r['backup'] for r in manifest if r['path'] == str(edited)]
-        self.assertEqual((self.root / 'backup' / saved).read_text(), 'retired\nlocal lesson\n')
+        for path in edited:
+            (saved,) = [r['backup'] for r in manifest if r['path'] == str(path)]
+            self.assertEqual((self.root / 'backup' / saved).read_text(), 'retired\nlocal lesson\n')
+        for _, home in self.profiles:
+            self.assertEqual((home / 'skills/unrelated/SKILL.md').read_text(), 'private skill\n')
+            self.assertEqual((home / 'recovery.json').read_text(), 'preserved evidence\n')
         again = self.plan()
         self.assertEqual((again['writes'], again['local_edits']), ([], []))
 

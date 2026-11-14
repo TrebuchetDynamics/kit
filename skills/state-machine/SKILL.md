@@ -31,9 +31,9 @@ them. This analysis itself remains read-only; it starts no repair workflow.
 
 ## Boundaries
 
-- Not a repair campaign; use `/bug-harvest` for a verified defect or `/autowork`
-  for an accepted implementation task. Carry existing authorization into that
-  workflow without adding a permission round.
+- Not a repair campaign; use `/bug-harvest` for a verified defect, or publish an
+  accepted implementation issue through the existing planners for Orbi.
+  Planning still stops after publication.
 - Not a requirement decision; use `/plan-with-me` for an unresolved product rule.
 - Not a framework migration or proof that all possible executions are safe.
   Use `/improve-codebase-architecture` for a broader structural review.

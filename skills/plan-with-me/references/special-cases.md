@@ -55,12 +55,9 @@ not implement it or dispatch a worker.
 
 ## Blockers and recovery
 
-`/plan_with_me blockers [repo|runner name]`, or a request to work through what blocks
-the queue, is [`/blockers`](../../blockers/SKILL.md): routine planning repairs first, then
-genuine owner decisions, easiest first, one question at a time. An
-answer that needs replanning is planned here, with the planning craft, and saved
-in the existing GitHub Issue before the next question. The rest of this section applies to a
-broader blockers question.
+Arguments beginning with `blockers` are ordinary planning input. Inspect the
+existing issue, decisions and evidence, then plan only missing consequential intent.
+Save accepted answers in the existing GitHub Issue. Planning does not perform repairs.
 
 For a broad "blockers" request, separate owner-input blockers from everything
 preventing delivery; an empty owner-question list does not prove execution is unblocked.

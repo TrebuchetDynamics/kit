@@ -126,9 +126,9 @@ A planning substep of an existing delivery returns to that same coordinator.
 Orbi per repository owns Pi implementation → tests → PR → independent review →
 merge gates. Read its configured `orbi status` and `orbi doctor` output alongside
 GitHub issues/PRs before reporting pickup or health. See
-[deployment and cutover](../../docs/github-native.md). No `/autowork` invocation
-may start the retired runner. Manual `/work` is an explicit exception to automatic
-execution: coordinate ownership first and still deliver via PR and required gates.
+[deployment and cutover](../../docs/github-native.md). Never start the retired
+runner. Retained authorized fix/apply modes keep their scope, coordinate actual
+ownership and still deliver via PR, independent review and required gates.
 
 ## Scoped Skills convention
 

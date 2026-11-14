@@ -1,20 +1,19 @@
 # Claude Code, Codex and Pi installation
 
 > **GitHub-native delivery:** GitHub Issues own executable work; Orbi owns delivery.
-> pi-autowork is retired and unsupported. The retained `/autowork` skill is only a
-> compatibility redirect, not a service starter. See [setup and support](github-native.md).
+> pi-autowork is retired and unsupported. See [setup and support](github-native.md).
 
 Kit supports Claude Code, Codex, Pi and optional Hermes integration.
 Claude Code, Codex and Pi use the portable adapters, not the Hermes plugin
 loader. None requires Hermes installed.
-These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Autowork, Orbi, Work,
+These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Orbi,
 Autoresearch, Impeccable, UI Taste, Beautify GitHub README,
-LGTM, Git Commit Push, Blockers, Pending, the six bundled Ponytail skills,
+LGTM, Git Commit Push, the six bundled Ponytail skills,
 and Bug Harvest, Autonomous Codebase Improver, Skill Folder Refactor, Unused Code
 and Test Optimizer, plus APK Get.
 Grill Me is Plan With Me's challenge mode, not a separate skill.
 The pinned engineering protocols are a **reference pack**, not a command or skill
-on any host; Work and Docs Sync read them directly when a method gap needs one.
+on any host; retained workflows read them directly when a method gap needs one.
 Every adapter is explicit-only: Claude Code and Pi read `disable-model-invocation: true`
 in its frontmatter and Codex reads `agents/openai.yaml`, so the model never starts a
 workflow on its own.
@@ -24,18 +23,11 @@ Supporting protocols are bundled and loaded only when needed. Hermes profile
 creation, Telegram routing,
 Kanban workers, fleet setup, memory and speech integrations remain Hermes-only.
 
-## Work in the current session
+## Planning and delivery
 
-Use `/kit:work` in Claude Code, `$kit:work` in Codex, or `/work` in Pi.
-[Work](../skills/work/SKILL.md) selects and completes accepted GitHub work here,
-following repository checks, actual ownership and closeout rules. No task ID is required. It continues
-after each task. When the queue is gated, it finds useful offline work within the
-repository scope. Named-task limits, pauses and live gates stay in force. It stops
-on an explicit limit or an evidenced blocker or exhausted search, not after one task.
-It does not start a service or schedule work after the session ends.
-The portable `/autowork` command only redirects to GitHub/Orbi; it starts no
-service. Both planners publish GitHub Issues, not local task records. No command
-rename is required. Orbi remains paused and live-unqualified.
+Both planners publish GitHub Issues and stop. Orbi owns automatic delivery.
+Retained authorized fix/apply modes keep their scope, actual ownership, checks,
+independent review and PR gates. Orbi remains paused and live-unqualified.
 
 ## Orbi lifecycle controls
 
@@ -149,10 +141,10 @@ name, within their accepted scope.
 
 | Host | Example |
 | --- | --- |
-| Hermes | `/writing-for-agents skills/blockers; remove no-ops; read-only` |
-| Claude Code | `/kit:writing-for-agents skills/blockers; remove no-ops; read-only` |
-| Codex | `$kit:writing-for-agents skills/blockers; remove no-ops; read-only` |
-| Pi | `/writing-for-agents skills/blockers; remove no-ops; read-only` |
+| Hermes | `/writing-for-agents skills/unblock; remove no-ops; read-only` |
+| Claude Code | `/kit:writing-for-agents skills/unblock; remove no-ops; read-only` |
+| Codex | `$kit:writing-for-agents skills/unblock; remove no-ops; read-only` |
+| Pi | `/writing-for-agents skills/unblock; remove no-ops; read-only` |
 
 The reference covers pointer wording, progressive disclosure, completion criteria,
 leading words, positive instruction and pruning. The local adapter keeps Kit
@@ -336,7 +328,6 @@ namespaced skills:
 /kit:plan-for-me investigate the next useful improvement; save the plan
 /kit:plan-for-me
 /kit:docs-sync update the docs and tasks
-/kit:work complete the next ready issue; commit locally, no push
 /kit:autoresearch debug the failing test
 ```
 
@@ -374,7 +365,6 @@ $kit:plan-with-me challenge this plan; read-only, no implementation
 $kit:plan-for-me investigate the next useful improvement; save the plan
 $kit:plan-for-me
 $kit:docs-sync update the docs and tasks
-$kit:work complete the next ready issue; commit locally, no push
 $kit:autoresearch debug the failing test
 ```
 
@@ -416,7 +406,6 @@ Local installs refer to this checkout; keep it in place. The extension registers
 /plan-for-me investigate the next useful improvement; save the plan
 /plan-for-me
 /docs-sync update the docs and tasks
-/work complete the next ready issue; commit locally, no push
 /autoresearch-debug diagnose the failing test
 ```
 
@@ -482,7 +471,7 @@ Orbi remains paused and live-unqualified until the cutover pilot succeeds.
 
 The adapters ask native questions, inspect files and publish GitHub issue handoffs
 through [Plan Handoff](../skills/shared/PLAN-HANDOFF.md). Explicit manual execution
-uses `/work`; `/autowork` is a compatibility redirect, not an executor. There are
+retains its own accepted scope, ownership, checks and PR/review gates. There are
 no bundled parallel-worker templates, service installers or provider setup CLI.
 
 Package installation does not install external integrations, change approval

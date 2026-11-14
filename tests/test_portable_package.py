@@ -8,6 +8,11 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 class PortablePackageTests(unittest.TestCase):
+    def test_removed_skill_resources_are_absent(self):
+        for root in ('skills', 'adapters/skills'):
+            for name in ('autowork', 'work', 'pending', 'blockers'):
+                self.assertFalse((ROOT / root / name).exists(), f'{root}/{name}')
+
     def test_only_the_required_hermes_adapter_is_python_at_root(self):
         self.assertEqual({p.name for p in ROOT.glob('*.py')}, {'__init__.py'})
 
@@ -57,6 +62,9 @@ class PortablePackageTests(unittest.TestCase):
             installed = base / 'package'
             self.assertFalse((installed / 'pi-autowork').exists())
             self.assertFalse((installed / 'src').exists())
+            for root in ('skills', 'adapters/skills'):
+                for name in ('autowork', 'work', 'pending', 'blockers'):
+                    self.assertFalse((installed / root / name).exists())
             self.assertFalse((installed / 'paseo-plugin.json').exists())
             self.assertTrue((installed / 'docs/github-native.md').is_file())
             batch = foreign / 'batch.json'
@@ -80,9 +88,9 @@ class PortablePackageTests(unittest.TestCase):
     def test_portable_skills_and_references_are_self_contained(self):
         folder = ROOT / 'adapters/skills'
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}
-        self.assertEqual(names, {'plan-with-me', 'blockers', 'unblock', 'plan-for-me', 'docs-sync', 'autowork', 'orbi', 'work',
+        self.assertEqual(names, {'plan-with-me', 'unblock', 'plan-for-me', 'docs-sync', 'orbi',
             'autoresearch', 'impeccable', 'lgtm', 'goal',
-            'git-commit-push', 'push', 'ui-taste', 'beautify-github-readme', 'pending',
+            'git-commit-push', 'push', 'ui-taste', 'beautify-github-readme',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
             'ponytail-gain', 'ponytail-help', 'bug-harvest',
             'autonomous-codebase-improver', 'split-folder', 'unused-code',
@@ -98,24 +106,6 @@ class PortablePackageTests(unittest.TestCase):
             for link in re.findall(r'\[[^\]]*\]\(([^)]+)\)', text):
                 if '://' not in link and not link.startswith('#'):
                     self.assertTrue((source.parent / link.split('#')[0]).exists(), (source, link))
-        worker = (folder / 'autowork/SKILL.md').read_text()
-        self.assertNotIn('start_goal.py', worker)
-        self.assertNotIn('finish_task.py', worker)
-
-    def test_work_uses_github_with_coordinated_manual_ownership(self):
-        adapter = (ROOT / 'adapters/skills/work/SKILL.md').read_text()
-        skill = ' '.join((ROOT / 'skills/work/SKILL.md').read_text().split())
-        self.assertIn('../../../skills/work/SKILL.md', adapter)
-        self.assertNotIn('../autowork/SKILL.md', adapter)
-        for required in ('GitHub', 'Honor a supplied issue or scope',
-                         'native `blockedBy`', 'Labels are not an atomic lock',
-                         'fresh context window', 'read-only permission',
-                         'independent review', '../shared/DEFINITION-OF-DONE.md',
-                         'Continue eligible work', 'actual checks/review/merge status'):
-            self.assertIn(required, skill)
-        self.assertNotIn('autowork start', skill)
-        self.assertNotIn('autowork tasks', skill)
-        self.assertIn('/work', (ROOT / 'adapters/skills/autowork/SKILL.md').read_text())
 
     def test_claude_code_marketplace_loads_only_the_portable_adapters(self):
         plugin = json.loads((ROOT / '.claude-plugin/plugin.json').read_text())

@@ -146,10 +146,10 @@ does not replace a missing criterion unless the contract explicitly allows it.
 ## Boundaries
 
 - Not planning or discovery; use `/plan-for-me` or `/plan-with-me`.
-- Not one queued task; use `/autowork`.
+- Not one queued task; publish accepted work through the planners for Orbi.
 - Not a multi-lane campaign or a second worker pool; use
   `/autonomous-codebase-improver`.
-- Not a task status report; use `/pending`.
+- Not a task status report; inspect GitHub issue/PR evidence and read-only Orbi status.
 - Not delivery or publication; use `/git-commit-push` with its existing authority.
 - Not the Hermes native goal loop; use the native `/goal` there and `kit:goal` only
   when the native loop is unavailable.

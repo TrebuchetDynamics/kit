@@ -7,7 +7,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 49);
+  assert.equal(commands.size, 46);
   assert.equal(commands.has('orbi'), true);
   assert.equal(commands.has('push'), true);
   assert.equal(commands.has('unblock'), true);
@@ -71,10 +71,10 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   }
   for (const [name, skill] of Object.entries({
     'plan-with-me': 'plan-with-me', 'plan-for-me': 'plan-for-me', 'docs-sync': 'docs-sync',
-    autowork: 'autowork', orbi: 'orbi', work: 'work', autoresearch: 'autoresearch',
+    orbi: 'orbi', autoresearch: 'autoresearch',
     impeccable: 'impeccable', 'ui-taste': 'ui-taste',
     'beautify-github-readme': 'beautify-github-readme', 'grill-me': 'plan-with-me',
-    lgtm: 'lgtm', goal: 'goal', blockers: 'blockers', unblock: 'unblock',
+    lgtm: 'lgtm', goal: 'goal', unblock: 'unblock',
     'git-commit-push': 'git-commit-push', push: 'push',
     ponytail: 'ponytail', 'ponytail-review': 'ponytail-review', 'ponytail-audit': 'ponytail-audit',
     'ponytail-debt': 'ponytail-debt', 'ponytail-gain': 'ponytail-gain', 'ponytail-help': 'ponytail-help',
@@ -93,22 +93,6 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   }
 });
 
-test('Work selects its own in-session skill and preserves bare and scoped requests', async () => {
-  const commands = new Map(), messages = [];
-  register({registerCommand: (name, handler) => commands.set(name, handler),
-    sendUserMessage: (...args) => messages.push(args)});
-  const {readFile} = await import('node:fs/promises');
-  const adapter = await readFile(new URL('../adapters/skills/work/SKILL.md', import.meta.url), 'utf8');
-  for (const [raw, idle] of [['', true], ['T-42 no commit; no push\n$(literal)', false]]) {
-    await commands.get('work').handler(raw, {isIdle: () => idle});
-    const [message, delivery] = messages.at(-1);
-    assert.equal(message.includes(adapter), true);
-    assert.equal(message.includes('/adapters/skills/work/SKILL.md'), true);
-    assert.equal(message.includes('Start the runner first'), false);
-    assert.equal(message.endsWith('User request (preserve scope and restrictions):\n' + raw), true);
-    assert.deepEqual(delivery, idle ? undefined : {deliverAs: 'followUp'});
-  }
-});
 
 test('Push loads its repo-wide default and preserves narrower requests', async () => {
   const commands = new Map();
@@ -160,6 +144,9 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     await rm(source, {recursive: true, force: true});
   }
   const paths = new Set(packed.files.map(f => f.path));
+  for (const name of ['autowork', 'work', 'pending', 'blockers'])
+    for (const root of ['skills', 'adapters/skills'])
+      assert.equal([...paths].some(p => p.startsWith(`${root}/${name}/`)), false);
   assert.equal(paths.has('adapters/skills/grill-me/SKILL.md'), false);
   assert.equal(paths.has('adapters/skills/grill-me/PROTOCOL.md'), true);
   assert.equal([...paths].some(p => p.includes('__pycache__') || p.endsWith('.pyc')), false);
@@ -173,8 +160,7 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     'skills/state-machine/SKILL.md', 'skills/state-machine/PROTOCOL.md',
     'skills/state-machine/references/sources-and-example.md',
     'adapters/skills/state-machine/SKILL.md', 'adapters/skills/state-machine/agents/openai.yaml',
-    'skills/shared/COMMUNICATION.md', 'skills/work/SKILL.md',
-    'adapters/skills/work/SKILL.md', 'adapters/skills/work/agents/openai.yaml',
+    'skills/shared/COMMUNICATION.md',
     'skills/orbi/SKILL.md', 'skills/orbi/references/lifecycle.md',
     'skills/orbi/scripts/orbi_control.py',
     'adapters/skills/orbi/SKILL.md', 'adapters/skills/orbi/agents/openai.yaml',
@@ -243,7 +229,7 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
-    assert.equal(skillCount, 37);
+    assert.equal(skillCount, 33);
     // Execute the packaged CommonJS helper under Kit's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
@@ -260,7 +246,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 49);
+    assert.equal(commands.size, 46);
     assert.equal(commands.has('orbi'), true);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {
@@ -274,5 +260,24 @@ test('installed archive resolves portable references and commands without checko
     }
   } finally {
     await rm(scratch, {recursive: true, force: true});
+  }
+});
+
+test('removed skills are neither commands nor discoverable resources; blockers is literal planning input', async () => {
+  const commands = new Map(), messages = [];
+  register({registerCommand: (name, handler) => commands.set(name, handler),
+    sendUserMessage: (...args) => messages.push(args)});
+  const {existsSync} = await import('node:fs');
+  for (const name of ['autowork', 'work', 'pending', 'blockers']) {
+    assert.equal(commands.has(name), false, name);
+    for (const root of ['skills', 'adapters/skills'])
+      assert.equal(existsSync(new URL(`../${root}/${name}/`, import.meta.url)), false, `${root}/${name}`);
+  }
+  for (const idle of [true, false]) {
+    const raw = 'blockers ./repo --no-write\n$(literal)';
+    await commands.get('plan-with-me').handler(raw, {isIdle: () => idle});
+    assert.match(messages.at(-1)[0], /adapters\/skills\/plan-with-me\/SKILL.md/);
+    assert.equal(messages.at(-1)[0].endsWith(raw), true);
+    assert.deepEqual(messages.at(-1)[1], idle ? undefined : {deliverAs: 'followUp'});
   }
 });

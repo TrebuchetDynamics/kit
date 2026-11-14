@@ -16,9 +16,9 @@ work or cancel unresolved product acceptance.
 
 Kit keeps `/plan-with-me` and `/plan-for-me`: both publish issue-based plans under
 the same handoff contract. Orbi is the separate delivery project, not a renamed
-Kit executor. `/work` supports explicit manual implementation. `/autowork` is only
-a compatibility redirect; retained Hermes maintenance commands and marketplace
-names are not support for the removed runner. No command rename is implied.
+Kit executor. Retained fix/apply modes preserve their accepted scope and shared
+ownership/review/PR gates; planning stops after publication. Hermes terminal
+maintenance commands and marketplace names are not support for the removed runner.
 Orbi stays paused until its separate qualification gates pass.
 
 Owner questions and external inputs are tracked in GitHub Issues. The former

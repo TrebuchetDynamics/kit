@@ -106,6 +106,6 @@ Do not act on the plan until the user confirms shared understanding.
 
 - Not a general interview of an idea; use `/grilling`.
 - Not the documentation side; use `/grill-with-docs`.
-- Not implementation; use `/autowork` after confirmation.
+- Not implementation; publish accepted work through the planners for Orbi.
 
 **Done when:** the frontier is empty, decisions and open items are summarized, and the owner confirms alignment.

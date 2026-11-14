@@ -74,7 +74,7 @@ Source: `Src/pi_autowork/engine/parallel_dispatch.py`, `pi-autowork/engine/test_
    person stage always dominates a working stage would remove the chance of disagreement.
    That is a display refactor across several consumers and needs its own tests.
 2. **Question budget.** The owner's block can hold many questions; dsh asks one concrete
-   question at a time. `/blockers` already walks them easiest first, so a budget would only
+   question at a time. The planners already resolve missing intent, one consequential question at a time, so a budget would only
    help the raw `BLOCKERS.md` read. Measure first.
 
 A runner stopped or answered by a person is a live path; the new reserve is covered offline
