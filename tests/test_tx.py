@@ -146,13 +146,12 @@ class TxTests(unittest.TestCase):
             self.assertEqual(attached.returncode, 0, attached.stderr)
             self.assertIn('attach-session -t =a', log.read_text())
 
-    def test_the_package_installs_tx_and_autowork(self):
+    def test_the_package_installs_tx_without_the_removed_runner(self):
         package = json.loads((ROOT / 'package.json').read_text())
-        self.assertEqual(package['bin'], {'autowork': 'pi-autowork/bin/autowork', 'tx': 'tmux/tx'})
-        for folder in ('tmux/', 'pi-autowork/bin/'):
-            self.assertIn(folder, package['files'])
-        for path in (TX, ROOT / 'pi-autowork/bin/autowork'):
-            self.assertTrue(os.access(path, os.X_OK), path)
+        self.assertEqual(package['bin'], {'tx': 'tmux/tx'})
+        self.assertIn('tmux/', package['files'])
+        self.assertFalse(any('pi-autowork' in path for path in package['files']))
+        self.assertTrue(os.access(TX, os.X_OK), TX)
 
 
 class TxConfigModuleTests(unittest.TestCase):

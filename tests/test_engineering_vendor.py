@@ -13,9 +13,8 @@ ROOT=Path(__file__).resolve().parents[1]
 PACK=ROOT/'skills/engineering'
 
 class EngineeringVendorTests(unittest.TestCase):
-    def test_the_engine_ships_with_pi_autowork_not_the_installed_skill(self):
-        """The autowork skill carries no code: profiles get its instructions and Docs Sync's
-        helpers, and the engine runs from the toolset's pi-autowork/engine."""
+    def test_installed_skills_ship_helpers_without_an_executor(self):
+        """Native profiles receive instructions and Docs Sync helpers, not a runner."""
         spec = importlib.util.spec_from_file_location('ready_install_fixture', ROOT / 'scripts/install_skills.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -27,11 +26,8 @@ class EngineeringVendorTests(unittest.TestCase):
             self.assertFalse((home / 'skills/autowork/scripts').exists())
             self.assertEqual((home / 'skills/docs-sync/scripts/docs.py').read_bytes(),
                              (ROOT / 'skills/docs-sync/scripts/docs.py').read_bytes())
-            result = subprocess.run(['python3', str(ROOT / 'pi-autowork/engine/owner_cycle.py'), '--help'],
-                                    capture_output=True, text=True, timeout=30)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn('--source-path', result.stdout)
-            self.assertIn('--profile', result.stdout)
+            self.assertFalse((ROOT / 'pi-autowork').exists())
+            self.assertIn('Orbi', (home / 'skills/autowork/SKILL.md').read_text())
 
     def test_exact_protocol_selection_has_no_implicit_phase_bundle(self):
         result = subprocess.run(['python3', str(PACK/'scripts/route.py'),
