@@ -1425,7 +1425,7 @@ def command_help(ctx, args):
             'Status is read-only. Only setup stages source/config; only start/stop touch '
             'the scheduler. Dry-run performs no writes.',
             'Not an executor or scheduler: no tick, issue claim, review or merge.',
-            'Not /unblock, /git-commit-push, /plan-with-me, /plan-for-me or /autowork.',
+            'Not /unblock, /git-commit-push, /plan-with-me, /plan-for-me.',
             'Local visibility only: no cross-machine lock or capacity guarantee.',
             'Next steps: use status to inspect; setup to prepare; start only after an '
             'owner scheduling request and resolved pauses, cutover and human-only gates; '

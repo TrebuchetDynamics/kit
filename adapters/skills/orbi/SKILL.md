@@ -16,7 +16,7 @@ Resolve its helper and references from that workflow's directory, not this adapt
 ## Boundaries
 
 Explicit invocation only. This adapter grants no deployment authority and does not
-release pauses or live gates. Use `/autowork` for the GitHub delivery handoff and
+release pauses or live gates. Use the existing planners for GitHub issue publication and
 `/unblock` for recovery rather than lifecycle control.
 
 **Done when:** the loaded workflow's completion condition is met and only observed

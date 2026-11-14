@@ -18,8 +18,8 @@ Status: Accepted
   GitHub Issues. An explicit objective keeps planning focused; a bare or vague request
   starts evidence-based discovery without inventing product direction.
 - Docs Sync maintains source-backed documents and GitHub issue handoffs.
-- `/autowork` is a compatibility redirect to GitHub/Orbi. `/work` performs explicit
-  manual implementation with ownership, checks and review boundaries preserved.
+- Planning stops after publication. Retained authorized fix/apply and recovery modes
+  preserve their own scope, ownership, checks, independent review and PR gates.
 - Load supporting methods only when useful, not every skill on every task. Preserve
   explicit exclusions, concurrent work, caller limits and live gates.
 - Support Hermes CLI/Telegram and native Claude Code, Codex and Pi packages.
@@ -56,12 +56,10 @@ Native Hermes Python owners live under `src/autowork_runtime/`, loaded through
 `src/autowork_bootstrap.py` by the existing thin entrypoints. The executor source
 and integrations are absent; native maintenance is not a replacement executor.
 
-Hermes workflow registration requests skill loading in the current conversation;
-`/autowork status` answers directly. Registration does not execute a workflow.
+Hermes workflow registration requests skill loading in the current conversation.
+Registration does not execute a workflow.
 Codex and Claude Code load portable adapters. Pi commands read adapter instructions
-and send a user message, queued as a follow-up when busy. Portable `/autowork`
-redirects to GitHub/Orbi; `/work` executes in-session without starting
-a service. The [current host spellings](cross-host.md) and [README](../README.md)
+and send a user message, queued as a follow-up when busy. The [current host spellings](cross-host.md) and [README](../README.md)
 own the public catalog; engineering remains a reference pack, not another public
 coordinator. Grill Me compatibility opens Plan With Me challenge behavior.
 Independent Autoresearch and its selectors remain available; its Hermes plan
@@ -128,8 +126,8 @@ See [paused GitHub/Orbi cutover](github-native.md).
 
 Status: Accepted
 
-Planning handles consequential complexity; Orbi or explicit manual `/work`
-executes accepted outcomes without repeatedly asking permission for
+Planning handles consequential complexity; Orbi and already-authorized in-session
+fix/apply modes execute accepted outcomes without repeatedly asking permission for
 already-authorized work.
 
 - Resolve design, decomposition, interfaces, migration and acceptance before handoff.
@@ -158,8 +156,7 @@ authorizes the saved occurrence, not extra budget or scope. An at-most-one-new-b
 job keeps that limit; authorized closeout/work inside it needs no new approval.
 An explicit multi-batch/whole-spec mandate continues within its existing limits.
 Resolve a routine operating-policy question without another user permission round. Reuse
-[iteration rules](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/iteration-and-decisions.md),
-[recovery](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/owner-cycle.md) and the
+[recovery provenance](../skills/shared/PLANNING-CRAFT.md#recovery-provenance-and-qualification) and the
 [standing decision policy](autonomy.md); add no permission framework or review lane.
 Offline policy tests remain distinct from native/model qualification. These rules
 supply no money, secret, publication, deployment, destructive or live authority.
@@ -496,17 +493,15 @@ replacement host/profile does not satisfy a missing original delivery target.
 
 ## Rename to Autowork (2026-10-16)
 
-The current product is Kit; `autowork` survives only in compatibility redirects,
-Hermes maintenance commands and existing state/package identifiers. pi-autowork
+The current product is Kit; `autowork` survives in Hermes terminal maintenance commands and existing state/package identifiers. pi-autowork
 is retired and unsupported, not an execution namespace or development target.
 Use current manifests and [installation](installation.md) for package names and
 supported transitional settings. The retired `hermes-toolset` namespace has no
 compatibility executor or automatic settings/cron migration.
 
-Maintenance recognizes exact `/autowork update|status|list` forms; other arguments
-route through the GitHub/Orbi compatibility skill, not the removed executor.
-Use `/work` for explicit manual implementation. Terminal maintenance
-uses `hermes autowork`. Keep `AUTOWORK_EXECUTION_COMMON`, `# autowork:` cron markers,
+Terminal maintenance uses `hermes autowork doctor --json` for inventory and
+`hermes autowork update [--check]` for synchronous maintenance with a printed receipt.
+No chat-maintenance replacement is registered. Keep `AUTOWORK_EXECUTION_COMMON`, `# autowork:` cron markers,
 and existing private `maintenance/toolset-update/` / `.toolset-imports.json` state
 identities. A source rename does not reinstall profiles, reset private state or
 restart hosts; live adoption remains a separately authorized operation.
@@ -679,7 +674,7 @@ High-risk skills use `## Common Rationalizations` and `## Red Flags`, retain one
 and points to pinned Addy guidance for correctness, quality, integration, docs and
 ship criteria; do not add another verification checklist/coordinator.
 
-Apply the rule to Work, Plan For Me, Ponytail Review, Git Commit Push, Docs Sync
+Apply the rule to Plan For Me, Ponytail Review, Git Commit Push, Docs Sync
 and Plan With Me, and to later high-risk skills through [skill standard](skill-standard.md)
 and Writing for Agents. Shared operating behavior lives in
 `skills/shared/COMMON-CONTRACT.md`, not a second meta-skill. Keep commands explicit,

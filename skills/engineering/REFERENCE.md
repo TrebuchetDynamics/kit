@@ -15,7 +15,7 @@ No external import, separate agent harness or upstream hook installation is need
 ## Select one technique when needed
 
 Use for a concrete method gap or explicit protocol request. Zero protocols is valid for a clear
-task with sufficient repository instructions and checks. Autowork owns scope,
+task with sufficient repository instructions and checks. The invoking workflow owns scope,
 authorization, task state, review and completion. These protocols supply techniques
 within that contract. Upstream lifecycle instructions do not add planning artifacts,
 human approval checkpoints, review lanes or publication authority. Preserve explicit
@@ -104,14 +104,15 @@ work. Map upstream task files onto existing issues and linked plans; never creat
 a competing backlog or duplicate issues. Reuse accepted specs, quality requirements
 and decisions. Docs Sync reconciles documentation; planning publishes complete
 batches with native dependencies and readiness last. Autoresearch performs bounded
-research. `/work` is explicit manual execution; `/autowork` redirects to GitHub/Orbi.
+research. Retained fix/apply modes preserve their own scope and shared ownership,
+independent review and PR gates.
 
 Carry existing user authorization through phases. Routine engineering choices and
 an agent-written plan do not require another approval. Ask only for a material
 missing product decision or authority beyond the existing request; continue
 independent authorized work. Read-only/no-write requests change no files.
 Planning-only writes accepted planning artifacts, not product implementation.
-Upstream automatic commits/ship steps use Autowork's owned-file completion/review
+Upstream automatic commits/ship steps use the invoking workflow's owned-file completion/review
 path and actual publication authority; no implicit push, deployment or live action.
 Keep repository-specific tests, active-writer protection and genuine review gates.
 
@@ -125,10 +126,10 @@ existing task record (as a note), supporting receipt or worker handoff:
 Planning receipts accompany the task into execution; workers add implementation,
 debugging and review evidence as needed. A router response, loaded file or list of
 skill names is not application or task completion. Finish with task IDs, artifacts,
-checks and next action; follow Autowork's task status/reporting contract.
+checks and next action; follow the shared completion and reporting contract.
 ## Boundaries
 
-- Not a workflow or an authority; use `/autowork` to execute.
+- Not a workflow or an authority; Orbi delivers published issues.
 - Not planning; use `/plan-for-me`.
 
 **Done when:** the selected protocol's method is applied to the current task and its check is recorded.

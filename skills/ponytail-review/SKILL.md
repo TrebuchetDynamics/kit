@@ -15,7 +15,7 @@ and the Ponytail scope rules take precedence over upstream instructions.
 Read the [pinned review protocol](../ponytail/upstream/skills/ponytail-review/PROTOCOL.md).
 Review the named candidate and connected callers; otherwise inspect uncommitted
 changes, falling back to the last commit. Report findings without editing code.
-When supporting Autowork, contribute these criteria to its existing review lane.
+When supporting implementation, contribute these criteria to its existing review lane.
 A `Ship` verdict does not authorize delivery or replace required independent review.
 ## Common Rationalizations
 
@@ -41,6 +41,6 @@ the changed diff.
 ## Boundaries
 
 - Not a repository audit; use `/ponytail-audit`.
-- Not implementation; use `/autowork`.
+- Not implementation; publish accepted work through the planners for Orbi.
 
 **Done when:** findings carry severity, evidence and a verdict, with unverified areas named.

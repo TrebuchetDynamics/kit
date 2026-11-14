@@ -15,7 +15,8 @@ Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for 
 Read the pinned [writing reference](upstream/PROTOCOL.md) before writing or editing a
 skill, an `AGENTS.md`/`CLAUDE.md`, or a document an agent reaches through a pointer.
 Read [skill mechanics](upstream/SKILL-MECHANICS.md) only when the document is a skill.
-Apply the technique; keep Autowork's scope, task store, review and delivery rules.
+Apply the technique; keep the invoking workflow's scope, GitHub handoff, review
+and delivery rules.
 
 ## The bar for a document
 

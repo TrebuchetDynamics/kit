@@ -34,7 +34,7 @@ class ArchitectureSkillTests(unittest.TestCase):
     def test_fix_branch_preserves_review_default_and_existing_executor(self):
         text = (ROOT / 'skills/improve-codebase-architecture/SKILL.md').read_text()
         for phrase in ('Default to review', 'references/fixes.md',
-                       'continue with `/autowork` for one bounded candidate',
+                       'implement one bounded candidate within the accepted scope',
                        'commit, push and deployment authority stay separate',
                        'no-write request also rules out the HTML file'):
             with self.subTest(phrase=phrase):

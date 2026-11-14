@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BANNED_OPENERS = ('use when', 'use to', 'use for', 'use if', 'use after', 'use before')
 # Hermes installs Graphify's own skill into profiles, so Autowork ships the adapter only.
 ADAPTER_ONLY = {'graphify'}
-PILOT = ('autowork', 'orbi', 'work', 'plan-for-me', 'ponytail-review',
+PILOT = ('orbi', 'plan-for-me', 'ponytail-review',
          'git-commit-push', 'push', 'unblock', 'docs-sync', 'plan-with-me')
 
 
@@ -96,10 +96,8 @@ class SkillStandardTests(unittest.TestCase):
 
     def test_sibling_pairs_name_each_other(self):
         # The pairs from docs/skill-standard.md, in both directions.
-        pairs = [('work', 'autowork'), ('plan-with-me', 'plan-for-me'), ('grilling', 'grill-me'),
+        pairs = [('plan-with-me', 'plan-for-me'), ('grilling', 'grill-me'),
                  ('grilling', 'grill-with-docs'), ('grill-me', 'grill-with-docs'),
-                 ('autowork', 'autonomous-codebase-improver'),
-                 ('autowork', 'improve-codebase-architecture'),
                  ('bug-harvest', 'unused-code'), ('bug-harvest', 'test-optimizer'),
                  ('unused-code', 'split-folder'),
                  ('git-commit-push', 'ponytail-review'),

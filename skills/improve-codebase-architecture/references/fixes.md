@@ -1,7 +1,7 @@
 # Verified architecture fixes
 
 Load this branch only when the caller explicitly authorizes fixes, patches or
-optimization. `/autowork` owns implementation, task records, review and closure;
+optimization. The invoking workflow retains accepted scope, ownership, PR/review gates and closure;
 this reference supplies architecture-specific acceptance, not another executor.
 
 1. **Bound the candidate.** Select the highest-severity source-confirmed finding
@@ -25,7 +25,7 @@ this reference supplies architecture-specific acceptance, not another executor.
    before/after values and variability; retain no optimization justified only by noise.
    Check edge cases and expected-load failures along the changed seam. A behavior
    regression blocks completion even if the speed target passes.
-5. **Review and close.** Load `/ponytail-review` in Autowork's existing review lane:
+5. **Review and close.** Load `/ponytail-review` in the existing review lane:
    correctness, safety, expected load, tests, speed, then unnecessary complexity.
    Fix in-scope must-fix findings and rerun affected checks. This read-only review
    does not itself apply patches or grant delivery authority. Reuse the required

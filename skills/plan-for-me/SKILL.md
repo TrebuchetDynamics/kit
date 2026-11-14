@@ -156,7 +156,7 @@ saved plan is not execution.
 ## Boundaries
 
 - Not an interactive interview; use `/plan-with-me`.
-- Not implementation; Orbi delivers published issues; `/work` is an explicit manual alternative.
+- Not implementation; Orbi delivers published issues through PR and review gates.
 - Not an Orbi-owned execution; return to that coordinator.
 
 **Done when:** open questions are answered or kept on affected tasks, and the plan and its tasks are saved and validated.

@@ -254,38 +254,26 @@ class PluginTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.plugin.register(self.ctx)
 
-    def test_autowork_replaces_legacy_command_with_arguments_and_origin(self):
+    def test_removed_skills_absent_but_terminal_maintenance_remains(self):
         self.plugin.SKILLS_DIR = ROOT / 'skills'
         self.plugin.register(self.ctx)
-        self.assertIn('autowork',self.ctx.commands)
-        self.session.update(HERMES_SESSION_PLATFORM='telegram',HERMES_SESSION_CHAT_ID='fixture-chat')
-        self.assertNotIn('autogoal', self.ctx.commands)
-        for command in ('autowork',):
-            self.ctx.commands[command]('Improve this repo; no push')
-            prompt,target=self.ctx.messages[-1]
-            self.assertIn('kit:autowork',prompt)
-            self.assertIn('Improve this repo; no push',prompt)
-            self.assertEqual(target['origin']['chat_id'],'fixture-chat')
-
-    def test_autowork_maintenance_forms_reply_and_other_arguments_run_the_skill(self):
-        self.plugin.SKILLS_DIR = ROOT / 'skills'
-        self.plugin.register(self.ctx)
+        for name in ('autowork', 'work', 'pending', 'blockers'):
+            self.assertNotIn(name, self.ctx.commands)
+            self.assertNotIn(name, self.ctx.skills)
         self.assertEqual(self.ctx.cli_commands, ['autowork'])
-        self.assertNotIn('toolset', self.ctx.commands)
-        bundle = sys.modules['toolset_under_test.bundle']
-        with patch.object(bundle, 'start_update', return_value='started') as start:
-            self.assertEqual(self.ctx.commands['autowork']('update'), 'started')
-            start.assert_called_once_with(check=False)
-        self.assertIn('executor has been removed', self.ctx.commands['autowork']('status Example'))
-        self.assertEqual(self.ctx.messages, [])
-        self.ctx.commands['autowork']('update the README')
-        self.assertIn('kit:autowork', self.ctx.messages[-1][0])
-        self.assertIn('update the README', self.ctx.messages[-1][0])
+        self.session.update(HERMES_SESSION_PLATFORM='telegram', HERMES_SESSION_CHAT_ID='fixture-chat')
+        for alias in ('plan-with-me', 'plan_with_me'):
+            raw = 'blockers ./repo --no-write\n$(literal)'
+            self.ctx.commands[alias](raw)
+            prompt, target = self.ctx.messages[-1]
+            self.assertIn('kit:plan-with-me', prompt)
+            self.assertTrue(prompt.endswith(raw))
+            self.assertEqual(target['origin']['chat_id'], 'fixture-chat')
 
     def test_repository_skills_are_all_discovered(self):
         self.plugin.SKILLS_DIR = ROOT / "skills"
         self.plugin.register(self.ctx)
-        self.assertTrue({"autowork", "git-commit-push", "grill-me", "lgtm", "docs-sync", "plan-with-me"}
+        self.assertTrue({"git-commit-push", "grill-me", "lgtm", "docs-sync", "plan-with-me"}
                         <= set(self.ctx.commands))
         self.assertNotIn('grill-me', self.ctx.skills)
         self.assertEqual(self.ctx.skills['plan-with-me'], ROOT / 'skills/plan-with-me/SKILL.md')

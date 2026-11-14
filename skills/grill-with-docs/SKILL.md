@@ -42,7 +42,7 @@ validation run; anything intentionally unrecorded and why.
 
 ## Boundaries
 
-- Not implementation; use `/autowork`.
+- Not implementation; publish accepted work through the planners for Orbi.
 - Not a record for every passing thought: ephemeral and self-evident reasons are named and skipped.
 
 **Done when:** settled decisions are recorded in the repository's ADR or glossary owners, Docs Sync validation passed, and skipped records are named.

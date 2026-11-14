@@ -42,7 +42,6 @@ hermes -p work
 In that chat:
 
 ```text
-/autowork list
 /plan_with_me questions only: help me clarify a caching improvement; ask one question, then stop
 ```
 
@@ -81,7 +80,7 @@ hermes -p work gateway status
 Apply config/session changes through your normal gateway service procedure after
 ongoing work is accounted for. Do not assume an already-running session picked up
 the changed directory. In the intended bot chat, request a read-only terminal `pwd`
-and inspect its actual tool result, then invoke `/autowork list` and the same
+and inspect its actual tool result, then invoke the same
 questions-only command as `/plan_with_me`. Confirm the reply arrives in that
 chat and that no project files changed. A registered command or successful CLI
 probe does not establish Telegram delivery.
@@ -113,7 +112,7 @@ acceptance, checks and verified native dependencies. Inspect issue bodies and
 readiness directly. For a no-dispatch exercise, request `ai-planning` explicitly;
 publication may otherwise be consumed by an existing deployment. The final response
 names changed paths, issue URLs and observed readiness, not presumed execution.
-Use `/work` for separately authorized manual implementation. Orbi remains paused
+Retained fix/apply modes keep their own scope and PR/review gates. Orbi remains paused
 and live-unqualified; this exercise does not enable it.
 
 These are operator-run live checks, not recorded model or Telegram test results.
@@ -123,7 +122,8 @@ These are operator-run live checks, not recorded model or Telegram test results.
 For a native Git install, use `hermes -p work plugins update kit`, then
 reload or restart the gateway through your normal service procedure and reopen CLI
 sessions. `plugins update` does not refresh skill copies already in the profile's
-skill directory; `/autowork update` synchronizes them. Recheck `doctor --core` and
+skill directory; an authorized `hermes autowork update` synchronizes and retires
+old first-party payloads with backups. Source deletion/reinstall alone is insufficient. Recheck `doctor --core` and
 first use.
 
 For a source install, the profile plugin links to your checkout. Keep its path
@@ -139,14 +139,14 @@ restoring configuration. Removal alone does not undo prior setup writes.
 ### Workflow commands in Telegram's picker
 
 The picker advertises the current workflow commands: `/plan_with_me`,
-`/plan_for_me`, `/docs_sync` and `/autowork`, plus `/ui_taste`,
+`/plan_for_me` and `/docs_sync`, plus `/ui_taste`,
 `/beautify_github_readme`, `/impeccable`, `/lgtm` and `/git_commit_push`.
 The engineering protocols are a reference pack, not a menu command. Plugin runtime
 defaults put the current commands in
 Hermes' menu priority, keep your own entries, mode and cap, and remove compatibility
 entries this bundle added earlier. Compatibility spellings such as `/autoresearch`,
 `/autoresearch_plan` and `/autoresearch_debug` still run when typed but are not
-advertised; `/autowork list` lists them (Hermes' `/commands` shows only built-in and
+advertised; `hermes autowork doctor --json` reports registration (Hermes' `/commands` shows only built-in and
 skill commands).
 Command registration and Telegram's stored menu are separate: a gateway plugin
 reload wires handlers, while a gateway reconnect refreshes the bot menu. Tests use

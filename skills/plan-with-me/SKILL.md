@@ -27,9 +27,9 @@ pages, teaching, investor briefs, jurisdiction changes, long interviews and live
 gates, load the matching section of [special cases](references/special-cases.md).
 
 `/plan_with_me` (`/plan-with-me` also works in CLI) starts an interview about the
-current repository; arguments narrow the topic. `/plan_with_me blockers [repo|name]`
-is [`/blockers`](../blockers/SKILL.md): routine planning repairs first, then genuine
-owner questions, easiest first, planning each task that needs it with this skill
+current repository; arguments narrow the topic, including literal input beginning
+with `blockers`. For held work, inspect saved decisions and current issue/PR evidence
+before asking for missing intent
 ([special cases](references/special-cases.md#blockers-and-recovery)). Its default
 scope includes saving answered decisions and maintaining affected docs. Only
 `questions only`, `read-only`, `no changes` or `dry run` means no file changes; an
@@ -162,7 +162,7 @@ plan is not execution.
 ## Boundaries
 
 - Not unattended discovery; use `/plan-for-me`.
-- Not implementation; Orbi delivers published issues; `/work` is an explicit manual alternative.
+- Not implementation; Orbi delivers published issues through PR and review gates.
 - Challenge mode loads `/grill-me`; the interview engine is `/grilling`.
 
 **Done when:** open questions are answered, and the plan and its tasks are saved and validated.

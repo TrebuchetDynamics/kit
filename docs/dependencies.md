@@ -39,7 +39,7 @@ default and fail on explicit selection. See [Pi-Bolt installation](installation.
 
 Ordinary installation preserves existing resources, adding only missing Markdown
 files in the bundled `shared/` support directory (without overwriting local edits).
-`/autowork update` synchronizes
+`hermes autowork update` synchronizes
 bundled content, including the pinned engineering pack, to the release bytes.
 Edited native copies are reset or removed when their release file is removed;
 their original bytes remain in the update backup and the action is reported.
@@ -200,7 +200,7 @@ run the full offline checks, then ship with the bundle. The former native-card
 registration-admission suite was retired with its unreachable engine. Native plugin
 registration remains a separate optional `tests/integration_plugin.py` check; see
 [its environment and limits](testing.md#verify).
-`/autowork update` consumes that reviewed snapshot; it never fetches Addy latest.
+`hermes autowork update` consumes that reviewed snapshot; it never fetches Addy latest.
 Existing profile-level Addy imports remain untouched as optional alternatives.
 
 ## Refresh the vendored UI Taste skill

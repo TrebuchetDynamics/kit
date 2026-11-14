@@ -14,14 +14,15 @@ Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for 
 
 Use for open-ended improvement across correctness, security, performance, design,
 UI/accessibility, reliability, tests, delivery and docs. Not a second runner,
-scheduler or replacement for Autowork. A known defect, fixed plan or audit-only
+scheduler or replacement for Orbi delivery. A known defect, fixed plan or audit-only
 request keeps its narrower workflow.
 
 Read the [host and authority adaptations](../shared/PI-TOOLSET.md), then the pinned
 [campaign protocol](upstream/PROTOCOL.md) and relevant selection/recovery references.
 This adapter overrides their Pi-only worker requirement, repeated approval
-ceremonies and separate conversation-only task-state convention. Autowork owns
-the task store, execution, review and acceptance.
+ceremonies and separate conversation-only task-state convention. GitHub Issues
+own the backlog; this authorized campaign preserves its scope, actual ownership,
+independent review, PR gates and acceptance.
 
 ## Local authority rules
 
@@ -143,7 +144,7 @@ checking these local rules. Offline checks validate packaging, not model behavio
 
 ## Boundaries
 
-- Not one known fix; use `/autowork` for a ready task.
+- Not one known fix; publish ready work through the planners for Orbi.
 - Not an architecture report; use `/improve-codebase-architecture`.
 - Not test-suite reduction; use `/test-optimizer`.
 

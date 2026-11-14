@@ -23,7 +23,7 @@ This file owns the Kit-specific gates.
 ## Apply
 
 - **Planning:** use it to test whether a task is ready.
-- **Autowork:** use it before closing a task.
+- **Implementation:** use it before closing an issue or authorized fix.
 - **Review:** use it as the standing bar beyond the changed diff.
 - **Delivery:** use it to separate a local commit from push or deployment.
 
