@@ -249,6 +249,56 @@ the adapter. Claude-only hooks are not installed.
 `/autowork` is the repository development command. Its helpers and profile-local
 state live under `autowork/`; upgrades preserve existing work through migration.
 
+## State machine
+
+[State Machine](../skills/state-machine/SKILL.md) maps lifecycle rules scattered
+across functions, fields and services. It reports state predicates, transition
+rules, source-backed counterexamples and coverage gaps. The default is read-only
+and inline; it neither repairs code nor writes task or report files.
+
+| Host | Invocation |
+| --- | --- |
+| Hermes | `/state-machine` |
+| Claude Code | `/kit:state-machine` |
+| Codex | `$kit:state-machine` |
+| Pi | `/skill:state-machine` |
+| Octet | `/skill:state-machine` |
+
+In Pi, this is a native skill command, not a `/state-machine` extension alias.
+After updating the installed package, reload skills in the host before use.
+
+```text
+/skill:state-machine find all implicit state machines in this app; no writes
+/skill:state-machine inspect checkout retries and cancellation; read-only
+```
+
+### Fix the findings without another prompt
+
+After the analysis, invoke Bug Harvest in the same conversation. In Pi:
+
+```text
+/skill:bug-harvest
+```
+
+Hermes also accepts `/bug-harvest`, Claude Code uses `/kit:bug-harvest`, and Codex
+uses `$kit:bug-harvest`. No finding IDs, copied report or extra prompt are required:
+the [contextual handoff](../skills/bug-harvest/SKILL.md#findings-from-the-preceding-response)
+uses the preceding response as the bounded repair scope. It verifies and fixes
+candidates one at a time, adds regression protection and runs affected checks.
+Hypotheses are not automatically bugs; unclear product rules need `/plan-with-me`.
+The campaign stops when the supplied findings are accounted for or a caller limit
+or genuine blocker stops progress. It does not automatically commit or push.
+Explicit user no-write and live-action restrictions remain binding; State Machine's
+default read-only mode does not make the subsequent repair invocation read-only.
+
+Planning, implementation and review use the shared contract's stateful-work trigger.
+Bug Harvest, architecture review and Test Optimizer also link the
+[analysis method](../skills/state-machine/PROTOCOL.md) at their relevant steps.
+These are scoped reference loads, not automatic skill activation or wider authority.
+The [online sources and example](../skills/state-machine/references/sources-and-example.md)
+explain the method. Offline packaging checks do not prove exhaustive discovery or
+live bug-finding effectiveness.
+
 ## Test optimizer
 
 `/test-optimizer` actively reduces executed cases, test code and maintenance cost.

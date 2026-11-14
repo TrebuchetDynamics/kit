@@ -23,7 +23,7 @@ apk-get ask-kit autonomous-codebase-improver autoresearch autowork
 beautify-github-readme blockers bug-harvest docs-sync git-commit-push goal
 grilling grill-with-docs impeccable improve-codebase-architecture lgtm pending
 plan-for-me plan-with-me ponytail ponytail-audit ponytail-debt ponytail-gain
-ponytail-help ponytail-review push responsive-screenshots split-folder
+ponytail-help ponytail-review push responsive-screenshots split-folder state-machine
 test-optimizer ui-taste unblock unused-code work writing-for-agents
 '''.split()
 TASK_WRITING_LINKS = (

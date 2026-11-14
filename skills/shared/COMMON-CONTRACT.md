@@ -13,6 +13,9 @@ Apply these with [Ponytail](PONYTAIL.md) and the [communication rules](COMMUNICA
 
 - Check whether a bundled skill fits before a non-trivial response or action; use
   [`/ask-kit`](../ask-kit/SKILL.md), then read the named skill.
+- For lifecycle rules, asynchronous effects or shared-state changes, apply the
+  [state-machine analysis](../state-machine/PROTOCOL.md) to the affected paths.
+  Reuse a current map; keep the caller's scope, mode and report format.
 - Surface assumptions before non-trivial work; mark guesses.
 - Name confusion and conflicting requirements; stop and resolve them.
 - Disagree with evidence; propose the alternative.

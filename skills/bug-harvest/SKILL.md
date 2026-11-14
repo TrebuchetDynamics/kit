@@ -17,6 +17,21 @@ For a supplied known repro, use the debugging method directly instead of startin
 a campaign. Apply the [host and authority adaptations](../shared/PI-TOOLSET.md)
 before reading the pinned [bug-harvest protocol](upstream/PROTOCOL.md).
 
+## Findings from the preceding response
+
+When invoked without arguments after an analysis such as `/state-machine`, use
+that response's findings as the repair scope. No extra prompt, report file or
+repeated analysis is required. The invocation requests local fixes, not just another
+report; preserve explicit user no-write, pause, live-action and delivery limits.
+
+Recheck the findings against current source and ownership, then process one
+candidate at a time through the fix loop below. Treat hypotheses as leads until
+verified; use a supplied known repro directly. Reuse the state map and evidence
+instead of starting a fresh repository hunt. Continue through the supplied findings
+within caller limits, then stop with each fixed, ruled out with evidence, or blocked
+with its exact next action. Do not expand into unrelated discovery. Route unresolved
+product rules to `/plan-with-me` rather than inventing expected behavior.
+
 ## Campaign boundary
 
 Inspect current source, instructions, task state and ownership; quarantine unrelated
@@ -27,6 +42,10 @@ with the smallest blast radius. Before wide reading, rank leads with a local cod
 when one exists, record its [declared graph
 state](../shared/COMMON-CONTRACT.md#graph-state), and confirm every graph lead in live
 source.
+
+For a lifecycle or event-ordering lead, apply the
+[state-machine analysis](../state-machine/PROTOCOL.md) before choosing the repro.
+Keep the campaign's one-candidate and stop limits.
 
 For the selected bug, record symptom, evidence, reproducer, expected post-fix
 signal and likely files. Confirm the failure, identify its root cause, make the

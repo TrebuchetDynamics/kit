@@ -41,7 +41,9 @@ or backlog. Load its relevant sections once.
    equal coverage, similar names and never failing are not equivalence. A local code
    graph shows which production nodes carry no test edge; record its [declared graph
    state](../shared/COMMON-CONTRACT.md#graph-state) and confirm every candidate in
-   source before removing a detector.
+   source before removing a detector. For stateful candidates, use the
+   [state-machine analysis](../state-machine/PROTOCOL.md) to compare protected
+   transitions, sequences and interleavings before declaring detectors equivalent.
 3. **Remove before polishing:** prioritize evidence-backed deletion of redundant,
    vacuous and obsolete tests. Prune equivalent inputs to useful representatives,
    retaining distinct boundaries. Then shrink fixtures and share immutable setup.
