@@ -352,6 +352,7 @@ class UpdateTests(unittest.TestCase):
             'read -r answer && exit 8\n'  # background updates cannot prompt
             'printf \'%s\\n\' \'{"item":"autowork","status":"installed","exit":0}\' '
             '\'{"item":"tx","status":"installed","exit":0}\' '
+            '\'{"item":"octet","status":"installed","exit":0}\' '
             '\'{"item":"claude","status":"failed","exit":7}\' '
             '\'{"item":"codex","status":"skipped","exit":null}\' > "$AUTOWORK_INSTALL_REPORT"\n'
             'exit 1\n')
@@ -372,10 +373,10 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(log.read_text().splitlines(), ['--full --skip hermes,pi -q'])
         self.assertEqual([r['status'] for r in receipts], ['update_available', 'updated', 'up_to_date'])
         self.assertEqual(receipts[1]['hosts'], [
-            {'item': 'autowork', 'status': 'installed', 'exit': 0},
             {'item': 'tx', 'status': 'installed', 'exit': 0},
             {'item': 'claude', 'status': 'failed', 'exit': 7},
-            {'item': 'codex', 'status': 'skipped', 'exit': None}])
+            {'item': 'codex', 'status': 'skipped', 'exit': None},
+            {'item': 'octet', 'status': 'installed', 'exit': 0}])
         self.assertNotIn('hosts', receipts[0])
         self.assertNotIn('hosts', receipts[2])
 
@@ -391,22 +392,22 @@ class UpdateTests(unittest.TestCase):
                     installer.write_text('#!/bin/bash\n' + body)
                 self.assertEqual(self.mod.refresh_hosts(self.repo), [
                     {'item': item, 'status': status, 'exit': code}
-                    for item in ('autowork', 'tx', 'claude', 'codex')])
+                    for item in ('tx', 'claude', 'codex', 'octet')])
 
     def test_host_refresh_timeout_keeps_completed_items_and_stops_descendants(self):
         import time
         child = self.root / 'late-write'
         (self.repo / 'install.sh').write_text(
             '#!/bin/bash\n'
-            'echo \'{"item":"autowork","status":"installed","exit":0}\' > "$AUTOWORK_INSTALL_REPORT"\n'
+            'echo \'{"item":"tx","status":"installed","exit":0}\' > "$AUTOWORK_INSTALL_REPORT"\n'
             f'(sleep 0.5; touch "{child}") &\nwait\n')
         with patch.object(self.mod, 'HOST_REFRESH_TIMEOUT_S', 0.1):
             rows = self.mod.refresh_hosts(self.repo)
         self.assertEqual(rows, [
-            {'item': 'autowork', 'status': 'installed', 'exit': 0},
-            {'item': 'tx', 'status': 'timeout', 'exit': None},
+            {'item': 'tx', 'status': 'installed', 'exit': 0},
             {'item': 'claude', 'status': 'timeout', 'exit': None},
-            {'item': 'codex', 'status': 'timeout', 'exit': None}])
+            {'item': 'codex', 'status': 'timeout', 'exit': None},
+            {'item': 'octet', 'status': 'timeout', 'exit': None}])
         time.sleep(0.6)
         self.assertFalse(child.exists())
 

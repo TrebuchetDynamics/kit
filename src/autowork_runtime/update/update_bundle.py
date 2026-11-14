@@ -19,7 +19,7 @@ import time
 UPSTREAM = 'https://github.com/TrebuchetDynamics/kit.git'
 PLUGIN = 'autowork'
 HOST_REFRESH_TIMEOUT_S = 300
-HOST_ITEMS = ('autowork', 'tx', 'claude', 'codex')
+HOST_ITEMS = ('tx', 'claude', 'codex', 'octet')
 
 
 def refresh_hosts(source):
