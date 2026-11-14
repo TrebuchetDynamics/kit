@@ -39,9 +39,9 @@ rename is required. Orbi remains paused and live-unqualified.
 
 ## Orbi lifecycle controls
 
-Use `/kit:orbi [status|setup|start|stop]` in Claude Code, `$kit:orbi` in Codex,
+Use `/kit:orbi [status|setup|start|stop|help]` in Claude Code, `$kit:orbi` in Codex,
 or `/orbi` in Pi or Hermes. All hosts load the same
-[Orbi workflow](../skills/orbi/SKILL.md); default status is read-only.
+[Orbi workflow](../skills/orbi/SKILL.md); default status is read-only. `help` prints the action reference read-only and needs no repository.
 Linux lifecycle changes require the workflow's ownership and authorization gates;
 macOS is status-only. Installing the skill does not activate a deployment or
 qualify live delivery. Existing pauses and cutover gates remain in force.

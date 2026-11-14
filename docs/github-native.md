@@ -166,13 +166,13 @@ Do not serve one repository from multiple deployments or machines.
 
 ### Kit lifecycle skill
 
-Use [`/orbi [status|setup|start|stop]`](../skills/orbi/SKILL.md) for one
+Use [`/orbi [status|setup|start|stop|help]`](../skills/orbi/SKILL.md) for one
 repository's deployment. Bare invocation reads status; `--repo-dir` selects the
 canonical repository and `--config` selects its existing native configuration.
 Setup prepares without activating scheduling. Start requires separate scheduling
 authorization with existing pauses and cutover gates resolved. Stop disables only
 owned timers and reports draining until active workers finish; missing evidence
-is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only.
+is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only. `help` prints the action reference read-only and needs no repository.
 
 The [lifecycle reference](../skills/orbi/references/lifecycle.md) owns prerequisite,
 retention, pinned-source and deployment-local uv isolation details. Native units
