@@ -991,30 +991,19 @@ class MaintainTests(Repo):
 class DocsSyncInstructionTests(unittest.TestCase):
     """The installed instructions on every host run the same lifecycle; prose only."""
 
-    def test_every_docs_sync_entry_runs_prepare_and_none_asks_the_owner_to_migrate(self):
-        for path in ('skills/docs-sync/SKILL.md', 'adapters/skills/docs-sync/SKILL.md',
+    def test_docs_sync_publishes_github_without_preparing_a_legacy_store(self):
+        for path in ('skills/docs-sync/SKILL.md',
                      'skills/docs-sync/references/document-scaffold.md'):
             text = (ROOT / path).read_text()
             with self.subTest(path=path):
-                self.assertIn('autowork tasks prepare', text)
-                if path.startswith(('skills/docs-sync/SKILL', 'adapters/')):
-                    # The handshake comes first, and a mismatch never falls back to TODO.md.
-                    self.assertLess(text.index('autowork capabilities'), text.index('autowork tasks prepare .')
-                                    if 'autowork tasks prepare .' in text else text.index('### Prepare the store'))
-                    self.assertIn('TOOLCHAIN_MISMATCH', text)
-                    self.assertIn('MIGRATION_DEFERRED', text)
-                normalized = ' '.join(text.split())
-                for rule in ('`tasks/.gitkeep`', 'even without accepted intent',
-                             'marker is not a task record', 'placeholder tasks or goals',
-                             'Audit/read-only', 'docs-only', 'explicit no-store',
-                             'toolchain mismatch', 'conversion refusal', 'invalid store',
-                             'uncommitted marker alone can still report `NO_STORE`',
-                             'local-only, not `READY`'):
-                    self.assertIn(rule, normalized)
-                self.assertNotIn('create no queue', text)
-                self.assertNotIn("owner's `autowork migrate`", text)
-                self.assertNotIn('until the owner runs `autowork migrate', text)
-                self.assertNotIn('do not convert it yourself', text)
+                for required in ('GitHub Issues', 'PLAN-HANDOFF.md', 'UNSAVED',
+                                 'ai-planning', 'ai-ready', 'blockedBy'):
+                    self.assertIn(required, text)
+                for retired in ('autowork tasks prepare', 'autowork capabilities', 'tasks/.gitkeep'):
+                    self.assertNotIn(retired, text)
+        adapter = (ROOT / 'adapters/skills/docs-sync/SKILL.md').read_text()
+        self.assertIn('../../../skills/docs-sync/SKILL.md', adapter)
+        self.assertNotIn('autowork tasks prepare', adapter)
 
 
 if __name__ == '__main__':

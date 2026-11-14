@@ -151,6 +151,27 @@ class PlanningCliContractTests(unittest.TestCase):
         self.assertIn('Concurrent evidence to preserve', final['notes'])
 
 
+    def test_documented_planning_close_forms_are_manual(self):
+        # Retained recovery API: retirement must not turn manual closure into proof.
+        self.tasks('done', 'T-1', '--by', 'fixture', '--reason', 'manual disposition')
+        record = json.loads(self.tasks('show', 'T-1', '--worktree').stdout)
+        self.assertEqual(record['closure']['provenance'], 'manual')
+        self.assertFalse((self.repo / 'tasks/evidence/T-1.toml').exists())
+
+    def test_identifier_guidance_matches_current_allocation_without_renaming_history(self):
+        before = (self.repo / 'tasks/items/T-1.md').read_bytes()
+        self.assertRegex(self.tasks('new-id').stdout.strip(), r'^T-\d+$')
+        self.assertEqual((self.repo / 'tasks/items/T-1.md').read_bytes(), before)
+
+    def test_runtime_failure_preserves_existing_contract(self):
+        for path in (PLANNER, INTERACTIVE[0]):
+            text = prose(path)
+            with self.subTest(path=path):
+                self.assertIn('same coordinator', text)
+                self.assertIn('existing issue', text)
+                self.assertIn('candidate evidence', text)
+                self.assertIn('do not create replacement work', text)
+
     def test_active_planning_routes_share_github_authority(self):
         for path in (PLANNER, INTERACTIVE[0], 'skills/docs-sync/SKILL.md',
                      'skills/shared/RESEARCH-PLAN.md', HANDOFF):

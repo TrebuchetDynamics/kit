@@ -9,7 +9,8 @@ Inventory existing document paths and sections before creating anything. Reuse a
 equivalent owner regardless of its filename. One document may cover several roles
 in a small repository; split only when content, audience or navigation warrants it.
 Do not rename existing docs to match the examples or generate empty template files.
-The required bootstrap BLOCKERS.md exception remains in the parent skill.
+Questions belong in the existing intent owner or affected GitHub Issue, not a
+new mandatory local tracker.
 
 For new substantial documents, start with a short purpose/scope sentence and links
 to related owners. Use the section outlines below as prompts, not mandatory empty
@@ -106,63 +107,21 @@ guard commands from current manifests, not guessed script names.
 
 ## Work queue and coordination
 
-| Role | Content |
-| --- | --- |
-| `tasks/goals/<ID>.md` | One goal: title, priority, accepted `source` (`path#anchor`), status, focus, goal dependencies |
-| `tasks/items/<ID>.md` | One task: title, scope, acceptance and checks; optional goal/short; scheduling, bounded writes, dependencies and authority fields; additive `- Label: value` notes |
-| `tasks/evidence/<ID>.toml` | The receipt the engine's verified close writes; never hand-written |
-| BLOCKERS.md | Active/Resolved external inputs under the parent skill's hard-blocker contract |
-| Existing `TODO.archive.md` | Frozen, read-only history; never written or created |
+GitHub Issues own executable work. Follow [Plan Handoff](../../shared/PLAN-HANDOFF.md)
+for complete issue contracts, native `blockedBy` relationships and `ai-epic`
+coordination. Read back the entire planning batch before publishing `ai-ready`.
+All authors receive the same default; unfinished planning retains `ai-planning`.
 
-Keep progress diaries out of task records. Task creation is not dispatch, and
-passing offline tests is not production qualification. Edit the store only through
-`autowork tasks`, following the parent skill's contract, authority and
-concurrent-write rules rather than inventing a new schema.
+Do not initialize a local task store, create placeholder tasks, or require a
+local-main commit to publish issues. Preserve existing legacy records and recovery
+state under the [migration guide](../../shared/TODO-WORKCENTER.md); do not convert
+or prune them as a side effect of document scaffolding. Audit/read-only and docs-only
+requests publish no issues. If GitHub is unavailable, report complete proposals as
+UNSAVED instead of creating a second executable queue.
 
-## First task-index initialization
-
-Goals and tasks come from the CLI, never from hand-seeded records. Start with
-`autowork tasks prepare .`: it converts a TODO.md + goals.json repository itself
-(one proven local commit; `--no-commit` stages it), finishes an interrupted
-conversion, and for a repository with no task store reports `state: none` with
-the headings marked `Status: Accepted`. Never hand-convert. On `NO_STORE`, writable
-Bootstrap creates `tasks/` even without accepted intent. Use a file-writing tool to
-create an empty `tasks/.gitkeep` only when absent, so Git retains the folder. This
-marker is not a task record; all task and goal records still require `autowork tasks`.
-Do not create placeholder tasks or goals, restore removed records, or put markers
-under `items/` or `goals/`. Use the accepted request or existing requirements for
-intent; with neither, report the missing input and leave the store empty.
-Audit/read-only, docs-only and explicit no-store scopes create nothing. Never use
-a marker to bypass a toolchain mismatch, conversion refusal or invalid store.
-Preserve existing store contents on repeat passes. Validate with `autowork tasks
-validate --worktree .`, include the marker in the scoped commit when authorized,
-then rerun prepare. An uncommitted marker alone can still report `NO_STORE`;
-without commit authority, report bootstrap as local-only, not `READY`. An empty
-store proves no goal met and starts no runner. For accepted work,
-`autowork tasks add` can initialize `tasks/` directly. Follow
-[ordinary authoring](../../shared/TODO-WORKCENTER.md#ordinary-authoring), not a
-mandatory goal or separate plan. Reuse an existing accepted source when available.
-Create a goal only for a meaningful shared outcome; rolling plans retain their
-shared-goal contract.
-
-From the consumer root, substitute the real scope, acceptance, check and write paths:
-
-```sh
-autowork tasks add --title "Verify application startup" \
-  --scope "Add the startup check; no deployment or runtime configuration changes." \
-  --acceptance "The project's startup test passes." \
-  --checks "<exact test command>" --touches tests/
-autowork tasks validate --worktree .
-autowork tasks prepare .
-```
-
-Expected: `validate` reports `"ok": true` with no drafts, and `prepare` reports no
-diagnostics. Give every executable
-task its `touches` through `--touches` (widen to owning directories when
-unsure, or set `resources` to `exclusive` with a reason). An added goal starts
-`unmet`; never mark it met without completed tasks and an executed, passing check.
-Commit the new `tasks/` files and any changed owning docs when authorized;
-`autowork tasks list` then shows the committed task. Validation neither authorizes nor starts execution.
+Issue publication is not pickup, a merged PR or live qualification. Keep progress
+and completion evidence on GitHub; use repository documents for current intent
+and operating guidance, not duplicate task history.
 
 ## Conditional documents
 
