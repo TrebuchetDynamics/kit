@@ -440,7 +440,7 @@ async def immediate_deletion():
                         assert 'T-1' in snap.store.tasks  # deletion has not changed HEAD
                         assert screen.query_one('#tasks').row_count == 0, 'successful delete retained row'
                         assert fleet_view.task_counts(app.current()) == (0, 0, 0, 0, 0, 0)
-                        assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:8]] == ['0'] * 6
+                        assert str(app.query_one('#runners').get_row_at(0)[2]) == '0'
                         assert app.current().snapshot is snap
                         assert 'deletion pending commit' in str(screen.query_one('#task-provenance').text)
                         assert 'Deletion pending commit' in str(screen.query_one('#task-freshness').render())
@@ -687,9 +687,9 @@ async def main():
             app.current().snapshot = original_snapshot
             app.show_detail()
             runners = app.query_one('#runners')
-            # Full-width fleet restores the count columns; Details retains source evidence.
-            assert [str(c.label) for c in runners.columns.values()][:8] == list(app.RUNNER_COLUMNS)
-            assert [str(c) for c in runners.get_row_at(0)[2:8]] == ['0', '0', '2', '1', '0', '3']
+            # Compact project selection retains total; Details retains every count and source.
+            assert [str(c.label) for c in runners.columns.values()] == ['Project', 'Status', 'Tasks']
+            assert str(runners.get_row_at(0)[2]) == '3'
             assert fleet_view.task_counts(app.current()) == (0, 0, 2, 1, 0, 3)
             assert '1 on dependencies' in fleet_view.needs(app.current()), fleet_view.needs(app.current())
             assert 'Tasks      3 open · 0 active · 0 mergeable · 2 waiting · 1 blocker' in detail, detail
@@ -779,7 +779,7 @@ async def main():
                                             errors=('inventory read denied',))
                 await refresh(app, pilot)
                 shown = str(app.query_one('#detail').render())
-                assert [str(c) for c in app.query_one('#runners').get_row_at(0)[2:8]] == ['—'] * 6
+                assert str(app.query_one('#runners').get_row_at(0)[2]) == '—'
                 assert fleet_view.task_counts(app.current()) is None
                 assert 'Task count unavailable' in shown and 'inventory read denied' in shown, shown
                 observed.snapshot = replace(original_runner.snapshot, captured_at=time.time() - 900, freshness='stale')
@@ -812,7 +812,7 @@ async def main():
             config = agent / 'models.json'
             original = b'{"providers":{"other":{"apiKey":"DO-NOT-LOG"}}}\n'
             config.write_bytes(original)
-            # Fleet controls omit Fallback/Portal for every runner state, including no runner.
+            # Independent fallback stays configurable; removed Portal shortcut stays inactive.
             runner = app.current()
             for width in (80, 120):
                 await pilot.resize_terminal(width, 45)
@@ -837,13 +837,14 @@ async def main():
                             assert str(menubar.render()).strip() == expected, menubar.render()
                             painted = ' '.join(menubar.render_line(y).text for y in range(menubar.content_size.height))
                             assert ' '.join(painted.split()) == ' '.join(expected.split()), painted
-                            assert not {'f', 'o'} & app.active_bindings.keys(), app.active_bindings
+                            assert 'o' not in app.active_bindings, app.active_bindings
+                            assert ('f' in app.active_bindings) is not view_only
                             if selected:
                                 assert 'f' not in {a.key for a in app.available(selected)}
                                 assert 'fallback ' in str(app.query_one('#detail').render())
                             screen = app.screen
                             before = {str(p): p.read_bytes() for p in base.rglob('*') if p.is_file()}
-                            await pilot.press('f', 'o')
+                            await pilot.press(*(('f', 'o') if view_only else ('o',)))
                             await pilot.pause()
                             assert app.screen is screen, app.screen
                             assert calls == [], calls
@@ -906,10 +907,13 @@ async def main():
             await pilot.pause()
             await pilot.press('enter')                  # Enter in the filter takes the first match
             await pilot.pause()
+            assert isinstance(app.screen, PickModel) and app.screen.allow_none
+            await pilot.click('#model-none')             # explicitly disable independent fallback
+            await pilot.pause()
             await pilot.press('y')
             await pilot.pause()
             await app.workers.wait_for_complete()
-            assert calls[-1] == ['aw', 'model', 'india', 'openai-codex/gpt-6-luna'], calls
+            assert calls[-1] == ['aw', 'model', 'india', 'openai-codex/gpt-6-luna', '--no-fallback'], calls
             await pilot.press('enter')                  # Enter: the full-screen log
             await pilot.pause()
             assert isinstance(app.screen, LogScreen), app.screen

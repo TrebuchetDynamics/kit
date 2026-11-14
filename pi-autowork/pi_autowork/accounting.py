@@ -1,5 +1,6 @@
 """Private run and owner-time accounting. No prices, billing calls or execution decisions."""
-from collections import Counter
+
+from collections import Counter, defaultdict
 from datetime import datetime
 import hashlib
 import json
@@ -17,8 +18,67 @@ ROLES = {'worker': 'worker', 'verify': 'reviewer', 'reviewer': 'reviewer',
 INTERVENTIONS = {'blocker_answered', 'contract_edited', 'hand_closed'}
 
 
-def number(value):
-    return value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
+class AccountBucket:
+    """A row for the cost report: measured USD, tokens and runs."""
+
+    def __init__(self):
+        self.runs = 0
+        self.tokens = None
+        self.input_tokens = None
+        self.output_tokens = None
+        self.measured_cost_usd = 0.0
+        self.unknown_cost_runs = 0
+
+    def add(self, row):
+        self.runs += 1
+        for field in ('tokens', 'input_tokens', 'output_tokens'):
+            value = number(row.get(field))
+            if value is not None:
+                existing = getattr(self, field)
+                setattr(self, field, (existing or 0) + value)
+        cost = number(row.get('cost_usd'))
+        measured = row.get('cost_source') == 'provider_reported' and row.get('billing') != 'subscription'
+        if measured:
+            self.measured_cost_usd += cost or 0
+        else:
+            self.unknown_cost_runs += 1
+
+    def summary(self, label):
+        return dict(label=label, runs=self.runs, tokens=self.tokens,
+                    input_tokens=self.input_tokens, output_tokens=self.output_tokens,
+                    measured_cost_usd=self.measured_cost_usd,
+                    unknown_cost_runs=self.unknown_cost_runs,
+                    estimated_cost_usd=(self.measured_cost_usd / self.runs) if self.runs else 0.0)
+
+
+def by_task():
+    return defaultdict(lambda: AccountBucket())
+
+
+def df(value):
+    """Short human value: bytes/KB/MiB, tokens or currency."""
+    if value is None:
+        return '—'
+    if isinstance(value, (int, float)) and abs(value) >= 1024 ** 3:
+        return f'{value / (1024 ** 3):.2f} GiB'
+    if isinstance(value, (int, float)) and abs(value) >= 1024 ** 2:
+        return f'{value / (1024 ** 2):.2f} MiB'
+    if isinstance(value, (int, float)) and abs(value) >= 1024:
+        return f'{value / 1024:.2f} KiB'
+    if isinstance(value, (int, float)) and abs(value) < 1:
+        return f'{value:.4f} B'
+    return str(int(value))
+
+
+def usd_short(value):
+    """Short human USD: $1.23, $1.2K, $1.2M."""
+    if value is None:
+        return '—'
+    if value >= 1_000_000:
+        return f'${value / 1_000_000:.2f}M'
+    if value >= 1_000:
+        return f'${value / 1_000:.2f}K'
+    return f'${value:.2f}'
 
 
 def state_dir(repo, root=None):
@@ -63,6 +123,28 @@ def attention(repo, minutes, *, task=None, note=None, category='manual', root=No
     append(state_dir(repo, root) / 'attention.jsonl',
            dict(event_id=uuid.uuid4().hex, time=time.time(), task=task, minutes=minutes,
                 category=category, note=note))
+
+
+def parse_window(argv):
+    """Parse an optional --since/--window pair into (since, until) timestamps."""
+    since = None
+    until = None
+    for index, arg in enumerate(argv):
+        if arg in ('--since', '--window'):
+            if index + 1 >= len(argv):
+                raise ValueError(f'{arg} needs a value')
+            raw = argv[index + 1]
+            try:
+                value = float(raw)
+            except ValueError:
+                raise ValueError(f'expected seconds, got: {raw}') from None
+            if value < 0:
+                raise ValueError(f'expected nonnegative seconds, got: {raw}')
+            if arg == '--since':
+                since = time.time() - value
+            else:
+                until = time.time() + value
+    return since, until
 
 
 def timestamp(value):
@@ -111,6 +193,36 @@ def records(path, since, now, diagnostics, identity):
             if key:
                 seen.add(key)
             yield row
+
+
+def number(value):
+    return value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
+
+
+def df(value):
+    """Short human value: bytes/KB/MiB, tokens or currency."""
+    if value is None:
+        return '—'
+    if isinstance(value, (int, float)) and abs(value) >= 1024 ** 3:
+        return f'{value / (1024 ** 3):.2f} GiB'
+    if isinstance(value, (int, float)) and abs(value) >= 1024 ** 2:
+        return f'{value / (1024 ** 2):.2f} MiB'
+    if isinstance(value, (int, float)) and abs(value) >= 1024:
+        return f'{value / 1024:.2f} KiB'
+    if isinstance(value, (int, float)) and abs(value) < 1:
+        return f'{value:.4f} B'
+    return str(int(value))
+
+
+def usd_short(value):
+    """Short human USD: $1.23, $1.2K, $1.2M."""
+    if value is None:
+        return '—'
+    if value >= 1_000_000:
+        return f'${value / 1_000_000:.2f}M'
+    if value >= 1_000:
+        return f'${value / 1_000:.2f}K'
+    return f'${value:.2f}'
 
 
 def bucket():
@@ -228,3 +340,79 @@ def measure(repo, since, now, *, tasks=(), verified=(), lifecycle=(), root=None)
                 if verified and total['cost_usd'] is not None else None,
                 cost_per_delivered_task_usd=total['cost_usd'] / len(delivered)
                 if delivered and total['cost_usd'] is not None else None)
+
+
+def usd(total, *, tasks=(), verified=(), cycle=None):
+    """Render cost in dollars from a windowed accounting total.
+
+    The repo does not price subscription usage, so only rows carrying
+    `cost_source: provider_reported` and `billing != subscription` become USD.
+    Everything else is reported as unknown (never zero).
+    """
+    if cycle is not None:
+        cost = 0.0
+        known = 0
+        for row in cycle:
+            if row.get('cost_source') == 'provider_reported' and row.get('billing') != 'subscription':
+                cost += number(row.get('cost_usd')) or 0
+                known += 1
+        return dict(measured_cost_usd=cost, measured_runs=known, runs=len(cycle), unknown=0)
+    if total['cost_usd'] is None:
+        return dict(measured_cost_usd=0.0, measured_runs=total['runs'] - total['unknown_cost_runs'],
+                    runs=total['runs'], unknown=total['unknown_cost_runs'])
+    return dict(measured_cost_usd=total['cost_usd'], measured_runs=total['runs'],
+                runs=total['runs'], unknown=0)
+
+
+def account(repo, root=None, *, since=None, window=None):
+    """Return measured tokens, USD and per-model totals for a time window.
+
+    `window` is seconds and implies `--since` for the whole window. Both
+    `since` and `window` omitted fall back to the last 7 days.
+    """
+    directory = state_dir(repo, root)
+    now = time.time()
+    cycle_since, cycle_until = since, None
+    if window is not None:
+        cycle_since, cycle_until = now - window, now
+    elif since is not None:
+        cycle_since = timestamp(since)
+        cycle_until = now
+    else:
+        cycle_since = now - 7 * 24 * 3600
+        cycle_until = now
+    if cycle_until > now:
+        cycle_until = now
+    diagnostics = dict(invalid_records=0)
+    total = bucket()
+    roles = {}
+    hosts = {}
+    providers = {}
+    models = {}
+    attempts = {}
+    for row in records(directory / 'runs.jsonl', cycle_since, cycle_until, diagnostics, 'run_id'):
+        add(total, row)
+        role = row.get('role')
+        if role not in ROLES:
+            role = None
+        if role not in roles:
+            roles[role] = bucket()
+        add(roles[role], row)
+        host = row.get('host') or 'unknown'
+        if host not in hosts:
+            hosts[host] = bucket()
+        add(hosts[host], row)
+        provider = row.get('provider') or 'unknown'
+        if provider not in providers:
+            providers[provider] = bucket()
+        add(providers[provider], row)
+        model = row.get('model') or 'unknown'
+        if model not in models:
+            models[model] = bucket()
+        add(models[model], row)
+        key = (row.get('host'), provider, model)
+        if key not in attempts:
+            attempts[key] = bucket()
+        add(attempts[key], row)
+    return dict(total=total, tasks=by_task(), roles=roles, hosts=hosts, providers=providers,
+                models=models, attempts=attempts, diagnostics=diagnostics)

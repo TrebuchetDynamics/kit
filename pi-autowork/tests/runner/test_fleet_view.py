@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import shlex
 from pathlib import Path
 import shutil
 import subprocess
@@ -891,6 +892,15 @@ class FleetViewTests(unittest.TestCase):
         self.assertEqual([r.task for r in fleet_view.task_view(rows, 'questions')], ['T-4'])
         self.assertEqual([r.task for r in fleet_view.task_view(rows, 'decisions')], ['T-4'])
         self.assertEqual([r.task for r in fleet_view.task_view(rows, 'held')], ['T-2'])
+
+    def test_prepare_hints_quote_repository_paths(self):
+        repo = "/projects/owner's work; example"
+        for problem, prefix in (('tasks', []), ('legacy planning', ['--force']),
+                                ('task store preparation: INVALID_STORE', [])):
+            ready = fleet_view.Readiness(repo, repo=repo, problems=[problem])
+            hint = fleet_view.how_to_fix(ready)[0]
+            command = hint.split('`')[1]
+            self.assertEqual(shlex.split(command), ['autowork', 'tasks', 'prepare', *prefix, repo])
 
     def test_readiness_needs_a_committed_task_store_and_main(self):
         repo = self.base / 'repo'

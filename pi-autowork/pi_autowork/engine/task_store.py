@@ -489,7 +489,11 @@ def planner_authority(before, after, *, goal=False, path=None):
             raise StoreError(f'{path}: planner cannot change existing ownership')
         new_live = 'live' in (new.data.get('resources') or [])
         old_live = 'live' in (old_data.get('resources') or [])
-        if new_live != old_live:
+        # Declaring a fresh owner obligation creates no execution authority. Existing
+        # resource gates, implicit defaults and worker/coordinator claims stay protected.
+        new_owner_obligation = (before is None and new.data.get('live') == 'denied'
+                                and new.data.get('ownership') == 'owner')
+        if new_live != old_live and not new_owner_obligation:
             raise StoreError(f'{path}: planner cannot change the live resource authorization gate')
     def notes(text):
         return [line for line in text.splitlines() if _PLANNER_NOTE.match(line)]

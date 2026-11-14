@@ -239,10 +239,13 @@ class PickModel(ReadScreen, ModalScreen[str]):
     #model-status { height: auto; max-height: 3; }
     '''
 
-    def __init__(self, title, models, current, loader=None, identity=None, agent_dir=None, identity_valid=None):
+    def __init__(self, title, models, current, loader=None, identity=None, agent_dir=None, identity_valid=None, allow_none=False,
+                 catalog_loader=None):
         super().__init__()
+        self.allow_none = allow_none
         self.title_text, self.models, self.current = title, models, current
         self.loader, self.identity, self.agent_dir = loader, identity, agent_dir
+        self.catalog_loader = catalog_loader
         self.identity_valid = identity_valid or (lambda: True)
         self.providers, self.auth_error = {}, ''
         self.free_only, self.free_models, self.usable_models = False, set(), set()
@@ -252,7 +255,9 @@ class PickModel(ReadScreen, ModalScreen[str]):
     def compose(self) -> ComposeResult:
         from textual.widgets import Input
         with Vertical():
-            yield ViewHeader(self.title_text, '1 Choose provider   2 Search or filter free models   3 Select a model')
+            yield ViewHeader(self.title_text, '1 Choose provider   2 Search models   3 Select a model'
+                             if self.allow_none else
+                             '1 Choose provider   2 Search or filter free models   3 Select a model')
             yield Label(Text(f'Current: {self.current}' if self.current else 'Choose a model available through Pi.'))
             yield Select([], prompt='1. Choose a Pi provider', id='provider', disabled=True)
             yield Input(placeholder='2. Search this provider\'s models', id='filter')
@@ -261,16 +266,46 @@ class PickModel(ReadScreen, ModalScreen[str]):
             with Horizontal(id='model-actions'):
                 yield Button('Configure provider', id='model-login', disabled=not self.agent_dir)
                 yield Button('Refresh models', id='model-refresh', disabled=self.loader is None)
-                yield Button('Free models', id='model-free')
-            yield Label('Choose a provider → Configure provider · Esc back')
+                if self.allow_none:
+                    yield Button('No fallback', id='model-none')
+                else:
+                    yield Button('Free models', id='model-free')
+            yield Label('Provider: Tab to focus · Enter opens · ↑/↓ then Enter · Esc back')
 
     def on_mount(self):
         self.shown = []
         self.query_one('#filter', Input).focus()
         if self.loader:
-            self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
+            self.start_model_reads()
         else:
             self.loaded_models(self.models)
+
+    def start_model_reads(self):
+        if self.catalog_loader is None:
+            self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
+            return
+        # Independent coordinator resources retain their physical slots until the
+        # underlying readers finish, including after refresh or screen dismissal.
+        self._model_parts, self._model_pending = {}, {'catalog', 'available'}
+        for kind, loader in (('catalog', self.catalog_loader), ('available', self.loader)):
+            self.read('model-' + kind, self.identity, loader,
+                      lambda value, kind=kind: self.model_part(kind, value),
+                      lambda error, kind=kind: self.model_part(kind, None, error))
+
+    def model_part(self, kind, value, error=None):
+        self._model_pending.discard(kind)
+        self._model_parts[kind] = (value, error)
+        catalog, catalog_error = self._model_parts.get('catalog', ({}, None))
+        available, available_error = self._model_parts.get('available', ([], None))
+        catalog, available = catalog or {}, available or []
+        public = catalog.get('models', [])
+        self.loaded_models(dict(
+            models=sorted(set(public) | set(available)), usable_models=available,
+            free_models=catalog.get('free_models', []), providers=catalog.get('providers', []),
+            auth_error=str(catalog_error) if catalog_error else catalog.get('auth_error', ''),
+            model_error=('Available Pi models could not be loaded. Refresh models to retry.'
+                         if available_error else catalog.get('model_error', '')),
+            loading=bool(self._model_pending)))
 
     def load_failed(self, error):
         self.catalog_loading, self.load_error = False, str(error)
@@ -287,8 +322,9 @@ class PickModel(ReadScreen, ModalScreen[str]):
         if not self.identity_valid():
             self.catalog_loading = False
             self.load_error = 'Pi profile or runner changed. Close and reopen the model picker.'
-            self.models, self.shown = [], []
+            self.models, self.shown, self.usable_models = [], [], set()
             self.query_one('#models', OptionList).clear_options()
+            self.query_one('#provider', Select).disabled = True
             self.query_one('#model-status', Static).update(self.load_error)
             return
         self.catalog_loading, self.load_error = False, ''
@@ -299,10 +335,11 @@ class PickModel(ReadScreen, ModalScreen[str]):
             self.usable_models = set(models.get('usable_models', models['models']))
             self.auth_error = models.get('auth_error', '')
             self.load_error = models.get('model_error', '')
+            self.catalog_loading = models.get('loading', False)
             models = models['models']
-        self.models = models
-        if not self.providers:
+        else:
             self.usable_models = set(models)
+        self.models = models
         providers = sorted(set(self.providers) | {model.partition('/')[0] for model in models})
         selector = self.query_one('#provider', Select)
         available = {model.partition('/')[0] for model in self.usable_models}
@@ -353,7 +390,7 @@ class PickModel(ReadScreen, ModalScreen[str]):
         if self.free_only:
             status = (f'{len(self.shown)} free models across providers. Login may be required; limits apply.'
                       if self.shown else 'No free models match. Clear the search or Refresh models.')
-        elif self.shown and any(m not in self.usable_models for m in self.shown):
+        elif not self.load_error and self.shown and any(m not in self.usable_models for m in self.shown):
             status = f'{len(self.shown)} catalog models. Select one to configure its provider if needed.'
         if self.auth_error:
             status = self.auth_error
@@ -364,10 +401,11 @@ class PickModel(ReadScreen, ModalScreen[str]):
             return
         self.invalidate_read()
         self.catalog_loading, self.load_error = True, ''
+        self.usable_models = set()
         self.query_one('#provider', Select).disabled = True
         self.query_one('#models', OptionList).clear_options()
         self.query_one('#model-status', Static).update('Refreshing models from Pi…')
-        self.read('models', self.identity, self.loader, self.loaded_models, self.load_failed)
+        self.start_model_reads()
 
     def action_login(self):
         if not self.agent_dir or not self.is_current or not self.identity_valid() or self.app.view_only:
@@ -383,12 +421,16 @@ class PickModel(ReadScreen, ModalScreen[str]):
             return
         self.invalidate_read()
         def authenticated(success):
-            if success and self.is_mounted and self.is_current and self.identity_valid() and not self.app.view_only:
+            if ((success or self.catalog_loading) and self.is_mounted and self.is_current
+                    and self.identity_valid() and not self.app.view_only):
                 self.refresh_models()
         self.app.push_screen(ProviderAuth(provider, self.agent_dir, identity_valid=self.identity_valid), authenticated)
 
     def on_button_pressed(self, event):
-        if event.button.id == 'model-free':
+        if event.button.id == 'model-none':
+            if self.allow_none and not self.app.view_only and self.identity_valid():
+                self.dismiss('')
+        elif event.button.id == 'model-free':
             self.free_only = not self.free_only
             event.button.label = 'All models' if self.free_only else 'Free models'
             self.query_one('#filter', Input).placeholder = ('Search free models across providers' if self.free_only
@@ -688,6 +730,7 @@ class BrowseScreen(ReadScreen, Screen):
         self.chosen_path = None
         self.starting = False
         self.navigating = False
+        self.selection_epoch = 0
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -698,6 +741,7 @@ class BrowseScreen(ReadScreen, Screen):
             yield Button('Parent', id='browse-up', tooltip='Open the parent directory (Alt+Up)')
             yield Button('Home', id='browse-home', tooltip='Open your home directory (Alt+Home)')
         yield Static('Enter opens a folder · Ctrl+L edits the path · Alt+↑ goes up', id='browse-status', markup=False)
+        yield Button('Plan tasks…', id='prepare-plan')
         with Horizontal(id='browser-body'):
             yield RepoTree(self.root or str(Path.home()), id='tree')
             with VerticalScroll(id='info-scroll'):
@@ -705,6 +749,7 @@ class BrowseScreen(ReadScreen, Screen):
 
     def on_mount(self):
         self.set_class(self.size.width < 100, 'compact')
+        self.query_one('#prepare-plan', Button).display = False
         self.title = f'start a runner: {self.root or Path.home()}'
         self.query_one('#menubar', MenuBar).show([('p', 'Start'), ('g', 'Plan'), ('ctrl+l', 'Path'), ('esc', 'Back')], explicit_keys=True)
         self.query_one('#tree', RepoTree).focus()
@@ -732,6 +777,11 @@ class BrowseScreen(ReadScreen, Screen):
         self.navigate_to(Path.home())
 
     def on_button_pressed(self, event):
+        if event.button.id == 'prepare-plan':
+            event.stop()
+            if self.prepare_result and self.prepare_result[0] == self.chosen_path:
+                self.plan(self.chosen_path)
+            return
         if event.button.id in ('browse-up', 'browse-home'):
             event.stop()
             (self.action_parent if event.button.id == 'browse-up' else self.action_home)()
@@ -758,6 +808,8 @@ class BrowseScreen(ReadScreen, Screen):
     def navigate_to(self, value):
         """Change the browser root after a read-only, off-loop directory check."""
         value = str(value).strip()
+        self.selection_epoch += 1
+        self.query_one('#prepare-plan', Button).display = False
         self.invalidate_read()
         self.navigating = bool(value)
         if not value:
@@ -820,8 +872,12 @@ class BrowseScreen(ReadScreen, Screen):
             self.invalidate_read()
         path = str(path)
         if self.chosen_path != path:
+            self.selection_epoch += 1
             self.chosen = None
             self.starting = False
+            self.query_one('#prepare-plan', Button).display = False
+            if not self.preparing:
+                self.query_one('#browse-status', Static).update('Enter opens a folder · Ctrl+L edits the path · Alt+↑ goes up')
         self.chosen_path = path
         self.query_one('#info', Static).update(f'{path}\nReading readiness…')
         def load():
@@ -847,6 +903,28 @@ class BrowseScreen(ReadScreen, Screen):
         tree.update_readiness(self.chosen)
         info = Text()
         info.append(str(path) + '\n', style='bold')
+        self.query_one('#prepare-plan', Button).display = bool(
+            not self.preparing and not self.navigating and self.prepare_result
+            and self.prepare_result[0] == str(path) and self.prepare_result[1]['outcome'] == 'NO_STORE')
+        if self.preparing:
+            info.append('\nPreparing repository…\n', style='yellow')
+        if self.prepare_result and self.prepare_result[0] == str(path):
+            report = self.prepare_result[1]
+            info.append(report['outcome'] + '\n', style='bold')
+            if report['outcome'] == 'NO_STORE':
+                info.append('No task store exists. Prepare cannot invent tasks or goals.\n'
+                            'No tasks were created; the service was not started.\n'
+                            'Choose Plan tasks… or press g to open planning, then describe the work.\n'
+                            'Opening Plan does not start a model; review and apply its proposals separately.\n')
+            for refusal in report.get('refusals', []):
+                info.append(str(refusal) + '\n')
+            if report.get('forced'):
+                info.append('Forced conversion:\n', style='bold')
+                step = report['forced'].get('step', {})
+                for key in ('stopped', 'set_aside', 'landed', 'committed', 'commit'):
+                    if key in step:
+                        info.append(f'{key}: {step[key]}\n')
+            info.append((report.get('next') or 'Resolve the reported problem, then run Prepare again.') + '\n')
         if self.chosen.ready:
             info.append('ready', style='bold green')
             info.append(f' on {self.chosen.branch}. Press p to play (start) its service.\n')
@@ -860,22 +938,6 @@ class BrowseScreen(ReadScreen, Screen):
                 info.append(f'Press p to confirm start: safely select local {self.chosen.start_branch}, then recheck readiness.\n')
             else:
                 info.append('Press p for Prepare, Prepare and start, Plan (an agent plans the tasks), or Force.\n')
-        if self.preparing:
-            info.append('\nPreparing repository…\n', style='yellow')
-        if self.prepare_result and self.prepare_result[0] == str(path):
-            report = self.prepare_result[1]
-            info.append('\n' + report['outcome'] + '\n', style='bold')
-            for refusal in report.get('refusals', []):
-                info.append(str(refusal) + '\n')
-            if report.get('forced'):
-                info.append('Forced conversion:\n', style='bold')
-                step = report['forced'].get('step', {})
-                for key in ('stopped', 'set_aside', 'landed', 'committed', 'commit'):
-                    if key in step:
-                        info.append(f'{key}: {step[key]}\n')
-            info.append((report.get('next') or 'Resolve the reported problem, then run Prepare again.') + '\n')
-            if report['outcome'] == 'NO_STORE':
-                info.append('Plan accepted intent with /docs-sync; no goals or tasks were created.\n')
         self.query_one('#info', Static).update(info)
 
     def action_start(self):
@@ -908,7 +970,8 @@ class BrowseScreen(ReadScreen, Screen):
 
     def plan(self, path):
         """Open embedded planning, independent of execution readiness or service state."""
-        if not self.app.view_only and not self.preparing:
+        if (not self.app.view_only and not self.preparing and not self.navigating
+                and self.is_current and self.chosen and str(path) in (self.chosen_path, self.chosen.repo)):
             self.app.open_plan(str(path))
 
     def confirm_force(self, path):
@@ -919,11 +982,16 @@ class BrowseScreen(ReadScreen, Screen):
             lambda yes: yes and self.prepare(path, False, force=True))
 
     def prepare(self, path, start, force=False):
-        if self.app.view_only or self.preparing:
+        path = str(path)
+        if (self.app.view_only or self.preparing or self.navigating
+                or not self.is_current or self.chosen_path != path):
             return
         self.preparing = True
+        self.prepare_epoch = self.selection_epoch
         self.prepare_result = None
-        self.show_repository(path)
+        self.query_one('#prepare-plan', Button).display = False
+        self.query_one('#browse-status', Static).update('Preparing repository… Please wait.')
+        self.render_repository(path)
         self.run_worker(lambda: self.run_prepare(path, start, force), thread=True, group='prepare')
 
     def run_prepare(self, path, start, force=False):
@@ -938,7 +1006,7 @@ class BrowseScreen(ReadScreen, Screen):
             except ValueError:
                 report = dict(outcome='PREPARE_FAILED', next=(result.stdout or '') + (result.stderr or ''))
             ok = result.returncode == 0 and report.get('ok') and report['outcome'] in ('READY', 'MIGRATED')
-        except OSError as error:
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
             report, ok = dict(outcome='PREPARE_FAILED', next=str(error)), False
         self.app.call_from_thread(self.prepared, path, report, bool(start and ok))
 
@@ -947,9 +1015,23 @@ class BrowseScreen(ReadScreen, Screen):
         self.prepare_result = (str(path), report)
         if not self.is_mounted:  # leaving the browser does not undo a CLI conversion in flight
             return
-        self.app.invalidate_reads()
-        if self.chosen_path == str(path):
-            self.show_repository(path, lambda ready: start and ready.ready and self.start(ready))
+        if self.is_current and self.chosen_path == str(path) and not self.navigating:
+            self.app.invalidate_reads()
+            outcome = report['outcome']
+            status = ('No tasks created; service not started. Choose Plan tasks…' if outcome == 'NO_STORE'
+                      else f'Prepare: {outcome}. ' + ('Checking readiness before starting…' if start else 'Review details below.'))
+            self.query_one('#browse-status', Static).update(status)
+            self.render_repository(path)
+            self.query_one('#info-scroll', VerticalScroll).scroll_home(animate=False)
+            epoch = getattr(self, 'prepare_epoch', self.selection_epoch)
+            def checked(ready):
+                if (start and ready.ready and not self.app.view_only and self.is_current
+                        and not self.navigating and self.selection_epoch == epoch):
+                    self.query_one('#browse-status', Static).update('Preparation complete. Starting service…')
+                    self.start(ready)
+                elif start:
+                    self.query_one('#browse-status', Static).update('Preparation complete; service not started. Recheck readiness and choose Start.')
+            self.show_repository(path, checked)
 
 
 def save_report(text, directory):
@@ -1118,13 +1200,16 @@ class WorkflowGuide(ModalScreen):
 
 class FleetApp(App):
     TITLE = 'autowork'
-    # Stacked, each part full width: a side-by-side split left a ~30-column pane on an
-    # 80-column terminal, which wrapped the detail and cut the log.
+    # Keep project selection beside work on wide terminals; stack on narrow ones.
     CSS = '''
     Header { background: $panel; }
     #workspace-body { height: 1fr; layout: vertical; }
     #project-context { width: 100%; height: auto; }
     #work-context { width: 100%; height: 1fr; }
+    .wide #workspace-body { layout: horizontal; }
+    .wide #project-context { width: 25%; min-width: 36; max-width: 40; height: 1fr; }
+    .wide #work-context { width: 1fr; height: 1fr; }
+    .wide #overview { max-height: 100%; }
     #nav-footer { dock: bottom; height: 1; background: $panel; color: $text-muted; }
 
     #modelbar { height: 1; padding: 0 1; background: $surface; }
@@ -1132,13 +1217,13 @@ class FleetApp(App):
     #empty-card { width: 72; max-width: 100%; height: auto; padding: 1 2; border: round $accent; background: $surface; content-align: center middle; }
     #runners, #lanes { background: $surface; }
     #runners, #lanes, #log { border-title-color: $text; border-title-style: bold; }
-    #runners { border-top: solid $panel; }
+    #runners { border: round $accent; }
     #runners { height: auto; min-height: 3; max-height: 6; }
     #overview { height: auto; max-height: 6; margin: 0; padding: 0 1; background: $surface; }
     #detail-scroll { display: none; height: 1fr; min-height: 4; border: round $accent; }
     #detail { height: auto; padding: 0 1; }
-    #lanes { height: auto; min-height: 3; max-height: 6; border-top: solid $panel; }
-    #log { height: 1fr; min-height: 4; border-top: solid $panel; }
+    #lanes { height: auto; min-height: 3; max-height: 6; border: round $accent; }
+    #log { height: 1fr; min-height: 4; border: round $accent; }
     .short #runners, .short #lanes { max-height: 3; }
     .short #overview { max-height: 3; margin: 0; }
     .short #detail-scroll { height: 1fr; }
@@ -1157,6 +1242,7 @@ class FleetApp(App):
         Binding('s', 'run("s")', 'Stop', show=False),
         Binding('r', 'run("r")', 'Restart', show=False),
         Binding('m', 'pick_model("model")', 'Model', show=False),
+        Binding('f', 'pick_model("fallback")', 'Fallback', show=False),
         Binding('t', 'run("t")', 'Tasks', show=False),
         Binding('i', 'toggle_details', 'Details', show=False),
         Binding('u', 'run("u")', 'Uninstall', show=False),
@@ -1186,6 +1272,8 @@ class FleetApp(App):
         if not self.view_only:
             yield SystemCommand('Choose provider and model', 'Select a Pi model for a runner',
                                 lambda: self.action_pick_model('model'))
+            yield SystemCommand('Choose fallback provider and model', 'Select or disable the independent fallback',
+                                lambda: self.action_pick_model('fallback'))
             yield SystemCommand('Browse repositories', 'Find and prepare a repository', self.action_browse)
         if runner is not None:
             yield SystemCommand('Open activity log', 'Read recent runner output', lambda: self.action_run('l'))
@@ -1216,6 +1304,7 @@ class FleetApp(App):
         self._report_pending = None
         self.details_open = False
         self.new_model = ''
+        self.new_fallback = ''
         self.new_model_agent_dir = portal.service_agent_dir(os.environ)
 
     def check_action(self, action, parameters):
@@ -1252,11 +1341,10 @@ class FleetApp(App):
                 yield RichLog(id='log', wrap=True, highlight=False, markup=False)
         yield MenuBar(id='nav-footer')
 
-    # Restore the full-width fleet table; compact terminals keep the count summary.
+    # Compact project selection; the selected overview and Details retain all counts.
     # Every open task is in one count bucket. Decision is Needs-decision membership,
     # not necessarily an unanswered owner question.
-    RUNNER_COLUMNS = ('Runner', 'State', 'Active', 'Mergeable', 'Waiting', 'Blocker', 'Decision', 'Total')
-    RUNNER_TEXT = ('Needs', 'Now')
+    RUNNER_COLUMNS = ('Project', 'Status', 'Tasks')
     LANE_COLUMNS = ('Task', 'Status', 'Try', 'For', 'Quiet')
     LANE_TEXT = ('Doing',)
     STATUS_STYLE = {fleet_view.ACTIVE: 'bold green', fleet_view.MERGEABLE: 'bold cyan',
@@ -1267,7 +1355,7 @@ class FleetApp(App):
         self.reader = self.reads.owner(self.read_done)
         table = self.query_one('#runners', DataTable)
         table.border_title = '1 · Projects — select a project'
-        table.add_columns(*self.RUNNER_COLUMNS, *self.RUNNER_TEXT)
+        table.add_columns(*self.RUNNER_COLUMNS)
         self.query_one('#lanes', DataTable).add_columns(*self.LANE_COLUMNS, *self.LANE_TEXT)
         self.query_one('#detail-scroll', VerticalScroll).border_title = 'Project details · i back · PgUp/PgDn scroll'
         self.query_one('#log', RichLog).border_title = '3 · Recent activity · Enter full log'
@@ -1378,6 +1466,7 @@ class FleetApp(App):
 
     def on_resize(self, event):
         self.screen_stack[0].set_class(event.size.height < 22, 'short')
+        self.screen_stack[0].set_class(event.size.width >= 110, 'wide')
         self._shown = {}  # the columns fit the new width
         if self.query_one('#runners', DataTable).columns:  # the first resize comes before on_mount
             # App.size may still be the previous viewport during the resize event.
@@ -1495,6 +1584,14 @@ class FleetApp(App):
         if isinstance(screen, (TasksScreen, TaskScreen)):
             screen.refresh_tasks(getattr(screen, 'follow', None))
 
+    def pane_width(self, *, projects=False):
+        """Budget the pending layout too: widget regions lag a terminal resize."""
+        width = self.size.width
+        if width < 110:
+            return width
+        sidebar = min(40, max(36, width // 4))
+        return sidebar if projects else width - sidebar
+
     def render_fleet(self):
         self.show_navigation()
         table = self.query_one('#runners', DataTable)
@@ -1508,16 +1605,18 @@ class FleetApp(App):
         for selector in ('#runners', '#overview', '#lanes', '#log'):
             self.query_one(selector).display = not welcome
         keep = self.selected
-        compact = self.size.width < 120
+        budget = self.pane_width(projects=True)
         rows = fleet_view.runner_rows(self.runners)
         for runner, row in zip(self.runners, rows):
-            row['State'] = self.execution_state(runner)
-        total_width = max([len('Total'), *(cell_len(row['Total'][0]) for row in rows)])
-        name_room = min(32, max(8, self.size.width - 20 - total_width - 10))
-        self.fill(table, rows,
-                  ('Runner', 'State', 'Total') if compact else self.RUNNER_COLUMNS,
-                  () if compact else self.RUNNER_TEXT,
-                  limits={'Runner': name_room, 'State': 20})
+            row['Project'] = row['Runner']
+            row['Status'] = self.execution_state(runner)
+            row['Tasks'] = row['Total']
+        task_width = max([len('Tasks'), *(cell_len(row['Tasks'][0]) for row in rows)])
+        state_room = min(15, budget - task_width - len('Project') - 10,
+                         max([len('Status'), *(cell_len(row['Status'][0]) for row in rows)]))
+        name_room = max(1, min(32, budget - state_room - task_width - 10))
+        self.fill(table, rows, self.RUNNER_COLUMNS, (),
+                  limits={'Project': name_room, 'Status': state_room}, budget=budget)
         names = [r.name for r in self.runners]
         if names:
             row = names.index(keep) if keep in names else 0
@@ -1690,10 +1789,18 @@ class FleetApp(App):
         if not self.view_only:
             modelbar.append('[m] Choose model', style=Style(bold=True, color='cyan', meta={'@click': 'app.pick_model("model")'}))
             modelbar.append(' · ')
+            modelbar.append('[f] Fallback', style=Style(bold=True, color='cyan', meta={'@click': 'app.pick_model("fallback")'}))
+            modelbar.append(' · ')
         else:
             modelbar.append('Model (read only) · ', style='dim')
         model = runner.model if runner and runner.has_service else self.new_model
         modelbar.append(model or 'Select a Pi model for a new runner', style='bold' if model else 'dim')
+        if model:
+            fallback = runner.fallback if runner and runner.has_service else self.new_fallback
+            if runner and runner.has_service and fleet_view.read_env(
+                    Path(self.env_dir) / f'{runner.name}.env').get('PI_AUTOWORK_NO_FALLBACK') == '1':
+                fallback = ''
+            modelbar.append(' · fallback ' + (fallback or 'disabled'), style='dim')
         publish_text(self.query_one('#modelbar', Static), modelbar)
         welcome = self.query_one('#empty-state')
         welcome.display = (runner is None and self.fleet_snapshot is not None
@@ -1814,7 +1921,7 @@ class FleetApp(App):
         repair = fleet_view.maintainer_line(runner)
         if repair:
             detail_row(text, 'Maintainer', repair, 'cyan')
-        # Short model names; fallback remains read-only in the fleet.
+        # Short model names; full identifiers remain in the model picker.
         detail_row(text, 'Repository', tilde(runner.repo) or '(unknown)', 'dim')
         if runner.model:
             detail_row(text, 'Model', f'{runner.model.rsplit("/", 1)[-1]} · fallback {runner.fallback.rsplit("/", 1)[-1]}', 'dim')
@@ -1860,7 +1967,7 @@ class FleetApp(App):
         self._lane_targets = targets
         table.border_title = (f'2 · Current work · {len(runner.lanes)} observed · Enter log' if runner.lanes
                               else '2 · Current work · no workers observed')
-        budget = self.size.width
+        budget = self.pane_width()
         compact = budget < 120
         for row in rows:
             status, style = row['Status']
@@ -1871,7 +1978,7 @@ class FleetApp(App):
         state_room = max(12, budget - name_room - 8) if compact else 32
         if self.fill(table, rows, ('Task', 'Status') if compact else self.LANE_COLUMNS,
                      () if compact else self.LANE_TEXT,
-                     limits={'Task': name_room, 'Status': state_room}) and rows:
+                     limits={'Task': name_room, 'Status': state_room}, budget=budget) and rows:
             keys = list(targets)
             fallback = next((i for i, key in enumerate(keys) if targets[key] == selected), 0)
             table.move_cursor(row=keys.index(keep) if keep in keys else fallback)
@@ -1936,6 +2043,8 @@ class FleetApp(App):
                        if runner else [('m', 'Choose provider and model')])
             if not any(key == 'm' for key, label in actions):
                 actions += [('m', 'Choose provider and model')]
+            if not any(key == 'f' for key, label in actions):
+                actions += [('f', 'Choose fallback provider and model')]
             actions += [('n', 'Browse repositories')]
         actions += [('q', 'Quit')]
         keys = {key for key, label in actions}
@@ -1947,7 +2056,7 @@ class FleetApp(App):
             if key not in ('n', 'q') and ((current.name, current.repo) if current else None) != identity:
                 self.notify('Runner selection changed. Reopen More for the current runner.', severity='warning')
                 return
-            action = {'m': 'pick_model("model")', 'i': 'toggle_details',
+            action = {'m': 'pick_model("model")', 'f': 'pick_model("fallback")', 'i': 'toggle_details',
                       'n': 'browse', 'q': 'quit'}.get(key, f'run("{key}")')
             await self.run_action(action)
         self.push_screen(ActionMenu(actions), chosen)
@@ -2064,67 +2173,108 @@ class FleetApp(App):
         else:
             self.execute(action)
 
+    def choose_model_configuration(self, title, current, fallback, *, load, identity, agent_dir, valid, chosen,
+                                   fallback_only=False, catalog_load=None):
+        """Stage both choices; publish them together only after summary consent."""
+        def usable():
+            return not self.view_only and valid()
+
+        def select_fallback(primary):
+            if primary is None or not usable():
+                chosen(None)
+                return
+            def selected(value):
+                if value is None or not usable():
+                    chosen(None)
+                    return
+                summary = f'{title}\nPrimary: {primary}\nFallback: {value or "disabled (only the primary model)"}'
+                def confirmed(yes):
+                    chosen((primary, value) if yes and usable() else None)
+                self.push_screen(Confirm(summary + '\nApply these model settings?'), confirmed)
+            self.push_screen(PickModel(title + ': fallback provider and model', [], fallback,
+                                       loader=load, identity=identity, agent_dir=agent_dir,
+                                       identity_valid=valid, allow_none=True, catalog_loader=catalog_load), selected)
+
+        if fallback_only:
+            select_fallback(current)
+        else:
+            self.push_screen(PickModel(title + ': primary provider and model', [], current,
+                                       loader=load, identity=identity, agent_dir=agent_dir,
+                                       identity_valid=valid, catalog_loader=catalog_load), select_fallback)
+
     def action_pick_model(self, which):
         if self.view_only:
             return
         runner = self.current()
         if runner is None or not runner.has_service:
-            if which == 'model':
-                self.pick_new_model()
+            self.pick_new_model(fallback_only=which == 'fallback' and bool(self.new_model))
             return
         name, repo = runner.name, runner.repo
         settings_path = Path(self.env_dir) / f'{name}.env'
+        settings = fleet_view.read_env(settings_path)
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
-        agent_dir = portal.service_agent_dir(fleet_view.read_env(settings_path))
+        agent_dir = portal.service_agent_dir(settings)
         def valid():
             selected = self.current()
             return (selected is not None and (selected.name, selected.repo) == (name, repo) and
                     portal.service_agent_dir(fleet_view.read_env(settings_path)) == agent_dir)
-        default_models = list_models is fleet_view.models
         def load():
-            if default_models:
-                return self.model_catalog(lambda: list_models(pi=pi, agent_dir=agent_dir), agent_dir, pi)
+            if list_models is fleet_view.models:
+                return list_models(pi=pi, agent_dir=agent_dir)
             return list_models()
-        current = runner.model if which == 'model' else runner.fallback
-        title = f'{runner.name}: {"model" if which == "model" else "fallback model"}'
-
-        def chosen(model):
-            if not model or model == current or self.view_only or not valid():
+        current = runner.model
+        fallback = '' if settings.get('PI_AUTOWORK_NO_FALLBACK') == '1' else runner.fallback
+        running = runner.service == 'running'
+        def chosen(configuration):
+            if configuration is None or self.view_only or not valid():
                 return
-            argv = [self.command, 'model', name] + ([model] if which == 'model' else ['--fallback', model])
-            action = fleet_view.Action('m', f'{which} {model}', argv,
-                                       confirm=f'Set {runner.name}\'s {which} to {model}'
-                                               + ('? Its service restarts; workers resume on the same attempt.'
-                                                  if runner.service == 'running' else '?'))
-            self.push_screen(Confirm(action.confirm),
-                             lambda yes: yes and valid() and not self.view_only and self.execute(action))
-        self.push_screen(PickModel(title, [], current, loader=load, identity=(name, repo, str(settings_path), agent_dir),
-                                   agent_dir=agent_dir, identity_valid=valid), chosen)
+            primary, fallback = configuration
+            argv = [self.command, 'model', name]
+            if which == 'model':
+                argv.append(primary)
+            argv += ['--fallback', fallback] if fallback else ['--no-fallback']
+            self.execute(fleet_view.Action('m', f'model settings for {name}', argv))
+        self.choose_model_configuration(f'{name}: model settings' + (' (service restarts)' if running else ''),
+            current, fallback, load=load, identity=(name, repo, str(settings_path), agent_dir),
+            agent_dir=agent_dir, valid=valid, chosen=chosen, fallback_only=which == 'fallback',
+            catalog_load=(lambda: self.model_catalog(None, agent_dir, pi))
+                         if list_models is fleet_view.models else None)
 
-    def pick_new_model(self, on_chosen=None):
+    def pick_new_model(self, on_chosen=None, *, fallback_only=False):
         list_models, pi = self.list_models, os.environ.get('AUTOWORK_PI', 'pi')
         agent_dir = self.new_model_agent_dir
+        selected = self.current()
+        target = (selected.name, selected.repo) if selected else None
+        origin = self.screen
+        path = getattr(origin, 'chosen_path', None)
+        def valid():
+            current = self.current()
+            return (origin.is_mounted and getattr(origin, 'chosen_path', None) == path and
+                    self.new_model_agent_dir == agent_dir and
+                    ((current.name, current.repo) if current else None) == target)
         def load():
-            return (self.model_catalog(lambda: list_models(pi=pi, agent_dir=agent_dir), agent_dir, pi)
+            return (list_models(pi=pi, agent_dir=agent_dir)
                     if list_models is fleet_view.models else list_models())
-        def chosen(model):
-            if model and not self.view_only and self.new_model_agent_dir == agent_dir:
-                self.new_model = model
+        def chosen(configuration):
+            if configuration is not None and not self.view_only and valid():
+                self.new_model, self.new_fallback = configuration
                 self.show_detail()
                 if on_chosen:
-                    on_chosen(model)
+                    on_chosen(configuration)
             elif on_chosen:
                 on_chosen(None)
-        self.push_screen(PickModel('Choose a Pi model for a new runner', [], self.new_model,
-                                   loader=load, identity=('new-runner', agent_dir),
-                                   agent_dir=agent_dir, identity_valid=lambda: self.new_model_agent_dir == agent_dir), chosen)
+        self.choose_model_configuration('New runner model settings', self.new_model, self.new_fallback,
+            load=load, identity=('new-runner', target, agent_dir), agent_dir=agent_dir,
+            valid=valid, chosen=chosen, fallback_only=fallback_only,
+            catalog_load=(lambda: self.model_catalog(None, agent_dir, pi))
+                         if list_models is fleet_view.models else None)
 
     @staticmethod
     def model_catalog(load_models, agent_dir, pi):
         # A failed/empty available-model list must not hide configurable providers.
         model_error = ''
         try:
-            models = load_models()
+            models = load_models() if load_models is not None else []
         except Exception:
             models = []
             model_error = 'Pi model catalog unavailable. Configure a provider or retry Refresh models.'
@@ -2177,13 +2327,15 @@ class FleetApp(App):
                     self.starting_repositories.discard(ready.repo)
             else:
                 self.starting_repositories.discard(ready.repo)
-        def model_chosen(model):
-            if not model or self.view_only or not browser.is_mounted or self.screen is not browser:
+        def model_chosen(configuration):
+            if not configuration or self.view_only or not browser.is_mounted or self.screen is not browser:
                 self.starting_repositories.discard(ready.repo)
                 return
-            action.env.update(PI_AUTOWORK_PRIMARY=model, PI_AUTOWORK_NO_FALLBACK='1',
+            model, fallback = configuration
+            action.env.update(PI_AUTOWORK_PRIMARY=model, PI_AUTOWORK_FALLBACK=fallback,
+                              PI_AUTOWORK_NO_FALLBACK='0' if fallback else '1',
                               PI_CODING_AGENT_DIR=self.new_model_agent_dir)
-            action.confirm += f' Model: {model}. Only this model will be used (no fallback).'
+            action.confirm += f' Primary: {model}. Fallback: {fallback or "disabled"}.'
             self.push_screen(Confirm(action.confirm), go)
 
         async def prepare_model():
@@ -2198,7 +2350,7 @@ class FleetApp(App):
                 elif saved:
                     self.push_screen(Confirm(action.confirm), go)
                 elif self.new_model:
-                    model_chosen(self.new_model)
+                    model_chosen((self.new_model, self.new_fallback))
                 else:
                     self.pick_new_model(model_chosen)
             except OSError as error:

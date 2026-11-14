@@ -5,7 +5,7 @@ import sys
 import threading
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from textual.app import App
-from textual.widgets import Input, Select, TextArea
+from textual.widgets import Button, Input, Select, Static, TabbedContent, TextArea
 from pi_autowork.planning_hub import PlanningHub
 from pi_autowork.planning_ui import DecisionPrompt, PlanScreen
 
@@ -16,6 +16,8 @@ class FakePlanner:
             raise RuntimeError('repository unavailable')
         self.repo, self.records, self.applied, self.sent = ('/repo' if repo == '/repo/sub' else repo), [], [], []
         self.release = threading.Event()
+        self.preview_result = {'revision': 'review-123', 'files': ['docs/plans/p.md'],
+                               'diff': '+ Proposal', 'valid': True, 'errors': []}
     def sessions(self):
         return list(self.records)
     def create(self, **kwargs):
@@ -37,7 +39,7 @@ class FakePlanner:
         self.sent.append((sid, message))
         return {'disposition': 'queued'}
     def preview(self, sid):
-        return {'id': sid, 'revision': 'review-123', 'files': ['docs/plans/p.md'], 'diff': '+ Proposal', 'valid': True, 'errors': []}
+        return {'id': sid, **self.preview_result}
     def apply(self, sid, rev):
         self.applied.append((sid, rev))
         return {'commit': 'cafe123'}
@@ -61,6 +63,7 @@ async def main():
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert screen.query_one('#plan-chat', TextArea).size.height >= 3
+            assert screen.query_one('#plan-input', TextArea).content_size.height >= 1
             # New is safe with an empty session list, including repeated clicks.
             for _ in range(2):
                 await pilot.click('#plan-new')
@@ -93,6 +96,51 @@ async def main():
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert '+ Proposal' in screen.query_one('#plan-proposal', TextArea).text
+            assert not screen.query_one('#plan-apply', Button).disabled
+            assert 'Ready to Apply' in str(screen.query_one('#plan-apply-status', Static).render())
+            # An authority rejection must explain the disabled button and how to recover.
+            valid_preview = dict(planner.preview_result)
+            error = 'tasks/items/T-003.md: planner cannot change live resource authorization gate [owner]'
+            planner.preview_result = {**valid_preview, 'valid': False, 'errors': [error],
+                                      'diff': '\n'.join('+ Proposed change ' + str(i) for i in range(100))}
+            await pilot.press('f2')
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            proposal = screen.query_one('#plan-proposal', TextArea)
+            assert screen.query_one('#plan-tabs', TabbedContent).active == 'plan-proposal-tab'
+            assert proposal.text.startswith('Validation failed.') and error in proposal.text
+            assert 'Send a corrected proposal' in proposal.text
+            assert 'Validation failed' in str(screen.query_one('#plan-state', Static).render())
+            assert screen.query_one('#plan-apply', Button).disabled
+            assert 'Apply disabled: Validation failed' in str(screen.query_one('#plan-apply-status', Static).render())
+            assert 'Send a corrected proposal' in str(screen.query_one('#plan-apply-status', Static).render())
+            assert screen.query_one('#plan-apply-status').region.bottom <= screen.query_one('#plan-controls').region.y
+            screen.action_apply()
+            assert app.screen is screen and planner.applied == []
+            proposal.scroll_to(y=proposal.max_scroll_y, animate=False)
+            await pilot.pause()
+            assert proposal.scroll_y > 0
+            await pilot.press('f2')
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert proposal.scroll_y == 0, 'Review must reveal validation errors above the diff'
+            # A valid preview with no file changes still cannot create a commit.
+            planner.preview_result = {**valid_preview, 'files': [], 'diff': ''}
+            await pilot.press('f2')
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert 'No proposed file changes' in proposal.text, (screen.preview, proposal.text[:300])
+            assert 'No proposed file changes' in str(screen.query_one('#plan-apply-status', Static).render())
+            assert screen.query_one('#plan-apply', Button).disabled
+            screen.action_apply()
+            assert app.screen is screen and planner.applied == []
+            # A corrected proposal restores the existing explicit confirmation flow.
+            planner.preview_result = valid_preview
+            await pilot.press('f2')
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert not screen.query_one('#plan-apply', Button).disabled
+            assert 'Ready to Apply' in str(screen.query_one('#plan-state', Static).render())
             await pilot.click('#plan-apply')
             await pilot.pause()
             await pilot.press('n')

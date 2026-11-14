@@ -2975,41 +2975,90 @@ fcntl.flock = observed_flock
         self.with_waiting_decision()
         self.plan({'worker:A': ['break_ledger']})  # maintainer defaults to making no change
         env = {**self.env, 'PI_AUTOWORK_STALL_AFTER': '1'}
-        runner = subprocess.Popen(['bash', str(RUNNER), '--interval', '1', '--workers', '1'], cwd=self.repo, env=env,
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        self.addCleanup(lambda: runner.poll() is None and runner.kill())
         log = lambda: ''.join(p.read_text() for p in self.state.glob('*/runner.log'))
-        deadline = time.monotonic() + 60
-        while 'DOCS-MAINTAINER: no change' not in log():
-            self.assertLess(time.monotonic(), deadline, log())
-            self.assertIsNone(runner.poll(), log())
-            time.sleep(0.2)
-        self.assertEqual(log().count('The engine needs attention'), 1, log())
-        self.assertIn('The engine needs attention: invalid task store', log())
-        self.assertEqual(log().count('DOCS-MAINTAINER: repairing the task docs of LEDGER'), 1, log())
-        listing = self.git(self.repo, 'worktree', 'list', '--porcelain')
-        session = next(Path(b.splitlines()[0].removeprefix('worktree ')) for b in listing.split('\n\n')
-                       if 'branch refs/heads/pi-autowork/' in b)
-        blocker_path = session / 'BLOCKERS.md'
-        blockers = blocker_path.read_text() if blocker_path.exists() else ''
-        self.assertNotIn('### Q-LEDGER', blockers)
-        self.assertIn('unknown goal PROOF', log())
-        # Technical failure does not create a question. An explicit correction on
-        # main must still reach the session even though A remains an in-flight slot.
-        (self.repo / 'tasks/goals/PROOF.md').write_text(task_store.render(dict(
-            schema=1, id='PROOF', title='Remaining proof', priority=2, source='docs/plan.md#proof',
-            status='unmet', focus=False, depends_on=[]), goal=True))
-        self.git(self.repo, 'add', 'tasks/goals/PROOF.md')
-        self.git(self.repo, 'commit', '-qm', 'owner records the goal PROOF-1 names')
-        deadline = time.monotonic() + 60
-        while not self.done('A', 'B', 'C'):
-            self.assertLess(time.monotonic(), deadline, log())
-            self.assertIsNone(runner.poll(), log())
-            time.sleep(0.2)
-        self.assertEqual(log().count('The engine needs attention'), 1, log())
-        runner.send_signal(signal.SIGINT)
-        runner.communicate(timeout=60)
-        self.assertEqual(runner.returncode, 130)
+        identity, output_path = self.root / 'attention-process.json', self.root / 'attention-output'
+        launcher = self.root / 'attention.sh'
+        # Controlled delayed-drain regression: both streams exceed pipe capacity before startup.
+        launcher.write_text("python3 -c 'import os; os.write(1, b\"x\" * 262144); os.write(2, b\"y\" * 262144)'\n"
+                            f'exec bash {shlex.quote(str(RUNNER))} "$@"\n')
+        started, stages = time.monotonic(), {}
+        # File output cannot stall the service while this observer is descheduled.
+        # The existing subreaper also owns setsid workers on assertion failure.
+        with output_path.open('w') as output:
+            guard = subprocess.Popen(
+                [sys.executable, str(ROOT / 'pi-autowork/pi_autowork/pi_process.py'),
+                 '--identity', str(identity), '--deadline', str(5 * 60 + 60), '--',
+                 'bash', str(launcher), '--interval', '1', '--workers', '1'],
+                cwd=self.repo, env=env, stdout=output, stderr=subprocess.STDOUT)
+            runner_fd = None
+
+            def wait(stage, predicate):
+                deadline = time.monotonic() + 60
+                while True:
+                    text = log()
+                    details = (f'{stage}; stages={stages}; load={os.getloadavg()}\n{text}\n'
+                               f'{output_path.read_text()[-6000:]}')
+                    self.assertIsNone(guard.poll(), details)
+                    if predicate(text):
+                        stages[stage] = round(time.monotonic() - started, 3)
+                        return
+                    self.assertLess(time.monotonic(), deadline, details)
+                    time.sleep(0.05)
+
+            try:
+                # "no change" is published before the diagnostic; it is not the barrier.
+                wait('attention reported', lambda text: 'The engine needs attention' in text)
+                owned = json.loads(identity.read_text())
+                runner_fd = os.pidfd_open(owned['pi_pid'])
+                ticks = Path(f'/proc/{owned["pi_pid"]}/stat').read_text().rsplit(')', 1)[1].split()[19]
+                self.assertEqual(owned['pi_start_time'], ticks)
+                self.assertEqual(log().count('The engine needs attention'), 1, log())
+                self.assertIn('The engine needs attention: invalid task store', log())
+                self.assertIn('DOCS-MAINTAINER: no change', log())
+                self.assertEqual(log().count('DOCS-MAINTAINER: repairing the task docs of LEDGER'), 1, log())
+                listing = self.git(self.repo, 'worktree', 'list', '--porcelain')
+                session = next(Path(b.splitlines()[0].removeprefix('worktree ')) for b in listing.split('\n\n')
+                               if 'branch refs/heads/pi-autowork/' in b)
+                blocker_path = session / 'BLOCKERS.md'
+                blockers = blocker_path.read_text() if blocker_path.exists() else ''
+                self.assertNotIn('### Q-LEDGER', blockers)
+                self.assertIn('unknown goal PROOF', log())
+                # Technical failure does not create a question. An explicit correction on
+                # main must reach the session even though A remains an in-flight slot.
+                self.assertFalse(self.done('A'))
+                (self.repo / 'tasks/goals/PROOF.md').write_text(task_store.render(dict(
+                    schema=1, id='PROOF', title='Remaining proof', priority=2, source='docs/plan.md#proof',
+                    status='unmet', focus=False, depends_on=[]), goal=True))
+                self.git(self.repo, 'add', 'tasks/goals/PROOF.md')
+                self.git(self.repo, 'commit', '-qm', 'owner records the goal PROOF-1 names')
+                wait('correction received', lambda _: (session / 'tasks/goals/PROOF.md').exists())
+                # Historical full runs advanced A/B throughout the old pooled 60 s window.
+                # Bound each real completion, not their aggregate; a stuck task still fails.
+                for task in 'ABC':
+                    wait(f'{task} done', lambda _, task=task: self.done(task))
+                self.assertTrue(self.done('A', 'B', 'C'))
+                self.assertEqual(log().count('The engine needs attention'), 1, log())
+                self.assertEqual(log().count('DOCS-MAINTAINER: repairing the task docs of LEDGER'), 1, log())
+                signal.pidfd_send_signal(runner_fd, signal.SIGINT)
+                guard.wait(timeout=60)
+                self.assertEqual(guard.returncode, 130, output_path.read_text()[-6000:])
+                self.assertTrue(output_path.read_text().startswith('x' * 262144 + 'y' * 262144))
+            finally:
+                if runner_fd is not None:
+                    os.close(runner_fd)
+                if guard.poll() is None:
+                    guard.terminate()
+                try:
+                    guard.wait(timeout=10)
+                finally:
+                    if guard.poll() is None:
+                        guard.kill()
+                        guard.wait()
+                print(f'ATTENTION_STAGES {stages}; load={os.getloadavg()}; '
+                      f'python={sys.executable} {sys.version}', flush=True)
+                self.assertTrue(identity.is_file(), output_path.read_text()[-6000:])
+                self.assertTrue(json.loads(identity.read_text())['cleanup_complete'],
+                                output_path.read_text()[-6000:])
 
     def test_ten_empty_intervals_keep_one_session_and_release_its_lease(self):
         self.write_todo(todo([]))
@@ -3848,12 +3897,75 @@ fcntl.flock = observed_flock
         self.assertIn('A: failed', result.stdout)
 
     def test_a_refused_adoption_holds_technically_without_running_the_resolver(self):
-        self.plan({'verify:A': ['fail', 'fail', 'fail']})  # with its one rework after review
-        first = self.run_runner('--until-empty')
-        self.assertEqual(first.returncode, 1, first.stdout + first.stderr)
+        # A finite run can see a validation hold before the review helper exits;
+        # its queue is then empty, but review rework has not recorded reviewed_twice.
+        # Hold the rework review until B lands, without host-load sleeps.
+        self.plan({'verify:A': ['fail', 'fail', 'gated_fail']})
+        ready, release = self.root / 'review-ready', self.root / 'review-release'
+        fake = FAKE_PI.replace("    if behavior == 'tamper':", """    if behavior == 'gated_fail':
+        root = os.environ['FAKE_PI_ROOT']
+        open(os.path.join(root, 'review-ready'), 'w').close()
+        while not os.path.exists(os.path.join(root, 'review-release')):
+            time.sleep(0.05)
+        behavior = 'fail'
+    if behavior == 'tamper':""")
+        (self.bin / 'pi').write_text(fake)
         slot_path = self.repo / '.git/autowork-execution/slots/A.json'
+        identity = self.root / 'setup-process.json'
+        with (self.root / 'setup.log').open('w+') as output:
+            runner = subprocess.Popen([sys.executable, str(ROOT / 'pi-autowork/pi_autowork/pi_process.py'),
+                                       '--identity', str(identity), '--deadline', '120',
+                                       '--', 'bash', str(RUNNER), '--interval', '1'],
+                                      cwd=self.repo, env=self.env, stdout=output,
+                                      stderr=subprocess.STDOUT, start_new_session=True)
+            try:
+                deadline = time.monotonic() + 120
+
+                def wait_until(predicate):
+                    while not predicate():
+                        diagnostic = ((self.root / 'setup.log').read_text() + '\n'
+                                      + (slot_path.read_text() if slot_path.exists() else ''))
+                        self.assertIsNone(runner.poll(), diagnostic)
+                        self.assertLess(time.monotonic(), deadline, diagnostic)
+                        time.sleep(0.05)
+
+                wait_until(ready.exists)
+                wait_until(lambda: 'B' in self.closed())
+                self.assertEqual([r['run'] for r in self.runs('verify') if r['task'] == 'A'],
+                                 ['fail', 'fail', 'gated_fail'])
+                release.touch()
+                wait_until(lambda: slot_path.exists()
+                           and json.loads(slot_path.read_text()).get('cause') == 'reviewed_twice'
+                           and (self.root / 'setup.log').read_text().count('A: failed') == 3)
+                runner.send_signal(signal.SIGINT)
+                runner.wait(timeout=120)
+                self.assertEqual(runner.returncode, 130, (self.root / 'setup.log').read_text())
+            finally:
+                # Also stop an unreleased fake reviewer if an assertion above fails.
+                release.touch()
+                if runner.poll() is None:
+                    runner.send_signal(signal.SIGINT)
+                runner.wait(timeout=120)
+                self.assertTrue(json.loads(identity.read_text())['cleanup_complete'])
+        # Interrupt preserves a session for resumption. Close only its fully landed,
+        # idle fixture worktree so the conflict phase starts from canonical main.
+        for block in self.git(self.repo, 'worktree', 'list', '--porcelain').split('\n\n'):
+            lines = block.splitlines()
+            branch = next((line.removeprefix('branch refs/heads/') for line in lines
+                           if line.startswith('branch refs/heads/pi-autowork/')), None)
+            if branch:
+                self.git(self.repo, 'merge-base', '--is-ancestor', branch, 'main')
+                self.git(self.repo, 'worktree', 'remove', lines[0].removeprefix('worktree '))
+                self.git(self.repo, 'branch', '-d', branch)
+                for session in self.state.glob('*/session.json'):
+                    if json.loads(session.read_text()).get('branch') == branch:
+                        session.unlink()
         original = json.loads(slot_path.read_text())
-        self.assertEqual(original['cause'], 'reviewed_twice')
+        self.assertEqual(original['cause'], 'reviewed_twice', original)
+        self.assertEqual([r['run'] for r in self.runs('verify') if r['task'] == 'A'],
+                         ['fail', 'fail', 'gated_fail'])
+        self.assertEqual(len([r for r in self.runs('worker') if r['task'] == 'A']), 3)
+        self.assertEqual(self.runs('merge'), [])
         original.update(cause='conflict', reason='merge conflict', conflict_files=['A.txt'])
         (self.repo / 'A.txt').write_text('conflicting session change\n')
         self.git(self.repo, 'commit', '-qam', 'session conflict')
@@ -3861,7 +3973,8 @@ fcntl.flock = observed_flock
         base = self.git(self.repo, 'rev-parse', 'HEAD')
         slot_path.write_text(json.dumps(dict(original, attempt=1, merged_base=base, merged_count=1)))
         result = self.run_runner('--once')  # main has not moved past the adopted revision
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 1, (self.root / 'setup.log').read_text()
+                         + result.stdout + result.stderr)
         self.assertEqual(len(self.runs('merge')), before, result.stdout)
         self.assertEqual(json.loads(slot_path.read_text())['state'], 'held')
         blockers = self.repo / 'BLOCKERS.md'
@@ -4773,6 +4886,62 @@ class ServiceTests(Fixture):
             self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
             self.assertNotIn('bad unit file setting', check.stdout + check.stderr)
 
+        # EnvironmentFile expands a glob even when %i contains systemd's literal
+        # backslash escapes. Exercise libc glob, rather than Python's different
+        # backslash rules, against the actual saved registration.
+        import ctypes
+        class Glob(ctypes.Structure):
+            _fields_ = [('count', ctypes.c_size_t), ('paths', ctypes.POINTER(ctypes.c_char_p)),
+                        ('offs', ctypes.c_size_t), ('flags', ctypes.c_int),
+                        ('padding', ctypes.c_void_p * 5)]
+        libc = ctypes.CDLL(None)
+        self.envs = self.root / 'envs space [literal]*?'
+        self.envs.mkdir()
+        self.env['PI_AUTOWORK_ENV_DIR'] = str(self.envs)
+        for name in ('navegador rust', 'café', r'folder\name', 'project[*?]', 'percent%repo'):
+            with self.subTest(name=name):
+                target = self.root / name
+                self.repo.rename(target)
+                self.repo = target
+                instance = subprocess.run(['systemd-escape', '--', name], check=True,
+                                          capture_output=True, text=True).stdout.strip()
+                registration = self.envs / f'{instance}.env'
+                registration.write_text(f'PI_AUTOWORK_REPO={self.repo}\nPI_AUTOWORK_PRIMARY=provider/model\n')
+                result = self.run_runner('--install-service')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                dropin = self.units / f'pi-autowork@{instance}.service.d/10-environment-file.conf'
+                settings = dropin.read_text()
+                if shutil.which('systemd-analyze'):
+                    verify = self.root / 'verify' / f'pi-autowork@{instance}.service'
+                    verify.write_text((self.units / 'pi-autowork@.service').read_text() + '\n' + settings)
+                    checked = subprocess.run(['systemd-analyze', '--user', 'verify', str(verify)],
+                                             capture_output=True, text=True)
+                    self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+                    self.assertNotIn('not absolute', checked.stderr)
+                    self.assertNotIn('Failed to resolve unit specifiers', checked.stderr)
+                # EnvironmentFile takes a raw path, without string unquoting;
+                # percent specifiers expand before globbing.
+                pattern = settings.split('EnvironmentFile=\nEnvironmentFile=', 1)[1].splitlines()[0]
+                pattern = pattern.replace('%%', '%')
+                matched = Glob()
+                try:
+                    self.assertEqual(libc.glob(pattern.encode(), 0, None, ctypes.byref(matched)), 0)
+                    self.assertEqual(matched.count, 1)
+                    self.assertEqual(os.fsdecode(matched.paths[0]), str(registration))
+                finally:
+                    libc.globfree(ctypes.byref(matched))
+                value = shlex.split(next(line.split('=', 1)[1] for line in settings.splitlines()
+                                        if line.startswith('Environment=')))[0].replace('%%', '%')
+                self.assertEqual(value, f'PI_AUTOWORK_ENV_FILE={registration}')
+                self.assertIn('PI_AUTOWORK_PRIMARY=provider/model\n', registration.read_text())
+                self.assertIn(f'--user restart pi-autowork@{instance}.service', self.calls.read_text())
+                self.assertEqual(self.runs(), [])
+                custom = dropin.parent / '90-owner.conf'
+                custom.write_text('# owner settings\n')
+                self.assertEqual(self.run_runner('--remove-service').returncode, 0)
+                self.assertFalse(dropin.exists())
+                self.assertEqual(custom.read_text(), '# owner settings\n')
+
     def test_observer_policy_survives_install_reinstall_and_fresh_start(self):
         home = Path(self.env['PI_AUTOWORK_HERMES_HOME'])
         store = home / 'cron/jobs.json'
@@ -4861,6 +5030,8 @@ class ServiceTests(Fixture):
         self.assertEqual(self.run_runner('--install-service').returncode, 0)
         registration = self.envs / 'project.env'
         saved = registration.read_bytes()
+        dropin = self.units / 'pi-autowork@project.service.d/10-environment-file.conf'
+        saved_dropin = dropin.read_bytes()
         for failure, state in (('disable', 'active'), ('show', 'inactive'), ('reset-failed', 'failed'),
                                ('', 'active'), ('', 'activating'), ('', 'deactivating')):
             with self.subTest(failure=failure, state=state):
@@ -4869,6 +5040,7 @@ class ServiceTests(Fixture):
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertNotIn('Removed ', result.stdout)
                 self.assertEqual(registration.read_bytes(), saved)
+                self.assertEqual(dropin.read_bytes(), saved_dropin)
         self.env.update(FAKE_FAIL='', FAKE_SERVICE_STATE='failed')
         legacy = self.legacy()
         for name in ('project', legacy):

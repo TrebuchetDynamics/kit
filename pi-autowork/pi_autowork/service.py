@@ -259,6 +259,23 @@ def _escape(*args):
     return subprocess.run(['systemd-escape', *args], capture_output=True, text=True).stdout.strip()
 
 
+def environment_dropin(env_file):
+    """Bind the existing registration without treating instance escapes as glob escapes.
+
+    EnvironmentFile globbing happens after %i expansion: a literal ``\\x20``
+    in an instance therefore loses its backslash. Quote the explicit filename
+    for glob. This directive takes a raw path; Environment= instead uses quoted
+    unit-file strings. Both directives expand percent specifiers.
+    """
+    def quote(value):
+        return '"' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"'
+
+    path = str(env_file)
+    pattern = ''.join('\\' + char if char in '\\*?[]' else char for char in path)
+    return ('[Service]\nEnvironmentFile=\nEnvironmentFile=' + pattern.replace('%', '%%')
+            + '\nEnvironment=' + quote(f'PI_AUTOWORK_ENV_FILE={path}') + '\n')
+
+
 def run(action, *, repo, base, script, workers, state_root, hermes_jobs, argv0):
     env = os.environ
     config = env.get('XDG_CONFIG_HOME') or str(Path.home() / '.config')
@@ -267,7 +284,7 @@ def run(action, *, repo, base, script, workers, state_root, hermes_jobs, argv0):
     env_dir = Path(env.get('PI_AUTOWORK_ENV_DIR') or f'{config}/pi-autowork')
     instance = Path(repo).name
     if not re.fullmatch(r'[A-Za-z0-9._-]+', instance):
-        instance = _escape(instance)
+        instance = _escape('--', instance)
     unit = f'pi-autowork@{instance}.service'
     env_file = env_dir / f'{instance}.env'
     try:
@@ -303,6 +320,12 @@ def run(action, *, repo, base, script, workers, state_root, hermes_jobs, argv0):
             die(1, f'Could not clear failed state for {target}; kept its registration.')
         for path in (env_dir / f'{name}.env', env_dir / f'{name}.paused', stop_marker(env_dir / f'{name}.env')):
             path.unlink(missing_ok=True)
+        dropin = unit_dir / f'{target}.d/10-environment-file.conf'
+        dropin.unlink(missing_ok=True)
+        try:
+            dropin.parent.rmdir()
+        except OSError:  # Keep any owner-provided drop-ins.
+            pass
 
     def retire_legacy():
         if legacy != instance and ((env_dir / f'{legacy}.env').exists()
@@ -330,6 +353,11 @@ def run(action, *, repo, base, script, workers, state_root, hermes_jobs, argv0):
     tmp = unit_dir / 'pi-autowork@.service.tmp'
     tmp.write_text(UNIT.format(env_dir=env_dir, script=script))
     os.replace(tmp, unit_dir / 'pi-autowork@.service')
+    dropin = unit_dir / f'{unit}.d/10-environment-file.conf'
+    dropin.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dropin.with_suffix('.conf.tmp')
+    tmp.write_text(environment_dropin(env_file))
+    os.replace(tmp, dropin)
     # The service sees this login's PATH (Pi, Node, Flutter and other tools); credentials stay in Pi.
     path = service_path(env)
     original = env.get('PATH', '').split(os.pathsep)

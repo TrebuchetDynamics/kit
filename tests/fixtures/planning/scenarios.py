@@ -12,6 +12,7 @@ from pathlib import Path
 import stat
 import subprocess
 import sys
+import tempfile
 
 SOURCE = Path(__file__).resolve().parents[3]
 COMMAND = SOURCE / 'pi-autowork/pi_autowork/command.py'
@@ -285,11 +286,25 @@ for entry, source in (('native', 'skills/plan-with-me/SKILL.md'),
         CASES[f'{entry}-{name}'] = case(source, request, repository)
 
 
+def command_environment(home):
+    """Keep user Git configuration and Python imports out of disposable seeds."""
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith(('GIT_', 'PYTHON'))}
+    # The native task CLI sanitizes GIT_* again, so config isolation needs HOME/XDG too.
+    return {**env, 'HOME': str(home), 'XDG_CONFIG_HOME': str(home),
+            'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull,
+            'PYTHONDONTWRITEBYTECODE': '1'}
+
+
 def run(root, *command):
     """Use the disposable repo, never an inherited Git index/worktree or host hook."""
-    env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
-    return subprocess.run(command, cwd=root, env={**env, 'PYTHONDONTWRITEBYTECODE': '1'},
-                          check=True, capture_output=True, text=True, timeout=60).stdout
+    with tempfile.TemporaryDirectory(prefix='planning-home-') as home:
+        try:
+            return subprocess.run(command, cwd=root, env=command_environment(home),
+                                  check=True, capture_output=True, text=True, timeout=60).stdout
+        except subprocess.CalledProcessError as exc:
+            exc.add_note(f'planning command cwd={root}: {exc.stderr}')
+            raise
 
 
 def git(root, *args):

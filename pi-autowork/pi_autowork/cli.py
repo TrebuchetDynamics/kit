@@ -26,7 +26,7 @@ import sys
 import tempfile
 from datetime import datetime
 
-from pi_autowork import health, hermes_observers, main_check, pi_runtime, post_merge_barrier, release, service, worker  # noqa: E402
+from pi_autowork import health, hermes_observers, main_check, pi_runtime, post_merge_barrier, release, service, usage, worker  # noqa: E402
 from pi_autowork.common import LOG, die, dirty, git, git_ok, lifecycle, model_of, provider_of, push_guard  # noqa: E402
 from pi_autowork.coordinator import Coordinator  # noqa: E402
 from pi_autowork.processes import running, start_time  # noqa: E402
@@ -236,6 +236,8 @@ def parse(argv):
             opts['set_aside'] = value('a task ID')
         elif arg == '--repo':
             opts['repo'] = value('a path')
+        elif arg == '--state':
+            opts['state'] = Path(value('a state directory'))
         elif arg == '--workers':
             opts['workers'] = value('a number')
         elif arg == '--interval':
@@ -250,6 +252,8 @@ def parse(argv):
             opts['service'] = 'install'
         elif arg == '--remove-service':
             opts['service'] = 'remove'
+        elif arg == '--usage':
+            opts['usage'] = True
         elif arg in ('-h', '--help'):
             print(USAGE, end='')
             sys.exit(0)
@@ -383,6 +387,12 @@ def run(argv, start, identity):
                    'or use --no-fallback.')
     jobs = hermes_jobs(repo)
     state = health.state_directory(state_root, repo, git_common)
+
+    # Console cost report: `pi-autowork usage`; not a run of the engine.
+    if opts.get('usage'):
+        return usage.cmd_usage(repo, state=state, since=opts.get('usage_since'),
+                               window=opts.get('usage_window'),
+                               json_output=opts.get('usage_json', False))
 
     # A request for the running runner, which owns the engine lease; nothing else changes.
     if opts['recheck_main']:

@@ -219,8 +219,8 @@ async def details_layout_pilot():
         await pilot.pause()
         pane = app.query_one('#detail-scroll')
         projects = app.query_one('#project-context')
-        assert pane.region.y >= projects.region.bottom, (pane.region, projects.region)
-        assert pane.region.width >= 178, pane.region
+        assert pane.region.x >= projects.region.right, (pane.region, projects.region)
+        assert pane.region.width >= 138, pane.region
         assert pane.region.height > 25, pane.region
         assert not app.query_one('#log').display and not app.query_one('#lanes').display
         for _ in range(3):
@@ -358,13 +358,13 @@ async def menu_pilot():
 async def layout_pilot():
     from textual.widgets import DataTable
     async with fixture_app((60, 18)) as (app, pilot):
-        for width, height in ((60, 18), (150, 45), (270, 70), (60, 24), (80, 18)):
+        for width, height in ((60, 18), (109, 30), (110, 30), (150, 45), (270, 70), (60, 24), (80, 18)):
             await pilot.resize_terminal(width, height)
             await pilot.pause()
             for selector in ('#runners', '#lanes'):
                 table = app.query_one(selector, DataTable)
                 assert table.region.height >= 3, (selector, table.region)
-                assert not table.show_horizontal_scrollbar, (selector, table.max_scroll_x)
+                assert not table.show_horizontal_scrollbar, (selector, width, height, table.region, table.max_scroll_x)
                 assert sum(c.get_render_width(table) for c in table.columns.values()) <= table.region.width - 2
             log = app.query_one('#log')
             assert log.region.height >= 4 and log.region.bottom <= height, log.region
@@ -376,18 +376,32 @@ async def layout_pilot():
                 assert app.focused.id == target, (key, app.focused)
             projects = app.query_one('#runners')
             workers = app.query_one('#lanes')
-            assert projects.region.width >= width - 2, projects.region
-            assert workers.region.width >= width - 2, workers.region
-            assert log.region.width >= width - 2, log.region
-            assert workers.region.y >= projects.region.bottom
+            context = app.query_one('#project-context')
+            if width >= 110:
+                assert 36 <= context.region.width <= 40, context.region
+                assert workers.region.x >= context.region.right, (context.region, workers.region)
+                assert workers.region.y == projects.region.y
+                assert log.region.x == workers.region.x
+                assert log.region.height > height // 2, log.region
+                assert app.query_one('#overview').region.y >= projects.region.bottom
+            else:
+                assert projects.region.width >= width - 2, projects.region
+                assert workers.region.width >= width - 2, workers.region
+                assert log.region.width >= width - 2, log.region
+                assert workers.region.y >= context.region.bottom
             assert log.region.y >= workers.region.bottom
             labels = [str(column.label) for column in projects.columns.values()]
-            if width >= 120:
-                assert labels[:8] == list(app.RUNNER_COLUMNS), labels
-                assert str(projects.get_row_at(0)[0]) == app.current().name
-                assert [str(column.label) for column in workers.columns.values()][:5] == list(app.LANE_COLUMNS)
-            else:
-                assert labels == ['Runner', 'State', 'Total'], labels
+            assert labels == ['Project', 'Status', 'Tasks'], labels
+            assert str(projects.get_row_at(0)[0]) == app.current().name
+            modelbar = app.query_one('#modelbar')
+            app.current().model = 'fixture/' + 'primary-model-' * 20
+            app.current().fallback = 'alternate/' + 'fallback-model-' * 20
+            app.show_detail()
+            await pilot.pause()
+            assert modelbar.region.height == 1 and modelbar.region.right <= width
+            painted_model = modelbar.render_line(0).text
+            assert '[m] Choose model' in painted_model and '[f] Fallback' in painted_model
+            assert len(painted_model) <= width
 
             bar = app.query_one('#menubar')
             painted = '\n'.join(bar.render_line(y).text for y in range(bar.content_size.height))

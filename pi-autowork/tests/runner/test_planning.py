@@ -121,6 +121,26 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(path.read_text(), source)
         self.assertFalse(task_commands.TaskStore.at(self.repo, 'HEAD').tasks['T-1'].runnable)
 
+    def test_new_denied_owner_live_obligation_can_be_planned_and_stays_blocked(self):
+        from pi_autowork import task_commands
+        source = ((self.repo / 'tasks/items/T-1.md').read_text()
+                  .replace('id = "T-1"', 'id = "T-2"')
+                  .replace('resources = []', 'resources = ["live"]')
+                  .replace('ownership = "worker"', 'ownership = "owner"')
+                  .replace('section = "Now"', 'section = "Needs decision"'))
+        preview = self.planner.stage(self.id, {'tasks/items/T-2.md': source})
+        self.assertTrue(preview['valid'], preview['errors'])
+        result = self.planner.apply(self.id, preview['revision'])
+        task = task_commands.TaskStore.at(self.repo, result['commit']).tasks['T-2']
+        self.assertEqual(task.ownership.value, 'owner')
+        self.assertEqual(task.live.value, 'denied')
+        self.assertEqual(task.resources, ('live',))
+        self.assertEqual(task.section, 'Needs decision')
+        self.assertIsNone(task.live_actor)
+        self.assertIsNone(task.live_at)
+        self.assertEqual(task.live_scope, ())
+        self.assertFalse(task.runnable)
+
     def test_cancel_at_settlement_does_not_stage_or_succeed(self):
         planner, _ = self.fake_planner('planner')
         cancel = threading.Event()

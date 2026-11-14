@@ -31,6 +31,8 @@ class PlanningAuthorityTests(unittest.TestCase):
     def test_prompt_text_is_generated_from_the_same_module(self):
         self.assertIn(planning_authority.policy_text(), planning.POLICY)
         self.assertIn('At most 64 files', planning.POLICY)
+        self.assertIn('New live obligations require explicit live = "denied" and ownership = "owner"',
+                      planning.POLICY)
         self.assertNotIn('At most 64 files, 256 KiB per file, 2 MiB total. Ordinary chat', planning.POLICY)
 
     def test_ordinary_task_fields_remain_editable(self):
@@ -59,6 +61,34 @@ class PlanningAuthorityTests(unittest.TestCase):
         with self.assertRaisesRegex(task_store.StoreError, 'live'):
             task_store.planner_authority(None, new.replace('live = "denied"', 'live = "authorized"'),
                                          path='tasks/items/T-2.md')
+
+    def test_new_owner_live_obligation_is_allowed_without_execution_authority(self):
+        pending = (TASK.replace('id = "T-1"', 'id = "T-2"')
+                   .replace('resources = []', 'resources = ["live"]')
+                   .replace('ownership = "worker"', 'ownership = "owner"')
+                   .replace('section = "Now"', 'section = "Needs decision"'))
+        task_store.planner_authority(None, pending, path='tasks/items/T-2.md')
+        for changed in (
+                pending.replace('live = "denied"', 'live = "authorized"'),
+                pending.replace('live = "denied"\n', ''),
+                *(pending.replace('ownership = "owner"', f'ownership = "{owner}"')
+                  for owner in ('worker', 'coordinator', 'unknown')),
+                pending.replace('ownership = "owner"\n', ''),
+                task_store.edit(pending, {'live_scope': []}),
+                task_store.edit(pending, {'live_actor': 'invented'}),
+                task_store.edit(pending, {'closure_evidence': 'invented'}),
+                pending + '- Evidence: invented\n',
+                pending + '- Held by: owner\n'):
+            with self.subTest(changed=changed), self.assertRaises(task_store.StoreError):
+                task_store.planner_authority(None, changed, path='tasks/items/T-2.md')
+
+    def test_existing_live_resource_gate_stays_protected_for_owner_tasks(self):
+        owner = TASK.replace('ownership = "worker"', 'ownership = "owner"')
+        live = owner.replace('resources = []', 'resources = ["live"]')
+        for before, after in ((owner, live), (live, owner)):
+            with self.subTest(before=before), self.assertRaisesRegex(task_store.StoreError, 'live resource'):
+                task_store.planner_authority(before, after)
+        task_store.planner_authority(live, live.replace('rank = 1', 'rank = 5'))
 
     def test_goal_progress_and_owner_notes_are_refused(self):
         task_store.planner_authority(GOAL, GOAL.replace('priority = 1', 'priority = 5'),

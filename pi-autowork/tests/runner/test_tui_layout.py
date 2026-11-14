@@ -145,6 +145,11 @@ async def layout_pilot():
                 table = app.query_one('#runners', DataTable)
                 assert not table.show_horizontal_scrollbar, (table.max_scroll_x, table.columns)
                 assert sum(c.get_render_width(table) for c in table.columns.values()) <= 58
+                await pilot.resize_terminal(110, 30)
+                app.render_fleet()
+                await pilot.pause()
+                assert not table.show_horizontal_scrollbar, (table.region, table.max_scroll_x)
+                assert sum(c.get_render_width(table) for c in table.columns.values()) <= table.region.width - 2
                 await pilot.resize_terminal(80, 24)
                 # The Details binding must not leak into child screens.
                 browser = BrowseScreen(str(root), lambda *args: no_command())

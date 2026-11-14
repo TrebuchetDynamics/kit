@@ -200,7 +200,7 @@ survival and missing/refused-login diagnosis, not live provider acceptance.
 | `bin/autowork`, `pi_autowork/command.py` | The `autowork` command (below), standard library only |
 | `pi_autowork/command_results.py` | Headless command-output and answer-receipt interpretation; no command execution, task mutation or UI effects |
 | `pi_autowork/tui_reads.py` | UI-loop read coordinator: four physical workers, coalesced requests, lifetime/identity/epoch-bound publication and cancellation-safe resource slots |
-| `pi_autowork/tui.py` | The `autowork` TUI (Textual, run through `uv`): live runners with what each needs (the owner's open BLOCKERS.md questions, else its first blocker), worker lanes, model and log, stacked full width so it reads on an 80-column terminal, a directory browser that starts services, and keys that run `autowork` commands; `--view-only` disables the keys |
+| `pi_autowork/tui.py` | The `autowork` TUI (Textual, run through `uv`): live runners with what each needs (the owner's open BLOCKERS.md questions, else its first blocker), worker lanes, model and log, a project sidebar on wide terminals and full-width stacking below 110 columns, a directory browser that starts services, and keys that run `autowork` commands; `--view-only` disables the keys |
 | `pi_autowork/tui_web.py` | `autowork web`: serves the TUI to a browser with textual-serve, on 127.0.0.1 by default |
 | `pi_autowork/questions.py` | The owner's questions block in `BLOCKERS.md`, built from the engine status without a model |
 | `pi_autowork/release.py` | Safe-checkpoint test before a self-update: fleet idle, and the new release reads current state |
@@ -375,6 +375,11 @@ agent, runner command or task mutation; only explicit Export writes a report cop
 Native terminal drag selection remains available.
 The directory browser's **g Plan** opens the embedded planning console for any
 repository; Tasks offers **g Discuss** and **v Investigate** for a selected task.
+**Prepare** and **Prepare and start** show progress and a persistent result above
+the directory tree. If preparation returns **NO_STORE**, no task store exists:
+no tasks were created and the service was not started. Prepare cannot invent work. Choose
+**Plan tasks…** to describe the work in the planning console. Opening it starts no
+model; proposals still require Review and Apply.
 Both **b** and **B** in Tasks open this in-app report; neither launches an agent
 or suspends the TUI. Interactive repair is still the separate
 `autowork blockers [dir]` command, not this report.
@@ -435,7 +440,7 @@ and the explicit agent commands below do.
 | `autowork stop [target]` | Stop the service; workers pause and resume on the same attempt. A deliberate stop is terminal: a restart will not revive the previous release or its push grant until `autowork start` |
 | `autowork restart [target] [--stop-workers [--now]]` | Reload in place; running workers keep running. `--stop-workers` waits for in-flight merges, then restarts the service and pauses workers; `--now` interrupts immediately instead |
 | `autowork pause` / `resume [target]` | Stop the service and keep it off, also after a reboot (disable), or start it again (enable); only a paused service is listed as `paused`, any other stopped one as `not running` |
-| `autowork model [target] [provider/model] [--fallback provider/model]` | Show or set this service's Pi model (checked against Pi's list), then reload it |
+| `autowork model [target] [provider/model] [--fallback provider/model \| --no-fallback]` | Show or set this service's Pi model (checked against Pi's list), then reload it |
 | `autowork models [search]` | Pi's model list (`pi --list-models`); an empty catalog is an actionable error, never `No/models` |
 | `autowork setup-portal --provider NAME --model ID [--endpoint URL] [--apply] [--json]` | Preview a selected Pi provider for the local Hermes Nous proxy; only `--apply` consents to configuration, never a proxy/service start |
 | `autowork ls [--long]` | One colored line per runner; `--long` adds its workers in flight, blockers, open owner-question count and model |
@@ -672,8 +677,9 @@ actions. The palette includes provider/model selection on the fleet and provider
 and refresh while the model picker is open. Read-only mode omits actions that
 change runner or repository state.
 
-The fleet keeps projects, selected summary, current work and activity stacked
-at full width, including on wide terminals. There is no project sidebar.
+At 110 columns and above, Projects and the selected summary sit on the left;
+Current work sits above Recent activity on the right. The project sidebar is
+36–40 columns wide. Smaller terminals stack these regions at full width.
 The fixed footer shows **1 Projects**, **2 Work**, **3 Activity**, Help and
 Quit. Press **h Guide** for the setup/execution/review/publication flow and how to
 interpret waiting, attention and unconfirmed states. Task progress is separate
@@ -682,10 +688,10 @@ Enter opens the selected log. Resizing does not acquire new state or dispatch an
 action.
 
 The fleet has three numbered regions: **Projects**, **Current work** and
-**Recent activity**. At 120 columns and above, the fleet table shows Runner,
-State, Active, Mergeable, Waiting, Blocker, Decision and Total, plus Needs and Now
-when space permits. Smaller terminals show Runner, State and Total. Wide worker
-tables show attempt, elapsed and quiet times. **i Details** retains full source evidence.
+**Recent activity**. The project table shows Project, Status and Tasks; the
+selected summary and Details retain the detailed task counts. Worker tables
+show attempt, elapsed and quiet times when their pane has enough room.
+**i Details** retains full source evidence.
 Unconfirmed worker observations retain that label and never count as verified
 active tasks. Repeated memory waits in the dashboard show their latest value,
 range, number of updates and first/last timestamps. Full-screen **Log**, including
@@ -734,8 +740,12 @@ keeps the available window rather than guessing a session boundary.
 
 A visible **Choose model** row shows the selected service's model. Press `m` (or
 click it with `autowork tui --mouse`) to choose a **Provider**, then search that
-provider's models. With multiple providers, select one before choosing a model;
-the current provider or the only available provider is preselected. Use Down to
+provider's models. Next, choose an independent fallback provider and model, or
+explicitly select **No fallback**. Both selectors browse the full catalog; the
+fallback provider can differ from the primary. Review both full model identifiers
+in the confirmation before applying them together. Cancelling either selector or
+the summary preserves the previous configuration. With multiple providers, select
+one before choosing a model; the current provider or the only available provider is preselected. Use Down to
 browse, Enter to select and Escape to return. Loading, no matches and catalog
 failures appear inside the selector. The provider menu includes Pi's configurable
 providers even when no models are available. It distinguishes credentials stored in
@@ -785,12 +795,14 @@ and [`AuthInteraction` contract](https://github.com/earendil-works/pi/blob/v1.5.
 Before starting a new service, choose its model in the TUI. You can select it from
 the fleet before browsing, or Play asks for it before the start confirmation.
 This choice stays in the TUI session until Start saves it for the new service;
-the confirmation names the model and disables automatic fallback. Existing services
-keep their saved model, fallback and Pi configuration. Changing an existing service's
-model still uses the separate model-change confirmation.
-The fleet has no Fallback or Nous Portal controls. Fallback remains visible in
-runner details; configure it with `autowork model --fallback` and use
-`autowork setup-portal` for opt-in provider setup.
+the start confirmation names the primary and fallback (or the explicit disabled
+choice). Existing services keep their saved model, fallback and Pi configuration
+when started. **Fallback** on the model bar, `f`, More and the command palette
+open the fallback selector independently. Applying existing service settings uses
+one model command and restarts a running service once.
+`autowork model --fallback provider/model` enables the selected fallback; `autowork model --no-fallback`
+disables fallback while retaining its saved model for later use. The fleet has no
+Nous Portal control; use `autowork setup-portal` for opt-in provider setup.
 If only the branch prevents readiness, Browse Play confirms the intended branch
 and calls Start for safe selection as described above. Other unready repositories
 offer **Prepare**, **Prepare and start**, **Plan**,
