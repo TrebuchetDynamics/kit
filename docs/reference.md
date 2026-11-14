@@ -64,7 +64,7 @@ relative to this repository.
 | Helper | Commands | Reference |
 | --- | --- | --- |
 | [`skills/docs-sync/scripts/docs.py`](../skills/docs-sync/scripts/docs.py) | `validate`, `check`, `stale`, `profiles` | `docs.py --help`; [role manifest](../skills/docs-sync/references/document-scaffold.md#optional-role-manifest) |
-| [`skills/orbi/scripts/orbi_control.py`](../skills/orbi/scripts/orbi_control.py) | `status` (default), `setup`, `start`, `stop`; `--repo-dir`, `--config`, `--dry-run`, `--json` | Python 3.11+; [lifecycle and safety boundaries](../skills/orbi/references/lifecycle.md) |
+| [`skills/orbi/scripts/orbi_control.py`](../skills/orbi/scripts/orbi_control.py) | `status` (default), `setup`, `start`, `stop`, `help` (read-only, needs no repository); `--repo-dir`, `--config`, `--dry-run`, `--json` | Python 3.11+; [lifecycle and safety boundaries](../skills/orbi/references/lifecycle.md) |
 
 ## Removed executor helpers
 
