@@ -1,0 +1,105 @@
+---
+name: orbi
+description: "Prepare, start, inspect or stop one Orbi deployment."
+license: MIT
+---
+
+# Orbi
+
+Apply the [shared Ponytail method](../shared/PONYTAIL.md) and the
+[shared communication rules](../shared/COMMUNICATION.md) within this workflow's
+scope, guided by the [GitHub-native contract](../../docs/github-native.md). This skill is a lifecycle
+client for one repository's existing Orbi deployment: it is not an executor,
+queue, daemon or second scheduler.
+
+`/orbi [status|setup|start|stop]` runs
+`python3 -B <this-skill>/scripts/orbi_control.py` with the same action and
+`--repo-dir PATH --config PATH --dry-run --json`. The default action is
+`status`; never run bare `orbi`, which is the Runner's one-tick entry. Use the
+helper, not hand-written `systemctl`, unit files or `orbi setup` commands.
+
+## Steps
+
+1. **Bind the repository.** Resolve the canonical checkout (the main worktree,
+   not a delivery worktree) and its GitHub origin. Read the native deployment
+   config and installed unit ownership. A repository with no deployment is
+   `absent`, not an empty queue.
+2. **Status.** Run `status` (or `status --json`) for the deployment state,
+   pinned source, shared bootstrap, provider metadata, target timers, service
+   states and ready queue. Status is read-only; missing evidence is
+   `unavailable`.
+3. **Prepare.** Run `setup` (preview with `--dry-run`). It stages the verified
+   pinned source, writes the native config and `.orbi/env`, reuses provider
+   metadata without credentials and validates with a non-activating `orbi
+   check`. It reports `prepared`; it never installs or enables a timer.
+4. **Start.** Run `start` only after the owner asks for scheduling. It re-reads
+   ownership, source, provider and prerequisite evidence, runs the supported
+   upstream `setup`/`install-units` with the scoped environment, enables only
+   this deployment's timers and requests one first tick when no worker runs.
+5. **Stop.** Run `stop` to disable only this deployment's owned timer instances,
+   including installed surplus instances. Active services finish: report
+   `draining` with the pending units until they stop. Never kill, stop or
+   restart a service to make the state look clean.
+6. **Report evidence.** Name the repository, deployment, unit, pin, source and
+   scheduler states you actually read, and the commands you ran. Keep provider
+   identifiers and non-secret evidence only.
+
+Use `status` on macOS; lifecycle mutations there are refused before any side
+effect. Linux is the only mutation platform in this version.
+
+## Common Rationalizations
+
+| Rationalization | Reality |
+| --- | --- |
+| "Setup already installs units, so enabling now is harmless." | Upstream setup and install-units enable timers at this pin. Setup must leave scheduling inactive until an explicit start. |
+| "A second deployment is easy; more slots deliver faster." | One repository has one task pool. A duplicate pool causes double claims; the helper refuses ambiguous matches and unit conflicts. |
+| "PYTHONPATH isolates the source, so the uv tool dir can stay shared." | A first tick or packaging change can reinstall the shared tool and change another deployment's launcher. Set `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` with `PYTHONPATH`. |
+| "Stopping the service guarantees the work is done." | Stop owns timers only. A pre-existing invocation may finish; report `draining` and remaining review/merge work. |
+| "`orbi doctor` warns about enforced admins, so relax protection." | The warning describes the merge identity, not a protection defect. Keep enforced admins, strict CI, independent review and human acceptance. |
+| "The queue is empty because the status read failed." | A failed read is `unavailable`. Use the read-only doctor plus explicit `gh` and scheduler reads; never invent an empty queue. |
+| "A missing launcher is ours to force-reinstall." | The units use the shared user bootstrap. Verify it and fail closed; repairing another deployment's launcher is not this command's scope. |
+
+## Red Flags
+
+- A setup or dry-run runs `orbi setup`, `install-units`, `systemctl enable`,
+  `enable --now`, `uv tool install`, `git fetch`/`clone`, label writes or
+  creates locks, receipts or `.orbi/cli-install.json`.
+- A command runs bare `orbi` with no named subcommand, or assembles commands
+  through a shell string instead of an argv list.
+- The target config or `.orbi/env` was rewritten while another deployment or a
+  live worker was observed.
+- `PYTHONPATH` is set without the deployment-local `UV_TOOL_DIR` and
+  `UV_TOOL_BIN_DIR`, or those values differ between `.orbi/env` and a
+  helper-launched command.
+- A unit is disabled or stopped without proving it belongs to this deployment,
+  or a service is stopped, killed or restarted by `stop`.
+- Status or dry-run writes a file, locks, fetches or changes a label.
+- An existing pin is upgraded, a credential is copied, or a literal
+  credential is written into provider metadata.
+- The platform is macOS or unsupported and a mutation still ran.
+- A secret, token, `auth.json`, private identity or raw child stderr appears
+  in a command, receipt, Issue or PR.
+
+## Boundaries
+
+- Not an executor or scheduler: it never runs a tick, claims an issue, reviews
+  or merges. Use the deployment's scheduler and the GitHub delivery loop.
+- Not `/unblock`: recovery and interrupted-work repair follow
+  [service boundaries](../unblock/references/services.md).
+- Not `/git-commit-push`: it does not commit, push or open a PR for the
+  repository it manages.
+- Not `/plan-with-me` or `/plan-for-me`: planning authorizes no live service
+  change.
+- Not `/autowork`: that command only inspects the Orbi handoff and never starts
+  the retired runner.
+- Not a cross-machine lock or capacity guarantee: visibility covers local
+  deployments; report remote ownership as unavailable.
+
+Load [lifecycle reference](references/lifecycle.md) for the interface,
+discovery rules, isolation variables, pinned source, ownership bounds and
+partial-failure recovery. The standing [Definition of Done](../shared/DEFINITION-OF-DONE.md)
+applies beyond this task's acceptance.
+
+**Done when:** the named deployment's state and the evidence behind it are
+reported, and every mutation was limited to that repository with its active
+workers preserved.
