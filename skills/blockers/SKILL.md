@@ -58,8 +58,8 @@ Resolve the target from the active profile's configured repository or current
 checkout; ask only when it cannot be established. Read GitHub Issues, native
 blockedBy dependencies, linked PRs and checks, and actual Orbi ownership where
 available. Inspect retained attempts read-only as migration evidence, not a second
-queue. Include owner-maintained BLOCKERS.md entries and every unresolved issue
-decision, even when absent from a dashboard. A failed read is unavailable evidence,
+queue. Include every unresolved issue decision, even when absent from a
+dashboard. A failed read is unavailable evidence,
 not an empty queue. Never use the removed executor CLI or edit its runtime state.
 
 ### Filter before asking
