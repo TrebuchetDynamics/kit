@@ -16,6 +16,8 @@
   },
   "files": [
     "scripts/github_issues.py",
+    "scripts/worktree_paths.py",
+    "scripts/checkout_lock.py",
     "adapters/",
     "skills/",
     "!**/__pycache__",

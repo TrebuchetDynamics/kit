@@ -174,7 +174,8 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     'adapters/skills/state-machine/SKILL.md', 'adapters/skills/state-machine/agents/openai.yaml',
     'skills/shared/COMMUNICATION.md', 'skills/work/SKILL.md',
     'adapters/skills/work/SKILL.md', 'adapters/skills/work/agents/openai.yaml',
-    'scripts/github_issues.py', 'docs/github-native.md']) {
+    'scripts/github_issues.py', 'scripts/worktree_paths.py', 'scripts/checkout_lock.py',
+    'docs/github-native.md']) {
     assert.equal(paths.has(path), true, path);
   }
 });

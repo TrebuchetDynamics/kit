@@ -18,7 +18,8 @@ class PortablePackageTests(unittest.TestCase):
         self.assertEqual(pi['pi']['skills'], ['./adapters/skills'])
         self.assertEqual(pi['pi']['extensions'], ['./adapters/pi.mjs'])
         self.assertNotIn('scripts', pi, 'installation must not run setup hooks')
-        self.assertIn('scripts/github_issues.py', pi['files'])
+        for helper in ('github_issues.py', 'worktree_paths.py', 'checkout_lock.py'):
+            self.assertIn('scripts/' + helper, pi['files'])
         self.assertIn('docs/', pi['files'])
         self.assertNotIn('autowork', pi['bin'])
         self.assertFalse(any('pi-autowork' in entry or entry.startswith('src/')
