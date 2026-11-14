@@ -595,14 +595,36 @@ def pi_bolt_item(output=None, mode='install'):
                             run=lambda: install_pi_bolt(output, update=mode == 'update'))])
 
 
+def missing_package_skills(package):
+    """Skill folders this checkout ships that the installed package checkout lacks.
+
+    An ordinary install keeps a registered package instead of running `pi install`,
+    so a release that adds a skill never reaches Pi: the skill has no `/skill:<name>`
+    and no command. A package whose skill folders are complete is still kept, so an
+    install stays offline-safe; only a provably stale one is refreshed.
+    """
+    shipped = ROOT / 'adapters/skills'
+    installed = package / 'adapters/skills'
+    if not shipped.is_dir():
+        return []
+    present = {p.name for p in installed.iterdir() if (p / 'SKILL.md').is_file()} \
+        if installed.is_dir() else set()
+    return sorted(p.name for p in shipped.iterdir()
+                  if (p / 'SKILL.md').is_file() and p.name not in present)
+
+
 def items(hermes_args, output=None, mode='install'):
     package = pi_package()
     pi = Item('pi', 'Pi package + bundled Ponytail', needs='pi', note='needs Node 22+')
     if package:
-        pi.note = f'installed at {package}; use install.sh update to refresh'
-        if mode == 'update':
-            pi.steps.append(Step(f'pi update {PI_SOURCE}', ['pi', 'update', PI_SOURCE]))
+        stale = missing_package_skills(package)
+        if mode == 'update' or stale:
+            reason = 'update requested' if mode == 'update' else f'skills missing: {", ".join(stale)}'
+            pi.note = f'installed at {package}; refreshing ({reason})'
+            pi.steps.append(Step(f'pi update {PI_SOURCE} (the installed package is out of date: {reason})',
+                                 ['pi', 'update', PI_SOURCE]))
         else:
+            pi.note = f'installed at {package}; use install.sh update to refresh'
             pi.steps.append(Step(f'keep the installed Pi package at {package}',
                                  run=lambda: f'{PI_SOURCE} already installed at {package}; kept'))
     else:
