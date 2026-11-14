@@ -27,3 +27,4 @@ node_modules/
 .codex-plugin/
 .agents/plugins/
 .mypy_cache/
+.claude/
