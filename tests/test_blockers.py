@@ -34,7 +34,13 @@ class BlockersContract(unittest.TestCase):
                      ROOT / 'skills/plan-with-me/references/special-cases.md'):
             with self.subTest(path=str(path.relative_to(ROOT))):
                 body = text(path)
-                self.assertIn('blockers/SKILL.md', body)
+                if path.parent.name == 'autowork':
+                    self.assertIn('Orbi', body)
+                    self.assertNotIn('autowork start', body)
+                elif 'adapters' in path.parts:
+                    self.assertIn('../../../skills/plan-with-me/SKILL.md', body)
+                else:
+                    self.assertIn('blockers/SKILL.md', body)
         self.assertIn('blockers/SKILL.md', text(ROOT / 'adapters/skills/blockers/SKILL.md'))
 
     def test_reads_the_runner_block_or_the_engine_without_a_model(self):

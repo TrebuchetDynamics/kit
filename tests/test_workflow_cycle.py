@@ -6,29 +6,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CycleGuidanceTests(unittest.TestCase):
-    def test_caller_controlled_continuation_matrix_across_hosts(self):
-        # Instruction contracts only: these fixtures do not execute a model or cron.
-        paths = ('skills/shared/ENGINEERING-CYCLE.md', 'skills/autowork/SKILL.md',
-                 'adapters/skills/autowork/SKILL.md')
-        cases = {
-            'default interactive': 'Default interactive execution',
-            'explicit one-task': 'An explicit one-task limit stops new selection',
-            'explicit continuation': 'Explicit continuation or whole-spec scope',
-            'recurring occurrence': 'Recurrence authorizes the saved occurrence',
-            'saved batch limit': 'saved stop/batch limits',
-            'no budgets': 'no token, cost or time budgets',
-        }
-        for path in paths:
+    def test_caller_controlled_continuation_uses_github_and_preserves_scope(self):
+        manual = (ROOT / 'skills/work/SKILL.md').read_text()
+        for requirement in ('Honor a supplied issue or scope', 'Continue eligible work',
+                            'caller', 'A session end starts no replacement service'):
+            self.assertIn(requirement, manual)
+        for path in ('skills/autowork/SKILL.md', 'adapters/skills/autowork/SKILL.md'):
             text = (ROOT / path).read_text()
-            if path == 'skills/autowork/SKILL.md':
-                self.assertIn('references/iteration-and-decisions.md#mode-precedence', text)
-                text += (ROOT / 'skills/autowork/references/iteration-and-decisions.md').read_text()
-            for case, requirement in cases.items():
-                with self.subTest(path=path, case=case):
-                    self.assertIn(requirement, text)
-            self.assertNotIn('Only an explicit whole-spec implementation request authorizes', text)
-            for removed in ('unknown usage is not zero', 'exhausted allocation', 'additional allocation'):
-                self.assertNotIn(removed, text)
+            self.assertIn('Orbi', text)
+            self.assertNotIn('autowork start .', text)
 
     def test_same_task_recovery_and_independent_fallback_keep_real_holds(self):
         iteration = (ROOT / 'skills/autowork/references/iteration-and-decisions.md').read_text()
@@ -47,25 +33,20 @@ class CycleGuidanceTests(unittest.TestCase):
             self.assertIn(requirement, scheduled)
         self.assertNotIn('unknown usage is not zero', scheduled)
 
-    def test_ready_native_and_portable_guidance_use_composition_not_duplicate_validation(self):
+    def test_ready_native_and_portable_guidance_use_one_github_contract(self):
         native = (ROOT / 'skills/autowork/SKILL.md').read_text()
         portable = (ROOT / 'adapters/skills/autowork/SKILL.md').read_text()
-        self.assertIn('default is one composed command', native)
-        self.assertIn('--owner-pid', native)
-        self.assertNotIn('run `scripts/start_goal.py … --validate-only`', native)
-        self.assertIn('one host-native', portable)
-        self.assertIn('No Kanban lookup', portable)
-        self.assertIn('no token, cost or time budgets', native)
-        self.assertIn('no token, cost or time budgets', portable)
-        self.assertNotIn('consumed budget', native + portable)
+        self.assertIn('../shared/PLAN-HANDOFF.md', native)
+        self.assertIn('../../../skills/autowork/SKILL.md', portable)
+        for text in (native, portable):
+            self.assertNotIn('--owner-pid', text)
+            self.assertNotIn('autowork tasks prepare', text)
 
-    def test_autowork_starts_the_runner_service_and_works_by_hand_only_when_it_cannot(self):
-        """`/autowork start` did the work in the session while the repository's runner sat unused."""
-        portable = (ROOT / 'adapters/skills/autowork/SKILL.md').read_text()
-        start, by_hand = portable.index('Run `autowork start .`'), portable.index('Do the work by hand in this session')
-        self.assertLess(start, by_hand)
-        for phrase in ('If `AUTOWORK_SLOT` is set', 'only when the service\n   can\'t run', 'the runner owns them'):
-            self.assertIn(phrase, portable)
+    def test_autowork_never_falls_back_to_legacy_execution(self):
+        native = (ROOT / 'skills/autowork/SKILL.md').read_text()
+        self.assertIn('never starts, resumes, installs or schedules', native)
+        self.assertIn('no fallback executor', native)
+        self.assertIn('routes explicitly to `/work`', native)
 
     def test_default_guidance_does_not_route_through_native_card_tools(self):
         paths = ('skills/autowork/SKILL.md',
@@ -96,20 +77,11 @@ class CycleGuidanceTests(unittest.TestCase):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
 
-    def test_shared_scheduled_policy_owns_fallback_and_authorized_delivery(self):
+    def test_legacy_scheduled_policy_is_not_an_active_entrypoint(self):
         core = (ROOT / 'skills/autowork/SKILL.md').read_text()
-        self.assertIn('references/scheduled-policy.md', core)
-        text = (ROOT / 'skills/autowork/references/scheduled-policy.md').read_text()
-        self.assertIn('# Scheduled policy and profile exceptions', text)
-        self.assertIn('load `kit:docs-sync`', text)
-        self.assertIn('rerun selection in the same occurrence', text)
-        self.assertIn('load `kit:git-commit-push`', text)
-        self.assertIn('exact remote ref and SHA', text)
-        self.assertIn('publication authority', text)
-        self.assertIn('source before changing profile prompts', text)
-        self.assertIn('never implies push permission', text)
-        self.assertNotIn('at most once per day', text)
-        self.assertNotIn('Repo-docs runs separately;', text)
+        self.assertNotIn('references/scheduled-policy.md', core)
+        self.assertIn('migration and recovery only', core)
+        self.assertIn('No legacy runner', (ROOT / 'skills/plan-for-me/SKILL.md').read_text())
 
     def test_cycle_routes_available_skills_and_preserves_authority(self):
         policy = ROOT / 'skills/shared/ENGINEERING-CYCLE.md'
@@ -123,9 +95,10 @@ class CycleGuidanceTests(unittest.TestCase):
                             'tasks/todo.md', 'review acceptance', 'NOT_CHECKED'):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
-        for path in ('docs-sync/SKILL.md', 'autowork/SKILL.md',
-                     'autowork/references/whole-spec-execution.md'):
-            self.assertIn('ENGINEERING-CYCLE.md', (ROOT / 'skills' / path).read_text())
+        for path in ('docs-sync/SKILL.md', 'autowork/SKILL.md'):
+            self.assertIn('PLAN-HANDOFF.md', (ROOT / 'skills' / path).read_text())
+        self.assertIn('ENGINEERING-CYCLE.md',
+                      (ROOT / 'skills/autowork/references/whole-spec-execution.md').read_text())
 
     def test_supporting_guidance_does_not_reintroduce_phase_checklists(self):
         forbidden = {
@@ -159,7 +132,7 @@ class CycleGuidanceTests(unittest.TestCase):
                             'Runtime admission still reads the committed typed task records'):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, policy)
-        for path in ('AGENTS.md', 'skills/autowork/SKILL.md',
+        for path in ('AGENTS.md',
                      'skills/autowork/references/iteration-and-decisions.md',
                      'pi-autowork/task-store.md'):
             with self.subTest(path=path):

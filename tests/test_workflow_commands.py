@@ -73,41 +73,19 @@ class WorkflowCommands(unittest.TestCase):
         self.assertNotIn('Selected route: autonomous project discovery', prompt)
         self.assertTrue(prompt.endswith('implement offline support'))
 
-    def test_planners_describe_a_rolling_flutter_batch_but_not_a_small_task(self):
-        # Text-only fixtures: this checks the saved skill contract, not model execution.
+    def test_planners_publish_evidence_backed_issues_without_legacy_rolling_jobs(self):
         self.plugin.SKILLS_DIR = fixture.ROOT / 'skills'
         self.plugin.register(self.ctx)
-        work_center = (fixture.ROOT / 'skills/shared/TODO-WORKCENTER.md').read_text()
         protocol = (fixture.ROOT / 'skills/shared/RESEARCH-PLAN.md').read_text()
         for command, skill in (('plan_for_me', 'plan-for-me'), ('plan_with_me', 'plan-with-me')):
             text = self.ctx.skills[skill].read_text() + protocol
-            for required in ('TODO-WORKCENTER.md#rolling-planning', 'kind = "plan"',
-                             'Plan round: 1 of 10', 'every building task', 'Needs decision',
-                             'continue on its own'):
+            for required in ('GitHub Issues', 'ai-ready', 'ai-planning', 'blockedBy',
+                             'do not create an automatic legacy'):
                 self.assertIn(required, text)
-            for request, want_plans in (('port this project to Flutter', 1), ('fix a README typo', 0)):
-                with self.subTest(command=command, request=request):
-                    self.ctx.commands[command](request)
-                    self.assertTrue(self.ctx.messages[-1][0].endswith(request))
-                    example = work_center.split('### Example: ' + request + '\n', 1)[1].split('\n### ', 1)[0]
-                    # Each record: `+++` TOML frontmatter `+++`, then its `- Label: value` notes.
-                    entries = [(tomllib.loads(header), notes) for header, notes in re.findall(
-                        r'^\+\+\+\n(.*?)^\+\+\+\n((?:- [^\n]*\n)*)', example, re.M | re.S)]
-                    self.assertTrue(entries)
-                    plans = [(fields, notes) for fields, notes in entries if fields['kind'] == 'plan']
-                    self.assertEqual(len(plans), want_plans)
-                    if plans:
-                        building_ids = [fields['id'] for fields, _ in entries if fields['kind'] != 'plan']
-                        self.assertTrue(building_ids)
-                        self.assertLessEqual(len(entries), 8)
-                        self.assertEqual(entries[-1], plans[0])
-                        self.assertTrue(all(fields['goal'] == 'PORT' for fields, _ in entries))
-                        fields, notes = plans[0]
-                        self.assertEqual(fields['depends_on'], building_ids)
-                        self.assertIn('- Plan round: 1 of 10', notes)
-                        self.assertRegex(fields['scope'], r'PORT.*find out')
-                    else:
-                        self.assertEqual(len(entries), 1)
+            for request in ('port this project to Flutter', 'fix a README typo'):
+                self.ctx.commands[command](request)
+                self.assertTrue(self.ctx.messages[-1][0].endswith(request))
+            self.assertNotIn('autowork tasks add', text)
 
     def test_plan_for_me_reserves_both_spellings_for_existing_owners(self):
         self.skill('plan-for-me')

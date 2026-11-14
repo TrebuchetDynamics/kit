@@ -1,5 +1,10 @@
 # Commands and repository workflows
 
+> **GitHub-native cutover:** GitHub Issues now own executable work and Orbi owns
+> delivery. The Autowork runner, plugin and scheduler/install instructions below
+> are retained legacy reference, not the active execution contract. Do not start
+> them for new work. See [current setup and migration](github-native.md).
+
 ## Blockers resolves held work and owner questions
 
 `/blockers` inspects both engine-held tasks and the runner's owner questions,
@@ -597,7 +602,7 @@ default. Only an explicit user request permits a new or renewed task hold, inclu
 an already-authorized runner; do not copy them into task exclusions as a requirement
 for another implementation order. Use execution leases and workspace locks for
 ownership. Existing user pauses, live claims, real dependencies and safety gates
-remain in force. See the [task-hold policy](../skills/shared/TODO-WORKCENTER.md#task-holds-require-an-explicit-user-request).
+remain in force. See the [GitHub publication and pause policy](../skills/shared/PLAN-HANDOFF.md#publication-and-dependencies).
 Shared-file decomposition retains the
 existing admission/ranking rules, not invented dependency locks. Planning commits
 include only attributable changes and never amend another session's runner merge.

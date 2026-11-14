@@ -16,6 +16,69 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/check.py'
 
 
+# The executor contract changed; keep the immutable layout fixture intact and
+# require each superseded instruction check's explicit replacement. Runtime recovery
+# checks remain in their original modules. This is not a blanket deletion exemption.
+GITHUB_NATIVE_REPLACEMENTS = {
+    'tests/test_install_menu.py': {
+        'InstallMenuTests.test_restart_services_uses_safe_runner_restart_and_tries_every_service':
+            'InstallMenuTests.test_restart_services_excludes_legacy_runner_and_tries_host_services',
+    },
+    'tests/test_planning_cli_contract.py': {
+        'PlanningCliContractTests.test_execution_handoff_names_a_session_or_runner_without_starting_either':
+            'PlanningCliContractTests.test_runtime_handoffs_do_not_revive_old_executor',
+        'PlanningCliContractTests.test_all_planning_routes_require_main_persistence_before_completion':
+            'PlanningCliContractTests.test_local_main_and_legacy_store_are_not_admission_requirements',
+        'PlanningCliContractTests.test_planners_share_descriptive_task_name_policy':
+            'PlanningCliContractTests.test_handoff_publishes_complete_native_graph_before_readiness',
+        'PlanningCliContractTests.test_interactive_runtime_failure_reuses_task_and_coordinator':
+            'PlanningCliContractTests.test_runtime_failure_preserves_existing_contract',
+        'PlanningCliContractTests.test_completed_task_retention_is_minimal_and_safe':
+            'PlanningCliContractTests.test_local_main_and_legacy_store_are_not_admission_requirements',
+        'PlanningCliContractTests.test_task_writers_share_actionable_description_policy':
+            'PlanningCliContractTests.test_handoff_publishes_complete_native_graph_before_readiness',
+        'PlanningCliContractTests.test_planning_handoffs_limit_selection_claims_and_disclose_delivery':
+            'PlanningCliContractTests.test_handoff_publishes_complete_native_graph_before_readiness',
+        'PlanningCliContractTests.test_ready_continuation_returns_without_executing_inside_planning':
+            'PlanningCliContractTests.test_runtime_handoffs_do_not_revive_old_executor',
+        'PlanningCliContractTests.test_readiness_guidance_separates_selection_from_dispatch_and_delivery':
+            'PlanningCliContractTests.test_handoff_publishes_complete_native_graph_before_readiness',
+        'PlanningCliContractTests.test_autonomous_blocker_routing_preserves_existing_contract_and_recovery':
+            'PlanningCliContractTests.test_runtime_failure_preserves_existing_contract',
+    },
+    'tests/test_planning_decision_closure.py': {
+        'PlanningDecisionClosureTests.test_handoff_makes_queue_and_commit_disposition_explicit':
+            'PlanningDecisionClosureTests.test_handoff_makes_github_disposition_explicit',
+    },
+    'tests/test_portable_package.py': {
+        'PortablePackageTests.test_work_selects_and_continues_here_without_the_runner_first_route':
+            'PortablePackageTests.test_work_uses_github_with_coordinated_manual_ownership',
+    },
+    'tests/test_workflow_commands.py': {
+        'WorkflowCommands.test_planners_describe_a_rolling_flutter_batch_but_not_a_small_task':
+            'WorkflowCommands.test_planners_publish_evidence_backed_issues_without_legacy_rolling_jobs',
+    },
+    'tests/test_workflow_cycle.py': {
+        'CycleGuidanceTests.test_ready_native_and_portable_guidance_use_composition_not_duplicate_validation':
+            'CycleGuidanceTests.test_ready_native_and_portable_guidance_use_one_github_contract',
+        'CycleGuidanceTests.test_shared_scheduled_policy_owns_fallback_and_authorized_delivery':
+            'CycleGuidanceTests.test_legacy_scheduled_policy_is_not_an_active_entrypoint',
+        'CycleGuidanceTests.test_autowork_starts_the_runner_service_and_works_by_hand_only_when_it_cannot':
+            'CycleGuidanceTests.test_autowork_never_falls_back_to_legacy_execution',
+        'CycleGuidanceTests.test_caller_controlled_continuation_matrix_across_hosts':
+            'CycleGuidanceTests.test_caller_controlled_continuation_uses_github_and_preserves_scope',
+    },
+    'tests/test_worktree_closeout.py': {
+        'WorktreeCloseoutTests.test_native_portable_and_shared_entrypoints_require_closeout':
+            'WorktreeCloseoutTests.test_legacy_closeout_is_retained_but_not_an_orbi_entrypoint',
+    },
+    'pi-autowork/tests/runner/test_task_prepare.py': {
+        'DocsSyncInstructionTests.test_every_docs_sync_entry_runs_prepare_and_none_asks_the_owner_to_migrate':
+            'DocsSyncInstructionTests.test_docs_sync_publishes_github_without_preparing_a_legacy_store',
+    },
+}
+
+
 class TextualDependencyTests(unittest.TestCase):
     def test_fast_ci_prepares_pinned_textual_before_offline_suites(self):
         import yaml
@@ -313,11 +376,18 @@ class OfflineCheckTests(unittest.TestCase):
         self.assertEqual(removed, set(renames))
         self.assertEqual(set(required), set(fixture['modules']))
         self.assertFalse(set(required) - set(actual), 'lost baseline modules')
+        self.assertFalse(set(GITHUB_NATIVE_REPLACEMENTS) - set(required),
+                         'replacement names an unknown baseline module')
         for path, methods in required.items():
             with self.subTest(path=path):
                 ids = {name.removeprefix(actual[path].stem + '.')
                        for name in checker['test_ids'](actual[path])}
-                self.assertEqual(methods - ids, set(), 'lost baseline methods')
+                replacements = GITHUB_NATIVE_REPLACEMENTS.get(path, {})
+                self.assertFalse(set(replacements) - methods, 'unknown baseline replacement')
+                for old, new in replacements.items():
+                    self.assertNotIn(old, ids, 'stale replacement: original check still exists')
+                    self.assertIn(new, ids, f'missing replacement for {old}')
+                self.assertEqual(methods - ids - set(replacements), set(), 'lost baseline methods')
         # Later work may add modules/methods; every current ID still participates in
         # the disjoint/exhaustive shard proof instead of freezing an obsolete count.
         self.assertEqual(checker['SPLIT'], fixture['split'])

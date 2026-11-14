@@ -1,144 +1,57 @@
 ---
 name: docs-sync
-description: "Maintain docs and repository tasks."
-version: 0.15.1
+description: "Maintain docs and GitHub issue handoffs."
+version: 1.0.0
 license: MIT
 metadata:
   hermes:
-    tags: [documentation, governance, technical-writing, ste-inspired, backlog, tasks]
+    tags: [documentation, governance, technical-writing, backlog]
 ---
 
 # Docs Sync
 
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
-
-Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
+Use the [communication rules](../shared/COMMUNICATION.md) and follow the
+[shared contract](../shared/COMMON-CONTRACT.md).
 
 Keep docs accurate and distinguish intent from implementation. Reuse owners.
-The public skill ID is `docs-sync`; invoke it with `/docs_sync` or `/docs-sync`.
-Follow [the shared skill contract](../shared/COMMON-CONTRACT.md) for study, hygiene,
-safety and evidence; use `wiki-docs` for raw-source-to-wiki compilation.
-
-Every Bootstrap/Maintain delivers corrected applicable docs and, for every
-evidenced unmet goal or requirement, complete task records in `tasks/`. Findings
-alone are insufficient. The [pruning procedure](references/pruning.md) is mandatory
-within scope on every Bootstrap/Maintain, for
-[completed-task retention](../shared/TODO-WORKCENTER.md#completed-task-retention).
-A bare invocation prints the `autowork tasks prune` plan and stops: it deletes no
-record. `/docs-sync tasks`, or a request that names pruning or task cleanup, applies
-the plan; that is maintenance, not a separate cleanup approval. Retain only records
-with a concrete current dependency, proof or ownership need.
-
-This skill neither grants nor removes delivery authority: the repository's
-`AGENTS.md` governs commit, integration and push. Report counts, the first failure
-and a path; prefer `--summary`, and never paste full machine output. Classify each
-diagnostic with the [triage table](references/diagnostics.md) before a repair.
-
-After a workflow update, verify the installed copies first, then maintain each
-project's tasks with freshly loaded instructions; installation does not rewrite
-project documents. Deliver integrated, verified corrections, not only private
-proposals, unless an actual overlapping writer or missing intent prevents them.
-Keep document-only scope separate from implementation, dispatch and schedule changes.
-
-Follow [the shared plan contract](../shared/PLAN-HANDOFF.md) for idea-to-execution
-handoffs. Accepted answers update existing owners; proposals stay outside the
-executable queue. Writing a task does not authorize its execution; a
-documentation-only request never launches autowork. Reconcile verified outcomes
-under the ownership and review rules below.
+GitHub Issues are the authoritative backlog; Orbi owns delivery. The
+[legacy task store](../shared/TODO-WORKCENTER.md) is migration-only, not a new queue.
 
 ## 1. Choose mode and scope
 
-| Mode | Work |
-| --- | --- |
-| Bootstrap | Build applicable missing docs. |
-| Maintain | Update affected owners only. |
-| Audit | Read/report; write only when explicitly authorized. |
+- **Bootstrap/Maintain:** inspect the requested scope, build missing applicable
+  document roles and correct affected owners from source evidence.
+- **Audit/read-only/questions-only/dry-run:** read and report; no files, scratch,
+  GitHub Issues, labels or service mutations.
+- **docs:** document maintenance only; no issue publication.
+- **tasks:** reconcile GitHub Issues, native dependencies and linked PR evidence.
+  Explicit legacy pruning follows the migration guide's separate safe reconciliation;
+  never delete recovery state or infer completion from an empty store.
 
-Bare `/docs_sync` or `/docs-sync` means Bootstrap + Maintain: inspect, prepare the
-task store ([prepare the store first](#prepare-the-store-first)), build every
-applicable core owner, correct supported drift, and run goal-gap analysis. Arguments
-narrow scope: `/docs-sync docs` maintains documents only, and `/docs-sync tasks`
-maintains the task store, including the prune apply. Explicit Audit/read-only scope changes no files, including `tasks/`
-and BLOCKERS.md. Task-addition/brainstorming persistence is narrow Maintain, not
-bootstrap. Preserve live IDs, focus, completed implementation, required proof,
-active holds and unrelated edits; Git preserves past task history, not an ever-growing
-done backlog. State mode/scope briefly, then make the authorized changes.
-
-Decide routine engineering choices within accepted scope, record material reasoning
-in existing task records and reuse accepted decisions; ask only for genuinely missing
-owner intent or authority. For a concrete method gap or explicit protocol request,
-select one technique through [engineering](../engineering/REFERENCE.md); consult
-[the engineering cycle](../shared/ENGINEERING-CYCLE.md) only if routing is unclear.
-Carry evidence of materially applied methods into the same task records.
-
-Do not force filenames, invent requirements, create empty scaffolds or present
-plans as implemented. Label missing intent in place as
-`Open question: <question> (default: <recommended answer>)`. Use `grill-me` for
-necessary owner questions (ask directly if unavailable). Continue independent
-supported work; silence/defaults are not approval.
-
-This skill authorizes no code/install/production/instruction/commit/push/release
-work independently. Inherit coding-task scope; examples are not execution orders.
-For research/design-only work, save actionable findings as tasks and goals in
-`tasks/` in the same batch; a research document alone is not the handoff. A
-no-code restriction covers presentation sites too: a suggested docs framework is a
-candidate, not permission to scaffold, install or build it.
-
-## Incremental caller handoff
-
-Apply the [single-pass handoff](../shared/PLAN-HANDOFF.md#one-planning-pass-one-handoff).
-A planner or Autowork caller supplies its task, findings and affected owners; reuse
-that verified context and inspect the changed inputs instead of rediscovering the
-repository. An autonomous Plan For Me handoff distinguishes accepted goals and
-planner-derived engineering goals from strategic proposals: persist the first two
-as records in their existing owners, and keep proposals as proposals or owner
-questions rather than runnable work. Compare the latest run, reviewed candidate,
-integrated source and current record before retaining a recovery instruction; edit
-the record in place instead of appending successive status notes. Completed work must not remain an open task that
-instructs a worker to reimplement it. Batch supported edits, then validate the final
-batch once. Unchanged findings require no write. Return paths, task IDs, input-bound
-checks and the next action to the caller; do not invoke another planner to restate
-its plan. Explicit bare Bootstrap scope still covers all applicable document roles.
+A bare invocation maintains applicable docs and evidenced missing work; it does not
+prune legacy records or start execution services. Newly published complete issues
+default to `ai-ready` through [Plan Handoff](../shared/PLAN-HANDOFF.md), so an existing
+Orbi deployment may pick them up. Explicit no-dispatch requests keep `ai-planning`.
+Keep incomplete/proposed work undispatched. Do not invent requirements, acceptance
+or completion to fill a queue. A document-only request does not change code, install
+software or deploy production.
 
 ## 2. Discover and coordinate
 
-Identify boundaries/instructions/intent/snapshot and actual owners/generated inputs.
-Inspect relevant source/manifests/tests/CI and scoped Git status/diffs, including
-untracked files. Use the supplied base, not assumed `main`. Preserve pre-existing
-work/layouts; inspect landed changes after interruption. Include staged, unstaged
-and untracked inputs; an unstaged-only inventory misses indexed dependencies. Before
-integration and reporting, reread affected source, task records and recent commits:
-reconcile landed work under existing IDs and withdraw obsolete proposals.
-Report missing authority; never create competing docs/trackers or guess content.
+Read repository instructions, accepted decisions, source/tests/CI, Git status and
+the current GitHub issues/PRs within scope. Inspect staged, unstaged and untracked
+inputs. Reuse the caller's verified findings instead of restarting research.
+Check actual writers and preserve unrelated changes. Before updating an issue,
+reread its current body, labels, dependencies and linked PR; do not replace a live
+worker's contract or replay a stale snapshot. A refused update requires narrow
+reconciliation, not a new blanket approval.
 
-A refused write or baseline mismatch is a reconciliation step, not a request for
-new approval: reread the target record and apply only the authorized delta to the
-latest state, or reconstruct it when the target itself changed. Never replay a
-whole-file snapshot or repin evidence to hide drift. Follow
-[stale-target reconciliation](references/concurrent-maintenance.md#reconcile-a-stale-or-occupied-target).
-
-Only the owner, or the coordinator's own bookkeeping, edits files under `tasks/`.
-A worker's commit that edits any task file is held and never merged. Distinguish an
-owner-requested priority change for the next selection (a `rank` or section edit)
-from rewriting a running worker's contract: integration treats rank, title, short
-and notes as bookkeeping, but an acceptance, checks, dependency, authority or
-section change to an admitted task sets its attempt aside or requires revalidation.
-Never interrupt a worker, repin its candidate or change its admitted contract to
-force progress. If an overlapping writer or another designated integration owner
-prevents landing, retain the scoped candidate and intended `autowork tasks`
-commands in durable private storage, not expiring scratch, and label new tasks
-pending integration rather than queued or ready.
-
-Use a private Git worktree for writing unless explicit scope restricts edits to the
-current checkout. Edit task records only through `autowork tasks` (see
-[concurrent maintenance](references/concurrent-maintenance.md)): it writes only the
-working tree, never commits, refuses a file changed since it was read and validates
-the whole store before keeping a write. Never reset, clean, stage or overwrite
-unrelated work. Commit task edits with the docs only when authorized; keep
-branch-local changes reviewable. Resolve the actual consumer repository, not a
-docs-only scratch checkout: a scratch store passing validation does not give the
-consumer any tasks. Keep new IDs provisional until the consumer's store allocates
-them (`autowork tasks new-id`).
+Resolve completed and partially delivered work against PR/check/review evidence.
+Preserve remaining live qualification and exact next actions on the same issue.
+Do not create completed-task reports or duplicate issue/PR history in local files.
+Use the existing document owner and normal repository PR process for document edits;
+there is no local-main task-store admission gate.
 
 ## 2a. Targeted relationship analysis
 
@@ -151,6 +64,7 @@ An explicit Graphify requirement remains binding. If graph tooling is unavailabl
 use bounded source inspection where sufficient and report material coverage gaps;
 never claim that source-only work completed a requested graph analysis. Audit
 reads existing artifacts only. Graph inference is not approval or executed validation.
+Report `Graph evidence:` and Graphify coverage/limitations with the source checks.
 
 ## 3. Intent and evidence
 
@@ -270,478 +184,59 @@ or use checked subprocess calls, not `;`, so a later successful validator cannot
 mask a failed conservation check. After a failure, inspect the affected bytes
 before resuming only the unapplied work.
 
-## 5. Goal-gap analysis and tasks
 
-Load [decisive planning](references/decisive-planning.md) when decomposing accepted
-work, ordering a large queue or repairing a failed handoff. Produce an evidence-backed
-Now/Next decision in the existing owner; task counts alone are not planning.
-Existing instructions suffice unless a concrete method gap or explicit protocol
-request calls for supporting guidance.
+## 5. Goal gaps and publication
 
-Fix in-scope supported docs now, not merely queue repairs. Route behavior to
-PRD/spec/contracts/tests, decisions to ADR/spec, setup to README/runbook, operations
-to runbook, verification to test-plan, releases to CHANGELOG. Audit reports ranked
-incorrect/stale/missing/contradictory/duplicated findings with evidence/consequence/
-correction; it writes nothing.
+Fix in-scope supported docs now. Route behavior to requirements/spec/tests, decisions
+to ADR/spec, setup to README/runbook and verification to test-plan. Investigate
+intent/code mismatches rather than silently changing acceptance to match code.
+Use `/plan-for-me` for consequential engineering decomposition and `/plan-with-me`
+only for genuinely missing intent; reuse settled answers.
 
-### The task store
+For each evidenced unmet requirement, find an existing open or closed issue and its
+PRs before creating anything. Reconcile in place where safe. New executable issues
+follow [Plan Handoff](../shared/PLAN-HANDOFF.md): observable outcome, bounded scope,
+exclusions, acceptance, exact verification commands and governing source links.
+Use an `ai-epic` for a large coordinated outcome and native `blockedBy` relationships,
+never local task-store edges or free-text substitutes. Preserve legacy IDs as
+provenance during migration and do not re-execute completed or currently owned work.
 
-A repository's tasks live in `tasks/`, its only task store (format:
-[the task store reference](../../pi-autowork/task-store.md)). Apply the
-[shared task rules](../shared/TODO-WORKCENTER.md) for `touches` and `resources`.
-`touches` is the only declaration of file overlap. `resources` names only things
-that cannot be shared, such as a port, an install, a device or a live service.
-For example, reserve an exclusive port with `resources = ["port:8080"]`; declare
-overlapping source edits with `touches = ["pi-autowork/src/"]`, not a broad resource
-such as `autowork-python-layout`. Tasks sharing a declared resource still run one
-at a time. `autowork tasks validate` warns, without failing, about a resource that
-no task uses with a live, port, install or device word in its resources; the warning
-does not change scheduling.
+Create the whole batch under `ai-planning`, validate/read back content and edges,
+then add `ai-ready` as the final publication phase. All issue authors receive the
+same default. Epics remain non-executable. Report GitHub/auth/network failure as
+**UNSAVED** with complete proposed changes and an exact retry, not as saved work.
 
-- `tasks/goals/<ID>.md`: optional multi-task outcomes, one goal per file, with `title`, `priority` (1 first),
-  `source` (the accepted plan or spec heading, `path#anchor`), `status`
-  (`unmet`, `partial`, `unverified`, `met`), `focus` (at most one goal) and
-  `depends_on` (goal IDs that must be met first).
-- `tasks/items/<ID>.md`: one task per file. TOML frontmatter between `+++` lines
-  holds the typed contract: `title`, `short` (40 characters at most), `status`
-  (`open`, `done`, `superseded`), optional `goal`, `section` (`Now`, `Next`,
-  `Needs decision`), `rank` (lower first within its section), `depends_on`,
-  `touches`, `resources`, `kind` (`implementation`, `plan`, `inspection`),
-  `ownership` (`worker`, `coordinator`, `owner`), `live` (`denied`, `authorized`),
-  `scope`, `acceptance`, `checks` and `exclusions`. After the frontmatter, free
-  body notes use `- Label: value` lines (`Sources:`, `Owner decision:`,
-  `Held by:`, `Evidence:`, `Question:`, `Superseded by:`).
-- `tasks/evidence/<ID>.toml`: the receipt the engine's verified close writes. Do
-  not write receipts by hand.
+## 6. Validate and report
 
-A record missing contract fields is a visible draft and is never selected. A
-`TODO.archive.md` that exists is frozen, read-only history: read it, never write it
-(see [frozen archive](references/todo-archive.md)). BLOCKERS.md keeps owner
-questions; CHANGELOG.md keeps releases. Never recreate TODO.md or goals.json, and
-never hand-write records.
-
-### Check the toolchain first
-
-Load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy) for the
-missing-PATH-wrapper fallback and complete inline **UNSAVED** proposals when tooling
-is unavailable. A guard refusal is not tool absence; preserve the outcomes below.
-
-Before any task-store step, run `autowork capabilities` with the `autowork` this host
-will use. It prints the resolved `executable`, `toolset` and `release`, the `commands`
-and `tasks` verbs, and `prepare_api`. Continue only when it succeeds, lists `tasks`
-with `prepare`, and reports `prepare_api` 4 or higher (consumer/content-safe conversion).
-If a present CLI fails this gate, report `TOOLCHAIN_MISMATCH` with the resolved
-executable, what is missing, and the fix, `autowork update` (then reload the host
-so it loads the matching skill). Run that update only when the owner's request allows
-installing; it can queue a gateway restart. Then continue document work, and do not
-touch tasks: never fall back to editing TODO.md or goals.json, and never report the
-store prepared.
-
-### Prepare the store first
-
-Every authorized Bootstrap or Maintain begins, in the resolved consumer repository,
-with `autowork tasks prepare <consumer>` (Audit: `autowork tasks prepare --check
-<consumer>`, which writes no file, ref, index, lock or object). It reports the
-`state` and one `outcome`, and does the mechanical part itself, so the owner never
-converts or initializes anything by hand:
-
-| `outcome` | Meaning | You do next |
-| --- | --- | --- |
-| `READY` | A valid store (working tree when task files are uncommitted) | Work the diagnostics, then reconcile |
-| `MIGRATED` | Converted TODO.md + goals.json now, one local commit | Reconcile; report the conversion commit |
-| `NO_STORE` | No store; `documents` and `accepted` headings listed | Bootstrap `tasks/` as described below, even when it must remain empty; add records only from accepted intent |
-| `MIGRATION_DEFERRED` | Work was in flight; nothing was written to the repository, and the request is recorded. The repository's runner (on this release) starts nothing new, lets live workers finish, sets the remaining attempts aside with their work kept, and converts. Exit status 3 | Report it as pending, not done; continue document work; run prepare again later |
-| `MIGRATION_BLOCKED` | A safety refusal (planning drift, an invalid queue, remaining legacy consumers, a preservation-path collision), or a deferral without commit authority | Resolve from evidence within scope, or report the exact missing authority |
-| `INVALID_STORE` | Refused with `path:line` errors | Fix that line from its accepted source or Git history, then rerun |
-| `ACTIVATION_PENDING` | The store is ready, but `runner.reads_tasks` is false: the running runner's release predates `tasks/` | Report it; the owner restarts the runner on the current release (`autowork restart`) |
-
-Each report also has `runner` (`running`, `release`, `reads_tasks`). Never report a
-deferred, blocked or pending conversion, or a docs-only change, as prepared task work.
-The `state` values remain:
-
-| `state` | Prepare did | You do next |
-| --- | --- | --- |
-| `legacy` | Converted TODO.md + goals.json through `autowork migrate`'s proven transaction: same task set, IDs, dependencies, ranks and selection order; TODO.archive.md kept | Reconcile on the converted store and report the conversion commit |
-| `conversion_pending` | Finished an interrupted or staged conversion, or refused | Resolve the named path, then rerun |
-| `none` | Nothing; listed `documents` and `accepted` headings | Bootstrap `tasks/`; add tasks from accepted intent and goals only for shared outcomes. With no accepted intent, keep the store empty and report the missing input |
-| `uncommitted` | Read the working-tree store | Continue; commit the task files with the docs when authorized |
-| `converted` | Read the committed store | Reconcile |
-| `invalid` | Refused with `path:line` errors | Fix that line from its accepted source or Git history, then rerun |
-
-On `NO_STORE`, writable Bootstrap creates `tasks/` even without accepted intent.
-Use a file-writing tool to create an empty `tasks/.gitkeep` only when that path is
-absent. Git does not retain empty directories. This marker is not a task record;
-all task and goal records still require `autowork tasks`. Do not create placeholder
-tasks or goals, restore removed records, or put markers under `items/` or `goals/`.
-Accepted gaps use ordinary authoring below; without accepted intent, report the
-missing input and leave the store empty. Audit/read-only, docs-only and explicit
-no-store scopes create nothing. Never use a marker to bypass a toolchain mismatch,
-conversion refusal or invalid store. Preserve existing store contents on repeat passes.
-Validate with `autowork tasks validate --worktree .`. Include the marker in the
-scoped commit when authorized, then rerun prepare. An uncommitted marker alone can
-still report `NO_STORE`; without commit authority, report bootstrap as local-only,
-not `READY`. An empty store proves no goal met and starts no runner.
-
-Without commit authority, run `prepare --no-commit`: a conversion is staged and HEAD
-does not move; report it as pending, not landed (work in flight is then
-`MIGRATION_BLOCKED`, since the runner's later conversion commits). A refusal (`ok:
-false`) writes nothing to the repository: uncommitted planning files, or content that
-is neither the old nor the converted version, or work in flight (deferred as above).
-Report it and continue independent document work; never hand-convert, stop workers,
-break a lease, close a task or delete the recorded conversion ref to get past one.
-
-Before converting, inspect `consumers`, `documentation_drift` and any `preserved` report.
-Tracked build, CI, hook, source and test references to TODO.md/goals.json block conversion;
-documentation mentions are nonblocking drift. The inventory includes the retained Git
-snapshot: commit authorized consumer repairs before converting, since uncommitted repairs
-are not part of the conversion commit. Repair consumers only when that repository and code
-are in scope. On the plain route, only explicit acceptance of those consumers permits
-`autowork migrate --accept-consumers <consumer>`; routine Maintain does not imply that
-acceptance. Resuming that route also requires the flag while consumers remain. The owner's
-`force` request accepts the reported consumers through `prepare --force`, as described below.
-Report the named files/lines and continue independent docs work
-when acceptance or code scope is missing. Never recreate legacy inputs to silence checks.
-Extra TODO content is saved as `CHECKLIST.md`, with source bytes/line numbers retained
-and generated coverage blanked; read back the reported inclusive `line_ranges` before
-reconciling it into existing document owners. Keep the snapshot until its content is
-accounted for. A destination collision refuses rather than overwriting any document.
-
-**`/docs_sync force`** (the owner's word `force` in the request) means: convert now, do
-not wait. Run `autowork tasks prepare --force <consumer>` (needs `prepare_api` 4) instead
-of plain `prepare`. It stops the repository's service, ends live workers and any other
-lease holder, sets every attempt aside with its worktree, branch and uncommitted files
-kept, releases the claims, commits the owner's TODO.md/goals.json edits, converts, and
-starts the service again. Force also accepts tracked legacy consumers without rewriting
-or deleting their code; report the resulting `LEGACY_CONSUMER` diagnostics (path, line and
-legacy names) and reconcile them within scope from evidence. Plain prepare lists every
-refusal and, when `runner.running` is false, names `autowork tasks prepare --force` as the
-route that does not wait for a runner; that suggestion alone is not permission to force.
-Report `forced`: what it stopped (`step.stopped`,
-`step.ended`), what it set aside (`step.set_aside`, each kept as `-set-aside-N`), the
-planning it committed, and the conversion commit. Force never discards work or data:
-if it still answers `MIGRATION_BLOCKED` (content a conversion cannot account for, an
-invalid queue), report that refusal; do not delete or overwrite anything to get past it.
-`force` changes only this step; the rest of the run follows the normal rules.
-
-Then work its `diagnostics`, each with the command that repairs it: `DRAFT`,
-`NOT_RUNNABLE`, `LIVE_NOT_AUTHORIZED`, `UNKNOWN_DEPENDENCY`, `SUPERSEDED_DEPENDENCY`,
-`TOUCHES_TASK_STORE`, `OPEN_TASK_UNDER_MET_GOAL`, `GOAL_WITHOUT_WORK`, `BROKEN_SOURCE`,
-`DUPLICATE_TASK` and `IN_FLIGHT`. `LEGACY_CONSUMER` and `LEGACY_DOCUMENTATION` name remaining
-file/line references after conversion; reconcile them within scope from evidence, not
-through task-field edits. Repair other diagnostics only from accepted documents, source or
-executed checks; without that evidence, keep the record a draft or place it in Needs
-decision. Never grant `worker` ownership, `live`, or resources, and never close a task
-or meet a goal to silence a diagnostic. `IN_FLIGHT` tasks keep their contract: the
-CLI refuses contract, section and closing writes to them until their attempt ends.
-Then reconcile the accepted requirements with the store (From gaps to tasks below).
-Finish with `autowork tasks validate --worktree .`, commit when authorized, and run
-`prepare` again: an unchanged repository reports the same result and writes nothing.
-
-### Edit tasks and goals with `autowork tasks`
-
-Every task or goal edit goes through one CLI, run from (or naming) the consumer
-repository. Read first, then write:
-
-| Need | Command |
-| --- | --- |
-| Detect, convert, recover, diagnose | `autowork tasks prepare [--check\|--no-commit] [--summary] [--code CODE] [--limit N]` |
-| Inspect | `autowork tasks list`, `autowork tasks show ID`, `autowork tasks why ID`; each takes `--store head\|worktree` |
-| Add or change a goal | `autowork tasks goal ID --title T --source path#anchor --priority N [--status S] [--focus/--no-focus] [--depends-on G] [--evidence TEXT]` |
-| Add a task | `autowork tasks add --title T [--goal G] [--short S] [--section Next] [--scope TEXT] [--acceptance A ...] [--checks C ...] [--touches P ...] [--depends-on ID ...] [--resources R ...] [--exclusions E ...] [--kind K] [--ownership O] [--sources path#anchor]` |
-| Set a typed field or note | `autowork tasks field ID LABEL VALUE` (for example `rank`, `touches`, `checks`, `kind`, `ownership`, `resources`, `exclusions`, `depends_on`, or a note label such as `Sources`) |
-| Change section | `autowork tasks place ID Now\|Next\|"Needs decision" [--decision TEXT]` |
-| Reorder | `autowork tasks move ID up\|down`, or `field ID rank N` |
-| Close manually (any task kind, not verified) | `autowork tasks done ID --by WHO --reason TEXT [--evidence REF]` |
-| Retire for a successor | `autowork tasks supersede ID --by OTHER --reason TEXT` |
-| Prune finished work | `autowork tasks prune` (plan), then `autowork tasks prune --apply --expect-plan REV`; see [pruning](references/pruning.md) |
-| Delete one record or a set | `autowork tasks delete ID [--closure\|--force]`, `autowork tasks delete --ids-file FILE`; refuses while a surviving task depends on it |
-| Check the result | `autowork tasks validate --worktree .` |
-| Read the goals | `autowork tasks goals [--worktree]` |
-| Commit only the task edits | `autowork tasks commit [--message TEXT] [--dry-run]` |
-
-**Use literal JSON for prose.** If a value contains quotes, backticks, `$`
-(including `$(...)` or `$VAR`) or newlines, write one UTF-8 JSON object with a
-file-writing tool and use `autowork tasks add --json task.json`,
-`autowork tasks field ID --json field.json`, or
-`autowork tasks goal ID --json goal.json` from the consumer repository.
-Use `--json - < task.json` for stdin; never interpolate prose into shell arguments,
-`echo` or an unquoted heredoc. JSON keys mirror option names with underscores;
-list options take arrays. Field input is `{"label": "scope", "value": "text"}`
-(or an array for `acceptance`). `notes` on add, or field label `notes`, preserves
-the complete multiline Markdown body; read and retain existing Sources/holds before
-replacing it. Do not mix JSON with value flags or label/value arguments.
-See [literal input](../../pi-autowork/task-store.md#literal-prose-input---json)
-for keys, types and examples. Existing validation and `--expect REV` still apply.
-
-A new goal needs `--title`, `--source` and `--priority`; ordinary tasks need no goal.
-Use title, scope, acceptance and checks for authoring. `add` derives the short label;
-bounded touches and actual resources must be resolved before dispatch. Do not create
-extra specifications, plans, goals, TODO.md views or completion reports for routine
-work. Reference existing intent rather than copying contracts. `add` rejects a supplied unknown
-goal and allocates the next plain numbered ID, without a hash suffix
-(`autowork tasks new-id` previews it, not a reservation); it defaults to
-`kind = "implementation"`, `ownership = "worker"` and the bottom of its section, and
-writes the whole contract in one write. It refuses a second task with the same goal
-and title (open or done), naming the existing one: change that record instead.
-Each write changes only the working tree, never commits, waits for the repository's
-task lock, refuses a file changed since it was read and is undone when the resulting
-store does not validate. When you decide from a record you read earlier, pass its
-`record_revision` (from `show ID --worktree`) as `--expect REV`: a record another
-writer changed since is refused, never overwritten; reread it and reapply. After
-the batch, run `autowork tasks validate --worktree .`, then commit the task files
-with the docs when authorized. `list`, `show` and `why` read the committed store
-(HEAD), so confirm selection with them only after that commit. Unchanged evidence
-leaves `tasks/` byte-identical on repeat.
-
-### From gaps to tasks
-
-1. Collect stated requirements/acceptance, planned design/ADR work, test/operations
-   gaps, README promises and real owner questions. Reuse IDs. Each goal binds to
-   its accepted `source` heading, priority and goal dependencies.
-2. Goal status is met/partial/unmet/unverified. `met` needs every owned task done,
-   an owner waiver or qualification for each manual closure, and an executed, passing check: `autowork tasks goal ID --status met --evidence
-   "<exact command or CI job>: pass"`. Unrun tests mean unverified. Harness checks
-   prove code paths, not live acceptance. Do not leave an unmet goal without an
-   open task.
-3. Each non-met goal gets bounded implementation work plus proof, named by outcome.
-   At most one investigation/contract task per goal (`kind = "inspection"` or
-   `"plan"`), only for a blocking unknown; no stacked preflights. Unverified work
-   needs its check. Keep ordered open slices for remaining work (Now then Next) with
-   dependencies; preserve done work. For unattended engineering, target up to three
-   independently ready, accepted slices when useful work exists. Separate
-   implementation/offline checks from live-device qualification: retain the live
-   gate on its task, not on independent offline work. Model pre-release inputs as
-   task dependencies; do not require a goal holding deployment-bound proof to be met
-   before the deployment enabling it. Give each slice its own sources, acceptance,
-   dependencies and ownership. Never fabricate scope, remove real dependencies,
-   duplicate done work or claim device acceptance to fill the queue. Report a
-   justified shortfall when fewer useful slices remain.
-4. Preserve accepted focus; `--focus` on a goal requires an authorized priority
-   change. Focused eligible work precedes unrelated work, still respecting
-   dependencies. Use vertical implementation/recovery/platform QA. Receipts/docs
-   are subtasks unless they remove a demonstrated prerequisite. A slice states
-   remaining gaps; qualified/reviewed/delivered/met remain distinct.
-5. Deduplicate against existing records before adding: `autowork tasks list` and
-   `show` the candidates sharing a goal or outcome.
-
-When graph analysis was used or explicitly required, save a separate
-`Graph evidence:` note under the [graph-evidence rules](references/graphify-analysis.md).
-Keep `Sources:` for relevant intent links. Otherwise cite direct source evidence
-without inventing graph metadata. Derive bounded outcome slices, blast radius and
-real prerequisites from corroborated relationships, not graph centrality alone.
-
-### Task contract
-
-Each executable task may have a goal for a real shared outcome. Reference existing
-accepted intent in `Sources:` when it exists; do not create a specification merely
-to obtain a `path#heading`. Each task owns a bounded `scope` with `exclusions`, observable `acceptance`, and
-separate `checks` holding the exact verification commands. Do not bury commands in
-acceptance: the runner needs checks. Mark proposed fixtures and unexecuted commands
-as planned; a check records the required procedure, not a passing result. List
-actual prerequisite task IDs in `depends_on` (an empty list is explicit) and keep
-coordination, history and prior evidence in notes. Give every executable task you
-create or rewrite `touches` (the paths it may change) and `resources` where needed:
-widen to owning directories when unsure, or set `resources` to `exclusive` with a
-`Reason:` note when no path can be bounded. Parallel Autowork admits a task beside
-others only from these fields. Never list files under `tasks/` in `touches`: the
-coordinator owns them.
-
-Now is ready work; Next is accepted successors; Needs decision is owner questions
-and defaults. Proposals stay outside executable Now/Next. Only typed fields grant
-authority: `ownership`, `resources` and `live`. A note never grants anything. Set
-`ownership = "owner"` for owner-only work, and put a task claiming the `live`
-resource under Needs decision unless the owner granted `live = "authorized"`;
-record who authorized which live scope and when in an `Owner decision:` note. Never
-infer live authorization from accepted scope or coordinator ownership; it is the
-owner's to grant. Other accepted tasks belong in Now/Next even when this docs pass
-does not execute them; execution needs its own authority. Saving never launches
-autowork, claims work, resumes cron or changes schedules.
-
-### Priority
-
-Selection takes the focus goal first, then section (Now before Next), then rank,
-with goal priority and goal dependencies gating. There is no separate recorded
-order: moving a task is editing its rank (`move`, `field ID rank N`) or section
-(`place`). Confirm with `autowork tasks list` and `autowork tasks why ID` that the
-intended tasks lead. Derive pick summaries from the selector, not hand-kept lists.
-Needs decision or focus is not eligibility or live availability. "No eligible
-follow-ups" requires every goal met with executed evidence; otherwise report the
-actual gap.
-
-Apply the [task-hold policy](../shared/TODO-WORKCENTER.md#task-holds-require-an-explicit-user-request):
-leave tasks open by default. Only an explicit user request permits adding or
-renewing `Held by:` with `autowork tasks hold ID --by WHO [--until YYYY-MM-DD]`.
-Planning or working outside the runner is not such a request; use supported leases
-and workspace locks for execution ownership. Preserve existing claims and pauses;
-release only reconciled holds with `autowork tasks release ID`. There is no
-in-progress status. Report real holds separately from new open selections.
-
-### Branch playbooks
-
-Five narrower dispositions have their own reference: deferred qualification, read-only
-pending-task reports, owner-stopped closeout, autoresearch intake and the hard-blocker
-coordination contract. Load [task-store branches](references/task-store-branches.md)
-when the request matches one, and keep the task contract above binding.
-
-### Closing and retiring tasks
-
-The engine's verified close writes `status = "done"`, `closure = "coordinator_verified"`
-and its receipt reference and receipt in one commit; do not repeat it. A person or
-planning step can close any task kind with `autowork tasks done ID --by WHO --reason
-TEXT [--evidence REF]`. This records `closure = "manual"`, actor, timestamp, reason
-and optional reference; it writes no receipt, check result or verification claim.
-
-Manual is not Verified, even when a report names passing checks. A manually closed
-owned task blocks `goal --status met` until the owner explicitly records
-`field ID owner_waiver "WHO DATE: exact criterion, reason, risk"` or
-`field ID owner_qualification "WHO DATE: qualification and evidence"`. Never invent
-that authority; a met-goal write names the recorded exception. A dependency in the
-consumer's `verified_depends_on` (a subset of `depends_on`, set through `field` or
-`add --verified-depends-on ID`) similarly waits for verification or an owner exception;
-ordinary dependencies are unaffected. CLI list/show/why and the fleet view disclose
-Verified with its receipt or Manual with its reason; scorecard counts stay separate.
-A coordinator-verified done task whose receipt pins another contract than its merged
-record is reopened by the runner; reconcile the record, never edit the receipt.
-
-When an accepted decision retires a task, use `autowork tasks supersede ID --by
-OTHER --reason TEXT`; the successor must exist. Superseded is not done: it does not
-satisfy dependencies or count toward a met goal. For owner-cancelled work without an accepted successor, use the owner's explicit
-manual-close decision with its reason, or place it in Needs decision with an
-`Owner decision:` note recording the stop. Neither disposition is verified acceptance;
-confirm with `autowork tasks why ID` that it is not selected.
-
-### Prune completed task history
-
-Before the final validation, perform
-[working-set reconciliation](../shared/TODO-WORKCENTER.md#reconcile-the-working-set),
-including the mandatory
-[completed-task retention pass](../shared/TODO-WORKCENTER.md#completed-task-retention)
-for the maintained scope. Confirm actual closure, integration and inactive ownership;
-reconcile satisfied ordinary dependencies and still-required proof before deleting
-finished records and their dedicated receipts/reports. Do not stop at marking work
-done or recommend cleanup instead of doing an eligible deletion. Audit/read-only
-reports candidates only. A retention blocker keeps only the affected records;
-state its concrete reason without inventing a task-count target or fresh backlog.
-Do not reopen or close tasks merely to make them eligible for deletion. Existing
-manual-close, verified-dependency and goal-qualification gates above remain binding.
-
-### Simplify execution, not acceptance
-
-To simplify tasks or speed Autowork, give each live record one concrete next action
-and remove repeated discovery or rationale; keep IDs, rank, scope, acceptance,
-mandatory checks, dependencies, ownership, live gates and verified partial delivery.
-Git history keeps the earlier text. Preserve existing accepted intent links in
-`Sources:`. When a task has a governing product plan, keep its exact accepted
-heading; a queue-simplification plan does not replace it. Ordinary tasks need no
-new plan heading.
-Never rewrite a running worker's admitted contract. Report prose reduction, not
-measured speedup. Follow
-[queue compaction](references/decisive-planning.md#compact-an-existing-queue).
-
-When asked whether tasks are necessary or may be removed, classify held work as an
-owner choice, operation/target approval, technical reconciliation or dependency-only
-hold; do not present all held work as a new product interview. Retire justified
-obsolete or explicitly stopped work with a non-completion disposition. Retain
-required behavior, distinct package/composed proof and parent acceptance records;
-similar titles or a shared test window do not establish redundancy. Compare
-preconditions, evidence, platform scope and dependencies before merging; prefer one
-compatible observation with separate verdicts when those contracts differ. Record
-the removal or retention reason in the task's notes without inventing replacement
-tasks. When the owner chooses tracked children, keep the parent's ID, acceptance
-and evidence as the aggregate closeout, make the parent depend on the children
-(never the reverse) and give children bounded remaining outcomes. Children done is
-not the parent's acceptance; `validate` refuses dependency cycles.
-
-### Accepted-plan handoff check
-
-After saving accepted intent and the matching tasks, check the handoff against the
-actual consumer:
-
-```sh
-autowork tasks validate --worktree /absolute/consumer
-autowork tasks why TASK1 /absolute/consumer
-```
-
-`validate` must pass and every requested task must be complete (no draft reasons).
-After the authorized commit, `why` names the blocking rule (a dependency, focus, section, hold, draft or met
-goal) or the tasks ahead of it. Put `Status: Accepted` on its own line inside the
-referenced plan heading only when an actual owner decision supports it, and
-explain remaining Proposed architecture on later lines. Before restoring status,
-compare the whole heading subtree with the owner decision: parent acceptance or an
-unchanged introduction does not approve changed or added children. Without
-acceptance evidence, keep the plan Proposed and its tasks out of Now/Next, and name
-the unresolved decision; never manufacture approval.
-
-Report validation, saved paths, IDs and the eligible slice or exact blocker.
-Capture each command's own exit status before a later successful command can mask
-it. Do not claim an edit landed from surrounding script output when the editing
-tool returned failure. Eligibility checks current dependencies, focus, section and
-holds; it does not dispatch, and readiness is not implementation authorization.
-Never move tasks, change focus or drop dependencies only to make a task eligible.
-
-## 6. Language, verification and report
-
-Consult [the STE-inspired writing profile](references/ste-inspired-profile.md)
-for substantive English-writing guidance when useful, not for a link or ID repair. Review literals, meaning and repository facts separately; no
-translation by default or dictionary-compliance claim from sentence counts.
-Use [bootstrap/idempotency regression](references/bootstrap-idempotency-regression.md)
-for authorized behavioral checks; static text tests do not prove model adherence.
-Run nearest contracts and requested broader gates without new tooling. Run the final
-`autowork tasks validate --worktree .`, the `docs.py` checks and a repeat-pass
-byte-stability check after the last document or task mutation; earlier passes do
-not certify a later edit. Bind results
-to tested bytes; inspect full logs/manifests, wait for suites and separate scoped
-passes from unrelated failures. Partial hashes do not qualify the whole tree.
-Check links/anchors/commands/keys/status/acceptance in the dirty checkout and a clean
-worktree or exact candidate closure; artifacts must not hide missing targets. Inspect
-the checker's scan scope and checkout completeness: a file-link checker may omit task
-records or fragment anchors, and an unpopulated submodule can look like broken documentation.
-Run dedicated checks for uncovered targets and verify against a closure with referenced
-paths present; report pre-existing or checkout-only failures separately instead of
-rewriting unrelated docs.
-Label optional scratch/candidate evidence. Never execute production/destructive
-procedures just to verify prose. Review scoped diffs for unsupported/unrelated edits.
-
-Lead with changed / verified / remaining, built from the final diff and retained
-receipts, not a process replay. Distinguish unchanged since this pass's baseline from
-clean against HEAD. Report scope, changed owners, actual checks, gaps and eligible next task. Bootstrap
-includes role/path/outcome coverage; Maintain only affected roles. Include the
-changed open-task/goal owners, cleanup counts, concrete retention reasons and the
-validation result; do not enumerate deleted completed-task IDs unless requested.
-Tasks are not dispatch/delivery proof. Name language/behavior checks not performed.
-For ELI5 or owner-decision summaries, lead with the everyday outcome and the exact
-input needed (a safe test phone, a disposable server, or permission), not a wall of
-task IDs. Separate product choices from access/authorization and missing runtime
-contracts; permission cannot create an absent capability. Keep IDs in the saved
-tasks or a secondary detail, and do not reopen already answered defaults.
-When graph analysis was used or required, include Graphify coverage/limitations,
-freshness, actual queries, source corroboration
-and the evidence chain behind changed docs and tasks; graph output alone is not delivery.
+Run proportional document, reference and contract checks once on the affected
+batch. Read back remote changes and name issue/PR URLs, decisions, checks and exact
+remaining inputs. A saved issue, label or document check is not evidence of Orbi
+pickup, model execution, independent review, merge or live qualification.
 
 ## Common Rationalizations
 
-The [Definition of Done](../shared/DEFINITION-OF-DONE.md) is the standing bar; a docs
-pass does not replace implementation or verification.
-
 | Rationalization | Reality |
 | --- | --- |
-| "A docs pass should also fix the code." | Docs Sync writes documentation and task records. Implementation uses `/autowork`. |
-| "The task looks done, so I can close it." | Close only with the required evidence. A manual close is not a verified receipt. |
-| "A small doc change needs a full bootstrap." | Use Maintain for affected owners. Bootstrap only when the requested scope needs it. |
-| "The other writer's dirty files are in the way." | Preserve them. Coordinate, or stage only attributable owned hunks. |
-| "The graph or links prove the docs." | Graph output is orientation. Check source, targets and current bytes. |
+| "The issue is closed, so its feature is verified." | Read the linked PR and actual checks; closure can mean superseded. |
+| "GitHub is unavailable, so save a local queue." | Keep proposals UNSAVED and report the retry. |
+| "A doc pass should restart the runner." | Service control is outside document maintenance. |
 
 ## Red Flags
 
-- Code, tests, fixtures or CI changed during a docs pass.
-- A task closed without its required verification.
-- Broad bootstrap or conversion for a narrow request.
-- Another writer's dirty work overwritten or absorbed.
-- A report claims checks that did not run.
+- Preparing a new `tasks/` store or restarting legacy execution.
+- Replacing active contracts or weakening acceptance to mark work complete.
+- Publishing readiness before the batch and dependencies exist.
+- Claiming live delivery from instruction changes.
 
 ## Boundaries
 
-- Not implementation; use `/autowork`.
-- Not the interview that settles decisions; use `/grilling` or `/grill-with-docs`.
+- Not product invention; use `/plan-with-me` for missing intent.
+- Not implementation; Orbi delivers issues, or use explicit manual `/work`.
+- Not a read-only queue query; use `/pending`.
+- No legacy scheduler, archive migration or pruning unless explicitly scoped.
 
-**Done when:** `autowork tasks validate` and the docs checks pass, and the report states what changed, what was verified and what remains.
+Apply the [Definition of Done](../shared/DEFINITION-OF-DONE.md) to verification claims.
+
+**Done when:** affected documents match inspected evidence, missing executable work
+is reconciled in GitHub or explicitly UNSAVED, and checks and remaining obligations
+are reported without claiming unobserved execution.

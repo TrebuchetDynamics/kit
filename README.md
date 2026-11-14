@@ -4,35 +4,29 @@
 
 <a id="a-toolset-of-skills-for-coding-agents"></a>
 
-**Coding-agent skills. A native Paseo plugin. An optional background runner.**
+**Planning skills for coding agents. GitHub-native delivery through Orbi.**
 
-Kit is a kit of skills for **Pi**, **Claude Code** and **Codex**, with an optional
-**Hermes** integration. Use it to plan work, document decisions, implement tasks,
-review changes and improve a codebase.
+Kit supplies skills for **Pi**, **Claude Code** and **Codex**, with optional
+**Hermes** integration. Kit researches, decides and decomposes work; **GitHub
+Issues** own the executable backlog; **Orbi** implements, tests, opens PRs, obtains
+independent review and enforces merge gates.
 
-The **Paseo plugin** brings Autowork's tasks, goals, runners and owner questions
-into Paseo. Inspect work in read-only mode, or enable specific actions through a
-daemon-side operator policy.
+All issues default to `ai-ready`, regardless of author. Kit publishes that label
+last, after complete issue content and native dependencies exist. Epics do not
+execute; explicit pauses and incomplete planning stay undispatched. CI, review
+and sensitive-change protections remain separate from dispatch.
 
-| Choose a part | What you get |
-| --- | --- |
-| [Skills](#the-skills) | Explicit workflows in your coding-agent session. No background runner required. |
-| [Paseo plugin](#paseo) | A native interface for an existing Linux Autowork installation. Read-only by default. |
-| [Autowork runner](#the-runner-autowork) | Optional Linux automation that works through accepted tasks after your session ends. |
+**The `pi-autowork` runner and its Paseo plugin are deprecated**, retained for
+migration/recovery only. Do not start them for new work or run them alongside Orbi.
+See [GitHub-native setup and cutover](docs/github-native.md).
 
 [Install](#install) · [First use](#first-use-in-your-project) ·
-[Autowork flow](#autowork-flow) · [Skills](#the-skills) · [Paseo interface](#paseo-interface) ·
-[Safety](#safety-before-installing) · [Evidence](#what-verification-proves) ·
-[Docs](#documentation)
+[Development flow](#autowork-flow) · [Skills](#the-skills) ·
+[Safety](#safety-before-installing) · [Docs](#documentation)
 
-**Start with one skill.** Not sure which fits? Ask `/ask-kit` in Pi,
-`/kit:ask-kit` in Claude Code or `$kit:ask-kit` in Codex.
-
-**Planning does not start a background service.** Most skills act in your session.
-On portable hosts, `/autowork` defaults to starting the optional runner; use `/work`
-for repeated manual execution in this session. The Pi runner is the continuous option.
-Hermes adds native scheduling for its own profiles. Paseo can host agents, but
-installing the Kit plugin does not start an Autowork service.
+**Start with one skill.** Ask `/ask-kit` in Pi, `/kit:ask-kit` in Claude Code or
+`$kit:ask-kit` in Codex. Planning does not start a service; an existing Orbi
+deployment may consume newly published ready issues immediately.
 
 ## Install
 
@@ -83,24 +77,9 @@ codex plugin add kit@autowork-marketplace
 
 ### Paseo
 
-Install the **Autowork Paseo plugin** on the intended daemon host. It requires
-Paseo 0.13, 0.14 or 0.15 and an existing Linux Autowork installation.
-See the [full requirements](pi-autowork/integrations/paseo/README.md#requirements).
-
-> **Trusted, unsandboxed code:** a Paseo plugin runs as the daemon user.
-> Review the [security notes](pi-autowork/integrations/paseo/docs/security.md) before installation.
-> It is read-only by default. Execution grants are shared by authenticated daemon
-> managers, not isolated per user.
-
-```sh
-paseo plugin add git:TrebuchetDynamics/kit
-paseo plugin ls
-```
-
-Confirm that `kit-autowork` is running. Open **Autowork** in Paseo's sidebar and
-select **Refresh** to inspect repositories already known to Autowork.
-Installation does not start a runner or grant mutations.
-See [Paseo interface](#paseo-interface) for controls and planning.
+Use Kit skills inside a Paseo-hosted Pi, Claude Code or Codex session. The old
+[Autowork Paseo plugin](pi-autowork/integrations/paseo/README.md) is deprecated;
+keep existing installations only for legacy inspection/recovery, not Orbi control.
 
 ### Hermes (optional)
 
@@ -132,7 +111,7 @@ Restart your host session to discover the installed skills. See the
 <summary><strong>Install every available host and CLI component at once</strong></summary>
 
 From a checkout, `install.sh` installs every available component with verbose output:
-the Pi package, the `autowork` command and TUI, the `tx` tmux launcher, official stable
+the Pi package, the `tx` tmux launcher, official stable
 Octet native binaries with Kit skills, and the Hermes, Claude Code and Codex plugins with their complete
 skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
 item runs that host's own install command. `tx` keeps an existing `~/.tmux.conf`.
@@ -142,13 +121,14 @@ git clone https://github.com/TrebuchetDynamics/kit && cd kit
 ./install.sh                    # full suite, live output and exact commands
 ./install.sh --menu             # arrows, Space toggles, Enter installs
 ./install.sh --dry-run          # preview the full suite without installing
-./install.sh --only pi,autowork,tx --dry-run
+./install.sh --only pi,tx --dry-run
 ```
 
 `--full` (`--all`) and `--verbose` (`-v`) are the defaults. Missing hosts are skipped,
 while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
-installs nothing. Every install/update also restarts all active Kit user services,
-even when nothing changed; paused/stopped and unrelated services stay untouched.
+installs nothing. The deprecated `autowork` recovery tools require explicit
+`--only autowork`; full installs omit them. Install/update restarts active host
+integrations, never legacy Autowork runners; paused/stopped services stay untouched.
 See [restart scope and failure handling](docs/installation.md#full-suite-from-a-checkout).
 Hermes still runs its complete fleet setup and its own dependency and
 security prompts; use `--yes-deps` only when you intend to consent to them.
@@ -188,33 +168,22 @@ smoke check **you perform**, not an outcome established by automated tests. Cont
 with the [core-only interview](docs/onboarding.md#core-only-requirements-interview) or
 the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-task).
 
-## Autowork flow
+<a id="autowork-flow"></a>
+## GitHub-native development flow
 
-**Plan → save the queue → execute → observe → unblock → continue.**
-Use this flow in your project, not in the Kit checkout. Commands below use Pi syntax;
-Claude Code uses `/kit:…` and Codex uses `$kit:…`.
+1. **Plan:** `/plan-with-me` resolves missing intent; `/plan-for-me` investigates and
+   decides within accepted scope. Both publish complete GitHub Issues.
+2. **Publish:** create the entire batch under `ai-planning`, link native `blockedBy`
+   dependencies and optional `ai-epic` sub-issues, verify, then add `ai-ready` last.
+3. **Deliver:** one Orbi deployment per repository owns Pi → tests → PR → independent
+   review → merge gates. `/work` is an explicit, ownership-coordinated manual alternative.
+4. **Observe:** `/pending`, GitHub Issues/PRs, `orbi status` and `orbi doctor`.
+   `/autowork` is now a compatibility handoff, not a legacy service starter.
+5. **Reconcile:** `/docs-sync` updates current requirements and issue evidence without
+   duplicating the backlog or restarting a scheduler.
 
-| Step | Skill or interface | What happens |
-| --- | --- | --- |
-| 1. Plan | [`/plan-with-me`](adapters/skills/plan-with-me/SKILL.md) **or** [`/plan-for-me`](adapters/skills/plan-for-me/SKILL.md) | Plan together through questions, or delegate research and planning without an interview. Save accepted decisions and executable tasks; planning alone starts no worker. |
-| 2. Reconcile | [`/docs-sync`](skills/docs-sync/SKILL.md) | Prepare a missing task store or reconcile changed docs and task records. Reuse a valid planner handoff; this is not a required extra pass before every task. |
-| 3. Execute | [`/autowork`](adapters/skills/autowork/SKILL.md) **or** [`/work`](skills/work/SKILL.md) | On portable hosts, `/autowork` starts the repository's runner and verifies its status. `/work` auto-selects and completes eligible tasks repeatedly in this session without starting a service. Both use the [execution workflow](skills/autowork/SKILL.md) for implementation, checks and closeout. |
-| 4. Observe | **Autowork TUI** or **[Paseo plugin](#paseo-interface)** | Inspect the same runners, tasks, blockers and owner questions. Open the TUI with `autowork tui`; the plugin is read-only by default and requires grants and confirmation for actions. |
-| 5. Recover | [`/unblock`](skills/unblock/SKILL.md) | Diagnose the target repository, repair authorized causes and verify that work consumed the repair and continued. Preserve explicit pauses and genuine owner/live gates. |
-
-```text
-/plan-with-me plan a bounded cache with me
-# Or: /plan-for-me plan a bounded cache from the existing requirements
-# Use /docs-sync if the store or documentation needs reconciliation.
-/autowork
-# Or: /work to execute repeatedly in this session without a runner.
-# If execution stalls: /unblock
-```
-
-In a terminal, `autowork tui` opens monitoring; `autowork start .` explicitly starts
-this repository's runner. Installing or opening the Paseo plugin does not start it.
-Planning, committed queue changes, runtime admission, verified completion and remote
-publication are separate outcomes; push and deployment need their own authority.
+See [publication, migration and deployment](docs/github-native.md). Readiness,
+pickup, passing checks, review and merge are separate observed outcomes.
 
 ## The skills
 
@@ -232,7 +201,7 @@ states its own boundaries and what "done" means.
 
 **Document and track**
 
-- `/docs-sync` — maintain the docs and the `tasks/` store from current source.
+- `/docs-sync` — maintain docs and GitHub issue handoffs from current source.
 - `/pending` — read what is open, done and next without changing anything.
 - `/blockers` — resolve held work and the questions only the owner can answer.
 - `/unblock` — diagnose stalled runners and repair authorized causes autonomously.
@@ -240,7 +209,7 @@ states its own boundaries and what "done" means.
 **Execute and deliver**
 
 - `/work` — auto-select and complete tasks in this session, including useful offline work when the queue is blocked.
-- `/autowork` — start the runner on portable hosts, or request in-session execution.
+- `/autowork` — inspect or hand off to GitHub and Orbi; the old runner is retired.
 - `/goal` — keep one objective alive until evidence proves it done.
 - `/lgtm` — say yes to the latest recommendation and continue.
 - `/split-folder` — reorganize one folder without changing behavior.
@@ -277,112 +246,26 @@ states its own boundaries and what "done" means.
 
 ## Paseo interface
 
-The [Autowork Paseo plugin](pi-autowork/integrations/paseo/README.md) lives in `pi-autowork/integrations/paseo/`.
-Install it from Git with the [command above](#paseo), or follow the
-[local checkout instructions](pi-autowork/integrations/paseo/README.md#install-only-after-reviewing-trusted-code).
-
-- **See the work:** inspect runners, tasks, goals, owner questions, logs and the scorecard.
-- **Review the plan:** prepare staged planning proposals, then review and explicitly apply them.
-- **Confirm the action:** edit tasks and goals, commit only task files, answer owner questions,
-  or control runners with the required operator grants and exact-action confirmations.
-
-The plugin uses the existing Autowork engine. It is not a model provider or scheduler.
-Planning does not start a runner. Physical client and live control qualification
-remain pending. See the [qualification record](pi-autowork/integrations/paseo/docs/qualification.md).
-
-Developer checks use `npm --prefix pi-autowork/integrations/paseo run check` after
-`npm --prefix pi-autowork/integrations/paseo ci --ignore-scripts`.
-See [testing](docs/testing.md#paseo-plugin-checks).
+The retained [Autowork integration](pi-autowork/integrations/paseo/README.md) is a
+legacy interface, not an Orbi dashboard. Its historical qualification does not
+qualify the new delivery system. Use GitHub and Orbi diagnostics for current work.
 
 ## The runner (Autowork)
 
-The runner is the only part of Kit that keeps going without you. It reads the same
-`tasks/` store, admits dependency-ready tasks in parallel, verifies each one, and merges
-the result into `main`/`master`. It is Linux-only and entirely optional: the skills above
-already do the work one task at a time.
-
-<p align="center">
-  <img src="assets/readme/workflow.svg" width="100%" alt="Plan accepted work, queue it in tasks/, execute an eligible task, and report checks and delivery. Further work requires the caller's authority; this diagram does not promise a background scheduler.">
-</p>
-
-The diagram shows the optional task workflow, not a background service started by a skill.
-
-```sh
-autowork                      # the live TUI: runners, workers, blockers, questions
-autowork start                # this repository: install the service if needed and start it
-autowork status india         # one repository's tasks, workers and what blocks them
-```
-
-- **Parallel in separate worktrees.** Ordinary file overlap ranks work but does not
-  block workers. Dependencies, shared resources and protected paths still limit admission. An empty queue waits without a model call rather than inventing work.
-- **Evidence before closure.** Worker commits and reports are claims; project checks and
-  a separate review gate integration and closure.
-- **Local delivery is automatic, push is opt-in.** Each closed task merges into
-  `main`/`master`. Publishing needs an explicit `PI_AUTOWORK_PUSH=1` grant; workers never
-  push. What cannot land is reported as `Merge pending`.
-- **Configure checks and limits before unattended use.** The runner defaults to the
-  SDK-backed Pi RPC transport; see [RPC setup](pi-autowork/docs/pi-rpc.md).
-
-Deeper material, including every command, model fallback, service controls and recovery:
-the [runner guide](pi-autowork/README.md) and
-[continuous operation](docs/cross-host.md#run-autowork-continuously).
+Deprecated. Historical source, tests and recovery tooling remain in `pi-autowork/`.
+Do not enable its runner, plugin mutation controls or cron execution for new work.
+Pause existing schedulers before enabling Orbi; preserve attempts and worktrees.
 
 ## Your work queue
 
-`tasks/` is the one queue: one file per task (`tasks/items/<ID>.md`) and per goal
-(`tasks/goals/<ID>.md`), edited only through `autowork tasks` (`list`, `goals`, `show`, `add`,
-`field`, `move`, `done`, …). The store is read from a commit, so a run's decisions are
-reproducible, and `/docs-sync` prepares or converts it.
-After verified closeout and integration, the coordinator removes eligible done
-records and unneeded dedicated receipts/reports. Git history is the archive, not
-a second done folder. Current proof or active-consumer needs remain protected by
-[the retention checks](skills/shared/TODO-WORKCENTER.md#completed-task-retention).
-`/pending` reads Git history when reporting completed work.
-If the wrapper is missing, follow the [task CLI policy](skills/shared/TODO-WORKCENTER.md#task-cli-policy)
-for the trusted Python entrypoint fallback. Missing or incompatible tooling leaves
-complete proposals **UNSAVED**, never a hand-edited or duplicate queue.
+GitHub Issues are the only executable backlog. Each issue names its outcome,
+scope, exclusions, acceptance, exact verification and governing sources. Native
+GitHub dependencies own ordering; epics coordinate larger plans without execution.
+Merged PRs, checks, reviews and GitHub history preserve delivery evidence.
 
-Ordinary authoring needs **title, scope, acceptance and checks**. The CLI derives
-IDs, list labels and scheduling defaults. Goals are optional multi-task outcomes;
-a routine task needs no separate plan or specification. Missing bounded write scope
-keeps a task draft until the coordinator resolves it. Existing permission and
-verification gates still apply. See [simple authoring](pi-autowork/task-store.md#simple-task-authoring).
-
-<details>
-<summary><strong>An illustrative task record</strong></summary>
-
-This is a consumer-project example, not a task to run here. Replace the goal, source,
-paths and check with your project's values; `autowork tasks add` writes the fields for
-you. See the [file schema](pi-autowork/task-store.md#file-schema).
-
-```markdown
-+++
-schema = 1
-id = "CACHE-01"
-title = "Add bounded cache storage"
-short = "Bounded cache storage"
-status = "open"
-goal = "CACHE"
-section = "Now"
-rank = 1000
-depends_on = []
-touches = ["src/cache/", "tests/test_cache.py", "docs/cache.md"]
-resources = []
-kind = "implementation"
-ownership = "worker"
-scope = "Bound cache memory by evicting the oldest entry; no new dependencies."
-acceptance = ["entries beyond the limit are evicted oldest-first"]
-checks = ["pytest tests/test_cache.py"]
-exclusions = []
-+++
-- Sources: [Accepted cache design](docs/cache.md#accepted-cache-design)
-```
-
-`COMPLETED` means verified acceptance and closure, not merely a passing build. See the
-[task-record rules](skills/shared/TODO-WORKCENTER.md) and the
-[reporting contract](skills/autowork/references/dispatch-and-reporting.md).
-
-</details>
+See [Plan Handoff](skills/shared/PLAN-HANDOFF.md) and the
+[legacy migration guide](skills/shared/TODO-WORKCENTER.md). There is no local-main
+task-store admission step and no synchronization with `tasks/`.
 
 ## Safety before installing
 
@@ -419,8 +302,8 @@ This project was called hermes-toolset before 0.3.0, and its plugin was called
 name: the command namespace is `kit:` and the settings key is
 `plugins.entries.kit`. Settings under `plugins.entries.autowork` keep being read for
 one release, so an opt-out you already set still applies. Remove an older installation
-and [install](#install) again in each host; in Hermes, rewire existing cron jobs with
-`python3 pi-autowork/scripts/wire-owner-cron.py --root DEFAULT_HERMES_HOME --apply`.
+and [install](#install) again in each host. Preserve existing job state during
+migration; do not rewire legacy Autowork cron execution for new work.
 
 </details>
 
@@ -437,9 +320,9 @@ and [install](#install) again in each host; in Hermes, rewire existing cron jobs
 Package contents have changed since some isolated-install runs. The
 [cross-host verification record](docs/cross-host.md#behavior-and-verification) names the
 tested versions and gaps; [testing and compatibility](docs/testing.md) covers host-specific checks.
-`/autowork status` reads the runner fleet; `/autowork plugin status` reports
-registrations and setup gaps. No registration or package test proves model output
-quality, Git delivery or live messaging execution.
+Use GitHub issue/PR evidence and `orbi status`/`orbi doctor` for current delivery.
+Legacy fleet diagnostics remain recovery-only. No registration or package test
+proves model output quality, Git delivery or live messaging execution.
 
 ## Project status
 
@@ -450,9 +333,9 @@ more effort improving the toolset than building products with it, and take
 explicit autonomous policy and retained permissive profile settings seriously.
 The next step is a 30-day evaluation on real repositories with controlled permissions — tasks completed without intervention,
 regressions, owner attention, cost per verified task, time to merge and crash recovery.
-`autowork scorecard` measures part of it today. See
-[Is Autowork worth it?](docs/evaluation.md) for the assessment and the gaps still to
-instrument.
+Measure the new loop through GitHub history and Orbi diagnostics. The earlier
+[Autowork assessment](docs/evaluation.md) remains historical context, not evidence
+that the Orbi pilot or fleet is qualified.
 
 ## Documentation
 
