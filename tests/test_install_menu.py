@@ -115,7 +115,7 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
     def calls(self, prefix=''):
         return [c for c in self.log.read_text().splitlines() if c.startswith(prefix)]
 
-    def test_restart_services_uses_safe_runner_restart_and_tries_every_service(self):
+    def test_restart_services_excludes_legacy_runner_and_tries_host_services(self):
         listed = subprocess.CompletedProcess([], 0,
             'pi-autowork@repo.service loaded active running Runner\n'
             'hermes-gateway.service loaded active running Hermes\n'
@@ -129,9 +129,10 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
                 install_menu.restart_services(install_menu.Output(verbosity=0))
         self.assertIn('--state=active', discover.call_args.args[0])
         commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(len(commands), 3)
+        self.assertEqual(len(commands), 2)
         self.assertEqual(commands[0][-2:], ['try-restart', 'hermes-gateway.service'])
-        self.assertEqual(commands[-1][-5:], ['restart', '--stop-workers', '--now', '--if-active', 'repo'])
+        self.assertEqual(commands[-1][-2:], ['try-restart', 'kit-helper.service'])
+        self.assertNotIn('pi-autowork@*.service', discover.call_args.args[0])
 
     def test_restart_phase_runs_on_unchanged_and_failed_installs_but_not_preview(self):
         item = install_menu.Item('fixture', 'Fixture', steps=[
@@ -274,7 +275,7 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
                                                'codex plugin remove kit@autowork-marketplace',
                                                'codex plugin add kit@autowork-marketplace'])
         link = self.home / '.local/bin/autowork'
-        self.assertEqual(Path(os.readlink(link)), self.home / '.local/state/pi-autowork/installed/pi-autowork/bin/autowork')
+        self.assertFalse(link.exists())  # deprecated recovery tool is explicit-only
         self.assertEqual((self.home / '.local/bin/tx').read_bytes(), (ROOT / 'tmux/tx').read_bytes())
         self.assertTrue((self.home / '.local/share/bash-completion/completions/tx').is_file())
         self.assertTrue((self.home / '.tmux.conf').is_file())  # none existed
@@ -715,7 +716,7 @@ exit 0
         self.assertEqual(self.calls('pi install'), [f'pi install {NEW}'])
         self.assertIn('claude plugin install kit@autowork', self.calls('claude'))
         self.assertIn('codex plugin add kit@autowork-marketplace', self.calls('codex'))
-        self.assertTrue((self.home / '.local/bin/autowork').is_symlink())
+        self.assertFalse((self.home / '.local/bin/autowork').exists())
         self.assertTrue((self.home / '.local/bin/tx').is_file())
         self.assertIn('$ codex plugin add kit@autowork-marketplace', result.stdout)
         self.assertRegex(result.stdout, r'octet\s+installed.*octet 1.2.3')
@@ -737,7 +738,8 @@ exit 0
         (self.home / '.hermes').mkdir()
         result = self.install('--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
-        for key in ('pi', 'autowork', 'tx', 'hermes', 'claude', 'codex'):
+        self.assertNotRegex(result.stdout, r'autowork\s+planned')
+        for key in ('pi', 'tx', 'hermes', 'claude', 'codex'):
             self.assertRegex(result.stdout, rf'{key}\s+planned')
         self.assertEqual(self.calls('pi install'), [])
         self.assertEqual(self.calls('codex'), [])
@@ -885,7 +887,8 @@ fi
         (self.home / '.hermes').mkdir()
         result = self.install('--full', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
-        for key in ('pi', 'autowork', 'tx', 'hermes', 'claude', 'codex'):
+        self.assertNotRegex(result.stdout, r'autowork\s+planned')
+        for key in ('pi', 'tx', 'hermes', 'claude', 'codex'):
             self.assertRegex(result.stdout, rf'{key}\s+planned')
         self.assertIn('codex plugin add kit@autowork-marketplace', result.stdout)
         self.assertIn('setup_bundle.py', result.stdout)

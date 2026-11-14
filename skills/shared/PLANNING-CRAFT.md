@@ -4,7 +4,7 @@ Shared method for Plan With Me and Plan For Me. It decides how well a plan is
 understood and written; first load the
 [planning artifact/authority contract](RESEARCH-PLAN.md#planning-artifact-and-authority-contract).
 [The handoff](PLAN-HANDOFF.md) decides where it is saved and who executes it. Adapted from obra/superpowers `brainstorming` and mattpocock/skills
-`grilling` and `domain-modeling` (both MIT), fitted to the `tasks/` work queue.
+`grilling` and `domain-modeling` (both MIT), fitted to the GitHub Issues backlog.
 
 ## Know what you know
 
@@ -154,15 +154,13 @@ decisions is enough. An ADR can be a single paragraph: context, decision, why.
 
 ## Plan for an unattended worker
 
-An Autowork worker runs a task alone and can only finish it or stop. Every stop
+An Orbi worker implements an issue in an isolated delivery session. Every stop
 that a person must answer costs hours. So write each task so that it can be
 finished without anyone:
 
 - **Inputs it can reach.** Name each input and where it comes from, or how the
-  worker makes it. Never write "the coordinator must provide", "obtain a handoff",
-  "await a receipt" or "verify exclusivity". The runner provides no more than its
-  worker prompt states: private ports and `$TMPDIR`, a fresh baseline, integration
-  by merge, and merged-tree checks under the repository's execution contract.
+  worker makes it. Verify the configured Orbi environment rather than promising
+  legacy runner facilities. Required setup belongs in scope and verification.
 - **Prerequisites are in scope.** If a defect already in the code would stop the
   task's checks, such as a broken test or a missing fixture, the task may repair
   it. Do not forbid "unrelated" fixes that the task's own checks depend on.
@@ -171,11 +169,9 @@ finished without anyone:
 - **Independent tasks first.** Prefer tasks with disjoint `touches` that can run
   at once. For a dependency chain longer than three tasks, state why each link
   depends on the last. Split a task that touches unrelated areas.
-- **Resources mean resources.** Use the `exclusive` or `live` resource only for a
-  real shared thing, such as a device, a port the code cannot move, or a live
-  account. Never use them for caution: `exclusive` runs alone and holds back the
-  queue. `live` requires authorization and serializes other users of that resource,
-  not unrelated offline workers.
+- **Resources mean resources.** Name actual devices, ports and accounts, and the
+  applicable deployment/resource limits. Orbi has no cross-deployment capacity or
+  ownership lock; do not promise serialization from a legacy task resource field.
 - **No process gates the repository lacks.** Signatures, registries, ownership
   ledgers and evidence bundles belong in a task only if the repository already has
   the mechanism, and the task says how to use it.
@@ -200,35 +196,14 @@ promise independent execution or add fictitious dependency/resource gates.
 
 ## Disjoint write sets
 
-`touches` is the task's expected write set. Prefer disjoint writes, but report
-actual overlap rather than invent prerequisites. Under
-[`parallel_plan.py::plan`](../../pi-autowork/engine/parallel_plan.py):
-
-- Ordinary files, directories, globs and test modules only rank likely-independent
-  work first. Their overlap alone does not hold dispatch, even when three or more
-  unfinished tasks name the same file or another commit waits to land. Workers use
-  separate worktrees. Merge resolves actual conflicts and checks qualify the merged
-  result; overlap is not a promise of no conflict.
-- Add `depends_on` only for a real prerequisite, not merely a shared path or a
-  preferred sequence. For example, overlapping source files or tests do not require
-  extraction or dependency edges.
-- Choose extraction for cohesion, observed conflict cost and testability, not a
-  line-count or task-count threshold.
-  A bounded fix may stay in a large or hot file when it is cohesive and testable at
-  an existing seam. Re-cut ownership or extract only when evidence makes that useful;
-  do not invent a preliminary extraction task or another permission gate.
-- Shared named resources serialize their users; only `exclusive` requires running
-  alone. `live` still needs authorization but does not drain unrelated workers. Keep protected-path coordination: protected-path tasks
-  serialize with each other, not ordinary tasks in isolated worktrees. New manifests,
-  lockfiles, schema/migration and CI files need explicit protected paths in `touches`
-  before editing; a broad directory does not reserve them. These gates apply even
-  when file overlap would otherwise only rank.
-- Name exact files when you know them. Only when you do not, widen to the owning
-  directories rather than omit the field.
-- Never list the coordinator's files: `tasks/`, `BLOCKERS.md`, `TODO.archive.md`,
-  `CHANGELOG.md`.
-- A shared registry (command table, route list, export index) changes in one task,
-  or in a closing glue task that depends on the others.
+Name the expected implementation paths in each issue's scope. Prefer disjoint
+writes, but report actual overlap instead of inventing product prerequisites.
+Native GitHub `blockedBy` edges represent real dependencies, not preferred order
+or file overlap. Workers use isolated worktrees and CI/review qualify the merged
+result; overlap is not a promise of no conflict. Re-cut ownership for cohesion,
+observed conflict cost and testability, not an arbitrary file-size threshold.
+Name shared registry/interface changes once or give them a genuine dependent
+integration issue. CI, manifests and sensitive changes retain repository gates.
 
 ## Interfaces between dependent tasks
 
@@ -265,11 +240,9 @@ Run focused tests and the task's `checks` while working, not the whole suite aft
 every edit. Preserve every task-required check and independent review. Follow the
 repository's execution contract: when the runner owns the merged-tree gate, do not
 repeat it in the worker; otherwise run a required worker full gate once at the end.
-For the supported checker, the runner uses an affected landing check on the merged
-candidate (with conservative full fallback). Main retains its separate full check
-after landing. An affected-only pass is not a full-main pass; neither source-contract
-checks nor this guidance prove model adherence or faster workers. See
-[affected landing checks](../../pi-autowork/README.md#affected-landing-checks).
+Use the repository's documented affected-test selection for focused work and
+preserve required CI and merge checks. Offline instruction checks do not prove
+model adherence, live execution or faster workers.
 
 ## Pre-mortem before saving
 
@@ -324,7 +297,7 @@ the builder who cannot ask questions. Dispatch a fresh read-only subagent
 (`delegate_task`, or the host's equivalent) with:
 
 > You are the engineer who will implement task(s) IDS in REPO. You cannot talk
-> to the planner. Read the task records (`tasks/items/<ID>.md`), their cited plan,
+> to the planner. Read the GitHub Issues, their cited plan,
 > repository instructions, implementation, existing tests and normative docs.
 > Check required docs missing from `touches`, stale contradictory assertions,
 > numeric bounds, event ownership and measurement seams against those sources;
@@ -344,14 +317,12 @@ Without a subagent tool, read the tasks as that builder yourself. Apply
 [decision closure](#decision-closure) to every material finding, including inputs,
 setup and checks, and persist its disposition before reporting readiness.
 
-Then check the batch yourself and fix it before handoff: each executable task
-declares bounded `touches` (and the `exclusive` resource only with a real resource
-reason); shared writes have the actual admission/ranking constraints above recorded
-(re-cut only when useful), true prerequisites have `depends_on` edges, and unrelated
-lanes remain independent. `depends_on` lists task
-IDs only; each `Consumes:` matches its producer's `Produces:`. Map every
-requested outcome to a complete saved task or a scoped unresolved choice; future
-roadmap ideas do not replace the requested batch.
+Then check the batch yourself before readiness: each issue declares bounded
+implementation paths, actual shared-resource constraints and native `blockedBy`
+prerequisites. Keep independent lanes independent and verify each `Consumes:`
+against its producer's `Produces:`. Map every requested outcome to a complete
+saved issue or a scoped unresolved choice. Future roadmap ideas do not replace
+the requested batch. Read back the whole graph before publishing `ai-ready`.
 
 Bring only genuine owner-only questions to the user, most important first, with
 each question's effect on the work. Plan With Me also keeps its interactive

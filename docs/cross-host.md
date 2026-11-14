@@ -1,5 +1,10 @@
 # Claude Code, Codex, Pi and Octet installation
 
+> **GitHub-native cutover:** GitHub Issues now own executable work and Orbi owns
+> delivery. The Autowork runner, plugin and scheduler/install instructions below
+> are retained legacy reference, not the active execution contract. Do not start
+> them for new work. See [current setup and migration](github-native.md).
+
 Kit supports Claude Code, Codex, Pi, Octet and optional Hermes integration.
 Claude Code, Codex, Pi and Octet use the portable adapters, not the Hermes plugin
 loader. None requires Hermes installed.

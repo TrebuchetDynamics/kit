@@ -1,5 +1,10 @@
 # Commands and repository workflows
 
+> **GitHub-native cutover:** GitHub Issues now own executable work and Orbi owns
+> delivery. The Autowork runner, plugin and scheduler/install instructions below
+> are retained legacy reference, not the active execution contract. Do not start
+> them for new work. See [current setup and migration](github-native.md).
+
 ## Blockers resolves held work and owner questions
 
 `/blockers` inspects both engine-held tasks and the runner's owner questions,

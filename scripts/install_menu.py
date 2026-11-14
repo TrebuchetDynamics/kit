@@ -654,7 +654,8 @@ def items(hermes_args, output=None, mode='install'):
         return link(installed / 'pi-autowork/bin/autowork', 'autowork')
     return [
         pi,
-        Item('autowork', 'autowork command and TUI', note='TUI and web view need uv',
+        Item('autowork', 'legacy autowork recovery tools (deprecated)',
+             note='explicit opt-in only; use GitHub Issues and Orbi for execution',
              steps=[Step('install pinned Pi RPC Python runtime',
                          [sys.executable, str(ROOT / 'scripts/install-pi-rpc.py')]),
                     Step(f'fill private runner Pi directory and link {BIN}/autowork to the installed release', run=install_runner)]),
@@ -748,31 +749,22 @@ def choose_text(all_items, chosen, read=input, write=print):
 
 # -- installing -------------------------------------------------------------------
 def restart_services(output):
-    """Restart every active Kit service, including on unchanged/partial installs.
-
-    Interrupt runner work through the supported immediate restart command, without
-    reviving stopped/paused services. Other host services stay outside this scope.
-    """
+    """Restart active host integrations, never the retired Autowork executor."""
     ctl = os.environ.get('PI_AUTOWORK_SYSTEMCTL', 'systemctl')
     if platform.system() != 'Linux' or not shutil.which(ctl):
         return 'service restarts unavailable (requires Linux user systemd)'
     listed = subprocess.run(
         [ctl, '--user', 'list-units', '--type=service', '--state=active',
-         '--plain', '--no-legend', 'pi-autowork@*.service', 'hermes-gateway*.service',
+         '--plain', '--no-legend', 'hermes-gateway*.service',
          'kit-*.service'], capture_output=True, text=True)
     if listed.returncode:
         raise RuntimeError('cannot discover Kit services: ' + failure_summary(listed.stderr))
     units = sorted({line.split()[0] for line in listed.stdout.splitlines() if line.split()
-                    and re.fullmatch(r'(?:pi-autowork@.+|hermes-gateway[^/]*|kit-[^/]+)\.service',
+                    and re.fullmatch(r'(?:hermes-gateway[^/]*|kit-[^/]+)\.service',
                                      line.split()[0])})
     failed = []
     for unit in units:
-        if unit.startswith('pi-autowork@'):
-            # Use the checkout entrypoint even if the autowork component was skipped.
-            argv = ['bash', str(ROOT / 'pi-autowork/bin/autowork'), 'restart',
-                    '--stop-workers', '--now', '--if-active', unit[len('pi-autowork@'):-len('.service')]]
-        else:
-            argv = [ctl, '--user', 'try-restart', unit]
+        argv = [ctl, '--user', 'try-restart', unit]
         output.line('  $ ' + shlex.join(argv), 'command')
         try:
             code, _ = run_command(argv, output)
@@ -966,7 +958,7 @@ def main(argv=None):
                   + (f' ({describe(item)})' if describe(item) else ''),
                         'installed' if item.available else 'skipped')
         return 0
-    chosen = {i.key for i in all_items if i.available}
+    chosen = {i.key for i in all_items if i.available and i.key != 'autowork'}
     if args.only:
         chosen = {k for k in args.only.split(',') if k}
     if args.skip:

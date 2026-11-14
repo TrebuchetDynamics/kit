@@ -64,8 +64,10 @@ class PlanningDecisionClosureTests(unittest.TestCase):
     def test_handoff_requires_reachable_contract_not_just_valid_metadata(self):
         handoff = section('skills/shared/PLAN-HANDOFF.md', 'One planning pass, one handoff')
         self.assertIn('PLANNING-CRAFT.md#decision-closure', handoff)
-        self.assertIn('Metadata validity and selection eligibility do not prove reachable inputs or checks', handoff)
-        self.assertIn('persist a resolution or keep only the affected task pending', handoff)
+        self.assertIn('Persist each material finding', handoff)
+        self.assertIn('exact missing input and resume condition', handoff)
+        publication = section('skills/shared/PLAN-HANDOFF.md', 'Publication and dependencies')
+        self.assertIn('Read back every issue, governing source', publication)
         research = section('skills/shared/RESEARCH-PLAN.md', 'Research and persistence method')
         self.assertIn('PLANNING-CRAFT.md#decision-closure', research)
 
@@ -90,12 +92,11 @@ class PlanningDecisionClosureTests(unittest.TestCase):
                      'cite file:line', 'required docs missing from `touches`'):
             self.assertIn(rule, builder)
 
-    def test_handoff_makes_queue_and_commit_disposition_explicit(self):
-        handoff = section('skills/shared/PLAN-HANDOFF.md', 'One planning pass, one handoff')
-        for rule in ('Queue disposition:', 'Next', 'No code this pass',
-                     'expected implementation merge count', 'review-gate count',
-                     'dedicated plan file', 'owned hunks', 'new scoped commit',
-                     'never amend a runner-created merge'):
+    def test_handoff_makes_github_disposition_explicit(self):
+        handoff = section('skills/shared/PLAN-HANDOFF.md', 'Publication and dependencies')
+        for rule in ('ready/waiting/proposed status', 'actual ownership',
+                     'final publication phase', 'Read back labels',
+                     'not pickup, implementation or merge'):
             self.assertIn(rule, handoff)
 
     def test_closure_does_not_widen_planning_writes_or_execution_authority(self):

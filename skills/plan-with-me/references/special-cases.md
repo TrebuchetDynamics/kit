@@ -10,8 +10,8 @@ When the matching task was cancelled, separate permission to revisit its plan,
 to reactivate it and to execute it; ask which boundary changes rather than reviving an
 old execution grant. On reactivation reuse its ID and keep the cancellation in
 history. If the owner instead requests a new replacement, add its successor with
-`autowork tasks add`, then supersede the old task with `autowork tasks supersede ID
---by NEW --reason TEXT`;
+the GitHub publication protocol, then link the replacement from the old issue and
+close the superseded issue as not planned only after ownership is reconciled;
 preserve original acceptance/results without importing withdrawn scope. Report queue eligibility separately from execution authority.
 
 ## Validation-performance plans
@@ -59,7 +59,7 @@ not implement it or dispatch a worker.
 the queue, is [`/blockers`](../../blockers/SKILL.md): routine planning repairs first, then
 genuine owner decisions, easiest first, one question at a time. An
 answer that needs replanning is planned here, with the planning craft, and saved
-with `autowork tasks` before the next question. The rest of this section applies to a
+in the existing GitHub Issue before the next question. The rest of this section applies to a
 broader blockers question.
 
 For a broad "blockers" request, separate owner-input blockers from everything
@@ -102,11 +102,10 @@ the already requested documentation work. Actual user scope takes precedence.
 report. Inspect read-only, then answer in this order:
 
 1. The verdict in one line (ready, or not ready and why in a few words).
-2. The gaps that stand between now and ready, each as a task: saved with `autowork
-   tasks add` with acceptance, checks and `touches` like any other, or, when it already
-   exists, named by its task ID with what changed. Tasks the runner can do now go to
-   Now or Next; a gap that needs the owner (live authorization, a product choice, an
-   outside input) goes to `Needs decision` with the one `Question:` note it needs.
+2. The gaps that stand between now and ready, saved as complete GitHub Issues
+   through [Plan Handoff](../../shared/PLAN-HANDOFF.md), or linked to existing issues.
+   Preserve unresolved intent with `ai-planning`; publish complete work with
+   `ai-ready` last and order it through native dependencies.
 3. What was not checked, in one line.
 
 A list of findings or a "smallest path" without task IDs is not a finished answer.
@@ -200,29 +199,14 @@ does not create standing publication permission for future research runs.
 
 ## Rolling plans
 
-For future work whose content depends on implementation evidence, follow
-[rolling planning](../../shared/TODO-WORKCENTER.md#rolling-planning): save only the
-first batch whose content is known now, at most 8 new tasks total including one
-closing planning task (`kind = "plan"`, set with `autowork tasks field ID kind plan`)
-under the same goal. Note `Plan round: 1 of 10` by default (`autowork tasks field
-ID "Plan round" "1 of 10"`) and give it dependencies on every building task in the
-batch. Its scope names the goal and what the next round must find out from the
-finished batch's evidence.
-
-When continuing an existing chain, advance N in `Plan round: N of M` without
-resetting its limit; apply the shared stopping rules. A small or single-batch plan
-adds no planning task and keeps the existing saving flow.
-
-For a rolling plan, the final report says the chain will continue on its own under
-an already running, authorized Autowork runner, gives its round limit (10 by default),
-and explains how to stop it: move the planning task to `Needs decision`
-(`autowork tasks place ID "Needs decision"`). Saving the
-chain does not start a runner or grant execution authority.
+Save the first evidence-backed issue batch and link future expansion from its
+`ai-epic`. Revisit it when implementation evidence is available. Do not create a
+legacy autonomous planning chain or promise a scheduler continuation.
 
 ## Continuations and live gates
 
-Permission to plan a continuation does not launch it; Autowork has no token, cost or
-time budgets to grant or extend. A shared live-campaign sequence
+Planning a continuation does not start a service. Publishing `ai-ready` allows an
+existing Orbi deployment to consume it under that deployment's resource budget. A shared live-campaign sequence
 likewise grants no target access or mutation approval; retain per-operation gates.
 
 When the user

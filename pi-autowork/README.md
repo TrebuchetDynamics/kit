@@ -1,5 +1,10 @@
 # Pi Autowork component
 
+> **GitHub-native cutover:** GitHub Issues now own executable work and Orbi owns
+> delivery. The Autowork runner, plugin and scheduler/install instructions below
+> are retained legacy reference, not the active execution contract. Do not start
+> them for new work. See [current setup and migration](../docs/github-native.md).
+
 **Turn an accepted task queue into checked, locally integrated changes.**
 
 Autowork is Kit's optional Linux background runner. It reads committed tasks,

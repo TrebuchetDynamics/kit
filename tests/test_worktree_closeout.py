@@ -16,11 +16,14 @@ class WorktreeCloseoutTests(unittest.TestCase):
         self.assertTrue(REFERENCE.is_file(), 'Missing worktree closeout contract')
         return REFERENCE.read_text()
 
-    def test_native_portable_and_shared_entrypoints_require_closeout(self):
-        for path in ('skills/autowork/SKILL.md', 'adapters/skills/autowork/SKILL.md',
-                     'skills/shared/WORKTREE-ISOLATION.md'):
+    def test_legacy_closeout_is_retained_but_not_an_orbi_entrypoint(self):
+        self.assertIn('worktree-closeout.md', (ROOT / 'skills/shared/WORKTREE-ISOLATION.md').read_text())
+        for path in ('skills/autowork/SKILL.md', 'adapters/skills/autowork/SKILL.md'):
             with self.subTest(path=path):
-                self.assertIn('worktree-closeout.md', (ROOT / path).read_text())
+                text = (ROOT / path).read_text()
+                self.assertIn('Orbi', text)
+                self.assertNotIn('worktree_closeout.py', text)
+        self.assertIn('preserve attempts and worktrees', (ROOT / 'README.md').read_text().lower())
 
     def test_contract_preserves_live_and_unfinished_work(self):
         text = self.reference()

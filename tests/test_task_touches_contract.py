@@ -54,9 +54,9 @@ class TaskTouchesContractTests(unittest.TestCase):
     def test_the_shared_protocol_owns_the_rule_once(self):
         text = ' '.join(PROTOCOL.read_text().split())
         for requirement in (
-                'Each executable task names its observable acceptance',
-                'bounded `touches` and real dependencies',
-                'Load the [work center](TODO-WORKCENTER.md) for the record fields'):
+                'Every executable issue has an observable outcome',
+                'bounded scope and exclusions',
+                'Native GitHub dependencies own ordering'):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
         self.assertNotIn('Every executable task you create or rewrite gets `touches`', text)

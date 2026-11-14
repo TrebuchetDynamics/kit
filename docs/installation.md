@@ -1,5 +1,10 @@
 # Installation and profile effects
 
+> **GitHub-native cutover:** GitHub Issues now own executable work and Orbi owns
+> delivery. The Autowork runner, plugin and scheduler/install instructions below
+> are retained legacy reference, not the active execution contract. Do not start
+> them for new work. See [current setup and migration](github-native.md).
+
 Source: [setup orchestrator](../scripts/setup_bundle.py), [source installer](../install-plugins.sh),
 [profile defaults](../scripts/runtime_defaults.py), [native skill provisioning](../scripts/install_skills.py).
 

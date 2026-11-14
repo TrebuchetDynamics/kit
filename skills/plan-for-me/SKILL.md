@@ -37,7 +37,7 @@ Decide from the request's meaning, not from a short phrase list:
 | No concrete objective; "plan this project"; "make it better"; a broad direction such as "improve reliability" or "improve performance" | Autonomous discovery: read [autonomous project discovery](references/discovery.md), investigate the repository, derive accepted and engineering goals, then save one executable frontier. Do not ask for a goal before investigating. |
 | A named outcome, feature, defect, spec slice or accepted plan | Focused planning for that outcome and its authorized prerequisites; do not expand into unrelated project work. |
 | Read-only, chat-only, no-write or dry-run | Use the matching route above but save nothing, including queue metadata. |
-| An Autowork-owned planning substep | Stay inside the named task and its authorized prerequisites; return findings and records to that same coordinator. |
+| An Orbi-owned planning substep | Stay inside the named task and its authorized prerequisites; return findings and records to that same coordinator. |
 
 A bare `/plan_for_me` is a discovery request, not an interview. A vague adjective
 ("better", "premium", "faster") is a direction for discovery, not an accepted
@@ -57,7 +57,7 @@ the frontier. Plan all requested projects in one coherent batch, retaining
 independent ready lanes.
 
 Inspect project instructions, relevant implementation and tests, existing docs,
-accepted decisions, `autowork tasks list` and the records it names, and active task
+accepted decisions, GitHub Issues and their linked PRs, and active task
 ownership. Reuse existing answers and task IDs. Compare practical approaches and
 record the evidence for the selected one. Own the complex part: resolve design,
 decomposition, interfaces and acceptance within delegated scope, and choose
@@ -77,7 +77,7 @@ request and the code instead of planning around it. Name new domain terms precis
 and record them, and give a decision its own ADR only when it is hard to reverse,
 surprising without context and a real trade-off.
 
-When called by Autowork, investigate its named uncertainty and return to the current
+When called by Orbi, investigate its named uncertainty and return to the current
 task. For held or blocked work, read the existing task, latest runs and retained
 candidate evidence; classify the observed source and phase. Use
 [decision closure](../shared/PLANNING-CRAFT.md#decision-closure) to resolve focused
@@ -102,71 +102,34 @@ owner/external-blocked affected tasks pending.
 
 ## Save the plan and hand off
 
-Save the planning batch on canonical `main` under
-[main-branch persistence](../shared/PLAN-HANDOFF.md#main-branch-persistence)
-before reporting planning complete; a branch-only save remains pending.
+Save meaningful decisions in their existing document owners; keep proposals and
+remaining questions scoped to affected work. Run the
+[builder check](../shared/PLANNING-CRAFT.md#builder-check-before-handoff) and resolve
+material findings before publication. Reuse the answers and evidence already gathered.
 
-Follow the shared protocol's save and validate steps. Use
-[Docs Sync](../docs-sync/SKILL.md) to persist findings and decisions in the existing
-document owners. Reuse Docs Sync's capability/prepare flow against the actual
-consumer: require `prepare_api` 4 or higher, inspect the reported outcome, and never
-call a deferred conversion or activation-pending consumer ready. Reuse that result
-while its inputs are unchanged; do not duplicate its conversion matrix, force
-conversion, install updates or interrupt workers to complete planning.
+Follow [Plan Handoff](../shared/PLAN-HANDOFF.md) for idempotent GitHub Issue
+publication, native `blockedBy` dependencies and optional `ai-epic` coordination.
+GitHub Issues, not `tasks/` or a local-main commit, are executable-work authority.
+Each issue includes outcome, scope, exclusions, acceptance, verification commands
+and governing sources. Read back the entire batch and publish `ai-ready` last.
+All issue authors receive that default; incomplete planning retains `ai-planning`.
+Explicit no-dispatch requests withhold readiness. Read-only/questions-only/no-write
+or dry-run requests make no local or GitHub writes. Failed persistence is **UNSAVED**,
+not a complete handoff or a reason to create a second queue.
 
-Apply the [single-pass handoff](../shared/PLAN-HANDOFF.md#one-planning-pass-one-handoff).
-Save the batch as task records with `autowork tasks add
---title T --scope ... --acceptance ... --checks ... --touches ...
---depends-on ...`. Goal and custom short label are optional; use `--goal G` and
-`autowork tasks goal` for a real multi-task outcome. A routine task needs no
-separate plan/specification; keep its scope and acceptance in its record and link
-existing shared intent rather than duplicating it.
-Include acceptance criteria, dependencies, verification and Now/Next placement;
-distinguish proposed decisions from accepted scope. Save observable criteria in
-`acceptance` and exact verification commands in `checks`. Give each executable task
-`touches` from the paths your investigation found, and `resources` where needed, per
-the [work center](../shared/TODO-WORKCENTER.md). Set further fields and notes such as
-`Sources:` with `autowork tasks field`. For literal prose, write JSON with a
-file-writing tool and use `--json`; after an earlier material read, carry `show ID
---worktree`'s `record_revision` to the update's `--expect REV`. On refusal reread,
-reconcile and reapply only the authorized delta, never a stale snapshot or blind
-retry.
-
-For future work whose content depends on implementation evidence, follow
-[rolling planning](../shared/TODO-WORKCENTER.md#rolling-planning). Run the
-[builder check](../shared/PLANNING-CRAFT.md#builder-check-before-handoff) and fold
-its answers in. Validate changed docs and run `autowork tasks validate --worktree .`;
-fix every error and every draft you did not mean. Commit the batch once. Put the
-existing intent reference in each affected task's `Sources:` note and, when used,
-its goal's `source`. Close a finished planning task with `autowork tasks done ID --by WHO
---reason TEXT [--evidence REF]`; it writes no verification receipt.
-
-After the commit, `autowork tasks why ID` reports committed-store selection
-eligibility and position only, not resource/ownership admission, capacity or
-dispatch. Report the selection-ready first task separately from a dependent
-successor: a successor waiting on its dependency is normal ordering, not a blocker.
-Distinguish a branch-local commit from delivery to the actual canonical consumer:
-disclose whether that consumer includes the commit and whether selection was checked
-there. Report runtime and ownership unassessed unless observed.
-
-For a rolling plan, the final report says the chain will continue on its own, gives
-its round limit, and explains how to stop it: move the planning task to `Needs
-decision`. Save the chain without starting a runner or granting execution authority.
-Docs-only scope leaves the full requested batch undispatched. A later explicit
-instruction to implement enters the execution workflow. An Autowork-owned planning
-substep returns the batch to its same coordinator without another permission
-question; preserve its review and owned-commit requirements.
-
-When existing execution fails without new product uncertainty, return the exact task
-ID, attempt evidence and failed operation to the same coordinator for supported
-recovery; do not reopen the product interview or create duplicate tasks.
+Report issue URLs, decisions and planner calls, unresolved choices, native
+dependencies and actual checks. Readiness is not pickup, PR delivery or merge.
+An existing Orbi deployment can consume published work immediately. Stop planning
+without implementing or starting a service. A delivery-owned substep returns to
+its same coordinator. Runtime failure without new product uncertainty goes back
+to that coordinator with the existing issue, failed operation and candidate evidence;
+do not create replacement work or reopen the product interview.
 
 ## Execution handoff
 
-A saved plan is not execution. Before reporting, use the shared
-[execution handoff](../shared/PLAN-HANDOFF.md#execution-handoff) to name the first
-selection-ready task and its execution mode. Start no runner here; an Autowork-owned
-substep returns to the same coordinator.
+Use the [execution handoff](../shared/PLAN-HANDOFF.md#execution-handoff): Orbi owns
+Pi implementation, tests, PR creation, independent review and merge gates.
+A published plan is not evidence those steps ran. No legacy runner starts here.
 
 ## Common Rationalizations
 
@@ -177,7 +140,7 @@ saved plan is not execution.
 | --- | --- |
 | "The request is vague, so ask for a goal first." | Bare or vague Plan For Me runs discovery. Investigate the repository first. |
 | "A well-written proposal is accepted scope." | New product directions stay proposals until the owner accepts them. |
-| "A plan without tasks is enough." | The handoff needs complete task records with acceptance, checks and `touches`. |
+| "A plan without tasks is enough." | The handoff needs complete GitHub Issues with acceptance, verification and bounded scope. |
 | "The queue is short, so invent useful work." | Save only the evidence-backed frontier. A short queue is not permission to invent work. |
 | "I can write code or tests while planning." | Planning writes docs and task records; implementation needs its own authorization. |
 
@@ -192,7 +155,7 @@ saved plan is not execution.
 ## Boundaries
 
 - Not an interactive interview; use `/plan-with-me`.
-- Not implementation; use `/autowork` after the plan is accepted.
-- Not an Autowork-owned execution; return to that coordinator.
+- Not implementation; Orbi delivers published issues; `/work` is an explicit manual alternative.
+- Not an Orbi-owned execution; return to that coordinator.
 
 **Done when:** open questions are answered or kept on affected tasks, and the plan and its tasks are saved and validated.

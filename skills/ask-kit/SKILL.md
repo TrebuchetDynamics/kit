@@ -31,9 +31,10 @@ not ask for.
    `/grill-me`, the plan-specific branch.
 2. **Make the plan executable.** `/plan-for-me` investigates and saves goals and tasks
    without an interview; `/plan-with-me` asks only what it cannot find.
-3. **Do the work here.** `/work` selects and completes tasks in this session.
-   It continues automatically and finds useful offline work when the queue is gated.
-   On portable hosts, `/autowork` starts the runner by default.
+3. **Deliver through GitHub.** Orbi implements ready issues through tests, PRs,
+   independent review and merge gates. `/work` explicitly requests manual delivery
+   with coordinated ownership. `/autowork` inspects the Orbi handoff; it never starts
+   the retired runner.
    For one objective that must stay in view across many turns, use `/goal`. For many
    lanes at once, `/autonomous-codebase-improver`.
 4. **Deliver.** `/git-commit-push` commits, syncs and pushes when the request allows.

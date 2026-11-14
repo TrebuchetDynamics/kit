@@ -1,5 +1,10 @@
 # Autowork for Paseo
 
+> **GitHub-native cutover:** GitHub Issues now own executable work and Orbi owns
+> delivery. The Autowork runner, plugin and scheduler/install instructions below
+> are retained legacy reference, not the active execution contract. Do not start
+> them for new work. See [current setup and migration](../../../docs/github-native.md).
+
 **See the work. Review the plan. Confirm the action.**
 
 Manage an existing Linux [Autowork](https://github.com/TrebuchetDynamics/kit) installation from Paseo. See runners, task contracts, goals, blockers, logs and the scorecard in one native interface. With an operator policy, run every `autowork` command from the same screens: task edits and commits, runner controls and maintenance, owner answers and staged planning. Every mutation shows the exact action and waits for your confirmation.

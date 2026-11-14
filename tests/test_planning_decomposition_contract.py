@@ -13,32 +13,29 @@ MAINTAINER = (ROOT / 'pi-autowork/pi_autowork/maintainer.py').read_text()
 
 class PlanningDecompositionContractTests(unittest.TestCase):
     def test_bounded_large_file_fix_needs_no_extraction_task(self):
-        for rule in ('A bounded fix may stay in a large or hot file',
-                     'cohesion, observed conflict cost and testability',
-                     'not a line-count or task-count threshold'):
+        for rule in ('Re-cut ownership for cohesion',
+                     'observed conflict cost and testability',
+                     'not an arbitrary file-size threshold'):
             with self.subTest(rule=rule):
                 self.assertIn(rule, CRAFT)
         self.assertNotIn('gets a first task that extracts', CRAFT)
         self.assertNotIn('longer than about 1500 lines', CRAFT)
 
     def test_file_overlap_ranks_without_fake_dependencies(self):
-        for rule in ('Ordinary files, directories, globs and test modules only rank',
-                     'Their overlap alone does not hold dispatch',
-                     'not merely a shared path or a preferred sequence',
-                     'overlapping source files or tests do not require extraction or dependency edges'):
+        for rule in ('report actual overlap instead of inventing product prerequisites',
+                     'Native GitHub `blockedBy` edges represent real dependencies',
+                     'not preferred order or file overlap',
+                     'overlap is not a promise of no conflict'):
             with self.subTest(rule=rule):
                 self.assertIn(rule, CRAFT)
         self.assertNotIn('Tasks that can run together have disjoint writes', CRAFT)
         self.assertNotIn('a file that unlanded work also names waits', CRAFT)
 
     def test_real_conflicts_and_protected_paths_still_coordinate(self):
-        for rule in ('only `exclusive` requires running alone',
-                     '`live` still needs authorization but does not drain unrelated workers',
-                     'Shared named resources serialize their users',
-                     'protected-path tasks serialize with each other, not ordinary tasks',
-                     'New manifests, lockfiles, schema/migration and CI files need explicit protected paths',
-                     'Never use them for caution',
-                     'A shared registry', 'changes in one task'):
+        for rule in ('Orbi has no cross-deployment capacity or ownership lock',
+                     'do not promise serialization from a legacy task resource field',
+                     'CI, manifests and sensitive changes retain repository gates',
+                     'Name shared registry/interface changes once'):
             with self.subTest(rule=rule):
                 self.assertIn(rule, CRAFT)
         for rule in ('Preserve existing Dependencies unless prerequisite evidence justifies changing them',
@@ -63,9 +60,9 @@ class PlanningDecompositionContractTests(unittest.TestCase):
                      'instruction-contract guard tests the instruction behavior itself',
                      'Reuse existing negative guards',
                      'Preserve every task-required check and independent review',
-                     'affected landing check on the merged candidate',
-                     'Main retains its separate full check',
-                     'An affected-only pass is not a full-main pass'):
+                     "repository's documented affected-test selection",
+                     'preserve required CI and merge checks',
+                     'Offline instruction checks do not prove model adherence'):
             with self.subTest(rule=rule):
                 self.assertIn(rule, CRAFT)
         self.assertNotIn("Put each task's tests in a new focused test file or class", CRAFT)

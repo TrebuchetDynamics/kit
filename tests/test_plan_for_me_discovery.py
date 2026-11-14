@@ -33,7 +33,7 @@ class PlanForMeDiscoveryContractTests(unittest.TestCase):
                 'A bare `/plan_for_me` is a discovery request, not an interview',
                 'Focused planning for that outcome and its authorized prerequisites',
                 'Read-only, chat-only, no-write or dry-run',
-                'An Autowork-owned planning substep',
+                'An Orbi-owned planning substep',
                 'If the repository has no accepted objective or meaningful source',
                 'New product directions stay proposals'):
             with self.subTest(requirement=requirement):
@@ -44,7 +44,7 @@ class PlanForMeDiscoveryContractTests(unittest.TestCase):
         self.assertIn('project-discovery protocol', contract)
         self.assertIn('Do not ask for a goal before that investigation', contract)
         self.assertIn('Plan With Me asks for the missing goal', contract)
-        self.assertIn('Autowork-owned substep stays inside its named task', contract)
+        self.assertIn('Orbi-owned substep stays inside its named task', contract)
         self.assertNotIn('otherwise ask for the missing goal', contract)
         craft = words(PLANNING_CRAFT)
         self.assertIn('Project discovery', craft)
@@ -71,7 +71,7 @@ class PlanForMeDiscoveryContractTests(unittest.TestCase):
                 'at most eight new tasks',
                 '## Reconcile repeated invocations',
                 '## Respect authority and persistence',
-                'Do not edit legacy TODO.md/goals.json',
+                'Do not create a local task queue',
                 '## Report',
                 'Next executable task'):
             with self.subTest(requirement=requirement):
@@ -81,13 +81,13 @@ class PlanForMeDiscoveryContractTests(unittest.TestCase):
         text = words(DISCOVERY)
         self.assertIn('Goal classes describe intent, not mandatory task grouping', text)
         self.assertIn('A standalone task may be ungrouped', text)
-        self.assertIn('Goal and custom short label are optional', text)
-        self.assertIn('rolling batch shares the same goal', text)
+        self.assertIn('an ordinary task needs no epic', text)
+        self.assertIn('expansion stays in the `ai-epic`', text)
         self.assertIn('at most eight new tasks', text)
         self.assertIn('observable acceptance and exact known checks', text)
-        self.assertIn('bounded `touches`', text)
+        self.assertIn('bounded scope', text)
         self.assertIn('keep it out of runnable scope until the owner accepts it', text)
-        self.assertIn('do not implement, dispatch, restart or schedule', text)
+        self.assertIn('publish readiness last, but do not implement, restart or schedule', text)
         self.assertNotIn('each executable task needs an existing or justified goal', text)
 
     def test_read_only_and_coordinator_boundaries_survive_the_default_discovery_route(self):
@@ -97,19 +97,20 @@ class PlanForMeDiscoveryContractTests(unittest.TestCase):
                 'same coordinator',
                 'authorized prerequisites',
                 'Preserve read-only modes, live leases and active workers',
-                'preserve the blocker'):
+                'preserve the failure'):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
 
     def test_portable_adapter_exposes_the_same_discovery_default(self):
-        text = words(ADAPTER)
+        self.assertIn('../../../skills/plan-for-me/SKILL.md', words(ADAPTER))
+        text = words(SKILL)
         for requirement in (
-                '../../../skills/plan-for-me/references/discovery.md',
+                'references/discovery.md',
                 'No concrete objective',
-                'Do not ask for a goal first',
+                'Do not ask for a goal before investigating',
                 'Focused planning',
                 'Read-only',
-                'An Autowork-owned substep'):
+                'An Orbi-owned planning substep'):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
 
@@ -118,7 +119,6 @@ class PlanForMeDiscoveryContractTests(unittest.TestCase):
         special = ROOT / 'skills/plan-for-me/references/special-cases.md'
         for path, link in (
                 (SKILL, '../shared/PLANNING-CRAFT.md#decision-closure'),
-                (ADAPTER, '../../../skills/shared/PLANNING-CRAFT.md#decision-closure'),
                 (DISCOVERY, '../../shared/PLANNING-CRAFT.md#decision-closure'),
                 (special, '../../shared/PLANNING-CRAFT.md#decision-closure')):
             with self.subTest(path=path):
@@ -128,7 +128,9 @@ class PlanForMeDiscoveryContractTests(unittest.TestCase):
                 self.assertEqual((path.parent / target).resolve(), PLANNING_CRAFT)
                 self.assertIn('## Decision closure', PLANNING_CRAFT.read_text())
                 self.assertNotIn('## Decision closure', path.read_text())
-        for path in (SKILL, ADAPTER):
+        # Thin adapters load the native policy, rather than duplicating it.
+        self.assertIn('../../../skills/plan-for-me/SKILL.md', words(ADAPTER))
+        for path in (SKILL,):
             text = words(path)
             self.assertIn('focused tasks and discovered frontiers', text)
             self.assertIn('record planner calls', text)

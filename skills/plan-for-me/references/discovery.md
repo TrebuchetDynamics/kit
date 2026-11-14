@@ -4,8 +4,8 @@ Load this reference when a standalone Plan For Me invocation has no concrete
 objective: bare `/plan_for_me`, "plan this project", "make it better", or a broad
 direction such as "improve reliability". [SKILL.md](../SKILL.md) and the
 [planning authority contract](../../shared/RESEARCH-PLAN.md) still apply. This
-reference changes what is investigated first; it grants no implementation,
-publication, spending or live-operation authority.
+reference changes what is investigated first. Publication follows Plan Handoff;
+it grants no implementation, unrelated spending or live-operation authority.
 
 A bare invocation is a discovery request, not a request for an interview. Read the
 repository before asking anything. If accepted intent is genuinely absent, report
@@ -18,7 +18,7 @@ that finding instead of inventing a roadmap.
 | No concrete objective, or a broad quality/risk/performance direction | Discover the project, derive evidence-backed goals, then save one executable frontier. |
 | A named outcome, feature, defect or accepted slice | Focused planning for that outcome and its authorized prerequisites; do not audit unrelated projects. |
 | Read-only, chat-only, no-write or dry-run | Use the same discovery or focused method; save nothing. |
-| Autowork-owned planning substep | Stay inside the named task and authorized prerequisites; return to that same coordinator. |
+| Orbi-owned planning substep | Stay inside the named task and authorized prerequisites; return to that same coordinator. |
 
 Classify semantically. A supplied objective wins even when it is short; a vague
 adjective ("better", "premium", "faster") is a direction for discovery, not an
@@ -28,8 +28,8 @@ plan the concrete outcome and record the aspiration as a separate proposal.
 ## Goal classes
 
 Build an explicit goal model from the evidence. Goal classes describe intent, not
-mandatory task grouping. A standalone task may be ungrouped; use a goal record for
-a meaningful shared or rolling outcome:
+mandatory task grouping. A standalone task may be ungrouped; use an `ai-epic` for
+a meaningful coordinated outcome:
 
 | Class | Meaning | Planner authority |
 | --- | --- | --- |
@@ -110,10 +110,10 @@ For each substantial discovery result, work in this order: **Discover -> Specify
   ordering and duplication with shared [decision closure](../../shared/PLANNING-CRAFT.md#decision-closure);
   persist planner calls and builder dispositions in the frontier's task contracts,
   leaving only genuinely blocked affected tasks pending. **Hand off** through the existing Docs Sync and
-  `autowork tasks` contracts; do not implement, dispatch, restart or schedule.
+  GitHub issue contracts; publish readiness last, but do not implement, restart or schedule.
 
-Keep new product strategy as a proposal in the appropriate document or a
-`Needs decision` task with its `Question:` note. A proposal never becomes a worker
+Keep new product strategy as a proposal in its existing document or an
+`ai-planning` issue with the exact missing intent and resume condition. A proposal never becomes a worker
 task by being well written.
 
 ## Prioritize the real frontier
@@ -145,23 +145,15 @@ dependencies) from the **execution frontier** (the smallest high-value group tha
 can be specified accurately and acted on now).
 
 Save at most eight new tasks per discovery frontier; do not fill the allowance
-artificially. For evidence-dependent rolling work, apply the existing
-[rolling-planning rules](../../shared/TODO-WORKCENTER.md#rolling-planning):
-the limit includes the closing planning task, and the rolling batch shares the same goal.
-Add a successor planning task only when later content genuinely depends on
-implementation evidence. Stop
-when the goal is complete, further work needs new owner intent, or the round adds
-no building task. Never create an unbounded self-replenishing chain or a second
-planning daemon.
+artificially. Future evidence-dependent expansion stays in the `ai-epic`, not a
+closing legacy planning task or self-replenishing scheduler chain. Revisit the
+frontier when implementation evidence arrives; an ordinary task needs no epic.
 
-Save executable tasks through
-[ordinary authoring](../../shared/TODO-WORKCENTER.md#ordinary-authoring):
-canonical ID, concrete outcome, bounded scope, observable acceptance and exact
-known checks. Goal and custom short label are optional; an ordinary task needs no
-separate plan. Resolve real dependencies, bounded `touches`, resources, exclusions,
-kind, ownership, Now/Next rank and relevant source links before dispatch. Do not invent worker ownership, live authorization or
-permission the repository does not grant. A check that does not exist yet is a
-proposed, unrun check, not a passing test.
+Save executable issues through [Plan Handoff](../../shared/PLAN-HANDOFF.md): stable
+publication key, concrete outcome, bounded scope, observable acceptance and exact
+known checks, exclusions and reachable source links. Preserve native dependencies,
+actual ownership, live qualification and repository priority. Do not invent
+permission. A check that does not exist yet is proposed/unrun, not a passing test.
 
 ## Reconcile repeated invocations
 
@@ -187,12 +179,11 @@ implementation. Preserve read-only modes, live leases and active workers, admitt
 contracts, dirty checkouts, credential and production restrictions, publication
 limits, document ownership and completed task history.
 
-Save through the supported `autowork tasks` workflow and task-store preparation. Do
-not edit legacy TODO.md/goals.json, bypass a hold, or clear another writer's claim
-to make planning pass. If preparation is blocked, preserve the blocker, continue
-independent read-only discovery, and report what remains unsaved. An explicit
-standalone request stops after its planning batch; an Autowork substep returns its
-findings and records to the same coordinator.
+Save through [GitHub publication](../../shared/PLAN-HANDOFF.md). Do not create a
+local task queue, bypass a pause or clear another writer's claim. If publication
+fails, preserve the failure, continue permitted discovery and report complete
+UNSAVED proposals. Standalone planning stops after its batch; an Orbi substep
+returns findings and issue links to the same coordinator.
 
 ## Report
 

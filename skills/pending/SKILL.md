@@ -3,51 +3,36 @@ name: pending
 description: "Report open, done and next tasks."
 license: MIT
 metadata:
-  version: 0.2.0
   hermes:
     tags: [tasks, pending, done, query, read-only]
 ---
 
 # Pending
 
-For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
-
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
+Use the [communication rules](../shared/COMMUNICATION.md) for user-facing text.
 
-Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
+Follow the [shared contract](../shared/COMMON-CONTRACT.md) and
+[GitHub issue contract](../shared/PLAN-HANDOFF.md).
 
-Answer "what is left, what is next, what was done" without changing the repository.
-Read current work from `tasks/` and completed work from
-[Git history](../shared/TODO-WORKCENTER.md#read-completed-work-from-git).
-Use the read-only `autowork tasks` queries, which read the store at a commit
-(HEAD by default), and report the outcome in the user's language, leading with
-what matters and keeping task IDs:
+1. Resolve the repository. Read open GitHub Issues and linked PRs, including labels,
+   priority, native `blockedBy` relationships and epic membership. Paginate the full
+   requested scope; do not confuse a client limit with the complete backlog.
+2. Report ready work, dependent waiting work, proposals/explicit pauses and actual
+   Orbi-owned delivery separately. `ai-ready` is the default, not proof of pickup.
+   Use `orbi status --config /path/to/orbi.toml` and `orbi doctor` when available;
+   distinguish diagnostics from successful model execution.
+3. For completion, read closed issues, merged PRs, checks and independent reviews
+   in the requested interval. Closed alone does not prove implementation. Preserve
+   legacy IDs as provenance; inspect immutable legacy history only when relevant.
+4. Report issue/PR URLs, next eligible work, exact blockers and coverage limits.
+   If GitHub or the deployment is unavailable, say what was not assessed.
 
-```sh
-autowork tasks list [repo]                 # every task: status, section, rank, next-eligible position
-autowork tasks show <TASK-ID> [repo]       # one task: its contract, notes and record revision
-autowork tasks why <TASK-ID> [repo]        # why it is or is not the next eligible task
-```
-
-Compare `list --worktree` with the committed list when there are pending task edits;
-label the two views rather than silently counting uncommitted work as queued.
-For completed work, inspect closure records in history, not just commit subjects
-or receipt presence. Report the revision/interval and coverage limits; pruning
-does not mean nothing was completed. Follow the linked history procedure for
-Manual versus Verified evidence and task-ID deduplication.
-
-Open work is `status: open` in Now and Next, in `position` order; Needs decision items
-wait for a person. A verified close has a receipt at its closure revision under
-`tasks/evidence/<ID>.toml`; cleanup can remove the current copy. The queries write
-nothing and run nothing; eligibility is recorded dependency and priority
-evidence, not worker admission or liveness. A repository without `tasks/` is not
-converted yet: say so and name `/docs_sync` (its `autowork tasks prepare` converts it,
-or defers to the runner while work is in flight); do not read TODO.md instead.
 ## Boundaries
 
-- Read-only: not a repair; use `/docs-sync` to change the store.
-- Not a blocker resolution; use `/blockers`.
+- Read-only: no labels, issues, local records, services or repair writes.
+- Use `/docs-sync` for supported document/issue reconciliation.
+- Use `/plan-with-me` for missing intent and `/work` for explicit manual delivery.
 
-**Done when:** open and next reflect the stated queue revision and selection order;
-completed work reflects inspected Git evidence for the stated interval, with coverage
-limits and Manual versus Verified distinguished.
+**Done when:** open, next and completed work reflect inspected GitHub evidence and
+the report states its interval, coverage and unassessed runtime state.

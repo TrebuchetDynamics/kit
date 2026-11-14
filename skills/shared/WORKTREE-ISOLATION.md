@@ -9,14 +9,16 @@ an isolated candidate. Never copy foreign edits to manufacture a clean gate.
 Use a private worktree when the workflow requires isolation, unless the user's
 scope explicitly requires the current checkout. Keep the checkout and owned file
 boundaries in the handoff. Verify its repository identity, base and required files
-before editing. Autowork's manifest and initial worker gate remain required.
+before editing. New task worktrees belong under the canonical repository's
+`.worktrees/` directory. For Orbi delivery, preserve its actual ownership and
+freshness checks; legacy manifests are not admission gates for new work.
 
 Worktree creation is not commit, push, merge, cleanup or delivery authorization.
 Preserve existing worktrees, branches, indexes and live writers. Remove only
 scratch you created when it is no longer needed, without deleting receipts or
 launch inputs required for recovery.
 
-For authorized Autowork tasks, apply [worktree closeout](../autowork/references/worktree-closeout.md):
+For explicitly scoped legacy recovery only, apply [worktree closeout](../autowork/references/worktree-closeout.md):
 integrate verified results into the canonical default branch (`main` or `master`),
 then remove finished owned task/integration worktrees. Keep active, dirty, locked,
 unmerged and recovery-bearing worktrees; report pending integration or cleanup.

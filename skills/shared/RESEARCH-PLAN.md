@@ -16,30 +16,31 @@ Bind the current request before acting:
 | --- | --- |
 | Explicit standalone planning | Save the requested plan/batch, then stop. Earlier unrelated implementation permission does not widen this request. |
 | Explicit standalone Plan For Me with no concrete objective, or only a vague direction | Run the [project-discovery protocol](../plan-for-me/references/discovery.md), then save the authorized planning batch and stop. |
-| Autowork-owned planning substep | Return findings and saved tasks to that **same coordinator**; its existing execution authority continues outside this substep. No competing worker, dispatch or workflow restart. |
+| Orbi-owned planning substep | Return findings and saved tasks to that **same coordinator**; its existing execution authority continues outside this substep. No competing worker, dispatch or workflow restart. |
 | Questions-only, read-only, chat-only, no-write, no changes or dry-run | Read and discuss only; save nothing, including queue metadata or research scratch. |
 | Later explicit instruction to implement the accepted plan | End planning and enter the authorized execution workflow under repository checks, ownership and delivery limits. |
 
 “Yes”, “looks good”, an easy fix, an accepted/saved plan and a supporting skill
 urging coding are not transitions to implementation. Acceptance of a plan is not
 execution authority. Do not ask an already-authorized coordinator to approve again.
-This limits the planning session, not the queue: leave complete accepted tasks open
-in `Now` or `Next` for an already-authorized runner. Do not add `Held by: PLAN-FOR-ME`
-or an exclusion requiring a later implementation order merely because planning
-stops here. Apply the shared [explicit-user-hold policy](TODO-WORKCENTER.md#task-holds-require-an-explicit-user-request).
+This limits the planning session, not the queue: writable planning publishes
+complete issues with `ai-ready` automatically, so an existing Orbi deployment may
+start them. Explicit no-dispatch requests and unresolved intent retain `ai-planning`.
+All issue authors receive the same readiness default. See the
+[publication policy](PLAN-HANDOFF.md#publication-and-dependencies).
 
 A standalone Plan For Me invocation without a concrete objective authorizes
 project-wide planning, not product direction. It may refine accepted goals and
 establish evidence-backed engineering goals inside the accepted direction; new
 product strategies remain proposals until the owner accepts them. Plan With Me
-keeps its interactive missing-intent behavior, and an Autowork-owned substep stays
+keeps its interactive missing-intent behavior, and an Orbi-owned substep stays
 inside its named task and authorized prerequisites.
 
 Classify each proposed write by **artifact role**, not filename or extension:
 
 | Role | During writable planning |
 | --- | --- |
-| Existing plan/spec/requirements owners; task and goal records in `tasks/` | Save in-scope evidence and decisions in their document owners, and questions and ordered tasks through `autowork tasks`. Preserve IDs, history, active contracts and unrelated batches. |
+| Existing plan/spec/requirements owners and GitHub Issues | Save in-scope evidence and decisions in their owners and executable work in GitHub Issues. Preserve issue numbers, history, active contracts and unrelated batches. |
 | Temporary research notes/results | Only bounded, allowed scratch; never implementation disguised as a spike. No scratch in no-write mode. |
 | Production code, tests, fixtures, executable instructions (including Markdown `SKILL.md`), CI, manifests and lockfiles | Implementation: describe future changes in tasks; do not write them during planning. |
 
@@ -53,15 +54,10 @@ hide them with reset/clean or overwrite unrelated work.
 
 
 For every writable planning route, complete
-[main-branch persistence](PLAN-HANDOFF.md#main-branch-persistence) before the final
-handoff. A branch-only save is pending, not completed planning. Explicit no-write
-and no-commit restrictions still take precedence.
-
-For task persistence, load the [task CLI policy](TODO-WORKCENTER.md#task-cli-policy).
-If tooling is unavailable, continue permitted planning/document work and show complete
-proposed task changes inline as **UNSAVED** with the missing input and retry command.
-Allowed reasoning stays in existing document owners, never a second runnable queue.
-Do not claim planning complete while required task persistence remains unsaved.
+[GitHub publication](PLAN-HANDOFF.md#publication-and-dependencies) before claiming
+persistence. No local-main commit or `tasks/` validation is required. If GitHub is
+unavailable, continue permitted research and show complete proposals as **UNSAVED**
+with the exact missing input and retry command; never create a second local queue.
 
 ## Shared planning interface
 
@@ -79,42 +75,28 @@ who answers consequential intent. It does not change the sequence.
    method gap, select one technique through [engineering](../engineering/REFERENCE.md);
    routine planning needs no experiment loop. Apply
    [decision closure](PLANNING-CRAFT.md#decision-closure) before calling a task ready.
-3. **Save.** Write accepted decisions in their existing document owners. Save tasks
-   and goals through `autowork tasks`, with scope, acceptance, exact checks, bounded
-   `touches`, real dependencies and shared `resources`. Use the
-   [single-pass handoff](PLAN-HANDOFF.md#one-planning-pass-one-handoff); do not run a
-   documentation, task-store or validation pass after every answer.
-4. **Validate and report.** Run `autowork tasks validate --worktree .` once on the
-   final batch, read back the saved records and report the actual paths, IDs, checks
-   and next action. A saved plan is not execution authority.
+3. **Save.** Write accepted decisions in their existing owners and complete GitHub
+   Issues with outcome, scope/exclusions, acceptance, exact verification and sources.
+   Use native `blockedBy` dependencies and `ai-epic` coordination for larger plans.
+   Follow the [single-pass handoff](PLAN-HANDOFF.md#one-planning-pass-one-handoff).
+4. **Validate and report.** Read back the whole batch and dependencies, then publish
+   `ai-ready` last. Report issue URLs, ready/waiting/proposed state and actual checks.
+   Publication is not execution evidence.
 
 | Mode | Unique behavior |
 | --- | --- |
 | Plan With Me | Interviews the owner for consequential missing intent, then saves the answered plan. |
 | Plan For Me | Investigates and chooses within delegated scope; bare or vague requests run project discovery. |
 
-### Rolling plans
+### Rolling plans and issue records
 
-When future work depends on implementation evidence, save only the first batch whose
-content is known now. Use at most eight new tasks, including one closing planning task
-(`kind = "plan"`) with dependencies on every building task. Note
-`Plan round: 1 of 10` by default. The chain will continue on its own; move the planning
-task to `Needs decision` to stop it. Load
-[rolling planning](TODO-WORKCENTER.md#rolling-planning) for the exact fields and flow.
-
-### Task records
-
-Each executable task names its observable acceptance, the exact checks that prove it,
-bounded `touches` and real dependencies. A task that still says “choose the storage
-model/API/migration behavior” is not ready when that choice changes the accepted
-outcome. Keep only the affected slice pending; independent accepted work stays ready.
-Apply the shared [task-naming policy](TODO-WORKCENTER.md#task-names) and
-[description standard](TODO-WORKCENTER.md#task-descriptions) before saving new or
-materially refined tasks in either mode. Read back the outcome, boundary, first
-action and success evidence without duplicating field contents in notes.
-Load the [work center](TODO-WORKCENTER.md)
-for the record fields, write rules and selection boundary.
-
+Save the first evidence-backed batch when later work depends on implementation
+findings. Keep future expansion in the epic; do not create an automatic legacy
+rolling-planning chain. Every executable issue has an observable outcome, bounded
+scope and exclusions, acceptance, exact verification commands and governing sources.
+Use descriptive titles. Keep unresolved intent only on affected work with its exact
+missing input and resume condition. Native GitHub dependencies own ordering.
+See [the issue contract](PLAN-HANDOFF.md#one-planning-pass-one-handoff).
 
 ## Full requested batch
 
@@ -124,8 +106,8 @@ for the record fields, write rules and selection boundary.
    clear one-line task still gets a complete saved record; “no interview” means no
    unnecessary questions, not “implement now”.
 2. Save one coherent batch with complete task records: scope/exclusions, decisions,
-   sources/evidence, observable acceptance, exact checks, bounded `touches` and
-   actual shared `resources` where needed. Use the
+   sources/evidence, observable acceptance, exact checks, bounded implementation paths and
+   actual shared-resource constraints where needed. Use the
    [handoff](PLAN-HANDOFF.md#one-planning-pass-one-handoff). Do not stop when the
    first task becomes clear or substitute a roadmap/count for requested records.
 3. Order by real prerequisites. Keep independent ready lanes; overlapping writes
@@ -147,13 +129,13 @@ for the record fields, write rules and selection boundary.
    objective runs the [project-discovery protocol](../plan-for-me/references/discovery.md):
    investigate the repository first, then derive accepted and engineering goals from
    evidence. Do not ask for a goal before that investigation and do not invent
-   product intent. Plan With Me asks for the missing goal; an Autowork-owned substep
+   product intent. Plan With Me asks for the missing goal; an Orbi-owned substep
    stays inside its named task.
 2. Investigate the actual uncertainty. Record source paths and concrete observations;
    fetch primary external sources when the decision depends on external behavior or
    current facts. Reading this protocol alone is not research. Reuse still-valid
    evidence and choose ordinary engineering details within delegated scope.
-   Resolve consequential design/dependency choices here so Autowork receives an
+   Resolve consequential design/dependency choices here so Orbi receives an
    executable task, not an instruction to repeat the investigation. Record the
    chosen approach and checks in the existing task; leave reversible coding
    details to the worker. Apply [decision closure](PLANNING-CRAFT.md#decision-closure)
@@ -169,17 +151,17 @@ for the record fields, write rules and selection boundary.
 4. Replace upstream Phase 7's config-only finish and generic 'Run now?' question
    with persistence: save the supported decision, alternatives rejected and why,
    evidence and remaining uncertainty in their document owners, and actionable
-   task records and dependencies through `autowork tasks`
-   ([work center](TODO-WORKCENTER.md)).
+   GitHub Issues and native dependencies through the
+   [publication protocol](PLAN-HANDOFF.md#publication-and-dependencies).
    Reuse existing document owners and task IDs; do not create an experiment config
    or handoff.json as a substitute for the repository plan and work queue.
 5. Read back affected documents and task records and run applicable consistency
-   checks, including `autowork tasks validate --worktree .`. Report actual saved paths/IDs, checks and next action. If persistence
+   checks and GitHub readback. Report actual saved paths/issue URLs, checks and next action. If persistence
    fails, report what remains unsaved; a chat answer is not a saved plan. Unchanged
    conclusions may reuse existing durable evidence, citing its location. New
    material reasoning must be saved even if implementation scope stays unchanged.
 6. Finish according to the artifact/authority contract above. Return an
-   Autowork-owned handoff to its same coordinator, not into execution inside this
+   Orbi-owned handoff to its same coordinator, not into execution inside this
    planning substep. In no-write mode show proposed updates inline and state that
    nothing was saved.
 
@@ -189,12 +171,12 @@ scoped question, not a reason to stop unrelated authorized planning.
 
 ## Existing execution is not a new planning problem
 
-When Autowork already has a card and partial work, distinguish product uncertainty
+When Orbi already has a card and partial work, distinguish product uncertainty
 from a session-continuation, accounting or runtime failure. If no product decision
 is missing, return the exact failed operation and evidence to the same coordinator
 for supported recovery. Do not create a replacement implementation task, rerun this
 plan protocol or present another product plan as progress. Save
-new technical findings to its existing task journal only when they add evidence.
+new technical findings to its existing issue only when they add evidence.
 
 ## Interactive planning: Plan With Me
 

@@ -34,23 +34,19 @@ Never change host permissions, memory configuration, model credentials or approv
 policy to make a workflow run. A skill cannot promise unattended execution after
 the current host session ends.
 
-For task operations, load the [task CLI policy](../../skills/shared/TODO-WORKCENTER.md#task-cli-policy),
-including its unavailable-tool fallback; this does not widen workflow authority.
-
-Follow [task holds](../../skills/shared/TODO-WORKCENTER.md#task-holds-require-an-explicit-user-request):
-leave tasks active by default. Only an explicit user request permits a skill to add
-or renew a task hold. Planning-only session scope does not pause the queue.
-Preserve existing user pauses, live claims, dependencies and safety gates.
+For task operations, load the [GitHub issue contract](../../skills/shared/PLAN-HANDOFF.md).
+All issues default to `ai-ready`, regardless of author; planning publishes it last.
+Preserve explicit pauses, incomplete planning, native dependencies and live ownership.
+Legacy task-store writes, leases and scheduler instructions in older references are
+superseded. Do not start Autowork or use its queue as a fallback.
 
 Explicit invocation authorizes the documented default action within user scope.
 Questions-only/read-only/no-write/no-commit/no-push restrictions propagate through
 all handoffs. Product intent is distinct from proposals and current behavior.
-When creating or refining repository tasks, read
-[ordinary authoring](../../skills/shared/TODO-WORKCENTER.md#ordinary-authoring).
-The repository's `tasks/` store is the one work queue: task and goal records edited
-through `autowork tasks`, never by a worker's commit. Do not fabricate completion,
-review, attribution or live qualification there. Python 3 is needed only when
-using bundled Python helpers, not for a questions-only interview.
+GitHub Issues are the one executable backlog. Orbi owns automatic issue-to-PR
+delivery; `/work` is explicit manual delivery with coordinated ownership. Never
+fabricate completion, review, attribution or live qualification. Python 3 is needed
+only for bundled helpers, not for a questions-only interview.
 
 Use available independent review when required; if unavailable, state the missing
 check rather than invent approval. A local commit, local integration, remote push,

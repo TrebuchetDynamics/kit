@@ -1,5 +1,22 @@
 # Repository agent instructions
 
+## GitHub-native execution (supersedes legacy workflow guidance below)
+
+GitHub Issues are the authoritative executable backlog. Kit plans; Orbi delivers
+issues through Pi, tests, PRs, independent review and merge gates. All issues default
+to `ai-ready`, regardless of author. Planning creates complete batches under
+`ai-planning`, verifies native `blockedBy` dependencies, then publishes readiness
+last; `ai-epic` coordination issues do not execute. Preserve explicit pauses,
+actual ownership, CI, sensitive-change controls and human-only requirements.
+See `docs/github-native.md` and `skills/shared/PLAN-HANDOFF.md`.
+
+The `pi-autowork` executor and plugin are deprecated. Do not start its services,
+prepare new local task stores or acquire its leases for new work. Existing task
+records, worktrees and recovery state are migration evidence, not a second queue.
+Legacy `autowork tasks` guidance below applies only to explicitly scoped recovery
+or pruning. No local-main planning commit is required for GitHub issue publication.
+Keep the unrelated safety, testing, ownership and delegation rules below.
+
 Autowork supplies repository workflows, command registration and profile
 setup. Read README.md and the relevant docs before changing these contracts.
 Preserve unrelated changes and keep credentials, private profile identities and
