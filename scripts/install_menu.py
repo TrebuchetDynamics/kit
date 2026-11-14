@@ -776,7 +776,7 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
     current = 0
     started = time.monotonic()
     if output.verbosity or dry_run:
-        title = 'Autowork suite update' if mode == 'update' else 'Autowork full suite installer'
+        title = 'Kit suite update' if mode == 'update' else 'Kit full suite installer'
         output.line(title + (' — preview' if dry_run else ''), 'heading')
         output.line('Selected: ' + (', '.join(i.key for i in all_items if i.key in chosen) or 'none'))
     for item in all_items:

@@ -271,7 +271,7 @@ fi
     def test_update_runs_the_same_items_as_a_full_install(self):
         result = self.install('update')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('Autowork suite update', result.stdout)
+        self.assertIn('Kit suite update', result.stdout)
         self.assert_octet_skills()
         self.assertRegex(result.stdout, r'octet\s+installed.*octet 1.2.3')
         self.assertIn(f'pi install {NEW}', self.calls('pi'))
