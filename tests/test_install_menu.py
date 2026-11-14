@@ -21,6 +21,8 @@ INSTALL = ROOT / 'install.sh'
 sys.path.insert(0, str(ROOT / "scripts"))
 import install_menu  # noqa: E402
 NEW = 'git:github.com/TrebuchetDynamics/kit'
+ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
+               '1a8b2f9603f6258cb105293f238a8d3f775f3393')
 
 # A fake pi: `pi list` reads installed sources from a file; install and remove edit it.
 PI = r'''#!/usr/bin/env bash
@@ -46,8 +48,8 @@ class InstallMenuTests(unittest.TestCase):
         self.log = self.home / 'calls.log'
         self.log.touch()
         self.fake('pi', PI)
-        self.fake('uv', LOGGING + '''
-if [[ "$*" != "tool install --python 3.14 orbi-cli" ]]; then exit 91; fi
+        self.fake('uv', LOGGING + f'''
+if [[ "$*" != "tool install --python 3.14 {ORBI_SOURCE}" ]]; then exit 91; fi
 if [[ -n "$ORBI_INSTALL_FAIL" ]]; then exit 17; fi
 mkdir -p "$UV_TOOL_BIN_DIR"
 printf '#!/bin/sh\\necho "orbi $*" >> "$FAKE_LOG"\\necho orbi 0.7.41\\n' > "$UV_TOOL_BIN_DIR/orbi"
@@ -195,7 +197,7 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
     def test_orbi_installs_cli_only_and_verifies_version(self):
         result = self.install('--only', 'orbi')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.calls('uv'), ['uv tool install --python 3.14 orbi-cli'])
+        self.assertEqual(self.calls('uv'), [f'uv tool install --python 3.14 {ORBI_SOURCE}'])
         self.assertEqual(self.calls('orbi'), ['orbi --version'])
         self.assertTrue((self.home / '.local/bin/orbi').is_file())
         self.assertIn('orbi 0.7.41', result.stdout)
@@ -208,7 +210,7 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
                 result = self.install(*args)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertRegex(result.stdout, r'orbi\s+planned')
-                self.assertIn('uv tool install --python 3.14 orbi-cli', result.stdout)
+                self.assertIn(f'uv tool install --python 3.14 {ORBI_SOURCE}', result.stdout)
         self.assertRegex(self.install('--list').stdout, r'orbi\s+available')
         self.assertEqual(self.calls('orbi'), [])
         self.assertEqual(self.calls('uv'), [])
@@ -217,6 +219,17 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('uv'), [])
         self.assertEqual(self.calls('orbi'), [])
+
+    def test_orbi_missing_git_refuses_fork_install_without_side_effects(self):
+        with patch.object(install_menu, 'HOME', self.home), \
+                patch.object(install_menu, 'BIN', self.home / '.local/bin'), \
+                patch.object(install_menu.shutil, 'which',
+                             side_effect=lambda name: str(self.bin / 'uv') if name == 'uv' else None), \
+                patch.object(install_menu, 'run_command') as run:
+            with self.assertRaisesRegex(OSError, 'requires git'):
+                install_menu.install_orbi()
+        run.assert_not_called()
+        self.assertFalse((self.home / '.local/bin/orbi').exists())
 
     def test_orbi_preserves_existing_cli_even_on_update(self):
         self.fake('orbi', LOGGING + 'echo orbi 0.7.41\n')
@@ -410,7 +423,7 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         self.assertRegex(result.stdout, r'pi-bolt\s+installed.*1\.4\.0')
         self.assertEqual(len(self.calls('pi-bolt-installer')), 1)
         self.assertRegex(result.stdout, r'orbi\s+installed.*orbi 0.7.41')
-        self.assertEqual(self.calls('uv'), ['uv tool install --python 3.14 orbi-cli'])
+        self.assertEqual(self.calls('uv'), [f'uv tool install --python 3.14 {ORBI_SOURCE}'])
 
     def test_codex_install_continues_when_marketplace_is_not_configured_or_installed(self):
         self.fake('codex', LOGGING + '''

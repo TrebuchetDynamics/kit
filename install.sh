@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One entry point: install Orbi, tx, Octet and the Hermes, Claude Code, Codex and Pi integrations
+# One entry point: install the pinned Orbi fork CLI, tx, Octet and the Hermes, Claude Code, Codex and Pi integrations
 # with the full available suite and verbose output by default; --menu selects items.
 # `install.sh update` runs the same items as an in-place update of what is installed.
 # Live progress and terminal colors: scripts/install_menu.py. See: install.sh --help
