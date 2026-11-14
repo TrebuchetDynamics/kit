@@ -88,9 +88,9 @@ class PortablePackageTests(unittest.TestCase):
             self.assertIn('macOS is status-only', reference)
             checkout = foreign / 'target repo'
             checkout.mkdir()
-            subprocess.run(['git', 'init', '-q', str(checkout)], check=True)
+            subprocess.run(['git', 'init', '-q', str(checkout)], check=True, timeout=30)
             subprocess.run(['git', '-C', str(checkout), 'remote', 'add', 'origin',
-                            'https://github.com/example/project.git'], check=True)
+                            'https://github.com/example/project.git'], check=True, timeout=30)
             tools = foreign / 'bin'
             tools.mkdir()
             git = shutil.which('git')

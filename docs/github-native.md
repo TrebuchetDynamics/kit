@@ -171,13 +171,18 @@ owned timers and reports draining until active workers finish; missing evidence
 is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only.
 
 Status names the state it observed: `absent` when no deployment owns the
-repository, `prepared` when an owned timer is installed and enabled while no owned
-worker is active, `running` while an owned worker is active, `draining` after the
-owned timers were disabled while an invocation finishes, `stopped` when every
-owned unit was read as inactive, and `unavailable` when a read failed and the
-state is unknown. Each mutation reports its own outcome: `setup` says `prepared`,
-`start` says `started` or `already-running`, and `stop` says `draining` or
-`stopped`; `--dry-run` says `planned` for all three.
+repository, and `unavailable` when scheduler evidence cannot be verified. With
+readable scheduler evidence, it reports `running` while any service is active,
+activating or reloading; `draining` when no service is running but one is
+deactivating. Otherwise it reports `prepared` when an owned timer is enabled or
+active, and `stopped` when services are inactive or failed and no owned timer is
+enabled or active.
+
+Each mutation reports its own outcome: `setup` says `prepared` (staging, not
+scheduler activation), `start` says `started` or `already-running`, and `stop`
+says `draining` or `stopped`; `--dry-run` says `planned` for all three. Thus `stop`
+can report `draining` while a subsequent status still reports `running`: an active
+worker is preserved, not killed, and status does not remember a global pause.
 
 The [lifecycle reference](../skills/orbi/references/lifecycle.md) owns prerequisite,
 retention, pinned-source and deployment-local uv isolation details. Native units
