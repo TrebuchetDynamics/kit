@@ -160,6 +160,22 @@ limits) rather than multiplying that slot count across every repository. `doctor
 can diagnose overlapping pools; it does not establish a global resource budget.
 Do not serve one repository from multiple deployments or machines.
 
+### Kit lifecycle skill
+
+Use [`/orbi [status|setup|start|stop]`](../skills/orbi/SKILL.md) for one
+repository's deployment. Bare invocation reads status; `--repo-dir` selects the
+canonical repository and `--config` selects its existing native configuration.
+Setup prepares without activating scheduling. Start requires separate scheduling
+authorization with existing pauses and cutover gates resolved. Stop disables only
+owned timers and reports draining until active workers finish; missing evidence
+is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only.
+
+The [lifecycle reference](../skills/orbi/references/lifecycle.md) owns prerequisite,
+retention, pinned-source and deployment-local uv isolation details. Native units
+still depend on a compatible shared bootstrap: this is not a self-contained
+executable per deployment. Installing the skill or passing offline checks does
+not prove live isolation or release the pilot gates.
+
 ## Qualify the model provider
 
 The diagnostics below were checked against Orbi 0.7.41. Re-check the release you

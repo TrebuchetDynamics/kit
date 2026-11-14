@@ -7,7 +7,7 @@
 Kit supports Claude Code, Codex, Pi and optional Hermes integration.
 Claude Code, Codex and Pi use the portable adapters, not the Hermes plugin
 loader. None requires Hermes installed.
-These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Autowork, Work,
+These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Autowork, Orbi, Work,
 Autoresearch, Impeccable, UI Taste, Beautify GitHub README,
 LGTM, Git Commit Push, Blockers, Pending, the six bundled Ponytail skills,
 and Bug Harvest, Autonomous Codebase Improver, Skill Folder Refactor, Unused Code
@@ -36,6 +36,15 @@ It does not start a service or schedule work after the session ends.
 The portable `/autowork` command only redirects to GitHub/Orbi; it starts no
 service. Both planners publish GitHub Issues, not local task records. No command
 rename is required. Orbi remains paused and live-unqualified.
+
+## Orbi lifecycle controls
+
+Use `/kit:orbi [status|setup|start|stop]` in Claude Code, `$kit:orbi` in Codex,
+or `/orbi` in Pi or Hermes. All hosts load the same
+[Orbi workflow](../skills/orbi/SKILL.md); default status is read-only.
+Linux lifecycle changes require the workflow's ownership and authorization gates;
+macOS is status-only. Installing the skill does not activate a deployment or
+qualify live delivery. Existing pauses and cutover gates remain in force.
 
 ## Bundled Ponytail on every host
 

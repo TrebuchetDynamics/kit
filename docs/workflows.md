@@ -63,6 +63,7 @@ capacity limit, so some commands must be typed rather than selected in the menu.
 | Hermes CLI chat | Telegram | Purpose |
 | --- | --- | --- |
 | `/autowork` | `/autowork` | Compatibility redirect to GitHub/Orbi; no executor or service startup |
+| `/orbi [status\|setup\|start\|stop]` | `/orbi` | [Repository-scoped lifecycle controls](../skills/orbi/SKILL.md): bare status is read-only, setup prepares without activation, authorized start schedules, stop drains without killing workers; Linux controls, macOS status-only |
 | `/work` | `/work` | Auto-select and complete tasks in this session; continue through useful offline work without starting a runner |
 | `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only clean unmerged ones, keep dirty and locked worktrees |

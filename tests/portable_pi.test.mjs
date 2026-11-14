@@ -7,7 +7,8 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 48);
+  assert.equal(commands.size, 49);
+  assert.equal(commands.has('orbi'), true);
   assert.equal(commands.has('push'), true);
   assert.equal(commands.has('unblock'), true);
   assert.equal(commands.has('apk-get'), true);
@@ -70,7 +71,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   }
   for (const [name, skill] of Object.entries({
     'plan-with-me': 'plan-with-me', 'plan-for-me': 'plan-for-me', 'docs-sync': 'docs-sync',
-    autowork: 'autowork', work: 'work', autoresearch: 'autoresearch',
+    autowork: 'autowork', orbi: 'orbi', work: 'work', autoresearch: 'autoresearch',
     impeccable: 'impeccable', 'ui-taste': 'ui-taste',
     'beautify-github-readme': 'beautify-github-readme', 'grill-me': 'plan-with-me',
     lgtm: 'lgtm', goal: 'goal', blockers: 'blockers', unblock: 'unblock',
@@ -174,6 +175,9 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     'adapters/skills/state-machine/SKILL.md', 'adapters/skills/state-machine/agents/openai.yaml',
     'skills/shared/COMMUNICATION.md', 'skills/work/SKILL.md',
     'adapters/skills/work/SKILL.md', 'adapters/skills/work/agents/openai.yaml',
+    'skills/orbi/SKILL.md', 'skills/orbi/references/lifecycle.md',
+    'skills/orbi/scripts/orbi_control.py',
+    'adapters/skills/orbi/SKILL.md', 'adapters/skills/orbi/agents/openai.yaml',
     'scripts/github_issues.py', 'scripts/worktree_paths.py', 'scripts/checkout_lock.py',
     'docs/github-native.md']) {
     assert.equal(paths.has(path), true, path);
@@ -239,7 +243,7 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
-    assert.equal(skillCount, 36);
+    assert.equal(skillCount, 37);
     // Execute the packaged CommonJS helper under Kit's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
@@ -256,7 +260,8 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 48);
+    assert.equal(commands.size, 49);
+    assert.equal(commands.has('orbi'), true);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {
       assert.match(name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, name);
