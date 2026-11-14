@@ -7,7 +7,7 @@ const workflows = {
   'plan-with-me': ['plan-with-me', 'Ask questions and plan together'],
   'plan-for-me': ['plan-for-me', 'Investigate, decide and save the plan'],
   'docs-sync': ['docs-sync', 'Keep documentation and the tasks/ store accurate'],
-  autowork: ['autowork', 'Plan, execute, verify and commit a useful task'],
+  autowork: ['autowork', 'Inspect GitHub delivery through Orbi'],
   work: ['work', 'Auto-select and complete tasks in this session'],
   autoresearch: ['autoresearch', 'Run bounded research or experiments'],
   'apk-get': ['apk-get', 'Find the app, build an ARM64 release APK and upload with s3upload'],

@@ -29,8 +29,7 @@ db=$FAKE_HOME/pi-installed
 touch "$db"
 case $1 in
   list) echo "User packages:"; while read -r src; do [[ -n $src ]] && { echo "  $src"; echo "    $FAKE_HOME/pkg/${src##*/}"; }; done < "$db" ;;
-  install) echo "$2" >> "$db"; mkdir -p "$FAKE_HOME/pkg/${2##*/}/scripts" "$FAKE_HOME/pkg/${2##*/}/pi-autowork/bin";
-           : > "$FAKE_HOME/pkg/${2##*/}/pi-autowork/bin/autowork" ;;
+  install) echo "$2" >> "$db"; mkdir -p "$FAKE_HOME/pkg/${2##*/}/adapters" ;;
   remove) grep -vxF "$2" "$db" > "$db.new"; mv "$db.new" "$db" ;;
 esac
 '''
@@ -86,12 +85,6 @@ if os.environ.get('OCTET_FIXTURE_STAGE') == 'download-empty':
 elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
     dest.write_bytes(b'x' * 1048577)
 ''')
-        # A ready private SDK environment keeps these installer-orchestration
-        # fixtures offline. The RPC installer has separate real wheel qualification.
-        sdk = self.home / '.local/state/pi-autowork/runtimes/pi-rpc-0.2.6/bin/python'
-        sdk.parent.mkdir(parents=True)
-        sdk.write_text('#!/bin/sh\necho 0.2.6\n')
-        sdk.chmod(0o755)
         for name in ('claude', 'codex', 'systemctl'):
             self.fake(name, LOGGING)
         self.env = {'PATH': f'{self.bin}:/usr/bin:/bin', 'HOME': str(self.home), 'FAKE_LOG': str(self.log),
@@ -165,7 +158,7 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
 
     def test_list_marks_missing_hosts(self):
         out = self.install('--list').stdout
-        for key in ('pi', 'autowork', 'tx', 'claude', 'codex', 'octet'):
+        for key in ('pi', 'tx', 'claude', 'codex', 'octet'):
             self.assertRegex(out, rf'{key}\s+available')
         self.assertRegex(out, r'hermes\s+unavailable.*hermes not found')
 
@@ -205,59 +198,19 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
         self.assertRegex(result.stdout, r'hermes\s+planned')
         self.assertFalse(marker.exists())
 
-    def test_runner_install_survives_removing_interactive_pi(self):
-        sys.path.insert(0, str(ROOT / 'pi-autowork'))
-        from pi_autowork.coordinator import Coordinator
-        from pi_autowork import service
-        interactive = self.home / '.pi/agent'
-        interactive.mkdir(parents=True)
-        login = 'disposable-fixture-login'
-        (interactive / 'auth.json').write_text(json.dumps({'fixture': login}))
-        (interactive / 'settings.json').write_text(json.dumps({'defaultModel': 'fixture', 'packages': ['unwanted']}))
-        (interactive / 'sessions').mkdir()
-        root = self.home / '.local/state/pi-autowork'
-        unit_path = self.home / '.config/systemd/user/pi-autowork@.service'
-        unit_path.parent.mkdir(parents=True)
-        unit_path.write_text(service.UNIT.format(env_dir=self.home / '.config/pi-autowork', script=interactive / 'removed.sh'))
-        result = self.install('--only', 'autowork')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn(str(root / 'installed/pi-autowork/bin/pi-autowork.sh'), unit_path.read_text())
-        private = root / 'pi-agent'
-        self.assertEqual({p.name for p in private.iterdir()}, {'settings.json', 'auth.json'})
-        self.assertEqual(json.loads((private / 'settings.json').read_text()), {'defaultModel': 'fixture'})
-        self.assertEqual((private / 'auth.json').read_bytes(), (interactive / 'auth.json').read_bytes())
-        self.assertEqual(stat.S_IMODE(private.stat().st_mode), 0o700)
-        self.assertTrue(all(stat.S_IMODE(p.stat().st_mode) == 0o600 for p in private.iterdir()))
-        (interactive / 'settings.json').write_text('{"defaultModel":"updated-fixture"}')
-        again = self.install('--only', 'autowork')
-        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
-        self.assertEqual(json.loads((private / 'settings.json').read_text())['defaultModel'], 'fixture')
-        refreshed = self.install('update', '--only', 'autowork')
-        self.assertEqual(refreshed.returncode, 0, refreshed.stdout + refreshed.stderr)
-        self.assertEqual(json.loads((private / 'settings.json').read_text())['defaultModel'], 'updated-fixture')
-        shutil.rmtree(interactive.parent)
-        owner = SimpleNamespace(cfg={'state_root': str(root), 'git_common': str(self.home / 'git')})
-        environment = Coordinator.job_environment(owner)
-        self.assertEqual(environment['PI_CODING_AGENT_DIR'], str(private))
-        self.fake('systemctl', LOGGING + '[[ $2 == is-enabled || $2 == is-active ]] && exit 1\nexit 0\n')
-        self.fake('loginctl', '#!/bin/sh\necho yes\n')
-        with patch.dict(os.environ, self.env, clear=True):
-            service.run('install', repo=str(self.home), base='main', script='removed-interactive-launcher',
-                        workers=8, state_root=str(root), hermes_jobs='', argv0='fixture')
-        saved = (self.home / '.config/pi-autowork' / f'{self.home.name}.env').read_text()
-        self.assertIn(f'PI_CODING_AGENT_DIR={private}', saved)
-        self.assertIn(f'PI_AUTOWORK_TOOLSET={root / "installed"}', saved)
-        unit = (self.home / '.config/systemd/user/pi-autowork@.service').read_text()
-        self.assertIn(str(root / 'installed/pi-autowork/bin/pi-autowork.sh'), unit)
-        link = self.home / '.local/bin/autowork'
-        installed = root / 'installed'
-        self.assertTrue((installed / '.git').is_dir())  # not tied to the removed package's Git directory
-        self.assertTrue((installed / 'pi-autowork/bin/pi-autowork.sh').is_file())
-        readback = subprocess.run([str(link), 'capabilities'], env=self.env, capture_output=True, text=True)
-        self.assertEqual(readback.returncode, 0, readback.stderr)
-        self.assertEqual(json.loads(readback.stdout)['toolset'], str(installed))
-        self.assertNotIn(login, result.stdout + result.stderr + again.stdout + again.stderr + refreshed.stdout + refreshed.stderr
-                         + readback.stdout + readback.stderr + self.log.read_text())
+    def test_removed_runner_cannot_be_installed_or_updated(self):
+        state = self.home / '.local/state/pi-autowork'
+        state.mkdir(parents=True)
+        evidence = state / 'preserved-attempt.json'
+        evidence.write_text('{"unfinished": true}\n')
+        for args in (('--only', 'autowork'), ('update', '--only', 'autowork')):
+            with self.subTest(args=args):
+                result = self.install(*args)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('autowork', result.stdout + result.stderr)
+                self.assertFalse((self.home / '.local/bin/autowork').exists())
+                self.assertEqual(evidence.read_text(), '{"unfinished": true}\n')
+        self.assertNotRegex(self.install('--list').stdout, r'(?m)^autowork\s')
 
     def test_all_installs_every_available_item_in_order(self):
         result = self.install('--all')
@@ -275,7 +228,7 @@ elif os.environ.get('OCTET_FIXTURE_STAGE') == 'download-oversize':
                                                'codex plugin remove kit@autowork-marketplace',
                                                'codex plugin add kit@autowork-marketplace'])
         link = self.home / '.local/bin/autowork'
-        self.assertFalse(link.exists())  # deprecated recovery tool is explicit-only
+        self.assertFalse(link.exists())  # removed executor has no installation path
         self.assertEqual((self.home / '.local/bin/tx').read_bytes(), (ROOT / 'tmux/tx').read_bytes())
         self.assertTrue((self.home / '.local/share/bash-completion/completions/tx').is_file())
         self.assertTrue((self.home / '.tmux.conf').is_file())  # none existed
@@ -786,7 +739,7 @@ exit 0
         self.assertRegex(result.stdout, r'pi\s+installed')
 
     def test_menu_toggles_items_and_needs_a_terminal(self):
-        result = self.install('--dry-run', '--menu', stdin='3 5 6\n\n', env={'AUTOWORK_INSTALL_UI': 'text'})
+        result = self.install('--dry-run', '--menu', stdin='2 4 5\n\n', env={'AUTOWORK_INSTALL_UI': 'text'})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('[x] 1 Pi package', result.stdout)
         self.assertRegex(result.stdout, r'tx\s+skipped\s+not chosen')
@@ -1026,32 +979,24 @@ fi
         self.assertEqual(Path(os.readlink(self.home / '.local/bin/tx.bak')), elsewhere)
 
     def test_a_second_replacement_keeps_the_first_backup(self):
-        command = self.home / '.local/bin/autowork'
+        command = self.home / '.local/bin/tx'
         command.parent.mkdir(parents=True)
         for content in ('first script\n', 'second script\n'):
-            if command.is_symlink():
-                command.unlink()
             command.write_text(content)
-            (self.home / '.local/bin/tx').write_text('old ' + content)
-            result = self.install('--only', 'autowork,tx')
+            result = self.install('--only', 'tx')
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        bin = self.home / '.local/bin'
-        self.assertEqual((bin / 'autowork.bak').read_text(), 'first script\n')
-        self.assertEqual((bin / 'autowork.bak.1').read_text(), 'second script\n')
-        self.assertEqual((bin / 'tx.bak').read_text(), 'old first script\n')
-        self.assertEqual((bin / 'tx.bak.1').read_text(), 'old second script\n')
+        self.assertEqual(command.with_name('tx.bak').read_text(), 'first script\n')
+        self.assertEqual(command.with_name('tx.bak.1').read_text(), 'second script\n')
 
     def test_a_filtered_pi_package_counts_as_installed(self):
-        package = self.home / 'pkg/autowork'
-        (package / 'pi-autowork/bin').mkdir(parents=True)
-        (package / 'pi-autowork/bin/autowork').touch()
+        package = self.home / 'pkg/kit'
+        package.mkdir(parents=True)
         self.fake('pi', LOGGING + f'[ "$1" = list ] && printf "User packages:\\n  {NEW} (filtered)\\n    {package}\\n"\ntrue\n')
-        result = self.install('--only', 'pi,autowork')
+        result = self.install('--only', 'pi')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('pi install'), [])
         self.assertEqual(self.calls('pi update'), [])
-        self.assertEqual(Path(os.readlink(self.home / '.local/bin/autowork')),
-                         self.home / '.local/state/pi-autowork/installed/pi-autowork/bin/autowork')
+        self.assertFalse((self.home / '.local/bin/autowork').exists())
 
     def test_install_clears_empty_pi_filters_that_hide_skills_and_commands(self):
         settings = self.home / '.pi/agent/settings.json'

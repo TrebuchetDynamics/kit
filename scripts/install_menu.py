@@ -637,28 +637,8 @@ def items(hermes_args, output=None, mode='install'):
     # `pi config` filters outlive the install, so enable the package resources here.
     pi.steps.append(Step('enable the package skills and commands in Pi settings',
                          run=enable_pi_package))
-    def install_runner():
-        sys.path.insert(0, str(ROOT / 'pi-autowork'))
-        from pi_autowork import private_pi
-        root = private_pi.state_root()
-        private_pi.fill(root, pi_settings_path().parent, refresh=mode == 'update')
-        installed = private_pi.install(root, ROOT)
-        config = Path(os.environ.get('XDG_CONFIG_HOME') or HOME / '.config')
-        unit = Path(os.environ.get('PI_AUTOWORK_UNIT_DIR') or config / 'systemd/user') / 'pi-autowork@.service'
-        if unit.is_file():
-            text = unit.read_text()
-            updated = re.sub(r'(?m)^ExecStart=/bin/bash .+ --repo \$\{PI_AUTOWORK_REPO\}$',
-                             lambda _: f'ExecStart=/bin/bash {installed}/pi-autowork/bin/pi-autowork.sh --repo ${{PI_AUTOWORK_REPO}}', text)
-            if updated != text:
-                unit.write_text(updated)
-        return link(installed / 'pi-autowork/bin/autowork', 'autowork')
     return [
         pi,
-        Item('autowork', 'legacy autowork recovery tools (deprecated)',
-             note='explicit opt-in only; use GitHub Issues and Orbi for execution',
-             steps=[Step('install pinned Pi RPC Python runtime',
-                         [sys.executable, str(ROOT / 'scripts/install-pi-rpc.py')]),
-                    Step(f'fill private runner Pi directory and link {BIN}/autowork to the installed release', run=install_runner)]),
         Item('tx', 'tx tmux session launcher', note='keeps your existing ~/.tmux.conf',
              steps=[Step(f'install {BIN}/tx and completions', run=install_tx)]),
         hermes_item(hermes_args),
@@ -701,7 +681,7 @@ def choose_curses(all_items, chosen):
         row = 0
         while True:
             screen.erase()
-            screen.addstr(0, 0, 'autowork installer: Space toggles, a all, n none, Enter installs, q quits')
+            screen.addstr(0, 0, 'Kit installer: Space toggles, a all, n none, Enter installs, q quits')
             for i, item in enumerate(all_items):
                 box = '[x]' if item.key in chosen else '[ ]'
                 text = f' {box} {item.label:<44} {describe(item)}'
@@ -728,7 +708,7 @@ def choose_curses(all_items, chosen):
 
 def choose_text(all_items, chosen, read=input, write=print):
     while True:
-        write('\nautowork installer (all available items are checked):')
+        write('\nKit installer (all available items are checked):')
         for i, item in enumerate(all_items, 1):
             write(f"  [{'x' if item.key in chosen else ' '}] {i} {item.label:<44} {describe(item)}")
         answer = read('Toggle numbers (e.g. 4 5), a = all, n = none, Enter = install, q = quit: ').strip().lower()
@@ -917,7 +897,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--all', '--full', action='store_true', help='install the full suite for every available host (default)')
-    selection.add_argument('--only', help='comma-separated items to install (pi,autowork,tx,hermes,claude,codex,octet)')
+    selection.add_argument('--only', help='comma-separated items to install (pi,tx,hermes,claude,codex,octet)')
     parser.add_argument('--skip', help='comma-separated items to leave out')
     parser.add_argument('--list', action='store_true', help='show the items and whether each is available')
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')
@@ -958,7 +938,7 @@ def main(argv=None):
                   + (f' ({describe(item)})' if describe(item) else ''),
                         'installed' if item.available else 'skipped')
         return 0
-    chosen = {i.key for i in all_items if i.available and i.key != 'autowork'}
+    chosen = {i.key for i in all_items if i.available}
     if args.only:
         chosen = {k for k in args.only.split(',') if k}
     if args.skip:

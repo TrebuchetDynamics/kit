@@ -2,10 +2,9 @@
   "name": "@trebuchet/kit",
   "version": "0.3.0",
   "bin": {
-    "autowork": "pi-autowork/bin/autowork",
     "tx": "tmux/tx"
   },
-  "description": "Kit: a toolset of skills for coding agents, with Autowork as its verified runner",
+  "description": "Kit: planning skills for coding agents, with GitHub Issues and Orbi delivery",
   "license": "MIT",
   "type": "module",
   "keywords": [
@@ -16,23 +15,14 @@
     "url": "https://github.com/TrebuchetDynamics/kit.git"
   },
   "files": [
-    "scripts/autowork_bootstrap.py",
-    "pi-autowork/src/autowork_bootstrap.py",
-    "pi-autowork/pi_autowork/",
+    "scripts/github_issues.py",
     "adapters/",
     "skills/",
-    "scripts/pi-autowork.sh",
-    "scripts/pi_autowork_touches.py",
-    "pi-autowork/engine/",
-    "pi-autowork/bin/",
-    "pi-autowork/README.md",
-    "pi-autowork/task-store.md",
     "!**/__pycache__",
     "LICENSE",
     "README.md",
-    "docs/cross-host.md",
+    "docs/",
     "tmux/",
-    "pi-autowork/integrations/paseo/",
     "!**/node_modules"
   ],
   "pi": {
