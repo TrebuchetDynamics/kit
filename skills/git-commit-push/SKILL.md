@@ -184,7 +184,7 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
    - Eligibility is per hunk, not per file. Read the diff of every co-touched file; if excluded
      hunks cannot be split out safely (`git add -p` is unavailable; use `git apply --cached`
      on an edited patch), hold the whole file.
-   - Ledgers (`tasks/` records, `BLOCKERS.md`, trackers) usually carry other passes' uncommitted
+   - Ledgers (`tasks/` records, trackers) usually carry other passes' uncommitted
      edits. If you stage one, say so in the commit message and report; never present it as
      only your change. A task record also receives the engine's own verified close (`status =
      "done"` plus its `tasks/evidence/` receipt), so staging one can duplicate a change that
@@ -376,7 +376,7 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
 
 8. **Close the loop.**
    - `git status --short --branch`; report hashes, the push result, and every remaining path with its reason.
-   - If a tracker or `BLOCKERS.md` entry authorized the commit, mark it with the SHAs using an
+   - If a tracker entry authorized the commit, mark it with the SHAs using an
      anchored patch (reread the file first). Don't rewrite the whole file.
    - If any safe topic shipped, the outcome is SHIPPED, even with other paths left local.
 
@@ -407,7 +407,7 @@ that branch while the rest continue.
   databases or service data roots, `graphify-out/`, `.understand-anything/` or other
   generated artifacts, or machine state.
 - **Project ledgers are not generated artifacts.** Legacy `tasks/` records remain
-  preserved evidence, not an active backlog. `BLOCKERS.md`, impeccable's `PRODUCT.md`,
+  preserved evidence, not an active backlog. Impeccable's `PRODUCT.md`,
   `DESIGN.md` (+ sidecar) and `.impeccable/` config/briefs are tracked project files.
   Ship authorized verified changes with their work; never mutate legacy task records
   through a removed CLI or a hand-edit workaround. Only
@@ -435,8 +435,9 @@ that branch while the rest continue.
 - **ASKED**: no safe topic can ship without one owner choice. Ask one yes/no question
   with `clarify` (reply `yes` to ship, `no` to leave local), or at most three numbered options.
 - **HELD**: a red line, missing credentials, a conflict, a hard validation failure, or an
-  unsafe remote state remains after one focused repair attempt. Record it in `BLOCKERS.md`
-  only if it meets the `hard-blockers` criteria, and ask any owner question as a questionnaire.
+  unsafe remote state remains after one focused repair attempt. Record it in a GitHub
+  Issue or the tracker only if it meets the `hard-blockers` criteria, and ask any owner
+  question as a questionnaire.
 
 ASKED and HELD describe this delivery only. The surrounding goal or card keeps going: they never mean the work is paused.
 

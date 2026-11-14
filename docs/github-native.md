@@ -21,6 +21,10 @@ a compatibility redirect; retained Hermes maintenance commands and marketplace
 names are not support for the removed runner. No command rename is implied.
 Orbi stays paused until its separate qualification gates pass.
 
+Owner questions and external inputs are tracked in GitHub Issues. The former
+`BLOCKERS.md` repository ledger is removed and deprecated: do not create, read or
+require it, and do not treat a missing ledger as an empty queue.
+
 ## Default dispatch
 
 All issues default to `ai-ready`, regardless of who opens them. This includes
@@ -162,13 +166,13 @@ Do not serve one repository from multiple deployments or machines.
 
 ### Kit lifecycle skill
 
-Use [`/orbi [status|setup|start|stop]`](../skills/orbi/SKILL.md) for one
+Use [`/orbi [status|setup|start|stop|help]`](../skills/orbi/SKILL.md) for one
 repository's deployment. Bare invocation reads status; `--repo-dir` selects the
 canonical repository and `--config` selects its existing native configuration.
 Setup prepares without activating scheduling. Start requires separate scheduling
 authorization with existing pauses and cutover gates resolved. Stop disables only
 owned timers and reports draining until active workers finish; missing evidence
-is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only.
+is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only. `help` prints the action reference read-only and needs no repository.
 
 Status names the state it observed: `absent` when no deployment owns the
 repository, and `unavailable` when scheduler evidence cannot be verified. With

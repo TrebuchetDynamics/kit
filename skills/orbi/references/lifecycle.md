@@ -9,12 +9,16 @@ contract nor the protection policy: read
 ## Interface
 
 ```sh
-python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|stop] \
+python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|stop|help] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json]
 ```
 
 - Omitted action means `status`. A bare `orbi` runs one Runner tick and is never
   the lifecycle entry.
+- `help` takes no repository, reads no deployment and is available on every
+  platform. It is the only action that needs no deployment context; `status`
+  still binds a repository and reports an absent deployment. Help accepts and
+  ignores `--repo-dir`, `--config` and `--dry-run`.
 - `--repo-dir` names the repository checkout; the helper resolves the canonical
   worktree, then verifies its GitHub origin against the native config.
 - `--config` names one existing native `orbi.toml`. Without it, visible local
@@ -22,7 +26,9 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|stop] \
   repository are ambiguous and refused, even with an explicit `--config`.
 - `--dry-run` prints the plan. It creates no config, scratch file, lock or
   receipt and runs no install, fetch, label change or activation.
-- `--json` prints one document. Text mode prints flattened `key=value` lines.
+- `--json` prints one document. Text mode prints flattened `key=value` lines
+  for lifecycle actions; `help` prints a compact human block with usage, actions,
+  mutation classes, options, limits and next steps.
 - Every subprocess is an argv list; no shell interpolation. Provider values,
   environment values and child stderr never appear in output.
 
@@ -128,8 +134,8 @@ local reads. Missing evidence is `unavailable`, never an empty queue. Status
 and dry-run create no config, lock, receipt or scratch file and suppress child
 Python bytecode writes.
 
-macOS is status-only; setup/start/stop are refused before side effects. Other
-unsupported platforms fail clearly. Secrets never appear in commands, output or
+macOS supports status and help; setup/start/stop are refused before side effects.
+Other platforms support help only; lifecycle actions fail clearly. Secrets never appear in commands, output or
 error receipts.
 
 ## Ownership and discovery limits

@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 FIX_SUBJECT = re.compile(r'^fix(\(.+\))?!?:')
-PLANNING = frozenset({'TODO.md', 'TODO.archive.md', 'goals.json', 'CHANGELOG.md', 'BLOCKERS.md'})
+PLANNING = frozenset({'TODO.md', 'TODO.archive.md', 'goals.json', 'CHANGELOG.md'})
 DAY = 86400
 RECORD, FIELD = '\x1e', '\x1f'
 
