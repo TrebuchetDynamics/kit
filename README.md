@@ -173,13 +173,31 @@ the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-
    dependencies and optional `ai-epic` sub-issues, verify, then add `ai-ready` last.
 3. **Deliver:** one Orbi deployment per repository owns Pi → tests → PR → independent
    review → merge gates. `/work` is an explicit, ownership-coordinated manual alternative.
-4. **Observe:** `/pending`, GitHub Issues/PRs, `orbi status` and `orbi doctor`.
+4. **Observe:** `/pending`, GitHub Issues/PRs and read-only
+   `orbi status`/`orbi doctor` ([usage](#using-orbi)).
    `/autowork` is now a compatibility handoff, not a legacy service starter.
 5. **Reconcile:** `/docs-sync` updates current requirements and issue evidence without
    duplicating the backlog or restarting a scheduler.
 
 See [publication, migration and deployment](docs/github-native.md). Readiness,
 pickup, passing checks, review and merge are separate observed outcomes.
+
+### Using Orbi
+
+One Orbi deployment owns one repository. The suite installer adds only the CLI
+(`./install.sh --only orbi`, needs `uv`); a working Orbi installation is kept.
+
+```sh
+orbi check  --config /path/to/orbi.toml   # configuration and provider checks
+orbi status --config /path/to/orbi.toml   # current delivery state
+orbi doctor --config /path/to/orbi.toml   # read-only diagnostics
+```
+
+`orbi setup` and `orbi install-units` change a deployment. Run them only in a
+separate deployment checkout, with their own authorization, and keep dispatch
+disabled until the cutover checks pass. Orbi stays paused and live-unqualified:
+installing the CLI does not start workers or delivery. See
+[one repository per deployment](docs/github-native.md#one-repository-per-deployment).
 
 ## The skills
 
