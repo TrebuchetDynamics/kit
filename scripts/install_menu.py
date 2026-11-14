@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the full Autowork suite with verbose output by default.
+"""Install the full Kit suite with verbose output by default.
 
     install.sh                every available component, live output and exact commands
     install.sh --menu         a checkbox menu on a terminal (arrows, Space, Enter)
@@ -15,7 +15,8 @@ upstream) and then run the pulled installer; a checkout with local changes, no u
 or a detached HEAD is installed as it is, and says so.
 
 Each host item runs its own supported install command; a host whose CLI is not
-installed is skipped and says so, and fails when named with --only. Hermes options
+installed is skipped and says so, and fails when named with --only. Orbi installs
+the CLI only via uv; existing CLIs and deployments are kept. Hermes options
 (--hermes-home, --bundle-only, --no-reload, --yes-deps) apply to the Hermes item.
 Standard library only.
 """
@@ -477,7 +478,48 @@ def drop_codex_plugin():
     return 'dropped the cached plugin' if done.returncode == 0 else 'no cached plugin to drop'
 
 
-def items(hermes_args, mode='install'):
+def orbi_version(binary):
+    result = subprocess.run([str(binary), '--version'], capture_output=True,
+                            text=True, timeout=30)
+    version = result.stdout.strip()
+    if result.returncode or not re.fullmatch(r'orbi [0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9.+-]*', version):
+        raise OSError(f'{binary}: Orbi version verification failed; existing installation left untouched')
+    return version
+
+
+def install_orbi(output=None):
+    """Install the official CLI, never setup/tick or replace a deployment bootstrap."""
+    output = output or Output()
+    destination = Path(os.environ.get('UV_TOOL_BIN_DIR') or BIN).absolute()
+    candidates = [shutil.which('orbi'), destination / 'orbi', HOME / '.local/bin/orbi']
+    for candidate in candidates:
+        if candidate and os.path.lexists(candidate):
+            # Even update must not replace an editable CLI serving a pinned deployment.
+            return f'{candidate}: {orbi_version(candidate)} (already installed; kept; deployment updates are separate)'
+    uv = shutil.which('uv')
+    if not uv:
+        raise OSError('Orbi requires uv; install uv and retry ./install.sh --only orbi')
+    argv = [uv, 'tool', 'install', '--python', '3.14', 'orbi-cli']
+    output.line('  $ ' + shlex.join(argv), 'command')
+    code, text = run_command(argv, output, extra_env={'UV_TOOL_BIN_DIR': str(destination)})
+    if code:
+        raise OSError(f'Orbi CLI installation failed (exit {code}): {failure_summary(text)}')
+    binary = destination / 'orbi'
+    return f'{binary}: {orbi_version(binary)}; CLI only, no deployment configured or started'
+
+
+def orbi_item(output=None):
+    system = platform.system()
+    return Item('orbi', 'Orbi CLI (no deployment activation)',
+                note='requires uv for a missing CLI; preserves existing installations and source pins',
+                missing='' if system in ('Linux', 'Darwin') else f'unsupported Orbi platform: {system}',
+                steps=[Step('reuse existing orbi --version, or install a missing CLI with '
+                            'uv tool install --python 3.14 orbi-cli; verify the installed version; '
+                            'no setup, scheduler changes or deployment upgrades',
+                            run=lambda: install_orbi(output))])
+
+
+def items(hermes_args, output=None, mode='install'):
     package = pi_package()
     pi = Item('pi', 'Pi package + bundled Ponytail', needs='pi', note='needs Node 22+')
     if package:
@@ -519,6 +561,7 @@ def items(hermes_args, mode='install'):
                     Step('drop the cached plugin', run=drop_codex_plugin),
                     Step(f'codex plugin add {CODEX_PLUGIN}@{CODEX_MARKETPLACE}',
                          ['codex', 'plugin', 'add', f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'])]),
+        orbi_item(output),
     ]
 
 
@@ -713,7 +756,7 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
               for state in ('installed', 'planned', 'skipped', 'failed')}
     output.line('\n' + ', '.join(f'{count} {state}' for state, count in counts.items())
                 + f' — {time.monotonic() - started:.1f}s', 'failed' if counts['failed'] else 'heading')
-    if any(key in ('claude', 'codex', 'pi') and outcome == 'installed' for key, outcome, _ in results):
+    if any(key in ('claude', 'codex', 'pi', 'orbi') and outcome == 'installed' for key, outcome, _ in results):
         output.line('Open a new host session to discover the installed skills.')
     return int(bool(counts['failed']))
 
@@ -751,7 +794,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--all', '--full', action='store_true', help='install the full suite for every available host (default)')
-    selection.add_argument('--only', help='comma-separated items to install (pi,tx,hermes,claude,codex)')
+    selection.add_argument('--only', help='comma-separated items to install (pi,tx,hermes,claude,codex,orbi)')
     parser.add_argument('--skip', help='comma-separated items to leave out')
     parser.add_argument('--list', action='store_true', help='show the items and whether each is available')
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')
@@ -780,7 +823,7 @@ def main(argv=None):
                               ('--yes-deps', args.yes_deps), ('--dry-run', args.dry_run)) if on]
     if args.hermes_home:
         hermes += ['--hermes-home', args.hermes_home]
-    all_items = items(hermes, mode=args.command)
+    all_items = items(hermes, output, mode=args.command)
     keys = [i.key for i in all_items]
     for given in (args.only, args.skip):
         unknown = [k for k in (given or '').split(',') if k and k not in keys]

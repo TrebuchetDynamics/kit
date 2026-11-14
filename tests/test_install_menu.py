@@ -46,6 +46,13 @@ class InstallMenuTests(unittest.TestCase):
         self.log = self.home / 'calls.log'
         self.log.touch()
         self.fake('pi', PI)
+        self.fake('uv', LOGGING + '''
+if [[ "$*" != "tool install --python 3.14 orbi-cli" ]]; then exit 91; fi
+if [[ -n "$ORBI_INSTALL_FAIL" ]]; then exit 17; fi
+mkdir -p "$UV_TOOL_BIN_DIR"
+printf '#!/bin/sh\\necho "orbi $*" >> "$FAKE_LOG"\\necho orbi 0.7.41\\n' > "$UV_TOOL_BIN_DIR/orbi"
+chmod 755 "$UV_TOOL_BIN_DIR/orbi"
+''')
         for name in ('claude', 'codex', 'systemctl'):
             self.fake(name, LOGGING)
         self.env = {'PATH': f'{self.bin}:/usr/bin:/bin', 'HOME': str(self.home), 'FAKE_LOG': str(self.log),
@@ -72,6 +79,7 @@ class InstallMenuTests(unittest.TestCase):
     def test_restart_services_excludes_legacy_runner_and_tries_host_services(self):
         listed = subprocess.CompletedProcess([], 0,
             'pi-autowork@repo.service loaded active running Runner\n'
+            'orbi-kit@1.service loaded active running Orbi\n'
             'hermes-gateway.service loaded active running Hermes\n'
             'kit-helper.service loaded active running Helper\n'
             'unrelated.service loaded active running Other\n', '')
@@ -159,6 +167,109 @@ class InstallMenuTests(unittest.TestCase):
         self.assertRegex(result.stdout, r'hermes\s+planned')
         self.assertFalse(marker.exists())
 
+    def test_orbi_installs_cli_only_and_verifies_version(self):
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls('uv'), ['uv tool install --python 3.14 orbi-cli'])
+        self.assertEqual(self.calls('orbi'), ['orbi --version'])
+        self.assertTrue((self.home / '.local/bin/orbi').is_file())
+        self.assertIn('orbi 0.7.41', result.stdout)
+        self.assertFalse(any('orbi-' in call for call in self.calls('systemctl')))
+        self.assertFalse((self.home / 'orbi.toml').exists())
+
+    def test_orbi_full_update_and_selection(self):
+        for args in (('--dry-run',), ('update', '--dry-run'), ('--only', 'orbi', '--dry-run')):
+            with self.subTest(args=args):
+                result = self.install(*args)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertRegex(result.stdout, r'orbi\s+planned')
+                self.assertIn('uv tool install --python 3.14 orbi-cli', result.stdout)
+        self.assertRegex(self.install('--list').stdout, r'orbi\s+available')
+        self.assertEqual(self.calls('orbi'), [])
+        self.assertEqual(self.calls('uv'), [])
+        self.assertEqual(self.calls('systemctl'), [])
+        result = self.install('--skip', 'orbi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls('uv'), [])
+        self.assertEqual(self.calls('orbi'), [])
+
+    def test_orbi_preserves_existing_cli_even_on_update(self):
+        self.fake('orbi', LOGGING + 'echo orbi 0.7.41\n')
+        before = (self.bin / 'orbi').read_bytes()
+        for args in (('--only', 'orbi'), ('update', '--only', 'orbi')):
+            result = self.install(*args)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('kept', result.stdout)
+        self.assertEqual((self.bin / 'orbi').read_bytes(), before)
+        self.assertEqual(self.calls('uv'), [])
+        self.assertEqual(self.calls('orbi'), ['orbi --version', 'orbi --version'])
+
+    def test_orbi_reuses_user_local_cli_off_path_without_uv(self):
+        self.assertEqual(self.install('--only', 'orbi').returncode, 0)
+        (self.bin / 'uv').unlink()
+        self.log.write_text('')
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls('uv'), [])
+        self.assertEqual(self.calls('orbi'), ['orbi --version'])
+
+    def test_orbi_verification_failure_after_install_is_reported(self):
+        self.fake('uv', LOGGING + '''
+mkdir -p "$UV_TOOL_BIN_DIR"
+printf '#!/bin/sh\\necho invalid-version\\n' > "$UV_TOOL_BIN_DIR/orbi"
+chmod 755 "$UV_TOOL_BIN_DIR/orbi"
+''')
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('version verification failed', result.stdout)
+        self.assertTrue((self.home / '.local/bin/orbi').is_file())
+
+    def test_orbi_version_probe_is_bounded_and_unsupported_hosts_fail_closed(self):
+        with patch.object(install_menu.subprocess, 'run',
+                          side_effect=subprocess.TimeoutExpired('orbi', 30)) as run:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                install_menu.orbi_version('/fake/orbi')
+        self.assertEqual(run.call_args.args[0], ['/fake/orbi', '--version'])
+        self.assertEqual(run.call_args.kwargs['timeout'], 30)
+        with patch.object(install_menu.platform, 'system', return_value='Windows'):
+            item = install_menu.orbi_item()
+        self.assertFalse(item.available)
+        self.assertIn('unsupported Orbi platform', item.missing)
+
+    def test_orbi_failures_do_not_force_reinstall_or_stop_other_items(self):
+        for body in ('exit 4\n', 'echo wrong-tool\n'):
+            with self.subTest(body=body):
+                self.fake('orbi', LOGGING + body)
+                result = self.install('--only', 'orbi,tx')
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertRegex(result.stdout, r'orbi\s+failed')
+                self.assertRegex(result.stdout, r'tx\s+installed')
+                self.assertEqual(self.calls('uv'), [])
+        (self.bin / 'orbi').unlink()
+        result = self.install('--only', 'orbi', env={'ORBI_INSTALL_FAIL': '1'})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('17', result.stdout)
+        self.assertFalse((self.home / '.local/bin/orbi').exists())
+        (self.bin / 'uv').unlink()
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('requires uv', result.stdout)
+
+    def test_orbi_preserves_dangling_launcher_and_respects_tool_bin_dir(self):
+        destination = self.home / 'custom bin'
+        destination.mkdir()
+        launcher = destination / 'orbi'
+        launcher.symlink_to(destination / 'missing')
+        result = self.install('--only', 'orbi', env={'UV_TOOL_BIN_DIR': str(destination)})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertTrue(launcher.is_symlink())
+        self.assertEqual(self.calls('uv'), [])
+        launcher.unlink()
+        result = self.install('--only', 'orbi', env={'UV_TOOL_BIN_DIR': str(destination)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(launcher.is_file())
+        self.assertFalse((self.home / '.local/bin/orbi').exists())
+
     def test_removed_runner_cannot_be_installed_or_updated(self):
         state = self.home / '.local/state/pi-autowork'
         state.mkdir(parents=True)
@@ -204,6 +315,8 @@ class InstallMenuTests(unittest.TestCase):
         self.assertTrue((self.home / '.tmux.conf').is_file())  # none existed
         self.assertRegex(result.stdout, r'hermes\s+skipped\s+hermes not found')
         self.assertRegex(result.stdout, r'tx\s+installed')
+        self.assertRegex(result.stdout, r'orbi\s+installed.*orbi 0.7.41')
+        self.assertEqual(self.calls('uv'), ['uv tool install --python 3.14 orbi-cli'])
 
     def test_codex_install_continues_when_marketplace_is_not_configured_or_installed(self):
         self.fake('codex', LOGGING + '''

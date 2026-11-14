@@ -29,7 +29,7 @@ Use `--menu` when you want to select components interactively:
 ./install.sh --only codex
 ```
 
-The suite includes the Pi package, `tx` launcher, Hermes
+The suite includes the Pi package, Orbi CLI, `tx` launcher, Hermes
 fleet setup, and Claude Code and Codex plugins
 with their complete portable skill suites, including [bundled Ponytail](cross-host.md#bundled-ponytail-on-every-host).
 All Kit skills apply its shared method within their existing authority; no
@@ -88,6 +88,32 @@ a stale registration with a missing directory is reinstalled. They do not run
 `pi update`. Empty package filters are still reconciled so skills and commands
 remain enabled. `./install.sh update --only pi` explicitly updates an existing
 package, or installs it when absent.
+
+### Orbi CLI
+
+Default/full/menu and `update` include `orbi`. Use `./install.sh --only orbi`
+to install it alone or `--skip orbi` to leave it untouched. A missing CLI uses the
+[official PyPI distribution](https://pypi.org/project/orbi-cli/) through
+`uv tool install --python 3.14 orbi-cli`; uv provisions the compatible Python.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) first. A missing
+uv or failed install fails this component with a diagnostic; other components
+continue. Kit does not bootstrap uv or force-reinstall a conflicting tool.
+
+The executable defaults to `~/.local/bin/orbi` (or `AUTOWORK_BIN_DIR`);
+`UV_TOOL_BIN_DIR` takes precedence and `UV_TOOL_DIR` retains uv's normal meaning.
+Add the selected binary directory to PATH yourself; Kit does not edit shell profiles.
+The installer verifies `orbi --version`, including a user-local CLI not yet on PATH.
+List/preview do not execute uv or Orbi. A broken existing launcher is reported,
+not overwritten; repair it using its deployment's supported procedure.
+
+A working existing CLI is kept, including on `install.sh update`, so an editable
+bootstrap or pinned live deployment is not silently replaced with a PyPI version.
+Update deployments separately through Orbi's supported source-sync procedure.
+This component installs **only the CLI**, not an execution-ready deployment: no
+`orbi setup`, `install-units`, bare tick, authentication or config changes, and no
+Orbi service start/restart/stop. The suite's existing host-only restart phase still
+runs. Repository deployment and activation remain separate, explicitly authorized
+steps; see [GitHub-native setup](github-native.md#one-repository-per-deployment).
 
 ### Removed runner installation
 
