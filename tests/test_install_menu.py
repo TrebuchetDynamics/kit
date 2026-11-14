@@ -24,14 +24,26 @@ NEW = 'git:github.com/TrebuchetDynamics/kit'
 ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
                '1a8b2f9603f6258cb105293f238a8d3f775f3393')
 
-# A fake pi: `pi list` reads installed sources from a file; install and remove edit it.
+# A fake pi: `pi list` reads installed sources from a file; install, update and remove edit it,
+# and install and update materialise the skill folders the checkout under test ships.
 PI = r'''#!/usr/bin/env bash
 echo "pi $*" >> "$FAKE_LOG"
 db=$FAKE_HOME/pi-installed
 touch "$db"
+materialise() {
+  pkg=$FAKE_HOME/pkg/${1##*/}
+  mkdir -p "$pkg/adapters/skills"
+  for skill in "$FAKE_KIT_CHECKOUT"/adapters/skills/*/; do
+    [[ -f $skill/SKILL.md ]] || continue
+    mkdir -p "$pkg/adapters/skills/$(basename "$skill")"
+    cp "$skill/SKILL.md" "$pkg/adapters/skills/$(basename "$skill")/SKILL.md"
+  done
+}
 case $1 in
   list) echo "User packages:"; while read -r src; do [[ -n $src ]] && { echo "  $src"; echo "    $FAKE_HOME/pkg/${src##*/}"; }; done < "$db" ;;
-  install) echo "$2" >> "$db"; mkdir -p "$FAKE_HOME/pkg/${2##*/}/adapters" ;;
+  install) echo "$2" >> "$db"; materialise "$2" ;;
+  update) if [[ -n $FAKE_PI_UPDATE_FAIL ]]; then echo "fatal: unable to access the source: network is unreachable" >&2; exit 3; fi
+    grep -qxF "$2" "$db" || echo "$2" >> "$db"; materialise "$2" ;;
   remove) grep -vxF "$2" "$db" > "$db.new"; mv "$db.new" "$db" ;;
 esac
 '''
@@ -85,6 +97,7 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
         self.env = {'PATH': f'{self.bin}:/usr/bin:/bin', 'HOME': str(self.home), 'FAKE_LOG': str(self.log),
                     'FAKE_HOME': str(self.home), 'XDG_CONFIG_HOME': str(self.home / '.config'),
                     'PI_AUTOWORK_SYSTEMCTL': str(self.bin / 'systemctl'), 'LANG': 'C.UTF-8',
+                    'FAKE_KIT_CHECKOUT': str(ROOT),
                     'TMPDIR': str(self.home), 'AUTOWORK_INSTALL_NO_PULL': '1'}  # never pull the checkout under test
         # In-process installer tests must also never discover the real host fleet.
         self.environment = patch.dict(os.environ, self.env)
@@ -102,6 +115,22 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
 
     def calls(self, prefix=''):
         return [c for c in self.log.read_text().splitlines() if c.startswith(prefix)]
+
+    def installed_package(self, only=None):
+        """A package directory Pi reports as installed, shipping the named skill folders.
+
+        ``only=None`` copies every skill folder this checkout ships; a subset stands
+        for a checkout older than this one.
+        """
+        shipped = sorted(p.name for p in (ROOT / 'adapters/skills').iterdir()
+                         if (p / 'SKILL.md').is_file())
+        package = self.home / 'pkg/kit'
+        for name in shipped if only is None else only:
+            skill = package / 'adapters/skills' / name
+            skill.mkdir(parents=True, exist_ok=True)
+            (skill / 'SKILL.md').write_text(f'---\nname: {name}\n---\n')
+        (self.home / 'pi-installed').write_text(NEW + '\n')  # what the fake `pi list` reports
+        return package
 
     def test_restart_services_excludes_legacy_runner_and_tries_host_services(self):
         listed = subprocess.CompletedProcess([], 0,
@@ -692,6 +721,42 @@ exit 0
         self.assertTrue(config.is_symlink())
         self.assertFalse(config.exists())
 
+    def test_an_ordinary_install_refreshes_a_package_missing_a_shipped_skill(self):
+        # A registered checkout older than this one lacks the skills a later release
+        # added (orbi). Keeping it left Pi without `/skill:orbi` and `/orbi` entirely.
+        self.installed_package(only=['plan-with-me'])
+        result = self.install('--only', 'pi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls('pi install'), [])
+        self.assertEqual(self.calls('pi update'), [f'pi update {NEW}'])
+        self.assertRegex(result.stdout, r'skills missing: .*\borbi\b')
+        self.assertRegex(result.stdout, r'pi\s+installed')
+
+    def test_an_ordinary_install_keeps_a_package_that_ships_every_skill(self):
+        self.installed_package()
+        result = self.install('--only', 'pi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls('pi update'), [])
+        self.assertIn(f'{NEW} already installed', result.stdout)
+
+    def test_a_refreshed_package_is_kept_by_the_next_install(self):
+        self.installed_package(only=['plan-with-me'])
+        first = self.install('--only', 'pi')
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        second = self.install('--only', 'pi')
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn(f'{NEW} already installed', second.stdout)
+        self.assertEqual(len(self.calls('pi update')), 1)  # one refresh, not one per install
+
+    def test_a_refresh_that_cannot_reach_the_source_fails_the_item(self):
+        # The package is installed but the suite's skills stay incomplete: report the
+        # cause and a retry instead of claiming a complete install.
+        self.installed_package(only=['plan-with-me'])
+        result = self.install('--only', 'pi', env={'FAKE_PI_UPDATE_FAIL': '1'})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('network is unreachable', result.stdout)
+        self.assertRegex(result.stdout, r'pi\s+failed')
+
     def test_an_installed_package_is_updated_and_its_runners_move_onto_it(self):
         (self.home / 'pi-installed').write_text(NEW + '\n')
         (self.home / 'pkg/kit').mkdir(parents=True)
@@ -952,8 +1017,7 @@ fi
         self.assertEqual(command.with_name('tx.bak.1').read_text(), 'second script\n')
 
     def test_a_filtered_pi_package_counts_as_installed(self):
-        package = self.home / 'pkg/kit'
-        package.mkdir(parents=True)
+        package = self.installed_package()
         self.fake('pi', LOGGING + f'[ "$1" = list ] && printf "User packages:\\n  {NEW} (filtered)\\n    {package}\\n"\ntrue\n')
         result = self.install('--only', 'pi')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

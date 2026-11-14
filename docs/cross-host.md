@@ -442,7 +442,9 @@ warns; same-name extension commands are all kept but renamed `/name:1`, `/name:2
 without a warning. Check `/` completions rather than assuming this package replaced them.
 
 Use Pi's package controls (`pi list`, `pi update --extensions`, `pi remove <source>`)
-for management. `./install.sh` also clears an empty `skills: []` or `extensions: []`
+for management. `./install.sh` also refreshes a registered package that lacks a skill
+folder this checkout ships (a release that added `orbi` left `/skill:orbi` and `/orbi`
+missing until then) and clears an empty `skills: []` or `extensions: []`
 filter on this package: a filter recorded in `pi config`, including one carried from
 the package's previous `autowork` name, survives `pi install` and `pi update` and
 hides every command and `/skill:<name>`. Non-empty filters are kept. Removing the
