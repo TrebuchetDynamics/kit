@@ -67,7 +67,7 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
         return f"Skill {name!r} no longer exists. Update the plugin and restart Hermes."
     if name == "blockers" and not (raw_args or '').strip():
         # `/blockers` with no target: name the repository from the session's cwd, so the
-        # skill reads its questions instead of the plugin's empty BLOCKERS.md template.
+        # skill reads its issue queue instead of an empty directory.
         target = repository_here()
         if target:
             raw_args = target
@@ -170,7 +170,7 @@ def repository_here(start=None):
     """The Git top level containing ``start`` (the Hermes process cwd by default), or ''.
 
     `/blockers` with no argument must not fall back to the Hermes process cwd: that is
-    often the home directory or the plugin, whose empty `BLOCKERS.md` template made the
+    often the home directory or the plugin, which holds no issue queue and made the
     skill report no questions while the repository had held tasks."""
     where = str(start or os.getcwd())
     try:

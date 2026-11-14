@@ -63,7 +63,7 @@ in the existing GitHub Issue before the next question. The rest of this section 
 broader blockers question.
 
 For a broad "blockers" request, separate owner-input blockers from everything
-preventing delivery; an empty BLOCKERS.md does not prove execution is unblocked.
+preventing delivery; an empty owner-question list does not prove execution is unblocked.
 If scope is unclear, ask whether it means the current task, repository-wide
 delivery or only owner decisions. Inspect the full task record, implementation and
 execution evidence first; do not ask the user to decide facts or routine repairs.

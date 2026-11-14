@@ -108,8 +108,8 @@ class BlockersRouting(unittest.TestCase):
                 self.assertTrue(prompt.endswith('User arguments:\nindia'), prompt)
 
     def test_blockers_without_a_target_names_the_repository_here(self):
-        """An empty /blockers target must not resolve to the Hermes cwd, whose empty
-        BLOCKERS.md template reported no questions while the repo had held tasks."""
+        """An empty /blockers target must not resolve to the Hermes cwd, which holds
+        no issue queue and reported no questions while the repo had held tasks."""
         self.register()
         with patch.object(self.plugin, 'repository_here', return_value='/repo/here'):
             self.ctx.commands['blockers']('')
