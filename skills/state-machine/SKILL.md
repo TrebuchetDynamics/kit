@@ -22,6 +22,13 @@ output format, and reuse a current map rather than start another repository audi
 For definitions, online sources or a worked counterexample, read
 [references](references/sources-and-example.md).
 
+## Execute the findings
+
+To request fixes, invoke `/bug-harvest` immediately after the analysis in the same
+conversation, with no extra prompt. Its [contextual handoff](../bug-harvest/SKILL.md#findings-from-the-preceding-response)
+uses the preceding findings as the repair scope and verifies candidates before fixing
+them. This analysis itself remains read-only; it starts no repair workflow.
+
 ## Boundaries
 
 - Not a repair campaign; use `/bug-harvest` for a verified defect or `/autowork`

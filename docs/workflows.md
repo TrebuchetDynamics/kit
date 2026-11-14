@@ -272,6 +272,25 @@ After updating the installed package, reload skills in the host before use.
 /skill:state-machine inspect checkout retries and cancellation; read-only
 ```
 
+### Fix the findings without another prompt
+
+After the analysis, invoke Bug Harvest in the same conversation. In Pi:
+
+```text
+/skill:bug-harvest
+```
+
+Hermes also accepts `/bug-harvest`, Claude Code uses `/kit:bug-harvest`, and Codex
+uses `$kit:bug-harvest`. No finding IDs, copied report or extra prompt are required:
+the [contextual handoff](../skills/bug-harvest/SKILL.md#findings-from-the-preceding-response)
+uses the preceding response as the bounded repair scope. It verifies and fixes
+candidates one at a time, adds regression protection and runs affected checks.
+Hypotheses are not automatically bugs; unclear product rules need `/plan-with-me`.
+The campaign stops when the supplied findings are accounted for or a caller limit
+or genuine blocker stops progress. It does not automatically commit or push.
+Explicit user no-write and live-action restrictions remain binding; State Machine's
+default read-only mode does not make the subsequent repair invocation read-only.
+
 Planning, implementation and review use the shared contract's stateful-work trigger.
 Bug Harvest, architecture review and Test Optimizer also link the
 [analysis method](../skills/state-machine/PROTOCOL.md) at their relevant steps.
