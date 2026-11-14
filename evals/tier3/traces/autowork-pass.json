@@ -5,22 +5,18 @@
   "note": "Synthetic trace fixture; not a model run.",
   "events": [
     {
-      "type": "tool",
-      "tool": "read",
-      "path": "tasks/items/T-1.md"
-    },
-    {
-      "type": "write",
-      "path": "src/parser.py"
+      "type": "command",
+      "command": "gh issue list --repo example/project",
+      "exit": 0
     },
     {
       "type": "command",
-      "command": "python3 scripts/check.py tests/test_parser.py",
+      "command": "orbi status --config /path/to/orbi.toml",
       "exit": 0
     },
     {
       "type": "final",
-      "text": "Task T-1 checked and closed with evidence."
+      "text": "No active delivery is reported. Issue readiness does not prove implementation or merge."
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "skill": "docs-sync",
   "tier": 3,
-  "description": "Docs trace: read owners, write docs or task records, run validation, do not edit code.",
+  "description": "Docs trace: read owners, write current documentation, run validation, do not edit code.",
   "require": [
     {
       "event": "read",
@@ -13,7 +13,7 @@
     },
     {
       "event": "command",
-      "command": "(scripts/check\\.py|docs\\.py|autowork tasks validate)",
+      "command": "(scripts/check\\.py|docs\\.py)",
       "exit": 0
     },
     {
