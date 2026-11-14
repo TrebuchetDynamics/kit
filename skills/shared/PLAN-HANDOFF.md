@@ -100,12 +100,27 @@ exact failure and retry command. Do not create a substitute executable queue or
 claim a saved handoff. Read-only/questions-only/no-write/dry-run means no GitHub,
 label, document or scratch writes. A preview proves no remote persistence.
 
+## Progress and final receipt
+
+Normally send one useful progress update and a final receipt. Additional updates
+are justified by material blockers or long-running work, not a rigid message quota.
+Keep the receipt compact: issue links, decisions and planner calls, scoped unresolved
+choices, ready/waiting/proposed state, native dependencies, actual checks and unmet
+gates. Distinguish recovery acceptance from application/device qualification using
+[the shared recovery policy](PLANNING-CRAFT.md#recovery-provenance-and-qualification).
+
+Readiness is not pickup, PR delivery or merge. Distinguish a generic possible
+consumer from an observed deployment: pickup or timers require current evidence,
+not an assumed scheduler or a historical report. Kit remains paused and
+live-unqualified; publication does not release that pause.
+
 ## Execution handoff
 
 Writable planning publishes readiness automatically under the default policy and
 then stops; it does not run implementation, start a service or launch a competing
-worker. An already-running Orbi deployment may immediately consume published
-issues. Explicit no-dispatch requests keep `ai-planning` and omit readiness.
+worker. A generic already-running consumer may act on readiness; that possibility
+is not an observation of this deployment. Explicit no-dispatch requests keep
+`ai-planning` and omit readiness.
 A planning substep of an existing delivery returns to that same coordinator.
 
 Orbi per repository owns Pi implementation → tests → PR → independent review →

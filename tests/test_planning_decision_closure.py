@@ -1,4 +1,5 @@
 """Focused instruction contracts, not model compliance or reduced-stall evidence."""
+import json
 from pathlib import Path
 import unittest
 
@@ -98,6 +99,106 @@ class PlanningDecisionClosureTests(unittest.TestCase):
                      'final publication phase', 'Read back labels',
                      'not pickup, implementation or merge'):
             self.assertIn(rule, handoff)
+
+    def test_recovery_preserves_guards_and_original_evidence(self):
+        recovery = section('skills/shared/PLANNING-CRAFT.md', 'Recovery, provenance and qualification')
+        for rule in ('missing recovery/state-refresh step', 'guard that detects stale state',
+                     'Cite the source supporting the repair', 'retain existing negative cases',
+                     'never weaken a guard just to unblock work',
+                     'narrow provenance stage', 'original oracle bytes and identity',
+                     'original versus derived evidence', 'authorized future changes',
+                     'never silently overwrite or re-baseline the oracle',
+                     'no new evidence registry or file format'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, recovery)
+
+    def test_recovery_separates_observation_and_qualification(self):
+        recovery = section('skills/shared/PLANNING-CRAFT.md', 'Recovery, provenance and qualification')
+        for rule in ('Label historical audits as historical', 'available current observations',
+                     'mismatch and remaining uncertainty',
+                     'An old host audit is not proof of current service presence',
+                     'do not fabricate a live inspection or assume a missing service',
+                     'Environment/display restoration has its own acceptance',
+                     'application/device qualification remains separately unmet',
+                     'until its actual checks run',
+                     'native `blockedBy` dependency on its real recovery prerequisite',
+                     'independent repairs remain independent',
+                     'Do not force a split of an existing owned task merely because runtime failed'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, recovery)
+
+    def test_receipt_is_compact_and_distinguishes_possible_from_observed_delivery(self):
+        receipt = section('skills/shared/PLAN-HANDOFF.md', 'Progress and final receipt')
+        for rule in ('Normally send one useful progress update and a final receipt',
+                     'material blockers or long-running work', 'not a rigid message quota',
+                     'issue links', 'ready/waiting/proposed', 'native dependencies',
+                     'actual checks and unmet gates', 'generic possible consumer',
+                     'observed deployment', 'pickup or timers require current evidence',
+                     'Kit remains paused and live-unqualified'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, receipt)
+
+    def test_both_routes_reach_single_recovery_policy_and_receipt(self):
+        for mode in ('plan-with-me', 'plan-for-me'):
+            canonical = ROOT / f'skills/{mode}/SKILL.md'
+            adapter = ROOT / f'adapters/skills/{mode}/SKILL.md'
+            with self.subTest(mode=mode):
+                self.assertIn(f'../../../skills/{mode}/SKILL.md', adapter.read_text())
+                self.assertEqual((adapter.parent / f'../../../skills/{mode}/SKILL.md').resolve(), canonical)
+                for relative, heading in (
+                        ('../shared/PLANNING-CRAFT.md', 'Recovery, provenance and qualification'),
+                        ('../shared/PLAN-HANDOFF.md', 'Progress and final receipt')):
+                    anchor = heading.lower().replace(',', '').replace(' ', '-')
+                    self.assertIn(f'{relative}#{anchor}', canonical.read_text())
+                    self.assertTrue(section(str((canonical.parent / relative).resolve().relative_to(ROOT)), heading))
+                    self.assertNotIn(f'## {heading}', canonical.read_text())
+                for owner in ('PONYTAIL.md', 'COMMUNICATION.md'):
+                    self.assertIn(f'../shared/{owner}', canonical.read_text())
+                for boundary in ('Read-only/questions-only/no-write', 'publish `ai-ready` last',
+                                 'Stop planning', 'without implementing or starting a service',
+                                 'same coordinator', 'existing issue'):
+                    self.assertIn(boundary, ' '.join(canonical.read_text().split()))
+                self.assertNotIn('An existing Orbi deployment can consume published work immediately', canonical.read_text())
+
+    def test_paired_recovery_specimens_cover_inputs_and_document_expected_outcomes(self):
+        fixture_dir = ROOT / 'tests/fixtures/planning'
+        cases = json.loads((fixture_dir / 'cases.json').read_text())['cases']
+        readme = ' '.join((fixture_dir / 'README.md').read_text().split())
+        inputs = {
+            'guard-refresh': {'src/session.py': 'raise ValueError("stale session")',
+                              'tests/test_session.py': 'test_rejects_stale',
+                              'docs/session.md': 'refresh()'},
+            'original-oracle': {'evidence/original.txt': 'preset=amber; result=17',
+                                'docs/provenance.md': 'derived',
+                                'config/preset.txt': 'preset=violet'},
+            'recovery-qualification': {'notes/historical-audit.md': 'historical',
+                                       'notes/current-observation.md': 'unverified',
+                                       'docs/acceptance.md': 'Android/app',
+                                       'notes/issues.md': 'blockedBy'},
+        }
+        for scenario, sources in inputs.items():
+            paired_files = []
+            for mode in ('plan-with-me', 'plan-for-me'):
+                name = f'{mode}-{scenario}'
+                with self.subTest(case=name):
+                    self.assertIn(name, cases)
+                    route, request, files = cases[name]
+                    self.assertEqual(route, f'skills/{mode}/SKILL.md')
+                    self.assertIn('do not implement', request)
+                    self.assertIn('GitHub Issues', files['AGENTS.md'])
+                    for path, evidence in sources.items():
+                        self.assertIn(evidence, files[path])
+                    self.assertIn(name, readme)
+                    paired_files.append(files)
+            self.assertEqual(*paired_files)
+        for expected in ('retain the stale-state guard and negative cases',
+                         'preserve original oracle bytes and identity',
+                         'historical/current/unverified', 'qualification remains unmet',
+                         'native dependency only on the real recovery prerequisite',
+                         'independent repairs stay independent', 'existing owned issue',
+                         'no implementation during planning', 'not model adherence',
+                         'one useful progress update', 'ready/waiting/proposed'):
+            self.assertIn(expected, readme)
 
     def test_closure_does_not_widen_planning_writes_or_execution_authority(self):
         contract = section('skills/shared/RESEARCH-PLAN.md', 'Planning artifact and authority contract')

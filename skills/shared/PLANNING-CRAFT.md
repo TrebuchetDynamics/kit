@@ -59,7 +59,9 @@ violation. This is a prose content requirement, not a new task-store schema fiel
 Before saving, search specs/tests for assertions encoding the behavior being
 replaced, including integration/browser consumers. Record file:line, keep or
 re-baseline, and replacement intent; changed assertion files belong in `touches`
-and `checks`. Quote the source expression or exact text for existing numeric and
+and `checks`. For original evidence, apply the
+[provenance rules](#recovery-provenance-and-qualification) before any re-baseline.
+Quote the source expression or exact text for existing numeric and
 contract invariants: minimum versus maximum, units, defaults, caps and clamping
 precedence. Label new thresholds as planner decisions, not existing facts.
 Preserve required caveat copy verbatim and independent invariants explicitly.
@@ -68,6 +70,34 @@ For interaction work, inventory current event owners before designing capture:
 handlers, nested interactive elements, delegation, propagation and passive/default
 behavior. Name the existing click, tap and keyboard activation paths to preserve.
 For noninteraction work, omit this inventory rather than invent event requirements.
+
+## Recovery, provenance and qualification
+
+Apply these rules to recovery plans within the existing brief or issue, not a new
+workflow or mandatory ceremony:
+
+- **Guards:** distinguish a missing recovery/state-refresh step from the guard
+  that detects stale state. Cite the source supporting the repair and retain
+  existing negative cases; never weaken a guard just to unblock work. Plan the
+  supported refresh/recovery step and its check, not removal of the detector.
+- **Provenance:** reconcile changed presets/baselines in a narrow provenance stage.
+  Preserve original oracle bytes and identity. Record original versus derived
+  evidence, the source of the difference and authorized future changes in the
+  existing owner; never silently overwrite or re-baseline the oracle. This needs
+  no new evidence registry or file format. Synthetic instruction specimens are
+  editable test data, not immutable user evidence.
+- **Observations:** Label historical audits as historical. Compare available
+  current observations and record the mismatch and remaining uncertainty, citing
+  each observation's source and time when known. An old host audit is not proof
+  of current service presence; do not fabricate a live inspection or assume a
+  missing service without evidence. Mark unavailable current evidence unverified.
+- **Qualification:** Environment/display restoration has its own acceptance;
+  application/device qualification remains separately unmet until its actual
+  checks run. Name both sets of checks and the remaining live gates. When separate
+  issues are justified, qualification has a native `blockedBy` dependency on its
+  real recovery prerequisite; independent repairs remain independent. Do not
+  force a split of an existing owned task merely because runtime failed. Preserve
+  its acceptance and return the failure and retained evidence to the same coordinator.
 
 ## Cover the ground, not a script
 
