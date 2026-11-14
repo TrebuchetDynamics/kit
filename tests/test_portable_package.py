@@ -85,7 +85,8 @@ class PortablePackageTests(unittest.TestCase):
             reference = (installed / 'skills/orbi/references/lifecycle.md').read_text()
             self.assertIn('<this-skill>/scripts/orbi_control.py', canonical)
             self.assertIn('Linux is the only mutation platform', canonical)
-            self.assertIn('macOS is status-only', reference)
+            self.assertIn('macOS supports status and help; setup/start/stop are refused before side effects.',
+                          reference)
             checkout = foreign / 'target repo'
             checkout.mkdir()
             subprocess.run(['git', 'init', '-q', str(checkout)], check=True, timeout=30)
@@ -106,7 +107,7 @@ class PortablePackageTests(unittest.TestCase):
                                    cwd=foreign, capture_output=True, text=True,
                                    timeout=60, env=sandbox)
             self.assertEqual(usage.returncode, 0, usage.stderr)
-            self.assertIn('{status,setup,start,stop}', usage.stdout)
+            self.assertIn('[status|setup|start|stop|help]', usage.stdout)
             before = sorted(path.relative_to(checkout) for path in checkout.rglob('*'))
             status = subprocess.run(
                 [sys.executable, '-B', str(helper), 'status',

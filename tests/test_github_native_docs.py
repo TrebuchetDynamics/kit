@@ -118,7 +118,7 @@ class GithubNativeDocsTests(unittest.TestCase):
     def test_lifecycle_skill_names_observed_states_and_platform_limits(self):
         lifecycle = compact(section(TEXT, "Kit lifecycle skill", level=3))
         for phrase in (
-                "`/orbi [status|setup|start|stop]`",
+                "`/orbi [status|setup|start|stop|help]`",
                 "Bare invocation reads status",
                 "Setup prepares without activating scheduling",
                 "`absent`",
