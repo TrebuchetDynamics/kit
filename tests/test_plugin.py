@@ -90,6 +90,21 @@ class PluginTests(unittest.TestCase):
                             self.assertEqual(written['agent']['max_turns'], 'unlimited' if autonomous else 90)
                             self.assertEqual(written['skills']['disabled'], ['user-skill'])
 
+    def test_registration_preserves_existing_cron_jobs_and_scripts(self):
+        self.skill('alpha')
+        home = Path(self.temp.name) / 'home'
+        existing = {'cron/jobs.json': b'{"paused": true}',
+                    'scripts/autowork-start-notice.py': b'# autowork: historical managed script\n'}
+        for name, data in existing.items():
+            path = home / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        self.plugin.register(self.ctx)
+        for name, data in existing.items():
+            self.assertEqual((home / name).read_bytes(), data)
+        self.assertEqual(sorted(p.name for p in (home / 'scripts').iterdir()),
+                         ['autowork-start-notice.py'])
+
     def test_discovers_new_skills_on_next_registration(self):
         self.skill("alpha")
         (self.root / "not-a-skill").mkdir()
@@ -134,11 +149,11 @@ class PluginTests(unittest.TestCase):
                 self.assertNotIn("kit:beta", message)
                 self.assertEqual(target, {})
                 if name != 'alpha':
-                    self.assertIn('tasks/ is the central work queue', message)
-                    self.assertIn('Docs Sync', message)
-                    self.assertIn('`autowork tasks`', message)
+                    self.assertIn('shared Plan Handoff contract', message)
+                    self.assertIn('GitHub Issues are the executable backlog', message)
+                    self.assertNotIn('`autowork tasks`', message)
                 else:
-                    self.assertNotIn('central work queue', message)
+                    self.assertNotIn('executable backlog', message)
 
     def test_repository_specialists_dispatch_namespaced_skills_without_interpreting_args(self):
         self.plugin.SKILLS_DIR = ROOT / 'skills'
@@ -261,6 +276,7 @@ class PluginTests(unittest.TestCase):
         with patch.object(bundle, 'start_update', return_value='started') as start:
             self.assertEqual(self.ctx.commands['autowork']('update'), 'started')
             start.assert_called_once_with(check=False)
+        self.assertIn('executor has been removed', self.ctx.commands['autowork']('status Example'))
         self.assertEqual(self.ctx.messages, [])
         self.ctx.commands['autowork']('update the README')
         self.assertIn('kit:autowork', self.ctx.messages[-1][0])

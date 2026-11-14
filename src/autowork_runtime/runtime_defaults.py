@@ -241,38 +241,3 @@ def verify_runtime_defaults():
     from hermes_cli.config import read_raw_config
     raw = read_raw_config() or {}
     return settings_drift(raw, opted_out_settings(raw) if _opted_out(raw) else expected_settings(raw))
-
-
-CRON_SCRIPTS = ('pi-autowork/scripts/autowork-start-notice.py',)
-MANAGED = b'# autowork: '
-
-
-def provision_cron_scripts(skills_dir, home):
-    """Copy bundle cron scripts into HERMES_HOME/scripts, where Hermes requires them.
-
-    Hermes refuses cron scripts that resolve outside the profile's scripts folder,
-    so a symlink to the bundle cannot work. A same-named file without the bundle
-    marker belongs to the user and is left alone. Returns the names it could not
-    provision.
-    """
-    target_dir = Path(home) / 'scripts'
-    if target_dir.is_symlink():
-        return [Path(rel).name for rel in CRON_SCRIPTS]
-    skipped = []
-    for rel in CRON_SCRIPTS:
-        source = Path(skills_dir).parent / rel
-        target = target_dir / source.name
-        if not source.is_file():
-            continue
-        data = source.read_bytes()
-        if target.is_symlink() or (target.exists() and MANAGED not in target.read_bytes()[:200]):
-            skipped.append(source.name)
-            continue
-        if target.exists() and target.read_bytes() == data:
-            continue
-        target_dir.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(f'.{target.name}.tmp')
-        temporary.write_bytes(data)
-        temporary.chmod(0o755)
-        temporary.replace(target)
-    return skipped

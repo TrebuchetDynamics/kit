@@ -73,7 +73,7 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
             raw_args = target
         else:
             raw_args = ("No target repository was given and the current directory is not a Git "
-                        "repository. Run `autowork ls`, then ask which runner to unblock; do not "
+                        "repository. Ask which repository to inspect through GitHub and Orbi; do not "
                         "report that there are no questions without a resolved target.")
     public = name
     mode = ""
@@ -109,9 +109,9 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
     )
     if namespace == "kit" and name in {"autoresearch", "plan-for-me"}:
         prompt = (
-            "tasks/ is the central work queue. By default, persist actionable "
-            "research/planning findings there through Docs Sync and `autowork tasks`; "
-            "reuse task IDs and preserve user ordering. Explicit "
+            "GitHub Issues are the executable backlog. By default, publish actionable "
+            "research/planning findings through the shared Plan Handoff contract; "
+            "reuse existing issues and preserve dependencies and user ordering. Explicit "
             "read-only, chat-only, no-write and --dry-run requests write nothing. "
             "Planning alone does not authorize implementation or timed scheduling.\n\n"
         ) + prompt
@@ -182,8 +182,8 @@ def repository_here(start=None):
 
 
 def _autowork(run_skill, run_blockers, raw_args):
-    """`status` reads runners; `plugin status`, `update` and `list` inspect/maintain the bundle;
-    `blockers` is `/blockers`;
+    """`plugin status`, `update` and `list` inspect/maintain the bundle;
+    `status` redirects to GitHub/Orbi; `blockers` is `/blockers`;
     any other arguments run the skill."""
     maintenance_reply = _AUTOWORK_COMPAT.peer(globals(), 'bundle').maintenance_reply
 
@@ -218,8 +218,6 @@ def register(ctx):
         logger.warning('Bundled native skill provisioning incomplete:\n%s', '\n'.join(messages))
     policy = _AUTOWORK_COMPAT.peer(globals(), 'runtime_defaults')
     policy.apply_runtime_defaults(ctx)
-    for name in policy.provision_cron_scripts(SKILLS_DIR, get_hermes_home()):
-        logger.warning("Not replacing user-owned cron script scripts/%s.", name)
     existing = get_plugin_commands()
     for name, command, path in skills:
         # Canonical folders own the current skill identities.

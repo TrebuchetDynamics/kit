@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def copy_sources(destination, *, source=ROOT, entries=()):
     """Copy the complete Python source closure plus explicitly needed resources.
 
-    Copy the canonical runner, native payloads and standalone hooks together. Never
+    Copy native payloads and their public wrappers together. Never
     borrow a missing source from the calling checkout when the selected copy is used.
     """
     source, destination = Path(source).resolve(), Path(destination)
@@ -17,11 +17,9 @@ def copy_sources(destination, *, source=ROOT, entries=()):
         'autowork_bootstrap', 'autoresearch_commands', 'workflow_commands', 'bundle',
         'runtime_defaults', 'telegram_menu_policy', 'install-graphify', 'install_skills',
         'preflight_config', 'setup_bundle', 'setup_preflight', 'setup_runtime', 'update_bundle', 'update_bundle_native'))
-    for folder in ('pi-autowork/src', 'pi-autowork/pi_autowork', 'pi-autowork/engine',
-                   'pi-autowork/scripts'):
+    for folder in ('src',):
         paths.update(p for p in (source / folder).rglob('*.py')
                      if not p.name.startswith('test_') and '__pycache__' not in p.parts)
-    paths.add(source / 'pi-autowork/bin/pi-autowork.sh')
     paths.update(source / entry for entry in entries)
     for path in sorted(paths):
         if not path.resolve().is_relative_to(source):

@@ -31,7 +31,8 @@ class WorkflowCommands(unittest.TestCase):
                     self.assertEqual(arguments, raw)
                     self.assertNotIn('TODO.md', injected)
                     self.assertNotIn('goals.json', injected)
-                    self.assertEqual('`autowork tasks`' in injected, skill == 'plan-for-me')
+                    self.assertEqual('GitHub Issues are the executable backlog' in injected, skill == 'plan-for-me')
+                    self.assertNotIn('`autowork tasks`', injected)
                     self.assertEqual(routing['origin']['chat_id'], 'fixture')
                     if skill.startswith('plan-'):
                         self.assertIn('../shared/RESEARCH-PLAN.md', prompt)

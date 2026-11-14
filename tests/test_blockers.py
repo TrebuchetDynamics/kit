@@ -120,7 +120,8 @@ class BlockersRouting(unittest.TestCase):
         with patch.object(self.plugin, 'repository_here', return_value=''):
             self.ctx.commands['autowork']('blockers')
         prompt, _ = self.ctx.messages[-1]
-        self.assertIn('Run `autowork ls`', prompt)
+        self.assertIn('Ask which repository to inspect through GitHub and Orbi', prompt)
+        self.assertNotIn('autowork ls', prompt)
         self.assertIn('do not report that there are no questions without a resolved target', prompt)
 
     def test_other_arguments_keep_their_skill(self):

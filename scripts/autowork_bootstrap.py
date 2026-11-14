@@ -5,7 +5,7 @@ import sys as _sys
 import types as _types
 
 _root = _Path(__file__).resolve().parents[1]
-_source = _root / 'pi-autowork/src/autowork_bootstrap.py'
+_source = _root / 'src/autowork_bootstrap.py'
 if not _source.resolve().is_relative_to(_root):
     raise ImportError('bootstrap source escapes selected release')
 _key = '_autowork_bootstrap_' + _hashlib.sha256(str(_source).encode()).hexdigest()
@@ -23,8 +23,5 @@ elif _Path(_bootstrap.__file__).resolve() != _source:
     raise ImportError('foreign Autowork bootstrap')
 
 Layout = _bootstrap.Layout
-activate = _bootstrap.activate
-load = _bootstrap.load
-run = _bootstrap.run
 execute = _bootstrap.execute
 peer = _bootstrap.peer

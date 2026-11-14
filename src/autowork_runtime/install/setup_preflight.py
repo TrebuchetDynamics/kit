@@ -93,7 +93,7 @@ def runtime_check(repo, root, profiles, bundle_only):
         for executable in dict.fromkeys(candidates):
             if not executable.is_file():
                 continue
-            command = [str(executable), '-B', str(repo / 'pi-autowork/src/autowork_runtime/install/preflight_config.py'),
+            command = [str(executable), '-B', str(repo / 'src/autowork_runtime/install/preflight_config.py'),
                        *(['--core'] if bundle_only else []), *[str(home / 'config.yaml') for _, home in profiles]]
             result = subprocess.run(command, capture_output=True, text=True, timeout=30,
                                     env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'))
@@ -119,9 +119,9 @@ def preflight(repo, root, profiles, *, bundle_only=False):
     required = ('install-skills.sh', 'install-plugins.sh', 'scripts/install_skills.py', 'scripts/runtime_defaults.py',
                 'scripts/setup_bundle.py', 'scripts/setup_preflight.py', 'scripts/setup_runtime.py',
                 'scripts/install-graphify.py',
-                'scripts/autowork_bootstrap.py', 'pi-autowork/src/autowork_bootstrap.py',
+                'scripts/autowork_bootstrap.py', 'src/autowork_bootstrap.py',
                 'plugin.yaml', 'plugins/defaults.json', 'plugins/PLUGINS.md',
-                'pi-autowork/src/autowork_runtime/install/preflight_config.py')
+                'src/autowork_runtime/install/preflight_config.py')
     layout = _AUTOWORK_COMPAT.Layout(repo)
     for name in required:
         if not (repo / name).is_file():

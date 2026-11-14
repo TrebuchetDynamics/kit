@@ -61,17 +61,16 @@ class BundleTests(unittest.TestCase):
 
     def test_autowork_maintenance_forms_are_exact(self):
         with patch.object(self.bundle, 'handle_chat', return_value='update') as chat, \
-                patch.object(self.bundle, 'list_commands', return_value='listed') as listing, \
-                patch.object(self.bundle, 'repository_status', return_value='runners') as status:
+                patch.object(self.bundle, 'list_commands', return_value='listed') as listing:
             for args in ('update', 'UPDATE --check', 'update status', 'update status full'):
                 self.assertEqual(self.bundle.maintenance_reply(args), 'update')
-            self.assertEqual(self.bundle.maintenance_reply('status'), 'runners')
-            status.assert_called_once_with(None)
+            self.assertIn('executor has been removed', self.bundle.maintenance_reply('status'))
             self.assertEqual(self.bundle.maintenance_reply('plugin status'), 'listed')
             listing.assert_called_with('')
             self.assertEqual(self.bundle.maintenance_reply('list sample-addon'), 'listed')
             listing.assert_called_with('list sample-addon')
-            for args in ('', 'update the README', 'status of task 4', 'list the open tasks', 'next task'):
+            for args in ('', 'update the README', 'status of task 4',
+                         'list the open tasks', 'next task'):
                 self.assertIsNone(self.bundle.maintenance_reply(args), args)
             self.assertEqual(chat.call_count, 4)
 

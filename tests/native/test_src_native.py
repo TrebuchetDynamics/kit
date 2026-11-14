@@ -1,11 +1,7 @@
 """Native owners execute in the public host namespace, never a borrowed release."""
 import sys as _sys
 from pathlib import Path as _Path
-_sys.path[:0] = [str(_Path(__file__).resolve().parent),
-                 str(_Path(__file__).resolve().parents[3] / 'tests'),
-                 str(_Path(__file__).resolve().parents[1]),
-                 str(_Path(__file__).resolve().parents[2]),
-                 str(_Path(__file__).resolve().parents[2] / 'engine')]
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
 import os
 from pathlib import Path
 import subprocess
@@ -15,7 +11,7 @@ import unittest
 
 from src_fixture import copy_sources
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[2]
 OWNERS = {
     '__init__.py': ('plugin.py', 'register'),
     'bundle.py': ('bundle.py', 'defaults'),
@@ -34,10 +30,9 @@ SUBFOLDER = {'autoresearch_commands.py': 'commands', 'workflow_commands.py': 'co
 
 
 class SrcNativeTests(unittest.TestCase):
-    def test_native_payload_and_source_have_component_owners(self):
-        for relative in ('src/autowork_runtime/plugin.py', 'scripts/profile-audit-cron.py',
-                         'scripts/autowork-start-notice.py'):
-            self.assertTrue((ROOT / 'pi-autowork' / relative).is_file(), relative)
+    def test_native_payload_is_owned_by_kit(self):
+        self.assertTrue((ROOT / 'src/autowork_runtime/plugin.py').is_file())
+        self.assertTrue((ROOT / 'src/autowork_bootstrap.py').is_file())
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -68,7 +63,7 @@ for entry, (owner, function) in {OWNERS!r}.items():
     func = getattr(module, function)
     assert func.__globals__ is module.__dict__ and func.__module__ == spec.name
     # Remote command modules live in their own subfolder; the rest stay at the root.
-    source = root / 'pi-autowork/src/autowork_runtime' / {SUBFOLDER!r}.get(owner, '') / owner
+    source = root / 'src/autowork_runtime' / {SUBFOLDER!r}.get(owner, '') / owner
     assert func.__code__.co_filename == str(source), func.__code__.co_filename
     assert module._AUTOWORK_LAYOUT.implementation(entry) == source
     tree = ast.parse((root / entry).read_text())
@@ -143,7 +138,7 @@ assert standalone[1].expected_settings({{}})['approvals']['mode'] == 'manual'
     def test_missing_migrated_payload_refuses_without_legacy_or_cached_fallback(self):
         for entry, (owner, _) in OWNERS.items():
             with self.subTest(entry=entry):
-                source = self.root / 'pi-autowork/src/autowork_runtime' / SUBFOLDER.get(owner, '') / owner
+                source = self.root / 'src/autowork_runtime' / SUBFOLDER.get(owner, '') / owner
                 self.assertTrue(source.is_file(), f'missing owner: {source}')
                 source.unlink()
                 self.probe(f'''import importlib.util, sys, types
