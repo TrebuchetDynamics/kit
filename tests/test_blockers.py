@@ -1,6 +1,6 @@
 """`/blockers`: only unresolved owner decisions become questions; runners stay untouched.
 
-Keep wire markers, resource links and authority guards, not editorial phrasing.
+Keep GitHub evidence, resource links and authority guards, not editorial phrasing.
 Instruction guards do not prove compliance; routing runs the Hermes handlers offline.
 """
 from pathlib import Path
@@ -43,21 +43,23 @@ class BlockersContract(unittest.TestCase):
                     self.assertIn('blockers/SKILL.md', body)
         self.assertIn('blockers/SKILL.md', text(ROOT / 'adapters/skills/blockers/SKILL.md'))
 
-    def test_reads_the_runner_block_or_the_engine_without_a_model(self):
-        for phrase in ('<!-- pi-autowork:questions:start -->', '<!-- pi-autowork:questions:end -->',
-                       '--parallel-status --json'):
+    def test_reads_github_and_retained_evidence_without_the_removed_cli(self):
+        for phrase in ('Read GitHub Issues', 'blockedBy dependencies',
+                       'Inspect retained attempts read-only', 'not an empty queue',
+                       'Never use the removed executor CLI'):
             self.assertIn(phrase, self.ref)
 
     def test_answers_are_planning_not_runner_management(self):
         for phrase in ('never starts, stops, restarts or reconfigures a runner',
                        'never launches a competing execution or repair session', 'never kills a session',
-                       'never pushes', "Edit that task's record: `autowork tasks field", "never edit inside the runner's marked block",
-                       'route separately requested publication through Git Commit Push', '--set-aside TASK` belong to the runner'):
+                       'never pushes', 'Record each decision in its current GitHub issue',
+                       'never drop a dependency', "never rewrite a running worker's contract",
+                       'separately requested publication uses Git Commit Push'):
             self.assertIn(phrase, self.ref)
 
-    def test_held_tasks_are_inspected_even_when_question_block_exists(self):
-        for phrase in ('Always inspect both', 'held tasks and owner questions',
-                       'an empty questions block does not mean no held work',
+    def test_held_work_and_questions_are_inspected_beyond_dashboard_entries(self):
+        for phrase in ('held tasks and owner questions', 'every unresolved issue decision',
+                       'even when absent from a dashboard', 'not an empty queue',
                        'latest attempt', 'actual writer/session activity'):
             self.assertIn(phrase, self.ref)
         self.assertNotIn("- Without that block, the engine's view:", self.ref)
@@ -74,8 +76,8 @@ class BlockersContract(unittest.TestCase):
     def test_classifies_causes_and_delivers_recoveries_before_claiming_progress(self):
         for phrase in ('Classify each hold by cause', 'the `exclusive` resource',
                        'never strip exclusivity in bulk', 'Never repeat a recovery that already failed',
-                       'Protect the agreed priority', 'local uncommitted edit is not a delivered recovery',
-                       'One task starting does not unblock the queue'):
+                       'Protect agreed priority', 'A local edit, new label or saved answer is not execution',
+                       'A successor may still wait', 'retirement is not completion'):
             self.assertIn(phrase, self.ref)
 
     def test_portable_adapter_requires_repair_without_relaxing_guards(self):
