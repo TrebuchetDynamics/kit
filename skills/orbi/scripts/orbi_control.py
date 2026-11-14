@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Repository-scoped Orbi lifecycle controls (Issue #18).
 
-`python3 -B orbi_control.py [status|setup|start|stop] [--repo-dir PATH]
+`python3 -B orbi_control.py [status|setup|start|stop|help] [--repo-dir PATH]
 [--config PATH] [--dry-run] [--json]`
 
 - `status` (the default) is read-only: local reads, read-only `orbi doctor`
@@ -17,7 +17,7 @@
   surplus instances); it never stops, kills or restarts a service and reports
   `draining` until active services finish.
 
-Linux owns the mutations; macOS is status-only; other platforms fail clearly.
+Linux owns the mutations; macOS also supports status; help works on every platform.
 All subprocesses use an argv list (no shell). Secrets are never printed: the
 helper never copies credentials and never echoes environment values or child
 stderr. Minimum compatible Python: 3.11 (stdlib only, `tomllib` included).
@@ -1376,13 +1376,146 @@ def render_error(ctx, action, exc, json_mode):
             ctx.err.write(line + '\n')
 
 
+def command_status(ctx, args):
+    repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
+    if ctx.platform == 'linux':
+        return status_linux(ctx, repo, args.config)
+    return status_darwin(ctx, repo, args.config)
+
+
+def action_usage():
+    return ('python3 -B orbi_control.py [' + '|'.join(ACTIONS) + '] '
+            '[--repo-dir PATH] [--config PATH] [--dry-run] [--json]')
+
+
+def command_help(ctx, args):
+    options = {
+        '--repo-dir': 'canonical repository checkout (default: current directory)',
+        '--config': 'explicit native Orbi config for this deployment',
+        '--dry-run': 'preview without locking, writing, installing or activating',
+        '--json': 'print one JSON document',
+    }
+    return {
+        'action': 'help',
+        'platform': ctx.platform,
+        'mutations_supported': ctx.platform == 'linux',
+        'actions': {name: {key: entry[key] for key in
+                           ('effect', 'mutates', 'platforms', 'when')}
+                    for name, entry in ACTIONS.items()},
+        'options': {flag: {'effect': effect,
+                           'applies_to': [name for name, entry in ACTIONS.items()
+                                          if flag in entry['applies']]}
+                    for flag, effect in options.items()},
+        'errors': {
+            'exit': 'Exit 0 means success or help; a nonzero exit reports an error, '
+                    'not whether a write occurred.',
+            'mutated': 'error.mutated, not the exit code, reports whether anything '
+                       'was written; inspect it before recovery (use --json).',
+            'code': 'error.code classifies the failure; codes are owned by the raising code.',
+            'fix': 'error.fix gives the repair action; unknown actions point to /orbi help.',
+        },
+        'boundaries': [
+            'Usage: ' + action_usage(),
+            'Minimum Python 3.11; the Python floor guard also applies to help.',
+            'Linux supports mutations; macOS supports status and help; other platforms '
+            'support help only.',
+            'Help needs no repository or deployment and reads no deployment, config, '
+            'environment values or scheduler; it runs no subprocess and performs no writes.',
+            'Help accepts and ignores --repo-dir, --config and --dry-run.',
+            'Status is read-only. Only setup stages source/config; only start/stop touch '
+            'the scheduler. Dry-run performs no writes.',
+            'Not an executor or scheduler: no tick, issue claim, review or merge.',
+            'Not /unblock, /git-commit-push, /plan-with-me, /plan-for-me or /autowork.',
+            'Local visibility only: no cross-machine lock or capacity guarantee.',
+            'Next steps: use status to inspect; setup to prepare; start only after an '
+            'owner scheduling request and resolved pauses, cutover and human-only gates; '
+            'stop to disable owned timers while preserving active workers.',
+        ],
+    }
+
+
+# One ordered inventory owns dispatch, argparse action names and help metadata.
+ACTIONS = {
+    'status': {
+        'handler': command_status,
+        'effect': 'Inspect local deployment, source, providers, timers, services and queue.',
+        'mutates': 'none',
+        'platforms': ['linux', 'darwin'],
+        'applies': ['--repo-dir', '--config', '--json'],
+        'when': 'Run by default to inspect a canonical GitHub checkout; no deployment is required '
+                '(an absent deployment is reported as absent).',
+    },
+    'setup': {
+        'handler': command_setup,
+        'effect': 'Stage pinned source/config and provider metadata; validate without activation.',
+        'mutates': 'staging',
+        'platforms': ['linux'],
+        'applies': ['--repo-dir', '--config', '--dry-run', '--json'],
+        'when': 'Run to prepare one unambiguous repository deployment with verified '
+                'prerequisites, preserving existing pins and active workers.',
+    },
+    'start': {
+        'handler': command_start,
+        'effect': 'Install scoped units, enable owned timers and request a first tick if idle.',
+        'mutates': 'scheduler',
+        'platforms': ['linux'],
+        'applies': ['--repo-dir', '--config', '--dry-run', '--json'],
+        'when': 'Run for a prepared deployment after an owner scheduling request and '
+                'resolution of explicit pauses, cutover requirements and human-only gates.',
+    },
+    'stop': {
+        'handler': command_stop,
+        'effect': 'Disable owned timers; preserve active services and report draining.',
+        'mutates': 'scheduler',
+        'platforms': ['linux'],
+        'applies': ['--repo-dir', '--config', '--dry-run', '--json'],
+        'when': 'Run to pause scheduling for a prepared, unambiguous deployment with '
+                'verified unit ownership; workers may finish.',
+    },
+    'help': {
+        'handler': command_help,
+        'effect': 'Print this authoritative command reference without deployment reads.',
+        'mutates': 'none',
+        'platforms': ['all'],
+        'applies': ['--json'],
+        'when': 'Run first for help or an action inventory; no repository or deployment needed.',
+    },
+}
+
+
+def render_help(ctx, document, json_mode):
+    if json_mode:
+        render(ctx, document, True)
+        return
+    ctx.out.write(document['boundaries'][0] + '\n')
+    ctx.out.write(f"Platform: {document['platform']}; "
+                  f"mutations_supported={document['mutations_supported']}\nActions:\n")
+    for name, entry in document['actions'].items():
+        ctx.out.write(f"  {name} [{entry['mutates']}] {entry['effect']} "
+                      f"Platforms: {', '.join(entry['platforms'])}. {entry['when']}\n")
+    ctx.out.write('Options:\n')
+    for flag, entry in document['options'].items():
+        ctx.out.write(f"  {flag}: {entry['effect']}; "
+                      f"applies to {', '.join(entry['applies_to'])}.\n")
+    ctx.out.write('Errors:\n')
+    for text in document['errors'].values():
+        ctx.out.write('  ' + text + '\n')
+    ctx.out.write('Limits and next steps:\n')
+    for text in document['boundaries'][1:]:
+        ctx.out.write('  ' + text + '\n')
+
+
 def parse_args(argv):
     parser = argparse.ArgumentParser(
         prog='orbi_control.py',
-        description='Repository-scoped Orbi lifecycle controls: status (default), setup, '
-                    'start, stop. Linux mutates; macOS is status-only; minimum Python 3.11.')
+        usage=action_usage() + ' [-h]',
+        description='Repository-scoped Orbi lifecycle controls: '
+                    + '; '.join(f"{name} [{entry['mutates']}]: {entry['effect']}"
+                                for name, entry in ACTIONS.items())
+                    + ' Default: status. Linux mutates; macOS also supports status; '
+                    'help works everywhere; minimum Python 3.11.')
     parser.add_argument('action', nargs='?', default='status',
-                        choices=('status', 'setup', 'start', 'stop'))
+                        metavar='[' + '|'.join(ACTIONS) + ']')
     parser.add_argument('--repo-dir', default=None,
                         help='canonical repository checkout (default: current directory)')
     parser.add_argument('--config', default=None,
@@ -1394,8 +1527,10 @@ def parse_args(argv):
 
 
 def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=None):
-    ctx = Context(env=env, platform=platform, cwd=cwd, stdout=stdout, stderr=stderr)
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    # Help binds nothing, including the caller's environment and working directory.
+    ctx = Context(env={} if args.action == 'help' else env, platform=platform,
+                  cwd='.' if args.action == 'help' else cwd, stdout=stdout, stderr=stderr)
     if sys.version_info < MIN_PYTHON:
         exc = ControlError(
             'python_unsupported',
@@ -1404,25 +1539,12 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
         render_error(ctx, args.action, exc, args.json)
         return exc.exit_code
     try:
-        if args.action == 'status':
-            if ctx.platform not in ('linux', 'darwin'):
-                raise ControlError(
-                    'unsupported_platform',
-                    f'platform {ctx.platform} is unsupported; Linux mutates and macOS is '
-                    'status-only',
-                    fix='run status on a supported host', exit_code=2)
-            repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
-            if ctx.platform == 'linux':
-                document = status_linux(ctx, repo, args.config)
-            elif ctx.platform == 'darwin':
-                document = status_darwin(ctx, repo, args.config)
-            else:
-                raise ControlError(
-                    'unsupported_platform',
-                    f'platform {ctx.platform} is unsupported; Linux mutates and macOS is '
-                    'status-only',
-                    fix='run status on a supported host', exit_code=2)
-        else:
+        if args.action not in ACTIONS:
+            raise ControlError(
+                'unknown_action', f"unknown action '{args.action}'", exit_code=2,
+                fix='run /orbi help for the supported actions and their effects')
+        entry = ACTIONS[args.action]
+        if 'all' not in entry['platforms'] and ctx.platform not in entry['platforms']:
             if ctx.platform == 'darwin':
                 raise ControlError(
                     'unsupported_platform',
@@ -1430,16 +1552,16 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
                     'side effect',
                     fix='run `/orbi status`; operate a macOS deployment with upstream orbi',
                     exit_code=2)
-            if ctx.platform != 'linux':
-                raise ControlError(
-                    'unsupported_platform',
-                    f'platform {ctx.platform} is unsupported; Linux mutates and macOS is '
-                    'status-only',
-                    fix='run status on a supported host', exit_code=2)
-            command = {'setup': command_setup, 'start': command_start,
-                       'stop': command_stop}[args.action]
-            document = command(ctx, args)
-        render(ctx, document, args.json)
+            raise ControlError(
+                'unsupported_platform',
+                f'platform {ctx.platform} is unsupported; Linux mutates and macOS is '
+                'status-only',
+                fix='run status on a supported host', exit_code=2)
+        document = entry['handler'](ctx, args)
+        if args.action == 'help':
+            render_help(ctx, document, args.json)
+        else:
+            render(ctx, document, args.json)
         return 0
     except ControlError as exc:
         render_error(ctx, args.action, exc, args.json)
