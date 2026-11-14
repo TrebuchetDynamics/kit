@@ -115,7 +115,7 @@ Restart your host session to discover the installed skills. See the
 <summary><strong>Install every available host and CLI component at once</strong></summary>
 
 From a checkout, `install.sh` installs every available component with verbose output:
-the Pi package, the `tx` tmux launcher, official stable
+the Pi package, the Orbi CLI, the `tx` tmux launcher, official stable
 Octet native binaries with Kit skills, and the Hermes, Claude Code and Codex plugins with their complete
 skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
 item runs that host's own install command. `tx` keeps an existing `~/.tmux.conf`.
@@ -136,6 +136,12 @@ paused/stopped services stay untouched.
 See [restart scope and failure handling](docs/installation.md#full-suite-from-a-checkout).
 Hermes still runs its complete fleet setup and its own dependency and
 security prompts; use `--yes-deps` only when you intend to consent to them.
+
+Orbi is included by default; use `./install.sh --only orbi` or `--skip orbi`.
+A missing CLI is installed user-locally with `uv tool install --python 3.14 orbi-cli`
+(`uv` must be installed first). Existing Orbi installations and source pins are kept,
+even during `update`. This installs the CLI only: no repository setup, credentials,
+scheduler activation or worker starts. See [Orbi CLI installation](docs/installation.md#orbi-cli).
 
 Ordinary installs reuse the installed Pi package and a working Octet binary in the
 selected destination. `./install.sh update` explicitly refreshes both. Kit skill

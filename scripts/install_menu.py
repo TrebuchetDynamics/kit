@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the full Autowork suite with verbose output by default.
+"""Install the full Kit suite with verbose output by default.
 
     install.sh                every available component, live output and exact commands
     install.sh --menu         a checkbox menu on a terminal (arrows, Space, Enter)
@@ -16,7 +16,8 @@ or a detached HEAD is installed as it is, and says so.
 
 Each host item runs its own supported install command; a host whose CLI is not
 installed is skipped and says so, and fails when named with --only. Octet instead
-bootstraps official stable native binaries and Kit skills on supported platforms. Hermes options
+bootstraps official stable native binaries and Kit skills on supported platforms.
+Orbi installs the CLI only via uv; existing CLIs and deployments are kept. Hermes options
 (--hermes-home, --bundle-only, --no-reload, --yes-deps) apply to the Hermes item.
 Standard library only.
 """
@@ -622,6 +623,47 @@ def octet_item(output=None, mode='install'):
                             run=install_octet_skills)])
 
 
+def orbi_version(binary):
+    result = subprocess.run([str(binary), '--version'], capture_output=True,
+                            text=True, timeout=30)
+    version = result.stdout.strip()
+    if result.returncode or not re.fullmatch(r'orbi [0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9.+-]*', version):
+        raise OSError(f'{binary}: Orbi version verification failed; existing installation left untouched')
+    return version
+
+
+def install_orbi(output=None):
+    """Install the official CLI, never setup/tick or replace a deployment bootstrap."""
+    output = output or Output()
+    destination = Path(os.environ.get('UV_TOOL_BIN_DIR') or BIN).absolute()
+    candidates = [shutil.which('orbi'), destination / 'orbi', HOME / '.local/bin/orbi']
+    for candidate in candidates:
+        if candidate and os.path.lexists(candidate):
+            # Even update must not replace an editable CLI serving a pinned deployment.
+            return f'{candidate}: {orbi_version(candidate)} (already installed; kept; deployment updates are separate)'
+    uv = shutil.which('uv')
+    if not uv:
+        raise OSError('Orbi requires uv; install uv and retry ./install.sh --only orbi')
+    argv = [uv, 'tool', 'install', '--python', '3.14', 'orbi-cli']
+    output.line('  $ ' + shlex.join(argv), 'command')
+    code, text = run_command(argv, output, extra_env={'UV_TOOL_BIN_DIR': str(destination)})
+    if code:
+        raise OSError(f'Orbi CLI installation failed (exit {code}): {failure_summary(text)}')
+    binary = destination / 'orbi'
+    return f'{binary}: {orbi_version(binary)}; CLI only, no deployment configured or started'
+
+
+def orbi_item(output=None):
+    system = platform.system()
+    return Item('orbi', 'Orbi CLI (no deployment activation)',
+                note='requires uv for a missing CLI; preserves existing installations and source pins',
+                missing='' if system in ('Linux', 'Darwin') else f'unsupported Orbi platform: {system}',
+                steps=[Step('reuse existing orbi --version, or install a missing CLI with '
+                            'uv tool install --python 3.14 orbi-cli; verify the installed version; '
+                            'no setup, scheduler changes or deployment upgrades',
+                            run=lambda: install_orbi(output))])
+
+
 def items(hermes_args, output=None, mode='install'):
     package = pi_package()
     pi = Item('pi', 'Pi package + bundled Ponytail', needs='pi', note='needs Node 22+')
@@ -665,6 +707,7 @@ def items(hermes_args, output=None, mode='install'):
                     Step(f'codex plugin add {CODEX_PLUGIN}@{CODEX_MARKETPLACE}',
                          ['codex', 'plugin', 'add', f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'])]),
         octet_item(output, mode=mode),
+        orbi_item(output),
     ]
 
 
@@ -897,7 +940,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--all', '--full', action='store_true', help='install the full suite for every available host (default)')
-    selection.add_argument('--only', help='comma-separated items to install (pi,tx,hermes,claude,codex,octet)')
+    selection.add_argument('--only', help='comma-separated items to install (pi,tx,hermes,claude,codex,octet,orbi)')
     parser.add_argument('--skip', help='comma-separated items to leave out')
     parser.add_argument('--list', action='store_true', help='show the items and whether each is available')
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')
