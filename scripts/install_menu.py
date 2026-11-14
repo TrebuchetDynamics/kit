@@ -866,7 +866,7 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
     if chosen:
         output.line('\nRestart active Kit services (always, including unchanged installs)', 'heading')
         if dry_run:
-            record('services', 'planned', 'discover and restart all active Autowork, Hermes gateway and kit-* user services')
+            record('services', 'planned', 'restart active Hermes gateway and kit-* host services; never legacy Autowork runners')
         else:
             try:
                 record('services', 'installed', restart_services(output), 0)
