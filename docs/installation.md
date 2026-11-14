@@ -88,9 +88,11 @@ and ships every skill folder this checkout ships; a stale registration with a mi
 directory is reinstalled, and a package missing a skill folder a release added (for
 example `orbi`) is refreshed with `pi update` so the missing `/skill:<name>` and
 command appear. A complete package stays untouched, so an install needs no network
-for it. Empty package filters are still reconciled so skills and commands
-remain enabled. `./install.sh update --only pi` refreshes an existing package
-unconditionally, or installs it when absent.
+for it; an unreadable package directory is kept rather than assumed stale. A refresh
+that cannot reach the source fails the Pi item with its cause and a nonzero exit,
+and the next install retries it. Empty package filters are still reconciled so
+skills and commands remain enabled. `./install.sh update --only pi` refreshes an
+existing package unconditionally, or installs it when absent.
 
 ### Pi-Bolt native executable
 
