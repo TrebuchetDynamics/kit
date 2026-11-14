@@ -1,6 +1,6 @@
 name: kit
 version: 0.3.0
-description: "Kit: bundled skills as commands in Hermes CLI and Telegram, with the Autowork runner."
+description: "Kit: bundled skills as commands in Hermes CLI and Telegram, with GitHub Issues and Orbi delivery."
 author: TrebuchetDynamics
 license: MIT
 homepage: https://github.com/TrebuchetDynamics/kit
