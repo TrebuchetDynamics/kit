@@ -160,6 +160,106 @@ limits) rather than multiplying that slot count across every repository. `doctor
 can diagnose overlapping pools; it does not establish a global resource budget.
 Do not serve one repository from multiple deployments or machines.
 
+## Qualify the model provider
+
+The diagnostics below were checked against Orbi 0.7.41. Re-check the release you
+actually deploy: the output and accepted configuration are release-scoped, and a
+green local diagnostic is not delivery evidence.
+
+`orbi check` and `orbi doctor` compare Orbi's configured provider path with the
+selected provider/model. They send no model request and do not inspect Pi's own
+provider directory.
+
+- **Native Pi provider (`pi_providers` unset).** Pi uses its own agent directory.
+  This path can be fully configured while Orbi's provider status still says
+  `NOT CONFIGURED` (setup/doctor) and `orbi check` fails at `check=model_provider`
+  with `model provider not configured`: those diagnostics mean Orbi has no
+  explicit provider file or selection to inspect, not that Pi has no working
+  provider. Verify it with Pi's own check and one real response:
+
+  ```sh
+  pi auth check --provider PROVIDER_ID
+  pi --print "reply with the single word: ok"
+  ```
+
+- **Explicit Orbi selection (`pi_providers`, `pi_provider`, `pi_model` set).**
+  Point `pi_providers` at a JSON file in Pi's `models.json` shape, then select the
+  provider and model in `orbi.toml`:
+
+  ```toml
+  pi_providers = ".orbi/pi-providers.json"
+  pi_provider = "PROVIDER_ID"
+  pi_model = "MODEL_ID"
+  ```
+
+  The file may reference a secret as `$PROVIDER_API_KEY`; keep its value in the
+  gitignored state file or the service environment, never in the repository or a
+  worktree. Copy the provider entry, including `id`, `name`, `contextWindow` and
+  `maxTokens`, from the provider's published model catalog. Do not invent
+  capabilities or reuse metadata from an unrelated model.
+
+With an explicit provider file, Orbi materializes
+`<worktree>/.orbi/pi-agent/` (gitignored) at run start: it merges the user and
+file providers into the per-run `models.json`, writes the selected
+provider/model into `settings.json`, and links `auth.json` to Pi's user agent
+directory when that file exists. Stored authentication for a built-in
+provider therefore remains usable without copying the token into the worktree;
+the user's Pi catalog and auth file are not modified.
+
+### Offline check, inference, and live delivery
+
+- **Offline configuration check.** `orbi check` and `orbi doctor` validate file
+  shape, selector presence, endpoint/API fields and key references. A status such
+  as `key=PROVIDER_API_KEY=set` only proves the referenced environment variable is
+  non-empty; `key=literal=set` only proves a literal value is present. Neither
+  authenticates the credential nor proves the model can answer.
+- **Inference through the configured path.** One real model response is required
+  through the same provider/model and per-run agent directory a delivery uses.
+  With an explicit Orbi selection, run one bounded test issue and inspect
+  `orbi status --follow` plus the run journal's `provider_config_loaded` line. A
+  bare `pi --print` is not proof of that path: it uses Pi's own agent directory
+  and never reads `pi_providers`. A successful call proves the provider, model and
+  credential path work; it does not qualify issue-to-merge delivery.
+- **Live delivery.** The pilot must then show issue → PR → independent review →
+  required CI → protected merge, plus failed-run recovery. Only that protected
+  merge, not a provider call or an offline test, is the delivery qualification
+  evidence.
+
+Record only non-secret evidence: provider/model identifiers, a pass/fail status,
+elapsed time, the non-secret journal `provider_config_loaded` line and the PR URL.
+Never paste a key, token, `auth.json`, session transcript or private account
+identity into an Issue, PR, test, log or document.
+
+## Read protection diagnostics safely
+
+`orbi doctor` may report
+`merge_gate: FAILED classic protection enforces admins` when the target branch
+enables `enforce_admins`. The merge executor uses an ordinary
+`gh pr merge --match-head-commit <SHA>` with the configured GitHub identity; it
+does not use an administrator override. The blocker therefore describes the
+configured merge identity, not a defect in the protection.
+
+Resolve it through the repository's supported governance path: a different
+approving reviewer or ruleset where policy allows, or a human maintainer
+performing the protected merge. Keep enforced administrators, strict required CI
+status checks, independent review and any human-only label in place. Never
+disable branch protection, required checks, administrator enforcement or the
+review gate to make `doctor` green, never use an administrator override, and
+never manufacture an approval or a human confirmation. If protection
+legitimately blocks the deployment identity, record the exact blocker and leave
+the PR unmerged. The actual protected merge of the reviewed head remains the
+qualification evidence.
+
+## Human acceptance is a separate gate
+
+The supported host setting `human_review_gate = true` posts one acceptance
+checklist when a PR opens and holds a delivery whose machine-unverifiable column
+is non-empty. Only a human applies `ai-human-review`; the agent and Runner must
+never add or remove it. An empty machine-unverifiable column is the intended pass
+state. The setting does not replace branch protection, required CI, independent
+review, credential isolation or sensitive-change controls, and a satisfied
+checklist is not a substitute for the protected merge or live-delivery evidence.
+
 ## Verification and rollback
 
 The pilot must show issue → PR → independent review → required checks → merge in
@@ -193,7 +293,15 @@ human/live gates and unresolved proof, while the new pilot and fleet stay paused
 
 ## Upstream contracts
 
-- [Orbi getting started](https://github.com/orbi-build/orbi/blob/main/docs/getting-started.mdx)
+The diagnostic details above were checked against these pinned Orbi 0.7.41
+sources. Use the release you deploy and re-check its corresponding files.
+
+- [Orbi 0.7.41 getting started: model provider](https://github.com/orbi-build/orbi/blob/v0.7.41/docs/getting-started.mdx#4-configure-the-model-provider)
+- [Orbi 0.7.41 provider status](https://github.com/orbi-build/orbi/blob/v0.7.41/src/orbi/setup_config.py)
+- [Orbi 0.7.41 per-run Pi agent directory](https://github.com/orbi-build/orbi/blob/v0.7.41/src/orbi/pi_session.py)
+- [Orbi 0.7.41 merge gate](https://github.com/orbi-build/orbi/blob/v0.7.41/src/orbi/merge_gate.py)
+- [Orbi 0.7.41 merge executor](https://github.com/orbi-build/orbi/blob/v0.7.41/src/orbi/merge_exec.py)
+- [Orbi 0.7.41 example config](https://github.com/orbi-build/orbi/blob/v0.7.41/src/orbi/example_config.toml)
 - [Orbi operations](https://github.com/orbi-build/orbi/blob/main/docs/operations.mdx)
 - [Orbi workflow and labels](https://github.com/orbi-build/orbi/blob/main/docs/workflow.mdx)
 - [GitHub issue dependencies](https://docs.github.com/en/rest/issues/issue-dependencies)
