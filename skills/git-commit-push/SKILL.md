@@ -96,15 +96,9 @@ not revoke a specific earlier KEEP/preservation decision: resolve it before stag
 deletions. [Shared-worktree safety](references/shared-worktree-safety.md) owns the full
 rule set for cross-agent scope, live writers, secrets and blind staging.
 
-Card branch helper (temporary index, so HEAD, the real index, and other agents' dirty work
-are untouched). It ships with the Autowork engine: `<toolset>` is the installed Autowork
-toolset (the Pi package `~/.pi/agent/git/github.com/TrebuchetDynamics/kit`, or a clone):
-
-```bash
-"<toolset>/pi-autowork/engine/agent_commit.sh" <repo> <profile> <card-id> "<message>" <files>...
-```
-
-Report the branch and sha it prints. Never point it at main/master or the checked-out branch.
+The executor's card-branch helper is removed. Use the repository's ordinary
+owned-branch commit workflow or the [temporary-index safety procedure](references/shared-worktree-safety.md)
+when explicitly authorized. Never change another writer's HEAD, index or dirty work.
 
 ## Fast path
 
@@ -202,7 +196,7 @@ Report the branch and sha it prints. Never point it at main/master or the checke
        Diff the ledger against the remote before staging (`git diff origin/<branch> -- <ledger>`) and
        inspect additions, removals and task identities against fresh upstream. Reconstruct only
        genuine authorized unshipped edits **on fresh upstream in an isolated candidate**;
-       preserve newer remote entries via supported `autowork tasks` operations and anchored
+       preserve newer remote entries via supported GitHub issue operations and anchored
        prose edits, then validate and inspect the resulting diff.
        Never delete remote lines merely to match a stale/forked copy. A stale-only ledger
        contains no new work: leave that copy untouched and do not create a restoration commit.
@@ -362,7 +356,7 @@ Report the branch and sha it prints. Never point it at main/master or the checke
    - **When a shared dirty checkout cannot safely integrate incoming work**, prepare a fresh
      isolated delivery branch at a pinned upstream revision without stashing, resetting or
      switching the shared checkout. Apply only attributed completed source deltas; reconstruct
-     genuine task-record changes with `autowork tasks` instead of copying a stale file.
+     genuine current issue changes through supported GitHub tools instead of copying a stale file; preserve legacy records.
      Stage explicit paths, gate the coherent candidate and push its delivery branch. Reuse an
      existing suitable PR rather than creating a duplicate. When merge is authorized, satisfy
      repository protection, reviews and checks, then merge the exact inspected PR head and
@@ -412,10 +406,11 @@ that branch while the rest continue.
 - Never commit secrets, `.env*`, credentials, private keys, logs, caches, build output,
   databases or service data roots, `graphify-out/`, `.understand-anything/` or other
   generated artifacts, or machine state.
-- **Project ledgers are not generated artifacts.** `tasks/` (task, goal and evidence records,
-  written via `autowork tasks` and the engine), `BLOCKERS.md`, and impeccable's `PRODUCT.md`,
-  `DESIGN.md` (+ sidecar) and `.impeccable/` config/briefs are tracked project files. Ship them
-  with the work that changed them; check `tasks/` with `autowork tasks validate --worktree .`. Only
+- **Project ledgers are not generated artifacts.** Legacy `tasks/` records remain
+  preserved evidence, not an active backlog. `BLOCKERS.md`, impeccable's `PRODUCT.md`,
+  `DESIGN.md` (+ sidecar) and `.impeccable/` config/briefs are tracked project files.
+  Ship authorized verified changes with their work; never mutate legacy task records
+  through a removed CLI or a hand-edit workaround. Only
   `.impeccable/mocks/` and screenshot/evidence folders follow the repo's gitignore.
 - Do not discard, stash, revert, or `git clean` other agents' or the owner's work to make a commit tidy.
 - Committed is not deployed. Do not deploy, publish, release, rebuild images, restart live

@@ -32,7 +32,7 @@ def anchors(text):
 class ProjectStatusTests(unittest.TestCase):
     def test_current_requirements_replace_completed_task_reports(self):
         status = section(PROJECT_TEXT, "Planned work and verification")
-        self.assertIn("task store", status)
+        self.assertIn("GitHub Issues own priorities", status)
         self.assertNotRegex(PROJECT_TEXT, r"\bTOOLSET-\d+")
         self.assertNotIn("TODO.archive.md", PROJECT_TEXT)
         authority = section(PROJECT_TEXT, "Autonomous execution authority")
@@ -40,11 +40,15 @@ class ProjectStatusTests(unittest.TestCase):
         self.assertIn("caller scope and saved stop/batch limits control", authority)
 
     def test_current_spec_does_not_retain_task_context_measurements(self):
-        context = section(PROJECT_TEXT, "Task context simplification", 3)
+        context = section(PROJECT_TEXT, "Faster ready-task startup")
+        self.assertIn('id="task-context-simplification"', context)
+        self.assertIn("executor implementation/operating direction is superseded", context)
+        self.assertIn("ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/project.md#faster-ready-task-startup", context)
         self.assertNotIn("five then-pending IDs", context)
         self.assertNotIn("29.0%", context)
         self.assertNotIn("At requirement capture", PROJECT_TEXT)
-        self.assertTrue(context.strip(), "Keep the current context-selection contract")
+        self.assertIn("original scope", context)
+        self.assertIn("human/live gates", context)
 
     def test_live_qualification_stays_open_and_separate(self):
         # Removing completed-task history must not turn pending live proof into success.

@@ -18,14 +18,16 @@ class PortablePackageTests(unittest.TestCase):
         self.assertEqual(pi['pi']['skills'], ['./adapters/skills'])
         self.assertEqual(pi['pi']['extensions'], ['./adapters/pi.mjs'])
         self.assertNotIn('scripts', pi, 'installation must not run setup hooks')
-        for entry in ('scripts/autowork_bootstrap.py', 'pi-autowork/src/autowork_bootstrap.py', 'pi-autowork/pi_autowork/'):
-            self.assertIn(entry, pi['files'])
-        self.assertNotIn('pi-autowork/src/autowork_runtime/', pi['files'], 'native-only sources must not leak into npm')
-        self.assertNotIn('pi-autowork/src/autowork_runtime/', pi['files'])
+        for helper in ('github_issues.py', 'worktree_paths.py', 'checkout_lock.py'):
+            self.assertIn('scripts/' + helper, pi['files'])
+        self.assertIn('docs/', pi['files'])
+        self.assertNotIn('autowork', pi['bin'])
+        self.assertFalse(any('pi-autowork' in entry or entry.startswith('src/')
+                             for entry in pi['files']))
         marketplace = json.loads((ROOT / '.agents/plugins/marketplace.json').read_text())
         self.assertEqual(marketplace['plugins'][0]['source'], {'source': 'local', 'path': '.'})
 
-    def test_archive_runs_fake_inference_without_checkout_sources(self):
+    def test_archive_contains_only_portable_delivery_resources(self):
         import os
         import shutil
         import subprocess
@@ -53,36 +55,27 @@ class PortablePackageTests(unittest.TestCase):
             archive = source / json.loads(packed.stdout)[0]['filename']
             subprocess.run(['tar', '-xzf', str(archive), '-C', str(base)], check=True)
             installed = base / 'package'
-            self.assertFalse((installed / 'pi-autowork/src/autowork_runtime').exists())
-            self.assertFalse((installed / 'pi-autowork/scripts/profile-consult.py').exists())
-            poison = foreign / 'pi_autowork'
-            poison.mkdir()
-            (poison / '__init__.py').write_text('raise AssertionError("foreign package")\n')
-            (foreign / 'task_store.py').write_text('raise AssertionError("foreign engine")\n')
-            fake = foreign / 'fake-pi'
-            fake.write_text('#!/usr/bin/env python3\nimport json\n'
-                            'print(json.dumps({"type":"message_end","message":{"role":"assistant",'
-                            '"stopReason":"stop","content":[{"type":"text","text":"offline reply"}]}}))\n'
-                            'print(json.dumps({"type":"agent_settled","aborted":False}))\n')
-            fake.chmod(0o755)
-            code = '''import sys
-from pathlib import Path
-root = Path(sys.argv[1])
-sys.path.insert(0, str(root / 'scripts'))
-import autowork_bootstrap as bootstrap
-runtime = bootstrap.load(root, 'pi_autowork.pi_runtime')
-engine = bootstrap.load(root, 'pi_autowork.engine.task_store')
-import task_store
-assert task_store is engine
-assert Path(runtime.__file__).is_relative_to(root / 'pi-autowork/pi_autowork')
-settings = runtime.Settings(Path.cwd() / 'state', {'PI_BIN': sys.argv[2], 'PI_AUTOWORK_TRANSPORT': 'json'})
-result = runtime.run_pi(settings, Path.cwd(), 'fixture', 'fixture', 'fixture/model', 10, [])
-assert result['rc'] == 0 and result['settled'] and result['text'] == 'offline reply', result
-'''
-            result = subprocess.run([sys.executable, '-B', '-c', code, str(installed), str(fake)],
-                                    cwd=foreign, env=dict(os.environ, PYTHONPATH=str(foreign)),
+            self.assertFalse((installed / 'pi-autowork').exists())
+            self.assertFalse((installed / 'src').exists())
+            self.assertFalse((installed / 'paseo-plugin.json').exists())
+            self.assertTrue((installed / 'docs/github-native.md').is_file())
+            batch = foreign / 'batch.json'
+            batch.write_text(json.dumps({'issues': [{
+                'key': 'example', 'title': 'Example bounded task',
+                **{field: 'Complete fixture contract' for field in
+                   ('outcome', 'scope', 'exclusions', 'acceptance', 'verification', 'sources')}
+            }]}))
+            # Preview must work from the installed archive, without a checkout or gh.
+            result = subprocess.run([sys.executable, '-B',
+                                     str(installed / 'scripts/github_issues.py'),
+                                     '--repo', 'example/project', '--batch', str(batch)],
+                                    cwd=foreign, env=dict(os.environ, PATH=str(foreign)),
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            preview = json.loads(result.stdout)
+            self.assertTrue(preview['preview'])
+            self.assertFalse(preview['remote_checked'])
+            self.assertEqual(preview['issues'][0]['key'], 'example')
 
     def test_portable_skills_and_references_are_self_contained(self):
         folder = ROOT / 'adapters/skills'

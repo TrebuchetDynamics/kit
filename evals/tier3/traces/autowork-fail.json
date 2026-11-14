@@ -2,12 +2,12 @@
   "name": "autowork-fail",
   "skill": "autowork",
   "model": "fixture",
-  "note": "Synthetic negative fixture: execution without a check.",
+  "note": "Synthetic negative fixture: legacy execution instead of observing GitHub and Orbi.",
   "events": [
     {
-      "type": "tool",
-      "tool": "read",
-      "path": "tasks/items/T-1.md"
+      "type": "command",
+      "command": "autowork start .",
+      "exit": 0
     },
     {
       "type": "write",
@@ -15,7 +15,7 @@
     },
     {
       "type": "final",
-      "text": "Task T-1 done."
+      "text": "Done."
     }
   ]
 }

@@ -1,5 +1,12 @@
 # Installed Pi RPC delivery pilot requirements
 
+> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> observations, recommendations and pilot procedures below refer to historical
+> sources, not current operating or development instructions. Do not revive it.
+> Preserve unresolved acceptance and recovery evidence; reconcile still-required
+> outcomes through [GitHub Issues and Orbi](../github-native.md). Orbi remains
+> paused and live-unqualified.
+
 Status: proposed, no pilot authority. A future pilot requires a new owner task
 with an explicit target, bounded model use and interruption window; live remains
 denied until then. This is not an executed result or fleet qualification.

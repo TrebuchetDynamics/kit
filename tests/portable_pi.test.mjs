@@ -162,7 +162,8 @@ test('npm package excludes local bytecode and keeps portable support files', asy
   assert.equal(paths.has('adapters/skills/grill-me/SKILL.md'), false);
   assert.equal(paths.has('adapters/skills/grill-me/PROTOCOL.md'), true);
   assert.equal([...paths].some(p => p.includes('__pycache__') || p.endsWith('.pyc')), false);
-  assert.equal([...paths].some(p => p.startsWith('pi-autowork/src/autowork_runtime/')), false);
+  assert.equal([...paths].some(p => p.startsWith('pi-autowork/') || p.startsWith('src/')), false);
+  assert.equal(paths.has('paseo-plugin.json'), false);
   assert.equal([...paths].some(p => p.startsWith('Src/')), false);
   for (const path of ['adapters/pi.mjs', 'adapters/skills/COMMON.md',
     'skills/docs-sync/scripts/docs.py', 'skills/autoresearch/upstream/plan.md', 'skills/impeccable/LICENSE',
@@ -173,7 +174,8 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     'adapters/skills/state-machine/SKILL.md', 'adapters/skills/state-machine/agents/openai.yaml',
     'skills/shared/COMMUNICATION.md', 'skills/work/SKILL.md',
     'adapters/skills/work/SKILL.md', 'adapters/skills/work/agents/openai.yaml',
-    'scripts/autowork_bootstrap.py', 'pi-autowork/src/autowork_bootstrap.py', 'pi-autowork/pi_autowork/__init__.py']) {
+    'scripts/github_issues.py', 'scripts/worktree_paths.py', 'scripts/checkout_lock.py',
+    'docs/github-native.md']) {
     assert.equal(paths.has(path), true, path);
   }
 });
@@ -199,34 +201,27 @@ test('installed archive resolves portable references and commands without checko
       try { await cp(join(root, entry), target, {recursive: true, filter: p => !p.includes('node_modules')}); }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
-    await mkdir(join(source, 'pi-autowork/src/autowork_runtime'), {recursive: true});
-    await writeFile(join(source, 'pi-autowork/src/autowork_runtime/private.py'), 'raise RuntimeError("native payload")\n');
-    await writeFile(join(source, 'pi-autowork/pi_autowork/fixture_reader.py'),
-      'def _compat_main(argv): return len(argv)\n');
+    // Even accidental executor/native files in a source checkout must stay out of npm.
+    await mkdir(join(source, 'pi-autowork/pi_autowork'), {recursive: true});
+    await writeFile(join(source, 'pi-autowork/pi_autowork/fixture.py'), 'raise RuntimeError("retired executor")\n');
+    await mkdir(join(source, 'src/autowork_runtime'), {recursive: true});
+    await writeFile(join(source, 'src/autowork_runtime/private.py'), 'raise RuntimeError("native payload")\n');
     const archive = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--offline', '--json', '--pack-destination', scratch],
       {cwd: source, encoding: 'utf8'}))[0];
-    assert.equal(archive.files.some(f => f.path.startsWith('pi-autowork/src/autowork_runtime/')), false);
+    assert.equal(archive.files.some(f => f.path.startsWith('pi-autowork/') || f.path.startsWith('src/')), false);
     execFileSync('tar', ['-xzf', join(scratch, archive.filename), '-C', scratch]);
     const installed = join(scratch, 'package');
     const foreign = join(scratch, 'unrelated cwd');
-    await mkdir(join(foreign, 'pi_autowork'), {recursive: true});
-    await writeFile(join(foreign, 'pi_autowork/__init__.py'), 'raise AssertionError("foreign package")\n');
-    await writeFile(join(foreign, 'task_store.py'), 'raise AssertionError("foreign engine")\n');
-    const pythonEnv = {...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: foreign};
-    const probe = code => execFileSync('python3', ['-B', '-c',
-      `import sys\nfrom pathlib import Path\nroot = Path(${JSON.stringify(installed)})\nsys.path.insert(0, str(root / 'scripts'))\n` + code],
-      {cwd: foreign, env: pythonEnv, encoding: 'utf8'});
-    probe('import autowork_bootstrap as b\nassert b.run(root, "pi_autowork.fixture_reader", ["read"]) == 1\n');
-    const help = execFileSync('python3', [join(installed, 'pi-autowork/pi_autowork/command.py'), '--help'],
-      {cwd: foreign, env: pythonEnv, encoding: 'utf8'});
-    assert.match(help, /tasks/);
-    const readOnly = JSON.parse(execFileSync('python3', [join(installed, 'pi-autowork/pi_autowork/command.py'), 'capabilities'],
-      {cwd: foreign, env: pythonEnv, encoding: 'utf8'}));
-    assert.equal(readOnly.release, null);
-    assert.equal(readOnly.commands.includes('tasks'), true);
-    // Reading an archive is not immutable runner qualification: pinning still
-    // needs a committed Git toolset. A fixture never manufactures that evidence.
-    probe('import sys\nfrom pathlib import Path\nsys.path.insert(0, str(root / "pi-autowork"))\nfrom pi_autowork import release\ntry:\n release.prepare(Path("pin-state"), root)\nexcept RuntimeError as e:\n assert "committed toolset release" in str(e), str(e)\nelse:\n raise AssertionError("archive accepted as committed runner")\n');
+    await mkdir(foreign);
+    const batch = {issues: [{key: 'example', title: 'Example task',
+      outcome: 'Bounded outcome', scope: 'Docs only', exclusions: 'No deployment',
+      acceptance: 'Guide explains the contract', verification: 'Run focused tests', sources: 'Accepted request'}]};
+    await writeFile(join(foreign, 'batch.json'), JSON.stringify(batch));
+    const preview = JSON.parse(execFileSync('python3', [join(installed, 'scripts/github_issues.py'),
+      '--repo', 'example/project', '--batch', join(foreign, 'batch.json')], {cwd: foreign, encoding: 'utf8'}));
+    assert.equal(preview.preview, true);
+    assert.equal(preview.remote_checked, false);
+    assert.equal(preview.issues[0].key, 'example');
     let skillCount = 0;
     const walk = async (dir) => {
       for (const entry of await readdir(dir, {withFileTypes: true})) {
@@ -245,7 +240,7 @@ test('installed archive resolves portable references and commands without checko
     };
     await walk(join(installed, 'adapters/skills'));
     assert.equal(skillCount, 36);
-    // Execute the packaged CommonJS helper under Autowork's ESM package boundary.
+    // Execute the packaged CommonJS helper under Kit's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
     assert.match(map, /Codebase map/);

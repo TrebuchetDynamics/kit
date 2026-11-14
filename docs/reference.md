@@ -6,6 +6,11 @@ page has drifted. Conversational workflow commands (`/autowork`, `/docs_sync`,
 `/plan_with_me` and the rest) are listed in [workflows](workflows.md#commands);
 procedures and their side effects are in [installation](installation.md).
 
+The `autowork` spelling below is retained for Hermes maintenance compatibility,
+not executor support. The removed `pi-autowork` CLI must not be installed or
+restored. Planning saves GitHub Issues; Orbi owns delivery. See the
+[support boundary](github-native.md#support-boundary).
+
 ## Terminal: `hermes autowork`
 
 Source: [`scripts/bundle.py`](../scripts/bundle.py) `setup_parser` and `handle_cli`. Add `-p PROFILE`
@@ -37,8 +42,7 @@ Source: [`scripts/bundle.py`](../scripts/bundle.py) `handle_chat`, `list_command
 
 | Form | Effect |
 | --- | --- |
-| `/autowork status` | Read-only fleet summary from the existing native runner command: repositories, activity, running/waiting/held counts. No repository is guessed from the gateway's working directory. |
-| `/autowork status NAME` | Read-only status for that registered runner, including repository, workers, holds and waiting reasons. A quoted absolute repository path is also supported; relative paths and options are refused. |
+| `/autowork status` or `/autowork status NAME` | Static removed-executor notice directing to GitHub Issues/PRs and `orbi status`/`orbi doctor`; no subprocess or task-store read. |
 | `/autowork plugin status` | Bundle version, revision and profile; ready workflow commands; last update; plugin load status and setup gaps (the former status overview). |
 | `/autowork list` | Every available command with its owner and Telegram spelling. |
 | `/autowork list TEXT` | Commands whose name or owner contains `TEXT`, for example `/autowork list graphify`. |
@@ -46,15 +50,12 @@ Source: [`scripts/bundle.py`](../scripts/bundle.py) `handle_chat`, `list_command
 | `/autowork update --check` | Starts an upstream check only. |
 | `/autowork update status` | Summarizes the durable result from `maintenance/toolset-update/latest.json` at the Hermes root in a few lines, and lists profiles linked to a working checkout. |
 | `/autowork update status full` | Shows that whole receipt as JSON. |
-| `/autowork` with other arguments | Runs the Autowork skill with them as instructions, for example `/autowork update the README`. |
+| `/autowork` with other arguments | GitHub/Orbi compatibility handoff; explicit implementation requests route to `/work`. |
 
-Repository status invokes the bundled Python runner entry point with literal argv,
-no shell or model call, and a bounded wait. Failed, empty or timed-out reads report
-unavailable, never a healthy empty fleet. Long output is explicitly truncated in chat;
-use terminal `autowork status NAME` for the full output. This does not install, update,
-start, stop, clear holds or change schedules. Named status reports provider readiness
-as `not checked: read-only status`; it does not check or refresh authentication.
-Plugin/gateway activation is separate from offline handler tests.
+Legacy repository/fleet status is unavailable: the executor is removed. Use
+GitHub issue/PR evidence and read-only Orbi diagnostics for current delivery;
+Orbi remains paused and live-unqualified. Native plugin status, list and update
+remain separate from executor status and from live qualification.
 
 ## Source-checkout scripts
 
@@ -62,12 +63,11 @@ Run from a clone of this repository. The shell installers are thin wrappers.
 
 | Script | Flags | Effect |
 | --- | --- | --- |
-| `./install.sh` | `--all`/`--full`, `--only a,b`, `--skip a,b`, `--list`, `--menu`, `--no-pull`, `--dry-run`, `--verbose`/`--quiet`, `--color auto\|always\|never`; Hermes options for the Hermes item | The suite installer ([`scripts/install_menu.py`](../scripts/install_menu.py)): Pi package, `autowork`, `tx`, Hermes, Claude Code, Codex. Defaults to all available components with verbose output; the explicit interactive menu requires a terminal. |
+| `./install.sh` | `--all`/`--full`, `--only a,b`, `--skip a,b`, `--list`, `--menu`, `--no-pull`, `--dry-run`, `--verbose`/`--quiet`, `--color auto\|always\|never`; Hermes options for the Hermes item | The suite installer ([`scripts/install_menu.py`](../scripts/install_menu.py)): Pi package, `tx`, Octet, Hermes, Claude Code, Codex. Defaults to all available components with verbose output; the explicit interactive menu requires a terminal. |
 | `bash install-plugins.sh` | Same as `hermes autowork setup`; `--help` | Public calls, including `--help`, execute `scripts/setup_bundle.py`. The source-installer usage appears only with the internal `--sources-only --help`. |
 | `bash install-skills.sh` | `--dry-run`, `--hermes-home ROOT`, `--profile-home HOME` | Runs [`scripts/install_skills.py`](../scripts/install_skills.py): copies `skills/` (except retired `repo-docs` and `repo-interview`, and support folders that document themselves with a `README.md` and have no `SKILL.md`) into the default and every existing profile, or only `--profile-home`; `--hermes-home` and `--profile-home` are mutually exclusive. Does not overwrite existing skill contents; a reference-only source container retires a legacy installed `SKILL.md` while keeping the other files. Never changes configuration. |
 | `python3 scripts/update_bundle.py` | `--hermes-home ROOT` (required), `--check`, `--dry-run`, `--profile NAME` (repeatable with `--source`), `--source CHECKOUT`, `--revision SHA`, `--native-python PATH`, `--cancel-scoped SHA256` | Cancel an exact unpublished scoped receipt (with `--check` to preview), or all-profile update, or with `--profile`, `--source`, `--revision` and `--native-python` (all four required) a scoped deployment of a reviewed local commit; see [installation](installation.md#deploy-an-exact-local-revision-to-selected-profiles). |
 | `python3 scripts/install-graphify.py` | `--hermes-home ROOT`, `--profile NAME` (both required), `--dry-run` | Installs Graphify's Hermes skill into selected existing profiles; installs the `graphifyy` tool with `uv tool install` when missing. |
-| `scripts/pi-autowork.sh` | `--once`, `--until-empty`, `--workers N`, `--dry-run`, `--status`, `--repo PATH`, `--interval SECONDS`, `--max-cycles N`, `--no-fallback`, `--allow-hermes`, `--install-service`, `--remove-service`, `--help` | Runs the Parallel Autowork engine with Pi workers, verified integration and a session merged into the main branch; see [continuous Autowork](cross-host.md#run-autowork-continuously). |
 | `python3 scripts/check.py` | `--list`, `--timeout SECONDS` (default 1800 per test process) | Runs the offline test inventory; see [testing](testing.md). |
 
 ## Repository helpers used by workflows
@@ -77,100 +77,15 @@ relative to this repository.
 
 | Helper | Commands | Reference |
 | --- | --- | --- |
-| `autowork plan` ([source](../pi-autowork/pi_autowork/planning_commands.py)) | `--objective`, `--mode plan\|discuss\|investigate`, `--task`, `--interactive`, `--session`, `--message`, `--list`, `--history`, `--preview`, `--apply REV`, `--roadmap`, `--model`, `--json`, `--legacy` | [Planning and decisions console](../pi-autowork/docs/planning-console.md); local reviewed proposals, no runner start or push |
-| `autowork tasks` ([source](../pi-autowork/pi_autowork/task_commands.py)) | `prepare`, `list`, `show`, `why`, `validate`, `new-id`, `add`, `field`, `place`, `move`, `hold`, `release`, `decide`, `done`, `supersede`, `delete`, `goal`, `goals`, `commit` ([`prepare` source](../pi-autowork/pi_autowork/task_prepare.py)) | `autowork tasks --help`; [task store](../pi-autowork/task-store.md) |
-| `autowork migrate` ([source](../pi-autowork/pi_autowork/task_migrate.py)) | convert a TODO.md + goals.json repository to `tasks/` once | [converting a repository](../pi-autowork/task-store.md#converting-a-repository-autowork-migrate) |
 | [`skills/docs-sync/scripts/docs.py`](../skills/docs-sync/scripts/docs.py) | `validate`, `check`, `stale`, `profiles` | `docs.py --help`; [role manifest](../skills/docs-sync/references/document-scaffold.md#optional-role-manifest) |
 
-## Worker long checks: `autowork-run`
+## Removed executor helpers
 
-Source: [`autowork_run.py`](../pi-autowork/engine/autowork_run.py) and
-[`parallel_dispatch.py`](../pi-autowork/engine/parallel_dispatch.py).
-Every dispatched worker has `autowork-run` on its PATH. Run suites or builds
-expected to take more than two minutes through it; run focused tests directly:
-
-```sh
-autowork-run python3 scripts/check.py path/to/test_module.py
-autowork-run bash -c 'build-command && integration-command'
-```
-
-The wrapper takes a host-wide **worker** check slot before starting the literal
-command and arguments, then returns its exit code (128 + signal for a signal exit).
-It prints one `waiting for a worker check slot` line if queued. These slots are
-separate from runner full-check slots, but use the same private host directory
-and `flock` mechanism. A killed process cannot leave a stale lease; a surviving
-check subprocess keeps its lease until it ends. Normal completion releases it
-including when a background descendant survives.
-
-The worker command watchdog excludes recorded queue intervals, including waits
-inside a shell tool call; `PI_AUTOWORK_COMMAND_TIMEOUT` still bounds execution
-after admission. The worker's overall task timeout is unchanged. Queue records
-live in `$AUTOWORK_WORKER_CHECK_DIR` beside the attempt's report, and reconciliation
-adds their total as `worker_check_slot_wait_seconds` to an existing worker report.
-This is voluntary: commands run without the wrapper are not slot-limited.
-
-## Main-checkout changes (Pi runner)
-
-Source: [`coordinator.py`](../pi-autowork/pi_autowork/coordinator.py)
-`commit_owner_changes`, `owner_planning_paths` and `fast_forward_main`.
-
-The runner never stages or commits non-planning changes from the main checkout,
-regardless of their age or quietness. Overlapping edits need no idle interval.
-The runner attempts a guarded three-way merge, including for recent edits:
-the owner's edits are merged onto the new main in the working tree and stay
-uncommitted, and nothing is staged. It checks file snapshots and open writers
-before and after moving the branch. These checks detect races but cannot lock
-out arbitrary external editors. This is a content merge, not test qualification
-of the owner's uncommitted changes. Unchanged final landing refusals are logged
-once per runner process until the reason changes or landing succeeds.
-**Merge pending** remains visible in status, and later cycles retry.
-A conflict, a staged, added, deleted, binary or mode-changed edit, or a file open
-for writing still waits. If the paths do not
-overlap, the session merges and pushes normally, leaving the owner's working-tree
-and staged changes uncommitted.
-
-The owner-planning sweep still commits task and goal files under `tasks/` and
-`BLOCKERS.md` once their
-content has stayed unchanged for `PI_AUTOWORK_PLANNING_QUIET` seconds (default
-`600`) and no process holds them open for writing. Unfinished Git operations
-are left alone. This main-checkout boundary does not change recovery commits
-of uncommitted changes in the runner's own session worktree.
-
-## Rolling planning tasks (Pi runner)
-
-Source: [`parallel_plan.py`](../pi-autowork/engine/parallel_plan.py),
-[`maintainer.py`](../pi-autowork/pi_autowork/maintainer.py) and
-[`coordinator.py`](../pi-autowork/pi_autowork/coordinator.py); accepted
-[rolling planning design](plans/2026-10-18-rolling-planning.md#rolling-planning-design).
-
-A task record may set `kind = "plan"` (with its `goal`) and a `Plan round: N of M`
-note (default `1 of 10`). Once its dependencies are done, the
-engine reports **ready for planning** rather than allocating a code-worker
-worktree. Sequential execution also leaves it to the maintainer.
-
-The runner handles one such entry at a time in its disposable docs-maintainer
-checkout, when task work and session writes have settled. Plan For Me reads the
-entry's scope, finished-batch reports, current code and remaining goal proof.
-The planning commit closes that entry and saves at most **8 new tasks total**
-under its goal, including any successor planning task. Owner-only gaps belong
-in `Needs decision` with their question; they do not block independent work.
-
-For an unmet goal, a batch with building tasks ends with one open `Kind: plan`
-entry, `Plan round: N+1 of M`, depending on every new building task. At round M,
-or with no new building task, there is no successor: `BLOCKERS.md` gets one
-`### Q-<planning task ID> — Planning stopped` question naming the goal and what
-remains. An indexed unmet goal retains or adds an open `Needs decision` task
-for the remaining-proof/continuation question, within the same eight-task cap;
-closing the plan must not leave that goal without an open task. A goal proven
-met by the existing ledger rules needs neither a successor nor a stop question.
-Limits, closure, goal membership and successor shape are checked before landing;
-an oversized proposal fails as a whole,
-never by truncation. An unchanged failed proposal is not called repeatedly.
-
-Planning does not grant code workers access to coordinator files, add a goal
-schema, or start another round without an explicit `Kind: plan` entry. Existing
-maintainer repair triggers remain available in repositories without these entries.
-Offline fixture checks cover scheduling and landing, not real-model plan quality.
+The runner, local task CLI, planning console and worker-check wrapper no longer
+ship. Use [GitHub issue publication](github-native.md#publish-a-planning-batch)
+and the repository's focused test commands directly. Historical contracts are
+[immutable evidence](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/reference.md#worker-long-checks-autowork-run),
+not supported command instructions. Preserve existing task and runtime state.
 
 ## Plugin settings
 
@@ -216,26 +131,7 @@ are preserved. See [installation](installation.md#install) for the policy and
 | Variable | Read by | Meaning |
 | --- | --- | --- |
 | `HERMES_HOME` | Setup, skill installer, `install-plugins.sh` | Default Hermes root when `--hermes-home` is absent. A named-profile home (`ROOT/profiles/NAME`) resolves to `ROOT`. Defaults to `~/.hermes`. `/autowork update` uses the running profile's Hermes root the same way. |
-| `PI_AUTOWORK_MERGE_BACKLOG` | [`parallel_dispatch.py`](../pi-autowork/engine/parallel_dispatch.py) `merge_backlog`, `admit` | Finished commits waiting to merge before fresh dispatch can pause; default half the worker count, at least 2 (4 for 8 workers), so finished work lands before more starts; `0` disables. Counts slots with commits in `reported` or `integrating`, not held or already integrated work. |
-| `PI_AUTOWORK_MERGE_BACKLOG_AFTER` | [`parallel_dispatch.py`](../pi-autowork/engine/parallel_dispatch.py) `merge_backlog` | Oldest finished commit's queue age in seconds before the count gate pauses fresh dispatch; default `1200`. Queue time starts at reporting, not worker launch. Nonnegative integers; invalid settings use their defaults. |
-| `PI_AUTOWORK_STALE_HOURS` | [`coordinator.py`](../pi-autowork/pi_autowork/coordinator.py) `set_aside_stale` | Hours since dispatch after which a finished commit still waiting to merge (`reported`, or `integrating` with no review running) is set aside and its task runs fresh on current main; default `24`, `0` disables. Never while a review or batch runs or a batch-passed candidate waits to land. |
-| `PI_AUTOWORK_OVERLAP_EVERY` | [`coordinator.py`](../pi-autowork/pi_autowork/coordinator.py) `overlap_idles` | Seconds between DOCS-MAINTAINER re-cuts of tasks waiting on another task's file while worker slots idle; default `1800`. Its Pi job holds the runner loop, so back-to-back re-cuts stopped reviews, landing and dispatch. |
-| `PI_AUTOWORK_CHECK_SLOTS` | [`main_check.py`](../pi-autowork/pi_autowork/main_check.py), [`worker.py`](../pi-autowork/pi_autowork/worker.py), [`autowork_run.py`](../pi-autowork/engine/autowork_run.py) | Fleet-wide full-suite concurrency per user: default **2**; `0` disables admission. Set consistently across runners. Main checks, merged-tree full gates, base full runs and worker full suites share flock slots; focused checks and reruns take none. Affected checks take a slot only when selection expands to the full inventory. Reviews precede background main checks, each in arrival order; a main check waiting 30 minutes joins reviews. Queued status names the current holders. Check, integration, worker command and worker task timeout budgets exclude slot waiting. Worker dispatch keeps memory/disk gates and does not gate on load average. Does not change `scripts/check.py` job count or the per-repository main-check lock. |
-| `PI_AUTOWORK_COMMAND_TIMEOUT` | [`pi_runtime.py`](../pi-autowork/pi_autowork/pi_runtime.py) | Worker tool-command execution limit, default 1800 s (capped below the overall worker timeout). `autowork-run` slot waiting is excluded from both command and overall worker task execution budgets. |
-| `PI_AUTOWORK_QUIET_WAIT` | [`worker.py`](../pi-autowork/pi_autowork/worker.py) | Seconds a review waits for this repository's main check to finish before rerunning a merged tree's failures one at a time; default 900. Focused reruns use no fleet full-suite slot, including after that bounded wait. |
-| `PI_AUTOWORK_FLEET_JOBS` | [`fleet_view.py`](../pi-autowork/pi_autowork/fleet_view.py) | Runners observed at once by `autowork ls`, the TUI and the Paseo plugin's fleet read (default 8; `1` observes them one after another in order). Each observation is dozens of read-only Git commands on its own repository. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`, `TELEGRAM_HOME_CHANNEL` | Update menu healing, from each profile's `.env` (not the process environment) | For each distinct bot token, the chats whose leftover command lists the updater checks; see [installation](installation.md#update-all-profiles). |
-
-Once both merge-backlog thresholds are met, fresh tasks show
-`wait for N finished commits to merge`. Running workers and restartable/interrupted
-work continue; no worker is stopped and the worker-count setting is unchanged.
-Fresh admission resumes automatically on a later dispatch cycle once the waiting
-commit count falls below the threshold (or the gate is disabled), even after a
-coordinator restart. The pause stays in effect while the count remains at or above
-the threshold, even if the oldest commit merges first. The runner's
-[`health.py`](../pi-autowork/pi_autowork/health.py) records one pause and one resume
-announcement per episode, including the recorded integration hold reason when
-available. This is a wait, not a request for a decision.
 
 ## Files and state
 
@@ -245,6 +141,5 @@ available. This is a wait, not a request for a decision.
 | `ROOT/maintenance/toolset-update/restart.json` | Updater | The last gateway restart the updater requested (process ID), or its deferred-restart waiter (process ID, latest chat-turn count), plus `covers`, the updates that restart will load; used to report progress, avoid overlapping restarts and record the outcome on each covered update. Once finished, also `finished` and the recorded `outcome`, which status shows when a later receipt replaced the covered one. |
 | `ROOT/maintenance/toolset-update/pinned/NAME-*/` | `hermes autowork pin` | One pin: `record.json` (profile, link, target, revision), the saved `link`, and after unpinning the kept clone (`unpinned-*`). |
 | `ROOT/maintenance/toolset-update/run.log` | Updater | Output of updates started with `/autowork update` and of gateway restarts the updater requests; terminal `hermes autowork update` prints to the terminal. |
-| `~/.local/state/pi-autowork/check-slots/` | Pi runner and worker checks | Shared per-user slot locks and waiter tickets, independent of repository state directories, `$HOME`, `$XDG_RUNTIME_DIR` and task `$TMPDIR`; the home directory comes from the user account. `PI_AUTOWORK_CHECK_ROOT` overrides the private directory for fixtures or an isolated fleet; configure the same root for all participants. Slots use one shared pool, including worker wrappers. Locks live with file descriptors inherited by check subprocesses: a dead holder leaves no stale lock, while a surviving child retains its lease. Do not delete slot/mutex files while runners are active. |
-| `tasks/items/`, `tasks/goals/`, `tasks/evidence/` (project) | `autowork tasks`, Autowork | The task store: one file per task and per goal, and the receipts of verified closes. `TODO.archive.md`, where it exists, is frozen history. |
+| `tasks/items/`, `tasks/goals/`, `tasks/evidence/` (project) | Preserved legacy evidence | Read-only migration inputs, not a second queue; do not delete during removal. |
 | `docs/roles.json` (project, optional) | Docs Sync | Document role manifest. |

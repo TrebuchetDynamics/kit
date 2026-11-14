@@ -16,12 +16,11 @@ risk or external-action authority, not routine reversible implementation details
 Questions-only, read-only and no-write requests change nothing, including task
 records or reports. Audit/discovery is not permission to implement.
 
-Use the existing [task store](TODO-WORKCENTER.md) for accepted scope, dependencies,
-checks and progress; use `autowork tasks` for record changes. Do not create another
-backlog, state database, goal extension or minimum-work quota. If that CLI is not
-available, inspect existing records read-only and report the missing capability;
-do not hand-edit the store or fabricate closure. Follow Autowork's existing
-execution/review path, not upstream service-start examples.
+Use [GitHub Issues](PLAN-HANDOFF.md) for accepted scope, native dependencies,
+checks and progress. Do not create another backlog, state database or minimum-work
+quota. If GitHub tooling is unavailable, report the exact capability gap; do not
+fabricate publication or use the removed task CLI. Preserve legacy records and
+actual execution/review ownership, not upstream service-start examples.
 
 Explicit slice, file, time, context, token and spend limits, and user pause/stop,
 override upstream continuous-loop and minimum-three-slices language, and any

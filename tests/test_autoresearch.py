@@ -30,7 +30,7 @@ class AutoresearchCommands(unittest.TestCase):
                 self.assertIn(f'Selected subcommand: {command}\n', prompt)
                 self.assertTrue(prompt.endswith(raw))
 
-    def test_task_store_default_reaches_router_and_aliases_without_losing_restrictions(self):
+    def test_github_default_reaches_router_and_aliases_without_losing_restrictions(self):
         self.skill('autoresearch')
         self.plugin.register(self.ctx)
         for alias in ('autoresearch', 'autoresearch:plan', 'autoresearch-plan'):
@@ -40,7 +40,8 @@ class AutoresearchCommands(unittest.TestCase):
                 injected = prompt.split('User arguments:\n', 1)[0]
                 self.assertNotIn('TODO.md', injected)
                 self.assertNotIn('goals.json', injected)
-                self.assertIn('reuse task IDs and preserve user ordering', injected)
+                self.assertIn('GitHub Issues are the executable backlog', injected)
+                self.assertIn('reuse existing issues and preserve dependencies and user ordering', injected)
                 self.assertIn('read-only, chat-only, no-write and --dry-run requests write nothing', injected)
                 self.assertIn('Planning alone does not authorize implementation or timed scheduling', injected)
                 self.assertTrue(prompt.endswith(raw))

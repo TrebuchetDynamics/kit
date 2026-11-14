@@ -2,8 +2,10 @@
 
 ## Decision
 
-Kit is the toolset; Autowork is its runner and skill. Current identity is distinct
-from compatibility with existing installed profiles. This document keeps that
+Kit is the toolset; GitHub Issues own executable plans and Orbi owns delivery.
+pi-autowork is retired and unsupported. The `/autowork` skill is a compatibility
+redirect, not a runner. Current identity is distinct from retained maintenance
+names and compatibility with existing installed profiles. This document keeps that
 contract and outstanding live proof, not completed rename-stage reports.
 
 ## Target identity
@@ -17,7 +19,7 @@ contract and outstanding live proof, not completed rename-stage reports.
 | Local package metadata | `@trebuchet/kit` |
 | New settings writes | `plugins.entries.kit` |
 | Compatible settings input | Existing `plugins.entries.autowork` values remain readable |
-| Runner CLI and private state | `autowork`, `~/.local/state/pi-autowork/`; unchanged |
+| Former executor | CLI removed; existing `~/.local/state/pi-autowork/` remains preserved recovery evidence |
 
 No npm publication is required. Install from the Git source and existing host
 marketplaces. Neither registry publication nor a scope/deprecation operation is

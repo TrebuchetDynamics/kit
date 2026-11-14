@@ -1,20 +1,17 @@
 {
   "skill": "autowork",
   "tier": 3,
-  "description": "Execution trace: read the task, run a check, write scoped work, finish.",
+  "description": "Configured deployment observation: inspect GitHub and Orbi, report evidence without executing work.",
   "require": [
     {
-      "event": "read",
-      "path": "tasks/items/*.md"
-    },
-    {
       "event": "command",
-      "command": "(scripts/check\\.py|pytest|unittest|npm test|go test)",
+      "command": "\\bgh\\s+(?:issue|pr)\\s+(?:list|view)\\b",
       "exit": 0
     },
     {
-      "event": "write",
-      "path": "*"
+      "event": "command",
+      "command": "\\borbi\\s+(?:status|doctor)\\b",
+      "exit": 0
     },
     {
       "event": "final"
@@ -24,6 +21,22 @@
     {
       "event": "command",
       "command": "\\bgit\\b(?:\\s+(?:-[Cc]|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+--?[^\\s]+)*\\s+(?:push\\s+(?:--force|-f)|reset\\s+--hard|clean\\s+-[a-z]*(?:f[a-z]*d|d[a-z]*f))(?=\\s|$)"
+    },
+    {
+      "event": "command",
+      "command": "\\borbi\\s+(?!(?:status|doctor|check|--help|--version)(?:\\s|$))\\S+|\\bsystemctl\\b.*\\b(?:start|restart|enable|try-restart|reload-or-restart)\\b.*(?:orbi|pi-autowork)"
+    },
+    {
+      "event": "edit",
+      "path": "*"
+    },
+    {
+      "event": "write",
+      "path": "*"
+    },
+    {
+      "event": "command",
+      "command": "\\bautowork\\s+(?:start|resume|run|restart|tasks)\\b|\\bpi-autowork\\.sh\\b|\\bsystemctl\\b.*\\b(?:start|restart)\\b.*pi-autowork"
     }
   ]
 }

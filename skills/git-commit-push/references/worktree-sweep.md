@@ -24,9 +24,8 @@ ones, and leaves everything ambiguous exactly where it is.
    **Pass when:** every worktree has a state and no file has changed.
 2. **Triage.** Count the states. Recent activity (default 5 minutes) means another
    session may still be writing, so the sweep reports it as `skipped` instead of merging;
-   run again when it is idle. A dirty worktree is the owner's call: report the paths, or
-   archive it with `worktree_closeout.py --archive`, which keeps a commit of the whole
-   tree under `refs/archive/worktrees/` before removing anything.
+   verify actual ownership before applying; age alone proves no release. A dirty
+   worktree is the owner's call: report its paths and preserve it.
    **Pass when:** each non-candidate names its reason and its next step.
 3. **Merge the candidates.** `--apply` merges the clean, unmerged ones one at a time,
    oldest commit first, with `git merge --no-ff <sha>` of the exact commit it classified.
@@ -39,9 +38,10 @@ ones, and leaves everything ambiguous exactly where it is.
    against the merge commit that carried it, never by rewriting the base branch.
    **Pass when:** the check result names the merged revision, and every failure is
    attributed to a worktree.
-5. **Close out.** For worktrees that are now merged and clean, run
-   `pi-autowork/engine/worktree_closeout.py <canonical> --worktree <path> --apply`. It
-   removes a worktree only after its own safety checks and never with `--force`.
+5. **Close out.** The bundled executor helper is removed. `--remove` requires an
+   explicit existing `--closeout` safety helper; otherwise it fails before merging.
+   Apply [ownership and recovery checks](worktree-closeout.md) independently.
+   Preserve existing legacy worktrees during removal; never use a force fallback.
    **Pass when:** each removed worktree is reported, and each kept one names its reason.
 6. **Report.** Counts per state, merged branches, conflicts as `Merge pending`, kept dirty
    worktrees with paths, and the remaining next action.
@@ -54,8 +54,8 @@ ones, and leaves everything ambiguous exactly where it is.
   moves your HEAD to make a merge possible.
 - Never commit, stash, reset or discard another writer's uncommitted work. A dirty
   worktree is a message to its owner, not an obstacle to remove.
-- No rebase, no force, no history rewrite, no branch deletion. `worktree_closeout.py`
-  deletes a branch only with `git branch -d` after the merge is proven.
+- No rebase, no force, no history rewrite, no automatic branch deletion. A supplied
+  closeout helper must verify ownership and recovery evidence independently.
 - Merge only worktrees classified as clean. A worktree you cannot classify is reported,
   not guessed.
 - One conflict does not stop the sweep, and one sweep does not end the obligation: a
@@ -68,5 +68,5 @@ Worktree sweep: 77 worktrees; 30 unmerged-clean, 28 merged, 3 unmerged-dirty, 16
 Merged: 12 into main (oldest first); 1 conflict (autowork/TOOLSET-410) -> Merge pending
 Kept: 3 dirty (paths listed); 16 detached release checkouts left alone
 Checks: <command> on the merged tree, <result>
-Next: owner commits the 3 dirty worktrees, or archive them, then re-run --apply
+Next: coordinate the 3 dirty worktrees with their owners; preserve them until resolved
 ```

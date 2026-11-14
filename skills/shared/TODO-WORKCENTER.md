@@ -2,8 +2,10 @@
 
 **Retired as an active backlog contract.** GitHub Issues now own executable work,
 priority, native dependencies and dispatch. Follow [Plan Handoff](PLAN-HANDOFF.md)
-for new work. `pi-autowork/` and its task CLI remain historical/recovery tooling;
-never prepare a new `tasks/` store or synchronize it with GitHub as a second queue.
+for new work. The pi-autowork executor and task CLI are removed; never prepare a
+new `tasks/` store or synchronize it with GitHub as a second queue.
+The [immutable format and source](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork)
+are evidence for migration, not a tooling installation fallback.
 
 ## Safe cutover
 
@@ -34,9 +36,10 @@ never prepare a new `tasks/` store or synchronize it with GitHub as a second que
 Merged PRs and GitHub history own new completion evidence. Legacy Git history and
 retained recovery state preserve old evidence. Do not create completed-task tables,
 archives or synchronization reports. This migration does not delete task records,
-worktrees or runtime state. Any later legacy pruning is separate safe reconciliation
-using `autowork tasks prune` for the decision and the supported task CLI for edits;
-check fresh ownership and preserve unresolved obligations and required proof first.
+worktrees or runtime state. Any later legacy pruning needs a separately scoped,
+reviewed reconciliation mechanism: the old task CLI is not available. Do not
+hand-edit or delete preserved records as a substitute. Check fresh ownership and
+preserve unresolved obligations and required proof first.
 An empty legacy store is not evidence that a goal is met.
 
 ## Compatibility links

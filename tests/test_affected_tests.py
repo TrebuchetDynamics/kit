@@ -57,9 +57,7 @@ class AffectedTestsTests(unittest.TestCase):
 
     def test_code_selects_its_importers_and_the_tests_that_run_it(self):
         """Today's real breakages: each change's selection holds the tests that failed."""
-        for change, failed in (('pi-autowork/pi_autowork/task_commands.py', ['pi-autowork/tests/runner/test_task_commands.py']),
-                               ('pi-autowork/pi_autowork/task_migrate.py', ['pi-autowork/tests/engine/test_parallel_plan.py']),
-                               ('pi-autowork/pi_autowork/worker.py', ['pi-autowork/tests/runner/test_pi_autowork.py']),
+        for change, failed in (('scripts/github_issues.py', ['tests/test_github_issues.py']),
                                ('scripts/install_skills.py', ['tests/test_engineering_vendor.py'])):
             with self.subTest(change=change):
                 tests, _, full = affected_tests.select([change])
@@ -76,23 +74,22 @@ class AffectedTestsTests(unittest.TestCase):
             with self.subTest(change=change):
                 tests, _, full = affected_tests.select([change])
                 self.assertTrue(full)
-                self.assertGreater(len(tests), 100)
+                self.assertEqual(set(tests), {p.relative_to(ROOT).as_posix()
+                                              for p in affected_tests.check_module().discover_tests(ROOT)})
 
-    def test_src_relative_qualified_and_legacy_edges_do_not_confuse_duplicate_stems(self):
+    def test_src_relative_qualified_and_helper_edges_do_not_confuse_duplicate_stems(self):
         files = {
-            'pi-autowork/pi_autowork/__init__.py': '',
-            'pi-autowork/pi_autowork/engine/__init__.py': '',
-            'pi-autowork/pi_autowork/engine/owner.py': 'VALUE = 1\n',
-            'pi-autowork/pi_autowork/engine/consumer.py': 'from .owner import VALUE\n',
-            'pi-autowork/pi_autowork/command.py': 'from .engine import consumer\n',
-            'pi-autowork/engine/consumer.py': '# flat engine entry\n',
+            'src/autowork_runtime/__init__.py': '',
+            'src/autowork_runtime/engine/__init__.py': '',
+            'src/autowork_runtime/engine/owner.py': 'VALUE = 1\n',
+            'src/autowork_runtime/engine/consumer.py': 'from .owner import VALUE\n',
+            'src/autowork_runtime/command.py': 'from .engine import consumer\n',
             'unrelated/owner.py': 'VALUE = 2\n',
-            'tests/test_public.py': 'import pi_autowork.command\n',
-            'tests/test_path.py': 'ENTRY = "pi-autowork/pi_autowork/command.py"\n',
+            'tests/test_public.py': 'import autowork_runtime.command\n',
+            'tests/test_path.py': 'ENTRY = "src/autowork_runtime/command.py"\n',
             'tests/test_other.py': 'import unrelated.owner\n',
-            **{f'pi-autowork/tests/{suite}/test_public.py': 'import pi_autowork.command\n'
-               for suite in ('runner', 'engine', 'native')},
-            'pi-autowork/tests/support/store_fixture.py': 'import pi_autowork.command\n',
+            'tests/native/test_public.py': 'import autowork_runtime.command\n',
+            'tests/support/store_fixture.py': 'import autowork_runtime.command\n',
             'tests/test_support.py': 'import store_fixture\n',
         }
         with tempfile.TemporaryDirectory() as temporary:
@@ -103,25 +100,23 @@ class AffectedTestsTests(unittest.TestCase):
                 path.write_text(body)
             with patch.object(affected_tests, 'ROOT', root):
                 graph = affected_tests.dependency_graph(list(files), conservative=True)
-                self.assertIn('pi-autowork/pi_autowork/engine/owner.py', graph['pi-autowork/pi_autowork/engine/consumer.py'])
-                self.assertIn('pi-autowork/pi_autowork/engine/consumer.py', graph['pi-autowork/engine/consumer.py'])
-                self.assertIn('pi-autowork/pi_autowork/__init__.py', graph['tests/test_public.py'])
-                self.assertNotIn('unrelated/owner.py', graph['pi-autowork/pi_autowork/engine/consumer.py'])
-                self.assertNotIn('pi-autowork/pi_autowork/engine/owner.py', graph['tests/test_other.py'])
+                self.assertIn('src/autowork_runtime/engine/owner.py', graph['src/autowork_runtime/engine/consumer.py'])
+                self.assertIn('src/autowork_runtime/__init__.py', graph['tests/test_public.py'])
+                self.assertNotIn('unrelated/owner.py', graph['src/autowork_runtime/engine/consumer.py'])
+                self.assertNotIn('src/autowork_runtime/engine/owner.py', graph['tests/test_other.py'])
             # Real direct-child inventory; no discovery plugin or flattened test stem.
             checker = affected_tests.check_module()
             with patch.object(affected_tests, 'ROOT', root), \
                     patch.object(affected_tests, 'check_module', return_value=checker), \
                     patch.object(affected_tests, 'repository_files', return_value=list(files)):
-                owner = 'pi-autowork/pi_autowork/engine/owner.py'
+                owner = 'src/autowork_runtime/engine/owner.py'
                 expected = {'tests/test_public.py', 'tests/test_path.py', 'tests/test_support.py',
-                            *(f'pi-autowork/tests/{suite}/test_public.py'
-                              for suite in ('runner', 'engine', 'native'))}
+                            'tests/native/test_public.py'}
                 selected, _, full = affected_tests.select([owner], conservative=True)
                 self.assertFalse(full)
                 self.assertEqual(set(selected), expected)
                 all_tests = {p.relative_to(root).as_posix() for p in checker.discover_tests(root)}
-                for changed in ('pi-autowork/pi_autowork/__init__.py', 'missing.py'):
+                for changed in ('src/autowork_runtime/__init__.py', 'missing.py'):
                     selected, _, full = affected_tests.select([changed], conservative=True)
                     self.assertTrue(full)
                     self.assertEqual(set(selected), all_tests)

@@ -33,7 +33,7 @@ over conflicting upstream instructions:
 | Execution | Use discovered host-native capabilities. In-session implementation without a delegated worker is allowed only when repository policy permits it and independent review is available. |
 | Review | Require fresh independent review of the actual slice delta. Missing review capability keeps discovery read-only. Never self-approve or install tools to bypass this gate. |
 | Decisions | Reuse accepted scope and routine local implementation authority. Ask only for genuinely missing product, risk or external-action authority. |
-| Task state | The coordinator updates task body notes through `autowork tasks`. Workers report results but never edit `tasks/`. Missing CLI capability means read-only discovery and an exact blocker report. |
+| Task state | The coordinator reconciles GitHub Issues through supported issue tools. Workers report results without changing owned contracts or preserved legacy `tasks/`. Missing capability means read-only discovery and an exact blocker report. |
 | Limits | Continue within this session by default. Explicit one-improvement, read-only, time, budget and pause/stop limits win. |
 | Delivery | Follow existing local commit and integration authority. Push, deployment and live qualification remain separate and need their corresponding authority. |
 
@@ -119,7 +119,7 @@ and the missing evidence. A timed-out check is not a pass.
 
 A campaign progress receipt is a report, not an engine verification receipt.
 The coordinator saves progress, coverage and deferred leads in the relevant task's
-body notes through [`autowork tasks`](../shared/TODO-WORKCENTER.md#edit-records).
+issue notes through [the GitHub handoff](../shared/PLAN-HANDOFF.md).
 Preserve existing notes and use `--expect REV` after an earlier record read.
 Do not create a second backlog. In read-only/no-write mode, report in conversation
 only: do not change task records or write report files.

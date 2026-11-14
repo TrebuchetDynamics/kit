@@ -21,8 +21,9 @@ Worktrees are merged oldest commit first, so work that others build on lands ear
 worktree whose Git metadata changed within `--idle-minutes` (default 5) is treated as
 live and skipped, because another session may still be writing there.
 
-`--remove` hands each worktree that became merged and clean to the repository's
-worktree_closeout.py, which removes it only after its own safety checks.
+`--remove` requires an explicit existing `--closeout` safety helper. There is no
+bundled executor helper or unsafe Git-removal fallback. The supplied helper must
+independently verify ownership, clean integration and retained recovery evidence.
 
 Exit status is 0 when the sweep completed, 1 when it refused to start or a merge
 failed, and 2 for a usage error.
@@ -177,11 +178,17 @@ def main():
     parser.add_argument('--remove', action='store_true',
                         help='remove worktrees that are merged and clean, through worktree_closeout.py')
     parser.add_argument('--closeout', type=Path, default=None,
-                        help='path to worktree_closeout.py (default: the repository copy)')
+                        help='explicit ownership-aware closeout helper (required with --remove)')
     parser.add_argument('--json', action='store_true', help='print the inventory as JSON')
     parser.add_argument('--idle-minutes', type=int, default=5,
                         help='skip a worktree whose Git metadata changed this recently (0 disables)')
     args = parser.parse_args()
+
+    if args.remove and (args.closeout is None or not args.closeout.is_file()):
+        parser.error('--remove requires an explicit existing --closeout safety helper; '
+                     'worktrees and recovery evidence are preserved')
+    if args.closeout is not None and not args.remove:
+        parser.error('--closeout requires --remove')
 
     repo = args.repo.resolve()
     base = args.base or git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')
@@ -189,8 +196,7 @@ def main():
 
     records = worktrees(repo)
     entries = [classify(repo, record, base) for record in records[1:]]  # skip the canonical one
-    closer = args.closeout or (repo / 'pi-autowork/engine/worktree_closeout.py')
-    closer = closer if args.remove and closer.is_file() else None
+    closer = args.closeout.resolve() if args.remove else None
 
     failed = 0
     if args.apply:

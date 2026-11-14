@@ -1,6 +1,6 @@
 # Repository agent instructions
 
-## GitHub-native execution (supersedes legacy workflow guidance below)
+## GitHub-native execution
 
 GitHub Issues are the authoritative executable backlog. Kit plans; Orbi delivers
 issues through Pi, tests, PRs, independent review and merge gates. All issues default
@@ -8,19 +8,25 @@ to `ai-ready`, regardless of author. Planning creates complete batches under
 `ai-planning`, verifies native `blockedBy` dependencies, then publishes readiness
 last; `ai-epic` coordination issues do not execute. Preserve explicit pauses,
 actual ownership, CI, sensitive-change controls and human-only requirements.
+Both `/plan-with-me` and `/plan-for-me` save executable plans as GitHub Issues,
+not local task records. Keep their current names; `/autowork` is compatibility-only
+and retained Hermes maintenance names are not executor support.
 See `docs/github-native.md` and `skills/shared/PLAN-HANDOFF.md`.
 
-The `pi-autowork` executor and plugin are deprecated. Do not start its services,
-prepare new local task stores or acquire its leases for new work. Existing task
-records, worktrees and recovery state are migration evidence, not a second queue.
-Legacy `autowork tasks` guidance below applies only to explicitly scoped recovery
-or pruning. No local-main planning commit is required for GitHub issue publication.
-Keep the unrelated safety, testing, ownership and delegation rules below.
+The pi-autowork executor, CLI and Paseo plugin are retired, unsupported and removed.
+Do not develop or repair the retired executor, restore it from older branches,
+install or restart it, prepare local task stores or acquire legacy leases.
+If an existing assignment targets pi-autowork, stop that executor work, preserve
+its changes and evidence, and reconcile still-required outcomes into GitHub Issues
+for Orbi. An old task, plan or research recommendation does not authorize revival.
+Existing tasks, worktrees and attempts/recovery state are preserved migration evidence, not a
+second queue. Orbi remains paused and live-unqualified; do not enable it as part
+of removal. No local-main planning commit is required for issue publication.
 
-Autowork supplies repository workflows, command registration and profile
-setup. Read README.md and the relevant docs before changing these contracts.
-Preserve unrelated changes and keep credentials, private profile identities and
-runtime state out of Git. Do not edit or patch upstream Hermes Agent.
+Kit supplies repository workflows, command registration and profile setup. Read
+README.md and relevant docs before changing these contracts. Preserve unrelated
+changes and keep credentials, private profile identities and runtime state out
+of Git. Do not edit or patch upstream Hermes Agent.
 
 - Read `~/.agents/skills/using-superpowers/SKILL.md` when available and apply the
   relevant workflow; existing user authorization takes precedence over repeated
@@ -42,8 +48,8 @@ runtime state out of Git. Do not edit or patch upstream Hermes Agent.
 - Test only what your change can affect: `python3 scripts/affected_tests.py --run`
   selects and runs the test modules that import, run or read the files you changed
   (since origin/main; `--base REV` otherwise) and prints why each was chosen. Do not
-  rerun whole test directories or the full check for a focused change: the runner
-  checks main in full after landing. `python3 scripts/check.py` runs the safe offline
+  rerun whole test directories or the full check for a focused change: CI
+  checks the integrated changes. `python3 scripts/check.py` runs the safe offline
   check inventory; inspect native/live tests before running them. Registration
   checks do not prove model execution or Telegram delivery.
 - Keep public examples generic and preserve existing per-profile job state.
@@ -58,22 +64,15 @@ operating instructions instead. Routine completion replies summarize the change 
 checks without listing closed task IDs or task-document paths unless requested.
 
 Keep done-task retention to the minimum required by current consumers and safety.
-Docs Sync task maintenance (`/docs-sync tasks`, or a request that names pruning) must
-delete eligible finished records within scope, not merely recommend cleanup or retain
-a recent-history quota; a bare `/docs-sync` prints the `autowork tasks prune` plan and
-deletes nothing. After real closure
-and integration, prune completed task records and their dedicated receipts/reports
-through a separate safe reconciliation. Use `autowork tasks prune` for the decision and `autowork tasks` for
-record edits. Check fresh status and actual ownership first; never remove an active
-attempt, alter a running contract, fabricate completion or discard an unresolved live
-obligation. Remove only already-satisfied ordinary dependency edges from inactive
-surviving tasks. Preserve verified-dependency proof and any still-required qualification
-via immutable Git inputs or current open requirements before pruning. Keep goal status
-and live/owner gates unchanged; an empty history is not proof that a goal is met.
-Do not rewrite Git history, remove worktrees/runtime recovery state, or change generic
-archive-import fixtures merely to clean this repository. Runtime closeout may create
-transient done records; this policy does not bypass its checks or promise immediate
-automatic deletion by an already-installed runner.
+GitHub history owns new completion evidence. Preserve existing legacy tasks,
+attempts, worktrees and recovery state during removal/migration. `/docs-sync` does
+not prune them; the removed task CLI is not a cleanup mechanism. Any later pruning
+requires separately scoped safe reconciliation, fresh ownership checks and retained
+immutable evidence; never remove an active attempt or its recovery inputs.
+Never alter a running contract, fabricate completion, drop a
+verified dependency or discard an unresolved live obligation. Keep goal status and
+live/owner gates unchanged; an empty history is not proof that a goal is met.
+Do not rewrite Git history or change archive-import fixtures merely for cleanup.
 
 ## Delegation
 
@@ -89,7 +88,7 @@ Interactive sessions (an agent working with the owner, a repository bot, the
 owner) work directly in the main checkout, one at a time. The first session to edit
 a file there holds the checkout until every file it edited is committed or reverted,
 or it ends; a second interactive session works in its own worktree meanwhile.
-Otherwise worktrees are only for Autowork runners and for parallel delegated agents
+Otherwise worktrees are only for delivery workers and for parallel delegated agents
 that would otherwise write the same checkout at once. Keep one writer per checkout:
 do not edit files a live runner worker owns, and commit only your own changes.
 
@@ -105,49 +104,23 @@ manual Bash creation bypasses that hook. Preserve live sessions, dirty files and
 unmerged branches when relocating or closing worktrees. See
 `docs/worktree-placement.md` for the hook configuration.
 
-<!-- autowork-local-authority:start -->
-## Autowork: autonomous local progress
+## Authorized local progress
 
-An Autowork invocation or recurring Autowork job authorizes routine local
-repository improvement: plan, implement, test, document and make scoped local
-commits. Choose reasonable reversible implementation details without waiting for
-an owner, parent session or another profile to approve them. This section replaces
-older owner-acknowledgement and blanket main-only development requirements for
-that local work; it does not override product safety or explicit task exclusions.
-For approved Autowork, follow [the standing decision policy](docs/autonomy.md):
-approval delegates the actions necessary to complete the accepted scope, including
-publication and live execution, without repeated owner approval. Reconcile stale
-owner-only labels and missing grant records from that approval through the supported
-task commands; do not bypass runtime guards or infer approval from queue placement.
+Accepted scope authorizes routine reversible implementation, focused tests,
+documentation and scoped commits without repeated planning ceremonies. Follow
+[the standing decision policy](docs/autonomy.md), while preserving explicit
+exclusions, pauses, actual ownership, access controls and human-only gates.
 
-- Read the current task and repository state. Repair attributable task metadata,
-  links and missing backlog structure from source evidence; preserve existing
-  decisions and never invent acceptance, ownership release or completed checks.
-- If no task is runnable, inspect implementation, tests, docs and UI/accessibility
-  for a concrete improvement. Record a bounded task with acceptance criteria and
-  dependencies, then execute it. Keep a few independent ready tasks when evidence
-  supports them; do not manufacture busywork or count planning as implementation.
-- Separate offline implementation and tests from device, production and other
-  live qualification. Complete the local task while retaining an explicit pending
-  live task; never mark the combined feature qualified from offline evidence.
-- Use supported isolated task branches/worktrees when needed. Keep one writer per
-  workspace. A historical ACTIVE claim alone is not a permanent veto: check actual
-  worker/session activity and candidate changes. Preserve prior work; adopt an
-  idle candidate only after verifying it is no longer being written. If activity
-  cannot be established, select non-overlapping work instead of guessing.
-- The current Autowork coordinator may review and integrate its verified local
-  changes into canonical main without a separate parent/owner acknowledgement.
-  Serialize canonical writes, inspect fresh status, preserve unrelated dirty
-  work, and use the supported integration path. Do not bypass runtime guards,
-  repin evidence to hide drift, force-push, reset or discard another writer's work.
-- After a repeated blocker, take a different concrete action in the same run:
-  repair the local cause, execute independent work, or report one precise external
-  input that is genuinely unavailable. Do not repeatedly audit the same hold.
-- Run checks proportional to the change. Commit only attributable, verified work.
-  Report task ID/title, actual changes, checks, commit, next task and exact remaining
-  blocker. Distinguish local commit, integration, push and live acceptance.
-- Approved scope, not a repeated permission ceremony, governs execution. Preserve
-  explicit exclusions, paused jobs, access controls and human-only requirements.
-  Missing credentials or external inputs remain real limitations; report them
-  precisely and continue independent approved work. Never fabricate completion.
-<!-- autowork-local-authority:end -->
+- Read current issues and repository state; never invent acceptance or ownership release.
+- Use `/work` for explicitly requested manual implementation; `/autowork` is only
+  a GitHub/Orbi compatibility redirect, not an autonomous loop or service control.
+- Separate offline implementation from device, production and live qualification.
+  Keep unresolved live proof visible in current requirements and GitHub Issues.
+- Keep one writer per checkout. Verify actual activity before adopting an idle
+  candidate; when activity is unknown, choose non-overlapping work.
+- Serialize authorized integration and preserve unrelated dirty changes. No
+  force-push, reset, discarded recovery state or repinned evidence to hide drift.
+- After a repeated blocker, repair the cause, do independent accepted work or
+  report the precise missing external input. Do not manufacture backlog work.
+- Commit only attributable verified changes. Report changes, checks and remaining
+  blockers; distinguish commit, integration, push, installation and live acceptance.

@@ -1,17 +1,20 @@
 # Language strategy and measurement boundaries
 
-The accepted [Rust Autowork with Octet direction](rust-octet-autowork.md#accepted-direction)
-owns the redesign. Earlier Python-retention and conditional Go choices do not
-constrain it. The existing Python runtime remains authoritative until a separately
-qualified cutover; no restart, replacement runner or state migration is implied.
-Completed sampling results and task timelines are retained in Git history, not here.
+The Python executor and proposed Rust/Octet executor redesign are superseded by
+pi-autowork retirement. Neither is supported or a development target. GitHub Issues
+own executable work; Orbi is the paused, live-unqualified successor. See the
+[current support boundary](../github-native.md#support-boundary). The
+[original Rust direction](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/rust-octet-autowork.md#accepted-direction)
+is immutable evidence, not an instruction to resume development.
+Completed sampling results and task timelines remain in Git history.
 
 ## Decision
 
-Keep current execution authority with the installed runtime until explicit safe
-handoff. Do not start a Go prototype or a second coordinator from this document.
-The independent language-measurement goal remains unmet; accepting Rust or deleting
-completed measurement records is not evidence that the earlier measurement gate passed.
+Do not keep or restore execution authority with a retired runtime. Preserve legacy
+records and reconcile any still-required outcome into GitHub Issues, without
+starting a Go/Rust prototype or enabling Orbi. The independent language-measurement
+goal remains unmet; removal, a replacement choice or deleted measurement reports
+are not evidence that the earlier measurement gate passed.
 
 ## Decision gate for a Go supervisor prototype
 
@@ -33,7 +36,7 @@ least one complete, source-bound condition is required:
 Missing evidence is not measured, not zero and not a met threshold. A single sample
 is not a benchmark. Passing a gate would justify only bounded operational prototyping
 under its own authority, never canonical write ownership or a full Go rewrite.
-The Rust redesign remains a separate accepted direction.
+The Rust executor redesign is superseded; these thresholds authorize no new work.
 
 ## Measurement round 1
 
@@ -59,13 +62,10 @@ benchmark service, restart, worker launch or prototype is authorized by this pag
 
 ## Sources
 
-Current measurement and authority surfaces are [the component map](../project.md#current-components),
-[dependencies](../dependencies.md#current-source-policy),
-[scorecard](../../src/pi_autowork/scorecard.py),
-[dispatch](../../src/pi_autowork/engine/parallel_dispatch.py),
-[slot persistence](../../src/pi_autowork/engine/parallel_state.py),
-[execution journal](../../src/pi_autowork/engine/execution_journal.py),
-[selection](../../src/pi_autowork/engine/task_select.py) and
-[planning authority](../../src/pi_autowork/planning_authority.py).
-Current type checks, lifecycle/transaction tests and runtime fixtures remain intact;
-no historical test result is presented as a new execution receipt.
+Current authority is documented in [GitHub-native delivery](../github-native.md)
+and the [component map](../project.md#current-components). Historical measurement
+surfaces (scorecard, dispatch, slot persistence, execution journal, selection and
+planning authority) are retained in the
+[immutable pre-removal component](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork).
+Their tests no longer ship. No historical result is a new execution receipt or
+proof of replacement qualification.

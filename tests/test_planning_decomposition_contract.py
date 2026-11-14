@@ -1,14 +1,9 @@
-"""Planning instruction guards, not model-adherence or worker-speed evidence.
-
-Runtime scheduling remains covered by test_parallel_plan{,_hot}.py; these cases
-protect the planner-facing contract rather than duplicate those runtime cases.
-"""
+"""Planning instruction guards, not model-adherence or worker-speed evidence."""
 from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 CRAFT = ' '.join((ROOT / 'skills/shared/PLANNING-CRAFT.md').read_text().split())
-MAINTAINER = (ROOT / 'pi-autowork/pi_autowork/maintainer.py').read_text()
 
 
 class PlanningDecompositionContractTests(unittest.TestCase):
@@ -38,21 +33,9 @@ class PlanningDecompositionContractTests(unittest.TestCase):
                      'Name shared registry/interface changes once'):
             with self.subTest(rule=rule):
                 self.assertIn(rule, CRAFT)
-        for rule in ('Preserve existing Dependencies unless prerequisite evidence justifies changing them',
-                     'ordinary files, directories, globs and test modules only rank',
-                     'File overlap does not block dispatch',
-                     'genuine prerequisites and resource/protected-path admission still apply',
-                     'Only an explicit exclusive resource drains the pool',
-                     'A held peer alone reserves no files',
-                     'Shared named resources and protected-path coordination still apply',
-                     'has a live worker (even if held), or whose commit waits to land'):
-            with self.subTest(maintainer_rule=rule):
-                self.assertIn(rule, MAINTAINER)
 
     def test_public_seam_budget_keeps_required_checks_and_review(self):
-        worker = (ROOT / 'pi-autowork/pi_autowork/engine/parallel_dispatch.py').read_text()
         budget = 'at most one focused test per behavior'
-        self.assertIn(budget, worker)
         self.assertIn(budget, CRAFT)
         for rule in ('Prefer extending an existing public test seam',
                      'A new focused file or class is optional',

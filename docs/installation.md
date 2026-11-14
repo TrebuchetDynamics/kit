@@ -1,18 +1,18 @@
 # Installation and profile effects
 
-> **GitHub-native cutover:** GitHub Issues now own executable work and Orbi owns
-> delivery. The Autowork runner, plugin and scheduler/install instructions below
-> are retained legacy reference, not the active execution contract. Do not start
-> them for new work. See [current setup and migration](github-native.md).
+> **GitHub-native delivery:** The pi-autowork executor, CLI, plugin and installer
+> component are removed. Preserve existing task data, attempts, worktrees and
+> recovery evidence. Orbi remains paused and live-unqualified; see
+> [setup and migration](github-native.md).
 
 Source: [setup orchestrator](../scripts/setup_bundle.py), [source installer](../install-plugins.sh),
 [profile defaults](../scripts/runtime_defaults.py), [native skill provisioning](../scripts/install_skills.py).
 
-The native setup bodies live in [`pi-autowork/src/autowork_runtime/install/`](../pi-autowork/src/autowork_runtime/install/).
+The native setup bodies live in [`src/autowork_runtime/install/`](../src/autowork_runtime/install/).
 Their Python entrypoints live in `scripts/`, including `scripts/setup_bundle.py`
 and `scripts/install-graphify.py`. Only `__init__.py` stays at the repository root:
 Hermes requires that adapter beside `plugin.yaml` to load the plugin.
-Keep the entrypoints, same-release `scripts/autowork_bootstrap.py` and `pi-autowork/src/`
+Keep the entrypoints, same-release `src/autowork_bootstrap.py` and `src/autowork_runtime/`
 payload together; a single copied
 installer is not standalone. Preflight rejects missing declared source payloads
 before installation stages. This layout does not change setup targets or policy.
@@ -29,10 +29,10 @@ Use `--menu` when you want to select components interactively:
 ./install.sh --only codex
 ```
 
-The suite includes the Pi package, `autowork` command/TUI, `tx` launcher, Hermes
+The suite includes the Pi package, `tx` launcher, Hermes
 fleet setup, official stable Octet native binaries with Kit skills, and Claude Code and Codex plugins
 with their complete portable skill suites, including [bundled Ponytail](cross-host.md#bundled-ponytail-on-every-host).
-All Autowork skills apply its shared method within their existing authority; no
+All Kit skills apply its shared method within their existing authority; no
 separate Ponytail plugin, hooks or persistent modes are installed. Existing external
 Ponytail installs are not changed or removed. `--full` (`--all`) is the default; `--skip` excludes components. Host CLIs
 for plugin items must already be installed: full mode reports missing hosts as skipped, while
@@ -44,8 +44,8 @@ source and installs from it: Claude Code refuses a second source for one marketp
 name. The installer never rewrites your settings or that source. Availability
 detection does not start host CLIs or change their settings. Hermes also needs a Hermes
 home (`~/.hermes`, or `--hermes-home`/`HERMES_HOME`); a default home that does not
-exist yet counts as missing. The TUI/web view needs `uv`, and using the tmux
-launcher needs `tmux`. A replaced `~/.local/bin/autowork` or `~/.local/bin/tx` is
+exist yet counts as missing. The tmux launcher needs `tmux`.
+A replaced `~/.local/bin/tx` is
 kept as `<name>.bak`, then `.bak.1` and so on, so no earlier backup is lost; a
 symlinked `tx` is moved aside, never written through. Existing tmux configuration,
 helpers and shell completions are kept, including dangling symlinks; only missing
@@ -69,19 +69,12 @@ Successful components remain installed; retry just Hermes with
 `./install.sh --only hermes` (and the same `--hermes-home` if supplied).
 
 Every nonempty install/update ends with a restart phase, even when files are
-unchanged or a component failed. It restarts all active user-systemd
-`pi-autowork@*.service`, `hermes-gateway*.service` and `kit-*.service` units,
-regardless of the selected components. Autowork uses
-`restart --stop-workers --now --if-active`, without waiting for a coordinator safe
-point, integration review or maintenance task. This can interrupt checks and lose
-an unread integration result. It uses the supported worker stop/resume path, not a
-separate kill command. An intervening explicit stop or pause is preserved through
-marker checks and systemd's active-only restart. Other units use `try-restart`.
-Stopped/paused services and unrelated host services stay untouched. Failures are
-reported in the summary and make the installer exit nonzero. Hosts without Linux
-user systemd report that restarts are unavailable. Preview/list/menu cancellation
-perform no restarts. `--no-reload` only defers Hermes setup's wiring step; it does
-not suppress this final service restart phase.
+unchanged or a component failed. It restarts active supported Hermes/Kit host
+integrations, never legacy Autowork runners. Stopped/paused services and unrelated
+host services stay untouched. Failures are reported and make installation fail.
+Hosts without Linux user systemd report restarts unavailable. Preview/list/menu
+cancellation perform no restarts. `--no-reload` only defers Hermes setup wiring;
+it does not suppress the final restart phase.
 
 `--dry-run` prints selected commands without installing. `--hermes-home`,
 `--bundle-only`, `--no-reload` and `--yes-deps` apply only to Hermes. When a
@@ -96,46 +89,12 @@ a stale registration with a missing directory is reinstalled. They do not run
 remain enabled. `./install.sh update --only pi` explicitly updates an existing
 package, or installs it when absent.
 
-### Private runner Pi directory
+### Removed runner installation
 
-The `autowork` installer component keeps one fleet-wide Pi directory at
-`${PI_AUTOWORK_STATE_DIR:-${XDG_STATE_HOME:-~/.local/state}/pi-autowork}/pi-agent`.
-It has mode 0700; copied files have mode 0600. The first install copies `auth.json`
-(the model login), `models.json` (provider/model configuration), and only
-`defaultProvider`, `defaultModel` and `defaultThinkingLevel` from `settings.json`.
-The source is `${PI_CODING_AGENT_DIR:-~/.pi/agent}`. Sessions, extensions, package
-registrations and other interactive settings are not copied. The interactive
-source is not changed by this component. Keep the private directory outside Git
-repositories and worktrees; never include its contents in logs or reports.
-
-A login file that names no provider counts as a missing login: Pi writes an empty one
-when it starts on an unfilled directory. Status then names the refill command, and the
-installer replaces the empty file even on a first install. A runner never fills the
-directory itself: after a runner updates itself to a release that needs the directory,
-run `autowork update --only autowork` once.
-
-The component also creates an independent Git installation under the same state
-root, in `installed/`. The `autowork` command link and installed service launcher
-point there. Runners select immutable releases from that installation and set
-`PI_CODING_AGENT_DIR` to `pi-agent`, even if an older saved service named the
-interactive home. Removing the interactive Pi home or its Kit package clone does
-not remove the runner configuration or release source. Pi and Node must still be
-available on the service PATH.
-
-Ordinary installs keep existing private files. To refill them after a login change,
-run this command from an interactive shell with the working interactive Pi home:
-
-```sh
-autowork update --only autowork
-```
-
-This refreshes the allowlisted files and restarts active services through the
-installer's immediate, active-only restart phase. A custom interactive home must be selected with
-`PI_CODING_AGENT_DIR` on that command. `autowork status` reports a missing private
-directory/login or a login refusal observed by a runner and names the same refill
-command. Status does not contact a provider, and runners never silently fall back
-to the interactive home. Offline fixtures cover copying, permissions, removal and
-status; they do not qualify a live login or model call.
+There is no `autowork` installer component or private runner bootstrap. Existing
+private Pi directories, credentials, task data and recovery state must not be
+removed as package cleanup. They are not shared with Orbi automatically. See
+[cutover and qualification](github-native.md#cutover).
 
 ### Octet native binaries
 
@@ -194,7 +153,7 @@ Reruns refresh changed entrypoints and leave identical files untouched. Existing
 same-name files or symlinks are preserved as `SKILL.md.bak` (then `.bak.1`, etc.);
 unrelated skills are left alone. Prompt pointers in `~/.octet/prompts/kit-<name>.md`
 load the same adapters and forward the caller's arguments with Octet's `$@` expansion.
-Use `/kit-ask-kit`, `/kit-plan-with-me`, `/kit-autowork` or `/kit-work`;
+Use `/kit-ask-kit`, `/kit-plan-with-me`, `/kit-plan-for-me` or `/kit-work`;
 `/kit-autoresearch-<selector>` and `/kit-grill-me` preserve the research/challenge
 routes. Names are prefixed to avoid native command collisions. Existing prompt
 files are backed up before replacement, like skill files. A symlinked prompts
@@ -256,7 +215,7 @@ the link and `hermes -p PROFILE plugins enable kit` to enable it.
 `hermes autowork setup` installs and enables the sources in
 [plugins/PLUGINS.md](../plugins/PLUGINS.md), including any external skill repositories
 it lists (currently none), Graphify's Hermes integration and speech support. It also links and enables
-autowork itself in every existing live profile, preserving existing plugin
+Kit itself in every existing live profile, preserving existing plugin
 installations. After creating another profile, rerun setup or, from this checkout,
 run `bash install-plugins.sh --bundle-only` to add just this bundle and its defaults
 across profiles. The links depend on keeping this checkout installed. It applies
@@ -381,7 +340,7 @@ updated/removed, avoiding finalization through stale code.
 mattpocock/skills grilling guidance, preserving their attribution. `/grill-me` (CLI)
 and `/grill_me` (Telegram) remain typeable compatibility commands that run
 `plan-with-me` in challenge mode with this skill as its reference; `/grill_me` is not
-shown in the Telegram menu. Enabling/loading autowork installs missing bundled
+shown in the Telegram menu. Enabling/loading Kit installs missing bundled
 skills and shared support files into that profile's native skill directory, using
 the same offline provisioner as full setup. Existing flat and categorized skills
 are preserved; an incomplete existing slot is never replaced and is logged as a
@@ -399,7 +358,7 @@ not as a tested messaging connection.
 
 ## Telegram setup
 
-Enabling/loading autowork applies its gateway-injection setting in the
+Enabling/loading Kit applies its gateway-injection setting in the
 owning profile. There is no YAML wiring step. This lets a skill command queue an
 agent turn in the chat where it was invoked. Full setup refreshes running gateway
 commands and verifies activation receipts; `--no-reload` explicitly defers that.
@@ -420,37 +379,18 @@ Back up configurations first and review [removal and recovery](uninstall.md).
 Updating this page: reconcile changes to setup flags, profile discovery, runtime
 policy writes and native provisioning against the source links above.
 
-## Upgrade to Autowork
+<a id="upgrade-to-autowork"></a>
+## Migrate from the retired executor
 
-Autowork replaces the former command and skill, rather than registering an alias.
-The skill, helper paths, readiness value (`ready_for_autowork`) and new private
-state use the same name. Update integrations that consume the old readiness value.
+pi-autowork is retired and unsupported. Do not reinstall its executor, CLI, TUI or
+Paseo plugin, or update consumers to its removed task/readiness interfaces.
+Kit planning publishes GitHub Issues for Orbi. Existing Hermes maintenance command
+names remain supported compatibility surfaces, not executor entrypoints.
 
-Before upgrading an existing scheduled profile, wait for its current cron and
-native workers to finish; preserve paused schedules. Back up its skill directories,
-cron jobs and private state. Provision `skills/autowork` from this checkout,
-preserving local skill customizations, and retire the old skill's `SKILL.md` from
-native discovery. Replace old command, helper and skill names in existing job
-names, prompts and attached skills through `hermes cron edit`; retain job IDs,
-schedules, enabled states, delivery and model settings.
-
-From the source checkout, preview and migrate each existing profile's private state:
-
-```sh
-python3 pi-autowork/scripts/migrate-autowork.py --home /path/to/profile-home
-python3 pi-autowork/scripts/migrate-autowork.py --home /path/to/profile-home --apply
-```
-
-The migration refuses conflicting stores and held owner/handoff locks. It moves
-the existing directory, preserving receipt bytes and lock inodes; it does not
-restart workers or declare their tasks complete. A filesystem link at the retired
-state path preserves historical receipt references, not a command alias. Do not
-rewrite pinned manifests or signed evidence to change their historical spelling.
-Update pending owner-mailbox routing paths to the new real state directory before
-using them; private-state helpers reject symlink paths. Retain retired execution
-files needed by historical/native contracts outside skill discovery until those
-contracts are retired. Reload gateway commands and refresh Telegram menus after
-provisioning; verify `/autowork` is present and the retired command is absent.
+Existing jobs, IDs, schedules, pause state, execution history and private profile
+state are preserved. Do not rewire legacy executor jobs or create new timers as
+part of a Kit update. The task/executor migration helper is removed; reconcile
+unfinished work through [GitHub migration](github-native.md#cutover).
 
 ## Update all profiles
 
@@ -464,17 +404,18 @@ profile skills/configuration. It still writes Git fetch metadata and its receipt
 
 After a changed all-profile update activates successfully, the updater also runs
 that fetched release's `install.sh --full --skip hermes,pi -q` once from its updated
-plugin checkout. This refreshes the `autowork` command/TUI, `tx`, and the Claude Code
-and Codex plugins through the same supported installer used for initial setup.
-Hermes was just updated; Pi package updates remain owned by the runners at their
-safe point. Missing host CLIs are skipped. No privilege escalation or consent flags
+plugin checkout. This refreshes the remaining selected components through the
+same supported installer used for initial setup, including `tx`, Octet and the
+Claude Code/Codex plugins. It does not install the retired executor or TUI.
+Hermes was just updated; Pi package updates are separate host maintenance,
+not a responsibility of the removed runner. Missing host CLIs are skipped. No privilege escalation or consent flags
 are supplied, and stdin is closed so background updates cannot wait for a person's
 answer. Native host security/dependency requirements still apply.
 
 Host refresh is best effort, with a five-minute limit for the whole installer run;
 on timeout its process group is stopped. It never rolls back or fails a successful
 Hermes update. The receipt's `hosts` list records `item`, `status` and `exit` for
-`autowork`, `tx`, `claude` and `codex`, and chat status adds one `Hosts:` line.
+`tx`, `claude`, `codex` and `octet`, and chat status adds one `Hosts:` line.
 Completed items retain their outcomes if a later item times out; remaining items
 report `timeout`. An unavailable installer reports `unavailable`; missing or invalid
 item reports use the installer's failure exit, or `unreported` if it exited zero.
@@ -568,7 +509,7 @@ update's receipt in place. In chat, `/autowork update` says which update is runn
 and starts nothing.
 
 A named-profile invocation still targets every existing live profile under the
-same Hermes root. The updater fetches the official Autowork `main` branch,
+same Hermes root. The updater fetches the official Kit `main` branch,
 checks each distinct installed Git checkout, and normally accepts clean equal or
 fast-forward revisions. A verified managed checkout with rewritten upstream history
 can instead use [managed checkout recovery](#managed-checkout-recovery).
@@ -819,9 +760,7 @@ original-task recovery.
 
 ## Scheduled self-repair
 
-Updated Autowork cron instructions use `pi-autowork/scripts/heal-owner-cron.py` for bounded
-repair of their own managed prompt/skill wiring. See [cron self-repair](../skills/autowork/references/cron-autoheal.md)
-for the exact-profile/job command, private receipts and startup limitations. Existing
-saved prompts are not updated merely by installing source: refresh their managed
-wiring through the supported cron interface. A maintainer can invoke the same helper
-for one existing job; it never creates a watchdog or resumes paused schedules.
+Kit does not schedule or revive the removed executor. Preserve existing per-profile
+jobs and their paused state. Native Hermes maintenance helpers do not authorize
+new delivery services or imply a live repair completed. Orbi remains paused until
+separately qualified under [the cutover gates](github-native.md).

@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Symptom-first fixes for installing and using Autowork. Each entry links to
+Symptom-first fixes for installing and using Kit. Each entry links to
 the owning guide; procedures are not repeated here. Start with the diagnostics:
 
 ```sh
@@ -8,8 +8,8 @@ hermes autowork doctor --core     # bundled skills and commands only
 hermes autowork doctor --json     # full stack, machine-readable
 ```
 
-In chat, `/autowork status` shows runner fleet status and `/autowork status NAME`
-shows one repository. `/autowork plugin status` shows plugin load/setup status,
+In chat, `/autowork status [NAME]` returns the removed-executor notice; use GitHub
+Issues/PRs and read-only Orbi diagnostics for delivery status. `/autowork plugin status` shows plugin load/setup status,
 and `/autowork list` shows which of this
 bundle's plugins (or a skill) owns each command; Hermes' `/commands` lists only
 built-in and skill commands, not plugin commands. Diagnostics check registration only: they never prove that a model
@@ -150,23 +150,15 @@ setup from the new location (setup and update refuse a dangling link); see [upda
 ### `/docs_sync` changed documents but nothing was implemented
 
 By design: documentation and planning never start implementation. Run
-`/autowork` for the task you want built; see [workflows](workflows.md#commands).
+`/work` for explicitly authorized manual implementation; see [workflows](workflows.md#commands).
 
-### Autowork says `no tasks/ store: run autowork migrate`
+### A workflow asks for the old task CLI
 
-The repository still keeps its tasks in `TODO.md` and `goals.json`, which nothing reads.
-Commit or set aside planning edits, let running work finish, then run `/docs_sync` in the
-repository (or `autowork tasks prepare <repo>`, or `autowork migrate <repo>`): it converts
-the queue to `tasks/` in one local commit and refuses, writing nothing, while work is in
-flight. A conversion that was interrupted resumes on the next run. See
-[Task Store v2](project.md#task-store-v2-2026-10-20).
-
-### `autowork tasks validate` reports an error
-
-Each error names a task or goal file and line (`tasks/items/T-1.md:7: unknown goal G`);
-the whole store is refused until it is fixed, so the runner selects nothing meanwhile.
-Fix that file (`autowork tasks field` or an editor) and run
-`autowork tasks validate --worktree` again before committing.
+The executor and task CLI are removed. Reload the current Kit skills and use
+[GitHub-native handoff](github-native.md). Preserve existing local tasks, attempts,
+worktrees and recovery evidence; do not reinstall the old executor or create a new
+store. Orbi remains paused and live-unqualified; this error is not permission to
+start it.
 
 ### `docs.py check` reports findings
 

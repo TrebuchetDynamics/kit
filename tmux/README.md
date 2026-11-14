@@ -7,12 +7,11 @@ This is the maintained `tx`. It started as a copy of
 at `4a2dbe5`; pi-toolset's `tx` is deprecated in its favor. Installing this one (`./install.sh`, or the package's `tx` command) replaces a
 `tx` installed from pi-toolset; every pi-toolset command works the same.
 
-## pi-autowork runners
+## Delivery services
 
-`tx` is a tmux session launcher only. pi-autowork runners are systemd services managed
-with the `autowork` command and its TUI; see
-[the autowork command](../pi-autowork/README.md#the-autowork-command). For one release,
-`tx autowork ...` only says to run `autowork ...` instead.
+`tx` is a tmux session launcher only. The pi-autowork executor and CLI are removed;
+`tx` does not install or control a replacement. See
+[GitHub/Orbi delivery](../docs/github-native.md). Orbi remains paused until qualified.
 
 ## Files
 

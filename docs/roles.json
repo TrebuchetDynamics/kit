@@ -29,7 +29,7 @@
         "plugins/defaults.json",
         "scripts/telegram_menu_policy.py",
         "scripts/check.py",
-        "pi-autowork/pi_autowork/task_commands.py",
+        "scripts/github_issues.py",
         "skills/docs-sync/scripts/docs.py"
       ]
     },
@@ -86,15 +86,14 @@
       "path": "docs/testing.md",
       "covers": [
         "scripts/check.py",
-        "tests",
-        "pi-autowork/tests"
+        "tests"
       ],
       "verified_at": "41aaad8fccfe"
     },
     "source-layout": {
       "status": "maintained",
-      "path": "pi-autowork/docs/source-layout.md",
-      "covers": ["pi-autowork/src", "pi-autowork/scripts", "pi-autowork/bin", "scripts/autowork_bootstrap.py"]
+      "path": "docs/project.md#current-components",
+      "covers": ["src/autowork_runtime", "src/autowork_bootstrap.py", "scripts"]
     },
     "changelog": {
       "status": "maintained",
@@ -127,7 +126,7 @@
         "adapters",
         ".claude-plugin",
         ".codex-plugin",
-        "scripts/pi-autowork.sh"
+        "scripts/github_issues.py"
       ],
       "verified_at": "41aaad8fccfe"
     },

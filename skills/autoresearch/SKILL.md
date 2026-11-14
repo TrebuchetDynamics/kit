@@ -33,7 +33,7 @@ research protocol.
 
 Apply the [work center](../shared/TODO-WORKCENTER.md) before planning and closeout.
 Every command saves in-scope actionable findings as task records in `tasks/` by
-default, through `autowork tasks`. No extra “save” instruction is needed.
+default, through the [GitHub handoff](../shared/PLAN-HANDOFF.md). No extra “save” instruction is needed.
 Planning-only permits documentation/backlog writes, not product implementation;
 explicit read-only, chat-only, no-write and --dry-run requests write nothing.
 Report saved paths, task IDs and the next executable action. Reuse existing plans
@@ -127,7 +127,7 @@ decision, roadmap and queue in one pass, turning non-reference work into retirem
 tasks (reusing matching follow-ups) rather than fictitious parity.
 
 When invoked by autowork for backlog recovery, follow its
-[bounded planning fallback](../autowork/references/backlog-planning.md): accepted
+[bounded planning fallback](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/backlog-planning.md): accepted
 scope only, up to three useful slices, canonical reconciliation, same-occurrence
 selection and a persisted input-bound receipt. Do not launch a recurring research
 loop or ask again for settled implementation choices.
@@ -143,7 +143,7 @@ acceptance, sources and dependencies remain correct, return the decision/evidenc
 coordinator without invoking Docs Sync. Keep any needed execution receipt in the
 existing task record. When documentation actually needs a change, load
 `kit:docs-sync` (or the verified sibling SKILL.md) in **narrow Maintain**
-for affected owners; save task changes with `autowork tasks`; do not start a whole-repository bootstrap implicitly.
+for affected owners; reconcile GitHub Issues; do not start a whole-repository bootstrap implicitly.
 
 1. Supply a compact finding receipt: command/run path, accepted requirement/source,
    task ID if any, exact observed evidence, scope, baseline/target/units, Verify and
@@ -157,27 +157,17 @@ for affected owners; save task changes with `autowork tasks`; do not start a who
    keep receipts as history. Preserve active leases,
    ownership, focus, completed history and unrelated edits. An in-progress cache
    benchmark remains that same task, not a second “research cache” task.
-3. For accepted unmet work, save complete task records with `autowork tasks add`
-   under [ordinary authoring](../shared/TODO-WORKCENTER.md#ordinary-authoring).
-   Use `autowork tasks goal` only for a meaningful shared outcome. Link existing
-   intent and research evidence in `Sources:`; keep bounded `scope`/`exclusions`, observable
-   `acceptance`/`checks`, `depends_on`, `ownership` and `touches` (plus `resources`
-   where needed). Place them in **Now/Next** by actual priority (section, then rank)
-   and dependencies. Use one discriminating investigation only for a blocking
-   unknown; produce implementation plus verification slices for known gaps.
-   Keep speculative product ideas in Needs decision unless the user's
-   request already supplies acceptance. No invented approval or priority changes.
-4. After the final changed batch, run `autowork tasks validate --worktree .` in the
-   canonical repository and commit the batch once; then `autowork tasks why ID` shows
-   whether each task can run. Repair supported missing fields; never fabricate
-   `Status: Accepted`. Report drafts, touched task IDs and the eligible next slice. Repeat reconciliation
-   of unchanged evidence must preserve IDs and bytes, not duplicate tasks.
-5. This is **backlog scheduling**: documenting and ordering task records in `tasks/`.
-   It does not mean installing a cron job or claiming an autowork task. If the user
-   also authorized implementation, pass the current ready receipt to `autowork`;
-   reuse an existing worker instead of spawning a competing worker for its task.
-   A request for periodic execution uses autowork's native schedule workflow with
-   the user's cadence/profile/repository; never invent or duplicate a timer.
+3. For accepted unmet work, publish complete GitHub issues under
+   [Plan Handoff](../shared/PLAN-HANDOFF.md): scope, exclusions, acceptance, exact
+   verification and immutable source evidence. Reuse existing issues and PRs.
+   Build the complete batch and native dependencies under `ai-planning`; read
+   back the graph before publishing `ai-ready` last. Proposals remain undispatched.
+4. Report issue URLs, evidence and the first dependency-ready slice; do not claim
+   implementation from publication. Repeated reconciliation preserves identities
+   and existing ownership instead of duplicating work.
+5. Scheduling here means backlog ordering, not timers or service activation.
+   Explicit manual implementation routes to `/work`; Orbi remains paused and
+   live-unqualified. Never start a competing worker or reinstall the removed executor.
 
 `plan`, `probe`, `predict`, `reason`, `scenario`, `learn`, `improve`, `evals` and
 `security` do not silently turn recommendations into product-code changes. Use the
@@ -230,7 +220,7 @@ says COMPLETE: use autowork's normal closure gates and receipts.
 
 Finish with the user outcome first (what is fixed, what is only planned, the exact
 next implementation action), then: result/stop reason; metric/check evidence; changed
-document owners; task IDs and Now/Next; readiness (`autowork tasks why`) or blocker
+document owners; issue URLs and native dependencies; readiness or blocker
 for the exact scheduled IDs; committed SHA when applicable; and whether execution/timed
 scheduling actually occurred. Attribute other workers' code and checks to them; a
 saved plan or zero pending decisions is not product completion. When challenged on

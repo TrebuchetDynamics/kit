@@ -131,9 +131,10 @@ leaves its partial private destination retained, never deletes owner files.
      and redaction tests together: a lost auth-rejection wrapper can keep replaying.
    - For `tasks/` records, compare task IDs, statuses and evidence receipts before choosing a
      side. Prefer the later reconciled record only after confirming it contains the completed
-     work from both sides; apply missing changes with `autowork tasks`, not by hand-editing the
-     frontmatter. Check the entire merged store by stable ID, not just conflict hunks, and run
-     `autowork tasks validate --worktree .`: preserve newer deferrals, completed statuses,
+     work from both sides. The executor/task CLI is removed; preserve legacy records
+     rather than hand-editing frontmatter. Any unresolved legacy conflict needs separately
+     scoped reconciliation. Check the entire retained store by stable ID, not just hunks;
+     preserve newer deferrals, completed statuses,
      receipts, goal evidence and local accepted work. A rank conflict keeps the owner's latest
      order. Compare upstream task/goal
      records programmatically, allowing only the explicitly owned changes; counts alone can

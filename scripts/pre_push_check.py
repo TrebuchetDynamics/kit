@@ -5,7 +5,7 @@
     python3 scripts/pre_push_check.py --install   # write or chain the hook into .git/hooks/pre-push
     KIT_PRE_PUSH=0 git push       # skip the tests this once (so does `git push --no-verify`)
 
-The core contracts (docs check, task-store validation) run first, in seconds: the selector
+The core contracts (docs check) run first, in seconds: the selector
 leaves documents to them. Git hands a pre-push hook one line per ref: local ref, local sha, remote ref, remote sha.
 The base of the change is the remote's current sha when this repository knows it, else
 the merge-base with origin/main (the selector's own default). Deleted refs and refs with
@@ -84,7 +84,7 @@ HOOK_VARIABLES = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_EDITOR', 'G
 def test_environment(env=os.environ):
     """The environment the tests see: Git exports GIT_EDITOR=true, GIT_EXEC_PATH and GIT_PREFIX to a
     hook, and GIT_EDITOR=true alone failed eight planning tests whose fixtures expect a plain shell.
-    GIT_CONFIG_* entries stay (scripts/check.py handles the runner's push guard itself).
+    GIT_CONFIG_* entries stay; repository-specific Git policies are not bypassed.
     TMPDIR gets a real directory: three suites read it with os.environ['TMPDIR'] and an interactive
     shell that never set it made them fail as if the tree were red, which invites --no-verify."""
     kept = {key: value for key, value in env.items()
@@ -94,9 +94,9 @@ def test_environment(env=os.environ):
 
 
 def load_note(loadavg=None, cpus=None):
-    """A failing affected run is not proof of a red tree on a host busy with its own runners.
+    """A failing affected run is not proof of a red tree on a busy host.
 
-    Window-based tests (runner/worker timing, slot waits) fail under load that has nothing to
+    Window-based tests can fail under load that has nothing to
     do with the push. Return the note to print, or None when the host is quiet.
     """
     try:
@@ -106,16 +106,16 @@ def load_note(loadavg=None, cpus=None):
         return None
     if one < max(2.0, count * 1.5):
         return None
-    return (f'pre-push: host load {one:.1f} on {count} cpus: runner and worker timing tests can fail\n'
+    return (f'pre-push: host load {one:.1f} on {count} cpus: timing tests can fail\n'
             '  under this load. Run one failing module alone before treating the tree as red.')
 
 
 def run_core():
-    """The checker's cheap core contracts (docs check, task-store validation): they cover the
+    """The checker's cheap core contracts (docs check): they cover the
     documents the selector leaves to them, in a few seconds."""
     import runpy
     core = runpy.run_path(str(ROOT / 'scripts/check.py'))['affected_core']
-    print('pre-push: core contracts (docs check, task-store validation)', flush=True)
+    print('pre-push: core contracts (docs check)', flush=True)
     return 0 if core(ROOT) else 1
 
 

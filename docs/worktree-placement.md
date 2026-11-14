@@ -5,13 +5,13 @@ checkout is the first non-bare entry from `git worktree list --porcelain`, not
 necessarily the current directory. `.worktrees/` is ignored; the shared helper also
 adds a local Git exclusion for repositories without a tracked ignore rule.
 
-Autowork worker, retry, integration and isolation paths use
-`pi-autowork/engine/worktree_paths.py`. Pi sessions and scratch checkouts use
-the same helper. Existing session paths remain resumable until explicitly moved.
+The standalone `scripts/worktree_paths.py` helper supplies placement and Claude
+hook policy independently of any executor. Existing installed hooks and session
+paths stay intact; removal does not move or delete worktrees.
 
 ## Claude Code
 
-Copy `pi-autowork/engine/worktree_paths.py` to
+Copy `scripts/worktree_paths.py` to
 `~/.claude/hooks/worktree-policy.py`. Merge these entries into the user
 `~/.claude/settings.json` hooks, preserving other settings:
 
@@ -37,7 +37,7 @@ The hook payloads and lifecycle are documented in the
 ## One interactive writer per checkout
 
 One interactive session writes a checkout at a time. Copy
-`pi-autowork/engine/checkout_lock.py` to `~/.claude/hooks/checkout-lock.py` and
+`scripts/checkout_lock.py` to `~/.claude/hooks/checkout-lock.py` and
 add these hooks beside the worktree policy's:
 
 ```json

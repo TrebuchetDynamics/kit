@@ -1,5 +1,12 @@
 # Orchestrator reliability and plan quality
 
+> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> observations, recommendations and pilot procedures below refer to historical
+> sources, not current operating or development instructions. Do not revive it.
+> Preserve unresolved acceptance and recovery evidence; reconcile still-required
+> outcomes through [GitHub Issues and Orbi](../github-native.md). Orbi remains
+> paused and live-unqualified.
+
 Status: research, 2026-10-19. Companion to
 [multi-agent orchestration](multi-agent-orchestration.md). It asks why the Pi
 Autowork runner keeps needing fixes, what comparable systems and the literature do

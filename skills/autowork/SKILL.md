@@ -14,7 +14,9 @@ Follow the [shared contract](../shared/COMMON-CONTRACT.md) and
 
 The legacy Autowork execution system is retired. This compatibility command now
 routes to GitHub and Orbi; it never starts, resumes, installs or schedules
-`pi-autowork`. Existing code is retained for migration and recovery only.
+`pi-autowork`. Its executor, CLI and integrations are removed. Preserve existing
+tasks, worktrees and attempts/recovery evidence. Orbi remains paused and
+live-unqualified; this command never releases that pause.
 
 ## Inspect and hand off
 

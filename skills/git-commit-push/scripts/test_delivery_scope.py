@@ -38,7 +38,7 @@ class DeliveryScopePolicyTests(unittest.TestCase):
                        'merge --ff-only origin/main', 'local main stale'):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.main)
-        closeout = normalized(ROOT / 'skills/autowork/references/worktree-closeout.md')
+        closeout = normalized(SKILL / 'references/worktree-closeout.md')
         self.assertIn('integrating onto a stale local `main` diverges from the remote', closeout)
 
     def test_completed_cross_agent_work_is_eligible_for_repo_wide_ship(self):
@@ -66,7 +66,7 @@ class DeliveryScopePolicyTests(unittest.TestCase):
     def test_remote_additions_conserved_in_isolated_reconciliation(self):
         self.both_require('fresh upstream', 'isolated candidate',
                           'preserve newer remote entries', 'never delete remote lines',
-                          'supported `autowork tasks` operations',
+                          'supported GitHub issue operations'.lower(),
                           'anchored prose edits', 'validate and inspect the resulting diff')
 
     def test_worker_local_only_audit_and_allowlist_do_not_gain_authority(self):

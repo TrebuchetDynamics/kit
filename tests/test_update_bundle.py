@@ -105,7 +105,7 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(module.__file__, str(release / 'scripts/update_bundle.py'))
             self.assertIs(module.prepare.__globals__, vars(module))
             self.assertEqual(module.prepare.__code__.co_filename,
-                             str(release / 'pi-autowork/src/autowork_runtime/update/update_bundle.py'))
+                             str(release / 'src/autowork_runtime/update/update_bundle.py'))
         with patch.object(peers[0], 'live_profiles', return_value=[('patched', self.home)]):
             self.assertEqual(modules[0].selected_profiles(self.home, ['patched']), [('patched', self.home)])
             self.assertEqual(modules[1].selected_profiles(self.home, ['default']), [('default', self.home)])
@@ -113,7 +113,7 @@ class UpdateTests(unittest.TestCase):
     def test_missing_updater_payload_never_borrows_another_release(self):
         release = copy_sources(self.root / 'incomplete')
         for entry in ('update_bundle', 'update_bundle_native'):
-            (release / f'pi-autowork/src/autowork_runtime/update/{entry}.py').unlink(missing_ok=True)
+            (release / f'src/autowork_runtime/update/{entry}.py').unlink(missing_ok=True)
             result = subprocess.run([sys.executable, str(release / f'scripts/{entry}.py'), '--help'],
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
@@ -352,6 +352,7 @@ class UpdateTests(unittest.TestCase):
             'read -r answer && exit 8\n'  # background updates cannot prompt
             'printf \'%s\\n\' \'{"item":"autowork","status":"installed","exit":0}\' '
             '\'{"item":"tx","status":"installed","exit":0}\' '
+            '\'{"item":"octet","status":"installed","exit":0}\' '
             '\'{"item":"claude","status":"failed","exit":7}\' '
             '\'{"item":"codex","status":"skipped","exit":null}\' > "$AUTOWORK_INSTALL_REPORT"\n'
             'exit 1\n')
@@ -372,10 +373,10 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(log.read_text().splitlines(), ['--full --skip hermes,pi -q'])
         self.assertEqual([r['status'] for r in receipts], ['update_available', 'updated', 'up_to_date'])
         self.assertEqual(receipts[1]['hosts'], [
-            {'item': 'autowork', 'status': 'installed', 'exit': 0},
             {'item': 'tx', 'status': 'installed', 'exit': 0},
             {'item': 'claude', 'status': 'failed', 'exit': 7},
-            {'item': 'codex', 'status': 'skipped', 'exit': None}])
+            {'item': 'codex', 'status': 'skipped', 'exit': None},
+            {'item': 'octet', 'status': 'installed', 'exit': 0}])
         self.assertNotIn('hosts', receipts[0])
         self.assertNotIn('hosts', receipts[2])
 
@@ -391,22 +392,22 @@ class UpdateTests(unittest.TestCase):
                     installer.write_text('#!/bin/bash\n' + body)
                 self.assertEqual(self.mod.refresh_hosts(self.repo), [
                     {'item': item, 'status': status, 'exit': code}
-                    for item in ('autowork', 'tx', 'claude', 'codex')])
+                    for item in ('tx', 'claude', 'codex', 'octet')])
 
     def test_host_refresh_timeout_keeps_completed_items_and_stops_descendants(self):
         import time
         child = self.root / 'late-write'
         (self.repo / 'install.sh').write_text(
             '#!/bin/bash\n'
-            'echo \'{"item":"autowork","status":"installed","exit":0}\' > "$AUTOWORK_INSTALL_REPORT"\n'
+            'echo \'{"item":"tx","status":"installed","exit":0}\' > "$AUTOWORK_INSTALL_REPORT"\n'
             f'(sleep 0.5; touch "{child}") &\nwait\n')
         with patch.object(self.mod, 'HOST_REFRESH_TIMEOUT_S', 0.1):
             rows = self.mod.refresh_hosts(self.repo)
         self.assertEqual(rows, [
-            {'item': 'autowork', 'status': 'installed', 'exit': 0},
-            {'item': 'tx', 'status': 'timeout', 'exit': None},
+            {'item': 'tx', 'status': 'installed', 'exit': 0},
             {'item': 'claude', 'status': 'timeout', 'exit': None},
-            {'item': 'codex', 'status': 'timeout', 'exit': None}])
+            {'item': 'codex', 'status': 'timeout', 'exit': None},
+            {'item': 'octet', 'status': 'timeout', 'exit': None}])
         time.sleep(0.6)
         self.assertFalse(child.exists())
 
@@ -1209,7 +1210,7 @@ class ScopedUpdateTests(unittest.TestCase):
 
     def test_git_export_attributes_do_not_change_deployed_blob_hashes(self):
         copy_sources(self.remote, entries=('plugins/defaults.json',))
-        payload = 'pi-autowork/src/autowork_runtime/update/update_bundle.py'
+        payload = 'src/autowork_runtime/update/update_bundle.py'
         (self.remote / payload).chmod(0o755)
         (self.remote/'.gitattributes').write_text(f'skills/demo/SKILL.md export-ignore\n{payload} export-ignore\n')
         self.git(self.remote, 'add', '.'); self.git(self.remote, 'commit', '-m', 'archive attributes')

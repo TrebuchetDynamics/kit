@@ -26,7 +26,7 @@ or backlog. Load its relevant sections once.
   authority permits one supported batch without another approval ceremony.
 - Read-only/questions-only/no-write wins over apply: change nothing, including
   reports or task records. Otherwise reuse the existing task/plan owner through
-  `autowork tasks`; unavailable task tooling is not permission to hand-edit records.
+  supported GitHub issue tools; unavailable tooling is not permission to hand-edit legacy records.
 - Preserve ownership, required gates and user limits. Explicit stop, time, token,
   spend and batch limits override conflicting continuation advice in references.
   No automatic commits, push, live suites, dependencies or CI-policy changes.

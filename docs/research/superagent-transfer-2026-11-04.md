@@ -1,5 +1,12 @@
 # What the dsh-superagent prototype changes in Autowork — 2026-11-04
 
+> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> observations, recommendations and pilot procedures below refer to historical
+> sources, not current operating or development instructions. Do not revive it.
+> Preserve unresolved acceptance and recovery evidence; reconcile still-required
+> outcomes through [GitHub Issues and Orbi](../github-native.md). Orbi remains
+> paused and live-unqualified.
+
 Read-only comparison of [`DeepSeek-ai/dsh-superagent-prototype`](https://github.com/DeepSeek-ai/dsh-superagent-prototype)
 at `8c32a9dc5d72c033816c6a8110b37f40cf94fba4` (2026-10-31) against the Autowork runner in
 this repository. That project is a research prototype, not a product; its own README says

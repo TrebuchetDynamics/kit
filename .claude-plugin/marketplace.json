@@ -1,7 +1,7 @@
 {
   "name": "autowork",
   "owner": {"name": "TrebuchetDynamics"},
-  "description": "Autowork repository workflows",
+  "description": "Kit repository planning and GitHub-native workflows",
   "plugins": [
     {
       "name": "kit",

@@ -40,6 +40,25 @@ class SkillTraceEvalTests(unittest.TestCase):
         self.assertFalse(result['ok'])
         self.assertTrue(any('missing required' in failure for failure in result['failures']))
 
+    def test_observation_trace_refuses_writes_and_legacy_execution(self):
+        spec = load(SPECS / 'autowork.json')
+        for extra in ({'type': 'edit', 'path': 'src/parser.py'},
+                      {'type': 'write', 'path': 'src/parser.py'},
+                      {'type': 'command', 'command': 'autowork start .', 'exit': 0},
+                      {'type': 'command', 'command': 'systemctl --user restart pi-autowork@repo.service', 'exit': 0},
+                      {'type': 'command', 'command': 'git reset --hard', 'exit': 0},
+                      {'type': 'command', 'command': 'git -C . push --force', 'exit': 0},
+                      {'type': 'command', 'command': 'git clean -fd', 'exit': 0},
+                      {'type': 'command', 'command': 'orbi setup', 'exit': 0},
+                      {'type': 'command', 'command': 'orbi run', 'exit': 0},
+                      {'type': 'command', 'command': 'systemctl --user enable --now orbi-kit@1.timer', 'exit': 0}):
+            trace = load(TRACES / 'autowork-pass.json')
+            trace['events'].insert(-1, extra)
+            with self.subTest(extra=extra):
+                result = evaluate(trace, spec)
+                self.assertFalse(result['ok'])
+                self.assertTrue(any('forbidden action' in failure for failure in result['failures']))
+
     def test_edit_and_tool_wrapped_commit_are_refused(self):
         spec = load(SPECS / 'ponytail-review.json')
         base = load(TRACES / 'ponytail-review-pass.json')

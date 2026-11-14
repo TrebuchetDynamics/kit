@@ -59,6 +59,33 @@ class WorktreeSweepTests(unittest.TestCase):
         return {entry['path'].split('/')[-1]: entry
                 for entry in json.loads(self.sweep('--json').stdout.split('\n\n')[0])}
 
+    def test_remove_without_explicit_safety_helper_refuses_before_merging(self):
+        ahead = self.worktree('ahead', commit='pending work')
+        done = self.sweep('--apply', '--remove', check=False)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn('explicit existing --closeout safety helper', done.stderr)
+        self.assertEqual(git(self.repo, 'rev-parse', 'HEAD'), self.base)
+        self.assertTrue(ahead.is_dir())
+
+    def test_missing_closeout_refuses_without_deleting_merged_worktree(self):
+        finished = self.worktree('finished')
+        done = self.sweep('--remove', '--closeout', str(self.repo / 'missing.py'),
+                          check=False)
+        self.assertEqual(done.returncode, 2)
+        self.assertTrue(finished.is_dir())
+
+    def test_explicit_closeout_receives_only_eligible_candidates(self):
+        finished = self.worktree('finished')
+        self.worktree('ahead-dirty', commit='unfinished work', dirty=True)
+        helper = Path(self.tmp.name) / 'closeout.py'
+        marker = Path(self.tmp.name) / 'seen'
+        helper.write_text(
+            'import pathlib, sys\n'
+            f'pathlib.Path({str(marker)!r}).write_text(sys.argv[3])\n')
+        self.sweep('--remove', '--closeout', str(helper))
+        self.assertEqual(marker.read_text(), str(finished))
+        self.assertTrue(finished.is_dir(), 'only the explicit helper may remove it')
+
     def test_classification_covers_every_state_without_changing_anything(self):
         self.worktree('finished')
         self.worktree('ahead', commit='work in progress')

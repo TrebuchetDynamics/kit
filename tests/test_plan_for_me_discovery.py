@@ -3,11 +3,8 @@
 These read the real skill, shared contract, adapters and disposable fixtures. They
 do not run a model; host/model behavior is evaluated with the planning specimens.
 """
-import runpy
+import json
 from pathlib import Path
-import subprocess
-import sys
-import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +13,7 @@ DISCOVERY = ROOT / 'skills/plan-for-me/references/discovery.md'
 RESEARCH_PLAN = ROOT / 'skills/shared/RESEARCH-PLAN.md'
 PLANNING_CRAFT = ROOT / 'skills/shared/PLANNING-CRAFT.md'
 ADAPTER = ROOT / 'adapters/skills/plan-for-me/SKILL.md'
-SCENARIOS = ROOT / 'tests/fixtures/planning/scenarios.py'
+SCENARIOS = ROOT / 'tests/fixtures/planning/cases.json'
 
 
 def words(path):
@@ -140,31 +137,24 @@ class PlanForMeDiscoveryContractTests(unittest.TestCase):
         self.assertIn('Reuse the original task and candidate', words(special))
         self.assertIn('positive trust/capability mechanism is still unidentified', words(special))
 
-    def test_discovery_fixture_matrix_covers_required_situations_and_prepares(self):
-        cases = runpy.run_path(str(SCENARIOS))['CASES']
+    def test_discovery_fixture_matrix_retains_requirements_without_executor(self):
+        fixtures = json.loads(SCENARIOS.read_text())
+        cases = fixtures['cases']
         required = {'bare-established', 'bare-sparse', 'bare-undefined', 'mature-backlog',
                     'vague-goal', 'verification-gap', 'spec-conflict', 'proposal',
                     'read-only', 'active-dirty', 'repeat', 'large', 'coordinator'}
         self.assertLessEqual(required, set(cases))
         self.assertEqual(cases['bare-established'][1], '')
         self.assertEqual(cases['vague-goal'][1], 'make this better')
-        with tempfile.TemporaryDirectory(prefix='planning-fixture-') as temporary:
-            destination = Path(temporary) / 'eval'
-            subprocess.run(
-                [sys.executable, str(SCENARIOS), 'prepare', str(destination),
-                 '--cases', 'bare-established,bare-sparse,bare-undefined,active-dirty'],
-                check=True, capture_output=True, text=True)
-            self.assertTrue((destination / 'bare-established/docs/prd.md').is_file())
-            self.assertIn('FMT-02', (destination / 'bare-established/docs/prd.md').read_text())
-            self.assertFalse((destination / 'bare-sparse/docs/plan.md').exists())
-            self.assertIn('test_trim', (destination / 'bare-sparse/tests/test_formatting.py').read_text())
-            self.assertIn('no product direction',
-                          (destination / 'bare-undefined/README.md').read_text())
-            self.assertIn('- Held by: owner',
-                          (destination / 'active-dirty/tasks/items/FMT-900-ab.md').read_text())
-            self.assertTrue((destination / 'active-dirty/notes/owner-edit.txt').is_file())
-            self.assertEqual((destination / 'bare-established.request.txt').read_text().count(
-                'No one can reply'), 1)
+        self.assertIn('FMT-02', cases['bare-established'][2]['docs/prd.md'])
+        self.assertNotIn('docs/plan.md', cases['bare-sparse'][2])
+        self.assertIn('test_trim', cases['bare-sparse'][2]['tests/test_formatting.py'])
+        self.assertIn('no product direction', cases['bare-undefined'][2]['README.md'])
+        self.assertIn('notes/owner-edit.txt', cases['active-dirty'][2])
+        self.assertIn('external-input', fixtures['stall_cases'])
+        self.assertIn('ambiguous-round', fixtures['interviews'])
+        self.assertFalse(SCENARIOS.with_name('scenarios.py').exists())
+        self.assertFalse(SCENARIOS.with_name('interviews.py').exists())
 
 
 if __name__ == '__main__':

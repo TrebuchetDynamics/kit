@@ -1,5 +1,12 @@
 # Production-readiness requirements
 
+> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> observations, recommendations and pilot procedures below refer to historical
+> sources, not current operating or development instructions. Do not revive it.
+> Preserve unresolved acceptance and recovery evidence; reconcile still-required
+> outcomes through [GitHub Issues and Orbi](../github-native.md). Orbi remains
+> paused and live-unqualified.
+
 This page retains current publication, recovery, security and live-qualification
 boundaries. Completed audits, issue timelines, test runs and local scorecard samples
 remain in Git history, not as a claim of current acceptance.

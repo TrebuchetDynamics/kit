@@ -19,10 +19,9 @@ A trace is one JSON object:
   "model": "fixture",
   "note": "Synthetic fixture; not a model run.",
   "events": [
-    {"type": "tool", "tool": "read", "path": "tasks/items/T-1.md"},
-    {"type": "write", "path": "src/parser.py"},
-    {"type": "command", "command": "python3 scripts/check.py tests/test_parser.py", "exit": 0},
-    {"type": "final", "text": "Task T-1 checked and closed with evidence."}
+    {"type": "command", "command": "gh issue list --repo example/project", "exit": 0},
+    {"type": "command", "command": "orbi status --config /path/to/orbi.toml", "exit": 0},
+    {"type": "final", "text": "No active delivery is reported; readiness is not merge evidence."}
   ]
 }
 ```

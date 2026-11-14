@@ -1,5 +1,12 @@
 # Pi harness integration requirements
 
+> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> observations, recommendations and pilot procedures below refer to historical
+> sources, not current operating or development instructions. Do not revive it.
+> Preserve unresolved acceptance and recovery evidence; reconcile still-required
+> outcomes through [GitHub Issues and Orbi](../github-native.md). Orbi remains
+> paused and live-unqualified.
+
 Current architecture, pins, installation and explicit rollback are in
 [the runtime guide](../pi-rpc.md); evidence boundaries are in
 [RPC qualification](pi-rpc-qualification-2026-10-24.md).
