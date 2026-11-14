@@ -13,6 +13,13 @@ Sources: [plugin manifest](../plugin.yaml), [installation inventory](../plugins/
 
 ## Current source policy
 
+The suite's `pi-bolt` item bootstraps the upstream native Pi build, not a Kit
+package. Default/`--all` and `update` include it; `--only pi-bolt` selects it and
+`--skip pi-bolt` leaves it untouched. It runs non-interactively, installs no
+optional extensions and keeps upstream's `~/.pi-bolt` payload directory. GNU/Linux
+x86-64 or ARM64 and macOS on Apple silicon are supported; other targets skip by
+default and fail on explicit selection. See [Pi-Bolt installation](installation.md#pi-bolt-native-executable).
+
 | Component | Selection | Reproducibility limit |
 | --- | --- | --- |
 | Bundled workflows | This repository revision | Pin the checkout revision to reproduce these files. |
@@ -27,6 +34,7 @@ Sources: [plugin manifest](../plugin.yaml), [installation inventory](../plugins/
 | Toolset engineering protocols (`skills/engineering/local/`) | Written and versioned in this repository; no upstream pin | `test-suite-optimization` adapts two criteria from Matt Pocock's MIT `tdd` skill in its own words; no text is copied. |
 | Addy agent-skills (25 protocols) | Vendored commit and hashes in [UPSTREAM.json](../skills/engineering/UPSTREAM.json) | Updated only through a reviewed Toolset change; shared references included. Two defensive examples are paraphrased, with original and adapted hashes recorded; a refresh restores upstream bytes, so re-apply them by hand. |
 | Graphify | Dedicated setup helper | Not covered by a unified bundle lockfile. |
+| Pi-Bolt | Official [installer](https://pi-bolt.opensec.in/install.sh) from [opensec-git/Pi-Bolt](https://github.com/opensec-git/Pi-Bolt), run unmodified in binary mode | Mutable upstream stable channel, not a Kit version pin; upstream verifies release identity, signatures and checksums. Kit reports the linked executable version and installs no optional extensions. |
 
 Ordinary installation preserves existing resources, adding only missing Markdown
 files in the bundled `shared/` support directory (without overwriting local edits).

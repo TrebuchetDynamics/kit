@@ -16,7 +16,9 @@ or a detached HEAD is installed as it is, and says so.
 
 Each host item runs its own supported install command; a host whose CLI is not
 installed is skipped and says so, and fails when named with --only. Orbi installs
-the CLI only via uv; existing CLIs and deployments are kept. Hermes options
+the CLI only via uv; existing CLIs and deployments are kept. Pi-Bolt bootstraps the
+upstream native Pi build, keeps an existing one on install, and never installs its
+optional extensions. Hermes options
 (--hermes-home, --bundle-only, --no-reload, --yes-deps) apply to the Hermes item.
 Standard library only.
 """
@@ -519,6 +521,76 @@ def orbi_item(output=None):
                             run=lambda: install_orbi(output))])
 
 
+PI_BOLT_INSTALLER = 'https://pi-bolt.opensec.in/install.sh'
+
+
+def pi_bolt_version(destination):
+    """Verify the linked destination executable, never another pi-bolt on PATH."""
+    version = subprocess.run([str(destination / 'pi-bolt'), '--version'],
+                             stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                             errors='replace', timeout=30)
+    if version.returncode or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+[^\n]*\n?', version.stdout):
+        raise OSError('Pi-Bolt destination version verification failed')
+    return version.stdout.strip()
+
+
+def install_pi_bolt(output=None, update=False):
+    """Reuse a working executable on install; upstream owns signatures and updates."""
+    output = output or Output()
+    destination = BIN.absolute()
+    if not update and (destination / 'pi-bolt').is_file():
+        try:
+            return f'{destination / "pi-bolt"}: {pi_bolt_version(destination)} (already installed; kept)'
+        except (OSError, subprocess.SubprocessError):
+            pass  # Broken destination: retry the official installer, never force placement.
+    for command in ('curl', 'sh'):
+        if not shutil.which(command):
+            raise OSError(f'Pi-Bolt requires {command}; install it and retry --only pi-bolt')
+
+    def run(argv, stage, env=None):
+        if output.verbosity > 1:
+            output.line('  $ ' + shlex.join(argv), 'command')
+        code, text = run_command(argv, output, env)
+        if code:
+            raise OSError(f'{stage}: {failure_summary(text)} (exit {code})')
+
+    with tempfile.TemporaryDirectory(prefix='kit-pi-bolt-') as directory:
+        installer = Path(directory) / 'install.sh'
+        installer.touch(mode=0o600)
+        run(['curl', '--disable', '--proto', '=https', '--proto-redir', '=https',
+             '--tlsv1.2', '--location', '--max-redirs', '5', '--connect-timeout', '15',
+             '--max-time', '300', '--max-filesize', '1048576', '--fail', '--silent',
+             '--show-error', '--output', str(installer), PI_BOLT_INSTALLER], 'Pi-Bolt installer download failed')
+        if not 0 < installer.stat().st_size <= 1048576:
+            raise OSError('Pi-Bolt installer download is empty or exceeds its size limit')
+        # A non-interactive run takes the default action and never installs OpenSec's
+        # optional extensions; the payload keeps upstream's default location.
+        env = {'PIBOLT_BIN_DIR': str(destination), 'PIBOLT_YES': '1', 'PIBOLT_EXTENSIONS': 'no'}
+        if output.verbosity > 1:
+            output.line('  Environment: ' + shlex.join(f'{key}={value}' for key, value in env.items()), 'command')
+        try:
+            run(['sh', str(installer)], 'Pi-Bolt upstream installer failed', env)
+            version = pi_bolt_version(destination)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise OSError(f'{exc}; upstream may have left a partial installation; no rollback performed') from exc
+    return f'{destination / "pi-bolt"}: {version}'
+
+
+def pi_bolt_item(output=None, mode='install'):
+    system, machine = platform.system(), platform.machine().lower()
+    supported = ((system == 'Darwin' and machine in ('arm64', 'aarch64'))
+                 or (system == 'Linux' and machine in ('x86_64', 'amd64', 'aarch64', 'arm64')))
+    destination = BIN.absolute()
+    return Item('pi-bolt', 'Pi-Bolt native Pi executable',
+                note='native Pi build; reuses ~/.pi/agent; optional extensions stay off',
+                missing='' if supported else f'unsupported Pi-Bolt platform: {system} {machine} (needs GNU/Linux x86-64/ARM64 or macOS Apple silicon)',
+                steps=[Step(('refresh Pi-Bolt; ' if mode == 'update' else 'reuse a working destination or bootstrap Pi-Bolt; ')
+                            + f'download {PI_BOLT_INSTALLER} privately when needed; run unmodified sh installer '
+                            f'with PIBOLT_BIN_DIR={destination} PIBOLT_YES=1 PIBOLT_EXTENSIONS=no; '
+                            f'verify {destination}/pi-bolt --version',
+                            run=lambda: install_pi_bolt(output, update=mode == 'update'))])
+
+
 def items(hermes_args, output=None, mode='install'):
     package = pi_package()
     pi = Item('pi', 'Pi package + bundled Ponytail', needs='pi', note='needs Node 22+')
@@ -536,6 +608,7 @@ def items(hermes_args, output=None, mode='install'):
                          run=enable_pi_package))
     return [
         pi,
+        pi_bolt_item(output, mode=mode),
         Item('tx', 'tx tmux session launcher', note='keeps your existing ~/.tmux.conf',
              steps=[Step(f'install {BIN}/tx and completions', run=install_tx)]),
         hermes_item(hermes_args),
@@ -756,7 +829,7 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
               for state in ('installed', 'planned', 'skipped', 'failed')}
     output.line('\n' + ', '.join(f'{count} {state}' for state, count in counts.items())
                 + f' — {time.monotonic() - started:.1f}s', 'failed' if counts['failed'] else 'heading')
-    if any(key in ('claude', 'codex', 'pi', 'orbi') and outcome == 'installed' for key, outcome, _ in results):
+    if any(key in ('claude', 'codex', 'pi', 'pi-bolt', 'orbi') and outcome == 'installed' for key, outcome, _ in results):
         output.line('Open a new host session to discover the installed skills.')
     return int(bool(counts['failed']))
 
@@ -794,7 +867,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--all', '--full', action='store_true', help='install the full suite for every available host (default)')
-    selection.add_argument('--only', help='comma-separated items to install (pi,tx,hermes,claude,codex,orbi)')
+    selection.add_argument('--only', help='comma-separated items to install (pi,pi-bolt,tx,hermes,claude,codex,orbi)')
     parser.add_argument('--skip', help='comma-separated items to leave out')
     parser.add_argument('--list', action='store_true', help='show the items and whether each is available')
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')

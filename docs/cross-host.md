@@ -439,6 +439,14 @@ the package's previous `autowork` name, survives `pi install` and `pi update` an
 hides every command and `/skill:<name>`. Non-empty filters are kept. Removing the
 package leaves repository documents and commits intact.
 
+### Pi-Bolt runtime
+
+`./install.sh` also installs [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt), Pi
+compiled to one native executable, as `pi-bolt` in the Kit binary directory. It runs
+the same commands and reads the same `~/.pi/agent` configuration and installed Pi
+packages, so the Kit package above serves it without a second install. See
+[Pi-Bolt installation](installation.md#pi-bolt-native-executable).
+
 ### Nous Portal through the local proxy
 
 The executor's `setup-portal` command and TUI provider bridge are removed. Ordinary
