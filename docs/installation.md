@@ -366,7 +366,7 @@ answer. Native host security/dependency requirements still apply.
 Host refresh is best effort, with a five-minute limit for the whole installer run;
 on timeout its process group is stopped. It never rolls back or fails a successful
 Hermes update. The receipt's `hosts` list records `item`, `status` and `exit` for
-`tx`, `claude` and `codex`, and chat status adds one `Hosts:` line.
+`tx`, `claude`, `codex` and `orbi`, and chat status adds one `Hosts:` line.
 Completed items retain their outcomes if a later item times out; remaining items
 report `timeout`. An unavailable installer reports `unavailable`; missing or invalid
 item reports use the installer's failure exit, or `unreported` if it exited zero.
