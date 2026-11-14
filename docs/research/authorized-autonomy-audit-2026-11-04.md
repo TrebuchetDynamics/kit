@@ -1,5 +1,12 @@
 # Authorized autonomy audit: dsh-superagent against Autowork — 2026-11-04
 
+> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> observations, recommendations and pilot procedures below refer to historical
+> sources, not current operating or development instructions. Do not revive it.
+> Preserve unresolved acceptance and recovery evidence; reconcile still-required
+> outcomes through [GitHub Issues and Orbi](../github-native.md). Orbi remains
+> paused and live-unqualified.
+
 Status: **research only.** This commit adds no behaviour. Every recommendation below is a
 proposal for review; none is implemented. One earlier commit on this branch
 (`7c746892`, reserved owner slot) predates the report-first instruction and is evaluated in

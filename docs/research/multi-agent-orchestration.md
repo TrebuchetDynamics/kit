@@ -1,5 +1,12 @@
 # Multi-agent orchestration for coding runners
 
+> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> observations, recommendations and pilot procedures below refer to historical
+> sources, not current operating or development instructions. Do not revive it.
+> Preserve unresolved acceptance and recovery evidence; reconcile still-required
+> outcomes through [GitHub Issues and Orbi](../github-native.md). Orbi remains
+> paused and live-unqualified.
+
 Status: research for the [more parallel workers plan](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/2026-10-19-more-parallel-workers.md).
 Gathered 2026-10-19 with ResearchForge (`rforge` v0.1.21): `rforge search batch` with eight
 queries across OpenAlex, arXiv and Semantic Scholar gave 450 records, 388 after

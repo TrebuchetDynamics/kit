@@ -92,18 +92,19 @@ working directory is not confinement. See Hermes' [profile and workspace guidanc
 
 ## Optional: see decisions become a task
 
-This exercise writes documentation and a task; it needs a configured model and
-file/terminal tools. Saving answers uses narrow docs-sync Maintain. A small utility
+This exercise writes documentation and a GitHub issue; it needs a configured model,
+file/terminal tools and authenticated GitHub issue-write access. Saving answers uses narrow docs-sync Maintain. A small utility
 with clear requirements can use direct source evidence without Graphify. Broader
 architecture or dependency analysis may benefit from that integration; native
 installation does not configure it. Use [full setup](installation.md) when those
 additional capabilities are needed. No implementation worker is started here.
 
-Use a new disposable Git repository with no real product data and a configured
-model. Command registration alone is not readiness for this exercise. In its CLI chat, try:
+Use a disposable GitHub-backed repository with no real product data, no active
+delivery deployment and a configured model. Command registration alone is not
+readiness for this exercise. In its CLI chat, try:
 
 ```text
-/plan_with_me Plan a tiny CLI that counts nonempty lines in a text file. Ask me the missing requirements, then save my accepted answers and one bounded implementation task. Do not implement, commit or push.
+/plan_with_me Plan a tiny CLI that counts nonempty lines in a text file. Ask me the missing requirements, then save my accepted answers and one bounded GitHub issue under ai-planning. No dispatch; do not implement, commit or push.
 ```
 
 Answer the interview. Expected evidence: the existing/new design owner records

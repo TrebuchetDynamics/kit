@@ -6,6 +6,11 @@ page has drifted. Conversational workflow commands (`/autowork`, `/docs_sync`,
 `/plan_with_me` and the rest) are listed in [workflows](workflows.md#commands);
 procedures and their side effects are in [installation](installation.md).
 
+The `autowork` spelling below is retained for Hermes maintenance compatibility,
+not executor support. The removed `pi-autowork` CLI must not be installed or
+restored. Planning saves GitHub Issues; Orbi owns delivery. See the
+[support boundary](github-native.md#support-boundary).
+
 ## Terminal: `hermes autowork`
 
 Source: [`scripts/bundle.py`](../scripts/bundle.py) `setup_parser` and `handle_cli`. Add `-p PROFILE`

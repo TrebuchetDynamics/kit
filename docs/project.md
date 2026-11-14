@@ -15,7 +15,7 @@ Status: Accepted
 
 - Plan With Me asks for consequential missing intent and saves accepted decisions.
 - Plan For Me investigates, chooses supported approaches and records executable
-  plans/tasks. An explicit objective keeps planning focused; a bare or vague request
+  GitHub Issues. An explicit objective keeps planning focused; a bare or vague request
   starts evidence-based discovery without inventing product direction.
 - Docs Sync maintains source-backed documents and GitHub issue handoffs.
 - `/autowork` is a compatibility redirect to GitHub/Orbi. `/work` performs explicit
@@ -25,7 +25,7 @@ Status: Accepted
 - Support Hermes CLI/Telegram and native Claude Code, Codex and Pi packages.
   Workers, profiles, permissions, credentials and external integrations remain
   host-specific. Paseo can host these agents without a Kit executor plugin.
-- Repository tasks are the work board; Kanban and historical cards are never
+- GitHub Issues are the work board; Kanban and historical local records are never
   prerequisites for execution, recovery, review, installation or integration.
 
 These contracts are detailed in [workflows](workflows.md). Planning does not grant
@@ -102,9 +102,11 @@ GitHub Issues own priorities, unresolved decisions and goal evidence.
 Eligibility does not establish live ownership, execution, review or qualification.
 [Testing](testing.md) owns executable checks and their limits. Clean installation,
 actual model execution, Telegram delivery and task acceptance are separate outcomes;
-offline helper tests prove none of those live outcomes by themselves. Measured native
-qualification, model-driven recovery and original-environment delivery requirements
-remain unqualified until their own evidence and authority exist.
+offline helper tests prove none of those live outcomes by themselves.
+Measured native qualification remains pending. Model-driven recovery, original-environment delivery
+and externally enforced spending/descendant limits still require their own evidence
+and authority. Offline checks do not establish actual model startup or universal
+latency. Removal does not satisfy these obligations or enable paused Orbi.
 
 ## Faster ready-task startup
 
@@ -126,8 +128,9 @@ See [paused GitHub/Orbi cutover](github-native.md).
 
 Status: Accepted
 
-Planning handles consequential complexity; Autowork executes accepted outcomes
-without repeatedly asking permission for already-authorized work.
+Planning handles consequential complexity; Orbi or explicit manual `/work`
+executes accepted outcomes without repeatedly asking permission for
+already-authorized work.
 
 - Resolve design, decomposition, interfaces, migration and acceptance before handoff.
   Supply a short executable outcome/sources/checks/exclusions/stop contract, not an
@@ -292,7 +295,7 @@ manifest. Preserve explicit-only Codex/Pi adapters and the hyphen/underscore com
 
 README claims remain source-backed through Docs Sync; run its checks after edits.
 Pure SVG is the default; no bundled Hermes image generator is assumed. Never offer
-upstream attribution/showcase submission unsolicited. Scheduled/Autowork invocation
+upstream attribution/showcase submission unsolicited. Scheduled invocation
 audits only unless task scope authorizes edits. Use the normal commit workflow.
 
 ## README polish (2026-11-05)
@@ -321,7 +324,7 @@ triggers first so host truncation does not hide their purpose.
 
 Load one design skill per task, chosen by the user. An unnamed UI request uses UI
 Taste; Impeccable owns its named commands, design-context setup and detector.
-Scheduled/cron/Autowork use only the read-only audit playbook unless scope authorizes
+Scheduled/cron use only the read-only audit playbook unless scope authorizes
 UI edits. Paid Uizze tools may be used only if already exposed by the host; never
 configure MCP, request credentials or send private code in a query. Windows is not
 a documented target; line-ending conversion must not be treated as passing vendored
@@ -483,7 +486,8 @@ See [paused GitHub/Orbi cutover](github-native.md).
 
 ## Backlog replan (2026-10-15)
 
-Current task records, not dated queue snapshots, control priority and dependencies.
+Current GitHub Issues and native dependencies, not dated queue snapshots or
+local task records, control priority and ordering.
 Split offline implementation from installed-profile refresh, service migration,
 model/authentication and external-delivery qualification. Check real writers before
 adopting candidates; an old review does not prove current source freshness. Preserve
@@ -492,13 +496,16 @@ replacement host/profile does not satisfy a missing original delivery target.
 
 ## Rename to Autowork (2026-10-16)
 
-The current product is Kit; Autowork remains its execution/maintenance namespace.
+The current product is Kit; `autowork` survives only in compatibility redirects,
+Hermes maintenance commands and existing state/package identifiers. pi-autowork
+is retired and unsupported, not an execution namespace or development target.
 Use current manifests and [installation](installation.md) for package names and
 supported transitional settings. The retired `hermes-toolset` namespace has no
 compatibility executor or automatic settings/cron migration.
 
 Maintenance recognizes exact `/autowork update|status|list` forms; other arguments
-remain workflow requests (for example, updating a README). Terminal maintenance
+route through the GitHub/Orbi compatibility skill, not the removed executor.
+Use `/work` for explicit manual implementation. Terminal maintenance
 uses `hermes autowork`. Keep `AUTOWORK_EXECUTION_COMMON`, `# autowork:` cron markers,
 and existing private `maintenance/toolset-update/` / `.toolset-imports.json` state
 identities. A source rename does not reinstall profiles, reset private state or
@@ -672,7 +679,7 @@ High-risk skills use `## Common Rationalizations` and `## Red Flags`, retain one
 and points to pinned Addy guidance for correctness, quality, integration, docs and
 ship criteria; do not add another verification checklist/coordinator.
 
-Apply the rule to Autowork, Plan For Me, Ponytail Review, Git Commit Push, Docs Sync
+Apply the rule to Work, Plan For Me, Ponytail Review, Git Commit Push, Docs Sync
 and Plan With Me, and to later high-risk skills through [skill standard](skill-standard.md)
 and Writing for Agents. Shared operating behavior lives in
 `skills/shared/COMMON-CONTRACT.md`, not a second meta-skill. Keep commands explicit,

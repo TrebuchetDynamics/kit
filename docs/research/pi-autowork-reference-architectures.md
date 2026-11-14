@@ -1,5 +1,12 @@
 # Pi Autowork: open-source reference architectures
 
+> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> observations, recommendations and pilot procedures below refer to historical
+> sources, not current operating or development instructions. Do not revive it.
+> Preserve unresolved acceptance and recovery evidence; reconcile still-required
+> outcomes through [GitHub Issues and Orbi](../github-native.md). Orbi remains
+> paused and live-unqualified.
+
 **Original research snapshot:** 2026-10-16. **Scope:** research and planning, plus
 an isolated [worker-runtime comparison spike](#worker-runtime-comparison-toolset-117-cb).
 The spike is not production adoption or a fleet installation.

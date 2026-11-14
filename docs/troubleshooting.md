@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Symptom-first fixes for installing and using Autowork. Each entry links to
+Symptom-first fixes for installing and using Kit. Each entry links to
 the owning guide; procedures are not repeated here. Start with the diagnostics:
 
 ```sh
@@ -150,7 +150,7 @@ setup from the new location (setup and update refuse a dangling link); see [upda
 ### `/docs_sync` changed documents but nothing was implemented
 
 By design: documentation and planning never start implementation. Run
-`/autowork` for the task you want built; see [workflows](workflows.md#commands).
+`/work` for explicitly authorized manual implementation; see [workflows](workflows.md#commands).
 
 ### A workflow asks for the old task CLI
 

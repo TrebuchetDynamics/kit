@@ -8,11 +8,18 @@ to `ai-ready`, regardless of author. Planning creates complete batches under
 `ai-planning`, verifies native `blockedBy` dependencies, then publishes readiness
 last; `ai-epic` coordination issues do not execute. Preserve explicit pauses,
 actual ownership, CI, sensitive-change controls and human-only requirements.
+Both `/plan-with-me` and `/plan-for-me` save executable plans as GitHub Issues,
+not local task records. Keep their current names; `/autowork` is compatibility-only
+and retained Hermes maintenance names are not executor support.
 See `docs/github-native.md` and `skills/shared/PLAN-HANDOFF.md`.
 
-The pi-autowork executor, CLI and Paseo plugin are removed. Do not install or
-restart them, prepare local task stores or acquire legacy leases. Existing tasks,
-worktrees and attempts/recovery state are preserved migration evidence, not a
+The pi-autowork executor, CLI and Paseo plugin are retired, unsupported and removed.
+Do not develop or repair the retired executor, restore it from older branches,
+install or restart it, prepare local task stores or acquire legacy leases.
+If an existing assignment targets pi-autowork, stop that executor work, preserve
+its changes and evidence, and reconcile still-required outcomes into GitHub Issues
+for Orbi. An old task, plan or research recommendation does not authorize revival.
+Existing tasks, worktrees and attempts/recovery state are preserved migration evidence, not a
 second queue. Orbi remains paused and live-unqualified; do not enable it as part
 of removal. No local-main planning commit is required for issue publication.
 
@@ -61,7 +68,8 @@ GitHub history owns new completion evidence. Preserve existing legacy tasks,
 attempts, worktrees and recovery state during removal/migration. `/docs-sync` does
 not prune them; the removed task CLI is not a cleanup mechanism. Any later pruning
 requires separately scoped safe reconciliation, fresh ownership checks and retained
-immutable evidence. Never alter a running contract, fabricate completion, drop a
+immutable evidence; never remove an active attempt or its recovery inputs.
+Never alter a running contract, fabricate completion, drop a
 verified dependency or discard an unresolved live obligation. Keep goal status and
 live/owner gates unchanged; an empty history is not proof that a goal is met.
 Do not rewrite Git history or change archive-import fixtures merely for cleanup.

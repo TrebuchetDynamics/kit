@@ -2,6 +2,14 @@
 
 Source: [command discovery](../__init__.py) and [native provisioning](../scripts/install_skills.py).
 
+## Unsupported executor work
+
+Do not submit new pi-autowork features, repairs or restoration work. Its executor,
+CLI and Paseo plugin are retired and unsupported. For an existing assignment,
+preserve the branch, dirty changes and recovery evidence; reconcile any still-needed
+outcome into GitHub Issues for Orbi instead. Do not treat an old plan or open legacy
+issue as approval to revive the executor. See the [support boundary](github-native.md#support-boundary).
+
 ## Work on a repository task
 
 Read README.md, AGENTS.md and the current GitHub issue, native dependencies and
@@ -71,7 +79,7 @@ Write a skill the way the pinned
 [Writing For Agents](../skills/writing-for-agents/SKILL.md) reference teaches it
 (mattpocock's `writing-for-agents`, formerly `writing-great-skills`). Load
 `/writing-for-agents` for a real editing pass. The [skill standard](skill-standard.md)
-is the review checklist and records where Autowork differs from that reference; these
+is the review checklist and records where Kit differs from that reference; these
 are the parts that decide review.
 
 - **Pointer wording is the trigger.** The description and any always-loaded line name

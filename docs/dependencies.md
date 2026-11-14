@@ -27,7 +27,7 @@ Offline fixtures are not real native-install or model qualification.
 | Component | Selection | Reproducibility limit |
 | --- | --- | --- |
 | Bundled workflows | This repository revision | Pin the checkout revision to reproduce these files. |
-| pi-toolset specialists | Four pinned instruction-only workflows; [selection and hashes](#bundled-pi-toolset-specialists) | Local adapters preserve Autowork authority; no upstream runtime, scripts or installer dependency. |
+| pi-toolset specialists | Four pinned instruction-only workflows; [selection and hashes](#bundled-pi-toolset-specialists) | Local adapters preserve Kit scope and authority; no upstream runtime, scripts or installer dependency. |
 | Ponytail 5.3.2 | Six protocols, benchmark attribution and optional map script at [pinned revision and hashes](../skills/ponytail/UPSTREAM.json) | Offline on all hosts; local adapters scope upstream behavior. No upstream hooks, installers, persistent modes or telemetry are activated. |
 | Autoresearch 2.2.2 | Vendored revision and file hashes in [UPSTREAM.json](../skills/autoresearch/UPSTREAM.json) | Reviewed updates require refreshing the pinned subtree and tests. |
 | UI Taste 0.2.0 (Uizze) | Vendored from a pinned Uizze commit, [pin and hashes](../skills/ui-taste/UPSTREAM.json) | Plain Markdown playbooks copied unchanged under `upstream/`; the toolset adapter sets host rules; works offline. Its optional paid Uizze MCP is never configured by Toolset. |
@@ -76,16 +76,17 @@ Review scan failures rather than silently substituting another source or disabli
 scanning. Updating this repository alone does not update every existing import.
 
 A suite-wide dependency lockfile, license inventory and automated update procedure
-remain unimplemented. The Rust candidate has its own Cargo.lock, as described above.
+remain unimplemented. The retired Rust candidate's lockfile is historical evidence,
+not a current Kit dependency.
 This page makes the suite-wide limitation explicit; it is not a lockfile.
 
 ## Licensing
 
-Autowork is licensed under the [MIT License](../LICENSE), copyright
+Kit is licensed under the [MIT License](../LICENSE), copyright
 2026 TrebuchetDynamics. Third-party components retain their respective licenses
 and copyright notices.
 
-- Vendored Ponytail retains its [MIT license and attribution](../skills/ponytail/upstream/LICENSE); pinned protocol bytes are unchanged behind local adapters, and its optional map helper is renamed `.cjs` for Autowork's ESM package with a documented bounded-read safety fix.
+- Vendored Ponytail retains its [MIT license and attribution](../skills/ponytail/upstream/LICENSE); pinned protocol bytes are unchanged behind local adapters, and its optional map helper is renamed `.cjs` for Kit's ESM package with a documented bounded-read safety fix.
 - Vendored Impeccable retains its [Apache-2.0 license](../skills/impeccable/LICENSE) and [notices](../skills/impeccable/NOTICE.md). Its official Hermes files are copied unchanged, with upstream SKILL.md stored as PROTOCOL.md behind the local Ponytail-aware adapter, and supplemental [modern-screenshot](../skills/impeccable/licenses/modern-screenshot-MIT.txt) and [platform-design-skills](../skills/impeccable/licenses/platform-design-skills-MIT.txt) MIT notices.
 - Vendored UI Taste retains its [Apache-2.0 license](../skills/ui-taste/upstream/LICENSE), [notice](../skills/ui-taste/upstream/NOTICE) (Impeccable 4.4.0 by Paul Bakaus and ehmo's MIT platform-design-skills) and Uizze's [modifications notice](../skills/ui-taste/upstream/MODIFICATIONS.md). Its SKILL.md is stored as PROTOCOL.md so only the toolset adapter registers; it is otherwise an unmodified copy, not an endorsement by Uizze or the Impeccable author.
 - Vendored Addy agent-skills retains its [MIT license and attribution](../skills/engineering/upstream/LICENSE). Two defensive examples have documented paraphrases with original/adapted hashes; other pinned protocol bytes are preserved. SKILL.md filenames become PROTOCOL.md to avoid duplicate host discovery.
@@ -108,17 +109,17 @@ Each skill carries its unchanged license, protocol and per-file SHA-256 mapping:
 - [Autonomous Codebase Improver](../skills/autonomous-codebase-improver/UPSTREAM.json):
   cross-lane discovery, coverage and recoverable reviewed slices; includes its four
   supporting reference documents. Its historical evaluation receipt is **upstream
-  evidence**, not an Autowork run or a claim of adapted campaign reliability.
+  evidence**, not a Kit workflow run or a claim of adapted campaign reliability.
 - [Split Folder](../skills/split-folder/UPSTREAM.json):
   move/extract/cleanup phases and exact remaining-root-file classification.
 - [Unused Code](../skills/unused-code/UPSTREAM.json):
   static, dynamic and external-consumer proof before deletion.
 
 SKILL.md becomes `upstream/PROTOCOL.md` to avoid nested discovery. Upstream bytes
-are unchanged; the original shared-contract link now resolves to Autowork's
+are unchanged; the original shared-contract link now resolves to Kit's
 existing shared contract. Local adapters and [PI-TOOLSET.md](../skills/shared/PI-TOOLSET.md)
 override upstream lifecycle and host assumptions, retaining explicit limits,
-required review and the one task store. No pi-toolset hooks, package manifests,
+required review and GitHub Issues as the executable backlog. No pi-toolset hooks, package manifests,
 extensions, controller scripts, installers or personal/global skill edits ship.
 
 Selection deliberately excludes:
@@ -144,7 +145,7 @@ No upstream source or installer is fetched during normal installation.
 `09c434ab73ca43761c5d8b0c5d341926c2fba710` (declared version 5.3.2), the MIT license
 and SHA-256 of every imported file. Six upstream SKILL.md files are stored as
 PROTOCOL.md to avoid recursive skill discovery. Local native and portable entry
-skills apply [Autowork's scope rules](../skills/shared/PONYTAIL.md); the upstream
+skills apply [Kit's scope rules](../skills/shared/PONYTAIL.md); the upstream
 help card is provenance only because it advertises unsupported global/plugin UI.
 
 The only executable imported is `hooks/ponytail-map.js`, stored as
@@ -155,7 +156,7 @@ as a hook. It uses Node built-ins and Git to print a bounded regex-based reuse i
 without tracked files (or if Git fails), it falls back to a directory walk that does
 not fully honor ignore rules. Use normal search for correctness and sensitive trees.
 The six skills need no Node dependency themselves. Debt uses native search/Git;
-gain labels its bundled benchmark report as upstream-reported, not Autowork savings.
+gain labels its bundled benchmark report as upstream-reported, not measured Kit savings.
 Upstream installers, publishers, uninstallers, lifecycle hooks, UI/band code and
 benchmark execution are excluded.
 

@@ -2,8 +2,10 @@
 
 ## Decision
 
-Kit is the toolset; Autowork is its runner and skill. Current identity is distinct
-from compatibility with existing installed profiles. This document keeps that
+Kit is the toolset; GitHub Issues own executable plans and Orbi owns delivery.
+pi-autowork is retired and unsupported. The `/autowork` skill is a compatibility
+redirect, not a runner. Current identity is distinct from retained maintenance
+names and compatibility with existing installed profiles. This document keeps that
 contract and outstanding live proof, not completed rename-stage reports.
 
 ## Target identity

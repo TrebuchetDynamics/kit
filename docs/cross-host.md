@@ -1,9 +1,8 @@
 # Claude Code, Codex, Pi and Octet installation
 
-> **GitHub-native cutover:** GitHub Issues now own executable work and Orbi owns
-> delivery. The Autowork runner, plugin and scheduler/install instructions below
-> are retained legacy reference, not the active execution contract. Do not start
-> them for new work. See [current setup and migration](github-native.md).
+> **GitHub-native delivery:** GitHub Issues own executable work; Orbi owns delivery.
+> pi-autowork is retired and unsupported. The retained `/autowork` skill is only a
+> compatibility redirect, not a service starter. See [setup and support](github-native.md).
 
 Kit supports Claude Code, Codex, Pi, Octet and optional Hermes integration.
 Claude Code, Codex, Pi and Octet use the portable adapters, not the Hermes plugin
@@ -15,7 +14,7 @@ and Bug Harvest, Autonomous Codebase Improver, Skill Folder Refactor, Unused Cod
 and Test Optimizer, plus APK Get.
 Grill Me is Plan With Me's challenge mode, not a separate skill.
 The pinned engineering protocols are a **reference pack**, not a command or skill
-on any host; autowork and Docs Sync read them directly when a method gap needs one.
+on any host; Work and Docs Sync read them directly when a method gap needs one.
 Every adapter is explicit-only: Claude Code and Pi read `disable-model-invocation: true`
 in its frontmatter and Codex reads `agents/openai.yaml`, so the model never starts a
 workflow on its own.
@@ -37,23 +36,25 @@ No executable Pi bridge is enabled. See [installation and qualification limits](
 ## Work in the current session
 
 Use `/kit:work` in Claude Code, `$kit:work` in Codex, or `/work` in Pi.
-[Work](../skills/work/SKILL.md) automatically selects and completes tasks here,
-following Autowork's checks and closeout rules. No task ID is required. It continues
+[Work](../skills/work/SKILL.md) selects and completes accepted GitHub work here,
+following repository checks, actual ownership and closeout rules. No task ID is required. It continues
 after each task. When the queue is gated, it finds useful offline work within the
 repository scope. Named-task limits, pauses and live gates stay in force. It stops
 on an explicit limit or an evidenced blocker or exhausted search, not after one task.
 It does not start a service or schedule work after the session ends.
-The portable `/autowork` command keeps its service-first default.
+The portable `/autowork` command only redirects to GitHub/Orbi; it starts no
+service. Both planners publish GitHub Issues, not local task records. No command
+rename is required. Orbi remains paused and live-unqualified.
 
 ## Bundled Ponytail on every host
 
-Every Autowork skill applies the [shared Ponytail method](../skills/shared/PONYTAIL.md)
+Every Kit skill applies the [shared Ponytail method](../skills/shared/PONYTAIL.md)
 within its own scope: smallest complete result, reuse first, no weakened safety or
 verification. Planning remains planning; read-only stays read-only. Detailed
 protocols load once when relevant; there is no extra review loop or global activation.
 
 `install.sh` includes the pinned six-skill suite and optional read-only map helper
-in each host's existing Autowork package, not a second plugin install. The method
+in each host's existing Kit package, not a second plugin install. The method
 needs only host tools; the map helper needs Node and is optional on non-Pi hosts.
 No hooks, telemetry, transcript import, UI band or global mode config are enabled.
 Existing external Ponytail installations are left alone; check command collisions.
@@ -68,7 +69,7 @@ Existing external Ponytail installations are left alone; check command collision
 
 The suite also includes `ponytail`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`
 and `ponytail-help`; Pi command aliases use the same hyphenated names.
-`ponytail lite|full|ultra|off` changes the conversation's Autowork preference only;
+`ponytail lite|full|ultra|off` changes the conversation's Kit preference only;
 no argument reports it (default `full`). The other commands report without edits.
 Gain displays attributed upstream benchmarks, never inferred local savings.
 See [provenance and refresh](dependencies.md#bundled-ponytail) and
@@ -114,7 +115,7 @@ executable helper or external dependency is installed.
 
 Portable invocation is explicit-only; `read-only` changes nothing. See
 [workflow and evidence requirements](workflows.md#test-optimizer).
-This skill is local Autowork content, not an imported pi-toolset protocol.
+This skill is local Kit content, not an imported pi-toolset protocol.
 
 ## Graphify
 
@@ -122,7 +123,7 @@ This skill is local Autowork content, not an imported pi-toolset protocol.
 knowledge graph. Hermes installs the official skill and CLI through its plugin
 installer, so `/graphify` there is upstream content. Claude Code, Codex and Pi use
 the local [adapter](../adapters/skills/graphify/SKILL.md), which calls the same
-`graphify` command with Autowork scope, evidence and limit rules.
+`graphify` command with Kit scope, evidence and limit rules.
 
 | Host | Example |
 | --- | --- |
@@ -155,8 +156,8 @@ name, within their accepted scope.
 | Pi | `/writing-for-agents skills/blockers; remove no-ops; read-only` |
 
 The reference covers pointer wording, progressive disclosure, completion criteria,
-leading words, positive instruction and pruning. The local adapter keeps Autowork
-scope, the task store, review gates and delivery limits. The current upstream name
+leading words, positive instruction and pruning. The local adapter keeps Kit
+scope, GitHub issue authority, review gates and delivery limits. The current upstream name
 is `writing-for-agents`; upstream retired `writing-great-skills` without an alias.
 See [workflow and evidence requirements](workflows.md#writing-for-agents).
 
@@ -181,7 +182,7 @@ with `/ui-taste` and `/impeccable`.
 
 ## Ask Kit
 
-[Ask Autowork](../skills/ask-kit/SKILL.md) is the router over the bundle: it names
+[Ask Kit](../skills/ask-kit/SKILL.md) is the router over the bundle: it names
 the skill for a situation, then the next step. It reads the chosen skill before
 describing it and names one command. Use it when you know the outcome you want but not
 the command.
@@ -263,10 +264,10 @@ Invoke with the existing host prefix:
 Pi also exposes `/autonomous-codebase-improver`, `/split-folder` and
 `/unused-code`; native `/skill:<hyphenated-name>` invocation remains available.
 Portable entries are explicit-only. Existing bare command/skill collisions are
-not overwritten: select the verified Autowork namespace or installed adapter path,
+not overwritten: select the verified Kit namespace or installed adapter path,
 not an unrelated same-named personal skill.
 
-[Autowork adaptations](../skills/shared/PI-TOOLSET.md) govern upstream scope,
+[Kit adaptations](../skills/shared/PI-TOOLSET.md) govern upstream scope,
 task state, tools and delivery. Missing Pi-specific tools do not require installing
 extensions; missing required independent review blocks implementation. Explicit
 read-only, pause, time/budget and one-slice limits win. All four use Ponytail and the
@@ -336,7 +337,7 @@ namespaced skills:
 /kit:plan-for-me investigate the next useful improvement; save the plan
 /kit:plan-for-me
 /kit:docs-sync update the docs and tasks
-/kit:autowork complete the next ready task; commit locally, no push
+/kit:work complete the next ready issue; commit locally, no push
 /kit:autoresearch debug the failing test
 ```
 
@@ -374,7 +375,7 @@ $kit:plan-with-me challenge this plan; read-only, no implementation
 $kit:plan-for-me investigate the next useful improvement; save the plan
 $kit:plan-for-me
 $kit:docs-sync update the docs and tasks
-$kit:autowork complete the next ready task; commit locally, no push
+$kit:work complete the next ready issue; commit locally, no push
 $kit:autoresearch debug the failing test
 ```
 
@@ -416,7 +417,7 @@ Local installs refer to this checkout; keep it in place. The extension registers
 /plan-for-me investigate the next useful improvement; save the plan
 /plan-for-me
 /docs-sync update the docs and tasks
-/autowork complete the next ready task; commit locally, no push
+/work complete the next ready issue; commit locally, no push
 /autoresearch-debug diagnose the failing test
 ```
 

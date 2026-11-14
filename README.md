@@ -16,13 +16,17 @@ last, after complete issue content and native dependencies exist. Epics do not
 execute; explicit pauses and incomplete planning stay undispatched. CI, review
 and sensitive-change protections remain separate from dispatch.
 
-**The `pi-autowork` executor, CLI and Paseo plugin are removed.** Existing task
-records, worktrees and attempts/recovery evidence are preserved, not executed.
+**`pi-autowork` is retired and unsupported. Its executor, CLI and Paseo plugin
+are removed. Do not develop, repair, reinstall or restart them.** Contributors and
+agents working from older branches must stop executor work and reconcile any
+still-required outcome into GitHub Issues for Orbi; do not discard their changes.
+Existing task records, worktrees and attempts/recovery evidence are preserved,
+not executed.
 **Orbi remains paused and live-unqualified** pending the pilot and cutover gates.
 See [GitHub-native setup and cutover](docs/github-native.md).
 
 [Install](#install) · [First use](#first-use-in-your-project) ·
-[Development flow](#autowork-flow) · [Skills](#the-skills) ·
+[Development flow](#github-native-development-flow) · [Skills](#the-skills) ·
 [Safety](#safety-before-installing) · [Docs](#documentation)
 
 **Start with one skill.** Ask `/ask-kit` in Pi, `/kit:ask-kit` in Claude Code or
@@ -192,8 +196,8 @@ states its own boundaries and what "done" means.
 
 **Plan and decide**
 
-- `/plan-with-me` — plan together through focused questions and research.
-- `/plan-for-me` — investigate and save a plan and tasks without an interview.
+- `/plan-with-me` — clarify intent together, then publish complete GitHub Issues.
+- `/plan-for-me` — investigate and publish complete GitHub Issues without an interview.
 - `/grilling` — stress-test an idea in rounds, one recommendation per question.
 - `/grill-with-docs` — the same interview, recording what it settles as ADRs and
   glossary terms.
@@ -250,13 +254,22 @@ The executor plugin is removed. Paseo remains a host for ordinary Kit agent
 sessions. Use GitHub and Orbi diagnostics for delivery status; historical plugin
 checks do not qualify the new delivery system.
 
-## The runner (Autowork)
+<a id="the-runner-autowork"></a>
+## Retired executor and compatibility names
 
-Removed, including source, launchers and integrations. Historical contracts and
+`pi-autowork` is not a supported Kit component or a development target. Its source,
+launchers and integrations are removed. Historical contracts and
 unresolved qualification are available at the
 [immutable pre-removal revision](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork).
-This is evidence, not an installation fallback. Preserve task data, attempts,
-worktrees and recovery state. Orbi stays paused until separately qualified.
+This is evidence, not an installation fallback. The `/autowork` skill remains a
+GitHub/Orbi compatibility redirect only. Existing Hermes maintenance commands
+(`hermes autowork`, `/autowork update`, `list`, `plugin status`) and marketplace
+identifiers keep their current names; they do not restore executor support. Use
+`/work` for explicitly requested manual implementation. No skill or CLI rename is
+part of this change.
+
+Preserve task data, attempts, worktrees and recovery state. Orbi stays paused
+until separately qualified.
 
 ## Your work queue
 

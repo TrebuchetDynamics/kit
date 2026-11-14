@@ -32,7 +32,7 @@ Use `--menu` when you want to select components interactively:
 The suite includes the Pi package, `tx` launcher, Hermes
 fleet setup, official stable Octet native binaries with Kit skills, and Claude Code and Codex plugins
 with their complete portable skill suites, including [bundled Ponytail](cross-host.md#bundled-ponytail-on-every-host).
-All Autowork skills apply its shared method within their existing authority; no
+All Kit skills apply its shared method within their existing authority; no
 separate Ponytail plugin, hooks or persistent modes are installed. Existing external
 Ponytail installs are not changed or removed. `--full` (`--all`) is the default; `--skip` excludes components. Host CLIs
 for plugin items must already be installed: full mode reports missing hosts as skipped, while
@@ -153,7 +153,7 @@ Reruns refresh changed entrypoints and leave identical files untouched. Existing
 same-name files or symlinks are preserved as `SKILL.md.bak` (then `.bak.1`, etc.);
 unrelated skills are left alone. Prompt pointers in `~/.octet/prompts/kit-<name>.md`
 load the same adapters and forward the caller's arguments with Octet's `$@` expansion.
-Use `/kit-ask-kit`, `/kit-plan-with-me`, `/kit-autowork` or `/kit-work`;
+Use `/kit-ask-kit`, `/kit-plan-with-me`, `/kit-plan-for-me` or `/kit-work`;
 `/kit-autoresearch-<selector>` and `/kit-grill-me` preserve the research/challenge
 routes. Names are prefixed to avoid native command collisions. Existing prompt
 files are backed up before replacement, like skill files. A symlinked prompts
@@ -215,7 +215,7 @@ the link and `hermes -p PROFILE plugins enable kit` to enable it.
 `hermes autowork setup` installs and enables the sources in
 [plugins/PLUGINS.md](../plugins/PLUGINS.md), including any external skill repositories
 it lists (currently none), Graphify's Hermes integration and speech support. It also links and enables
-autowork itself in every existing live profile, preserving existing plugin
+Kit itself in every existing live profile, preserving existing plugin
 installations. After creating another profile, rerun setup or, from this checkout,
 run `bash install-plugins.sh --bundle-only` to add just this bundle and its defaults
 across profiles. The links depend on keeping this checkout installed. It applies
@@ -340,7 +340,7 @@ updated/removed, avoiding finalization through stale code.
 mattpocock/skills grilling guidance, preserving their attribution. `/grill-me` (CLI)
 and `/grill_me` (Telegram) remain typeable compatibility commands that run
 `plan-with-me` in challenge mode with this skill as its reference; `/grill_me` is not
-shown in the Telegram menu. Enabling/loading autowork installs missing bundled
+shown in the Telegram menu. Enabling/loading Kit installs missing bundled
 skills and shared support files into that profile's native skill directory, using
 the same offline provisioner as full setup. Existing flat and categorized skills
 are preserved; an incomplete existing slot is never replaced and is logged as a
@@ -358,7 +358,7 @@ not as a tested messaging connection.
 
 ## Telegram setup
 
-Enabling/loading autowork applies its gateway-injection setting in the
+Enabling/loading Kit applies its gateway-injection setting in the
 owning profile. There is no YAML wiring step. This lets a skill command queue an
 agent turn in the chat where it was invoked. Full setup refreshes running gateway
 commands and verifies activation receipts; `--no-reload` explicitly defers that.
@@ -379,11 +379,13 @@ Back up configurations first and review [removal and recovery](uninstall.md).
 Updating this page: reconcile changes to setup flags, profile discovery, runtime
 policy writes and native provisioning against the source links above.
 
-## Upgrade to Autowork
+<a id="upgrade-to-autowork"></a>
+## Migrate from the retired executor
 
-Autowork replaces the former command and skill, rather than registering an alias.
-The skill, helper paths, readiness value (`ready_for_autowork`) and new private
-state use the same name. Update integrations that consume the old readiness value.
+pi-autowork is retired and unsupported. Do not reinstall its executor, CLI, TUI or
+Paseo plugin, or update consumers to its removed task/readiness interfaces.
+Kit planning publishes GitHub Issues for Orbi. Existing Hermes maintenance command
+names remain supported compatibility surfaces, not executor entrypoints.
 
 Existing jobs, IDs, schedules, pause state, execution history and private profile
 state are preserved. Do not rewire legacy executor jobs or create new timers as
@@ -402,17 +404,18 @@ profile skills/configuration. It still writes Git fetch metadata and its receipt
 
 After a changed all-profile update activates successfully, the updater also runs
 that fetched release's `install.sh --full --skip hermes,pi -q` once from its updated
-plugin checkout. This refreshes the `autowork` command/TUI, `tx`, and the Claude Code
-and Codex plugins through the same supported installer used for initial setup.
-Hermes was just updated; Pi package updates remain owned by the runners at their
-safe point. Missing host CLIs are skipped. No privilege escalation or consent flags
+plugin checkout. This refreshes the remaining selected components through the
+same supported installer used for initial setup, including `tx`, Octet and the
+Claude Code/Codex plugins. It does not install the retired executor or TUI.
+Hermes was just updated; Pi package updates are separate host maintenance,
+not a responsibility of the removed runner. Missing host CLIs are skipped. No privilege escalation or consent flags
 are supplied, and stdin is closed so background updates cannot wait for a person's
 answer. Native host security/dependency requirements still apply.
 
 Host refresh is best effort, with a five-minute limit for the whole installer run;
 on timeout its process group is stopped. It never rolls back or fails a successful
 Hermes update. The receipt's `hosts` list records `item`, `status` and `exit` for
-`autowork`, `tx`, `claude` and `codex`, and chat status adds one `Hosts:` line.
+`tx`, `claude`, `codex` and `octet`, and chat status adds one `Hosts:` line.
 Completed items retain their outcomes if a later item times out; remaining items
 report `timeout`. An unavailable installer reports `unavailable`; missing or invalid
 item reports use the installer's failure exit, or `unreported` if it exited zero.
@@ -506,7 +509,7 @@ update's receipt in place. In chat, `/autowork update` says which update is runn
 and starts nothing.
 
 A named-profile invocation still targets every existing live profile under the
-same Hermes root. The updater fetches the official Autowork `main` branch,
+same Hermes root. The updater fetches the official Kit `main` branch,
 checks each distinct installed Git checkout, and normally accepts clean equal or
 fast-forward revisions. A verified managed checkout with rewritten upstream history
 can instead use [managed checkout recovery](#managed-checkout-recovery).

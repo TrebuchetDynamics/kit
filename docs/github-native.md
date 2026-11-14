@@ -5,6 +5,22 @@ executable backlog, priority, native dependencies and dispatch. One Orbi deploym
 per repository owns Pi implementation, tests, PR creation, independent review and
 merge gates. Merged PRs and GitHub history retain delivery evidence.
 
+## Support boundary
+
+`pi-autowork` is retired and unsupported, not a fallback or an active redesign.
+Do not develop, repair, reinstall, restart or restore its executor, CLI or Paseo
+plugin. Contributors with older assignments must stop executor work, preserve
+uncommitted changes and recovery evidence, and reconcile still-required outcomes
+into GitHub Issues. Historical plans and research do not authorize new executor
+work or cancel unresolved product acceptance.
+
+Kit keeps `/plan-with-me` and `/plan-for-me`: both publish issue-based plans under
+the same handoff contract. Orbi is the separate delivery project, not a renamed
+Kit executor. `/work` supports explicit manual implementation. `/autowork` is only
+a compatibility redirect; retained Hermes maintenance commands and marketplace
+names are not support for the removed runner. No command rename is implied.
+Orbi stays paused until its separate qualification gates pass.
+
 ## Default dispatch
 
 All issues default to `ai-ready`, regardless of who opens them. This includes

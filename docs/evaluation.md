@@ -13,6 +13,8 @@ Orbi remains paused and live-unqualified. Complete the single-repository
 actual issue pickup, implementation, PR creation, independent review, required CI,
 merge and failed-run recovery without duplicate work or lost candidates.
 Preserve explicit pauses, sensitive-change controls and human-only acceptance.
+Review the [safety requirements](../README.md#safety-before-installing) before any
+live evaluation; keep production credentials away from unattended agents.
 
 ## Thirty-day evaluation
 
