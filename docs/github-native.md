@@ -170,6 +170,15 @@ authorization with existing pauses and cutover gates resolved. Stop disables onl
 owned timers and reports draining until active workers finish; missing evidence
 is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only.
 
+Status names the state it observed: `absent` when no deployment owns the
+repository, `prepared` when an owned timer is installed and enabled while no owned
+worker is active, `running` while an owned worker is active, `draining` after the
+owned timers were disabled while an invocation finishes, `stopped` when every
+owned unit was read as inactive, and `unavailable` when a read failed and the
+state is unknown. Each mutation reports its own outcome: `setup` says `prepared`,
+`start` says `started` or `already-running`, and `stop` says `draining` or
+`stopped`; `--dry-run` says `planned` for all three.
+
 The [lifecycle reference](../skills/orbi/references/lifecycle.md) owns prerequisite,
 retention, pinned-source and deployment-local uv isolation details. Native units
 still depend on a compatible shared bootstrap: this is not a self-contained
