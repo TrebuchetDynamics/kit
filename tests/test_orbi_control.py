@@ -972,6 +972,141 @@ class LifecycleSequenceTests(unittest.TestCase):
 
 
 class InterfaceAndSkillTests(unittest.TestCase):
+    def test_help_is_read_only_and_names_every_action(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(Path(tmp))
+            scratch = h.root / 'scratch'
+            scratch.mkdir()
+            before = snapshot(h.home)
+            expected = {'status': 'none', 'setup': 'staging', 'start': 'scheduler',
+                        'stop': 'scheduler', 'help': 'none'}
+            for options in ([], ['--repo-dir', '/missing/repo', '--config',
+                                  '/missing/config', '--dry-run']):
+                for json_mode in (True, False):
+                    with self.subTest(options=options, json=json_mode):
+                        result = subprocess.run(
+                            [sys.executable, '-B', str(HELPER), 'help', *options,
+                             *(['--json'] if json_mode else [])],
+                            cwd=scratch, env=dict(h.env), capture_output=True,
+                            text=True, timeout=20)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(result.stderr, '')
+                        if json_mode:
+                            document = json.loads(result.stdout)
+                            self.assertEqual(set(document), {
+                                'action', 'platform', 'mutations_supported', 'actions',
+                                'options', 'errors', 'boundaries'})
+                            self.assertEqual(document['action'], 'help')
+                            self.assertEqual(list(document['actions']), list(expected))
+                            for action, mutation in expected.items():
+                                entry = document['actions'][action]
+                                self.assertEqual(set(entry), {
+                                    'effect', 'mutates', 'platforms', 'when'})
+                                self.assertEqual(entry['mutates'], mutation)
+                                self.assertTrue(entry['effect'])
+                                self.assertTrue(entry['when'])
+                            for flag, actions in {
+                                '--repo-dir': ['status', 'setup', 'start', 'stop'],
+                                '--config': ['status', 'setup', 'start', 'stop'],
+                                '--dry-run': ['setup', 'start', 'stop'],
+                                '--json': list(expected),
+                            }.items():
+                                self.assertEqual(document['options'][flag]['applies_to'],
+                                                 actions)
+                            self.assertEqual(set(document['errors']),
+                                             {'exit', 'mutated', 'code', 'fix'})
+                            self.assertIn('Exit 0 means success or help',
+                                          document['errors']['exit'])
+                            self.assertIn('error.mutated, not the exit code',
+                                          document['errors']['mutated'])
+                            for boundary in ('no repository or deployment',
+                                             'Status is read-only',
+                                             'Only setup stages source/config',
+                                             'only start/stop touch the scheduler',
+                                             'Not an executor or scheduler',
+                                             '/unblock', '/git-commit-push', '/autowork',
+                                             'Local visibility only'):
+                                self.assertIn(boundary, ' '.join(document['boundaries']))
+                            self.assertNotIn(SECRET, result.stdout)
+                        else:
+                            self.assertIn('[status|setup|start|stop|help]', result.stdout)
+                            for action, mutation in expected.items():
+                                lines = [line for line in result.stdout.splitlines()
+                                         if line.startswith(f'  {action} [')]
+                                self.assertEqual(len(lines), 1)
+                                self.assertIn(f'[{mutation}]', lines[0])
+                        self.assertEqual(h.calls(), [])
+                        self.assertEqual(snapshot(h.home), before)
+
+    def test_help_reports_platform_limits(self):
+        # No repo-dir is injected: help must not bind a deployment or environment.
+        # Argparse itself uses locale/terminal variables; assert the helper context
+        # binds no environment, including the injected caller environment.
+        for platform, normalized, supported in (
+                ('linux-gnu', 'linux', True), ('darwin', 'darwin', False),
+                ('win32', 'win32', False)):
+            with self.subTest(platform=platform), \
+                    mock.patch.object(helper, 'repo_identity', side_effect=AssertionError), \
+                    mock.patch.object(helper, 'select_target', side_effect=AssertionError), \
+                    mock.patch.object(helper, 'Context', wraps=helper.Context) as context, \
+                    mock.patch.object(helper.os, 'getcwd', side_effect=AssertionError), \
+                    mock.patch.object(helper.Path, 'read_text', side_effect=AssertionError), \
+                    mock.patch.object(helper.Path, 'open', side_effect=AssertionError), \
+                    mock.patch.object(helper.subprocess, 'run', side_effect=AssertionError):
+                out = io.StringIO()
+                code = helper.main(['help', '--json'], env=mock.Mock(),
+                                   platform=platform, stdout=out)
+                self.assertEqual(code, 0)
+                self.assertEqual(context.call_args.kwargs['env'], {})
+                self.assertEqual(context.call_args.kwargs['cwd'], '.')
+                doc = json.loads(out.getvalue())
+                self.assertEqual(doc['platform'], normalized)
+                self.assertEqual(doc['mutations_supported'], supported)
+                self.assertEqual(doc['actions']['status']['platforms'], ['linux', 'darwin'])
+                self.assertEqual(doc['actions']['help']['platforms'], ['all'])
+                for action in ('setup', 'start', 'stop'):
+                    self.assertEqual(doc['actions'][action]['platforms'], ['linux'])
+
+    def test_unknown_action_points_at_help(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(Path(tmp))
+            before = snapshot(h.home)
+            for json_mode in (False, True):
+                result = subprocess.run(
+                    [sys.executable, '-B', str(HELPER), 'bogus',
+                     *(['--json'] if json_mode else [])],
+                    cwd=h.root, env=dict(h.env), capture_output=True, text=True,
+                    timeout=20)
+                self.assertEqual(result.returncode, 2)
+                if json_mode:
+                    doc = json.loads(result.stdout)
+                    self.assertEqual(doc['action'], 'bogus')
+                    self.assertEqual(doc['error']['code'], 'unknown_action')
+                    self.assertFalse(doc['error']['mutated'])
+                    self.assertEqual(doc['error']['fix'],
+                                     'run /orbi help for the supported actions and their effects')
+                else:
+                    self.assertIn('error=unknown_action', result.stderr)
+                    self.assertIn('fix=run /orbi help', result.stderr)
+                self.assertEqual(h.calls(), [])
+                self.assertEqual(snapshot(h.home), before)
+
+    def test_help_keeps_python_floor_and_argparse_usage(self):
+        out = io.StringIO()
+        with mock.patch.object(helper.sys, 'version_info', (3, 10)), \
+                mock.patch.object(helper.subprocess, 'run', side_effect=AssertionError):
+            code = helper.main(['help', '--json'], stdout=out)
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out.getvalue())['error']['code'], 'python_unsupported')
+        self.assertFalse(json.loads(out.getvalue())['error']['mutated'])
+        for flag in ('-h', '--help'):
+            result = subprocess.run([sys.executable, '-B', str(HELPER), flag],
+                                    capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('[status|setup|start|stop|help]', result.stdout)
+            for action in ('status', 'setup', 'start', 'stop', 'help'):
+                self.assertRegex(result.stdout, rf'{action} \[(none|staging|scheduler)\]')
+
     def test_default_action_is_status_and_cli_uses_argv(self):
         with tempfile.TemporaryDirectory() as tmp:
             h = Harness(Path(tmp))
@@ -999,14 +1134,19 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertIn('../shared/DEFINITION-OF-DONE.md', skill)
         self.assertIn('references/lifecycle.md', skill)
         self.assertIn('scripts/orbi_control.py', skill)
-        self.assertIn('status|setup|start|stop', skill)
+        self.assertIn('`/orbi [status|setup|start|stop|help]`', skill)
+        self.assertIn('**Help first.**', skill)
+        self.assertIn("helper's `help`", skill)
+        self.assertIn('observed output', skill)
         self.assertIn('macOS', skill)
         self.assertIn('explicit pauses, cutover requirements and human-only gates', skill)
         router = (ROOT / 'skills/ask-kit/SKILL.md').read_text()
         self.assertIn('`/orbi`', router)
         reference = (ROOT / 'skills/orbi/references/lifecycle.md').read_text()
+        self.assertIn('[status|setup|start|stop|help]', reference)
+        self.assertIn('for lifecycle actions; `help` prints a compact human block', reference)
         for topic in ('PYTHONPATH', 'UV_TOOL_DIR', 'UV_TOOL_BIN_DIR',
-                      f'sha:{PIN}', 'five', 'draining', 'is read-only'):
+                      f'sha:{PIN}', 'five', 'draining', 'is read-only', 'help'):
             self.assertIn(topic, reference)
 
 

@@ -12,11 +12,18 @@ scope, guided by the [GitHub-native contract](../../docs/github-native.md). This
 client for one repository's existing Orbi deployment: it is not an executor,
 queue, daemon or second scheduler.
 
-`/orbi [status|setup|start|stop]` runs
+`/orbi [status|setup|start|stop|help]` runs
 `python3 -B <this-skill>/scripts/orbi_control.py` with the same action and
 `--repo-dir PATH --config PATH --dry-run --json`. The default action is
 `status`; never run bare `orbi`, which is the Runner's one-tick entry. Use the
 helper, not hand-written `systemctl`, unit files or `orbi setup` commands.
+
+**Help first.** For a help or command-inventory request, run the helper's `help`
+action and report the observed output instead of composing a reference from
+memory. Help needs no repository or deployment and works on every platform;
+it accepts and ignores `--repo-dir`, `--config` and `--dry-run`. Do not bind a
+repository or read deployment state for this route. Use the steps below for
+lifecycle actions.
 
 ## Steps
 
@@ -56,6 +63,7 @@ effect. Linux is the only mutation platform in this version.
 
 | Rationalization | Reality |
 | --- | --- |
+| "I remember the commands, so I can compose the help table." | Run the helper's `help` action and report its observed output; memory is not the authoritative reference. |
 | "Setup already installs units, so enabling now is harmless." | Upstream setup and install-units enable timers at this pin. Setup must leave scheduling inactive until an explicit start. |
 | "A second deployment is easy; more slots deliver faster." | One repository has one task pool. A duplicate pool causes double claims; the helper refuses ambiguous matches and unit conflicts. |
 | "PYTHONPATH isolates the source, so the uv tool dir can stay shared." | A first tick or packaging change can reinstall the shared tool and change another deployment's launcher. Set `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` with `PYTHONPATH`. |
