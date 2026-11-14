@@ -5,8 +5,8 @@
 
 The change is everything between BASE (default: where HEAD left origin/main, else main) and the
 working tree, untracked files included. A test module is selected when it changed itself, or
-when it reaches a changed file through what it imports (``import parallel_integrate``,
-``from pi_autowork import coordinator``) or the repository files it names (a script it runs, a
+when it reaches a changed file through imports (including qualified and relative imports)
+or the repository files it names (a script it runs, a
 document it reads), followed transitively. Each selection prints the chain that selected it.
 A change to the check itself, CI or packaging selects the whole suite, as does `--full`; any
 other changed file no test reaches does too, except a document (Markdown or text), which the
@@ -74,23 +74,16 @@ def repository_files():
 
 
 def module_name(path):
-    """Canonical source names, including the stable pre-src public entry names."""
+    """Canonical source names for the root src layout and ordinary modules."""
     name = path.removesuffix('.py').replace('/', '.')
-    if name.startswith('pi-autowork.src.'):
-        name = name[len('pi-autowork.src.'):]
-    elif name.startswith('src.'):
+    if name.startswith('src.'):
         name = name[4:]
-    elif name.startswith('pi-autowork.pi_autowork.'):
-        name = name[len('pi-autowork.'):]
-    elif name.startswith('pi-autowork.engine.'):
-        name = 'pi_autowork.engine.' + name[len('pi-autowork.engine.'):]
     return name.removesuffix('.__init__')
 
 
 def python_references(source, path=''):
     """(top and lazy imported module names, text of string literals). Paths count
-    only in string literals, not comments or docstrings: a comment naming pi-autowork.sh made a
-    state module depend on the whole runner."""
+    only in string literals, not comments or docstrings."""
     try:
         tree = ast.parse(source)
     except (SyntaxError, ValueError):
@@ -155,25 +148,19 @@ def dependency_graph(files, tests=(), *, conservative=False):
         except OSError:
             continue
         deps = set()
-        # Flat engine entries and canonical imports share one implementation.
-        canonical = module_name(path)
-        if path.startswith('pi-autowork/engine/'):
-            deps |= {p for p in modules.get(canonical, ())
-                     if p.startswith('pi-autowork/pi_autowork/engine/')}
         if conservative and path.endswith('.py'):
             # Loading a package member executes every ancestor package initializer,
             # including unchanged initializers that import a changed dependency.
             deps |= {str(parent / '__init__.py') for parent in Path(path).parents
                      if parent != Path('.') and str(parent / '__init__.py') in known}
         if path.endswith('.py'):
-            # An import inside a function is a dependency of the module that makes it, not of
-            # everything above it: task_prepare imports fleet_view for one path, and through the
-            # shared store fixture that tied 60 engine tests to the fleet view.
+            # Lazy imports belong to the module making them; conservative selection
+            # follows them transitively, while advisory selection favors precision.
             top, lazy, text = python_references(text, path)
             for name in top | (lazy if conservative or path in tests else set()):
                 deps |= modules.get(name, set())
                 if '.' not in name:
-                    # Old flat engine imports and test-specific path setup can be ambiguous.
+                    # Unqualified imports and test-specific path setup can be ambiguous.
                     deps |= stems.get(name, set())
                 for index in range(1, len(name.split('.'))):
                     prefix = '.'.join(name.split('.')[:index])
@@ -236,7 +223,7 @@ def select(changed, base='HEAD', *, conservative=False):
             if not reached & tests:
                 if changed_path.endswith(DOCUMENTS):
                     # A document is read, not run: one no test names affects no test module.
-                    # The checker's core contracts (docs check, task-store validation) still
+                    # The checker's core contracts (tree guard and docs check) still
                     # cover it; a changelog line used to cost the whole suite before a push.
                     continue
                 return whole(f'{changed_path} has no resolved test mapping')
@@ -253,8 +240,8 @@ def select(changed, base='HEAD', *, conservative=False):
     while queue:
         path = queue.popleft()
         # A document reaches the tests that read it and the tests of the code that reads it,
-        # no further: the engine names CHANGELOG.md and README.md because it edits them in
-        # target repositories, and following every importer of that code reached the suite.
+        # no further: tools may mention documents in target repositories too, and
+        # following every importer of those tools needlessly reaches the whole suite.
         if reason[path][0].endswith(DOCUMENTS) and len(reason[path]) > 2:
             continue
         for user in sorted(reverse.get(path, ())):
