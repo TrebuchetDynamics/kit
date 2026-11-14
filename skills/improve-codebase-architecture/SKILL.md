@@ -33,8 +33,9 @@ before naming anything; a decision an ADR records is not yours to re-open silent
    the hot spots. Read the glossary and the ADRs for those areas. Default to review;
    `report only` or `read-only` rules out fixes. An explicit request to fix, patch or
    optimize authorizes the bounded fix branch in step 4, not a repository-wide rewrite.
-2. **Map, then challenge.** Load `/graphify` before wide reading. Reuse a valid local
-   graph to inspect hubs, cycles, callers and cross-module seams; follow that skill's
+2. **Map, then challenge.** Load `/graphify` before wide reading. On portable hosts,
+   read the [Graphify adapter](../../adapters/skills/graphify/SKILL.md).
+   Reuse a valid local graph to inspect hubs, cycles, callers and cross-module seams; follow that skill's
    build, freshness and fallback rules. The source scan is read-only: build no graph
    in review mode. Record the [declared graph
    state](../shared/COMMON-CONTRACT.md#graph-state), queries and coverage gaps. Missing

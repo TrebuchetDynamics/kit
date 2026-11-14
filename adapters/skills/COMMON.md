@@ -15,7 +15,9 @@ belong to the Hermes distribution, not portable prerequisites.
 
 Installation exposes skill metadata, not all instructions in every request. Load
 only the selected workflow and relevant references. Resolve links relative to the
-loaded skill file. The canonical primary workflows are Plan With Me, Plan For Me,
+loaded skill file. For a named command, use host-discovered skill metadata or an
+explicit file link. Do not infer `skills/<command>/SKILL.md` from the command name.
+The canonical primary workflows are Plan With Me, Plan For Me,
 Docs Sync and Autowork. Autoresearch remains independently discoverable with all
 13 research selectors. Grill Me is Plan With Me's challenge mode, not a separate
 public skill; Pi retains `/grill-me` as a compatibility command. In native skill
