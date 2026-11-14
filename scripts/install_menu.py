@@ -819,6 +819,16 @@ def pi_bolt_item(output=None, mode='install'):
                             run=lambda: install_pi_bolt(output, update=mode == 'update'))])
 
 
+def skill_folders(folder):
+    """Names of the skill folders in ``folder``; None when it exists but cannot be read."""
+    try:
+        return {p.name for p in folder.iterdir() if (p / 'SKILL.md').is_file()}
+    except FileNotFoundError:
+        return set()  # no such folder: this side ships nothing, or an older layout
+    except OSError:
+        return None   # unreadable: cannot prove what it ships
+
+
 def missing_package_skills(package):
     """Skill folders this checkout ships that the installed package checkout lacks.
 
@@ -827,14 +837,10 @@ def missing_package_skills(package):
     and no command. A package whose skill folders are complete is still kept, so an
     install stays offline-safe; only a provably stale one is refreshed.
     """
-    shipped = ROOT / 'adapters/skills'
-    installed = package / 'adapters/skills'
-    if not shipped.is_dir():
+    shipped, present = skill_folders(ROOT / 'adapters/skills'), skill_folders(package / 'adapters/skills')
+    if not shipped or present is None:
         return []
-    present = {p.name for p in installed.iterdir() if (p / 'SKILL.md').is_file()} \
-        if installed.is_dir() else set()
-    return sorted(p.name for p in shipped.iterdir()
-                  if (p / 'SKILL.md').is_file() and p.name not in present)
+    return sorted(shipped - present)
 
 
 def pi_executable():
