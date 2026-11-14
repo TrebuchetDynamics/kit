@@ -19,6 +19,14 @@
   ],
   "forbid": [
     {
+      "event": "command",
+      "command": "\\bgit\\b(?:\\s+(?:-[Cc]|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+--?[^\\s]+)*\\s+(?:push\\s+(?:--force|-f)|reset\\s+--hard|clean\\s+-[a-z]*(?:f[a-z]*d|d[a-z]*f))(?=\\s|$)"
+    },
+    {
+      "event": "command",
+      "command": "\\borbi\\s+(?!(?:status|doctor|check|--help|--version)(?:\\s|$))\\S+|\\bsystemctl\\b.*\\b(?:start|restart|enable|try-restart|reload-or-restart)\\b.*(?:orbi|pi-autowork)"
+    },
+    {
       "event": "edit",
       "path": "*"
     },
