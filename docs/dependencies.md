@@ -13,17 +13,6 @@ Sources: [plugin manifest](../plugin.yaml), [installation inventory](../plugins/
 
 ## Current source policy
 
-The suite's `octet` item bootstraps upstream binaries and packaged docs, not Kit
-skill/prompt resources. Default/`--all` and `update` follow the same stable channel;
-`--only octet` selects it and `--skip octet` excludes it. GNU/Linux x86-64 and
-macOS x86-64/arm64 are supported; musl and other targets are skipped by default
-and fail on explicit selection. It requires `curl`, `sh`, Python 3, `uname`, a
-SHA-256 utility, ordinary POSIX tools and upstream release-network access, with
-no source build or package-manager fallback. Credentials, optional extensions,
-trust and services are unchanged. See [Octet installation](installation.md#octet-native-binaries)
-for destination, verification, prerequisite and partial-install recovery limits.
-Offline fixtures are not real native-install or model qualification.
-
 | Component | Selection | Reproducibility limit |
 | --- | --- | --- |
 | Bundled workflows | This repository revision | Pin the checkout revision to reproduce these files. |
@@ -38,7 +27,6 @@ Offline fixtures are not real native-install or model qualification.
 | Toolset engineering protocols (`skills/engineering/local/`) | Written and versioned in this repository; no upstream pin | `test-suite-optimization` adapts two criteria from Matt Pocock's MIT `tdd` skill in its own words; no text is copied. |
 | Addy agent-skills (25 protocols) | Vendored commit and hashes in [UPSTREAM.json](../skills/engineering/UPSTREAM.json) | Updated only through a reviewed Toolset change; shared references included. Two defensive examples are paraphrased, with original and adapted hashes recorded; a refresh restores upstream bytes, so re-apply them by hand. |
 | Graphify | Dedicated setup helper | Not covered by a unified bundle lockfile. |
-| Octet native binaries | Official stable [installer](https://octet.skaft.org/install) from [skaft-software/octet](https://github.com/skaft-software/octet), run unmodified in binary mode | Mutable stable channel, not a Kit version pin; upstream verifies release identity, Sigstore provenance, checksums, archive safety and exact version. Kit reports the installed destination version. |
 
 Ordinary installation preserves existing resources, adding only missing Markdown
 files in the bundled `shared/` support directory (without overwriting local edits).
@@ -63,7 +51,7 @@ versions. Native scans remain enabled; blocked imports mean incomplete setup.
 The pi-autowork Python/Rust executors, TUI/web dependencies and Paseo plugin no
 longer ship. Their [prior dependency and licensing record](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/dependencies.md#rust-autowork-candidate)
 remains evidence for retained installations, not a build/install recipe for Kit.
-This removal does not change upstream Octet or ordinary host dependencies.
+This removal does not change ordinary host dependencies.
 
 ## Updating
 

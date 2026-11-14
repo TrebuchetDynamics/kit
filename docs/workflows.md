@@ -243,7 +243,6 @@ and inline; it neither repairs code nor writes task or report files.
 | Claude Code | `/kit:state-machine` |
 | Codex | `$kit:state-machine` |
 | Pi | `/skill:state-machine` |
-| Octet | `/skill:state-machine` |
 
 In Pi, this is a native skill command, not a `/state-machine` extension alias.
 After updating the installed package, reload skills in the host before use.

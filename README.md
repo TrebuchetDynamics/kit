@@ -115,9 +115,8 @@ Restart your host session to discover the installed skills. See the
 <summary><strong>Install every available host and CLI component at once</strong></summary>
 
 From a checkout, `install.sh` installs every available component with verbose output:
-the Pi package, the Orbi CLI, the `tx` tmux launcher, official stable
-Octet native binaries with Kit skills, and the Hermes, Claude Code and Codex plugins with their complete
-skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
+the Pi package, the Orbi CLI, the `tx` tmux launcher, and the Hermes, Claude Code and
+Codex plugins with their complete skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
 item runs that host's own install command. `tx` keeps an existing `~/.tmux.conf`.
 
 ```sh
@@ -143,21 +142,8 @@ A missing CLI is installed user-locally with `uv tool install --python 3.14 orbi
 even during `update`. This installs the CLI only: no repository setup, credentials,
 scheduler activation or worker starts. See [Orbi CLI installation](docs/installation.md#orbi-cli).
 
-Ordinary installs reuse the installed Pi package and a working Octet binary in the
-selected destination. `./install.sh update` explicitly refreshes both. Kit skill
-and settings reconciliation still runs, as does the service-restart phase.
-
-Octet bootstraps when its destination binary is absent or fails version verification.
-Bootstrap and explicit updates use the
-[official stable installer](https://octet.skaft.org/install); `--only octet` selects
-it alone and `--skip octet` excludes it. It supports GNU/Linux x86-64 and macOS
-x86-64/arm64, needs `curl`, `sh`, Python 3 and native verification utilities, and
-reports the destination version. This installs upstream binaries and packaged docs,
-plus Kit skill entrypoints in `~/.octet/skills/` referencing this checkout. Keep the
-checkout in place. Kit also writes `/kit-*` prompt pointers in `~/.octet/prompts/`;
-use `/kit-ask-kit` or `/kit-work`. Use `/reload` for prompts and `/skills reload` for
-skills after updates. Optional
-extensions, credentials and shell profiles are unchanged. See [installation limits and failure recovery](docs/installation.md#octet-native-binaries).
+Ordinary installs reuse the installed Pi package. `./install.sh update` explicitly
+refreshes it. Settings reconciliation still runs, as does the service-restart phase.
 
 </details>
 

@@ -30,7 +30,7 @@ Use `--menu` when you want to select components interactively:
 ```
 
 The suite includes the Pi package, Orbi CLI, `tx` launcher, Hermes
-fleet setup, official stable Octet native binaries with Kit skills, and Claude Code and Codex plugins
+fleet setup, and Claude Code and Codex plugins
 with their complete portable skill suites, including [bundled Ponytail](cross-host.md#bundled-ponytail-on-every-host).
 All Kit skills apply its shared method within their existing authority; no
 separate Ponytail plugin, hooks or persistent modes are installed. Existing external
@@ -121,81 +121,6 @@ There is no `autowork` installer component or private runner bootstrap. Existing
 private Pi directories, credentials, task data and recovery state must not be
 removed as package cleanup. They are not shared with Orbi automatically. See
 [cutover and qualification](github-native.md#cutover).
-
-### Octet native binaries
-
-Default, `--all`/`--full` and `update` include `octet`, even without an existing
-Octet CLI. Use `./install.sh --only octet` to install Octet and its Kit skills,
-`./install.sh update --only octet` to rerun the same stable channel, or
-`--skip octet` to leave it out. `--list` and `--dry-run` do not download or execute
-Octet tooling, and skipping Octet leaves its files untouched.
-
-Ordinary installs first verify `octet --version` in the selected binary directory.
-A successful version check reuses that binary without downloading or rerunning the
-upstream installer. It does not check whether a newer release exists. Missing,
-non-executable or invalid-version destinations retry the official bootstrap;
-upstream collision and integrity checks still apply. Kit skill/prompt reconciliation
-and the suite's mandatory service-restart phase still run. Explicit `update`
-always refreshes the binary through the upstream installer.
-
-When bootstrap or update is needed, Kit downloads the [official stable installer](https://octet.skaft.org/install)
-from [skaft-software/octet](https://github.com/skaft-software/octet) into a private
-temporary file with HTTPS-only redirects, a 15-second connection timeout, a
-300-second transfer limit and a 1 MiB size limit. It runs the published file
-unmodified with `sh`, in default native binary mode (never `--from-source`).
-`OCTET_INSTALL_DIR` is the absolute Kit binary directory (`~/.local/bin`, or
-`AUTOWORK_BIN_DIR`); `OCTET_NO_MODIFY_PATH=1` leaves shell profiles unchanged.
-The summary reads `--version` from that destination executable, not from PATH.
-There is no Rust, npm or Homebrew fallback and no Kit-pinned Octet version:
-bootstrap and explicit updates follow the current official stable release.
-
-Supported targets are GNU/Linux x86-64 (not musl) and macOS x86-64/arm64.
-Unsupported platforms are skipped by default and fail when explicitly requested
-with `--only octet`. Prerequisites include `curl`, `sh`, `python3`, `uname`,
-a SHA-256 utility (`sha256sum` or `shasum`) and ordinary POSIX utilities; Linux
-also needs GNU libc detection through `getconf` or `ldd`. Upstream downloads its
-pinned signature verifier and requires release-network access. Missing tools,
-download, provenance, checksum, archive or version failures fail only this
-component; independent components continue.
-
-Upstream owns source identity, Sigstore, checksum, archive and exact-version
-checks, plus collision refusals. Kit does not bypass them or unlink files to force
-success. Pre-placement integrity/version refusals preserve an existing binary.
-Upstream places executables and packaged data in separate steps, so execution
-or final version failure can leave a **partial installation**: no rollback is
-claimed or performed. Inspect the native diagnostics, resolve the cause, then
-retry `./install.sh update --only octet` to rerun upstream placement even when
-the binary already passes its version check.
-
-After the binary version check, this component installs every portable Kit skill
-from `adapters/skills/` as a regular `~/.octet/skills/<name>/SKILL.md` entrypoint.
-Each preserves the skill's metadata and points to its workflow in this checkout,
-including the base directory for relative references. **Keep this checkout in
-place**; rerun `./install.sh --only octet` if you move it. These are regular files,
-not symlinks, so Octet's native resource discovery can admit them. Symlinked
-resource directories are refused rather than written through.
-
-Reruns refresh changed entrypoints and leave identical files untouched. Existing
-same-name files or symlinks are preserved as `SKILL.md.bak` (then `.bak.1`, etc.);
-unrelated skills are left alone. Prompt pointers in `~/.octet/prompts/kit-<name>.md`
-load the same adapters and forward the caller's arguments with Octet's `$@` expansion.
-Use `/kit-ask-kit`, `/kit-plan-with-me`, `/kit-plan-for-me` or `/kit-work`;
-`/kit-autoresearch-<selector>` and `/kit-grill-me` preserve the research/challenge
-routes. Names are prefixed to avoid native command collisions. Existing prompt
-files are backed up before replacement, like skill files. A symlinked prompts
-directory refuses the resource step before any skill or prompt writes.
-Open a new Octet session or use `/reload` to refresh prompts and `/skills reload`,
-then `/skills` to list them and `/skills load <name>` or `/skill:<name>` to load one.
-Discovery does not automatically activate a workflow. If skill installation fails,
-the binary remains installed; fix the reported path or permission problem and rerun.
-
-Upstream executables and packaged documentation (by default in the sibling
-`share/octet`) are still installed by the official installer. Kit does not install
-executable extensions, migrate credentials, change trust or
-permission policy, or manage active services or unrelated user configuration.
-Offline fake-installer tests verify orchestration only. Real signed native
-installation and destination `octet --version` remain **NOT_CHECKED** until
-separately observed; they do not imply model or extension qualification.
 
 ## Install
 
@@ -431,7 +356,7 @@ profile skills/configuration. It still writes Git fetch metadata and its receipt
 After a changed all-profile update activates successfully, the updater also runs
 that fetched release's `install.sh --full --skip hermes,pi -q` once from its updated
 plugin checkout. This refreshes the remaining selected components through the
-same supported installer used for initial setup, including `tx`, Octet and the
+same supported installer used for initial setup, including `tx` and the
 Claude Code/Codex plugins. It does not install the retired executor or TUI.
 Hermes was just updated; Pi package updates are separate host maintenance,
 not a responsibility of the removed runner. Missing host CLIs are skipped. No privilege escalation or consent flags
@@ -441,7 +366,7 @@ answer. Native host security/dependency requirements still apply.
 Host refresh is best effort, with a five-minute limit for the whole installer run;
 on timeout its process group is stopped. It never rolls back or fails a successful
 Hermes update. The receipt's `hosts` list records `item`, `status` and `exit` for
-`tx`, `claude`, `codex` and `octet`, and chat status adds one `Hosts:` line.
+`tx`, `claude` and `codex`, and chat status adds one `Hosts:` line.
 Completed items retain their outcomes if a later item times out; remaining items
 report `timeout`. An unavailable installer reports `unavailable`; missing or invalid
 item reports use the installer's failure exit, or `unreported` if it exited zero.
