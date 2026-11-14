@@ -602,7 +602,7 @@ default. Only an explicit user request permits a new or renewed task hold, inclu
 an already-authorized runner; do not copy them into task exclusions as a requirement
 for another implementation order. Use execution leases and workspace locks for
 ownership. Existing user pauses, live claims, real dependencies and safety gates
-remain in force. See the [task-hold policy](../skills/shared/TODO-WORKCENTER.md#task-holds-require-an-explicit-user-request).
+remain in force. See the [GitHub publication and pause policy](../skills/shared/PLAN-HANDOFF.md#publication-and-dependencies).
 Shared-file decomposition retains the
 existing admission/ranking rules, not invented dependency locks. Planning commits
 include only attributable changes and never amend another session's runner merge.
