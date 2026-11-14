@@ -15,8 +15,7 @@ upstream) and then run the pulled installer; a checkout with local changes, no u
 or a detached HEAD is installed as it is, and says so.
 
 Each host item runs its own supported install command; a host whose CLI is not
-installed is skipped and says so, and fails when named with --only. Octet instead
-bootstraps official stable native binaries and Kit skills on supported platforms. Hermes options
+installed is skipped and says so, and fails when named with --only. Hermes options
 (--hermes-home, --bundle-only, --no-reload, --yes-deps) apply to the Hermes item.
 Standard library only.
 """
@@ -478,151 +477,7 @@ def drop_codex_plugin():
     return 'dropped the cached plugin' if done.returncode == 0 else 'no cached plugin to drop'
 
 
-OCTET_INSTALLER = 'https://octet.skaft.org/install'
-
-
-def octet_version(destination):
-    """Verify the selected destination, never a different executable on PATH."""
-    version = subprocess.run([str(destination / 'octet'), '--version'],
-                             stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                             errors='replace', timeout=5)
-    if version.returncode or not re.fullmatch(r'octet [0-9]+\.[0-9]+\.[0-9]+\n?', version.stdout):
-        raise OSError('Octet destination version verification failed')
-    return version.stdout.strip()
-
-
-def install_octet(output=None, update=False):
-    """Reuse a working binary on install; upstream owns explicit updates and repairs."""
-    output = output or Output()
-    destination = BIN.absolute()
-    if not update and (destination / 'octet').is_file():
-        try:
-            return f'{destination / "octet"}: {octet_version(destination)} (already installed; kept)'
-        except (OSError, subprocess.SubprocessError):
-            pass  # Broken destination: retry the official installer, never force placement.
-    for command in ('curl', 'sh', 'python3', 'uname'):
-        if not shutil.which(command):
-            raise OSError(f'Octet requires {command}; install it and retry --only octet')
-
-    def run(argv, stage, env=None):
-        if output.verbosity > 1:
-            output.line('  $ ' + shlex.join(argv), 'command')
-        code, text = run_command(argv, output, env)
-        if code:
-            raise OSError(f'{stage}: {failure_summary(text)} (exit {code})')
-
-    with tempfile.TemporaryDirectory(prefix='kit-octet-') as directory:
-        installer = Path(directory) / 'install.sh'
-        installer.touch(mode=0o600)
-        run(['curl', '--disable', '--proto', '=https', '--proto-redir', '=https',
-             '--tlsv1.2', '--location', '--max-redirs', '5', '--connect-timeout', '15',
-             '--max-time', '300', '--max-filesize', '1048576', '--fail', '--silent',
-             '--show-error', '--output', str(installer), OCTET_INSTALLER], 'Octet installer download failed')
-        if not 0 < installer.stat().st_size <= 1048576:
-            raise OSError('Octet installer download is empty or exceeds its size limit')
-        env = {'OCTET_INSTALL_DIR': str(destination), 'OCTET_NO_MODIFY_PATH': '1'}
-        if output.verbosity > 1:
-            output.line('  Environment: ' + shlex.join(f'{key}={value}' for key, value in env.items()), 'command')
-        try:
-            run(['sh', str(installer)], 'Octet upstream installer failed', env)
-            # Upstream proves the exact release version before and after placement.
-            # Read back the destination, never a different Octet earlier on PATH.
-            version = octet_version(destination)
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise OSError(f'{exc}; upstream may have left a partial installation; no rollback performed') from exc
-    return f'{destination / "octet"}: {version}'
-
-
-def install_octet_skills():
-    """Native, non-symlink entrypoints; shared instructions stay in this checkout."""
-    destination = HOME / '.octet' / 'skills'
-    sources = sorted((ROOT / 'adapters/skills').glob('*/SKILL.md'))
-    if not sources:
-        raise OSError('No portable Kit skills found in this checkout')
-    entries = []
-    prompts = {}
-    for source in sources:
-        source = source.resolve()
-        header, separator, _ = source.read_text(encoding='utf-8').partition('\n---\n')
-        if not header.startswith('---\n') or not separator:
-            raise OSError(f'Missing skill metadata: {source}')
-        target = destination / source.parent.name / 'SKILL.md'
-        body = (header + separator + '\n# Kit workflow for Octet\n\n'
-                f'Read and follow the portable workflow at `{source}`.\n'
-                f'Resolve its relative references from `{source.parent}`, not this directory.\n'
-                'Use Octet\'s native tools and preserve the user\'s scope and restrictions.\n')
-        entries.append((target, body))
-        name = source.parent.name
-        prompts[f'kit-{name}'] = (
-            f'---\ndescription: {json.dumps("Kit " + name.replace("-", " ") + " workflow")}\n---\n\n'
-            f'Read and follow the portable workflow at `{source}`.\n'
-            f'Resolve its relative references from `{source.parent}`.\n'
-            'Work in the current target repository, not the Kit source directory.\n'
-            'Use /kit-NAME for referenced Kit /NAME commands; preserve caller restrictions.\n\n'
-            'User request (preserve scope and restrictions):\n$@\n')
-    for selector in json.loads((ROOT / 'skills/autoresearch/UPSTREAM.json').read_text())['commands']:
-        prompts[f'kit-autoresearch-{selector}'] = prompts['kit-autoresearch'].replace(
-            'User request (preserve scope and restrictions):',
-            f'Selected subcommand: {selector}\n\nUser request (preserve scope and restrictions):')
-    prompts['kit-grill-me'] = prompts['kit-plan-with-me'].replace(
-        'User request (preserve scope and restrictions):',
-        'Selected mode: challenge\n\nUser request (preserve scope and restrictions):')
-    entries.extend((destination.parent / 'prompts' / f'{name}.md', body)
-                   for name, body in sorted(prompts.items()))
-    # Refuse redirected resource roots before writing any entrypoint.
-    for folder in (destination.parent, destination, *(target.parent for target, _ in entries)):
-        if folder.is_symlink() or (folder.exists() and not folder.is_dir()):
-            raise OSError(f'Octet skills require a regular directory: {folder}')
-    def identity(target):
-        if target.is_symlink():
-            return ('symlink', os.readlink(target))
-        return ('file', target.read_bytes()) if target.exists() else None
-
-    originals = {}
-    for target, _ in entries:
-        if target.exists() and not target.is_symlink() and not target.is_file():
-            raise OSError(f'Octet skill entrypoint is not a file: {target}')
-        originals[target] = identity(target)
-    updated, backups = 0, []
-    for target, body in entries:
-        if not target.is_symlink() and target.is_file() and target.read_bytes() == body.encode('utf-8'):
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=target.parent, delete=False) as stream:
-            temporary = Path(stream.name)
-            try:
-                stream.write(body)
-                stream.close()
-                if identity(target) != originals[target]:
-                    raise OSError(f'Octet resource changed during installation: {target}; kept unchanged')
-                if target.exists() or target.is_symlink():
-                    backups.append(str(set_aside(target)))
-                temporary.replace(target)
-            finally:
-                temporary.unlink(missing_ok=True)
-        updated += 1
-    note = '; preserved previous files: ' + ', '.join(backups) if backups else ''
-    return f'{len(sources)} Kit skills and {len(prompts)} prompts ready in {destination.parent} ({updated} updated){note}'
-
-
-def octet_item(output=None, mode='install'):
-    system, machine = platform.system(), platform.machine().lower()
-    supported = ((system == 'Darwin' and machine in ('x86_64', 'arm64', 'aarch64'))
-                 or (system == 'Linux' and machine in ('x86_64', 'amd64')
-                     and platform.libc_ver()[0] == 'glibc'))
-    destination = BIN.absolute()
-    return Item('octet', 'Octet official stable native binaries + Kit skills',
-                note='bootstraps the CLI and native skills; no optional extensions',
-                missing='' if supported else f'unsupported Octet binary platform: {system} {machine} (needs GNU/Linux x86-64 or macOS x86-64/arm64)',
-                steps=[Step(('refresh Octet; ' if mode == 'update' else 'reuse a working destination or bootstrap Octet; ')
-                            + f'download {OCTET_INSTALLER} privately when needed; run unmodified sh installer in binary mode '
-                            f'with OCTET_INSTALL_DIR={destination} OCTET_NO_MODIFY_PATH=1; '
-                            f'verify {destination}/octet --version', run=lambda: install_octet(output, update=mode == 'update')),
-                       Step(f'install Kit skills in {HOME / ".octet/skills"} from this checkout',
-                            run=install_octet_skills)])
-
-
-def items(hermes_args, output=None, mode='install'):
+def items(hermes_args, mode='install'):
     package = pi_package()
     pi = Item('pi', 'Pi package + bundled Ponytail', needs='pi', note='needs Node 22+')
     if package:
@@ -664,7 +519,6 @@ def items(hermes_args, output=None, mode='install'):
                     Step('drop the cached plugin', run=drop_codex_plugin),
                     Step(f'codex plugin add {CODEX_PLUGIN}@{CODEX_MARKETPLACE}',
                          ['codex', 'plugin', 'add', f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'])]),
-        octet_item(output, mode=mode),
     ]
 
 
@@ -859,7 +713,7 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
               for state in ('installed', 'planned', 'skipped', 'failed')}
     output.line('\n' + ', '.join(f'{count} {state}' for state, count in counts.items())
                 + f' — {time.monotonic() - started:.1f}s', 'failed' if counts['failed'] else 'heading')
-    if any(key in ('claude', 'codex', 'pi', 'octet') and outcome == 'installed' for key, outcome, _ in results):
+    if any(key in ('claude', 'codex', 'pi') and outcome == 'installed' for key, outcome, _ in results):
         output.line('Open a new host session to discover the installed skills.')
     return int(bool(counts['failed']))
 
@@ -897,7 +751,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--all', '--full', action='store_true', help='install the full suite for every available host (default)')
-    selection.add_argument('--only', help='comma-separated items to install (pi,tx,hermes,claude,codex,octet)')
+    selection.add_argument('--only', help='comma-separated items to install (pi,tx,hermes,claude,codex)')
     parser.add_argument('--skip', help='comma-separated items to leave out')
     parser.add_argument('--list', action='store_true', help='show the items and whether each is available')
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')
@@ -926,7 +780,7 @@ def main(argv=None):
                               ('--yes-deps', args.yes_deps), ('--dry-run', args.dry_run)) if on]
     if args.hermes_home:
         hermes += ['--hermes-home', args.hermes_home]
-    all_items = items(hermes, output, mode=args.command)
+    all_items = items(hermes, mode=args.command)
     keys = [i.key for i in all_items]
     for given in (args.only, args.skip):
         unknown = [k for k in (given or '').split(',') if k and k not in keys]

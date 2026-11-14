@@ -352,7 +352,6 @@ class UpdateTests(unittest.TestCase):
             'read -r answer && exit 8\n'  # background updates cannot prompt
             'printf \'%s\\n\' \'{"item":"autowork","status":"installed","exit":0}\' '
             '\'{"item":"tx","status":"installed","exit":0}\' '
-            '\'{"item":"octet","status":"installed","exit":0}\' '
             '\'{"item":"claude","status":"failed","exit":7}\' '
             '\'{"item":"codex","status":"skipped","exit":null}\' > "$AUTOWORK_INSTALL_REPORT"\n'
             'exit 1\n')
@@ -375,8 +374,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(receipts[1]['hosts'], [
             {'item': 'tx', 'status': 'installed', 'exit': 0},
             {'item': 'claude', 'status': 'failed', 'exit': 7},
-            {'item': 'codex', 'status': 'skipped', 'exit': None},
-            {'item': 'octet', 'status': 'installed', 'exit': 0}])
+            {'item': 'codex', 'status': 'skipped', 'exit': None}])
         self.assertNotIn('hosts', receipts[0])
         self.assertNotIn('hosts', receipts[2])
 
@@ -392,7 +390,7 @@ class UpdateTests(unittest.TestCase):
                     installer.write_text('#!/bin/bash\n' + body)
                 self.assertEqual(self.mod.refresh_hosts(self.repo), [
                     {'item': item, 'status': status, 'exit': code}
-                    for item in ('tx', 'claude', 'codex', 'octet')])
+                    for item in ('tx', 'claude', 'codex')])
 
     def test_host_refresh_timeout_keeps_completed_items_and_stops_descendants(self):
         import time
@@ -406,8 +404,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(rows, [
             {'item': 'tx', 'status': 'installed', 'exit': 0},
             {'item': 'claude', 'status': 'timeout', 'exit': None},
-            {'item': 'codex', 'status': 'timeout', 'exit': None},
-            {'item': 'octet', 'status': 'timeout', 'exit': None}])
+            {'item': 'codex', 'status': 'timeout', 'exit': None}])
         time.sleep(0.6)
         self.assertFalse(child.exists())
 
