@@ -53,6 +53,31 @@ mkdir -p "$UV_TOOL_BIN_DIR"
 printf '#!/bin/sh\\necho "orbi $*" >> "$FAKE_LOG"\\necho orbi 0.7.41\\n' > "$UV_TOOL_BIN_DIR/orbi"
 chmod 755 "$UV_TOOL_BIN_DIR/orbi"
 ''')
+        self.upstream = self.home / 'upstream-pi-bolt-install.sh'
+        self.upstream.write_text('''#!/bin/sh
+set -eu
+printf 'pi-bolt-installer %s|%s|%s\n' "$PIBOLT_BIN_DIR" "$PIBOLT_YES" "$PIBOLT_EXTENSIONS" >> "$FAKE_LOG"
+case "${PI_BOLT_FIXTURE_STAGE:-}" in
+  install) echo 'release signature verification failed' >&2; exit 9 ;;
+esac
+mkdir -p "$PIBOLT_BIN_DIR"
+printf '#!/bin/sh\ncase "${1:-}" in --version) echo 1.4.0 ;; *) echo "pi-bolt $*" >> "$FAKE_LOG" ;; esac\n' > "$PIBOLT_BIN_DIR/pi-bolt"
+chmod 755 "$PIBOLT_BIN_DIR/pi-bolt"
+''')
+        self.fake('curl', '''#!/usr/bin/env python3
+import os, pathlib, shutil, stat, sys
+args = sys.argv[1:]
+with open(os.environ['FAKE_LOG'], 'a') as log:
+    log.write('curl ' + ' '.join(args) + '\\n')
+if args[-1] != 'https://pi-bolt.opensec.in/install.sh':
+    raise SystemExit('unexpected network request')
+dest = pathlib.Path(args[args.index('--output') + 1])
+assert stat.S_IMODE(dest.parent.stat().st_mode) == 0o700
+assert stat.S_IMODE(dest.stat().st_mode) == 0o600
+shutil.copyfile(pathlib.Path(os.environ['FAKE_HOME']) / 'upstream-pi-bolt-install.sh', dest)
+if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
+    dest.write_bytes(b'')
+''')
         for name in ('claude', 'codex', 'systemctl'):
             self.fake(name, LOGGING)
         self.env = {'PATH': f'{self.bin}:/usr/bin:/bin', 'HOME': str(self.home), 'FAKE_LOG': str(self.log),
@@ -127,7 +152,7 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
 
     def test_list_marks_missing_hosts(self):
         out = self.install('--list').stdout
-        for key in ('pi', 'tx', 'claude', 'codex'):
+        for key in ('pi', 'pi-bolt', 'tx', 'claude', 'codex'):
             self.assertRegex(out, rf'{key}\s+available')
         self.assertRegex(out, r'hermes\s+unavailable.*hermes not found')
 
@@ -270,6 +295,73 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         self.assertTrue(launcher.is_file())
         self.assertFalse((self.home / '.local/bin/orbi').exists())
 
+    def assert_pi_bolt_stub(self):
+        binary = self.home / '.local/bin/pi-bolt'
+        self.assertTrue(binary.is_file())
+        self.assertEqual(self.calls('pi-bolt-installer'),
+                         [f'pi-bolt-installer {binary.parent}|1|no'])
+
+    def test_pi_bolt_bootstraps_through_the_official_installer(self):
+        result = self.install('--only', 'pi-bolt')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r'pi-bolt\s+installed.*1\.4\.0')
+        self.assert_pi_bolt_stub()
+        curl = self.calls('curl')
+        self.assertEqual(len(curl), 1)
+        for flags in ('--proto =https', '--proto-redir =https', '--tlsv1.2',
+                      '--connect-timeout 15', '--max-time 300', '--max-filesize 1048576'):
+            self.assertIn(flags, curl[0])
+        self.assertTrue(curl[0].endswith('https://pi-bolt.opensec.in/install.sh'))
+        self.assertFalse(list(self.home.glob('kit-pi-bolt-*')))
+        self.assertFalse((self.home / '.profile').exists())
+
+    def test_pi_bolt_reuses_a_working_install_and_update_refreshes(self):
+        first = self.install('--only', 'pi-bolt')
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        binary = self.home / '.local/bin/pi-bolt'
+        before = binary.stat().st_mtime_ns
+        second = self.install('--only', 'pi-bolt')
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn('already installed', second.stdout)
+        self.assertEqual(binary.stat().st_mtime_ns, before)
+        self.assertEqual(len(self.calls('pi-bolt-installer')), 1)
+        updated = self.install('update', '--only', 'pi-bolt')
+        self.assertEqual(updated.returncode, 0, updated.stdout + updated.stderr)
+        self.assertEqual(len(self.calls('pi-bolt-installer')), 2)
+
+    def test_pi_bolt_uses_the_selected_bin_directory(self):
+        destination = self.home / 'custom bin'
+        result = self.install('--only', 'pi-bolt', env={'AUTOWORK_BIN_DIR': str(destination)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f'{destination / "pi-bolt"}: 1.4.0', result.stdout)
+        self.assertEqual(self.calls('pi-bolt-installer'),
+                         [f'pi-bolt-installer {destination}|1|no'])
+
+    def test_pi_bolt_failure_keeps_other_components(self):
+        result = self.install('--only', 'pi-bolt,tx', env={'PI_BOLT_FIXTURE_STAGE': 'install'})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r'pi-bolt\s+failed.*signature verification failed')
+        self.assertRegex(result.stdout, r'tx\s+installed')
+        self.assertFalse((self.home / '.local/bin/pi-bolt').exists())
+
+    def test_pi_bolt_empty_download_fails_without_running_the_installer(self):
+        result = self.install('--only', 'pi-bolt', env={'PI_BOLT_FIXTURE_STAGE': 'download-empty'})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r'pi-bolt\s+failed.*size limit')
+        self.assertEqual(self.calls('pi-bolt-installer'), [])
+
+    def test_pi_bolt_unsupported_platform_skips_or_fails(self):
+        for system, machine, supported in (('Linux', 'x86_64', True), ('Linux', 'aarch64', True),
+                                           ('Darwin', 'arm64', True), ('Darwin', 'x86_64', False),
+                                           ('Windows', 'AMD64', False)):
+            with self.subTest(system=system, machine=machine), \
+                 patch.object(install_menu.platform, 'system', return_value=system), \
+                 patch.object(install_menu.platform, 'machine', return_value=machine):
+                item = install_menu.pi_bolt_item()
+                self.assertEqual(item.available, supported)
+                if not supported:
+                    self.assertIn('unsupported Pi-Bolt platform', item.missing)
+
     def test_removed_runner_cannot_be_installed_or_updated(self):
         state = self.home / '.local/state/pi-autowork'
         state.mkdir(parents=True)
@@ -315,6 +407,8 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         self.assertTrue((self.home / '.tmux.conf').is_file())  # none existed
         self.assertRegex(result.stdout, r'hermes\s+skipped\s+hermes not found')
         self.assertRegex(result.stdout, r'tx\s+installed')
+        self.assertRegex(result.stdout, r'pi-bolt\s+installed.*1\.4\.0')
+        self.assertEqual(len(self.calls('pi-bolt-installer')), 1)
         self.assertRegex(result.stdout, r'orbi\s+installed.*orbi 0.7.41')
         self.assertEqual(self.calls('uv'), ['uv tool install --python 3.14 orbi-cli'])
 
@@ -350,6 +444,7 @@ fi
         result = self.install('update')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('Kit suite update', result.stdout)
+        self.assertRegex(result.stdout, r'pi-bolt\s+installed.*1\.4\.0')
         self.assertIn(f'pi install {NEW}', self.calls('pi'))
         self.assertIn('claude plugin install kit@autowork', self.calls('claude'))
         self.assertIn('codex plugin add kit@autowork-marketplace', self.calls('codex'))
@@ -529,6 +624,7 @@ exit 0
         self.assertFalse((self.home / '.local/bin/autowork').exists())
         self.assertTrue((self.home / '.local/bin/tx').is_file())
         self.assertIn('$ codex plugin add kit@autowork-marketplace', result.stdout)
+        self.assertRegex(result.stdout, r'pi-bolt\s+installed.*1\.4\.0')
         self.assertRegex(result.stdout, r'hermes\s+skipped.*hermes not found')
 
     def test_default_install_enables_the_pi_package_without_extra_flags(self):
@@ -548,11 +644,12 @@ exit 0
         result = self.install('--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotRegex(result.stdout, r'autowork\s+planned')
-        for key in ('pi', 'tx', 'hermes', 'claude', 'codex'):
+        for key in ('pi', 'pi-bolt', 'tx', 'hermes', 'claude', 'codex'):
             self.assertRegex(result.stdout, rf'{key}\s+planned')
         self.assertEqual(self.calls('pi install'), [])
         self.assertEqual(self.calls('codex'), [])
         self.assertEqual(self.calls('hermes'), [])
+        self.assertFalse(self.calls('curl'))
         self.assertFalse((self.home / '.local/bin').exists())
         self.assertIn('enable the package skills and commands in Pi settings', result.stdout)
 
@@ -592,7 +689,7 @@ exit 0
         self.assertRegex(result.stdout, r'pi\s+installed')
 
     def test_menu_toggles_items_and_needs_a_terminal(self):
-        result = self.install('--dry-run', '--menu', stdin='2 4 5\n\n', env={'AUTOWORK_INSTALL_UI': 'text'})
+        result = self.install('--dry-run', '--menu', stdin='3 5 6\n\n', env={'AUTOWORK_INSTALL_UI': 'text'})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('[x] 1 Pi package', result.stdout)
         self.assertRegex(result.stdout, r'tx\s+skipped\s+not chosen')

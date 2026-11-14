@@ -56,6 +56,9 @@ three portable agents.
 To use the skills inside Paseo, install
 Kit in the coding-agent host, then run that agent in a Paseo workspace.
 
+Pi-Bolt is a native build of Pi. It runs the same commands and reads the same
+`~/.pi/agent` configuration and Pi packages, so one Kit install serves both.
+
 ### Pi
 
 Requires Node 22 or later:
@@ -115,8 +118,8 @@ Restart your host session to discover the installed skills. See the
 <summary><strong>Install every available host and CLI component at once</strong></summary>
 
 From a checkout, `install.sh` installs every available component with verbose output:
-the Pi package, the Orbi CLI, the `tx` tmux launcher, and the Hermes, Claude Code and
-Codex plugins with their complete skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
+the Pi package, the Pi-Bolt native Pi executable, the Orbi CLI, the `tx` tmux
+launcher, and the Hermes, Claude Code and Codex plugins with their complete skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
 item runs that host's own install command. `tx` keeps an existing `~/.tmux.conf`.
 
 ```sh
@@ -141,6 +144,13 @@ A missing CLI is installed user-locally with `uv tool install --python 3.14 orbi
 (`uv` must be installed first). Existing Orbi installations and source pins are kept,
 even during `update`. This installs the CLI only: no repository setup, credentials,
 scheduler activation or worker starts. See [Orbi CLI installation](docs/installation.md#orbi-cli).
+
+Pi-Bolt is included by default; use `./install.sh --only pi-bolt` or `--skip pi-bolt`.
+It installs the upstream native Pi build through the
+[official installer](https://pi-bolt.opensec.in/install.sh) and links `pi-bolt` in the
+Kit binary directory. A working `pi-bolt` is kept on install and refreshed by
+`./install.sh update`. The upstream run is non-interactive and installs no optional
+extensions. See [Pi-Bolt installation](docs/installation.md#pi-bolt-native-executable).
 
 Ordinary installs reuse the installed Pi package. `./install.sh update` explicitly
 refreshes it. Settings reconciliation still runs, as does the service-restart phase.

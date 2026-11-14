@@ -29,8 +29,8 @@ Use `--menu` when you want to select components interactively:
 ./install.sh --only codex
 ```
 
-The suite includes the Pi package, Orbi CLI, `tx` launcher, Hermes
-fleet setup, and Claude Code and Codex plugins
+The suite includes the Pi package, the Pi-Bolt native executable, the Orbi CLI,
+the `tx` launcher, Hermes fleet setup, and Claude Code and Codex plugins
 with their complete portable skill suites, including [bundled Ponytail](cross-host.md#bundled-ponytail-on-every-host).
 All Kit skills apply its shared method within their existing authority; no
 separate Ponytail plugin, hooks or persistent modes are installed. Existing external
@@ -88,6 +88,30 @@ a stale registration with a missing directory is reinstalled. They do not run
 `pi update`. Empty package filters are still reconciled so skills and commands
 remain enabled. `./install.sh update --only pi` explicitly updates an existing
 package, or installs it when absent.
+
+### Pi-Bolt native executable
+
+Default/full/menu and `update` include `pi-bolt`. Use `./install.sh --only pi-bolt`
+to install it alone or `--skip pi-bolt` to leave it untouched. A working `pi-bolt`
+in the selected binary directory is kept on install; explicit selection and `update`
+run the upstream installer again.
+
+Kit downloads the [official installer](https://pi-bolt.opensec.in/install.sh) into a
+private temporary file with HTTPS-only redirects, five redirects at most, a 15-second
+connection timeout, a 300-second transfer limit and a 1 MiB size limit, then runs
+the published file unmodified with `sh`. The run cannot prompt and installs no
+optional extensions (`PIBOLT_YES=1`, `PIBOLT_EXTENSIONS=no`). `PIBOLT_BIN_DIR` is
+the Kit binary directory (`~/.local/bin`, or `AUTOWORK_BIN_DIR`); the payload keeps
+upstream's `~/.pi-bolt` default. Kit verifies the linked `pi-bolt --version` and
+never writes through a broken link. Upstream owns release selection, channel,
+signature and checksum verification, and `pi-bolt update`; Kit pins no version and
+edits no shell profile. An upstream failure can leave a partial installation: no
+rollback is claimed or performed.
+
+Supported targets are GNU/Linux x86-64 or ARM64 (glibc or musl, including Termux)
+and macOS on Apple silicon. Other platforms are skipped by default and fail when
+explicitly requested with `--only pi-bolt`. Pi-Bolt reads the same `~/.pi/agent`
+configuration and Pi packages as Pi, so the installed Kit package serves both.
 
 ### Orbi CLI
 
@@ -366,7 +390,7 @@ answer. Native host security/dependency requirements still apply.
 Host refresh is best effort, with a five-minute limit for the whole installer run;
 on timeout its process group is stopped. It never rolls back or fails a successful
 Hermes update. The receipt's `hosts` list records `item`, `status` and `exit` for
-`tx`, `claude`, `codex` and `orbi`, and chat status adds one `Hosts:` line.
+`pi-bolt`, `tx`, `claude`, `codex` and `orbi`, and chat status adds one `Hosts:` line.
 Completed items retain their outcomes if a later item times out; remaining items
 report `timeout`. An unavailable installer reports `unavailable`; missing or invalid
 item reports use the installer's failure exit, or `unreported` if it exited zero.
