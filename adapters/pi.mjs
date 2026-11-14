@@ -8,6 +8,7 @@ const workflows = {
   'plan-for-me': ['plan-for-me', 'Investigate, decide and save the plan'],
   'docs-sync': ['docs-sync', 'Keep documentation and the tasks/ store accurate'],
   autowork: ['autowork', 'Inspect GitHub delivery through Orbi'],
+  orbi: ['orbi', 'Prepare, start, inspect or stop one Orbi deployment'],
   work: ['work', 'Auto-select and complete tasks in this session'],
   autoresearch: ['autoresearch', 'Run bounded research or experiments'],
   'apk-get': ['apk-get', 'Find the app, build an ARM64 release APK and upload with s3upload'],

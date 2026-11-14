@@ -187,6 +187,15 @@ pickup, passing checks, review and merge are separate observed outcomes.
 One Orbi deployment owns one repository. The suite installer adds only the CLI
 (`./install.sh --only orbi`, needs `uv`); a working Orbi installation is kept.
 
+Use `/orbi [status|setup|start|stop]` in Pi or Hermes, `/kit:orbi` in Claude
+Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) defaults
+to read-only status. Setup prepares without activating timers; start requires
+separate scheduling authorization and the existing cutover gates. Stop disables
+owned timers while active workers finish. Linux supports lifecycle changes;
+macOS supports status only.
+
+The upstream CLI remains available for diagnostics:
+
 ```sh
 orbi check  --config /path/to/orbi.toml   # configuration and provider checks
 orbi status --config /path/to/orbi.toml   # current delivery state
@@ -256,6 +265,7 @@ states its own boundaries and what "done" means.
 **Operate**
 
 - `/ask-kit` — ask which of the above fits.
+- `/orbi` — inspect or explicitly manage one repository's Orbi deployment.
 - GitHub Issues and Orbi diagnostics — see [delivery setup](docs/github-native.md).
 
 ## Paseo interface
