@@ -117,11 +117,19 @@ configuration and Pi packages as Pi, so the installed Kit package serves both.
 
 Default/full/menu and `update` include `orbi`. Use `./install.sh --only orbi`
 to install it alone or `--skip orbi` to leave it untouched. A missing CLI uses the
-[official PyPI distribution](https://pypi.org/project/orbi-cli/) through
-`uv tool install --python 3.14 orbi-cli`; uv provisions the compatible Python.
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) first. A missing
-uv or failed install fails this component with a diagnostic; other components
-continue. Kit does not bootstrap uv or force-reinstall a conflicting tool.
+[XelHaku/orbi fork](https://github.com/XelHaku/orbi) at commit
+`1a8b2f9603f6258cb105293f238a8d3f775f3393`, which adds the host-only
+`pi_executable` setting for Pi-compatible CLIs such as Pi-Bolt:
+
+```sh
+uv tool install --python 3.14 git+https://github.com/XelHaku/orbi.git@1a8b2f9603f6258cb105293f238a8d3f775f3393
+```
+
+This uses the immutable Git revision, not the upstream shell installer or PyPI.
+Install Git and [uv](https://docs.astral.sh/uv/getting-started/installation/) first;
+uv provisions the compatible Python. A missing prerequisite or failed install
+fails this component with a diagnostic; other components continue. Kit does not
+bootstrap uv or Git, or force-reinstall a conflicting tool.
 
 The executable defaults to `~/.local/bin/orbi` (or `AUTOWORK_BIN_DIR`);
 `UV_TOOL_BIN_DIR` takes precedence and `UV_TOOL_DIR` retains uv's normal meaning.
@@ -131,8 +139,11 @@ List/preview do not execute uv or Orbi. A broken existing launcher is reported,
 not overwritten; repair it using its deployment's supported procedure.
 
 A working existing CLI is kept, including on `install.sh update`, so an editable
-bootstrap or pinned live deployment is not silently replaced with a PyPI version.
+bootstrap or pinned live deployment is not silently replaced with the fork.
 Update deployments separately through Orbi's supported source-sync procedure.
+The CLI source selection does not repin deployment homes or `engine_source_track`,
+set `pi_executable`, copy provider files or credentials, or change the lifecycle
+skill's separately supported source pin. Those remain explicit deployment work.
 This component installs **only the CLI**, not an execution-ready deployment: no
 `orbi setup`, `install-units`, bare tick, authentication or config changes, and no
 Orbi service start/restart/stop. The suite's existing host-only restart phase still

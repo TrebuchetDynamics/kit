@@ -41,6 +41,8 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = 'TrebuchetDynamics/kit'
 PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
+ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
+               '1a8b2f9603f6258cb105293f238a8d3f775f3393')
 HOME = Path(os.environ.get('HOME', str(Path.home())))
 BIN = Path(os.environ.get('AUTOWORK_BIN_DIR') or HOME / '.local' / 'bin')
 # Claude Code's refusal when settings name this marketplace from another source.
@@ -490,7 +492,7 @@ def orbi_version(binary):
 
 
 def install_orbi(output=None):
-    """Install the official CLI, never setup/tick or replace a deployment bootstrap."""
+    """Install the pinned fork CLI, never setup/tick or replace a deployment bootstrap."""
     output = output or Output()
     destination = Path(os.environ.get('UV_TOOL_BIN_DIR') or BIN).absolute()
     candidates = [shutil.which('orbi'), destination / 'orbi', HOME / '.local/bin/orbi']
@@ -501,7 +503,9 @@ def install_orbi(output=None):
     uv = shutil.which('uv')
     if not uv:
         raise OSError('Orbi requires uv; install uv and retry ./install.sh --only orbi')
-    argv = [uv, 'tool', 'install', '--python', '3.14', 'orbi-cli']
+    if not shutil.which('git'):
+        raise OSError('Orbi requires git to install the pinned fork; install git and retry ./install.sh --only orbi')
+    argv = [uv, 'tool', 'install', '--python', '3.14', ORBI_SOURCE]
     output.line('  $ ' + shlex.join(argv), 'command')
     code, text = run_command(argv, output, extra_env={'UV_TOOL_BIN_DIR': str(destination)})
     if code:
@@ -513,10 +517,10 @@ def install_orbi(output=None):
 def orbi_item(output=None):
     system = platform.system()
     return Item('orbi', 'Orbi CLI (no deployment activation)',
-                note='requires uv for a missing CLI; preserves existing installations and source pins',
+                note='requires uv and git for the pinned XelHaku fork; preserves existing installations and source pins',
                 missing='' if system in ('Linux', 'Darwin') else f'unsupported Orbi platform: {system}',
                 steps=[Step('reuse existing orbi --version, or install a missing CLI with '
-                            'uv tool install --python 3.14 orbi-cli; verify the installed version; '
+                            f'uv tool install --python 3.14 {ORBI_SOURCE}; verify the installed version; '
                             'no setup, scheduler changes or deployment upgrades',
                             run=lambda: install_orbi(output))])
 
