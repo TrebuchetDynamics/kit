@@ -85,13 +85,17 @@ agents actually ran. Record unavailable tools/checks honestly.
 
 ## First: bind research to the repository
 
-Inspect project rules,
-accepted intent, current docs, the `tasks/` store, active task ownership, dirty
-changes and existing research receipts. The main checkout's `tasks/` is canonical;
-an experiment worktree's copied store is not. Reuse the current task
-and requirement IDs. Research logs, TSV and upstream `handoff.json` remain evidence,
-not a second backlog or proof of completion. Use a unique per-run output directory
-under the existing research owner (avoid minute-timestamp collisions).
+Inspect project rules, accepted intent, current docs, open and closed GitHub Issues,
+linked PRs, accepted requirement IDs, actual ownership, dirty changes and existing
+research receipts. GitHub Issues own the executable backlog through
+[Plan Handoff](../shared/PLAN-HANDOFF.md). Reuse existing issues, PRs, requirement IDs
+and coordinators. Treat historical `tasks/` records as read-only provenance, never a
+writable queue. Preserve them without moving or deleting them; never reinstall the
+removed task CLI. Use the [migration owner](../shared/TODO-WORKCENTER.md) to reconcile
+still-required outcomes.
+Research logs, TSV and upstream `handoff.json` remain evidence, not a second backlog
+or proof of completion. Use a unique per-run output directory under the existing
+research owner (avoid minute-timestamp collisions).
 
 The selected Autoresearch protocol is normally sufficient. For a concrete method
 gap or explicit protocol request, select one technique through
@@ -196,6 +200,10 @@ command with its variables) under the durable research owner, never expiring scr
 
 ## Execution, experiments and completion
 
+Only an actually authorized `fix` or bounded experiment may change product code.
+Inherit all caller limits, including read-only/no-write/`--dry-run`, no-implementation
+and no-commit; an explicit selector or `--chain fix` adds no authority.
+
 Use upstream bounded iteration/cycle limits and stop on plateau/ceiling/blockers;
 explicit unlimited work still checkpoints and stops on user interruption. No hidden
 background loop. Pin the metric/predicate, record baseline and check the same signal
@@ -235,7 +243,12 @@ all upstream contents are otherwise byte-identical. Update this pinned subtree
 deliberately, review command/runtime changes, then rerun distribution/dispatch tests.
 ## Boundaries
 
-- Not implementation; publish accepted findings through the planners for Orbi.
+- Plan/analysis does not implement; follow the
+  [planning authority contract](../shared/RESEARCH-PLAN.md#planning-artifact-and-authority-contract).
+  Publish accepted follow-ups through [Plan Handoff](../shared/PLAN-HANDOFF.md) and stop.
+  An Orbi-owned substep returns to the same coordinator.
+- Authorized `fix` and bounded experiments may implement within accepted scope and
+  the execution limits above; they do not bypass ownership, PR or independent review gates.
 - Not an interactive plan; use `/plan-with-me`.
 
 **Done when:** the selected protocol's findings or bounded loop result are saved with evidence and the stop reason.
