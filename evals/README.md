@@ -30,7 +30,8 @@ Event types: `read`, `write`, `edit`, `command`, `final`. A `tool` event with
 event with `tool: "bash"` or `"shell"` and a command is a `command` event. Paths
 may be top-level or under `args.path`; commands may be top-level or under
 `args.command`. Paths are repository-relative strings. Commands include the exact
-command and exit code.
+command text and, when known for that invocation, an exit code. An absent `exit`
+is unknown, not zero.
 
 ## Tier 3 spec format
 
@@ -135,7 +136,25 @@ python3 scripts/skill_trace_eval.py evals/tier3/ponytail-review.json \
 
 The converter removes heredoc bodies, maps read-only `cat`/`head`/`tail`/`sed`/
 `git show`/`git diff`/`git log` commands to read events, and keeps the last assistant
-text as `final`. Keep live traces and credentials outside Git.
+text as `final`. Conversion does not execute recorded commands or modify the source
+trace. Keep live traces and credentials outside Git.
+
+The converter attributes `exit` only to an unambiguously single simple shell
+invocation with an integer tool exit code (not a boolean). Missing or malformed
+status stays unknown. Compound commands (`CHECK || true`, `CHECK; true`,
+`false && CHECK`), pipelines, multiline input, grouping, `[[ ... ]]` conditionals,
+heredocs, substitutions, redirections and shell wrappers such as `sh -c 'CHECK'`
+do not provide per-command exit evidence. Quoted operator-like text may
+conservatively be ambiguous too.
+Their command events retain valid numeric tool status as `aggregate_exit_code`,
+provenance only: the grader does not use it to satisfy an `exit=0` requirement.
+Command text remains available to forbidden-action matching, even when it may have
+failed or never executed.
+
+To collect reliable success evidence, capture verification as a separate simple
+tool invocation with its own result. Do not rewrite a historic trace or guess an
+inner command's exit from a successful wrapper. An aggregate-success trace without
+separate per-invocation evidence yields a missing required-success event.
 
 Exit 0 means the trace satisfies the spec. Exit 1 means a required event is missing
 or a forbidden action occurred. Exit 2 means the JSON is malformed.
@@ -146,3 +165,9 @@ The checked-in traces are synthetic fixtures. A passing fixture proves the grade
 spec work, not that a live agent followed the skill. Tier 3 does not execute trace
 content, call a model or prove delivery. Collect live traces from the host session,
 redact secrets and store them outside Git; grade them with the same command.
+
+Heredoc-example exclusion, command splitting, read derivation and regex matching are
+limited lexical approximations, not complete shell interpretation, a shell audit or
+a security sandbox. They can miss actions or match text that was not executed;
+conservative exit attribution does not make grading semantically complete or
+qualify live skill behavior.
