@@ -9,12 +9,14 @@ license: MIT
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) and the
 [shared communication rules](../shared/COMMUNICATION.md) within this workflow's
 scope, guided by the [GitHub-native contract](../../docs/github-native.md). This skill is a lifecycle
-client for one repository's existing Orbi deployment: it is not an executor,
+client for one repository's Orbi deployment: it is not an executor,
 queue, daemon or second scheduler.
 
 `/orbi [status|setup|start|stop|help]` runs
 `python3 -B <this-skill>/scripts/orbi_control.py` with the same action and
-`--repo-dir PATH --config PATH --dry-run --json`. The default action is
+`--repo-dir PATH --config PATH --dry-run --json`. For a new deployment, setup
+also accepts `--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]`.
+The default action is
 `status`; never run bare `orbi`, which is the Runner's one-tick entry. Use the
 helper, not hand-written `systemctl`, unit files or `orbi setup` commands.
 
@@ -36,9 +38,16 @@ lifecycle actions.
    states and ready queue. Status is read-only; missing evidence is
    `unavailable`.
 3. **Prepare.** Run `setup` (preview with `--dry-run`). It stages the verified
-   pinned source, writes the native config and `.orbi/env`, reuses provider
-   metadata without credentials and validates with a non-activating `orbi
-   check`. It reports `prepared`; it never installs or enables a timer.
+   pinned source, writes the native config and `.orbi/env`, and validates with a
+   non-activating `orbi check`. For the first deployment, supply
+   `--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]`
+   using published metadata from Pi's local catalog, not authentication files.
+   Without these flags, setup reuses verified metadata from a visible deployment.
+   Incomplete selectors, invalid metadata, literal credentials and symlink paths
+   are refused before writes. Bootstrap flags cannot override an existing target;
+   omit them to reuse its selection. New configs preserve the verified origin's
+   SSH/HTTPS transport without rewriting remotes. It reports `prepared` with
+   `activated: false`; it never installs or enables a timer.
 4. **Start.** Run `start` only after the owner asks for scheduling and existing
    explicit pauses, cutover requirements and human-only gates are resolved for
    that deployment. Orbi remains paused and live-unqualified until its separate
@@ -54,7 +63,11 @@ lifecycle actions.
    make the state look clean.
 6. **Report evidence.** Name the repository, deployment, unit, pin, source and
    scheduler states you actually read, and the commands you ran. Keep provider
-   identifiers and non-secret evidence only.
+   identifiers and non-secret evidence only. Report preparation, scheduler
+   activation and live delivery separately. If non-activating validation fails
+   after writes, inspect and repair the partial deployment, then rerun helper
+   `setup` without bootstrap flags. Do not use activating upstream setup as a
+   preparation repair; inspect scheduler state with `status`.
 
 Use `status` on macOS; lifecycle mutations there are refused before any side
 effect. Linux is the only mutation platform in this version.
