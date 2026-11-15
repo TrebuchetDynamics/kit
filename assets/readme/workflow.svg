@@ -1,18 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="180" viewBox="0 0 1200 180" role="img" aria-labelledby="title desc">
-  <title id="title">Plan, queue, execute, report</title>
-  <desc id="desc">Plan accepted work, publish GitHub Issues, deliver through Orbi, and report checks and delivery separately.</desc>
-  <rect width="1200" height="180" rx="16" fill="#101a18"/>
-  <g font-family="ui-monospace, 'DejaVu Sans Mono', monospace" font-size="22" fill="#aab8ae">
-    <text x="64" y="48">01</text><text x="322" y="48">02</text>
-    <text x="610" y="48">03</text><text x="950" y="48">04</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Kit plans. GitHub queues. Orbi delivers through PR gates.</title>
+  <desc id="desc">Conceptual sequence, not live delivery evidence: Kit planning publishes complete GitHub Issues. Orbi uses Pi for implementation and tests, then opens a PR for independent review and merge gates.</desc>
+  <rect width="1200" height="420" rx="16" fill="#101a18"/>
+  <g font-family="ui-monospace, 'DejaVu Sans Mono', monospace" font-size="24" fill="#aab8ae">
+    <text x="64" y="52">01</text><text x="650" y="52">02</text>
+    <text x="64" y="254">03</text><text x="650" y="254">04</text>
   </g>
-  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="48" font-weight="600" fill="#f4f3e8">
-    <text x="64" y="116">Plan</text><text x="322" y="116">Queue</text>
-    <text x="610" y="116" fill="#b7e88c">Execute</text><text x="950" y="116">Report</text>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="60" font-weight="600" fill="#f4f3e8">
+    <text x="64" y="124">Kit</text><text x="650" y="124">GitHub Issues</text>
+    <text x="64" y="326" fill="#b7e88c">Orbi + Pi</text>
+    <text x="650" y="326">PR / review</text><text x="650" y="388">Merge gates</text>
   </g>
   <g fill="none" stroke="#aab8ae" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M218 98 h52 m-11 -9 11 9 -11 9"/>
-    <path d="M516 98 h42 m-11 -9 11 9 -11 9"/>
-    <path d="M850 98 h48 m-11 -9 11 9 -11 9"/>
+    <path d="M390 106 h180 m-12 -10 12 10 -12 10"/>
+    <path d="M1050 154 v30 H90 v30 m-10 -12 10 12 10 -12"/>
+    <path d="M430 308 h140 m-12 -10 12 10 -12 10"/>
   </g>
 </svg>

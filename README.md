@@ -4,34 +4,27 @@
 
 <a id="a-toolset-of-skills-for-coding-agents"></a>
 
-**Planning skills for coding agents. GitHub-native delivery through Orbi.**
+**Plan with Kit. Deliver through Orbi.**
 
-Kit supplies skills for **Pi**, **Claude Code** and **Codex**, with optional
-**Hermes** integration. Kit researches, decides and decomposes work; **GitHub
-Issues** own the executable backlog; **Orbi** implements, tests, opens PRs, obtains
-independent review and enforces merge gates.
+Kit supplies planning skills for **Pi**, **Claude Code** and **Codex**, with optional
+**Hermes** integration. Kit researches, decides and decomposes accepted intent into
+complete **GitHub Issues**, the executable backlog. **Orbi** is a separate delivery
+project, not Kit's bundled executor: it uses Pi to implement and test, opens PRs,
+obtains independent review and applies merge gates. Planning stops after publication.
 
-All issues default to `ai-ready`, regardless of author. Kit publishes that label
-last, after complete issue content and native dependencies exist. Epics do not
-execute; explicit pauses and incomplete planning stay undispatched. CI, review
-and sensitive-change protections remain separate from dispatch.
+![Conceptual workflow: Kit planning to GitHub Issues to Orbi and Pi delivery to PR, review and merge gates](assets/readme/workflow.svg)
 
-**`pi-autowork` is retired and unsupported. Its executor, CLI and Paseo plugin
-are removed. Do not develop, repair, reinstall or restart them.** Contributors and
-agents working from older branches must stop executor work and reconcile any
-still-required outcome into GitHub Issues for Orbi; do not discard their changes.
-Existing task records, worktrees and attempts/recovery evidence are preserved,
-not executed.
-**Orbi remains paused and live-unqualified** pending the pilot and cutover gates.
-See [GitHub-native setup and cutover](docs/github-native.md).
+**Conceptual workflow, not live delivery evidence:** Kit planning → complete GitHub
+Issues → Orbi/Pi implementation and tests → PR, independent review and merge gates.
 
 [Install](#install) · [First use](#first-use-in-your-project) ·
-[Development flow](#github-native-development-flow) · [Skills](#the-skills) ·
-[Safety](#safety-before-installing) · [Docs](#documentation)
+[Using Orbi](#using-orbi) · [Development flow](#github-native-development-flow) ·
+[Skills](#the-skills) · [Safety](#safety-before-installing) · [Docs](#documentation)
 
-**Start with one skill.** Ask `/ask-kit` in Pi, `/kit:ask-kit` in Claude Code or
-`$kit:ask-kit` in Codex. Planning does not start a service; an existing Orbi
-deployment may consume newly published ready issues immediately.
+**Orbi remains paused and live-unqualified** pending the
+[pilot and cutover gates](docs/github-native.md#cutover). Installing Kit or publishing
+an issue does not authorize activation. `pi-autowork` is retired and unsupported;
+[preserve existing work and recovery evidence](#the-runner-autowork), never restart it.
 
 ## Install
 
@@ -114,6 +107,100 @@ external integrations. Existing memory providers and stores are preserved.
 Restart your host session to discover the installed skills. See the
 [cross-host guide](docs/cross-host.md) for reload commands, updates and removal.
 
+## First use in your project
+
+Start the host you installed (`pi`, `claude`, `codex` or `hermes`). Ask for the
+read-only Orbi action reference first. No repository or deployment is needed:
+
+| Host | Read-only help |
+| --- | --- |
+| Pi / Hermes | `/orbi help` |
+| Claude Code | `/kit:orbi help` |
+| Codex | `$kit:orbi help` |
+
+Expected result: the supported actions, their effects and limits, with no deployment
+reads or writes. To choose a planning skill, use `/ask-kit` in Pi,
+`/kit:ask-kit` in Claude Code or `$kit:ask-kit` in Codex.
+
+Next, open **your project**, not this checkout, and try the questions-only command:
+
+```text
+/plan-with-me questions only: help me clarify a caching improvement; ask one question, then stop
+```
+
+Claude Code uses `/kit:plan-with-me`; Codex uses `$kit:plan-with-me`. The portable
+hosts resolve the same skill.
+
+Expected first success: one relevant question and no file changes. This is a live
+smoke check **you perform**, not an outcome established by automated tests. Continue
+with the [core-only interview](docs/onboarding.md#core-only-requirements-interview) or
+the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-task).
+
+<a id="autowork-flow"></a>
+## GitHub-native development flow
+
+1. **Plan:** `/plan-with-me` resolves missing intent; `/plan-for-me` investigates and
+   decides within accepted scope. Both publish complete GitHub Issues.
+2. **Publish:** create the entire batch under `ai-planning`, link native `blockedBy`
+   dependencies and optional `ai-epic` sub-issues, verify, then add `ai-ready` last.
+3. **Deliver:** one Orbi deployment per repository owns Pi → tests → PR → independent
+   review → merge gates.
+4. **Observe:** GitHub Issues/PRs and read-only
+   `orbi status`/`orbi doctor` ([usage](#using-orbi)).
+5. **Reconcile:** `/docs-sync` updates current requirements and issue evidence without
+   duplicating the backlog or restarting a scheduler.
+
+All issues default to `ai-ready`, regardless of author. Publish readiness last,
+after complete content and native `blockedBy` prerequisites exist. Epics do not
+execute; explicit pauses and incomplete planning stay undispatched. An existing
+Orbi deployment may pick up newly ready issues immediately, but a label is not
+pickup, passing tests, independent review or protected merge.
+
+**Activation is a separate gate.** Orbi stays paused and live-unqualified until the
+[pilot and cutover checks](docs/github-native.md#cutover) pass. Keep scoped
+credentials, strict required CI, enforced branch protection, independent review,
+sensitive-change controls and human-only acceptance. Dispatch does not replace them.
+See [publication, migration and deployment](docs/github-native.md).
+
+### Using Orbi
+
+One Orbi deployment owns one repository. The suite installer adds only the CLI
+(`./install.sh --only orbi`, needs `uv`); a working Orbi installation is kept.
+
+Use `/orbi [status|setup|start|stop|help]` in Pi or Hermes, `/kit:orbi` in Claude
+Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
+
+| Action | Effect and boundary |
+| --- | --- |
+| Bare skill invocation or `status` | Read-only status for the repository; missing evidence is unavailable, not an empty queue. |
+| `help` | Read-only action reference, without a repository or deployment. |
+| `setup` | Prepare source/configuration without scheduling or timer activation. |
+| `start` | Activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
+| `stop` | Disable owned timers without killing active workers; report draining while they finish. |
+
+Linux supports lifecycle changes. macOS supports status and help only.
+Never run bare `orbi` to inspect: it runs a Runner tick, not status.
+
+The upstream CLI remains available for diagnostics:
+
+```sh
+orbi check  --config /path/to/orbi.toml   # configuration and provider checks
+orbi status --config /path/to/orbi.toml   # current delivery state
+orbi doctor --config /path/to/orbi.toml   # read-only diagnostics
+```
+
+Upstream `orbi setup` and `orbi install-units` can activate timers. Prefer the
+Kit lifecycle skill for preparation; deployment changes require a separate
+checkout and their own authorization. Installing or updating files is not runtime
+activation, and installing the CLI does not start workers or qualify delivery.
+
+Read [GitHub-native deployment](docs/github-native.md#one-repository-per-deployment)
+and the [current lifecycle reference](skills/orbi/references/lifecycle.md) for
+prerequisites, preparation and partial-failure recovery. First-deployment provider
+and SSH setup has an [unresolved limitation (#43)](https://github.com/TrebuchetDynamics/kit/issues/43);
+do not assume automatic provider discovery or guaranteed setup. Keep credentials
+out of Git and preserve existing pins, workers and recovery state.
+
 <details>
 <summary><strong>Install every available host and CLI component at once</strong></summary>
 
@@ -158,66 +245,6 @@ Ordinary installs reuse the installed Pi package. `./install.sh update` explicit
 refreshes it. Settings reconciliation still runs, as does the service-restart phase.
 
 </details>
-
-## First use in your project
-
-Open **your project**, not this checkout. Start the host you installed (`pi`, `claude`,
-`codex` or `hermes`), then use the planning command from the table above:
-
-```text
-/plan-with-me questions only: help me clarify a caching improvement; ask one question, then stop
-```
-
-Claude Code uses `/kit:plan-with-me`; Codex uses `$kit:plan-with-me`. The portable
-hosts resolve the same skill.
-
-Expected first success: one relevant question and no file changes. This is a live
-smoke check **you perform**, not an outcome established by automated tests. Continue
-with the [core-only interview](docs/onboarding.md#core-only-requirements-interview) or
-the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-task).
-
-<a id="autowork-flow"></a>
-## GitHub-native development flow
-
-1. **Plan:** `/plan-with-me` resolves missing intent; `/plan-for-me` investigates and
-   decides within accepted scope. Both publish complete GitHub Issues.
-2. **Publish:** create the entire batch under `ai-planning`, link native `blockedBy`
-   dependencies and optional `ai-epic` sub-issues, verify, then add `ai-ready` last.
-3. **Deliver:** one Orbi deployment per repository owns Pi → tests → PR → independent
-   review → merge gates.
-4. **Observe:** GitHub Issues/PRs and read-only
-   `orbi status`/`orbi doctor` ([usage](#using-orbi)).
-5. **Reconcile:** `/docs-sync` updates current requirements and issue evidence without
-   duplicating the backlog or restarting a scheduler.
-
-See [publication, migration and deployment](docs/github-native.md). Readiness,
-pickup, passing checks, review and merge are separate observed outcomes.
-
-### Using Orbi
-
-One Orbi deployment owns one repository. The suite installer adds only the CLI
-(`./install.sh --only orbi`, needs `uv`); a working Orbi installation is kept.
-
-Use `/orbi [status|setup|start|stop|help]` in Pi or Hermes, `/kit:orbi` in Claude
-Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) defaults
-to read-only status. Setup prepares without activating timers; start requires
-separate scheduling authorization and the existing cutover gates. Stop disables
-owned timers while active workers finish. Linux supports lifecycle changes;
-macOS supports status only. `help` prints the action reference read-only and needs no repository.
-
-The upstream CLI remains available for diagnostics:
-
-```sh
-orbi check  --config /path/to/orbi.toml   # configuration and provider checks
-orbi status --config /path/to/orbi.toml   # current delivery state
-orbi doctor --config /path/to/orbi.toml   # read-only diagnostics
-```
-
-`orbi setup` and `orbi install-units` change a deployment. Run them only in a
-separate deployment checkout, with their own authorization, and keep dispatch
-disabled until the cutover checks pass. Orbi stays paused and live-unqualified:
-installing the CLI does not start workers or delivery. See
-[one repository per deployment](docs/github-native.md#one-repository-per-deployment).
 
 ## The skills
 
@@ -284,8 +311,12 @@ checks do not qualify the new delivery system.
 <a id="the-runner-autowork"></a>
 ## Retired executor and compatibility names
 
-`pi-autowork` is not a supported Kit component or a development target. Its source,
-launchers and integrations are removed. Historical contracts and
+**`pi-autowork` is retired and unsupported. Its executor, CLI and Paseo plugin
+are removed. Do not develop, repair, reinstall or restart them.** Contributors and
+agents working from older branches must stop executor work and reconcile any
+still-required outcome into GitHub Issues for Orbi; do not discard their changes.
+Existing task records, worktrees and attempts/recovery evidence are preserved,
+not executed. Historical contracts and
 unresolved qualification are available at the
 [immutable pre-removal revision](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork).
 This is evidence, not an installation fallback. Hermes terminal maintenance
