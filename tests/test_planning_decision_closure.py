@@ -200,6 +200,52 @@ class PlanningDecisionClosureTests(unittest.TestCase):
                          'one useful progress update', 'ready/waiting/proposed'):
             self.assertIn(expected, readme)
 
+    def test_lgtm_continuation_specimens_bind_inputs_to_scoped_results(self):
+        """Inert source examples, not executed conversations or a model evaluator."""
+        examples = section('skills/lgtm/SKILL.md', 'Examples').split(' - ')
+        cases = (
+            ('One clear planning recommendation', '`yes`',
+             'accept that choice and continue planning, without implementation'),
+            ('Six independent consequential planning questions', '`yes`',
+             'leave only ambiguous choices unresolved'),
+            ('Named retention and access choices', '`accept all named recommendations`',
+             'settle both choices and continue planning, not implementation'),
+            ('Standalone plan ready', '`lgtm`',
+             'accept the plan, save the authorized planning artifacts, then stop'),
+            ('Accepted plan', '`implement this plan`',
+             'enter the authorized execution workflow'),
+            ('Earlier request: implement, commit and push', '`lgtm`',
+             'finish the already-authorized implementation, commit and push'),
+            ('Earlier implementation permission, then standalone planning', '`lgtm`',
+             'finish planning only; earlier unrelated permission does not widen it'),
+            ('Continuing no-write and no-push limits', '`lgtm`',
+             'discuss only, with no file/GitHub writes, commit or push'),
+            ('Completed work with nothing authorized left', '`lgtm`',
+             'acknowledge once and stop'),
+            ('Unambiguous four-item cleanup batch in an implementation workflow', '`lgtm`',
+             'verify and implement all supported items'),
+            ('Equivalent internal test helpers within authorized implementation', '`lgtm`',
+             'choose the safe reversible default and continue'),
+            ('Planning menu with independent owner choices', '`lgtm`',
+             'clarify affected choices, not select the first recommendation'),
+        )
+        for checkpoint, reply, outcome in cases:
+            with self.subTest(checkpoint=checkpoint, reply=reply):
+                matching = [example for example in examples if checkpoint in example]
+                self.assertEqual(len(matching), 1, checkpoint)
+                self.assertIn(reply, matching[0])
+                self.assertIn(outcome, matching[0])
+        self.assertIn('Which retention and access choices do you accept?', ' '.join(examples))
+        # The expected refusals come from the existing shared owners, not LGTM defaults.
+        uncertainty = section('skills/shared/PLANNING-CRAFT.md', 'Consequential uncertainty')
+        self.assertIn('A bare "yes" accepts a single unambiguous proposal, not several recommendations', uncertainty)
+        authority = section('skills/shared/RESEARCH-PLAN.md', 'Planning artifact and authority contract')
+        for rule in ('Acceptance of a plan is not execution authority',
+                     'Earlier unrelated implementation permission does not widen this request',
+                     'Later explicit instruction to implement the accepted plan',
+                     'Do not ask an already-authorized coordinator to approve again'):
+            self.assertIn(rule, authority)
+
     def test_closure_does_not_widen_planning_writes_or_execution_authority(self):
         contract = section('skills/shared/RESEARCH-PLAN.md', 'Planning artifact and authority contract')
         for rule in ('Save the requested plan/batch, then stop', 'same coordinator',

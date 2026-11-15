@@ -36,7 +36,7 @@ is limited, so some commands must be typed directly.
 | `/orbi [status\|setup\|start\|stop\|help]` | `/orbi` | [Repository-scoped lifecycle controls](../skills/orbi/SKILL.md): bare status is read-only, setup prepares without activation, authorized start schedules, stop drains without killing workers; Linux controls, macOS status-only; help prints the action reference read-only on any platform |
 | `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only clean unmerged ones, keep dirty and locked worktrees |
-| `/lgtm` | `/lgtm` | Accept the latest recommendation, including a question round, and continue |
+| `/lgtm` | `/lgtm` | [Continue within inherited authority](../skills/lgtm/SKILL.md): accept unambiguous choices, clarify only ambiguous planning choices; standalone plan approval does not authorize implementation |
 | `/docs_sync` | `/docs_sync` | Maintain repository documentation |
 | `/plan_with_me` | `/plan_with_me` | Resolve missing intent, then publish complete GitHub Issues |
 | `/plan_for_me` | `/plan_for_me` | Investigate accepted scope and publish complete GitHub Issues without an interview |
