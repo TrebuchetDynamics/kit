@@ -2,7 +2,7 @@
   "name": "plan-with-me-pass",
   "skill": "plan-with-me",
   "model": "fixture",
-  "note": "Synthetic trace fixture; not a model run.",
+  "note": "Synthetic writable fresh helper-publication pilot; not a model run or remote receipt.",
   "events": [
     {
       "type": "tool",
@@ -10,12 +10,13 @@
       "path": "src/parser.py"
     },
     {
-      "type": "write",
-      "path": "tasks/items/PLAN-2.md"
+      "type": "command",
+      "command": "python3 scripts/github_issues.py --repo OWNER/REPO --batch /tmp/batch.json --apply",
+      "exit": 0
     },
     {
       "type": "final",
-      "text": "Saved the answered plan and bounded tasks."
+      "text": "Published https://github.com/OWNER/REPO/issues/1: ready, no dependencies. Helper readback succeeded; implementation and live delivery unverified."
     }
   ]
 }
