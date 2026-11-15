@@ -85,6 +85,52 @@ class PortablePackageTests(unittest.TestCase):
             self.assertFalse(preview['remote_checked'])
             self.assertEqual(preview['issues'][0]['key'], 'example')
 
+            # The packaged lifecycle helper resolves its skill and reference from the
+            # archive and reads status from a foreign directory without a checkout,
+            # Hermes source, executor payload or any staged/installed deployment.
+            helper = installed / 'skills/orbi/scripts/orbi_control.py'
+            canonical = (installed / 'skills/orbi/SKILL.md').read_text()
+            reference = (installed / 'skills/orbi/references/lifecycle.md').read_text()
+            self.assertIn('<this-skill>/scripts/orbi_control.py', canonical)
+            self.assertIn('Linux is the only mutation platform', canonical)
+            self.assertIn('macOS supports status and help; setup/start/stop are refused before side effects.',
+                          reference)
+            checkout = foreign / 'target repo'
+            checkout.mkdir()
+            subprocess.run(['git', 'init', '-q', str(checkout)], check=True, timeout=30)
+            subprocess.run(['git', '-C', str(checkout), 'remote', 'add', 'origin',
+                            'https://github.com/example/project.git'], check=True, timeout=30)
+            tools = foreign / 'bin'
+            tools.mkdir()
+            git = shutil.which('git')
+            self.assertIsNotNone(git, 'the archive check needs git on PATH')
+            (tools / 'git').symlink_to(git)
+            home, state = foreign / 'home', foreign / 'xdg'
+            home.mkdir()
+            state.mkdir()
+            sandbox = {'PATH': str(tools), 'HOME': str(home), 'XDG_DATA_HOME': str(state),
+                       'XDG_CONFIG_HOME': str(foreign / 'config'),
+                       'PYTHONDONTWRITEBYTECODE': '1'}
+            usage = subprocess.run([sys.executable, '-B', str(helper), '--help'],
+                                   cwd=foreign, capture_output=True, text=True,
+                                   timeout=60, env=sandbox)
+            self.assertEqual(usage.returncode, 0, usage.stderr)
+            self.assertIn('[status|setup|start|stop|help]', usage.stdout)
+            before = sorted(path.relative_to(checkout) for path in checkout.rglob('*'))
+            status = subprocess.run(
+                [sys.executable, '-B', str(helper), 'status',
+                 '--repo-dir', str(checkout), '--json'],
+                cwd=foreign, capture_output=True, text=True, timeout=60, env=sandbox)
+            self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+            report = json.loads(status.stdout)
+            self.assertEqual(report['deployment'], {'state': 'absent'})
+            self.assertEqual(report['scheduler']['state'], 'unavailable')
+            self.assertEqual(report['queue']['state'], 'unavailable')
+            self.assertEqual(sorted(path.relative_to(checkout) for path in checkout.rglob('*')),
+                             before, 'status wrote into the target repository')
+            self.assertEqual(list(home.rglob('.orbi*')), [], 'status staged a deployment')
+            self.assertEqual(list(state.rglob('*')), [], 'status installed a deployment')
+
     def test_portable_skills_and_references_are_self_contained(self):
         folder = ROOT / 'adapters/skills'
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}
