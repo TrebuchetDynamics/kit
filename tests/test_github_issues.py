@@ -1,6 +1,8 @@
 """Offline publication, retry and default-dispatch contracts; no live qualification."""
+from contextlib import redirect_stderr, redirect_stdout
 import copy
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -185,6 +187,133 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(publisher.PublicationError, 'dependency readback failed'):
             publisher.publish(api, {'issues': [task('a'), task('b', blocked_by=['a'])]})
         self.assertTrue(all(publisher.labels(row) == {'ai-planning'} for row in api.issues.values()))
+
+    def test_final_refresh_refuses_drift_after_an_earlier_ready_post(self):
+        cases = {
+            'dependency removed': 'dependency readback failed',
+            'dependency added': 'dependency readback failed',
+            'parent removed': 'epic readback failed',
+            'parent changed': 'epic readback failed',
+            'parent added': 'epic readback failed',
+            'owned': 'owned',
+            'paused': 'owned',
+            'readiness withdrawn': 'readiness withdrawn',
+            'pending dispatched': 'already dispatched',
+            'body changed': 'contract changed',
+            'title changed': 'contract changed',
+            'closed': 'closed',
+            'epic added': 'changed epic classification',
+            'epic removed': 'changed epic classification',
+            'issue read failure': 'issue readback failed',
+            'dependency read failure': 'dependency readback failed',
+            'dependency read timeout': 'dependency readback failed',
+            'parent read failure': 'epic readback failed',
+        }
+        for change, error in cases.items():
+            with self.subTest(change=change):
+                api = FakeGitHub()
+                b = task('b', blocked_by=['a'], epic='e')
+                if change == 'parent added':
+                    del b['epic']
+                if change == 'epic removed':
+                    b['kind'] = 'epic'
+                if change == 'pending dispatched':
+                    b.update(ready=False, pending_reason='Needs input')
+                batch = {'issues': [task('a'), b, task('e', kind='epic'),
+                                    task('f', kind='epic')]}
+                original, pages = api.api, api.pages
+                foreign = {}
+
+                def interleave(path, method='GET', data=None, **kwargs):
+                    if foreign and method == 'GET' and (
+                        change == 'issue read failure' and path == 'issues/2'
+                        or change == 'parent read failure' and path == 'issues/2/parent'
+                    ):
+                        raise publisher.PublicationError('injected read failure')
+                    result = original(path, method, data, **kwargs)
+                    if method == 'POST' and path == 'issues/1/labels':
+                        row = api.issues[2]
+                        if change == 'dependency removed':
+                            api.dependencies[2].clear()
+                        elif change == 'dependency added':
+                            api.dependencies[2].add(9876)
+                        elif change in ('parent removed', 'parent changed', 'parent added'):
+                            api.children.get(3, set()).discard(row['id'])
+                            if change != 'parent removed':
+                                api.children[4] = {row['id']}
+                        elif change in ('owned', 'paused', 'epic added'):
+                            label = {'owned': 'ai-in-progress', 'paused': 'ai-paused',
+                                     'epic added': 'ai-epic'}[change]
+                            row['labels'].append({'name': label})
+                        elif change == 'epic removed':
+                            row['labels'] = [{'name': 'ai-planning'}]
+                        elif change == 'readiness withdrawn':
+                            row['labels'] = []
+                        elif change == 'pending dispatched':
+                            row['labels'].append({'name': 'ai-ready'})
+                        elif change in ('body changed', 'title changed'):
+                            row[change.split()[0]] += ' human edit'
+                        elif change == 'closed':
+                            row['state'] = 'closed'
+                        foreign.update(issue=copy.deepcopy(row),
+                                       dependencies=copy.deepcopy(api.dependencies),
+                                       children=copy.deepcopy(api.children))
+                    return result
+
+                def read_dependencies(path):
+                    if foreign and path == 'issues/2/dependencies/blocked_by':
+                        if change == 'dependency read failure':
+                            raise publisher.PublicationError('injected read failure')
+                        if change == 'dependency read timeout':
+                            raise subprocess.TimeoutExpired('gh api', 60)
+                    return pages(path)
+
+                api.api, api.pages = interleave, read_dependencies
+                with self.assertRaisesRegex(publisher.PublicationError, f'#2: .*{error}'):
+                    publisher.publish(api, batch)
+                self.assertTrue(foreign, 'interleaving must happen after A is ready')
+                self.assertEqual(publisher.labels(api.issues[1]), {'ai-ready'})
+                self.assertEqual(api.issues[2], foreign['issue'])
+                self.assertEqual(api.dependencies, foreign['dependencies'])
+                self.assertEqual(api.children, foreign['children'])
+                if change != 'readiness withdrawn':
+                    self.assertIn('ai-planning', publisher.labels(api.issues[2]))
+                self.assertNotIn(('POST', 'issues/2/labels', {'labels': ['ai-ready']}), api.events)
+
+    def test_apply_entry_point_reports_success_or_preserves_partial_publication(self):
+        for drift in (False, True):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as tmp:
+                api = FakeGitHub()
+                original = api.api
+
+                def interleave(path, method='GET', data=None, **kwargs):
+                    result = original(path, method, data, **kwargs)
+                    if drift and method == 'POST' and path == 'issues/1/labels':
+                        api.dependencies[2].clear()
+                    return result
+
+                api.api = interleave
+                path = Path(tmp) / 'batch.json'
+                path.write_text(json.dumps({'issues': [task('a'), task('b', blocked_by=['a'])]}))
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with patch.object(publisher, 'GitHub', return_value=api) as transport, \
+                        redirect_stdout(stdout), redirect_stderr(stderr):
+                    status = publisher.main(['--repo', 'example/repo', '--batch', str(path), '--apply'])
+                transport.assert_called_once_with('example/repo')
+                self.assertEqual(publisher.labels(api.issues[1]), {'ai-ready'})
+                if drift:
+                    self.assertEqual(status, 1)
+                    self.assertEqual(stdout.getvalue(), '')
+                    self.assertEqual(stderr.getvalue(), 'Publication incomplete: #2: dependency readback failed\n')
+                    self.assertEqual(publisher.labels(api.issues[2]), {'ai-planning'})
+                    self.assertEqual(api.dependencies[2], set())
+                    self.assertNotIn(('POST', 'issues/2/labels', {'labels': ['ai-ready']}), api.events)
+                else:
+                    self.assertEqual(status, 0)
+                    self.assertEqual(stderr.getvalue(), '')
+                    self.assertEqual([row['labels'] for row in json.loads(stdout.getvalue())],
+                                     [['ai-ready'], ['ai-ready']])
+                    self.assertEqual(api.dependencies[2], {1001})
 
     def test_external_dependency_uses_issue_id_and_keeps_existing_issue(self):
         api = FakeGitHub()
