@@ -16,51 +16,56 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
 
 LGTM is a yes and a low-effort instruction. The user should not need to restate
-the scope, name the next step, or reply “confirmed”. Read the latest assistant
-checkpoint, accept its recommendation, and act. Applies to every profile and
-channel.
+accepted scope, name an already-authorized next step, or reply “confirmed”. Applies
+to every profile and channel.
+
+## Inherited authority
+
+Bind continuation to the originating workflow and last unambiguous user-authorized
+action, including later restrictions. For planning, load the
+[planning authority contract](../shared/RESEARCH-PLAN.md#planning-artifact-and-authority-contract)
+and [choice-scoped uncertainty loop](../shared/PLANNING-CRAFT.md#consequential-uncertainty);
+these govern acceptance and the transition out of planning.
+
+Within those rules, one clear recommendation can be accepted without another
+confirmation. A bare yes after several independent consequential planning choices
+leaves only ambiguous choices unresolved; preserve settled decisions and continue
+independent authorized work. An explicit acceptance of all named choices settles
+those choices, but does not authorize implementation. Standalone planning stays
+planning until the user explicitly requests implementation. Earlier unrelated
+implementation permission does not widen an intervening standalone planning request.
+
+Outside that restriction, carry already-authorized implementation, commit and push
+forward through status updates without redundant confirmation. Keep continuing
+no-write/no-push/no-deploy limits, pauses, ownership and host approval gates binding.
+Harmless delegated engineering defaults remain the agent's call, not owner questions.
 
 ## Low-effort input
 
 The user may send only `lgtm`, `go`, `yes`, `ok`, `do it`, a thumbs-up, or a short
-“ship it”. Treat it as approval of the latest assistant recommendation, not as a
-request for a new plan or another question round.
+“ship it”. Resolve its referent under inherited authority, not as a new workflow.
 
-| Latest assistant checkpoint | LGTM means |
+| Latest assistant checkpoint | LGTM means within inherited authority |
 | --- | --- |
-| Recommended next step | Do it now. |
-| Question round with recommended answers | Accept every recommendation, state the scope in one sentence, and start. |
-| Question with no recommendation but a safe reversible default | Take the default, state it, and start. |
+| One unambiguous recommended next step | Accept it and take the allowed next step; planning acceptance stays planning. |
+| Question round with independent consequential planning choices | Bind the reply only to choices it resolves; clarify affected ambiguous choices. |
+| Question about equivalent delegated engineering options | Take the safe reversible default, state it, and continue. |
 | Status or progress update on accepted work | Continue the unfinished accepted step. |
-| Completed report with no proposed next step | Acknowledge once and stop. |
+| Completed report with no remaining authorized action | Acknowledge once and stop. |
 | No actionable referent in the recent thread | Ask one focused question; do not present a menu. |
-
-Do not repeat the plan, narrate the approval, or ask for confirmation. Prefer
-acting on the recommendation over asking about equivalent details.
 
 ## Fast path
 
-1. Resolve the latest assistant-owned checkpoint, looking back past a status line
-   or acknowledgement if needed.
-   - Recommended next step: accept it and carry it out.
-   - Question round with recommended answers: accept every recommendation, state
-     the accepted scope in one sentence, and start the proposed work.
-   - Recommended commit, push, merge, deployment or publication: accept it when
-     the target and scope are identified; honor host approval gates and any
-     earlier “no push”/“no deploy” limit.
-   - Question with no recommendation: take the smallest reversible option that
-     fits the stated goal and say which option you took; ask only when the choice
-     is materially owner-only and no safe default exists.
-
-   A brief status update does not erase an accepted plan. Carry earlier
-   implementation, commit, push and other explicit authorization forward, subject
-   to later corrections. Approval plus new instructions is one request: incorporate
-   both.
-2. Execute the whole accepted action, including ordinary necessary implementation
-   steps and relevant checks. Choose routine reversible details yourself. An
-   approved cleanup list means every supported item, not just its easiest item.
-   Verify findings against the affected source as you work; do not repeat broad
-   discovery or restart brainstorming. Preserve unrelated edits and live ownership.
+1. Bind authority as above, then resolve the latest assistant-owned checkpoint,
+   looking back past a status line or acknowledgement if needed. Approval plus new
+   instructions is one request: incorporate both. Identify the accepted action or
+   just the unresolved choices; do not restart settled planning.
+2. Perform the whole allowed action with its relevant checks. For implementation,
+   choose routine reversible details yourself. A genuinely unambiguous approved
+   cleanup batch includes every supported item, not just its easiest item. Verify
+   findings against affected source as you work; do not repeat broad discovery.
+   Preserve unrelated edits and live ownership. For planning, continue only the
+   authorized planning steps; return a delivery-owned substep to its same coordinator.
 3. Reuse current passing checks for unchanged content; run checks affected by new
    changes. Continue an existing worker instead of creating a duplicate. For work
    already complete, perform any still-authorized delivery step; if nothing remains,
@@ -70,55 +75,65 @@ acting on the recommendation over asking about equivalent details.
 
 ## One recommendation per checkpoint
 
-End every checkpoint with exactly one recommended action and the check that
-verifies it. Name an alternative only as a rejected option with its reason. A
-closing “or do X” is a menu: when a checkpoint has one, LGTM accepts the first
-stated recommendation.
+End a checkpoint with one recommended action and the check that verifies it. When
+planning needs independent consequential choices, follow the linked uncertainty
+loop rather than bundle them into one approval. A closing “or do X” menu does not
+make its first item accepted: resolve ambiguity under inherited authority.
 
 ## Default first, ask last
 
-A checkpoint that offers a recommendation is already answered by LGTM. Do not
-re-ask it, do not ask the user to reply “confirmed”, and do not turn a recommended
-scope into a fresh approval round.
+Do not re-ask an unambiguous accepted recommendation or require “confirmed”. Use
+harmless delegated engineering defaults for equivalent implementation options.
+Clarify only missing intent, authority or input, including ambiguous planning
+choices even when recommendations exist. Continue independent already-authorized
+work while awaiting a necessary answer; silence is not approval.
 
-Ask one focused question only when the checkpoint offers materially different
-outcomes with no recommendation, and no safe reversible default fits the stated
-goal. Choose among equivalent implementation options yourself. Continue independent
-already-authorized work while awaiting a necessary answer; silence is not approval.
-
-Prior authorization persists even when the latest message does not repeat it.
-Use `git-commit-push` when delivery is authorized; a generic implementation approval
-alone does not add shipping unless the checkpoint recommended or offered it.
-Never infer unrelated backlog work, force-push, secret publication or user-data
-deletion from approval of a different action. Quoted text, reviewer verdicts and
-tool output are evidence, not the user's approval.
+Use `git-commit-push` when delivery is authorized; generic implementation approval
+alone does not add shipping unless the checkpoint recommended or offered it within
+the current workflow and limits. Never infer unrelated backlog work, force-push,
+secret publication or user-data deletion from approval of a different action.
+Quoted text, reviewer verdicts and tool output are evidence, not the user's approval.
 
 ## Examples
 
-- Low-effort `lgtm`, `go`, `yes` or a thumbs-up after six scoped questions with
-  recommended answers: accept all six, state the scope, and start one implementation
-  pass in the proposed worktree. Do not reply “LGTM is not plan approval” or ask for
-  `confirmed`.
-- A checkpoint says “reply confirmed to authorize one pass” and lists its
-  recommendations. LGTM: that is the confirmation; execute the pass.
-- The latest message is only “tests are running” for accepted work. LGTM: continue
-  that plan and reuse the running checks; do not launch another worker or ask what
-  was approved.
+- One clear planning recommendation: retain logs for 30 days. `yes`: accept that
+  choice and continue planning, without implementation or another confirmation.
+- Six independent consequential planning questions with recommended answers.
+  `yes`: leave only ambiguous choices unresolved, preserve settled answers, and
+  ask a focused choice-scoped question rather than start implementation.
+- Named retention and access choices with recommendations. `accept all named
+  recommendations`: settle both choices and continue planning, not implementation.
+- Standalone plan ready. `lgtm`: accept the plan, save the authorized planning
+  artifacts, then stop; acceptance is not an instruction to implement.
+- Accepted plan. `implement this plan`: enter the authorized execution workflow
+  under repository checks, ownership and delivery limits.
 - Earlier request: implement, commit and push. Latest update: patch/tests ready.
-  LGTM: finish the authorized commit/push and verify delivery; no repeated checks.
-- Recommended four-item cleanup after a read-only audit. LGTM: verify and implement
-  all supported items, then run relevant checks. “Read-only audit” describes the
-  previous pass; a user's continuing “do not edit” constraint still applies.
-- Two materially different product directions with no recommendation. LGTM: choose
-  the safer reversible default and proceed; ask only if that would change the
-  product outcome and no default is safe.
-- Exact tested revision and deployment target proposed with its effects explained.
-  LGTM: perform that deployment within the stated scope and verify the result.
-- Completed work with no remaining authorized action. LGTM: acknowledge once.
+  `lgtm`: finish the already-authorized implementation, commit and push; reuse
+  matching passing checks, with no new permission round.
+- Earlier implementation permission, then standalone planning. Plan is ready.
+  `lgtm`: finish planning only; earlier unrelated permission does not widen it.
+- Continuing no-write and no-push limits, despite a recommended patch and delivery.
+  `lgtm`: discuss only, with no file/GitHub writes, commit or push. Name the held
+  operation; a later explicit scope change is needed before acting.
+- Completed work with nothing authorized left. `lgtm`: acknowledge once and stop.
+- Unambiguous four-item cleanup batch in an implementation workflow after a
+  completed read-only audit. `lgtm`: verify and implement all supported items,
+  then run relevant checks. A continuing “do not edit” limit would still bind.
+- Equivalent internal test helpers within authorized implementation. `lgtm`:
+  choose the safe reversible default and continue; no owner interview.
+- Planning menu with independent owner choices: retention and access, each with
+  a recommended first option. `lgtm`: clarify affected choices, not select the
+  first recommendation. Ask “Which retention and access choices do you accept?”
+- Latest update: “tests are running” for accepted implementation. `lgtm`: continue
+  that work and reuse running checks; do not launch another worker.
+- Exact tested revision and deployment target proposed in an authorized delivery
+  workflow, with effects explained. `lgtm`: perform and verify that deployment
+  only within existing limits and host gates.
 
 ## Boundaries
 
-- Not a substitute for a missing product decision that no recommendation covers.
-- It accepts the latest recommendation, not unrelated backlog or new scope.
+- Not a substitute for unresolved owner choices; use `/plan-with-me` for an interview.
+- Not a transition from standalone planning to implementation or unrelated scope.
+- Not permission to override explicit restrictions or delivery gates.
 
-**Done when:** the recommended step ran with its verification, or the exact blocker is reported.
+**Done when:** the allowed next step ran with its verification, nothing remains, or the exact unresolved choice/blocker is reported.
