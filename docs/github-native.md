@@ -287,7 +287,13 @@ qualification evidence.
 
 ## Human acceptance is a separate gate
 
-The supported host setting `human_review_gate = true` posts one acceptance
+New deployments prepared by `/orbi setup` default to `human_review_gate = false`,
+disabling the optional human-acceptance label gate, not required CI or independent
+AI review. Setup preserves an existing deployment's explicitly selected policy.
+Branch/admin protections, credential isolation and external authorization rules
+remain unchanged, including any operations-specific human-only gates.
+
+The optional supported host setting `human_review_gate = true` posts one acceptance
 checklist when a PR opens and holds a delivery whose machine-unverifiable column
 is non-empty. Only a human applies `ai-human-review`; the agent and Runner must
 never add or remove it. An empty machine-unverifiable column is the intended pass

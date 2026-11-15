@@ -93,6 +93,10 @@ class GithubNativeDocsTests(unittest.TestCase):
     def test_human_review_gate_is_human_only_and_not_a_protection_substitute(self):
         gate = compact(section(TEXT, "Human acceptance is a separate gate"))
         for phrase in (
+                "`/orbi setup` default to `human_review_gate = false`",
+                "not required CI or independent AI review",
+                "Setup preserves an existing deployment's explicitly selected policy",
+                "external authorization rules remain unchanged",
                 "human_review_gate = true",
                 "ai-human-review",
                 "Only a human applies",
