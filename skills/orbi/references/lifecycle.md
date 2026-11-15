@@ -47,14 +47,15 @@ unavailable.
   verified `OWNER/REPO` origin. `repo_dir` must resolve to the canonical
   checkout.
 - A new deployment gets a collision-resistant unit name derived from the
-  repository (`<slug>-<8 hex>`) and exactly one slot. Keep
-  `keep_failed_worktrees = true` and `human_review_gate = true`.
+  repository (`<slug>-<8 hex>`) and exactly one slot. New configs set
+  `keep_failed_worktrees = true` and `human_review_gate = false`: the optional
+  human-acceptance label gate is off, not required CI or independent AI review.
 - New configs derive `git_transport` from the verified origin: `ssh` for
   `git@github.com:OWNER/REPO.git` or `ssh://git@github.com/OWNER/REPO.git`, and
   `https` for `https://github.com/OWNER/REPO.git`. Setup never rewrites a remote;
   unsupported transports fail before staging.
-- Existing configs, pins, schedules, credentials and attempts are preserved.
-  A reused deployment keeps its pin; a changed pin is a deliberate owner
+- Existing configs, explicit review-policy settings, pins, schedules, credentials
+  and attempts are preserved. A reused deployment keeps its pin; a changed pin is a deliberate owner
   operation, never a setup side effect.
 - The initial supported source is the verified retention-capable pin
   `sha:ce97e015ca433a9312e5bdf69353be58ab394fd9`. Never silently upgrade it.
