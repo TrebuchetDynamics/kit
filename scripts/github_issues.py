@@ -237,25 +237,43 @@ def publish(api: GitHub, batch: Any) -> list[dict]:
                 raise PublicationError(f"#{child['number']}: dispatched issue missing epic link")
             api.api(f"issues/{parent['number']}/sub_issues", 'POST', {'sub_issue_id': child['id']})
 
-    # Verify the entire batch before *any* readiness publication.
-    for spec in specs:
-        row = api.api(f"issues/{saved[spec['key']]['number']}")
+    def verify(spec):
+        number = saved[spec['key']]['number']
+        try:
+            row = api.api(f'issues/{number}')
+        except (PublicationError, OSError, ValueError, subprocess.SubprocessError) as exc:
+            raise PublicationError(f'#{number}: issue readback failed: {exc}') from exc
         safe_existing(row)
         if row['body'] != body(spec) or row['title'] != spec['title']:
-            raise PublicationError(f"#{row['number']}: contract changed during publication")
-        if {dep['id'] for dep in api.pages(f"issues/{row['number']}/dependencies/blocked_by")} != expected_dependencies(spec):
-            raise PublicationError(f"#{row['number']}: dependency readback failed")
-        actual_parent = parent_of(row['number'])
+            raise PublicationError(f'#{number}: contract changed during publication')
+        if (spec.get('kind') == 'epic') != ('ai-epic' in labels(row)):
+            raise PublicationError(f'#{number}: changed epic classification')
+        if not spec.get('ready', True) and 'ai-ready' in labels(row):
+            raise PublicationError(f'#{number}: already dispatched; cannot make pending')
+        try:
+            actual = {dep['id'] for dep in api.pages(f'issues/{number}/dependencies/blocked_by')}
+        except (PublicationError, OSError, ValueError, subprocess.SubprocessError) as exc:
+            raise PublicationError(f'#{number}: dependency readback failed: {exc}') from exc
+        if actual != expected_dependencies(spec):
+            raise PublicationError(f'#{number}: dependency readback failed')
+        try:
+            actual_parent = parent_of(number)
+        except (PublicationError, OSError, ValueError, subprocess.SubprocessError) as exc:
+            raise PublicationError(f'#{number}: epic readback failed: {exc}') from exc
         expected_parent = saved.get(spec.get('epic'))
         if (actual_parent or {}).get('id') != (expected_parent or {}).get('id'):
-            raise PublicationError(f"#{row['number']}: epic readback failed")
+            raise PublicationError(f'#{number}: epic readback failed')
+        return row
+
+    # Verify the entire batch before *any* readiness publication.
+    for spec in specs:
+        verify(spec)
     results = []
     for spec in specs:
         number = saved[spec['key']]['number']
-        row = api.api(f'issues/{number}')
-        safe_existing(row)
-        if row['body'] != body(spec) or row['title'] != spec['title']:
-            raise PublicationError(f"#{number}: contract changed before dispatch")
+        # Earlier readiness writes may have interleaved with foreign edits.
+        # Refresh without repairing drift; reads and the label POST are not atomic.
+        row = verify(spec)
         if spec.get('kind') != 'epic' and spec.get('ready', True):
             if 'ai-ready' not in labels(row):
                 api.api(f'issues/{number}/labels', 'POST', {'labels': ['ai-ready']})
