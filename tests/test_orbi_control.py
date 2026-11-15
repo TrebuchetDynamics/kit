@@ -298,8 +298,9 @@ class Harness:
                 'exit': 0 if enabled.get(index) else 1})
         return rules
 
-    def run(self, action, *, platform='linux', dry_run=False, env=None, config=None):
-        argv = [action, '--repo-dir', str(self.repo), '--json']
+    def run(self, action, *, platform='linux', dry_run=False, env=None, config=None,
+            options=()):
+        argv = [action, '--repo-dir', str(self.repo), '--json', *options]
         if config is not None:
             argv.extend(['--config', str(config)])
         if dry_run:
@@ -590,6 +591,245 @@ class SetupBoundaryTests(unittest.TestCase):
             if call['tool'] == 'orbi':
                 self.assertNotIn(call['argv'][0] if call['argv'] else '',
                                  {'setup', 'install-units'}, call)
+
+
+class FirstDeploymentTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.h = Harness(Path(self.tmp.name))  # deliberately no donor deployment
+        self.metadata = {'providers': {'openai': {
+            'baseUrl': 'https://api.openai.com/v1',
+            'api': 'openai-responses',
+            'models': [{'id': 'gpt-6.1-sol', 'contextWindow': 272000,
+                        'maxTokens': 128000}],
+        }}}
+        self.catalog = self.h.home / 'models.json'
+        self.catalog.write_text(json.dumps(self.metadata))
+        self.options = ['--pi-providers', str(self.catalog), '--pi-provider', 'openai',
+                        '--pi-model', 'gpt-6.1-sol', '--pi-thinking', 'high']
+
+    def test_first_deployment_explicit_preview_and_preparation(self):
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('setup', options=self.options, dry_run=True)
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(doc['status'], 'planned')
+        self.assertFalse(doc['activated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        code, doc, err = self.h.run('setup', options=self.options)
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(doc['status'], 'prepared')
+        self.assertFalse(doc['activated'])
+        config = self.h.config()
+        self.assertEqual((config['pi_provider'], config['pi_model'], config['pi_thinking']),
+                         ('openai', 'gpt-6.1-sol', 'high'))
+        self.assertEqual(json.loads((self.h.deploy / '.orbi/pi-providers.json').read_text()),
+                         self.metadata)
+        calls = self.h.calls()
+        self.assertTrue(any(c['tool'] == 'orbi' and c['argv'][0] == 'check'
+                            for c in calls))
+        SetupBoundaryTests.assert_no_activation(self, calls)
+
+    def test_missing_metadata_has_a_first_deployment_repair(self):
+        before = snapshot(self.h.home)
+        for dry_run in (True, False):
+            code, doc, err = self.h.run('setup', dry_run=dry_run)
+            self.assertNotEqual(code, 0)
+            self.assertEqual(doc['error']['code'], 'provider_unavailable')
+            self.assertFalse(doc['error']['mutated'])
+            self.assertIn('--pi-providers', doc['error']['fix'])
+            self.assertEqual(snapshot(self.h.home), before)
+
+    def test_invalid_explicit_metadata_fails_before_writes_without_secrets(self):
+        cases = ('missing', 'invalid-json', 'not-object', 'providers-list',
+                 'provider-not-object', 'unknown-provider', 'unknown-model',
+                 'models-not-list', 'missing-context', 'invalid-limit', 'missing-api',
+                 'missing-base-url', 'literal-credential', 'bad-variable',
+                 'literal-header', 'model-literal-header',
+                 'symlink', 'symlink-parent')
+        for case in cases:
+            with self.subTest(case=case):
+                h = Harness(Path(self.tmp.name) / case)
+                metadata = json.loads(json.dumps(self.metadata))
+                entry = metadata['providers']['openai']
+                catalog = h.home / 'models.json'
+                expected = 'provider_unavailable'
+                if case == 'not-object':
+                    metadata = []
+                elif case == 'providers-list':
+                    metadata['providers'] = ['openai']
+                elif case == 'provider-not-object':
+                    metadata['providers']['openai'] = 'invalid'
+                elif case == 'unknown-provider':
+                    metadata['providers'] = {'other': entry}
+                elif case == 'unknown-model':
+                    entry['models'][0]['id'] = 'other'
+                elif case == 'models-not-list':
+                    entry['models'] = 'invalid'
+                elif case == 'missing-context':
+                    del entry['models'][0]['contextWindow']
+                elif case == 'invalid-limit':
+                    entry['models'][0]['maxTokens'] = False
+                elif case == 'missing-api':
+                    del entry['api']
+                elif case == 'missing-base-url':
+                    del entry['baseUrl']
+                elif case in {'literal-credential', 'bad-variable'}:
+                    entry['apiKey'] = SECRET if case == 'literal-credential' else '$' + SECRET
+                    expected = 'credential_copy_refused'
+                elif case in {'literal-header', 'model-literal-header'}:
+                    target = entry if case == 'literal-header' else entry['models'][0]
+                    target['headers'] = {'Authorization': 'Bearer ' + SECRET}
+                    expected = 'credential_copy_refused'
+                catalog.write_text(SECRET + '{' if case == 'invalid-json'
+                                   else json.dumps(metadata))
+                if case == 'missing':
+                    catalog.unlink()
+                elif case == 'symlink':
+                    original = h.home / 'original.json'
+                    catalog.rename(original)
+                    catalog.symlink_to(original)
+                    expected = 'unknown_target'
+                elif case == 'symlink-parent':
+                    alias = h.home / 'alias'
+                    alias.symlink_to(h.home, target_is_directory=True)
+                    catalog = alias / 'models.json'
+                    expected = 'unknown_target'
+                before = snapshot(h.home)
+                options = ['--pi-providers', str(catalog), '--pi-provider', 'openai',
+                           '--pi-model', 'gpt-6.1-sol']
+                for dry_run in (True, False):
+                    code, doc, err = h.run('setup', options=options, dry_run=dry_run)
+                    self.assertNotEqual(code, 0, (doc, err))
+                    self.assertEqual(doc['error']['code'], expected)
+                    self.assertFalse(doc['error']['mutated'])
+                    self.assertNotIn(SECRET, json.dumps(doc) + err)
+                    self.assertEqual(snapshot(h.home), before)
+                    self.assertFalse(any(c['tool'] != 'git' for c in h.calls()))
+
+    def test_incomplete_and_non_setup_selectors_are_refused(self):
+        before = snapshot(self.h.home)
+        options = (['--pi-thinking', 'high'], self.options[:2], self.options[2:6],
+                   self.options[:4], [*self.options[:5], ''],
+                   [*self.options[:6], '--pi-thinking', ' '])
+        for action, selection in [('setup', item) for item in options] + [
+                (action, self.options) for action in ('status', 'start', 'stop')]:
+            with self.subTest(action=action, selection=selection):
+                code, doc, err = self.h.run(action, options=selection)
+                self.assertEqual(code, 2, (doc, err))
+                self.assertEqual(doc['error']['code'], 'invalid_provider_selection')
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+                self.assertEqual(self.h.calls(), [])
+
+    def test_bootstrap_cannot_overwrite_existing_selection(self):
+        a = self.h.add_deployment_a()
+        code, doc, err = self.h.run('setup', options=self.options)
+        self.assertEqual(code, 0, (doc, err))
+        config_path = self.h.deploy / 'orbi.toml'
+        # Existing deployments retain deliberate transport and pin choices.
+        config_path.write_text(config_path.read_text().replace(
+            helper.PIN_TRACK, 'sha:' + OLD_PIN))
+        self.h.deploy_head = OLD_PIN
+        self.h.rules()
+        before = snapshot(self.h.home)
+        for dry_run in (True, False):
+            self.h.clear_calls()
+            code, doc, err = self.h.run('setup', options=self.options, dry_run=dry_run)
+            self.assertEqual(code, 2, (doc, err))
+            self.assertEqual(doc['error']['code'], 'provider_override_refused')
+            self.assertEqual(snapshot(self.h.home), before)
+            self.assertFalse(any(c['tool'] != 'git' for c in self.h.calls()))
+        code, doc, err = self.h.run('setup')
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertEqual(snapshot(a['deploy']), a['snapshot'])
+
+    def test_check_failure_recovers_without_activation(self):
+        self.h.rules({'tool': 'orbi', 'argv_contains': ['check'], 'exit': 1,
+                      'stderr': 'check=transport reason="transport mismatch" '
+                                'fix="orbi setup --config target"'})
+        code, doc, err = self.h.run('setup', options=self.options)
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'validation_failed')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertIn('partially prepared', doc['error']['fix'])
+        self.assertIn('`/orbi setup` without bootstrap inputs', doc['error']['fix'])
+        self.assertNotIn('orbi setup --config target', doc['error']['fix'])
+        self.h.rules()
+        code, doc, err = self.h.run('setup')
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(doc['status'], 'prepared')
+        self.assertFalse(doc['activated'])
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
+    def test_references_and_model_level_api_need_no_credential_copy(self):
+        entry = self.metadata['providers']['openai']
+        entry['models'][0]['api'] = entry.pop('api')
+        for index, reference in enumerate(('$OPENAI_API_KEY', '${OPENAI_API_KEY}')):
+            with self.subTest(reference=reference):
+                h = Harness(Path(self.tmp.name) / ('reference-' + str(index)))
+                entry['apiKey'] = reference
+                entry['headers'] = {'Authorization': reference}
+                entry['models'][0]['headers'] = {'X-Api-Key': reference}
+                catalog = h.home / 'models.json'
+                catalog.write_text(json.dumps(self.metadata))
+                code, doc, err = h.run('setup', options=[
+                    '--pi-providers', str(catalog), '--pi-provider', 'openai',
+                    '--pi-model', 'gpt-6.1-sol'])
+                self.assertEqual(code, 0, (doc, err))
+                self.assertNotIn('pi_thinking', h.config())
+                self.assertEqual(json.loads((h.deploy / '.orbi/pi-providers.json').read_text()),
+                                 self.metadata)
+                self.assertNotIn('OPENAI_API_KEY=', (h.deploy / '.orbi/env').read_text())
+                SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_donor_credentials_also_fail_before_writes(self):
+        a = self.h.add_deployment_a()
+        a['metadata']['providers']['openrouter']['apiKey'] = SECRET
+        (a['deploy'] / '.orbi/pi-providers.json').write_text(json.dumps(a['metadata']))
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('setup')
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'credential_copy_refused')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+
+    def test_unsupported_transport_fails_before_writes(self):
+        before = snapshot(self.h.home)
+        for origin in ('http://github.com/example/kit.git',
+                       'git://github.com/example/kit.git',
+                       'https://notgithub.com/example/kit.git'):
+            with self.subTest(origin=origin):
+                self.h.rules({'tool': 'git', 'argv_contains': ['config', 'remote.origin.url'],
+                              'stdout': origin + '\n'})
+                code, doc, err = self.h.run('setup', options=self.options)
+                self.assertEqual(code, 2, (doc, err))
+                self.assertEqual(doc['error']['code'], 'transport_unsupported')
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+                self.assertFalse(any(c['tool'] != 'git' for c in self.h.calls()))
+
+    def test_origin_transport_is_preserved(self):
+        for index, (origin, transport) in enumerate((
+                ('git@github.com:example/kit.git', 'ssh'),
+                ('ssh://git@github.com/example/kit.git', 'ssh'),
+                ('https://github.com/example/kit.git', 'https'))):
+            with self.subTest(origin=origin):
+                h = Harness(Path(self.tmp.name) / str(index))
+                h.add_deployment_a()  # donor path also preserves SSH
+                h.rules({'tool': 'git',
+                         'argv_contains': [str(h.repo), 'config', 'remote.origin.url'],
+                         'stdout': origin + '\n'})
+                code, doc, err = h.run('setup')
+                self.assertEqual(code, 0, (doc, err))
+                self.assertEqual(h.config()['git_transport'], transport)
+                self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
+                self.assertFalse(any(c['tool'] == 'git' and
+                                     set(c['argv']) & {'set-url', 'remote'}
+                                     for c in h.calls()))
+                SetupBoundaryTests.assert_no_activation(self, h.calls())
 
 
 class RuntimeIsolationTests(unittest.TestCase):
@@ -1010,6 +1250,10 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                 '--config': ['status', 'setup', 'start', 'stop'],
                                 '--dry-run': ['setup', 'start', 'stop'],
                                 '--json': list(expected),
+                                '--pi-providers': ['setup'],
+                                '--pi-provider': ['setup'],
+                                '--pi-model': ['setup'],
+                                '--pi-thinking': ['setup'],
                             }.items():
                                 self.assertEqual(document['options'][flag]['applies_to'],
                                                  actions)
