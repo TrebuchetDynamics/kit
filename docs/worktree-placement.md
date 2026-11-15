@@ -49,9 +49,14 @@ add these hooks beside the worktree policy's:
 }
 ```
 
-The first session to edit a file in a repository's canonical checkout holds it; the
-lock lives in the Git common directory (`interactive-writer.json`), so every linked
-checkout sees it. Another session's edit there is denied with a reason that names
+The first session to edit a file in a repository's canonical checkout holds it.
+This includes initialized submodules: Git can list their administrative directory
+(`parent/.git/modules/sub`) as the main worktree, so the helper resolves that entry
+with `git -C LISTED rev-parse --show-toplevel` to find the checkout (`parent/sub`).
+The lock and its advisory transaction lock live in that repository's own Git common
+directory (`interactive-writer.json` and `interactive-writer.json.lock`). A submodule
+and its superproject have separate writer records, not a parent/child mutex.
+Another session's edit in the canonical checkout is denied with a reason that names
 the holder and its uncommitted files; that session continues in a worktree through
 `EnterWorktree`, or waits. The lock passes on once every file the holder edited is
 committed or reverted (after a one-minute grace, since the hook runs before an edit
@@ -60,6 +65,9 @@ released automatically: `python3 ~/.claude/hooks/checkout-lock.py status|release
 [REPO]` shows the holder and frees it by hand. Edits under `.worktrees/`, linked
 worktrees and paths outside Git are never locked; reads are never blocked. Like the
 Bash worktree guard, this guards the edit tools, not shell commands that write files.
+The helper is standalone; copying it does not require sibling Python modules.
+Repository changes and offline tests do not refresh installed hooks; updating a
+live copy and restarting sessions are separate deployment steps.
 
 ## Existing checkouts
 

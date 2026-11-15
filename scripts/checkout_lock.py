@@ -44,7 +44,12 @@ def locked_checkout(path):
         first = git(folder, 'worktree', 'list', '--porcelain', '-z').split('\0\0')[0].split('\0')
     except ValueError:
         return None
-    if 'bare' in first or not first[0].startswith('worktree ') or Path(first[0][9:]).resolve() != top:
+    if 'bare' in first or not first[0].startswith('worktree '):
+        return None
+    # Submodules list their Git directory (.git/modules/NAME), whose core.worktree
+    # points at the canonical checkout. Resolve that checkout before comparing.
+    canonical = Path(git(first[0][9:], 'rev-parse', '--show-toplevel')).resolve()
+    if canonical != top:
         return None
     try:
         Path(path).absolute().resolve().relative_to(top / '.worktrees')
