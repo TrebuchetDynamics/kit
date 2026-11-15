@@ -46,6 +46,7 @@ class PiTraceToEvalTests(unittest.TestCase):
             f"/bin/sh -ec '{CHECK}'",
             f"env bash -lc '{CHECK}'",
             f'({CHECK})',
+            f'[[ -n "{CHECK}" ]]',
             f'{{ {CHECK}; }}',
             f'echo $({CHECK})',
             f'echo `{CHECK}`',

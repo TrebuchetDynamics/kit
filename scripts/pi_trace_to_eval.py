@@ -41,7 +41,7 @@ def _simple_command(command):
     """Conservative lexical gate, not a shell parser or execution audit."""
     # Inspect the original invocation, before heredoc removal or segmentation.
     # Even quoted operators are ambiguous rather than risking false success.
-    if re.search(r'[;&|(){}<>$`\\\n\r#!]', command):
+    if re.search(r'[;&|(){}\[\]<>$`\\\n\r#!]', command):
         return False
     try:
         tokens = shlex.split(command)

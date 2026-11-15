@@ -86,9 +86,10 @@ trace. Keep live traces and credentials outside Git.
 The converter attributes `exit` only to an unambiguously single simple shell
 invocation with an integer tool exit code (not a boolean). Missing or malformed
 status stays unknown. Compound commands (`CHECK || true`, `CHECK; true`,
-`false && CHECK`), pipelines, multiline input, grouping, heredocs, substitutions,
-redirections and shell wrappers such as `sh -c 'CHECK'` do not provide per-command
-exit evidence. Quoted operator-like text may conservatively be ambiguous too.
+`false && CHECK`), pipelines, multiline input, grouping, `[[ ... ]]` conditionals,
+heredocs, substitutions, redirections and shell wrappers such as `sh -c 'CHECK'`
+do not provide per-command exit evidence. Quoted operator-like text may
+conservatively be ambiguous too.
 Their command events retain valid numeric tool status as `aggregate_exit_code`,
 provenance only: the grader does not use it to satisfy an `exit=0` requirement.
 Command text remains available to forbidden-action matching, even when it may have
