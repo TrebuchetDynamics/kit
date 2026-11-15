@@ -361,7 +361,7 @@ class SetupBoundaryTests(unittest.TestCase):
         self.assertEqual(config['engine_source_track'], helper.PIN_TRACK)
         self.assertEqual(config['max_concurrency'], 1)
         self.assertTrue(config['keep_failed_worktrees'])
-        self.assertTrue(config['human_review_gate'])
+        self.assertIs(config['human_review_gate'], False)
         self.assertEqual(config['pi_provider'], 'openrouter')
         self.assertEqual(config['pi_model'], 'vendor/model-a')
         env = env_dict((self.h.deploy / '.orbi/env').read_text())
@@ -435,9 +435,15 @@ class SetupBoundaryTests(unittest.TestCase):
             f'repo_dir = "{conflict.root}/repo-a"\n'
             f'deploy_home = "{foreign}"\n'
             'unit_name = "' + helper.derive_unit_name(REPO) + '"\n')
+        before = snapshot(conflict.home)
         code, doc, err = conflict.run('setup')
-        self.assertNotEqual(code, 0)
+        self.assertEqual(code, 2, err)
         self.assertEqual(doc['error']['code'], 'unit_conflict')
+        self.assertIn(str(foreign / 'orbi.toml'), doc['error']['message'])
+        self.assertEqual(doc['error']['fix'],
+                         'keep one deployment per repository and do not duplicate unit ownership')
+        self.assertEqual(snapshot(conflict.home), before)
+        self.assert_no_activation(conflict.calls())
         self.assertFalse(conflict.deploy.exists())
 
         # Unknown existing files or symlinks are never adopted.
@@ -484,20 +490,26 @@ class SetupBoundaryTests(unittest.TestCase):
         self.assertEqual(doc['error']['code'], 'ambiguous_deployment')
         self.assertFalse(duplicate.deploy.exists())
 
-        # Existing setup is idempotent and keeps its own (old) pin.
+        # Existing setup is idempotent and keeps its explicit policy and (old) pin.
         first = snapshot(self.h.deploy)
         code, doc, err = self.h.run('setup')
         self.assertEqual(code, 0, err)
         self.assertEqual(snapshot(self.h.deploy), first)
         config_text = (self.h.deploy / 'orbi.toml').read_text()
         (self.h.deploy / 'orbi.toml').write_text(
-            config_text.replace(helper.PIN_TRACK, 'sha:' + OLD_PIN))
+            config_text.replace(helper.PIN_TRACK, 'sha:' + OLD_PIN)
+            .replace('human_review_gate = false', 'human_review_gate = true'))
+        first = snapshot(self.h.deploy)
         self.h.deploy_head = OLD_PIN
         self.h.rules()
         self.h.clear_calls()
         code, doc, err = self.h.run('setup')
         self.assertEqual(code, 0, err)
         self.assertEqual(self.h.config()['engine_source_track'], 'sha:' + OLD_PIN)
+        self.assertIs(self.h.config()['human_review_gate'], True)
+        self.assertEqual(snapshot(self.h.deploy), first)
+        self.assertFalse(doc['activated'])
+        self.assert_no_activation(self.h.calls())
         self.assertFalse([c for c in self.h.calls() if c['tool'] == 'git'
                           and set(c['argv']) & {'clone', 'checkout', 'fetch'}])
         self.assert_a_unchanged()
