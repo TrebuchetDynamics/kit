@@ -84,6 +84,7 @@ class Repo:
     full: str
     owner: str
     name: str
+    git_transport: str | None
 
 
 @dataclasses.dataclass
@@ -354,10 +355,14 @@ def repo_identity(ctx, repo_dir):
     if not full:
         raise ControlError('origin_unavailable',
                            f'{canonical} has no verifiable GitHub origin',
-                           fix='set origin to https://github.com/OWNER/REPO.git and retry',
+                           fix='use a canonical GitHub checkout with a supported SSH or HTTPS origin',
                            exit_code=2)
     owner, _, name = full.partition('/')
-    return Repo(path=canonical, full=full, owner=owner, name=name)
+    url = origin.stdout.strip()
+    transport = ('ssh' if url.startswith(('git@github.com:', 'ssh://git@github.com/'))
+                 else 'https' if url.startswith('https://github.com/') else None)
+    return Repo(path=canonical, full=full, owner=owner, name=name,
+                git_transport=transport)
 
 
 def service_path(ctx, deploy_home):
@@ -445,7 +450,23 @@ def load_provider_metadata(deployment):
         data = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return None
-    return data if isinstance(data, dict) else None
+    # Pi models.json structure, also required by the pinned upstream loader.
+    providers = data.get('providers') if isinstance(data, dict) else None
+    if not isinstance(providers, dict) or not providers:
+        return None
+    for entry in providers.values():
+        if not isinstance(entry, dict):
+            return None
+        models = entry.get('models')
+        if models is not None:
+            if (not isinstance(models, list) or not models
+                    or not isinstance(entry.get('baseUrl'), str) or not entry['baseUrl']
+                    or not all(isinstance(item, dict) and item.get('id') for item in models)):
+                return None
+            if not (isinstance(entry.get('api'), str) and entry['api']):
+                if not all(isinstance(item.get('api'), str) and item['api'] for item in models):
+                    return None
+    return data
 
 
 def provider_evidence(deployment):
@@ -456,7 +477,10 @@ def provider_evidence(deployment):
     metadata = load_provider_metadata(deployment)
     if not metadata:
         return {'state': 'unavailable', 'reason': 'pi_providers metadata is missing or invalid'}
-    entry = (metadata.get('providers') or {}).get(provider)
+    providers = metadata.get('providers')
+    if not isinstance(providers, dict):
+        return {'state': 'unavailable', 'reason': 'pi_providers must contain a providers object'}
+    entry = providers.get(provider)
     if not isinstance(entry, dict):
         return {'state': 'unavailable', 'reason': f'provider {provider} is not in pi_providers'}
     models = entry.get('models')
@@ -464,8 +488,8 @@ def provider_evidence(deployment):
         return {'state': 'unavailable', 'reason': f'provider {provider} declares no models'}
     for item in models:
         if (isinstance(item, dict) and item.get('id') == model
-                and isinstance(item.get('contextWindow'), int)
-                and isinstance(item.get('maxTokens'), int)):
+                and type(item.get('contextWindow')) is int and item['contextWindow'] > 0
+                and type(item.get('maxTokens')) is int and item['maxTokens'] > 0):
             return {'state': 'ok', 'provider': provider, 'model': model,
                     'provider_file': str(provider_path(deployment))}
     return {'state': 'unavailable',
@@ -495,8 +519,9 @@ def find_provider_source(ctx, deployments):
         raise ControlError(
             'provider_unavailable',
             'no visible deployment has a verified pi_provider/pi_model selection to reuse',
-            fix='configure a verified provider selection in an existing native Orbi config, '
-                'then run `/orbi setup` again; credentials are never copied')
+            fix='run `/orbi setup --pi-providers PATH --pi-provider ID --pi-model ID '
+                '[--pi-thinking LEVEL]` with published Pi model metadata; '
+                'credentials are never copied')
     distinct = {(evidence['provider'], evidence['model'])
                 for _, evidence, _ in sources}
     if len(distinct) > 1:
@@ -509,15 +534,30 @@ def find_provider_source(ctx, deployments):
 
 def sanitized_metadata(metadata):
     data = json.loads(json.dumps(metadata))
-    for name, entry in (data.get('providers') or {}).items():
-        if isinstance(entry, dict) and 'apiKey' in entry:
-            value = entry['apiKey']
-            if not (isinstance(value, str) and value.strip().startswith('$')):
-                raise ControlError(
-                    'credential_copy_refused',
-                    f'provider {name} stores a literal credential in pi_providers',
-                    fix='reference the credential as $VARIABLE in pi_providers and keep its '
-                        'value in the target .orbi/env; /orbi never copies credentials')
+    for entry in data['providers'].values():
+        overrides = entry.get('modelOverrides', {})
+        if not isinstance(overrides, dict) or not all(
+                isinstance(item, dict) for item in overrides.values()):
+            raise ControlError('provider_unavailable', 'Pi modelOverrides must map IDs to objects',
+                               fix='repair the published metadata and preview setup again')
+        for item in (entry, *(entry.get('models') or []), *overrides.values()):
+            # Pi supports credentials in provider/model/override headers as well as apiKey.
+            # Require references for all headers: arbitrary names can carry secrets.
+            headers = item.get('headers', {})
+            if not isinstance(headers, dict):
+                raise ControlError('provider_unavailable', 'Pi metadata headers must be an object',
+                                   fix='repair the published metadata and preview setup again')
+            values = list(headers.values())
+            if 'apiKey' in item:
+                values.append(item['apiKey'])
+            for value in values:
+                if not (isinstance(value, str) and re.fullmatch(
+                        r'\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})', value)):
+                    raise ControlError(
+                        'credential_copy_refused',
+                        'pi_providers stores a literal credential or invalid credential reference',
+                        fix='use only $VARIABLE or ${VARIABLE} references for apiKey and headers; '
+                            '/orbi never copies credentials')
     return data
 
 
@@ -703,7 +743,7 @@ def write_config(deployment, repo, provider):
         '# Preserve machine-unverifiable acceptance; agents never apply the human label.',
         'human_review_gate = true',
         'base_branch = "main"',
-        'git_transport = "https"',
+        f'git_transport = {json.dumps(repo.git_transport)}',
         'pi_providers = ".orbi/pi-providers.json"',
         f'pi_provider = {json.dumps(provider["provider"])}',
         f'pi_model = {json.dumps(provider["model"])}',
@@ -841,7 +881,12 @@ def stage_checkout(ctx, deploy_home, pin):
     return {'step': 'stage_checkout', 'status': 'staged'}
 
 
-def plan_new_deployment(ctx, repo, deployments):
+def plan_new_deployment(ctx, repo, deployments, args):
+    if repo.git_transport is None:
+        raise ControlError(
+            'transport_unsupported', 'the repository origin is not supported SSH or HTTPS',
+            fix='use a canonical GitHub checkout with a supported SSH or HTTPS origin; '
+                '/orbi never rewrites remotes', exit_code=2)
     unit_name = derive_unit_name(repo.full)
     for item in deployments:
         if item.unit_name == unit_name:
@@ -863,17 +908,28 @@ def plan_new_deployment(ctx, repo, deployments):
                     exit_code=2)
     deploy_home = checked_path(data_home(ctx) / f'orbi-{unit_name}', 'staging path').resolve()
     ensure_staging_path(ctx, deploy_home, SUPPORTED_PIN)
-    source, evidence, metadata = find_provider_source(ctx, deployments)
     deployment = Deployment(
         config_path=deploy_home / 'orbi.toml',
         data={'source_repos': [repo.full], 'unit_name': unit_name,
-              'engine_source_track': PIN_TRACK, 'max_concurrency': 1},
+              'engine_source_track': PIN_TRACK, 'max_concurrency': 1,
+              'git_transport': repo.git_transport},
         source_repos=(repo.full,), unit_name=unit_name, deploy_home=deploy_home,
         repo_dir=repo.path, pin=PIN_TRACK, max_concurrency=1)
     validate_deployment_paths(deployment)
-    provider = dict(evidence)
-    provider['thinking'] = source.data.get('pi_thinking')
-    return deployment, provider, metadata, source
+    if args.pi_providers is not None:
+        selection = dataclasses.replace(deployment, data={
+            **deployment.data, 'pi_providers': str(checked_path(args.pi_providers, 'provider file')),
+            'pi_provider': args.pi_provider, 'pi_model': args.pi_model})
+        provider = require_provider(selection)
+        provider['thinking'] = args.pi_thinking
+        metadata = load_provider_metadata(selection)
+    else:
+        source, evidence, metadata = find_provider_source(ctx, deployments)
+        provider = dict(evidence)
+        provider['thinking'] = source.data.get('pi_thinking')
+    # Validate credentials before staging, locking or writing the native config.
+    metadata = sanitized_metadata(metadata)
+    return deployment, provider, metadata
 
 
 @contextlib.contextmanager
@@ -922,9 +978,11 @@ def run_orbi_check(ctx, deployment):
         message = f'orbi check failed at {check}: {reason}' if check else f'orbi check failed: {reason}'
         raise ControlError(
             'validation_failed', message,
-            fix=fields.get('fix') or (
-                f'{home_dir(ctx)}/.local/bin/orbi check --config '
-                f'{deployment.config_path}'), mutated=True)
+            fix='inspect and repair the partially prepared native config/provider metadata; '
+                'rerun `/orbi setup` without bootstrap inputs for non-activating validation '
+                '(or run orbi check --config ' + str(deployment.config_path) + '); '
+                'use `/orbi status` to inspect scheduler state; upstream setup/install-units '
+                'are activating and are not preparation repairs', mutated=True)
     return {'step': 'validate', 'status': 'ok'}
 
 
@@ -1122,7 +1180,8 @@ def new_deployment_report(deployment, provider):
             'pin': deployment.pin,
             'source': 'verified',
             'provider': provider,
-            'slots': deployment.max_concurrency}
+            'slots': deployment.max_concurrency,
+            'git_transport': deployment.data.get('git_transport')}
 
 
 def command_setup(ctx, args):
@@ -1131,6 +1190,12 @@ def command_setup(ctx, args):
     deployments = load_deployments(ctx, repo, explicit)
     target = select_target(ctx, repo, explicit)
     if target is not None:
+        if any(getattr(args, key) is not None for key in
+               ('pi_providers', 'pi_provider', 'pi_model', 'pi_thinking')):
+            raise ControlError(
+                'provider_override_refused', 'bootstrap inputs cannot replace an existing selection',
+                fix='omit --pi-* bootstrap inputs to reuse the existing deployment; '
+                    'repair its native provider config deliberately if incomplete', exit_code=2)
         validate_target(target, repo)
         require_unit_ownership(ctx, target)
         provider = require_provider(target)
@@ -1138,8 +1203,8 @@ def command_setup(ctx, args):
         metadata = None
         new = False
     else:
-        target, provider, metadata, _source = plan_new_deployment(
-            ctx, repo, deployments)
+        target, provider, metadata = plan_new_deployment(
+            ctx, repo, deployments, args)
         source = {'state': 'verified', 'expected': SUPPORTED_PIN, 'head': SUPPORTED_PIN}
         new = True
     evidence = prerequisites(ctx, target, action='setup', provider=provider,
@@ -1385,7 +1450,8 @@ def command_status(ctx, args):
 
 def action_usage():
     return ('python3 -B orbi_control.py [' + '|'.join(ACTIONS) + '] '
-            '[--repo-dir PATH] [--config PATH] [--dry-run] [--json]')
+            '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] '
+            '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]]')
 
 
 def command_help(ctx, args):
@@ -1394,6 +1460,10 @@ def command_help(ctx, args):
         '--config': 'explicit native Orbi config for this deployment',
         '--dry-run': 'preview without locking, writing, installing or activating',
         '--json': 'print one JSON document',
+        '--pi-providers': 'regular Pi metadata JSON for a new deployment (no credentials)',
+        '--pi-provider': 'explicit provider ID; requires --pi-providers and --pi-model',
+        '--pi-model': 'model ID with verified metadata; requires --pi-providers and --pi-provider',
+        '--pi-thinking': 'optional Pi reasoning level for a new deployment',
     }
     return {
         'action': 'help',
@@ -1450,7 +1520,8 @@ ACTIONS = {
         'effect': 'Stage pinned source/config and provider metadata; validate without activation.',
         'mutates': 'staging',
         'platforms': ['linux'],
-        'applies': ['--repo-dir', '--config', '--dry-run', '--json'],
+        'applies': ['--repo-dir', '--config', '--dry-run', '--json',
+                    '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking'],
         'when': 'Run to prepare one unambiguous repository deployment with verified '
                 'prerequisites, preserving existing pins and active workers.',
     },
@@ -1523,6 +1594,10 @@ def parse_args(argv):
     parser.add_argument('--dry-run', action='store_true',
                         help='show the plan without locking, writing, installing or activating')
     parser.add_argument('--json', action='store_true', help='print one JSON document')
+    parser.add_argument('--pi-providers', help='setup only: Pi metadata JSON for a new deployment')
+    parser.add_argument('--pi-provider', help='setup only: explicit provider ID')
+    parser.add_argument('--pi-model', help='setup only: explicit model ID with verified metadata')
+    parser.add_argument('--pi-thinking', help='setup only: optional Pi reasoning level')
     return parser.parse_args(argv)
 
 
@@ -1543,6 +1618,16 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             raise ControlError(
                 'unknown_action', f"unknown action '{args.action}'", exit_code=2,
                 fix='run /orbi help for the supported actions and their effects')
+        selectors = (args.pi_providers, args.pi_provider, args.pi_model, args.pi_thinking)
+        if args.action != 'help' and any(value is not None for value in selectors):
+            if (args.action != 'setup' or not all(selectors[:3])
+                    or any(value is not None and not value.strip() for value in selectors)):
+                raise ControlError(
+                    'invalid_provider_selection',
+                    'bootstrap requires setup with --pi-providers, --pi-provider and --pi-model',
+                    fix='supply all three selectors and optionally --pi-thinking for a new '
+                        'deployment, or omit all bootstrap inputs to reuse existing metadata',
+                    exit_code=2)
         entry = ACTIONS[args.action]
         if 'all' not in entry['platforms'] and ctx.platform not in entry['platforms']:
             if ctx.platform == 'darwin':

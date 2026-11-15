@@ -93,6 +93,32 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   }
 });
 
+test('Orbi dispatch forwards lifecycle arguments and queues in a busy session', async () => {
+  const commands = new Map(), messages = [];
+  register({registerCommand: (name, handler) => commands.set(name, handler),
+    sendUserMessage: (...args) => messages.push(args)});
+  const {readFile} = await import('node:fs/promises');
+  const {fileURLToPath} = await import('node:url');
+  const adapterFile = new URL('../adapters/skills/orbi/SKILL.md', import.meta.url);
+  const adapter = await readFile(adapterFile, 'utf8');
+  const raw = 'setup --dry-run --json\n--repo-dir "/tmp/checkout $(literal)"; no push';
+  for (const idle of [true, false]) {
+    await commands.get('orbi').handler(raw, {isIdle: () => idle});
+    const [message, delivery] = messages.at(-1);
+    assert.equal(message.includes(adapter), true);
+    assert.equal(message.includes('../../../skills/orbi/SKILL.md'), true);
+    assert.equal(message.includes(`Resolve the workflow references from ${fileURLToPath(new URL('./', adapterFile))}.`), true);
+    assert.equal(message.endsWith('User request (preserve scope and restrictions):\n' + raw), true);
+    assert.deepEqual(delivery, idle ? undefined : {deliverAs: 'followUp'});
+  }
+  // The extension callback is dispatch only: it never shells out to a lifecycle command.
+  const source = await readFile(new URL('../adapters/pi.mjs', import.meta.url), 'utf8');
+  for (const forbidden of ['node:child_process', 'spawn(', 'execFile(', 'systemctl',
+    'uv tool install', 'orbi_control']) {
+    assert.equal(source.includes(forbidden), false, forbidden);
+  }
+});
+
 
 test('Push loads its repo-wide default and preserves narrower requests', async () => {
   const commands = new Map();
@@ -241,6 +267,19 @@ test('installed archive resolves portable references and commands without checko
         await stat(join(installed, `skills/${skill}`, resource.path));
       }
     }
+    const listing = async dir => {
+      const entries = [];
+      const walkAll = async folder => {
+        for (const entry of await readdir(folder, {withFileTypes: true})) {
+          const path = join(folder, entry.name);
+          entries.push(path);
+          if (entry.isDirectory()) await walkAll(path);
+        }
+      };
+      await walkAll(dir);
+      return entries.sort();
+    };
+    const beforeLoad = await listing(installed);
     const commands = new Map();
     const messages = [];
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
@@ -258,6 +297,19 @@ test('installed archive resolves portable references and commands without checko
     for (const selector of JSON.parse(await readFile(join(installed, 'skills/autoresearch/UPSTREAM.json'))).commands) {
       await readFile(join(installed, `skills/autoresearch/upstream/${selector}.md`));
     }
+    // The archive carries the adapter, canonical skill, helper and reference, and
+    // loading the extension resolves them without shelling out to a lifecycle command.
+    const installedAdapter = await readFile(join(installed, 'adapters/pi.mjs'), 'utf8');
+    for (const forbidden of ['node:child_process', 'spawn(', 'execFile(', 'systemctl',
+      'uv tool install', 'orbi_control']) {
+      assert.equal(installedAdapter.includes(forbidden), false, forbidden);
+    }
+    const canonicalOrbi = await readFile(join(installed, 'skills/orbi/SKILL.md'), 'utf8');
+    await readFile(join(installed, 'skills/orbi/references/lifecycle.md'));
+    await readFile(join(installed, 'skills/orbi/scripts/orbi_control.py'));
+    assert.match(canonicalOrbi, /<this-skill>\/scripts\/orbi_control\.py/);
+    // Loading the extension and dispatching every command installs nothing.
+    assert.deepEqual(await listing(installed), beforeLoad);
   } finally {
     await rm(scratch, {recursive: true, force: true});
   }
