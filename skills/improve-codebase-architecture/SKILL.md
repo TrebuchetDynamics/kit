@@ -70,7 +70,7 @@ before naming anything; a decision an ADR records is not yours to re-open silent
    Open it only when a display and opener exist; otherwise leave it for the owner.
 4. **Choose the branch.** In review mode, propose no interfaces yet and ask which
    candidate to explore. In authorized fix mode, load [verified fixes](references/fixes.md)
-   and continue with `/autowork` for one bounded candidate; do not ask again for scope
+   and implement one bounded candidate within the accepted scope; do not ask again for scope
    already granted. Record other findings as pending, not silently expanded scope.
 5. **Interview unresolved design choices only.** For a review candidate or a fix whose
    compatibility or ADR decision is not authorized, pause that candidate and ask the
@@ -79,8 +79,8 @@ before naming anything; a decision an ADR records is not yours to re-open silent
    tests survive. Record settled decisions per
    [Grill With Docs](../grill-with-docs/SKILL.md) when the owner wants them durable.
 
-A review is advice, not authorization. Fixes use the caller's accepted scope through
-[Autowork](../autowork/SKILL.md); commit, push and deployment authority stay separate.
+A review is advice, not authorization. Fixes use the caller's accepted scope and shared
+[ownership](../shared/WORKTREE-ISOLATION.md), review and PR gates; commit, push and deployment authority stay separate.
 Report CDN use in the report file, since the visuals load from the network when opened.
 An explicit no-write request also rules out the HTML file: report inline instead.
 
@@ -107,12 +107,12 @@ omission decisions; actual changes and checks; remaining findings and unverified
 
 ## Boundaries
 
-- Not a separate implementation engine; fix mode uses `/autowork` and the shared
+- Not a separate implementation engine; fix mode preserves ownership, review, PR gates and the shared
   [Definition of Done](../shared/DEFINITION-OF-DONE.md).
 - Not a general bug hunt or dead-code sweep; use `/bug-harvest` or `/unused-code`.
 - Not multi-lane improvement; use `/autonomous-codebase-improver`.
 
 **Done when:** the review report is delivered (inline for no-write requests), and either
-review stops with a next choice or one authorized fix has a verified Autowork receipt;
+review stops with a next choice or one authorized fix has a verified receipt;
 blocked fixes and all remaining candidates are explicitly pending.
 [Source and hashes](UPSTREAM.json) · [MIT license](upstream/LICENSE).

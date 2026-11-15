@@ -119,8 +119,7 @@ effect. Linux is the only mutation platform in this version.
   repository it manages.
 - Not `/plan-with-me` or `/plan-for-me`: planning authorizes no live service
   change.
-- Not `/autowork`: that command only inspects the Orbi handoff and never starts
-  the retired runner.
+- Not an implementation coordinator or a fallback to the retired runner.
 - Not a cross-machine lock or capacity guarantee: visibility covers local
   deployments; report remote ownership as unavailable.
 

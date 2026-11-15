@@ -35,26 +35,27 @@ class SkillTraceEvalTests(unittest.TestCase):
         self.assertTrue(any('forbidden action' in failure for failure in result['failures']))
 
     def test_missing_required_check_fails(self):
-        result = evaluate(load(TRACES / 'autowork-fail.json'),
-                          load(SPECS / 'autowork.json'))
+        trace = load(TRACES / 'ponytail-review-pass.json')
+        trace['events'] = [e for e in trace['events'] if e['type'] != 'final']
+        result = evaluate(trace, load(SPECS / 'ponytail-review.json'))
         self.assertFalse(result['ok'])
         self.assertTrue(any('missing required' in failure for failure in result['failures']))
 
-    def test_observation_trace_refuses_writes_and_legacy_execution(self):
-        spec = load(SPECS / 'autowork.json')
-        for extra in ({'type': 'edit', 'path': 'src/parser.py'},
-                      {'type': 'write', 'path': 'src/parser.py'},
-                      {'type': 'command', 'command': 'autowork start .', 'exit': 0},
-                      {'type': 'command', 'command': 'systemctl --user restart pi-autowork@repo.service', 'exit': 0},
-                      {'type': 'command', 'command': 'git reset --hard', 'exit': 0},
-                      {'type': 'command', 'command': 'git -C . push --force', 'exit': 0},
-                      {'type': 'command', 'command': 'git clean -fd', 'exit': 0},
-                      {'type': 'command', 'command': 'orbi setup', 'exit': 0},
-                      {'type': 'command', 'command': 'orbi run', 'exit': 0},
-                      {'type': 'command', 'command': 'systemctl --user enable --now orbi-kit@1.timer', 'exit': 0}):
-            trace = load(TRACES / 'autowork-pass.json')
-            trace['events'].insert(-1, extra)
-            with self.subTest(extra=extra):
+    def test_failed_validation_command_does_not_satisfy_requirement(self):
+        trace = load(TRACES / 'docs-sync-pass.json')
+        for event in trace['events']:
+            if event['type'] == 'command':
+                event['exit'] = 1
+        result = evaluate(trace, load(SPECS / 'docs-sync.json'))
+        self.assertFalse(result['ok'])
+        self.assertTrue(any('missing required' in failure for failure in result['failures']))
+
+    def test_delivery_trace_refuses_destructive_history(self):
+        spec = load(SPECS / 'git-commit-push.json')
+        for command in ('git reset --hard', 'git -C . push --force', 'git clean -fd'):
+            trace = load(TRACES / 'git-commit-push-pass.json')
+            trace['events'].insert(-1, {'type': 'command', 'command': command, 'exit': 0})
+            with self.subTest(command=command):
                 result = evaluate(trace, spec)
                 self.assertFalse(result['ok'])
                 self.assertTrue(any('forbidden action' in failure for failure in result['failures']))
@@ -81,29 +82,29 @@ class SkillTraceEvalTests(unittest.TestCase):
         self.assertTrue(evaluate(trace, spec)['ok'])
 
     def test_spec_typos_and_wrong_fields_are_refused(self):
-        trace = {'skill': 'autowork', 'events': []}
+        trace = {'skill': 'ponytail-review', 'events': []}
         for spec in (
-                {'skill': 'autowork', 'require': [{'event': 'read', 'pth': '*'}]},
-                {'skill': 'autowork', 'require': [{'event': 'read', 'exit': 0}]},
-                {'skill': 'autowork', 'require': [{'event': 'command', 'path': '*'}]}):
+                {'skill': 'ponytail-review', 'require': [{'event': 'read', 'pth': '*'}]},
+                {'skill': 'ponytail-review', 'require': [{'event': 'read', 'exit': 0}]},
+                {'skill': 'ponytail-review', 'require': [{'event': 'command', 'path': '*'}]}):
             with self.subTest(spec=spec), self.assertRaises(TraceError):
                 evaluate(trace, spec)
 
     def test_wrong_skill_and_malformed_trace_are_refused(self):
-        spec = load(SPECS / 'autowork.json')
-        trace = load(TRACES / 'autowork-pass.json')
+        spec = load(SPECS / 'ponytail-review.json')
+        trace = load(TRACES / 'ponytail-review-pass.json')
         trace['skill'] = 'plan-for-me'
         result = evaluate(trace, spec)
         self.assertFalse(result['ok'])
         self.assertTrue(any('skill mismatch' in failure for failure in result['failures']))
         with self.assertRaises(TraceError):
-            evaluate({'skill': 'autowork', 'events': 'not a list'}, spec)
+            evaluate({'skill': 'ponytail-review', 'events': 'not a list'}, spec)
 
     def test_the_documented_cli_example_runs(self):
         import subprocess
         result = subprocess.run(
             [sys.executable, str(ROOT / 'scripts/skill_trace_eval.py'),
-             str(SPECS / 'autowork.json'), str(TRACES / 'autowork-pass.json')],
+             str(SPECS / 'ponytail-review.json'), str(TRACES / 'ponytail-review-pass.json')],
             capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
 

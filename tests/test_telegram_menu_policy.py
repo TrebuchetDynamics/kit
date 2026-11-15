@@ -4,7 +4,7 @@ import unittest
 spec=importlib.util.spec_from_file_location('menu_policy',Path(__file__).resolve().parents[1]/'scripts/telegram_menu_policy.py')
 policy=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(policy)
-WORKFLOWS=['plan_with_me', 'blockers', 'plan_for_me', 'docs_sync', 'autowork',
+WORKFLOWS=['plan_with_me', 'plan_for_me', 'docs_sync',
            'ui_taste', 'beautify_github_readme', 'impeccable', 'lgtm', 'git_commit_push']
 
 def priority(raw):
@@ -24,11 +24,11 @@ class MenuPolicyTests(unittest.TestCase):
         self.assertLessEqual(set(WORKFLOWS) - skills, {'plan_with_me','plan_for_me','docs_sync'})
     def test_stale_compatibility_entries_are_removed_and_user_choices_kept(self):
         old=['autoresearch','autoresearch_plan','autoresearch_debug','autoresearch-fix','status','custom',
-             'engineering','autowork','plan_with_me','grill_me','repo_interview','repo_docs','autogoal','git_pull_merge']
+             'engineering','autowork','work','pending','blockers','plan_with_me','grill_me','repo_interview','repo_docs','autogoal','git_pull_merge']
         raw={'platforms':{'telegram':{'extra':{'command_menu':{'priority':old,
              'max_commands':40,'priority_mode':'append'}}}}}
         menu=priority(raw)
-        self.assertEqual(menu['priority'], ['status','custom','autowork','plan_with_me','blockers','plan_for_me','docs_sync',
+        self.assertEqual(menu['priority'], ['status','custom','plan_with_me','plan_for_me','docs_sync',
                                            'ui_taste','beautify_github_readme','impeccable','lgtm','git_commit_push'])
         self.assertNotIn('engineering', menu['priority'])
         raw['platforms']['telegram']['extra']['command_menu'].update(menu)
@@ -52,6 +52,16 @@ class ChatMenuTests(unittest.TestCase):
         self.assertEqual(menus, {22:['custom']})
         self.assertEqual(policy.stale_chat_menus(env, call), [])
         self.assertNotIn(('deleteMyCommands', 22), calls)
+    def test_each_removed_skill_retires_stale_chat_menus(self):
+        for name in ('autowork', 'work', 'pending', 'blockers'):
+            with self.subTest(name=name):
+                menus = {11: [name], 22: ['custom']}
+                call, calls = self.fake(menus)
+                env = {'TELEGRAM_ALLOWED_USERS': '11,22'}
+                self.assertEqual(policy.stale_chat_menus(env, call), [11])
+                self.assertEqual(menus, {22: ['custom']})
+                self.assertEqual(policy.stale_chat_menus(env, call), [])
+
     def test_no_owner_chats_means_no_api_calls(self):
         call, calls=self.fake({})
         self.assertEqual(policy.stale_chat_menus({}, call), [])
@@ -173,7 +183,7 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
 
 
     def test_an_opted_out_profile_gets_new_menu_commands_and_keeps_its_own_settings(self):
-        """Every profile had opted out, so /blockers never reached a Telegram menu."""
+        """Every profile had opted out, so menu retirement must still reach the profile."""
         import sys
         self.raw={'approvals':{'mode':'manual'},'agent':{'max_turns':90},
                   'platforms':{'telegram':{'extra':{'command_menu':{'priority':['status','plan_with_me']}}}},
@@ -187,7 +197,9 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
         self.rd.apply_runtime_defaults(Ctx())
         self.assertEqual(len(saved), 1)
         self.assertEqual(set(saved[0]), {'platforms'})  # approvals and turns stay the profile's
-        self.assertIn('blockers', saved[0]['platforms']['telegram']['extra']['command_menu']['priority'])
+        menu = saved[0]['platforms']['telegram']['extra']['command_menu']['priority']
+        self.assertIn('plan_with_me', menu)
+        self.assertFalse(set(('autowork', 'work', 'pending', 'blockers')) & set(menu))
         self.assertEqual(saved[0]['platforms']['telegram']['extra']['command_menu']['priority'][:2], ['status','plan_with_me'])
         config.require_readable_config_before_write=lambda: (_ for _ in ()).throw(ValueError('malformed'))
         self.rd.apply_runtime_defaults(Ctx())  # an unreadable config never fails an opted-out load

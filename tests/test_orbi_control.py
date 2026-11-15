@@ -1268,7 +1268,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                              'Only setup stages source/config',
                                              'only start/stop touch the scheduler',
                                              'Not an executor or scheduler',
-                                             '/unblock', '/git-commit-push', '/autowork',
+                                             '/unblock', '/git-commit-push',
                                              'Local visibility only'):
                                 self.assertIn(boundary, ' '.join(document['boundaries']))
                             self.assertNotIn(SECRET, result.stdout)

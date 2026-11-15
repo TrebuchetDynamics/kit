@@ -2,10 +2,8 @@
 
 from functools import partial
 import logging
-import os
 from pathlib import Path
 import re
-import subprocess
 
 
 SKILLS_DIR = _AUTOWORK_LAYOUT.root / "skills"
@@ -65,16 +63,6 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
 
     if not path.is_file():
         return f"Skill {name!r} no longer exists. Update the plugin and restart Hermes."
-    if name == "blockers" and not (raw_args or '').strip():
-        # `/blockers` with no target: name the repository from the session's cwd, so the
-        # skill reads its issue queue instead of an empty directory.
-        target = repository_here()
-        if target:
-            raw_args = target
-        else:
-            raw_args = ("No target repository was given and the current directory is not a Git "
-                        "repository. Ask which repository to inspect through GitHub and Orbi; do not "
-                        "report that there are no questions without a resolved target.")
     public = name
     mode = ""
     if namespace == "kit" and name == "grill-me" and (SKILLS_DIR / "plan-with-me/SKILL.md").is_file():
@@ -159,41 +147,6 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
     )
 
 
-def blockers_args(raw_args):
-    """The rest of `blockers [repo|name]`, or None: `/autowork blockers` and
-    `/plan_with_me blockers` are `/blockers`, routed here rather than by the model."""
-    first, _, rest = (raw_args or '').strip().partition(' ')
-    return rest.strip() if first.lower() == 'blockers' else None
-
-
-def repository_here(start=None):
-    """The Git top level containing ``start`` (the Hermes process cwd by default), or ''.
-
-    `/blockers` with no argument must not fall back to the Hermes process cwd: that is
-    often the home directory or the plugin, which holds no issue queue and made the
-    skill report no questions while the repository had held tasks."""
-    where = str(start or os.getcwd())
-    try:
-        found = subprocess.run(['git', '-C', where, 'rev-parse', '--show-toplevel'],
-                               capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return ''
-    return found.stdout.strip() if found.returncode == 0 else ''
-
-
-def _autowork(run_skill, run_blockers, raw_args):
-    """`plugin status`, `update` and `list` inspect/maintain the bundle;
-    `status` redirects to GitHub/Orbi; `blockers` is `/blockers`;
-    any other arguments run the skill."""
-    maintenance_reply = _AUTOWORK_COMPAT.peer(globals(), 'bundle').maintenance_reply
-
-    rest = blockers_args(raw_args)
-    if rest is not None and run_blockers is not None:
-        return run_blockers(rest)
-    reply = maintenance_reply(raw_args)
-    return run_skill(raw_args) if reply is None else reply
-
-
 def register(ctx):
     """Hermes plugin entry point; called again on plugin load after a restart."""
     from hermes_cli.commands import resolve_command
@@ -207,7 +160,7 @@ def register(ctx):
     if shared.is_dir():
         native_skills.append(shared)
     # The engineering pack is a reference tree, not a registered skill: install it
-    # beside the skills so links from autowork and Docs Sync resolve, without a
+    # beside the skills so links from retained workflows resolve, without a
     # command or skill entry that invites direct use.
     engineering = SKILLS_DIR / 'engineering'
     if engineering.is_dir():
@@ -230,9 +183,6 @@ def register(ctx):
                            command, name)
             continue
         handler = partial(_invoke, ctx, name, path)
-        if name == "autowork":
-            blockers = next((partial(_invoke, ctx, n, p) for n, _, p in skills if n == "blockers"), None)
-            handler = partial(_autowork, handler, blockers)
         ctx.register_command(
             command, handler,
             description=f"Run the {name} skill",

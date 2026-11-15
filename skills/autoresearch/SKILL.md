@@ -17,14 +17,14 @@ Without an explicit subcommand, use the upstream router to select a protocol
 from the user's goal. Explicit Autoresearch subcommands select their own protocol.
 
 Run the pinned Udit Goenka autoresearch protocols with Hermes tools and the existing
-docs-sync → `tasks/` → autowork cycle. Read this adapter first, then the
+GitHub issue/PR handoff. Read this adapter first, then the
 selected upstream protocol. For `plan`, also apply the
 [planning adaptations](../shared/RESEARCH-PLAN.md) before following upstream phases.
 These integration rules govern host/tool substitutions,
 repository ownership and handoff; preserve upstream research methods and flags.
 
-When called by Autowork, investigate the named uncertainty and return to its
-current task. Do not assume coordination of the repository, reopen settled plans,
+When called by an existing execution owner, investigate the named uncertainty and
+return to the same issue and candidate. Do not assume coordination of the repository, reopen settled plans,
 or start another worker/scheduler. Explicit subcommands retain their documented
 behavior within the user's scope. An empty queue with an obvious repair needs no
 research protocol.
@@ -32,7 +32,7 @@ research protocol.
 ## Default output: update the work queue
 
 Apply the [work center](../shared/TODO-WORKCENTER.md) before planning and closeout.
-Every command saves in-scope actionable findings as task records in `tasks/` by
+Every command saves in-scope actionable findings as GitHub Issues by
 default, through the [GitHub handoff](../shared/PLAN-HANDOFF.md). No extra “save” instruction is needed.
 Planning-only permits documentation/backlog writes, not product implementation;
 explicit read-only, chat-only, no-write and --dry-run requests write nothing.
@@ -126,10 +126,10 @@ exercised parity. A scope restriction to reference features propagates through t
 decision, roadmap and queue in one pass, turning non-reference work into retirement
 tasks (reusing matching follow-ups) rather than fictitious parity.
 
-When invoked by autowork for backlog recovery, follow its
-[bounded planning fallback](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/backlog-planning.md): accepted
-scope only, up to three useful slices, canonical reconciliation, same-occurrence
-selection and a persisted input-bound receipt. Do not launch a recurring research
+When invoked for backlog recovery, follow
+[recovery provenance](../shared/PLANNING-CRAFT.md#recovery-provenance-and-qualification):
+accepted scope only, current evidence, same-issue/candidate recovery and a persisted
+input-bound receipt. Do not launch a recurring research
 loop or ask again for settled implementation choices.
 
 ## Document and schedule through docs-sync
@@ -139,8 +139,8 @@ Persist new actionable findings at a bounded checkpoint; unchanged checkpoints
 reuse their existing receipt and do not trigger another documentation pass.
 A new investigation result does not automatically require a docs edit: if the
 existing task and docs already preserve its material reasoning/evidence and scope,
-acceptance, sources and dependencies remain correct, return the decision/evidence to the same Autowork
-coordinator without invoking Docs Sync. Keep any needed execution receipt in the
+acceptance, sources and dependencies remain correct, return the decision/evidence to the same execution
+owner without invoking Docs Sync. Keep any needed execution receipt in the
 existing task record. When documentation actually needs a change, load
 `kit:docs-sync` (or the verified sibling SKILL.md) in **narrow Maintain**
 for affected owners; reconcile GitHub Issues; do not start a whole-repository bootstrap implicitly.
@@ -166,7 +166,7 @@ for affected owners; reconcile GitHub Issues; do not start a whole-repository bo
    implementation from publication. Repeated reconciliation preserves identities
    and existing ownership instead of duplicating work.
 5. Scheduling here means backlog ordering, not timers or service activation.
-   Explicit manual implementation routes to `/work`; Orbi remains paused and
+   Retained authorized fix modes keep their own scope and PR/review gates; Orbi remains paused and
    live-unqualified. Never start a competing worker or reinstall the removed executor.
 
 `plan`, `probe`, `predict`, `reason`, `scenario`, `learn`, `improve`, `evals` and
@@ -208,15 +208,15 @@ stage all files or revert a shared HEAD. Record an experiment's exact SHA and on
 revert that owned experiment there. Where worktree use is prohibited, use a private
 snapshot for experiments and transplant only verified owned changes; record snapshot
 identity rather than pretending an experiment commit exists. Preserve dirty user work.
-Honor no-commit instructions. For autowork work, its `finish_task.py` validation and
-owned-file commit gate remain authoritative; upstream experiment commits do not
+Honor no-commit instructions. The repository's validation, ownership, PR and
+independent review gates remain authoritative; upstream experiment commits do not
 replace the accepted-task commit, review or canonical completion evidence.
 
 `ship` follows the upstream readiness protocol within existing authority. Push,
 deploy, publication and external messages need the actual user-authorized scope;
 research success or command chaining alone provides none. Carry prior authorization
 without reasking. Do not close canonical tasks just because an upstream handoff
-says COMPLETE: use autowork's normal closure gates and receipts.
+says COMPLETE: use the repository's normal closure gates and evidence.
 
 Finish with the user outcome first (what is fixed, what is only planned, the exact
 next implementation action), then: result/stop reason; metric/check evidence; changed
@@ -235,7 +235,7 @@ all upstream contents are otherwise byte-identical. Update this pinned subtree
 deliberately, review command/runtime changes, then rerun distribution/dispatch tests.
 ## Boundaries
 
-- Not implementation; use `/autowork` after the research settles.
+- Not implementation; publish accepted findings through the planners for Orbi.
 - Not an interactive plan; use `/plan-with-me`.
 
 **Done when:** the selected protocol's findings or bounded loop result are saved with evidence and the stop reason.

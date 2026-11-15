@@ -155,7 +155,10 @@ class PluginSettingsDualReadTests(unittest.TestCase):
         self.assertIn('writes use plugins.entries.kit', logs.output[0])
         self.assertEqual(raw['approvals']['mode'], 'manual')
         self.assertNotIn('approvals', patch)
-        self.assertIn('blockers', patch['platforms']['telegram']['extra']['command_menu']['priority'])
+        priority = patch['platforms']['telegram']['extra']['command_menu']['priority']
+        self.assertIn('plan_with_me', priority)
+        for retired in ('autowork', 'work', 'pending', 'blockers'):
+            self.assertNotIn(retired, priority)
         self.assertEqual(entry.get('settings'), {'apply_runtime_defaults': False})
 
     def test_canonical_key_wins_when_both_entries_exist(self):

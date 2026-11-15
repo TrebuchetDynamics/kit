@@ -30,7 +30,7 @@ sibling to use instead, by command name. Sibling pairs that must stay distinct:
 | --- | --- |
 | Plan interactively, or investigate and save a plan | `plan-with-me` / `plan-for-me` |
 | Stress-test any idea, challenge a plan, record decisions | `grilling` / `grill-me` / `grill-with-docs` |
-| Implement accepted work, improve many lanes, review architecture | `work` / `autonomous-codebase-improver` / `improve-codebase-architecture` |
+| Improve many lanes, review architecture | `autonomous-codebase-improver` / `improve-codebase-architecture` |
 | Hunt a bug, remove dead code, shrink a suite | `bug-harvest` / `unused-code` / `test-optimizer` |
 | Commit and push, review a change, audit a repository | `git-commit-push` / `ponytail-review` / `ponytail-audit` |
 

@@ -120,7 +120,10 @@ def main():
         assert result == 'executed' and called == [True]
         commands = get_plugin_commands()
         assert not {'repo-docs', 'repo_docs', 'repo-interview', 'repo_interview'} & commands.keys(), commands.keys()
-        assert {"autowork", "impeccable", "git-commit-push", "lgtm", "docs-sync", "plan-with-me"} <= commands.keys()
+        assert {"impeccable", "git-commit-push", "lgtm", "docs-sync", "plan-with-me"} <= commands.keys()
+        for name in ('autowork', 'work', 'pending', 'blockers'):
+            assert name not in commands
+            assert manager.find_plugin_skill('kit:' + name) is None
         assert manager.find_plugin_skill("kit:docs-sync") == root / "skills/docs-sync/SKILL.md"
         payload = json.loads(skill_view("kit:docs-sync"))
         assert "error" not in payload, payload
@@ -164,6 +167,11 @@ def main():
                 assert f'kit:{target}' in message, message
                 assert message.endswith('read-only: example'), message
                 assert manager.find_plugin_skill('kit:' + target) == root / 'skills' / target / 'SKILL.md'
+            for alias in ('plan_with_me', 'plan-with-me'):
+                raw = 'blockers ./repo --no-write'
+                assert commands[alias]['handler'](raw) is None
+                message = cli._pending_input.get_nowait()
+                assert 'kit:plan-with-me' in message and message.endswith(raw), message
             assert commands["docs-sync"]["handler"]("update the README") is None
             queued = cli._pending_input.get_nowait()
             assert 'skill_view(name="kit:docs-sync")' in queued
