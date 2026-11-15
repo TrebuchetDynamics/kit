@@ -9,8 +9,9 @@
 
 Status: owner-approved. This policy applies to this repository and to workspaces
 whose owner explicitly adopts it. Approval of implementation delegates execution
-of the approved scope, not just preparation of a plan. `/autowork` is now only a
-GitHub/Orbi redirect; it grants no service activation. Orbi remains paused and
+of the approved scope, not just preparation of a plan. Retained fix/apply modes
+keep their accepted scope, ownership, review and PR gates. Planning still stops
+after publication and grants no service activation. Orbi remains paused and
 live-unqualified, and the removed executor must not be restored.
 
 ## Approved work has full delegated authority

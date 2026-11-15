@@ -14,14 +14,13 @@ A trace is one JSON object:
 
 ```json
 {
-  "name": "autowork-pass",
-  "skill": "autowork",
+  "name": "ponytail-review-pass",
+  "skill": "ponytail-review",
   "model": "fixture",
   "note": "Synthetic fixture; not a model run.",
   "events": [
-    {"type": "command", "command": "gh issue list --repo example/project", "exit": 0},
-    {"type": "command", "command": "orbi status --config /path/to/orbi.toml", "exit": 0},
-    {"type": "final", "text": "No active delivery is reported; readiness is not merge evidence."}
+    {"type": "read", "path": "src/parser.py"},
+    {"type": "final", "text": "No findings; review does not authorize delivery."}
   ]
 }
 ```
@@ -65,8 +64,8 @@ options such as `git -C . commit`, not only `git commit`; see
 ## Run
 
 ```sh
-python3 scripts/skill_trace_eval.py evals/tier3/autowork.json \
-  evals/tier3/traces/autowork-pass.json
+python3 scripts/skill_trace_eval.py evals/tier3/ponytail-review.json \
+  evals/tier3/traces/ponytail-review-pass.json
 ```
 
 For a real Pi session, capture JSONL with `pi --mode json -p ...`, then convert it:

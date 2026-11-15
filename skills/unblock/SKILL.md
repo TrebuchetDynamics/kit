@@ -28,14 +28,22 @@ does not authorize enabling it, clearing a pause or starting another implementer
    not only the dashboard's displayed questions.
 2. **Diagnose.** Read repository policy, accepted scope, latest attempts and failed
    operation logs. Distinguish dependency, active ownership, failed check,
-   missing external input and explicit pause. Apply [Blockers](../blockers/SKILL.md)
-   discovery before asking for an interview. Choose routine reversible repairs
-   within accepted scope; record the reason as `Standing policy:` where useful.
+   missing external input and explicit pause. Inspect saved decisions, issue comments,
+   dependency readbacks and candidate/attempt evidence before asking a question.
+   Check same-issue recovery first: retain its candidate, findings, budgets and
+   coordinator; do not create replacement work or a competing repair session.
+   Reuse settled answers; distinguish real dependency/resource waits, active or
+   uncertain ownership, failed validation and missing external input. A worker
+   approval request or label alone does not prove a human decision is needed.
+   Choose routine reversible repairs within accepted scope; record the reason as `Standing policy:` where useful.
    Never fabricate an owner answer, waiver, grant or live qualification.
-3. **Repair.** Use `/work` for authorized local implementation without an
-   additional permission ceremony. Establish one writer per checkout, preserve
-   existing candidates and coordinate with their actual owner. Re-read an issue
+3. **Repair.** Perform authorized local diagnosis and repair within the accepted
+   scope, without an additional permission ceremony. Establish one writer per checkout,
+   preserve existing candidates and coordinate with their actual owner. Re-read an issue
    before editing its contract; never replace an active worker's instructions.
+   Reuse retained code and valid exact-source checks; rerun missing or invalidated
+   checks. Never patch a report or clear ownership/attempt state to manufacture progress.
+   Keep issue acceptance, affected checks, independent review and PR gates.
    Publish only under existing publication authority. Service operations are a
    separate scope: follow [service boundaries](references/services.md).
 4. **Verify.** Run affected checks and required review, then inspect consumption
@@ -67,9 +75,11 @@ A planning closure or an evidenced wait is not recovery. Apply the
 
 ## Boundaries
 
-- Use `/blockers` for an owner-question interview, `/pending` for a read-only
-  report and `/work` for manual implementation.
-- Read-only/audit/questions-only requests mutate no files, issues, labels or services.
+- Use the existing planners for missing intent; inspect GitHub issue/PR evidence
+  and existing read-only `/orbi status` or CLI diagnostics for status.
+- Not a replacement implementation coordinator; repair only the scoped cause.
+- Planning-only requests perform no repairs. Read-only/audit/questions-only
+  requests mutate no files, issues, labels or services.
 - Preserve deliberately paused, disabled or stopped services and other writers.
   Do not kill competing sessions, delete runtime state or change credentials,
   approval policy, model/spend grants or security defaults.

@@ -69,7 +69,7 @@ PROFILE config unset KEY`) when that was the prior state; do not replace an enti
   inventory and inspect local edits before removing any skill or shared support files.
 - Speech, Graphify and external skills are separate installations. A previously
   installed external Ponytail plugin also remains separate; the current pinned
-  Ponytail skill suite is bundled with Autowork.
+  Ponytail skill suite is bundled with Kit.
   Do not remove one merely because Toolset is gone; other workflows may use it.
 - Select your intended memory provider before removing an active provider plugin.
   Removing a plugin is not erasure of its memory store, a migration, or deletion

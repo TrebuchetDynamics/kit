@@ -53,7 +53,7 @@ Load one specialist at the seam that needs it. Do not load every skill.
 | --- | --- |
 | Investigate and save a plan or tasks | `/plan-for-me` |
 | Answer missing owner intent | `/plan-with-me` |
-| Execute one ready task in the repository queue | `/autowork` |
+| Publish one ready task for delivery | Planners publish GitHub Issues for Orbi |
 | Run many independent improvement lanes with review | `/autonomous-codebase-improver` |
 | Select one engineering method | [engineering](../../engineering/REFERENCE.md) (reference only) |
 | Hunt an unreproduced defect | `/bug-harvest` |
@@ -109,5 +109,5 @@ cleared.
 
 A goal is not a second task queue. When the work must survive this conversation,
 drive a runner or share ownership, use the repository's `tasks/` store through
-`/plan-for-me` and `/autowork`. Do not create a private goal database or copy the
+`/plan-for-me` and GitHub Issues/PRs. Do not create a private goal database or copy the
 contract into a project instruction file.

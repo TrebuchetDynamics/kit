@@ -6,8 +6,8 @@ final answer. A spec names the required and forbidden events for one skill. This
 grader checks the trace shape and sequence. It does not call a model and does not
 prove that a live agent will behave the same way.
 
-    python3 scripts/skill_trace_eval.py evals/tier3/autowork.json \\
-      evals/tier3/traces/autowork-pass.json
+    python3 scripts/skill_trace_eval.py evals/tier3/ponytail-review.json \\
+      evals/tier3/traces/ponytail-review-pass.json
 """
 import argparse
 from fnmatch import fnmatchcase

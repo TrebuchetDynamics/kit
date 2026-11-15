@@ -151,7 +151,7 @@ class WorkflowCommands(unittest.TestCase):
     def test_pilot_command_descriptions_are_distinct_and_routed(self):
         router = (fixture.ROOT / 'skills/ask-kit/SKILL.md').read_text()
         descriptions = {}
-        for name in ('autowork', 'plan-for-me', 'ponytail-review',
+        for name in ('plan-for-me', 'ponytail-review',
                      'git-commit-push', 'docs-sync', 'plan-with-me'):
             with self.subTest(name=name):
                 text = (fixture.ROOT / f'skills/{name}/SKILL.md').read_text()

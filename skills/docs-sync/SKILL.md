@@ -231,8 +231,8 @@ pickup, model execution, independent review, merge or live qualification.
 ## Boundaries
 
 - Not product invention; use `/plan-with-me` for missing intent.
-- Not implementation; Orbi delivers issues, or use explicit manual `/work`.
-- Not a read-only queue query; use `/pending`.
+- Not implementation; Orbi delivers published issues through PR and review gates.
+- Not a read-only queue query; inspect GitHub issue/PR evidence and read-only Orbi status.
 - No legacy scheduler, archive migration or pruning unless explicitly scoped.
 
 Apply the [Definition of Done](../shared/DEFINITION-OF-DONE.md) to verification claims.

@@ -28,7 +28,9 @@ def main():
         assert 'kit:engineering' not in [i['name'] for i in manager.list_plugin_skill_metadata()]
         assert (home / 'skills/engineering/REFERENCE.md').is_file()
         assert (home / 'skills/engineering/upstream/references/security-checklist.md').is_file()
-        assert 'No update receipt yet' in commands['autowork']['handler']('update status')
+        for name in ('autowork', 'work', 'pending', 'blockers'):
+            assert name not in commands
+            assert 'kit:' + name not in [i['name'] for i in manager.list_plugin_skill_metadata()]
         names = json.loads((root / 'skills/autoresearch/UPSTREAM.json').read_text())['commands']
         payload = json.loads(skill_view('kit:autoresearch'))
         assert 'error' not in payload, payload
@@ -43,15 +45,15 @@ def main():
         # Compatibility aliases stay typeable but are no longer advertised (b021c54).
         assert not any(key.startswith('autoresearch') for key in menu), menu
         assert 'plan_for_me' in menu and 'autoresearch' not in menu, menu
-        assert 'autowork' in menu, menu
+        assert not set(('autowork', 'work', 'pending', 'blockers')) & menu.keys(), menu
         assert 'autogoal' not in commands and 'autogoal' not in menu
         cli = SimpleNamespace(_pending_input=Queue(), _agent_running=False)
         manager._cli_ref = cli
         tokens = set_session_vars()
         try:
-            for alias in ('autowork',):
+            for alias in ('plan-with-me', 'plan_with_me'):
                 assert commands[alias]['handler']('Improve this repo; no push') is None
-                assert 'kit:autowork' in cli._pending_input.get_nowait()
+                assert 'kit:plan-with-me' in cli._pending_input.get_nowait()
             for name in names:
                 raw = 'Goal: cache latency\n--chain evals; do not implement'
                 assert commands[f'autoresearch:{name}']['handler'](raw) is None
@@ -67,7 +69,7 @@ def main():
         manager.set_gateway_message_injector(accepted, lambda **kwargs: accepted.append(kwargs) or True)
         tokens = set_session_vars(platform='telegram', chat_id='42', thread_id='8', profile='research')
         try:
-            for alias in ('autowork',):
+            for alias in ('plan-with-me', 'plan_with_me'):
                 assert commands[alias]['handler']('Improve this repo; no push') is None
                 assert accepted[-1]['origin']['thread_id'] == '8'
             for name in names:

@@ -184,10 +184,9 @@ the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-
 2. **Publish:** create the entire batch under `ai-planning`, link native `blockedBy`
    dependencies and optional `ai-epic` sub-issues, verify, then add `ai-ready` last.
 3. **Deliver:** one Orbi deployment per repository owns Pi → tests → PR → independent
-   review → merge gates. `/work` is an explicit, ownership-coordinated manual alternative.
-4. **Observe:** `/pending`, GitHub Issues/PRs and read-only
+   review → merge gates.
+4. **Observe:** GitHub Issues/PRs and read-only
    `orbi status`/`orbi doctor` ([usage](#using-orbi)).
-   `/autowork` is now a compatibility handoff, not a legacy service starter.
 5. **Reconcile:** `/docs-sync` updates current requirements and issue evidence without
    duplicating the backlog or restarting a scheduler.
 
@@ -237,14 +236,10 @@ states its own boundaries and what "done" means.
 **Document and track**
 
 - `/docs-sync` — maintain docs and GitHub issue handoffs from current source.
-- `/pending` — read what is open, done and next without changing anything.
-- `/blockers` — resolve held work and the questions only the owner can answer.
 - `/unblock` — diagnose blocked GitHub work and repair authorized causes without releasing pauses.
 
 **Execute and deliver**
 
-- `/work` — auto-select and complete tasks in this session, including useful offline work when the queue is blocked.
-- `/autowork` — inspect or hand off to GitHub and Orbi; the old runner is retired.
 - `/goal` — keep one objective alive until evidence proves it done.
 - `/lgtm` — say yes to the latest recommendation and continue.
 - `/split-folder` — reorganize one folder without changing behavior.
@@ -293,12 +288,9 @@ checks do not qualify the new delivery system.
 launchers and integrations are removed. Historical contracts and
 unresolved qualification are available at the
 [immutable pre-removal revision](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork).
-This is evidence, not an installation fallback. The `/autowork` skill remains a
-GitHub/Orbi compatibility redirect only. Existing Hermes maintenance commands
-(`hermes autowork`, `/autowork update`, `list`, `plugin status`) and marketplace
-identifiers keep their current names; they do not restore executor support. Use
-`/work` for explicitly requested manual implementation. No skill or CLI rename is
-part of this change.
+This is evidence, not an installation fallback. Hermes terminal maintenance
+(`hermes autowork`) and marketplace identifiers retain their current names.
+Use GitHub Issues/PRs and read-only Orbi diagnostics for delivery status.
 
 Preserve task data, attempts, worktrees and recovery state. Orbi stays paused
 until separately qualified.
@@ -333,11 +325,12 @@ acceptable.
 **Claude Code and Codex:** update the marketplace and plugin through their CLI. See
 [cross-host updates](docs/cross-host.md) for the exact commands.
 
-**Hermes:** `/autowork update` updates every live profile; the terminal form is
-`hermes autowork update`, and `/autowork update --check` previews it. See
+**Hermes:** `hermes autowork update` updates every live profile;
+`hermes autowork update --check` previews it. See
 [update behavior and recovery](docs/installation.md#update-all-profiles). Files updated
-does not mean a gateway is running the new code; check `/autowork update status` for
-pending activation.
+does not mean a gateway is running the new code; inspect the printed receipt for
+pending activation. Old profile skills require an authorized normal update and reload;
+source deletion or reinstall alone does not retire preserved native copies.
 
 <details>
 <summary><strong>Migrating from hermes-toolset</strong></summary>

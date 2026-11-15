@@ -6,7 +6,7 @@ license: MIT
 metadata:
   hermes:
     tags: [git, commit, push, pull, merge, sync, delivery, worktree, fleet]
-    related_skills: [lgtm, autowork, hard-blockers, systematic-debugging]
+    related_skills: [lgtm, ponytail-review, systematic-debugging]
 ---
 
 # Git Commit Push
@@ -16,8 +16,7 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
 
 Adapted from an earlier TrebuchetDynamics delivery workflow.
-Merged with the fleet's shared-worktree rules and autowork's local agent-branch helper, and,
-since 2.0.0, with the former `git-pull-merge` skill: one skill delivers changes out
+Merged with the fleet's shared-worktree rules and, since 2.0.0, with the former `git-pull-merge` skill: one skill delivers changes out
 (commit, push) and brings them in (pull, merge).
 
 Ship finished work without turning delivery into another project. Local changes are the
@@ -71,7 +70,7 @@ original commit/push/main-delivery obligation and continue candidate verificatio
 |---|---|---|
 | User explicitly asked to commit only | the checked-out branch, subject to repository branch policy | **no** |
 | User explicitly asked to push, commit and push, or ship | the checked-out branch, then its upstream | yes |
-| Autonomous goal slice / kanban card, no explicit or standing publication authority | `agent/<profile>/<card-id>` via autowork's helper | **never** |
+| Authorized local slice, no explicit or standing publication authority | owned task branch under repository policy | **never** |
 | Audit request | nothing | no |
 
 Interpret delivery verbs separately: a request to implement and commit authorizes a local commit, not publication. Do not infer push permission from the skill name, an upstream being configured, or a broad request to finish all plans. After a local-only commit, verify `git show --stat HEAD` and repository status; omit remote-write readback because no remote write occurred (a read-only fetch to detect stale copies is still fine).

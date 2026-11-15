@@ -1,4 +1,4 @@
-# Ponytail for every Autowork skill
+# Ponytail for every Kit skill
 
 Apply Ponytail's **smallest complete change** method within the selected workflow,
 including planning, documentation, design, review and operations. This is shared
@@ -24,14 +24,11 @@ Report checks actually run, anything important not checked, and residual risk.
 
 ## Scope and levels
 
-Default to `full` within Autowork workflows. An explicit `lite`, `full`, `ultra` or
+Default to `full` within Kit workflows. An explicit `lite`, `full`, `ultra` or
 `off` preference wins and travels with delegated work. `off` disables this optional
 method, not repository safety or acceptance requirements. With no argument,
 `ponytail` reports the current preference (or `full`); an explicit level changes
-only the conversation's Autowork preference. A Pi Autowork runner reads
-`PI_AUTOWORK_PONYTAIL_LEVEL` (default `full`) and carries that level, with this
-method's path, into worker and reviewer prompts. Set it on the runner process when
-a non-default level must outlive this conversation. Do not write mode/config files
+only the conversation's Kit preference. Do not write mode/config files
 or change unrelated skills. No startup hook, persistent activation, band UI, transcript
 import, telemetry or upstream plugin installation is part of this bundle.
 
