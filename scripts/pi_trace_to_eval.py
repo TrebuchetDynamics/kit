@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Convert a Pi JSONL session into a Tier 3 trace object.
 
-The converter keeps executed command events, maps read-only `cat`/`head`/`tail`/
+The converter keeps recorded command text, maps read-only `cat`/`head`/`tail`/
 `sed`/`git show`/`git diff`/`git log` commands to read events, and keeps the last
 assistant text as the final event. Heredoc bodies are removed from the command
 text so a quoted example is not mistaken for an executed command.
@@ -35,6 +35,23 @@ def strip_heredocs(command):
 
 def _segments(command):
     return [part.strip() for part in re.split(r'\s*(?:;|&&|\|\|)\s*', command) if part.strip()]
+
+
+def _simple_command(command):
+    """Conservative lexical gate, not a shell parser or execution audit."""
+    # Inspect the original invocation, before heredoc removal or segmentation.
+    # Even quoted operators are ambiguous rather than risking false success.
+    if re.search(r'[;&|(){}\[\]<>$`\\\n\r#!]', command):
+        return False
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    # Wrappers can return success without executing/succeeding at inner text.
+    # Check all tokens to catch e.g. env/timeout /bin/bash -lc '...'.
+    wrappers = {'sh', 'bash', 'dash', 'ash', 'zsh', 'ksh', 'mksh', 'fish',
+                'csh', 'tcsh', 'eval', 'source', '.', 'coproc'}
+    return bool(tokens) and not any(token.rsplit('/', 1)[-1] in wrappers for token in tokens)
 
 
 def _read_paths(segment):
@@ -93,6 +110,7 @@ def convert(path, skill, name=None):
             if tool in ('read', 'write', 'edit') and isinstance(args.get('path'), str):
                 events.append({'type': tool, 'path': args['path']})
             elif tool in ('bash', 'shell') and isinstance(args.get('command'), str):
+                simple = _simple_command(args['command'])
                 command = strip_heredocs(args['command'])
                 result = item.get('result') if isinstance(item.get('result'), dict) else {}
                 structured = result.get('structuredContent') if isinstance(result.get('structuredContent'), dict) else {}
@@ -100,7 +118,7 @@ def convert(path, skill, name=None):
                 for segment in _segments(command):
                     event = {'type': 'command', 'command': segment, 'raw_command': command}
                     if isinstance(exit_code, int) and not isinstance(exit_code, bool):
-                        event['exit'] = exit_code
+                        event['exit' if simple else 'aggregate_exit_code'] = exit_code
                     events.append(event)
                     for read_path in _read_paths(segment):
                         events.append({'type': 'read', 'path': read_path, 'derived_from': 'bash'})
