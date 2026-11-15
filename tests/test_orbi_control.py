@@ -645,7 +645,8 @@ class FirstDeploymentTests(unittest.TestCase):
                  'provider-not-object', 'unknown-provider', 'unknown-model',
                  'models-not-list', 'missing-context', 'invalid-limit', 'missing-api',
                  'missing-base-url', 'literal-credential', 'bad-variable',
-                 'literal-header', 'model-literal-header',
+                 'literal-header', 'model-literal-header', 'override-literal-header',
+                 'overrides-not-object', 'override-not-object',
                  'symlink', 'symlink-parent')
         for case in cases:
             with self.subTest(case=case):
@@ -677,10 +678,17 @@ class FirstDeploymentTests(unittest.TestCase):
                 elif case in {'literal-credential', 'bad-variable'}:
                     entry['apiKey'] = SECRET if case == 'literal-credential' else '$' + SECRET
                     expected = 'credential_copy_refused'
-                elif case in {'literal-header', 'model-literal-header'}:
+                elif case in {'literal-header', 'model-literal-header', 'override-literal-header'}:
                     target = entry if case == 'literal-header' else entry['models'][0]
+                    if case == 'override-literal-header':
+                        entry['modelOverrides'] = {'other-model': {}}
+                        target = entry['modelOverrides']['other-model']
                     target['headers'] = {'Authorization': 'Bearer ' + SECRET}
                     expected = 'credential_copy_refused'
+                elif case == 'overrides-not-object':
+                    entry['modelOverrides'] = []
+                elif case == 'override-not-object':
+                    entry['modelOverrides'] = {'other-model': None}
                 catalog.write_text(SECRET + '{' if case == 'invalid-json'
                                    else json.dumps(metadata))
                 if case == 'missing':
@@ -772,6 +780,7 @@ class FirstDeploymentTests(unittest.TestCase):
                 entry['apiKey'] = reference
                 entry['headers'] = {'Authorization': reference}
                 entry['models'][0]['headers'] = {'X-Api-Key': reference}
+                entry['modelOverrides'] = {'other-model': {'headers': {'X-Api-Key': reference}}}
                 catalog = h.home / 'models.json'
                 catalog.write_text(json.dumps(self.metadata))
                 code, doc, err = h.run('setup', options=[

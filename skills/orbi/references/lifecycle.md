@@ -122,10 +122,11 @@ limits. Inspect the preview, then remove `--dry-run` to prepare. The file must
 contain a `providers` object with the selected provider's `baseUrl`, API (at
 provider or model level), and a `models` list. The selected model needs an `id`
 and positive integer `contextWindow`/`maxTokens`. Literal `apiKey` values and
-provider/model header values are refused; use only `$VARIABLE` or `${VARIABLE}`
-references for those fields. Even static headers must use references because
-arbitrary header names can carry credentials. Referenced values are not copied. Do not pass `auth.json` or migrate credentials. File and
-parent symlinks, missing/invalid files, unknown models and incomplete selectors
+provider/model header values (including `modelOverrides` headers) are refused;
+use only `$VARIABLE` or `${VARIABLE}` references for those fields. Even static
+headers must use references because arbitrary header names can carry credentials.
+Referenced values are not copied. Do not pass `auth.json` or migrate credentials.
+File and parent symlinks, missing/invalid files, unknown models and incomplete selectors
 fail before locks, staging or writes. Preview creates no deployment files or
 receipts and performs no scheduler changes.
 

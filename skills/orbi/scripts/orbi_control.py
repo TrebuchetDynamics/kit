@@ -535,8 +535,13 @@ def find_provider_source(ctx, deployments):
 def sanitized_metadata(metadata):
     data = json.loads(json.dumps(metadata))
     for entry in data['providers'].values():
-        for item in (entry, *(entry.get('models') or [])):
-            # Pi supports credentials in provider/model headers as well as apiKey.
+        overrides = entry.get('modelOverrides', {})
+        if not isinstance(overrides, dict) or not all(
+                isinstance(item, dict) for item in overrides.values()):
+            raise ControlError('provider_unavailable', 'Pi modelOverrides must map IDs to objects',
+                               fix='repair the published metadata and preview setup again')
+        for item in (entry, *(entry.get('models') or []), *overrides.values()):
+            # Pi supports credentials in provider/model/override headers as well as apiKey.
             # Require references for all headers: arbitrary names can carry secrets.
             headers = item.get('headers', {})
             if not isinstance(headers, dict):
