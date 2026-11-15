@@ -9,7 +9,7 @@
     },
     {
       "event": "command",
-      "command": "^\\s*(?:python3?\\s+(?:-B\\s+)?)?scripts/github_issues\\.py\\s+(?:[^\\s;&|\\x22\\x27#]+\\s+)*--apply(?=\\s|$)",
+      "command": "^(?![\\s\\S]*(?<!\\S)(?:-h|--h|--he|--hel|--help)(?=\\s|$))\\s*(?:python3?\\s+(?:-B\\s+)?)?scripts/github_issues\\.py\\s+(?:[^\\s;&|\\x22\\x27#]+\\s+)*--apply(?=\\s|$)",
       "exit": 0
     },
     {

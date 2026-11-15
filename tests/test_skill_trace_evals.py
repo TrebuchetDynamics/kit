@@ -81,6 +81,20 @@ class SkillTraceEvalTests(unittest.TestCase):
                     self.assertFalse(result['ok'])
                     self.assertTrue(any('missing required' in f for f in result['failures']))
 
+    def test_planning_helper_help_is_not_persistence(self):
+        # argparse exits 0 on help, even with --apply and required inputs present.
+        for skill in PLANNERS:
+            for help_arg in ('-h', '--help', '--h', '--he', '--hel'):
+                for command in (
+                        f'python3 scripts/github_issues.py {help_arg} --apply',
+                        publication_trace(skill)['events'][1]['command'] + ' ' + help_arg):
+                    trace = publication_trace(skill)
+                    trace['events'][1]['command'] = command
+                    with self.subTest(skill=skill, command=command):
+                        result = evaluate(trace, load(SPECS / f'{skill}.json'))
+                        self.assertFalse(result['ok'])
+                        self.assertTrue(any('missing required' in f for f in result['failures']))
+
     def test_planning_legacy_and_implementation_mutations_are_forbidden(self):
         # Known pilot layout, not a universal filename/extension role classifier.
         paths = (
@@ -157,7 +171,8 @@ class SkillTraceEvalTests(unittest.TestCase):
             trace['events'].insert(0, {'type': 'tool', 'tool': 'read',
                                        'args': {'path': 'tasks/items/PLAN-1.md'}})
             for command in ('git -C . log --grep commit', 'git show HEAD',
-                            'systemctl --user status orbi.timer', 'orbi status'):
+                            'systemctl --user status orbi.timer', 'orbi status',
+                            'python3 scripts/github_issues.py --help'):
                 trace['events'].insert(-1, {'type': 'command', 'command': command, 'exit': 0})
             with self.subTest(skill=skill):
                 result = evaluate(trace, load(SPECS / f'{skill}.json'))

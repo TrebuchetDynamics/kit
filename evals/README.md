@@ -78,6 +78,8 @@ This is recorded data, not a command to run as part of an eval. The publisher's
 interface. The pilot matches the bare helper path or a `python`/`python3` invocation
 (optionally `-B`), with unquoted arguments before `--apply`, and requires recorded
 exit 0. Preview-only, failed or missing-status publication cannot satisfy persistence.
+Help invocations (`-h`, `--help` or its argparse abbreviations) do not count, even
+when combined with `--apply`: they exit 0 without publishing.
 No local plan/spec write is required when the issue owns all decisions. A final event
 is required, but the grader does not semantically validate its receipt text.
 
