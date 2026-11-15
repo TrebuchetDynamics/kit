@@ -1,15 +1,16 @@
 {
   "skill": "plan-with-me",
   "tier": 3,
-  "description": "Interactive planning trace: investigate, save a task record, do not write implementation.",
+  "description": "Writable fresh helper-publication pilot: investigate, successfully apply a GitHub issue batch, report; no implementation or activation. Not all valid planning outcomes.",
   "require": [
     {
       "event": "read",
       "path": "*"
     },
     {
-      "event": "write",
-      "path": "tasks/items/*.md"
+      "event": "command",
+      "command": "^(?![\\s\\S]*(?<!\\S)(?:-h|--h|--he|--hel|--help)(?=\\s|$))\\s*(?:python3?\\s+(?:-B\\s+)?)?scripts/github_issues\\.py\\s+(?:[^\\s;&|\\x22\\x27#]+\\s+)*--apply(?=\\s|$)",
+      "exit": 0
     },
     {
       "event": "final"
@@ -18,11 +19,223 @@
   "forbid": [
     {
       "event": "write",
+      "path": "tasks/**"
+    },
+    {
+      "event": "edit",
+      "path": "tasks/**"
+    },
+    {
+      "event": "write",
+      "path": "src/**"
+    },
+    {
+      "event": "edit",
       "path": "src/**"
     },
     {
       "event": "write",
+      "path": "scripts/**"
+    },
+    {
+      "event": "edit",
+      "path": "scripts/**"
+    },
+    {
+      "event": "write",
       "path": "tests/**"
+    },
+    {
+      "event": "edit",
+      "path": "tests/**"
+    },
+    {
+      "event": "write",
+      "path": "adapters/**"
+    },
+    {
+      "event": "edit",
+      "path": "adapters/**"
+    },
+    {
+      "event": "write",
+      "path": "skills/**"
+    },
+    {
+      "event": "edit",
+      "path": "skills/**"
+    },
+    {
+      "event": "write",
+      "path": ".github/**"
+    },
+    {
+      "event": "edit",
+      "path": ".github/**"
+    },
+    {
+      "event": "write",
+      "path": ".claude-plugin/**"
+    },
+    {
+      "event": "edit",
+      "path": ".claude-plugin/**"
+    },
+    {
+      "event": "write",
+      "path": ".codex-plugin/**"
+    },
+    {
+      "event": "edit",
+      "path": ".codex-plugin/**"
+    },
+    {
+      "event": "write",
+      "path": ".agents/plugins/**"
+    },
+    {
+      "event": "edit",
+      "path": ".agents/plugins/**"
+    },
+    {
+      "event": "write",
+      "path": "plugins/**"
+    },
+    {
+      "event": "edit",
+      "path": "plugins/**"
+    },
+    {
+      "event": "write",
+      "path": "__init__.py"
+    },
+    {
+      "event": "edit",
+      "path": "__init__.py"
+    },
+    {
+      "event": "write",
+      "path": "install.sh"
+    },
+    {
+      "event": "edit",
+      "path": "install.sh"
+    },
+    {
+      "event": "write",
+      "path": "install-plugins.sh"
+    },
+    {
+      "event": "edit",
+      "path": "install-plugins.sh"
+    },
+    {
+      "event": "write",
+      "path": "install-skills.sh"
+    },
+    {
+      "event": "edit",
+      "path": "install-skills.sh"
+    },
+    {
+      "event": "write",
+      "path": "AGENTS.md"
+    },
+    {
+      "event": "edit",
+      "path": "AGENTS.md"
+    },
+    {
+      "event": "write",
+      "path": "CLAUDE.md"
+    },
+    {
+      "event": "edit",
+      "path": "CLAUDE.md"
+    },
+    {
+      "event": "write",
+      "path": "package.json"
+    },
+    {
+      "event": "edit",
+      "path": "package.json"
+    },
+    {
+      "event": "write",
+      "path": "plugin.yaml"
+    },
+    {
+      "event": "edit",
+      "path": "plugin.yaml"
+    },
+    {
+      "event": "write",
+      "path": "requirements-test.txt"
+    },
+    {
+      "event": "edit",
+      "path": "requirements-test.txt"
+    },
+    {
+      "event": "write",
+      "path": "package-lock.json"
+    },
+    {
+      "event": "edit",
+      "path": "package-lock.json"
+    },
+    {
+      "event": "write",
+      "path": "npm-shrinkwrap.json"
+    },
+    {
+      "event": "edit",
+      "path": "npm-shrinkwrap.json"
+    },
+    {
+      "event": "write",
+      "path": "pnpm-lock.yaml"
+    },
+    {
+      "event": "edit",
+      "path": "pnpm-lock.yaml"
+    },
+    {
+      "event": "write",
+      "path": "yarn.lock"
+    },
+    {
+      "event": "edit",
+      "path": "yarn.lock"
+    },
+    {
+      "event": "write",
+      "path": "uv.lock"
+    },
+    {
+      "event": "edit",
+      "path": "uv.lock"
+    },
+    {
+      "event": "command",
+      "command": "\\bgit\\b(?:\\s+(?:-[Cc]|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+--?[^\\s]+)*\\s+(?:commit|push)(?=\\s|$)"
+    },
+    {
+      "event": "command",
+      "command": "\\bsystemctl\\b(?:\\s+--?[^\\s]+)*\\s+(?:start|restart|enable)(?=\\s|$)"
+    },
+    {
+      "event": "command",
+      "command": "\\blaunchctl\\s+(?:load|bootstrap|kickstart|start|enable)(?=\\s|$)"
+    },
+    {
+      "event": "command",
+      "command": "\\borbi\\s+(?:start|setup|install-units)(?=\\s|$)"
+    },
+    {
+      "event": "command",
+      "command": "\\bpi-autowork\\s+(?:start|run|resume|restart)(?=\\s|$)"
     }
   ]
 }

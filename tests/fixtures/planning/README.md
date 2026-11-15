@@ -40,8 +40,10 @@ Orbi pickup or timers; Kit remains paused and live-unqualified.
 
 `test_planning_decision_closure.py` checks these paired inputs and expected-outcome
 coverage. This is static instruction/fixture evidence, not model adherence or live
-qualification. The legacy Tier 3 task-store evaluator is not evidence for these
-new recovery specimens; its migration is outside this change.
+qualification. The [Tier 3 writable-fresh-helper-publication pilot](../../../evals/README.md#planning-pilot-writable-fresh-helper-publication)
+grades synthetic investigation, successful `github_issues.py --apply` and final
+receipt events for a selected publication path. It does not evaluate these #33
+recovery specimens or model adherence, and is not a universal planning-outcome gate.
 
 The [original evaluation criteria](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/tests/fixtures/planning/README.md)
 remain immutable requirements evidence. In particular, preserve accepted decisions,
