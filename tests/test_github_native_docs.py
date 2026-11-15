@@ -115,6 +115,26 @@ class GithubNativeDocsTests(unittest.TestCase):
                 "blob/v0.7.41/src/orbi/example_config.toml"):
             self.assertIn(source, TEXT)
 
+    def test_lifecycle_skill_names_observed_states_and_platform_limits(self):
+        lifecycle = compact(section(TEXT, "Kit lifecycle skill", level=3))
+        for phrase in (
+                "`/orbi [status|setup|start|stop|help]`",
+                "Bare invocation reads status",
+                "Setup prepares without activating scheduling",
+                "On Linux, status names the state it observed",
+                "`absent`",
+                "`prepared` when an owned timer is enabled or active",
+                "`running` while any service is active, activating or reloading",
+                "`draining` when no service is running but one is deactivating",
+                "`stopped` when services are inactive or failed",
+                "`stop` can report `draining` while a subsequent status still reports `running`",
+                "`unavailable`",
+                "Linux supports lifecycle changes",
+                "macOS is status-only",
+                "macOS status reports local deployment metadata but leaves active scheduler state `unavailable`",
+                "shared bootstrap"):
+            self.assertIn(phrase, lifecycle)
+
     def test_local_links_and_anchors_resolve(self):
         repo = docs.Repo(ROOT)
         self.assertEqual(docs.check_document(repo, "github-native", DOC_PATH), [])
