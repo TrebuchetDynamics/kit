@@ -174,13 +174,14 @@ authorization with existing pauses and cutover gates resolved. Stop disables onl
 owned timers and reports draining until active workers finish; missing evidence
 is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only. `help` prints the action reference read-only and needs no repository.
 
-Status names the state it observed: `absent` when no deployment owns the
-repository, and `unavailable` when scheduler evidence cannot be verified. With
+On Linux, status names the state it observed: `absent` when no deployment owns
+the repository, and `unavailable` when scheduler evidence cannot be verified. With
 readable scheduler evidence, it reports `running` while any service is active,
 activating or reloading; `draining` when no service is running but one is
 deactivating. Otherwise it reports `prepared` when an owned timer is enabled or
 active, and `stopped` when services are inactive or failed and no owned timer is
-enabled or active.
+enabled or active. macOS status reports local deployment metadata but leaves
+active scheduler state `unavailable`.
 
 Each mutation reports its own outcome: `setup` says `prepared` (staging, not
 scheduler activation), `start` says `started` or `already-running`, and `stop`

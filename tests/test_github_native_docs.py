@@ -121,6 +121,7 @@ class GithubNativeDocsTests(unittest.TestCase):
                 "`/orbi [status|setup|start|stop|help]`",
                 "Bare invocation reads status",
                 "Setup prepares without activating scheduling",
+                "On Linux, status names the state it observed",
                 "`absent`",
                 "`prepared` when an owned timer is enabled or active",
                 "`running` while any service is active, activating or reloading",
@@ -130,6 +131,7 @@ class GithubNativeDocsTests(unittest.TestCase):
                 "`unavailable`",
                 "Linux supports lifecycle changes",
                 "macOS is status-only",
+                "macOS status reports local deployment metadata but leaves active scheduler state `unavailable`",
                 "shared bootstrap"):
             self.assertIn(phrase, lifecycle)
 
