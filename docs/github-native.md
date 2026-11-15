@@ -91,13 +91,22 @@ python3 scripts/github_issues.py --repo OWNER/REPO --batch /tmp/batch.json --app
 
 Keep stable keys across retries. The helper inventories all issue states, reuses
 exact matches, refuses duplicates/changed contracts/closed or owned work, creates
-all issues and edges before readiness, and reads back the graph. A failed apply
-can leave an undispatched partial batch; retry the same input after fixing the
-cause. Readiness publication itself is not atomic: a failure there can leave some
-complete issues ready, but their complete graph already exists. Inspect actual
-ownership before retrying. Serialize publishers of the same batch; GitHub offers
-no atomic issue-create idempotency key. Do not use this helper to overwrite an
-existing edited issue; reconcile that issue fresh through supported GitHub tools.
+all issues and edges before readiness, and verifies the entire batch before any
+readiness publication. Immediately before each issue's `ai-ready` POST, it freshly
+checks title/body, open state, readiness/ownership, epic classification, the exact
+native `blockedBy` ID set and native parent against the complete saved spec.
+Observed drift or a failed read stops publication with an issue-specific error;
+the final check never repairs changed dependencies or parents.
+
+A failed apply can leave an undispatched partial batch, or leave earlier issues
+ready while a later issue remains `ai-planning`. Earlier readiness and foreign
+edits are preserved, not rolled back. Inspect actual ownership and reconcile the
+cause through supported GitHub tools before retrying the same stable-key input;
+do not blindly replay it to overwrite drift. Publication is still non-atomic:
+another client can edit after a final read and before the separate label write.
+Serialize publishers of the same batch; this rule is not cross-client exclusion,
+and GitHub offers no atomic issue-create idempotency key or read/label transaction.
+Do not use this helper to overwrite an existing edited issue.
 
 ## Cutover
 
