@@ -6,6 +6,8 @@ import json
 import os
 import pty
 import shutil
+import signal
+import time
 import stat
 from types import SimpleNamespace
 import selectors
@@ -30,6 +32,7 @@ echo "pi $*" >> "$FAKE_LOG"
 db=$FAKE_HOME/pi-installed
 touch "$db"
 case $1 in
+  --version) echo 0.72.0 ;;
   list) echo "User packages:"; while read -r src; do [[ -n $src ]] && { echo "  $src"; echo "    $FAKE_HOME/pkg/${src##*/}"; }; done < "$db" ;;
   install) echo "$2" >> "$db"; pkg=$FAKE_HOME/pkg/${2##*/}; mkdir -p "$pkg/adapters/skills"
     for skill in "$FAKE_KIT_CHECKOUT"/adapters/skills/*/; do
@@ -75,12 +78,21 @@ import os, pathlib, shutil, stat, sys
 args = sys.argv[1:]
 with open(os.environ['FAKE_LOG'], 'a') as log:
     log.write('curl ' + ' '.join(args) + '\\n')
-if args[-1] != 'https://pi-bolt.opensec.in/install.sh':
+if args[-1] not in ('https://pi-bolt.opensec.in/install.sh', 'https://pi.dev/install.sh'):
     raise SystemExit('unexpected network request')
 dest = pathlib.Path(args[args.index('--output') + 1])
 assert stat.S_IMODE(dest.parent.stat().st_mode) == 0o700
 assert stat.S_IMODE(dest.stat().st_mode) == 0o600
-shutil.copyfile(pathlib.Path(os.environ['FAKE_HOME']) / 'upstream-pi-bolt-install.sh', dest)
+if args[-1] == 'https://pi.dev/install.sh':
+    if os.environ.get('PI_FIXTURE_STAGE') == 'download':
+        print('curl: (22) HTTP 503', file=sys.stderr)
+        dest.write_text('exit 98')  # a failed response must never execute
+        raise SystemExit(22)
+    shutil.copyfile(pathlib.Path(os.environ['FAKE_HOME']) / 'upstream-pi-install.sh', dest)
+    if os.environ.get('PI_FIXTURE_STAGE') == 'download-empty':
+        dest.write_bytes(b'')
+else:
+    shutil.copyfile(pathlib.Path(os.environ['FAKE_HOME']) / 'upstream-pi-bolt-install.sh', dest)
 if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
     dest.write_bytes(b'')
 ''')
@@ -123,6 +135,277 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
             (skill / 'SKILL.md').write_text(f'---\nname: {name}\n---\n')
         (self.home / 'pi-installed').write_text(NEW + '\n')  # what the fake `pi list` reports
         return package
+
+    def missing_pi(self):
+        (self.bin / 'pi').unlink()
+        (self.home / 'pi-fixture').write_text(PI)
+        (self.home / 'upstream-pi-install.sh').write_text(r'''#!/bin/sh
+set -eu
+echo "pi-installer $#" >> "$FAKE_LOG"
+# Official installer gates agent startup on stdout being a terminal.
+if [ -t 1 ]; then echo 'agent would start' >&2; exit 97; fi
+case "${PI_FIXTURE_STAGE:-}" in
+  bootstrap) echo 'npm registry unavailable' >&2; exit 9 ;;
+  native-prerequisite)
+    exec 3<>/dev/tty
+    printf 'Pi needs Node.js 22.19.0 or newer and npm. Install them now? [Y/n] ' >&3
+    read -r answer <&3
+    echo "native-prerequisite-answer $answer" >> "$FAKE_LOG"
+    echo 'Install Node.js 22.19.0 or newer and npm, then run this installer again.'
+    exit 1 ;;
+  refusal) printf 'Install Node.js 22.19.0 or newer and npm? [Y/n] '
+    read -r answer || answer=n
+    echo "prerequisite-answer $answer" >> "$FAKE_LOG"
+    echo 'Install Node.js 22.19.0 or newer and npm, then run this installer again.'
+    exit 1 ;;
+  probe-missing) exit 0 ;;
+esac
+agent=${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}
+if [ -n "${PI_MANAGED_INSTALL_ROOT:-}" ]; then agent=${PI_MANAGED_INSTALL_ROOT%/*}; fi
+mkdir -p "$agent/bin"
+cp "$FAKE_HOME/pi-fixture" "$agent/bin/pi"
+chmod 755 "$agent/bin/pi"
+case "${PI_FIXTURE_STAGE:-}" in
+  probe-nonexec) chmod 644 "$agent/bin/pi" ;;
+  probe-version) printf '#!/bin/sh\necho wrong-tool\n' > "$agent/bin/pi" ;;
+  probe-exit) printf '#!/bin/sh\necho "node: not found" >&2; exit 127\n' > "$agent/bin/pi" ;;
+esac
+''')
+
+    def test_missing_pi_bootstraps_and_enables_in_one_invocation_then_reuses(self):
+        self.missing_pi()
+        settings = self.home / '.pi/agent/settings.json'
+        settings.parent.mkdir(parents=True)
+        original = {'packages': [{'source': NEW, 'skills': [], 'extensions': []},
+                                 {'source': 'npm:other', 'skills': []}], 'model': 'keep-me'}
+        settings.write_text(json.dumps(original))
+        profile = self.home / '.profile'
+        profile.write_text('# keep my profile\n')
+        result = self.install('--no-pull', '--only', 'pi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r'pi\s+installed')
+        self.assertEqual(self.calls('pi-installer'), ['pi-installer 0'])
+        self.assertEqual(self.calls('pi '), ['pi --version', 'pi list', f'pi install {NEW}'])
+        curl = self.calls('curl')
+        self.assertEqual(len(curl), 1)
+        for flag in ('--fail', '--location', '--output', '--proto =https'):
+            self.assertIn(flag, curl[0])
+        self.assertTrue(curl[0].endswith('https://pi.dev/install.sh'))
+        original['packages'][0] = NEW
+        self.assertEqual(json.loads(settings.read_text()), original)
+        before = settings.read_bytes(), settings.stat().st_mtime_ns
+        self.log.write_text('')
+        result = self.install('--only', 'pi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('already installed', result.stdout)
+        self.assertEqual(self.calls('pi '), ['pi --version', 'pi list'])
+        self.assertEqual(self.calls('curl'), [])
+        self.assertEqual((settings.read_bytes(), settings.stat().st_mtime_ns), before)
+        self.assertEqual(profile.read_text(), '# keep my profile\n')
+        self.assertFalse(self.calls('systemctl --user try-restart'))
+        self.assertFalse(list(self.home.glob('kit-pi-*')))
+
+    def test_off_path_pi_locations_reuse_absolute_executable_and_stale_package_fix(self):
+        self.missing_pi()
+        package = self.installed_package(only=['plan-with-me'])
+        for relative, env in (
+            ('.pi/agent/bin/pi', {}), ('.local/bin/pi', {}), ('bin/pi', {}),
+            ('custom agent/bin/pi', {'PI_CODING_AGENT_DIR': str(self.home / 'custom agent')}),
+            ('managed/bin/pi', {'PI_MANAGED_INSTALL_ROOT': str(self.home / 'managed/install')}),
+        ):
+            with self.subTest(relative=relative):
+                binary = self.home / relative
+                binary.parent.mkdir(parents=True, exist_ok=True)
+                binary.write_text(PI)
+                binary.chmod(0o755)
+                self.log.write_text('')
+                result = self.install('--only', 'pi', env=env)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.calls('pi '), ['pi --version', 'pi list', f'pi update {NEW}'])
+                self.assertIn('skills missing:', result.stdout)
+                self.assertIn(str(binary), result.stdout)
+                self.assertFalse(self.calls('curl'))
+                self.assertTrue(package.is_dir())
+                binary.unlink()
+
+    def test_pi_download_bootstrap_probe_and_prerequisite_failures_are_actionable(self):
+        self.missing_pi()
+        for stage, cause in (('download', 'HTTP 503'), ('download-empty', 'empty'),
+                             ('bootstrap', 'npm registry unavailable'),
+                             ('refusal', 'Install Node.js 22.19.0'),
+                             ('probe-missing', 'executable'), ('probe-nonexec', 'executable'),
+                             ('probe-version', 'wrong-tool'), ('probe-exit', 'node: not found')):
+            with self.subTest(stage=stage):
+                shutil.rmtree(self.home / '.pi', ignore_errors=True)
+                self.log.write_text('')
+                result = self.install('--only', 'pi,tx', '--quiet', stdin='n\n',
+                                      env={'PI_FIXTURE_STAGE': stage})
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertRegex(result.stdout, r'pi\s+failed')
+                self.assertIn(cause, result.stdout)
+                self.assertIn('--only pi', result.stdout)
+                self.assertRegex(result.stdout, r'tx\s+installed')
+                self.assertFalse(self.calls('pi install'))
+                self.assertFalse((self.home / '.pi/agent/settings.json').exists())
+                if stage.startswith('download'):
+                    self.assertFalse(self.calls('pi-installer'))
+                if stage == 'refusal':
+                    self.assertEqual(self.calls('prerequisite-answer'), ['prerequisite-answer n'])
+                self.assertFalse(list(self.home.glob('kit-pi-*')))
+                self.assertFalse((self.home / '.profile').exists())
+
+    def test_pi_native_prerequisite_prompt_can_be_refused_through_controlling_terminal(self):
+        self.missing_pi()
+        pid, master = pty.fork()
+        if pid == 0:
+            os.execvpe('bash', ['bash', str(INSTALL), '--only', 'pi', '--quiet'],
+                       {**self.env, 'PI_FIXTURE_STAGE': 'native-prerequisite'})
+        seen, answered, status = b'', False, None
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(master, selectors.EVENT_READ)
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    if selector.select(timeout=0.2):
+                        try:
+                            chunk = os.read(master, 4096)
+                        except OSError:
+                            break  # PTY EIO after the child closes stdout.
+                        if not chunk:
+                            break
+                        seen += chunk
+                        if b'Install them now? [Y/n]' in seen and not answered:
+                            os.write(master, b'n\n')
+                            answered = True
+                # Never block waiting for a potentially stuck installer.
+                while time.monotonic() < deadline:
+                    waited, child_status = os.waitpid(pid, os.WNOHANG)
+                    if waited:
+                        status = child_status
+                        break
+                    time.sleep(0.01)
+            self.assertIsNotNone(status, seen.decode(errors='replace'))
+            self.assertEqual(os.waitstatus_to_exitcode(status), 1, seen.decode(errors='replace'))
+            self.assertTrue(answered)
+            self.assertEqual(self.calls('native-prerequisite-answer'), ['native-prerequisite-answer n'])
+            self.assertIn(b'--only pi', seen)
+            self.assertFalse(self.calls('pi install'))
+            self.assertFalse((self.home / '.pi').exists())
+            self.assertFalse((self.home / '.profile').exists())
+        finally:
+            if status is None:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+            os.close(master)
+
+    def test_pi_bootstrap_requires_download_tools_and_bounds_the_executable_probe(self):
+        with patch.object(install_menu, 'pi_executable', return_value=None):
+            for missing in ('curl', 'sh'):
+                with self.subTest(missing=missing), patch.object(install_menu.shutil, 'which',
+                        side_effect=lambda name: None if name == missing else '/fake/' + name), \
+                     patch.object(install_menu, 'run_command') as run:
+                    with self.assertRaisesRegex(OSError, f'requires {missing}.*--only pi'):
+                        install_menu.install_pi_harness(install_menu.Output(verbosity=0))
+                    run.assert_not_called()
+        with patch.object(install_menu.subprocess, 'run',
+                          side_effect=subprocess.TimeoutExpired('/fake/pi', 30)) as run:
+            with self.assertRaisesRegex(OSError, r'probe failed.*timed out.*--only pi'):
+                install_menu.pi_version('/fake/pi')
+        self.assertEqual(run.call_args.args[0], ['/fake/pi', '--version'])
+        self.assertEqual(run.call_args.kwargs['timeout'], 30)
+        self.assertEqual(run.call_args.kwargs['stdin'], subprocess.DEVNULL)
+
+    def test_pi_command_timeouts_stop_descendants_and_bound_silent_or_busy_hosts(self):
+        marker = self.home / 'orphan-write'
+        for script in ('sleep 30', 'exec 1>&- 2>&-; sleep 30',
+                       'while :; do printf busy; done',
+                       f'(sleep 0.5; touch "{marker}") & wait'):
+            with self.subTest(script=script):
+                # The outer timeout guards this regression even if the inner bound breaks.
+                probe = subprocess.run([sys.executable, '-c',
+                    'import json, sys; sys.path.insert(0, sys.argv[1]); import install_menu; '
+                    'print(json.dumps(install_menu.run_command(["sh", "-c", sys.argv[2]], '
+                    'install_menu.Output(verbosity=0), timeout=0.1)))',
+                    str(ROOT / 'scripts'), script], capture_output=True, text=True,
+                    env=self.env, timeout=5)
+                self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
+                self.assertIn('124,', probe.stdout)
+                self.assertIn('timed out after 0.1 seconds', probe.stdout)
+        time.sleep(0.6)
+        self.assertFalse(marker.exists(), 'timed-out installer left a running descendant')
+
+    def test_pi_timeout_failure_names_stage_and_repair(self):
+        output = install_menu.Output(verbosity=0)
+        for stage in ('download', 'bootstrap'):
+            def command(argv, output, **kwargs):
+                if stage == 'bootstrap' and argv[0] == 'curl':
+                    Path(argv[argv.index('--output') + 1]).write_text('exit 0\n')
+                    return 0, ''
+                return 124, 'command timed out'
+            with self.subTest(stage=stage), \
+                 patch.object(install_menu, 'pi_executable', return_value=None), \
+                 patch.object(install_menu, 'run_command', side_effect=command) as run:
+                with self.assertRaisesRegex(OSError, rf'{stage} failed.*timed out.*--only pi'):
+                    install_menu.install_pi_harness(output)
+                self.assertEqual(run.call_args.kwargs['timeout'], 600)
+        with patch.object(install_menu, 'install_pi_harness', return_value='/fake/pi'), \
+             patch.object(install_menu, 'pi_package', return_value=None), \
+             patch.object(install_menu, 'run_command', return_value=(124, 'command timed out')) as run:
+            with self.assertRaisesRegex(OSError, r'package install failed.*timed out.*--only pi'):
+                install_menu.install_pi_package(output)
+            self.assertEqual(run.call_args.kwargs['timeout'], 600)
+
+    def test_pi_package_failure_after_bootstrap_does_not_enable_or_claim_success(self):
+        self.missing_pi()
+        (self.home / 'pi-fixture').write_text(PI.replace('  install) echo',
+            '  install) echo "Git transport denied" >&2; exit 23 ;;\n  unused) echo'))
+        settings = self.home / '.pi/agent/settings.json'
+        settings.parent.mkdir(parents=True)
+        settings.write_text(json.dumps({'packages': [{'source': NEW, 'skills': []}]}))
+        before = settings.read_bytes()
+        result = self.install('--only', 'pi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r'pi\s+failed.*Git transport denied')
+        self.assertIn('exit 23', result.stdout)
+        self.assertIn('--only pi', result.stdout)
+        self.assertEqual(settings.read_bytes(), before)
+        self.assertNotIn('Open a new host session', result.stdout)
+
+    def test_existing_broken_pi_is_not_replaced_or_bootstrapped(self):
+        body = LOGGING + 'echo "node: not found" >&2; exit 127\n'
+        self.fake('pi', body)
+        result = self.install('--only', 'pi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('node: not found', result.stdout)
+        self.assertIn('--only pi', result.stdout)
+        self.assertFalse(self.calls('curl'))
+        self.assertEqual((self.bin / 'pi').read_text(), body)
+
+    def test_missing_pi_preview_skip_and_menu_do_not_execute_or_write(self):
+        self.missing_pi()
+        report = self.home / 'preview.jsonl'
+        for args, stdin, env in (
+            (('--no-pull', '--dry-run', '--only', 'pi'), None, {'AUTOWORK_INSTALL_REPORT': str(report)}),
+            (('--list',), None, {}),
+            (('--only', 'pi', '--skip', 'pi'), None, {}),
+            (('--menu', '--dry-run'), '\n', {'AUTOWORK_INSTALL_UI': 'text'}),
+            (('--menu',), 'q\n', {'AUTOWORK_INSTALL_UI': 'text'}),
+        ):
+            with self.subTest(args=args):
+                before = sorted(str(p) for p in self.home.rglob('*'))
+                result = self.install(*args, stdin=stdin, env=env)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(sorted(str(p) for p in self.home.rglob('*')), before)
+                self.assertEqual(self.calls(), [])
+                if '--dry-run' in args:
+                    self.assertRegex(result.stdout, r'pi\s+planned')
+                    self.assertIn('https://pi.dev/install.sh', result.stdout)
+                if '--menu' in args:
+                    self.assertIn('[x] 1 Pi package', result.stdout)
+        # Missing Pi is selected by the default full flow as well.
+        result = self.install('--skip', 'pi-bolt,orbi,tx,hermes,claude,codex')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls('pi install'), [f'pi install {NEW}'])
 
     def test_restart_services_excludes_legacy_runner_and_tries_host_services(self):
         listed = subprocess.CompletedProcess([], 0,
@@ -991,7 +1274,7 @@ fi
 
     def test_a_filtered_pi_package_counts_as_installed(self):
         package = self.installed_package()
-        self.fake('pi', LOGGING + f'[ "$1" = list ] && printf "User packages:\\n  {NEW} (filtered)\\n    {package}\\n"\ntrue\n')
+        self.fake('pi', LOGGING + f'[ "$1" = --version ] && echo 0.72.0\n[ "$1" = list ] && printf "User packages:\\n  {NEW} (filtered)\\n    {package}\\n"\ntrue\n')
         result = self.install('--only', 'pi')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('pi install'), [])

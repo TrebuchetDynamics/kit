@@ -54,11 +54,16 @@ Pi-Bolt is a native build of Pi. It runs the same commands and reads the same
 
 ### Pi
 
-Requires Node 22 or later:
+With Pi already installed:
 
 ```sh
 pi install git:github.com/TrebuchetDynamics/kit
 ```
+
+From a Kit checkout, `./install.sh --only pi` also installs a missing Pi harness
+through the official pi.dev installer, then installs and enables Kit. Upstream
+requires Node.js 22.19.0 or newer and npm; its prerequisite prompts/refusal remain
+in force. See [Pi bootstrap and recovery](docs/installation.md#pi-harness-bootstrap).
 
 ### Claude Code
 
@@ -217,7 +222,8 @@ delivery. Keep credentials out of Git and preserve workers and recovery state.
 From a checkout, `install.sh` installs every available component with verbose output:
 the Pi package, the Pi-Bolt native Pi executable, the Orbi CLI, the `tx` tmux
 launcher, and the Hermes, Claude Code and Codex plugins with their complete skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
-item runs that host's own install command. `tx` keeps an existing `~/.tmux.conf`.
+item runs that host's own install command. Pi is the exception: a missing harness
+is bootstrapped from pi.dev before installing the package. `tx` keeps an existing `~/.tmux.conf`.
 
 ```sh
 git clone https://github.com/TrebuchetDynamics/kit && cd kit
@@ -227,8 +233,8 @@ git clone https://github.com/TrebuchetDynamics/kit && cd kit
 ./install.sh --only pi,tx --dry-run
 ```
 
-`--full` (`--all`) and `--verbose` (`-v`) are the defaults. Missing hosts are skipped,
-while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
+`--full` (`--all`) and `--verbose` (`-v`) are the defaults. Missing hosts other than
+Pi are skipped, while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
 installs nothing. The old `autowork` installer component is removed.
 Install/update restarts active host integrations, never legacy Autowork runners;
 paused/stopped services stay untouched.

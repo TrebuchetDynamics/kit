@@ -35,8 +35,9 @@ with their complete portable skill suites, including [bundled Ponytail](cross-ho
 All Kit skills apply its shared method within their existing authority; no
 separate Ponytail plugin, hooks or persistent modes are installed. Existing external
 Ponytail installs are not changed or removed. `--full` (`--all`) is the default; `--skip` excludes components. Host CLIs
-for plugin items must already be installed: full mode reports missing hosts as skipped, while
-`--only` reports a requested missing host as failed. Hermes is optional. A simple
+for Hermes, Claude Code and Codex must already be installed: full mode reports missing hosts as skipped, while
+`--only` reports a requested missing host as failed. Pi is the exception: selecting it
+bootstraps a missing harness from pi.dev before installing Kit. Hermes is optional. A simple
 shell launcher whose target is missing or not executable also counts as unavailable;
 full mode skips it without running Hermes setup. When your own host settings already
 configure the autowork marketplace from another source, the installer keeps that
@@ -91,6 +92,46 @@ command appear. A complete package stays untouched, so an install needs no netwo
 for it. Empty package filters are still reconciled so skills and commands
 remain enabled. `./install.sh update --only pi` refreshes an existing package
 unconditionally, or installs it when absent.
+
+### Pi harness bootstrap
+
+`./install.sh --no-pull --only pi` reuses a working Pi or installs a missing harness
+through the [official pi.dev installer](https://pi.dev/install.sh), then installs
+and enables Kit in the same invocation. Full mode and the menu also select Pi when
+its harness is missing; `--skip pi` leaves it untouched. This does not install or
+replace Pi-Bolt.
+
+Pi on `PATH` takes precedence. Otherwise the installer checks the managed
+`${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/bin/pi` launcher, the agent directory beside
+`PI_MANAGED_INSTALL_ROOT` when set, and user-local `~/.local/bin`, `~/bin`, `~/.bin`
+and `~/local/bin`. It verifies `--version` and reuses that absolute executable for
+package list/install/update, without requiring a shell restart or parent PATH change.
+A broken existing executable fails with a repair instruction, not a forced replacement.
+
+Bootstrap needs `curl`, `sh`, network access and upstream-supported Linux/macOS.
+Kit downloads the script privately with HTTP failure checking before executing it
+unmodified with `sh`. It explicitly keeps upstream managed installation enabled;
+there is no global npm fallback or invented unattended flag. Upstream requires
+Node.js **22.19.0 or newer** and npm. Its native prerequisite prompts/refusal remain
+in force: Kit never supplies consent, invokes sudo itself or provisions Node itself.
+Without a usable terminal, install the prerequisites yourself and retry.
+
+Output is captured and streamed using the normal verbosity rules. Download, bootstrap
+and package commands each have a ten-minute outer limit (the download also has curl's
+five-minute limit). A timeout stops the command and its descendants, reports failure
+and leaves completed upstream changes in place; prerequisite prompts remain interactive
+within that limit. Captured stdout suppresses upstream's terminal-only offer to start an agent. Upstream may offer a
+shell-profile PATH edit via the terminal; it is optional, not forced by Kit.
+Kit starts no agent/model/service and changes no credentials. The suite's existing
+active-integration restart phase still applies. Preview/list/menu cancellation run
+no Pi host command or download and write nothing, including no preview receipt.
+
+Download, bootstrap, executable verification or package failures report the cause
+and return nonzero; independent selected components continue. Upstream partial
+changes are not rolled back. Repair the reported cause and retry
+`./install.sh --no-pull --only pi`. Offline tests use isolated homes and fake official
+installer responses; they are not evidence of a real download/install, model run or
+live rollout.
 
 ### Pi-Bolt native executable
 
