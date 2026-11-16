@@ -38,7 +38,7 @@ COMMANDS=(
   'kill-all|--kill-all|cmd_kill_all|tx kill-all|Kill all running configured tx sessions.|yes|no'
   'init||cmd_init|tx init|Create an example config if one does not exist.|yes|no'
   'add||cmd_add|tx add <alias[,..]> [dir]|Add or update an alias; prompt and directory-first forms are accepted.|yes|no'
-  'remove||cmd_remove|tx remove <alias>|Remove one alias from the config.|yes|yes'
+  'remove||cmd_remove|tx remove <alias-or-pattern> [alias-or-pattern ...]|Remove selected aliases from the config only.|yes|yes'
   'edit||cmd_edit|tx edit <alias> [new]|Rename one alias; prompt when the new name is omitted.|yes|yes'
   'doctor||cmd_doctor|tx doctor [--install]|Validate tmux, config parsing, targets and installed assets.|yes|no'
   'which||cmd_which|tx which <alias>|Print the resolved target directory.|yes|yes'
@@ -133,6 +133,17 @@ Config format:
 
 Alias prefixes are accepted. Exact aliases win; otherwise the shortest
 matching alias wins, with alphabetical order used as a tie-breaker.
+
+Remove selectors:
+  tx remove hw1 hw2 hw3 hw4
+  tx remove 'hw*'
+  A literal/prefix selects one alias; *, ? and bracket classes select all full,
+  case-sensitive alias-name matches. Overlaps/repeats are removed once, in config
+  order. Every selector must match; failures leave the entire config unchanged.
+  Only config entries change: no sessions are killed or directories deleted.
+  Quote patterns in Bash, Zsh and Fish (or escape: hw\*). Unquoted patterns may
+  expand to filenames or be rejected by the caller shell before tx runs; tx
+  receives only the resulting arguments and cannot reconstruct the pattern.
 
 Environment:
   TX_CONFIG                         Override config file path.
@@ -350,8 +361,8 @@ EOF
 }
 
 # --- config module ---------------------------------------------------------
-# One owner for the config grammar. Commands resolve a target and print the
-# result; they do not parse or rewrite config lines themselves.
+# One owner for the config grammar. Commands delegate all config row parsing
+# and rewriting here.
 
 config_reset() {
   ALIAS_TO_PATH=()
@@ -521,6 +532,63 @@ config_rewrite_alias() {
   die "$mode: alias not found: $alias"
 }
 
+# Resolve the entire request against the loaded snapshot before changing rows.
+# Isolate basic, case-sensitive matching options and the candidate from callers.
+config_remove_aliases() (
+  shopt -u extglob nocasematch
+  local selector alias matched i part joined changed
+  local -A selected=()
+  local -a parts kept receipts=()
+  for selector in "$@"; do
+    [[ -n "$selector" ]] || die "remove: empty selector: ''"
+    case "$selector" in
+      *'*'*|*'?'*|*'['*)
+        matched=0
+        for alias in "${!ALIAS_TO_PATH[@]}"; do
+          case "$alias" in
+            $selector) selected[$alias]=1; matched=1 ;;
+          esac
+        done
+        (( matched == 1 )) || die "remove: no aliases match selector: '$selector'"
+        ;;
+      *)
+        alias=$(resolve_alias "$selector") || return
+        selected[$alias]=1
+        ;;
+    esac
+  done
+
+  for i in "${!CFG_KIND[@]}"; do
+    [[ "${CFG_KIND[i]}" == alias ]] || continue
+    IFS=',' read -ra parts <<< "${CFG_KEYS[i]}"
+    kept=()
+    changed=0
+    for part in "${parts[@]}"; do
+      if [[ -n "${selected[$part]+x}" ]]; then
+        receipts+=("removed: $part=${ALIAS_TO_PATH[$part]}")
+        changed=1
+      else
+        kept+=("$part")
+      fi
+    done
+    (( changed == 1 )) || continue
+    if (( ${#kept[@]} == 0 )); then
+      unset "CFG_LINES[$i]" "CFG_KIND[$i]" "CFG_PREFIX[$i]" "CFG_KEYS[$i]"
+      unset "CFG_SEP[$i]" "CFG_VALUE_RAW[$i]" "CFG_TARGET[$i]"
+    else
+      joined=""
+      for part in "${kept[@]}"; do
+        [[ -n "$joined" ]] && joined+=","
+        joined+="$part"
+      done
+      config_render_alias_line "$i" "$joined"
+    fi
+  done
+  config_write || return
+  config_load || return
+  printf '%s\n' "${receipts[@]}"
+)
+
 init_config() {
   if [[ -e "$CONFIG_PATH" ]]; then
     printf 'config exists: %s\n' "$CONFIG_PATH"
@@ -585,13 +653,9 @@ add_alias() {
 }
 
 remove_alias() {
-  [[ $# -eq 1 ]] || die "remove: expected exactly one alias"
-  local alias target
-  config_load
-  alias=$(resolve_alias "$1")
-  target=${ALIAS_TO_PATH[$alias]}
-  config_rewrite_alias remove "$alias"
-  printf 'removed: %s=%s\n' "$alias" "$target"
+  [[ $# -ge 1 ]] || die "remove: expected at least one alias or pattern"
+  config_load || return
+  config_remove_aliases "$@"
 }
 
 edit_alias() {
