@@ -12,10 +12,10 @@ Use the [ASD-STE100 and project language rules](../../../skills/shared/COMMUNICA
 
 Read the [host contract](../COMMON.md), then use this host's native terminal and file
 tools. Graphify maps a project into a local graph; you query that graph instead of
-reading many files. This adapter is Autowork content that calls the official Graphify
+reading many files. This adapter is Kit content that calls the official Graphify
 CLI. It does not bundle, install or configure Graphify. Where the official `/graphify`
 skill is installed (Hermes), that skill builds the graph; this workflow owns the
-Autowork scope, evidence, limit and reporting rules that follow.
+Kit scope, evidence, limit and reporting rules that follow.
 
 ## Preconditions
 

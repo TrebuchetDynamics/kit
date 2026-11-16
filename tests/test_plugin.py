@@ -28,6 +28,7 @@ class PluginTests(unittest.TestCase):
         self.plugin.SKILLS_DIR = self.root
         self.session = {}
         self.existing = {}
+        self.manager = types.SimpleNamespace(list_plugin_skill_metadata=lambda: [], _cli_commands={})
         modules = {
             "hermes_constants": types.SimpleNamespace(get_hermes_home=lambda: Path(self.temp.name) / 'home'),
             "gateway.session_context": types.SimpleNamespace(
@@ -36,7 +37,7 @@ class PluginTests(unittest.TestCase):
                 resolve_command=lambda name: object() if name == "help" else None),
             "hermes_cli.plugins": types.SimpleNamespace(
                 get_plugin_commands=lambda: self.existing,
-                get_plugin_manager=lambda: types.SimpleNamespace(list_plugin_skill_metadata=lambda: [])),
+                get_plugin_manager=lambda: self.manager),
         }
         mock_modules = patch.dict("sys.modules", modules)
         mock_modules.start()
@@ -260,7 +261,7 @@ class PluginTests(unittest.TestCase):
         for name in ('autowork', 'work', 'pending', 'blockers'):
             self.assertNotIn(name, self.ctx.commands)
             self.assertNotIn(name, self.ctx.skills)
-        self.assertEqual(self.ctx.cli_commands, ['autowork'])
+        self.assertEqual(self.ctx.cli_commands, ['kit'])
         self.session.update(HERMES_SESSION_PLATFORM='telegram', HERMES_SESSION_CHAT_ID='fixture-chat')
         for alias in ('plan-with-me', 'plan_with_me'):
             raw = 'blockers ./repo --no-write\n$(literal)'
@@ -269,6 +270,72 @@ class PluginTests(unittest.TestCase):
             self.assertIn('kit:plan-with-me', prompt)
             self.assertTrue(prompt.endswith(raw))
             self.assertEqual(target['origin']['chat_id'], 'fixture-chat')
+
+    def test_maintenance_registration_preserves_a_foreign_cli_owner(self):
+        self.skill('alpha')
+        foreign = {'plugin': 'other', 'handler_fn': object()}
+        self.manager._cli_commands['kit'] = foreign
+        with self.assertLogs(level='WARNING') as logs, \
+             patch.object(self.ctx, 'register_cli_command') as register:
+            self.plugin.register(self.ctx)
+        register.assert_not_called()
+        self.assertIs(self.manager._cli_commands['kit'], foreign)
+        self.assertTrue(any('hermes kit' in line and 'already' in line for line in logs.output))
+        # Reloading our own canonical or transitional plugin keeps normal wiring.
+        for owner in ('kit', 'autowork'):
+            self.manager._cli_commands['kit'] = {'plugin': owner}
+            with patch.object(self.ctx, 'register_cli_command') as register:
+                self.plugin.register(self.ctx)
+            self.assertEqual(register.call_args.args, ('kit',))
+
+    def test_maintenance_hook_forwards_all_action_options_without_legacy_dispatch(self):
+        import argparse
+        import contextlib
+        import io
+
+        self.skill('alpha')
+        bundle = self.plugin._AUTOWORK_COMPAT.peer(vars(self.plugin), 'bundle')
+        # The documented Hermes hook calls setup_fn on its subparser and sets
+        # handler_fn as func. Exercise that boundary, not a second parser.
+        with patch.object(self.ctx, 'register_cli_command') as register, \
+             patch.object(bundle, 'handle_cli', return_value=7) as handler:
+            self.plugin.register(self.ctx)
+        self.assertEqual(register.call_count, 1)
+        self.assertEqual(register.call_args.args, ('kit',))
+        hook = register.call_args.kwargs
+        parser = argparse.ArgumentParser(prog='hermes')
+        commands = parser.add_subparsers(dest='command', required=True)
+        maintenance = commands.add_parser('kit')
+        hook['setup_fn'](maintenance)
+        maintenance.set_defaults(func=hook['handler_fn'])
+        cases = [
+            (['update', '--check', '--hermes-home', '/fixture home'],
+             dict(action='update', check=True, hermes_home='/fixture home')),
+            (['setup', '--dry-run', '--yes-deps', '--bundle-only', '--no-reload',
+              '--hermes-home', '/fixture home'],
+             dict(action='setup', dry_run=True, yes_deps=True, bundle_only=True,
+                  no_reload=True, hermes_home='/fixture home')),
+            (['pin', 'target', '--dry-run', '--unpin', '--hermes-home', '/fixture home'],
+             dict(action='pin', profile='target', dry_run=True, unpin=True, hermes_home='/fixture home')),
+            (['finalize', '--hermes-home', '/fixture home', '--bundle-only', '--no-reload'],
+             dict(action='finalize', hermes_home='/fixture home', bundle_only=True, no_reload=True)),
+            (['doctor', '--json', '--core'], dict(action='doctor', json=True, core_only=True)),
+            (['doctor', '--bundle-only'], dict(action='doctor', json=False, core_only=True)),
+        ]
+        for argv, expected in cases:
+            with self.subTest(argv=argv):
+                # Hermes consumes global -p/--profile before this hook.
+                args = parser.parse_args(['kit', *argv])
+                self.assertEqual(vars(args), dict(command='kit', func=handler, **expected))
+                self.assertEqual(args.func(args), 7)
+                handler.assert_called_with(args)
+        handler.reset_mock()
+        with contextlib.redirect_stderr(io.StringIO()) as error:
+            with self.assertRaises(SystemExit) as rejected:
+                parser.parse_args(['autowork', 'doctor'])
+        self.assertEqual(rejected.exception.code, 2)
+        self.assertIn("invalid choice: 'autowork'", error.getvalue())
+        handler.assert_not_called()
 
     def test_repository_skills_are_all_discovered(self):
         self.plugin.SKILLS_DIR = ROOT / "skills"

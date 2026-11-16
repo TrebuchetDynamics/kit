@@ -25,8 +25,8 @@ available as `kit:ponytail` and `kit:ponytail-review` (and the other names).
 
 Use GitHub Issues/PRs and read-only `orbi status`/`orbi doctor` for current
 delivery status. For Hermes inventory and plugin setup diagnostics, use terminal
-`hermes autowork doctor --json`; `--core` checks only bundled registration.
-`hermes autowork update` and `hermes autowork update --check` run synchronously
+`hermes kit doctor --json`; `--core` checks only bundled registration.
+`hermes kit update` and `hermes kit update --check` run synchronously
 and print their receipt. No chat-maintenance command is provided. Imported native
 commands keep their handlers; existing owners win collisions. Telegram menu capacity
 is limited, so some commands must be typed directly.
