@@ -635,6 +635,9 @@ class UpdateTests(unittest.TestCase):
         self.assertTrue(all(r['status']=='ready' for r in results))
         commands=[c.args[0] for c in run.call_args_list]
         self.assertEqual(sum('finalize' in c for c in commands),2)
+        self.assertEqual([c for c in commands if 'finalize' in c], [
+            ['hermes', '-p', name, 'kit', 'finalize', '--hermes-home', str(self.home), '--bundle-only']
+            for name, _ in self.profiles])
         self.assertFalse(any(any('setup_bundle.py' in a for a in c) for c in commands))
 
     def test_a_profile_left_incomplete_is_finalized_again_after_each_delay(self):
@@ -647,6 +650,9 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual([r['status'] for r in rows], ['ready', 'ready'])
         self.assertEqual([c.args[0] for c in sleep.call_args_list], [15, 30])
         self.assertEqual(sum('finalize' in c.args[0] for c in run.call_args_list), 4)
+        self.assertEqual([c.args[0] for c in run.call_args_list if 'finalize' in c.args[0]], [
+            ['hermes', '-p', name, 'kit', 'finalize', '--hermes-home', str(self.home), '--bundle-only']
+            for name in ('default', 'work', 'work', 'work')])
 
     def test_an_update_between_gateways_waits_for_the_new_one(self):
         folder = self.home / 'maintenance/toolset-update'; folder.mkdir(parents=True, exist_ok=True)

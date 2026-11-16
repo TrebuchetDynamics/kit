@@ -6,7 +6,7 @@ source checkout. Replace `work` with your actual profile; omit `-p work` for def
 ```sh
 hermes -p work plugins install TrebuchetDynamics/kit
 hermes -p work plugins enable kit
-hermes -p work autowork doctor --core
+hermes -p work kit doctor --core
 ```
 
 This path affects the selected profile. Loading the plugin still applies its
@@ -22,7 +22,7 @@ external plugins, imported skills or skill sources are unavailable. Those gaps
 remain visible. A missing core skill or a command owned only by another plugin
 fails the check.
 
-Plain `hermes autowork doctor` checks the full stack and exits nonzero for external
+Plain `hermes kit doctor` checks the full stack and exits nonzero for external
 gaps too. Both modes use one inventory snapshot; `--json` adds machine-readable
 `scope`, `status`, `core_status`, `core_errors`, `integrations_status` and
 `integration_gaps` alongside the existing inventory fields. Neither mode proves
@@ -122,7 +122,7 @@ These are operator-run live checks, not recorded model or Telegram test results.
 For a native Git install, use `hermes -p work plugins update kit`, then
 reload or restart the gateway through your normal service procedure and reopen CLI
 sessions. `plugins update` does not refresh skill copies already in the profile's
-skill directory; an authorized `hermes autowork update` synchronizes and retires
+skill directory; an authorized `hermes kit update` synchronizes and retires
 old first-party payloads with backups. Source deletion/reinstall alone is insufficient. Recheck `doctor --core` and
 first use.
 
@@ -146,7 +146,7 @@ defaults put the current commands in
 Hermes' menu priority, keep your own entries, mode and cap, and remove compatibility
 entries this bundle added earlier. Compatibility spellings such as `/autoresearch`,
 `/autoresearch_plan` and `/autoresearch_debug` still run when typed but are not
-advertised; `hermes autowork doctor --json` reports registration (Hermes' `/commands` shows only built-in and
+advertised; `hermes kit doctor --json` reports registration (Hermes' `/commands` shows only built-in and
 skill commands).
 Command registration and Telegram's stored menu are separate: a gateway plugin
 reload wires handlers, while a gateway reconnect refreshes the bot menu. Tests use
