@@ -113,11 +113,11 @@ def preflight(repo, root, profiles, *, bundle_only=False):
     errors, plan = [], []
     if sys.version_info < (3, 12):
         errors.append('Setup requires Python 3.12 or newer')
-    for binary in ('bash', 'python3', 'hermes', *(() if bundle_only else ('git',))):
+    for binary in ('bash', 'python3', 'hermes', 'timeout', *(() if bundle_only else ('git',))):
         if not shutil.which(binary):
             errors.append(f'Required executable missing: {binary}')
     required = ('install-skills.sh', 'install-plugins.sh', 'scripts/install_skills.py', 'scripts/runtime_defaults.py',
-                'scripts/setup_bundle.py', 'scripts/setup_preflight.py', 'scripts/setup_runtime.py',
+                'scripts/setup_bundle.py', 'scripts/setup_preflight.py', 'scripts/setup_runtime.py', 'scripts/update_bundle.py',
                 'scripts/install-graphify.py',
                 'scripts/autowork_bootstrap.py', 'src/autowork_bootstrap.py',
                 'plugin.yaml', 'plugins/defaults.json', 'plugins/PLUGINS.md',
@@ -164,24 +164,24 @@ def preflight(repo, root, profiles, *, bundle_only=False):
         plugins = home / 'plugins'
         if plugins.exists() and not plugins.is_dir():
             errors.append(f'{name}: plugins must be a directory')
-        target = plugins / 'autowork'
-        if target.exists() or target.is_symlink():
-            if not (target / 'plugin.yaml').is_file():
-                errors.append(f'{name}: existing bundle path is not a complete plugin')
-            elif target.resolve() != repo.resolve():
-                errors.append(f'{name}: bundle points to another checkout; update/remove it explicitly before fleet setup')
-            plan.append(f'  Preserve existing bundle path: {target}')
-        else:
-            plan.append(f'  Link bundle: {target} -> {repo}')
+        try:
+            updater = _AUTOWORK_COMPAT.peer(globals(), 'update_bundle')
+            target = updater.setup_plugin_dir(home, repo)
+            if target.exists():
+                plan.append(f'  Preserve existing bundle path: {target}')
+            else:
+                plan.append(f'  Link bundle: {target} -> {repo}')
+        except (ValueError, OSError) as exc:
+            errors.append(f'{name}: {exc}')
         try:
             selected = runtime.setup_profile_policy(home / 'config.yaml')
         except (OSError, ValueError):
             errors.append(f'{name}: cannot verify runtime policy/opt-out; valid YAML and PyYAML required')
         else:
             if selected['policy'] == 'disabled':
-                plan.append('  Enable autowork; runtime-defaults opt-out: bundle policy settings skipped')
+                plan.append('  Enable kit; runtime-defaults opt-out: bundle policy settings skipped')
             else:
-                plan.append(f"  Enable autowork; runtime policy={selected['policy']}; apply settings: " +
+                plan.append(f"  Enable kit; runtime policy={selected['policy']}; apply settings: " +
                             json.dumps(selected['settings'], sort_keys=True))
                 plan.append('  Existing approval/turn values preserved unless runtime_policy is explicit')
         plan.append('  Existing skill copies are preserved; auth and conversation history unchanged')

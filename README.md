@@ -69,7 +69,7 @@ in force. See [Pi bootstrap and recovery](docs/installation.md#pi-harness-bootst
 
 ```sh
 claude plugin marketplace add TrebuchetDynamics/kit
-claude plugin install kit@autowork
+claude plugin install kit@kit
 ```
 
 ### Codex
@@ -78,8 +78,10 @@ Requires a CLI with plugin support:
 
 ```sh
 codex plugin marketplace add TrebuchetDynamics/kit --ref main
-codex plugin add kit@autowork-marketplace
+codex plugin add kit@kit-marketplace
 ```
+
+Existing Autowork marketplace registrations require [manual migration](docs/cross-host.md#legacy-marketplace-migration); the suite installer does not migrate them.
 
 ### Paseo
 
@@ -105,6 +107,10 @@ hermes plugins install TrebuchetDynamics/kit
 hermes plugins enable kit
 hermes kit doctor --core
 ```
+
+Fresh Hermes installs use `plugins/kit` and enable `kit`. Verified legacy physical
+slots are retained for safe update discovery, not supported Autowork operation;
+[duplicate/foreign registrations block setup](docs/installation.md#install).
 
 The opt-out does not undo prior changes or stop full setup from configuring
 external integrations. Existing memory providers and stores are preserved.
@@ -347,7 +353,8 @@ unresolved qualification are available at the
 [immutable pre-removal revision](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork).
 This is evidence, not an installation fallback. Hermes terminal maintenance uses
 `hermes kit`. The obsolete `hermes autowork` command has no alias or redirect.
-Marketplace identifiers are unchanged.
+Fresh portable installs use Kit marketplace identities;
+[legacy marketplace migration](docs/cross-host.md#legacy-marketplace-migration) is manual.
 Use GitHub Issues/PRs and read-only Orbi diagnostics for delivery status.
 
 Preserve task data, attempts, worktrees and recovery state. Orbi stays paused
@@ -396,12 +403,14 @@ source deletion or reinstall alone does not retire preserved native copies.
 ### Renamed from hermes-toolset
 
 This project was called hermes-toolset before 0.3.0, and its plugin was called
-`autowork` until the Kit rename. There is no compatibility layer for the old plugin
-name: the command namespace is `kit:` and the settings key is
+`autowork` until the Kit rename. There is no executable compatibility alias:
+the command namespace is `kit:` and the settings key is
 `plugins.entries.kit`. Settings under `plugins.entries.autowork` keep being read for
-one release, so an opt-out you already set still applies. Remove an older installation
-and [install](#install) again in each host. Preserve existing job state during
-migration; do not rewire legacy Autowork cron execution for new work.
+one release, so an opt-out you already set still applies. For Hermes,
+[update the verified existing installation](docs/installation.md#update-all-profiles)
+without creating a second copy or deleting recovery state. Source delivery alone
+does not adopt a release into an installed profile or activate running hosts.
+Preserve existing job state; do not rewire legacy Autowork cron execution for new work.
 
 </details>
 

@@ -37,9 +37,13 @@ lifecycle actions.
    config and installed unit ownership. A repository with no deployment is
    `absent`, not an empty queue.
 2. **Status.** Run `status` (or `status --json`) for the deployment state,
-   pinned source, selected harness/executable evidence, shared bootstrap, provider metadata, target timers, service
-   states and ready queue. Status is read-only; missing evidence is
-   `unavailable`.
+   pinned source, selected harness/executable evidence, shared bootstrap, provider
+   metadata, target timers, service states and ready queue. Distinguish configured
+   slots, enabled timers, active timers and running service units: shared template
+   availability is not instance enablement. Report, for example, “3 configured slots,
+   3 enabled timers; observed instances 1–5,” not “5 installed slots.” Counts are local
+   scan evidence, not deployment health or model/delivery proof. Status is read-only;
+   missing evidence is `unavailable`.
 3. **Prepare.** Run `setup` (preview with `--dry-run`). It stages the verified
    pinned source, atomically publishes provider metadata, the deployment-local
    `.orbi/harness-bin/pi` exec launcher and `.orbi/env` before
@@ -85,7 +89,7 @@ lifecycle actions.
    upstream `setup`/`install-units` with the scoped environment, enables only
    this deployment's timers and requests one first tick when no worker runs.
 5. **Stop.** Run `stop` to disable only this deployment's owned timer instances,
-   including installed surplus instances. Active services finish: report
+   including observed out-of-config instances. Active services finish: report
    `draining` with the pending units until they stop. Missing service evidence
    is `unavailable`, never `stopped`. Never kill, stop or restart a service to
    make the state look clean.
@@ -96,7 +100,13 @@ lifecycle actions.
    probe and invents no version. Absent means unconfigured; Pi-Bolt is only the new
    setup default. Legacy service resolution is unknown without a stored PATH. Keep provider
    identifiers and non-secret evidence only. Report preparation, scheduler
-   activation and live delivery separately. If non-activating validation fails
+   activation and live delivery separately. One deployment/pool may have several
+   slots; template-only rows do not establish a duplicate pool or a scheduling
+   defect. Compare native config, explicit enablement and observed activity first;
+   never enable 4/5 merely to match the scan bound. Use read-only status to observe:
+   `setup --dry-run` is preparation preflight and `setup_busy` is an expected
+   refusal while scheduling/workers are active, not evidence of extra instances.
+   Any repair still needs separate scope/authority. If non-activating validation fails
    after writes, inspect and repair the partial deployment, then rerun helper
    `setup` without bootstrap flags. Do not use activating upstream setup as a
    preparation repair; inspect scheduler state with `status`. Read `steps`, `target`,

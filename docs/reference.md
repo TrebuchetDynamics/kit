@@ -79,6 +79,17 @@ and the repository's focused test commands directly. Historical contracts are
 [immutable evidence](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/reference.md#worker-long-checks-autowork-run),
 not supported command instructions. Preserve existing task and runtime state.
 
+## Hermes install identity
+
+Fresh setup and native registration probes use `plugins/kit` and enable `kit`.
+Discovery also recognizes verified `plugins/autowork` physical slots by manifest
+identity, including supported old manifests as update/migration input only.
+Setup adopts only Kit from the selected source. Duplicate slots (even aliases),
+foreign sources and uncertain manifests refuse mutation with path diagnostics.
+Both names remain covered by source-replacement consumer protections. No runtime
+state relocation, credential copy or permission reset is required; source delivery
+is not installed adoption or live activation. See [setup/recovery](installation.md#install).
+
 ## Plugin settings
 
 Source: [`scripts/runtime_defaults.py`](../scripts/runtime_defaults.py),

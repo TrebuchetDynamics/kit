@@ -8,6 +8,33 @@ Source: [runtime configuration writes](../scripts/runtime_defaults.py),
 [setup configuration writes](../install-plugins.sh), and
 [native skill provisioning](../scripts/install_skills.py).
 
+## Portable marketplace removal and migration
+
+Fresh Claude Code installs use `kit@kit`; Codex uses `kit@kit-marketplace`.
+For intentional removal, use the original Claude scope:
+
+```sh
+claude plugin uninstall kit@kit --scope SCOPE --keep-data
+claude plugin marketplace remove kit --scope SCOPE
+codex plugin remove kit@kit-marketplace
+codex plugin marketplace remove kit-marketplace
+```
+
+Replace `SCOPE` with the original `user`, `project` or `local` scope; managed
+registrations need the administrator. Review other plugins before marketplace
+removal, which can remove more than Kit. Preserve private configuration/source/data
+backups and recovery evidence first. Claude `--keep-data` preserves its data
+directory, not all options/secrets or transfer to another ID. No Codex keep-data or
+automatic rollback guarantee is made. These commands do not undo repository work.
+
+Legacy `autowork` / `autowork-marketplace` registrations require
+[separately authorized manual migration](cross-host.md#legacy-marketplace-migration).
+The installer never removes them, even when a recorded directory is stale.
+Inspect the same effective configuration context and inherited/project overrides;
+Codex effective lists do not cover all persisted scopes. Verify one intended active
+Kit registration afterward. Source removal/rename is not installed-host cleanup or
+live migration evidence.
+
 ## Before installation
 
 Keep a private backup of each target profile's `config.yaml` and an inventory of
@@ -31,6 +58,16 @@ hermes -p PROFILE config set plugins.entries.kit.settings.apply_runtime_defaults
 hermes -p PROFILE plugins disable kit
 hermes -p PROFILE plugins remove kit
 ```
+
+Fresh installs use `plugins/kit`. A verified older installation may still occupy
+`plugins/autowork` while its manifest declares Kit; do not infer the enable/removal
+identity from the directory name. Inspect the actual manifest and native inventory
+before removal. An old Autowork manifest is migration evidence, not a supported
+maintenance CLI. If both physical slots exist, stop and reconcile ownership rather
+than deleting either source or using reinstall as cleanup. Preserve
+`.toolset-imports.json`, journals, backups, tasks, attempts and worktrees; no runtime
+move/purge is part of Kit adoption. Actual native loader discovery of retained
+legacy physical slots remains separately unverified.
 
 These are Hermes' native removal commands. `plugins remove` also deletes the whole
 `plugins.entries.kit` entry, including that opt-out, so set the opt-out

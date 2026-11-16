@@ -2,6 +2,7 @@
 import importlib.util
 import contextlib
 import io
+import fcntl
 import json
 from pathlib import Path
 import subprocess
@@ -47,12 +48,53 @@ class PluginDirectoryTests(unittest.TestCase):
             self.assertEqual(module.plugin_name(home), 'kit')
             self.assertFalse((home / 'plugins' / 'autowork').exists())
 
-    def test_without_an_install_the_legacy_path_is_the_target(self):
+    def test_without_an_install_the_canonical_path_is_the_target(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             module = self.module()
-            self.assertEqual(module.plugin_dir(home), home / 'plugins' / 'autowork')
-            self.assertEqual(module.plugin_name(home), 'autowork')
+            self.assertEqual(module.plugin_dir(home), home / 'plugins' / 'kit')
+            self.assertEqual(module.plugin_name(home), 'kit')
+
+    def test_legacy_physical_slot_uses_manifest_identity_and_preserves_private_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            folder = self.make(home, 'autowork')
+            (folder / 'plugin.yaml').write_text('name: kit\n')
+            marker = home / '.toolset-imports.json'
+            marker.write_bytes(b'private recovery evidence\n')
+            module = self.module()
+            self.assertEqual(module.plugin_dir(home), folder)
+            self.assertEqual(module.plugin_name(home), 'kit')
+            self.assertEqual(marker.read_bytes(), b'private recovery evidence\n')
+            self.assertFalse((home / 'plugins/kit').exists())
+
+    def test_ambiguous_or_unreadable_identity_refuses_without_changes(self):
+        for case in ('same-source', 'distinct-source', 'missing', 'malformed', 'malformed-body', 'conflicting', 'quoted-conflict', 'foreign', 'dangling'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                legacy = self.make(home, 'autowork')
+                if case == 'same-source':
+                    (home / 'plugins/kit').symlink_to(legacy)
+                elif case == 'distinct-source':
+                    self.make(home, 'kit')
+                elif case == 'missing':
+                    (legacy / 'plugin.yaml').unlink()
+                elif case == 'dangling':
+                    (legacy / 'plugin.yaml').unlink()
+                    legacy.rmdir()
+                    legacy.symlink_to(home / 'gone')
+                else:
+                    (legacy / 'plugin.yaml').write_text({
+                        'malformed': 'name: [kit]\n',
+                        'malformed-body': 'name: kit\nsettings: [\n',
+                        'conflicting': 'name: kit\nname: autowork\n',
+                        'quoted-conflict': 'name: kit\n"name": autowork\n',
+                        'foreign': 'name: foreign\n',
+                    }[case])
+                before = sorted(str(p) for p in home.rglob('*'))
+                with self.assertRaisesRegex(ValueError, 'plugins/'):
+                    self.module().plugin_dir(home)
+                self.assertEqual(before, sorted(str(p) for p in home.rglob('*')))
 
 
 class UpdateTests(unittest.TestCase):
@@ -85,6 +127,38 @@ class UpdateTests(unittest.TestCase):
         self.git(self.remote,'commit','-am','update')
     def plan(self):
         return self.mod.prepare(self.repo,self.profiles,upstream=str(self.remote))
+    def test_duplicate_slots_refuse_update_before_fetch_or_receipt_writes(self):
+        self.advance()
+        (self.home / 'plugins/kit').symlink_to(self.repo)
+        with patch.object(self.mod, 'fetch', side_effect=AssertionError('no fetch on ambiguity')):
+            with self.assertRaisesRegex(ValueError, 'Duplicate Kit registrations'):
+                self.plan()
+            peer = self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle')
+            with patch.object(peer, 'live_profiles', self.setup_stub.live_profiles), \
+                 contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(self.mod.main(['--hermes-home', str(self.home)]), 1)
+        self.assertIn('reconcile registrations', output.getvalue())
+        self.assertFalse((self.home / 'maintenance').exists())
+        self.assertTrue((self.home / 'plugins/autowork').is_symlink())
+        self.assertTrue((self.home / 'plugins/kit').is_symlink())
+
+    def test_existing_update_state_does_not_bypass_identity_admission(self):
+        (self.home / 'plugins/kit').symlink_to(self.repo)
+        state = self.home / 'maintenance/toolset-update'
+        state.mkdir(parents=True)
+        receipt = state / 'latest.json'
+        receipt.write_bytes(b'{"status": "up_to_date"}\n')
+        peer = self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle')
+        for args in (['--dry-run'], []):
+            with self.subTest(args=args), patch.object(peer, 'live_profiles', self.setup_stub.live_profiles), \
+                 patch.object(self.mod, 'finish_restart', side_effect=AssertionError('identity admission first')), \
+                 contextlib.redirect_stdout(io.StringIO()) as output:
+                code = self.mod.main(['--hermes-home', str(self.home), *args])
+                self.assertEqual(code, 1, output.getvalue())
+            self.assertIn('Duplicate Kit registrations', output.getvalue())
+            self.assertEqual(receipt.read_bytes(), b'{"status": "up_to_date"}\n')
+            self.assertEqual(sorted(p.name for p in state.iterdir()), ['latest.json'])
+
     def test_native_releases_keep_peers_and_source_payload_local(self):
         releases = [copy_sources(self.root / name) for name in ('one', 'two')]
         modules = []
@@ -720,11 +794,23 @@ class ScopedUpdateTests(unittest.TestCase):
             raise ValueError('Kanban lookup is forbidden during deployment')
         self.calls.append((action, str(home)))
         if action == 'install':
-            self.git(home, 'clone', str(stage), str(home/'plugins/autowork'))
-        return {'commands': ['autowork']} if action == 'verify' else {'admitted': True}
+            self.git(home, 'clone', str(stage), str(home/'plugins/kit'))
+        return {'commands': ['plan-with-me']} if action == 'verify' else {'admitted': True}
 
     def deploy(self, names=('default',), **kwargs):
         return self.mod.scoped_update(self.home, self.remote, self.revision, names, 'python3', **kwargs)
+
+    def test_fresh_scoped_install_and_retry_use_only_kit(self):
+        (self.home / 'plugins/autowork').unlink()
+        result = self.deploy()
+        self.assertEqual(result['status'], 'updated', result)
+        self.assertEqual(self.git(self.home / 'plugins/kit', 'rev-parse', 'HEAD'), self.revision)
+        self.assertFalse((self.home / 'plugins/autowork').exists())
+        calls = list(self.calls)
+        again = self.deploy()
+        self.assertEqual(again['status'], 'up_to_date', again)
+        self.assertEqual(again['backup'], result['backup'])
+        self.assertEqual(self.calls, calls)
 
     def test_scoped_api_exists(self):
         self.assertTrue(callable(getattr(self.mod, 'scoped_update', None)), 'scoped deployment is missing')
@@ -1031,7 +1117,7 @@ class ScopedUpdateTests(unittest.TestCase):
     def test_untracked_native_output_cannot_be_reported_ready(self):
         def extra(action, home, stage, *args):
             result = self.fake_native(action, home, stage, *args)
-            if action == 'install': (home/'plugins/autowork/extra.py').write_text('extra')
+            if action == 'install': (home/'plugins/kit/extra.py').write_text('extra')
             return result
         with patch.object(self.mod, 'native_call', extra): result = self.deploy()
         self.assertEqual(result['status'], 'incomplete')
@@ -1290,7 +1376,7 @@ class ManagedRecoveryTests(unittest.TestCase):
         if action == 'install':
             path = home / 'plugins/.install-metadata.json'
             records = json.loads(path.read_text())
-            records['autowork'] = {'source': stage.as_uri(), 'revision': revision, 'pinned': True}
+            records['kit'] = {'source': stage.as_uri(), 'revision': revision, 'pinned': True}
             path.write_text(json.dumps(records))
         return result
 
@@ -1341,6 +1427,70 @@ class ManagedRecoveryTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             code = self.mod.main(['--hermes-home', str(self.home), *extra])
         return code, json.loads(output.getvalue())
+
+    def test_canonical_and_legacy_identity_recovery_preserve_state(self):
+        for identity in ('canonical', 'legacy-manifest', 'legacy-kit'):
+            with self.subTest(identity=identity), contextlib.ExitStack() as cleanup:
+                fixture = ManagedRecoveryTests()
+                cleanup.callback(fixture.doCleanups)
+                fixture.setUp()
+                slot = fixture.repo
+                if identity == 'canonical':
+                    slot = fixture.home / 'plugins/kit'
+                    fixture.repo.rename(slot)
+                    fixture.repo = slot
+                    shared = fixture.profiles[1][1] / 'plugins/autowork'
+                    shared.unlink()
+                    (shared.parent / 'kit').symlink_to(slot)
+                    records = json.loads(fixture.metadata.read_text())
+                    records['kit'] = records.pop('autowork')
+                    fixture.metadata.write_text(json.dumps(records))
+                elif identity == 'legacy-manifest':
+                    (slot / 'plugin.yaml').write_text('name: autowork\n')
+                    fixture.git(slot, 'commit', '-am', 'registered old manifest')
+                    fixture.before = fixture.git(slot, 'rev-parse', 'HEAD')
+                    records = json.loads(fixture.metadata.read_text())
+                    records['autowork']['revision'] = fixture.before
+                    fixture.metadata.write_text(json.dumps(records))
+                evidence = fixture.home / 'autowork/attempts/evidence'
+                evidence.parent.mkdir(parents=True)
+                evidence.write_bytes(b'private unfinished attempt\x00')
+                imports = fixture.home / '.toolset-imports.json'
+                imports.write_bytes(b'private imports')
+                code, result = fixture.run_update()
+                self.assertEqual(code, 0, result)
+                self.assertEqual(fixture.git(slot, 'rev-parse', 'HEAD'), fixture.after)
+                self.assertEqual((slot / 'plugin.yaml').read_text(), 'name: kit\n')
+                self.assertEqual(evidence.read_bytes(), b'private unfinished attempt\x00')
+                self.assertEqual(imports.read_bytes(), b'private imports')
+                self.assertFalse((fixture.home / 'plugins' / ('autowork' if identity == 'canonical' else 'kit')).exists())
+                backup = result['recovery']['backup']
+                code, again = fixture.run_update()
+                self.assertEqual((code, again['status']), (0, 'up_to_date'))
+                self.assertEqual(again['recovery']['backup'], backup)
+
+    def test_canonical_shared_and_live_consumers_hold_recovery(self):
+        alias = self.home / 'profiles/not-live/plugins/kit'
+        alias.parent.mkdir(parents=True)
+        alias.symlink_to(self.repo)
+        code, result = self.run_update()
+        self.assertEqual(code, 1, result)
+        self.assertIn('Unselected shared consumer ' + str(alias), str(result))
+        self.assertEqual(self.calls, [])
+        alias.unlink()
+        selected = self.profiles[1][1]
+        (selected / 'plugins/autowork').rename(selected / 'plugins/kit')
+        process = self.root / 'fake-proc/12345'
+        process.mkdir(parents=True)
+        (process / 'cmdline').write_bytes(str(selected / 'plugins/kit/helper.py').encode() + b'\x00')
+        iterdir = Path.iterdir
+        def processes(path):
+            return iter((process,)) if path == Path('/proc') else iterdir(path)
+        with patch.object(Path, 'iterdir', processes):
+            code, result = self.run_update()
+        self.assertEqual(code, 1, result)
+        self.assertIn('Active helper process', str(result))
+        self.assertEqual(self.calls, [])
 
     def test_verified_rewrite_preserves_checkout_customizations_and_shared_links(self):
         metadata = json.loads(self.metadata.read_text())
@@ -1528,6 +1678,23 @@ class ManagedRecoveryTests(unittest.TestCase):
                     returned = fixture.run_update()
                     self.fail(f'{point} interruption not reached: {returned!r}; native calls: {fixture.calls!r}')
                 saved = json.loads((fixture.home / 'maintenance/toolset-update/recovery.json').read_text())
+                if point == 'install':
+                    code, preview = fixture.run_update('--check')
+                    self.assertEqual((code, preview['status']), (0, 'update_available'))
+                    self.assertTrue((fixture.home / 'plugins/kit').is_dir())
+                    self.assertFalse(fixture.repo.exists())
+                    self.assertEqual(json.loads((fixture.home / 'maintenance/toolset-update/recovery.json').read_text()), saved)
+                    # Every selected handoff must be locked before restoring a slot,
+                    # including a shared consumer whose source is temporarily absent.
+                    shared_lock = fixture.profiles[1][1] / 'autowork/goal-handoff.lock'
+                    with shared_lock.open('a') as worker:
+                        fcntl.flock(worker, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        code, held = fixture.run_update()
+                        self.assertEqual(code, 1, held)
+                        self.assertIn('Worker handoff is active', str(held))
+                        self.assertTrue((fixture.home / 'plugins/kit').is_dir())
+                        self.assertFalse(fixture.repo.exists())
+                        self.assertEqual(json.loads((fixture.home / 'maintenance/toolset-update/recovery.json').read_text()), saved)
                 (fixture.remote / 'skills/demo/SKILL.md').write_text('later upstream release\n')
                 fixture.git(fixture.remote, 'commit', '-am', 'upstream moved during interruption')
                 if point == 'ordinary':
@@ -1701,6 +1868,26 @@ def cmd_install(source, *, force, ref, enable):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('caution refused' if verdict == 'caution' else 'scanning is disabled', result.stderr)
             self.assertFalse((self.home/'installed').exists())
+
+    def test_native_registration_probe_uses_only_canonical_kit_slot(self):
+        (self.root / 'hermes_cli/plugins.py').write_text("""
+import os
+from pathlib import Path
+class Manager:
+    def discover_and_load(self):
+        home = Path(os.environ['HERMES_HOME'])
+        assert (home / 'plugins/kit').is_symlink()
+        assert not (home / 'plugins/autowork').exists()
+        config = (home / 'config.yaml').read_text()
+        assert 'enabled: [kit]' in config and 'apply_runtime_defaults: false' in config
+
+def get_plugin_manager(): return Manager()
+def get_plugin_commands(): return {'plan-with-me': {'plugin': 'kit'}}
+""")
+        result = self.run_helper('verify')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['commands'], ['plan-with-me'])
+        self.assertEqual(list(self.home.iterdir()), [])
 
     def test_native_installer_gets_exact_local_source_without_force_or_enable(self):
         result = self.run_helper('install')

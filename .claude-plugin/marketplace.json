@@ -1,5 +1,5 @@
 {
-  "name": "autowork",
+  "name": "kit",
   "owner": {"name": "TrebuchetDynamics"},
   "description": "Kit repository planning and GitHub-native workflows",
   "plugins": [
