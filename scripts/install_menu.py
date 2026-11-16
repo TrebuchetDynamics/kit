@@ -49,9 +49,6 @@ ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
                '1a8b2f9603f6258cb105293f238a8d3f775f3393')
 HOME = Path(os.environ.get('HOME', str(Path.home())))
 BIN = Path(os.environ.get('AUTOWORK_BIN_DIR') or HOME / '.local' / 'bin')
-# Claude Code's refusal when settings name this marketplace from another source.
-TOLERATE_CLAUDE_SOURCE = "its source doesn't match its extraKnownMarketplaces entry"
-
 
 def manifest_name(relative, key='name'):
     """A plugin or marketplace name declared by a manifest in this checkout."""
@@ -63,9 +60,9 @@ def manifest_name(relative, key='name'):
 
 
 CLAUDE_PLUGIN = manifest_name('.claude-plugin/plugin.json') or 'kit'
-CLAUDE_MARKETPLACE = manifest_name('.claude-plugin/marketplace.json') or 'autowork'
+CLAUDE_MARKETPLACE = manifest_name('.claude-plugin/marketplace.json') or 'kit'
 CODEX_PLUGIN = manifest_name('.codex-plugin/plugin.json') or CLAUDE_PLUGIN
-CODEX_MARKETPLACE = manifest_name('.agents/plugins/marketplace.json') or 'autowork-marketplace'
+CODEX_MARKETPLACE = manifest_name('.agents/plugins/marketplace.json') or 'kit-marketplace'
 
 
 class Output:
@@ -152,7 +149,7 @@ def run_command(argv, output, extra_env=None, timeout=None):
                     pass
                 child.wait()
                 code = 124
-                tail += f'\ncommand timed out after {timeout} seconds; stopped Pi command and descendants'
+                tail += f'\ncommand timed out after {timeout} seconds; stopped command and descendants'
             except BaseException:
                 if timeout is not None:
                     try:
@@ -455,91 +452,258 @@ def hermes_item(hermes_args):
     return item
 
 
-def claude_marketplace_folders():
-    """The folders Claude Code's configuration records for this marketplace.
+LEGACY_CLAUDE_MARKETPLACE = 'autowork'
+LEGACY_CODEX_MARKETPLACE = 'autowork-marketplace'
+MIGRATION_GUIDE = 'docs/cross-host.md#legacy-marketplace-migration'
 
-    A marketplace added from a checkout is recorded as a `directory` source in the user
-    settings and in Claude Code's own known-marketplaces registry. A published Git source
-    records a repository instead and yields nothing here.
+
+def marketplace_hold(host, reason, code=None):
+    message = (f'{host}: {reason}; manual migration required or host qualification needed. '
+               f'Marketplace/plugin modification steps held. See {MIGRATION_GUIDE}')
+    if code is not None:
+        raise subprocess.CalledProcessError(code, host, output=message)
+    raise OSError(message)
+
+
+def registry_json(path):
+    """Absent is fresh; unreadable or unknown registry data is not fresh."""
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        marketplace_hold('Claude', f'cannot read {path}: {exc}')
+    if not isinstance(data, dict):
+        marketplace_hold('Claude', f'unsupported registry object in {path}')
+    return data
+
+
+def owned_git(source):
+    return source in (SOURCE, f'https://github.com/{SOURCE}',
+                      f'https://github.com/{SOURCE}.git', f'git@github.com:{SOURCE}.git',
+                      f'ssh://git@github.com/{SOURCE}.git')
+
+
+def owned_directory(path, manifest, name):
+    """A local source must still identify the Kit marketplace and plugin."""
+    if not isinstance(path, str) or not Path(path).is_absolute():
+        return False
+    try:
+        data = json.loads((Path(path) / manifest).read_text(encoding='utf-8'))
+        return (isinstance(data, dict) and data.get('name') == name
+                and any(isinstance(p, dict) and p.get('name') == 'kit'
+                        for p in data.get('plugins', [])))
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def claude_registration(output):
+    """Inspect both names, settings scopes and installed IDs; never rewrite registries ourselves.
+
+    Reject conflicting records rather than guessing which source the host will use.
+    Installed project records outside this invocation's context are not update targets.
     """
-    for path, key in ((HOME / '.claude/settings.json', 'extraKnownMarketplaces'),
-                      (HOME / '.claude/plugins/known_marketplaces.json', '')):
-        try:
-            data = json.loads(path.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
+    config = Path(os.environ.get('CLAUDE_CONFIG_DIR') or HOME / '.claude')
+    sources, scopes, installed = [], [], []
+    cwd = Path.cwd().resolve()
+    contexts = [cwd]
+    if not (cwd / '.git').exists():
+        for parent in cwd.parents:
+            contexts.append(parent)
+            if (parent / '.git').exists():
+                break
+        else:
+            contexts = [cwd]
+    settings = [(config / 'settings.json', 'user')]
+    for parent in reversed(contexts):
+        settings.extend([(parent / '.claude/settings.json', 'project'),
+                         (parent / '.claude/settings.local.json', 'local')])
+    managed = (Path('/Library/Application Support/ClaudeCode/managed-settings.json')
+               if platform.system() == 'Darwin' else Path('/etc/claude-code/managed-settings.json'))
+    settings.append((managed, 'managed'))
+    for path, scope in settings:
+        data = registry_json(path)
+        entries = data.get('extraKnownMarketplaces', {})
+        enabled = data.get('enabledPlugins', {})
+        if not isinstance(entries, dict) or not isinstance(enabled, dict):
+            marketplace_hold('Claude', f'unsupported marketplace/plugin settings in {path}')
+        if LEGACY_CLAUDE_MARKETPLACE in entries or f'kit@{LEGACY_CLAUDE_MARKETPLACE}' in enabled:
+            marketplace_hold('Claude', 'legacy kit@autowork registration (including stale entries)')
+        if CLAUDE_MARKETPLACE in entries:
+            entry = entries[CLAUDE_MARKETPLACE]
+            sources.append(entry.get('source') if isinstance(entry, dict) else None)
+        if 'kit' in enabled:
+            marketplace_hold('Claude', f'unresolved installed Kit identity in {path}')
+        if f'kit@{CLAUDE_MARKETPLACE}' in enabled:
+            scopes.append(scope)
+    known = registry_json(config / 'plugins/known_marketplaces.json')
+    if LEGACY_CLAUDE_MARKETPLACE in known:
+        marketplace_hold('Claude', 'legacy autowork marketplace registration (including stale entries)')
+    if CLAUDE_MARKETPLACE in known:
+        entry = known[CLAUDE_MARKETPLACE]
+        sources.append(entry.get('source') if isinstance(entry, dict) else None)
+    # Use the documented installed-plugin interface, not a private registry schema.
+    rows = host_registry_json(['claude', 'plugin', 'list', '--json'], output)
+    if not isinstance(rows, list):
+        marketplace_hold('Claude', 'unsupported plugin list --json output')
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('id'), str):
+            marketplace_hold('Claude', 'unknown installed plugin identity')
+        identity = row['id']
+        if identity == f'kit@{LEGACY_CLAUDE_MARKETPLACE}':
+            marketplace_hold('Claude', 'legacy installed kit@autowork identity')
+        if identity == 'kit':
+            marketplace_hold('Claude', 'unresolved installed Kit identity')
+        if identity != f'kit@{CLAUDE_MARKETPLACE}':
             continue
-        entries = data.get(key, {}) if key else data
-        if not isinstance(entries, dict):
+        scope = row.get('scope')
+        if scope not in ('user', 'project', 'local', 'managed') or not isinstance(row.get('enabled'), bool):
+            marketplace_hold('Claude', 'unknown installed Kit scope or enabled state')
+        if scope in ('project', 'local'):
+            project = row.get('projectPath')
+            if not isinstance(project, str) or not Path(project).is_absolute():
+                marketplace_hold('Claude', 'missing installed Kit projectPath')
+            if Path(project).resolve() not in contexts:
+                continue
+        installed.append(scope)
+    if not sources and (scopes or installed):
+        marketplace_hold('Claude', 'installed Kit has no known marketplace source')
+    for source in sources:
+        if not isinstance(source, dict):
+            marketplace_hold('Claude', 'missing canonical marketplace source metadata')
+        kind = source.get('source')
+        owned = ((kind == 'github' and source.get('repo') == SOURCE)
+                 or (kind == 'git' and owned_git(source.get('url')))
+                 or (kind == 'directory' and owned_directory(source.get('path'),
+                     '.claude-plugin/marketplace.json', CLAUDE_MARKETPLACE)))
+        if not owned:
+            marketplace_hold('Claude', 'canonical marketplace has foreign, unknown or stale source')
+    if sources and any(source != sources[0] for source in sources[1:]):
+        marketplace_hold('Claude', 'conflicting canonical marketplace source records')
+    priority = {'managed': 0, 'user': 1, 'project': 2, 'local': 3}
+    scope = max(installed or scopes, key=priority.get, default='user')
+    if scope == 'managed' and not installed:
+        marketplace_hold('Claude', 'managed Kit declaration requires an administrator-installed plugin')
+    return bool(sources), scope, scope in installed
+
+
+def host_commands(commands, output):
+    for argv in commands:
+        if output.verbosity > 1:
+            output.line('  $ ' + shlex.join(argv), 'command')
+        code, text = run_command(argv, output, timeout=120)
+        if code:
+            raise subprocess.CalledProcessError(code, argv, output=text)
+
+
+def install_claude(output):
+    registered, scope, installed = claude_registration(output)
+    commands = []
+    if not registered:
+        commands.append(['claude', 'plugin', 'marketplace', 'add', SOURCE])
+    commands.append(['claude', 'plugin', 'marketplace', 'update', CLAUDE_MARKETPLACE])
+    command = ['claude', 'plugin', 'update' if installed else 'install',
+               f'{CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}']
+    if scope != 'user' or installed:
+        command += ['--scope', scope]
+    commands.append(command)
+    host_commands(commands, output)
+    return f'Kit marketplace qualified; source and {scope} scope preserved'
+
+
+def host_registry_json(argv, output):
+    """Actual-install-only probes: CLI initialization may write cache/auth state."""
+    host = argv[0].capitalize()
+    if output.verbosity > 1:
+        output.line('  $ ' + shlex.join(argv), 'command')
+    try:
+        done = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
+                              text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        marketplace_hold(host, f'required capability {shlex.join(argv)} failed: {exc}')
+    if done.returncode:
+        marketplace_hold(host, f'required capability {shlex.join(argv)} failed: '
+                         f'{failure_summary(done.stdout + done.stderr)} (exit {done.returncode})', done.returncode)
+    try:
+        return json.loads(done.stdout)
+    except ValueError:
+        marketplace_hold(host, f'{shlex.join(argv)} returned malformed JSON')
+
+
+def codex_list(argv, key, output):
+    data = host_registry_json(argv, output)
+    if not isinstance(data, dict) or not isinstance(data.get(key), list):
+        marketplace_hold('Codex', f'{shlex.join(argv)} returned unsupported {key} output')
+    return data
+
+
+def install_codex(output):
+    names = (LEGACY_CODEX_MARKETPLACE, CODEX_MARKETPLACE)
+    rows = codex_list(['codex', 'plugin', 'marketplace', 'list', '--json'],
+                     'marketplaces', output)['marketplaces']
+    registrations = {}
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('name'), str) or not row['name']:
+            marketplace_hold('Codex', 'unknown marketplace identity in list output')
+        name = row['name']
+        if name not in names:
             continue
-        source = (entries.get(CLAUDE_MARKETPLACE) or {}).get('source')
-        if isinstance(source, dict) and source.get('source') == 'directory':
-            yield Path(str(source.get('path') or ''))
-
-
-def missing_claude_marketplace():
-    """The folder a marketplace registration names when this host no longer has it.
-
-    Settings follow their owner between machines and outlive a renamed checkout, so a
-    registered folder is often gone. That path is not a source choice any more: it is a
-    stale registration that breaks `claude plugin marketplace update` with ENOENT, which
-    would stop the suite installing from the published source.
-    """
-    for folder in claude_marketplace_folders():
-        if not str(folder):
-            continue
-        try:
-            if not folder.is_dir():
-                return folder
-        except OSError:
-            return folder
-    return None
-
-
-def drop_stale_claude_marketplace():
-    """Re-register from the published source when the recorded folder is gone (see
-    missing_claude_marketplace); the component's own add step then adds that source."""
-    folder = missing_claude_marketplace()
-    if folder is None:
-        return ''
-    done = subprocess.run(['claude', 'plugin', 'marketplace', 'remove', CLAUDE_MARKETPLACE],
-                          stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
-    text = (done.stdout + done.stderr).strip()
-    if done.returncode and 'not found' not in text.lower() and 'no marketplace' not in text.lower():
-        raise OSError(f'claude plugin marketplace remove {CLAUDE_MARKETPLACE}: {failure_summary(text)}')
-    return f'dropped the stale registration: {folder} is gone'
-
-
-def claude_steps():
-    steps = []
-    if missing_claude_marketplace() is not None:
-        steps.append(Step('drop the marketplace registration whose folder is gone',
-                          run=drop_stale_claude_marketplace))
-    return steps + [
-        Step(f'claude plugin marketplace add {SOURCE}', ['claude', 'plugin', 'marketplace', 'add', SOURCE],
-             tolerate=(TOLERATE_CLAUDE_SOURCE, 'already added', 'already exists')),
-        Step(f'claude plugin marketplace update {CLAUDE_MARKETPLACE}',
-             ['claude', 'plugin', 'marketplace', 'update', CLAUDE_MARKETPLACE]),
-        Step('drop the cached plugin, keeping its data', run=drop_claude_plugin),
-        Step(f'claude plugin install {CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}',
-             ['claude', 'plugin', 'install', f'{CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}'])]
-
-
-def drop_claude_plugin():
-    """Claude Code caches a plugin by its version, which changes rarely: a reinstall of the same
-    version kept the old workflows (sessions lacked two skills a release had added). Uninstalling
-    first makes the install copy the current release; not being installed yet is fine."""
-    done = subprocess.run(['claude', 'plugin', 'uninstall', '--keep-data',
-                           f'{CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}'], stdin=subprocess.DEVNULL,
-                          capture_output=True, text=True, timeout=120)
-    return 'dropped the cached plugin' if done.returncode == 0 else 'no cached plugin to drop'
-
-
-def drop_codex_plugin():
-    """Codex caches a plugin by its version too (see drop_claude_plugin)."""
-    done = subprocess.run(['codex', 'plugin', 'remove',
-                           f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'], stdin=subprocess.DEVNULL,
-                          capture_output=True, text=True, timeout=120)
-    return 'dropped the cached plugin' if done.returncode == 0 else 'no cached plugin to drop'
+        if (name in registrations or not isinstance(row.get('root'), str)
+                or not row['root'] or not Path(row['root']).is_absolute()):
+            marketplace_hold('Codex', f'ambiguous or missing marketplace root for {name}')
+        registrations[name] = row
+    plugins = {}
+    for name in names:
+        data = codex_list(['codex', 'plugin', 'list', '--marketplace', name, '--json'],
+                          'installed', output)
+        if not isinstance(data.get('available'), list) or data['available']:
+            marketplace_hold('Codex', f'unsupported filtered plugin list for {name}')
+        plugins[name] = data['installed']
+        seen = set()
+        for plugin in data['installed']:
+            if (not isinstance(plugin, dict) or not isinstance(plugin.get('name'), str) or not plugin['name']
+                    or plugin.get('marketplaceName') != name
+                    or plugin.get('pluginId') != f"{plugin.get('name')}@{name}"
+                    or plugin.get('installed') is not True
+                    or not isinstance(plugin.get('enabled'), bool)):
+                marketplace_hold('Codex', f'unresolved installed identity in {name}')
+            if plugin['pluginId'] in seen:
+                marketplace_hold('Codex', f'ambiguous installed identity in {name}')
+            seen.add(plugin['pluginId'])
+            if plugin['name'] != CODEX_PLUGIN:
+                continue
+            registration = registrations.get(name)
+            if (not registration or not plugin.get('marketplaceSource')
+                    or plugin['marketplaceSource'] != registration.get('marketplaceSource')
+                    or not isinstance(plugin.get('source'), dict)
+                    or plugin['source'].get('source') != 'local'
+                    or plugin['source'].get('path') != registration['root']):
+                marketplace_hold('Codex', f'missing or mismatched installed Kit source in {name}')
+    if LEGACY_CODEX_MARKETPLACE in registrations or plugins[LEGACY_CODEX_MARKETPLACE]:
+        marketplace_hold('Codex', 'legacy autowork-marketplace effective registration or installed identity')
+    canonical = registrations.get(CODEX_MARKETPLACE)
+    kind = None
+    if canonical:
+        source = canonical.get('marketplaceSource')
+        if not isinstance(source, dict):
+            marketplace_hold('Codex', 'missing canonical marketplaceSource metadata')
+        kind = source.get('sourceType')
+        owned = ((kind == 'git' and owned_git(source.get('source')))
+                 or (kind == 'local' and source.get('source') == canonical['root']
+                     and owned_directory(source.get('source'), '.agents/plugins/marketplace.json',
+                                         CODEX_MARKETPLACE)))
+        if not owned:
+            marketplace_hold('Codex', 'canonical marketplace has foreign, unknown or stale source')
+    commands = []
+    if not canonical:
+        commands.append(['codex', 'plugin', 'marketplace', 'add', SOURCE, '--ref', 'main'])
+    if kind != 'local':
+        commands.append(['codex', 'plugin', 'marketplace', 'upgrade', CODEX_MARKETPLACE])
+    # An installed plugin's effective enablement/scope is not ours to rewrite.
+    if not any(p['name'] == CODEX_PLUGIN for p in plugins[CODEX_MARKETPLACE]):
+        commands.append(['codex', 'plugin', 'add', f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'])
+    host_commands(commands, output)
+    return 'Kit effective marketplace qualified; existing source/context preserved (not all persisted scopes)'
 
 
 def orbi_version(binary):
@@ -798,27 +962,19 @@ def items(hermes_args, output=None, mode='install'):
              steps=[Step(f'install {BIN}/tx and completions', run=install_tx)]),
         hermes_item(hermes_args),
         Item('claude', 'Claude Code plugin and full suite + bundled Ponytail', needs='claude',
-             # Claude Code refuses `marketplace add` when the owner's settings list that
-             # marketplace from another source, such as this repository's checkout. That
-             # source is the owner's choice: install from it, and never rewrite it here.
-             # A recorded folder that is gone is not a choice, and claude_steps drops it
-             # first so the published source installs on a host that never had it.
-             # The update step below proves the configured marketplace is usable.
-             steps=claude_steps()),
+             steps=[Step('registry/migration status: NOT_CHECKED until actual install; validate both names, '
+                         'installed IDs via claude plugin list --json, source and scope; then claude plugin marketplace add '
+                         f'{SOURCE} only if fresh; claude plugin marketplace update {CLAUDE_MARKETPLACE}; '
+                         f'claude plugin install {CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE} or scoped plugin update',
+                         run=lambda: install_claude(output or Output()))]),
         Item('codex', 'Codex plugin and full suite + bundled Ponytail', needs='codex',
-             # The registration carries the source URL, so a renamed repository is a
-             # different source for the same marketplace id. Drop it before adding.
-             steps=[Step(f'codex plugin marketplace remove {CODEX_MARKETPLACE}',
-                         ['codex', 'plugin', 'marketplace', 'remove', CODEX_MARKETPLACE],
-                         tolerate=('not found', 'no marketplace', 'not registered',
-                                   'is not configured or installed')),
-                    Step(f'codex plugin marketplace add {SOURCE} --ref main',
-                         ['codex', 'plugin', 'marketplace', 'add', SOURCE, '--ref', 'main']),
-                    Step(f'codex plugin marketplace upgrade {CODEX_MARKETPLACE}',
-                         ['codex', 'plugin', 'marketplace', 'upgrade', CODEX_MARKETPLACE]),
-                    Step('drop the cached plugin', run=drop_codex_plugin),
-                    Step(f'codex plugin add {CODEX_PLUGIN}@{CODEX_MARKETPLACE}',
-                         ['codex', 'plugin', 'add', f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'])]),
+             steps=[Step('registry/migration status: NOT_CHECKED until actual install; validate '
+                         'codex plugin marketplace list --json and codex plugin list --marketplace NAME --json '
+                         'for both names (CLI initialization may write cache/auth state); then '
+                         f'codex plugin marketplace add {SOURCE} --ref main only if fresh; '
+                         f'codex plugin marketplace upgrade {CODEX_MARKETPLACE} for Git; '
+                         f'codex plugin add {CODEX_PLUGIN}@{CODEX_MARKETPLACE} only if not installed',
+                         run=lambda: install_codex(output or Output()))]),
         orbi_item(output),
     ]
 
@@ -988,9 +1144,14 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
                     detail.append('ok')
                     break
                 except (OSError, subprocess.SubprocessError) as exc:
-                    outcome, exit_code = 'failed', 1
-                    detail.append(str(exc))
-                    output.line(f'  FAILED: {exc}', 'failed')
+                    outcome = 'failed'
+                    exit_code = exc.returncode if isinstance(exc, subprocess.CalledProcessError) else 1
+                    cause = (failure_summary(exc.output) if isinstance(exc, subprocess.CalledProcessError)
+                             and exc.output else str(exc))
+                    if isinstance(exc, subprocess.CalledProcessError):
+                        cause += f' (exit {exit_code})'
+                    detail.append(cause)
+                    output.line(f'  FAILED: {cause}', 'failed')
                     break
             if outcome == 'failed':
                 break  # skip this component's dependent steps, not independent items
