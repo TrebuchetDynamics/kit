@@ -140,8 +140,11 @@ See [linked profiles](installation.md#linked-profiles-and-pinned-clones).
 ### The bundle broke after moving or deleting its checkout
 
 Source installs link each profile to the checkout. Restore it at the same path,
-or delete the now-dangling `plugins/autowork` link in each profile and rerun
-setup from the new location (setup and update refuse a dangling link); see [update or remove](onboarding.md#update-or-remove).
+or preserve and reconcile the exact dangling plugin slot reported by the diagnostic
+(`plugins/kit` for fresh installs, or a retained `plugins/autowork` slot). Remove
+only that verified dangling link before rerunning setup from the new location;
+setup and update refuse dangling links and duplicate registrations. See
+[update or remove](onboarding.md#update-or-remove).
 
 ## Workflows
 
