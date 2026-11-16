@@ -12,14 +12,15 @@ class WorkflowCommands(unittest.TestCase):
     skill = fixture.PluginTests.skill
 
     def test_new_names_route_to_existing_skills_and_preserve_arguments(self):
-        for name in ('plan-with-me', 'plan-for-me', 'docs-sync', 'autoresearch'):
+        for name in ('plan-with-me', 'plan-for-me', 'docs-sync', 'update-kit', 'autoresearch'):
             self.skill(name)
         self.plugin.register(self.ctx)
         self.session.update(HERMES_SESSION_PLATFORM='telegram', HERMES_SESSION_CHAT_ID='fixture')
         for command, skill in (
                 ('plan_with_me', 'plan-with-me'),
                 ('docs_sync', 'docs-sync'),
-                ('plan_for_me', 'plan-for-me')):
+                ('plan_for_me', 'plan-for-me'),
+                ('update_kit', 'update-kit')):
             for spelling in (command, command.replace('_', '-')):
                 with self.subTest(spelling=spelling):
                     self.assertIn(spelling, self.ctx.commands)
@@ -66,6 +67,28 @@ class WorkflowCommands(unittest.TestCase):
         self.assertEqual(arguments, raw)
         self.assertNotIn('checkout', injected)
         self.assertNotIn('../shared/RESEARCH-PLAN.md', prompt)
+
+    def test_update_kit_aliases_preserve_existing_owners(self):
+        self.skill('update-kit')
+        self.existing['update_kit'] = {'plugin': 'other'}
+        self.plugin.register(self.ctx)
+        self.assertNotIn('update-kit', self.ctx.commands)
+        self.assertNotIn('update_kit', self.ctx.commands)
+
+    def test_update_kit_provisions_complete_helper_and_shared_resources(self):
+        self.plugin.SKILLS_DIR = fixture.ROOT / 'skills'
+        self.plugin.register(self.ctx)
+        installed = self.root.parent / 'home/skills'
+        source = fixture.ROOT / 'skills/update-kit'
+        self.assertEqual((installed / 'update-kit/SKILL.md').read_bytes(), (source / 'SKILL.md').read_bytes())
+        self.assertEqual((installed / 'update-kit/scripts/update_kit.py').read_bytes(),
+                         (source / 'scripts/update_kit.py').read_bytes())
+        self.assertTrue((installed / 'shared/DEFINITION-OF-DONE.md').is_file())
+        raw = '--only pi --hermes-home "space $(literal); home"'
+        with patch('subprocess.run') as run:
+            self.ctx.commands['update_kit'](raw)
+            run.assert_not_called()
+        self.assertTrue(self.ctx.messages[-1][0].endswith('User arguments:\n' + raw))
 
     def test_orbi_route_preserves_an_existing_command_owner(self):
         self.skill('orbi')

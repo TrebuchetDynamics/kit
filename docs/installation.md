@@ -17,6 +17,57 @@ payload together; a single copied
 installer is not standalone. Preflight rejects missing declared source payloads
 before installation stages. This layout does not change setup targets or policy.
 
+## Update Kit
+
+Explicit `/update-kit` loads [one canonical workflow](../skills/update-kit/SKILL.md)
+on every packaged host. Its [standard-library helper](../skills/update-kit/scripts/update_kit.py)
+requires Python 3.11+, Git, bash and lsof on Linux/macOS. It downloads the complete
+`https://github.com/TrebuchetDynamics/kit.git`, branch `main`, into the persistent
+`${XDG_DATA_HOME:-$HOME/.local/share}/kit/source`. `XDG_DATA_HOME` must be absolute;
+correct it or unset it on an error. Keep it on persistent storage, not `/tmp` or a
+host package/plugin cache. No project/developer checkout is discovered or adopted.
+Keep source after installation because native installs can link to it.
+
+Before execution, the workflow explains the [full-suite effects](#full-suite-from-a-checkout):
+all available components by default, possible Pi/Pi-Bolt bootstrap and active supported
+integration restarts. It delegates native prompts, availability/skips, verbose output
+and nonzero partial-failure behavior rather than implementing host update logic.
+For example, `/update-kit --only pi,tx` narrows outer components. A restriction that
+still selects Hermes while excluding another component is refused before mutation:
+Hermes can run a nested **broader full-suite** refresh. Exclude Hermes (for example
+`--only pi,tx` or `--skip hermes`) or separately authorize unrestricted full-suite
+behavior. Outer flags do not constrain nested updates. Menu selection is not supported
+by the updater; use explicit flags. No-restarts requests are refused before mutation;
+`--no-reload` does not suppress the final restart phase.
+
+Read-only/questions-only/`--dry-run` (also `--list`) shows intended source path/argv
+with unavailable facts `NOT_CHECKED`. It does not clone, fetch, create directories
+or locks, probe hosts or write caches. Resolve the helper from the loaded skill,
+not cwd; direct invocation is `python3 -B <loaded-skill>/scripts/update_kit.py --dry-run`.
+
+The helper serializes update-kit invocations through installation. This is **not**
+a global/native Hermes lock: preexisting live/unknown consumers and concurrent
+native ownership hold. Resolve native ownership receipts and wait for idle owners
+before retrying. It conservatively checks source open files/processes, linked Hermes
+gateway receipts and native updater locks; scan uncertainty also holds. A fresh
+clone is staged in a unique sibling; failures retain that directory for diagnosis.
+Existing source requires updater provenance, same-user ownership, non-symlink safe
+paths, fixed origin, clean attached `main`, no extra worktrees and no local-ahead or
+diverged history. Repair holds manually while preserving source, edits, history and
+evidence; the helper never resets, stashes, cleans, forces, repins or deletes it.
+
+It fetches only fixed upstream and fast-forwards `main`, then invokes that fetched
+checkout's `bash install.sh update --no-pull` once, including equal-SHA reinstalls.
+`--no-pull` suppresses only the outer installer pull; unrestricted Hermes native
+updates may fetch source and launch another full-suite refresh. The receipt reports
+old, helper-selected and final SHA, explicitly noting secondary changes. It does
+not promise a single immutable revision across nested updates. Installer output
+owns component outcomes; nonzero/partial failure propagates and successful host
+items remain installed, not rolled back. Repair the reported cause and retry only
+compatible selected failures. Reload/reopen the current agent session for discovery;
+package refresh does not reload a running agent. Installation, activation and live
+qualification remain separate, and Orbi stays paused.
+
 ## Full suite from a checkout
 
 `./install.sh` installs the full suite for every available host with verbose output.
@@ -258,6 +309,24 @@ refresh. No manual symlinks or per-profile enable commands are needed. Use
 skills, or `--no-reload` to explicitly defer gateway wiring. Dependency consent
 and native security scans still apply; a blocked dependency or failed readiness
 check returns nonzero and reports setup as incomplete.
+
+Fresh native/source installs and isolated registration probes use `plugins/kit`
+and enable `kit`; setup finalizes through `hermes -p PROFILE kit finalize`.
+Setup reuses a canonical link or a verified `plugins/autowork` link to the selected
+checkout **when its manifest already declares Kit**. Source setup requires the
+`timeout` executable and bounds each Kit enablement to 120 seconds; a timeout
+reports incomplete setup, not successful activation. A supported old Autowork
+manifest is migration input for an authorized normal update, not a plugin that
+fresh setup enables. Managed clones under either physical name route to the updater,
+not a second linked installation.
+
+Both slots are checked before setup mutates components. Two registrations refuse,
+even if they resolve to the same source; missing/malformed manifests and foreign
+sources also hold with path/source diagnostics. Preserve both paths and private
+state, reconcile the reported registration/ownership with its owner, then repeat
+the preview. No runtime directory move or purge is needed. Expected source-install
+symlinks remain supported; other existing safety checks still apply. `--dry-run`
+performs no installation, enablement or reload.
 
 Plugins are enabled per profile. For a named profile, use that profile's home for
 the link and `hermes -p PROFILE plugins enable kit` to enable it.
@@ -620,7 +689,8 @@ checkouts. A shallow checkout gets one trusted fetch with at most 1,000 addition
 history levels; if negative ancestry remains shallow, recovery defers rather than
 assuming a rewrite. Equal/fast-forward updates retain their normal path.
 
-Automatic recovery requires a same-user standalone `plugins/autowork` checkout,
+Automatic recovery requires a same-user standalone `plugins/kit` checkout (or a
+verified retained `plugins/autowork` physical slot),
 the expected plugin identity, a native `plugins/.install-metadata.json` record
 bound to the trusted upstream, and HEAD matching its saved installed revision or
 a trusted tracking tip captured **before fetch**. A clean tree or matching URL
@@ -633,8 +703,10 @@ The updater stages the exact trusted fetched main commit and reuses the scoped
 native transaction below: all selected consumers are preflighted and scanned,
 worker-handoff locks are held, the complete original checkout (including `.git`)
 is moved into an owned backup, and native installation publishes the staged local
-URI without force or enablement. Selected links to that canonical checkout remain
-links; their source is recovered once. Additional native metadata fields and other
+URI without force or enablement. When native admission uses the manifest-named Kit
+slot, the verified candidate returns to the journaled physical slot before readiness;
+interrupted publication retains its original backup and resumable evidence. Selected
+links to that canonical checkout remain links; their source is recovered once. Additional native metadata fields and other
 plugins' records are retained, and the bundle record keeps its trusted source
 binding. New unselected consumers or foreign source/profile edits on retry defer
 instead of becoming a new baseline.
@@ -670,8 +742,9 @@ native scanner acceptance, a live profile reinstall or Telegram delivery.
 
 ### Linked profiles and pinned clones
 
-A source install links each profile's `plugins/autowork` to the checkout, so
-the profile loads whatever that checkout holds at the next gateway restart,
+A fresh source install links each profile's `plugins/kit` to the checkout; verified
+legacy physical slots remain in place. Both names participate in shared-consumer
+and live-use protections. The profile loads whatever that checkout holds at the next gateway restart,
 including commits that were never released. A profile whose plugin is its own clone
 changes only when an update advances it.
 `hermes kit doctor --json` lists the linked profiles; nothing converts them

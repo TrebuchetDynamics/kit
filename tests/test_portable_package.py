@@ -126,7 +126,13 @@ class PortablePackageTests(unittest.TestCase):
                 cwd=foreign, capture_output=True, text=True, timeout=60, env=sandbox)
             self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
             report = json.loads(status.stdout)
-            self.assertEqual(report['deployment'], {'state': 'absent'})
+            self.assertEqual(report['deployment'], {
+                'state': 'absent',
+                'harness': {'management': 'legacy', 'requested_kind': None,
+                            'selection_source': 'legacy', 'launcher': None,
+                            'executable': None, 'state': 'unknown',
+                            'reason': 'unconfigured; new setup defaults to pi-bolt'},
+            })
             self.assertEqual(report['scheduler']['state'], 'unavailable')
             self.assertEqual(report['queue']['state'], 'unavailable')
             self.assertEqual(sorted(path.relative_to(checkout) for path in checkout.rglob('*')),
@@ -134,10 +140,26 @@ class PortablePackageTests(unittest.TestCase):
             self.assertEqual(list(home.rglob('.orbi*')), [], 'status staged a deployment')
             self.assertEqual(list(state.rglob('*')), [], 'status installed a deployment')
 
+            # Update preview from the shipped archive: no git/bash/lsof/host probes,
+            # no checkout, locks, cache or destination directory creation.
+            update = installed / 'skills/update-kit/scripts/update_kit.py'
+            self.assertTrue(update.is_file())
+            self.assertIn('<this-skill>/scripts/update_kit.py',
+                          (installed / 'skills/update-kit/SKILL.md').read_text())
+            sandbox['PATH'] = str(foreign / 'no-tools')
+            before = sorted(path.relative_to(foreign) for path in foreign.rglob('*'))
+            result = subprocess.run([sys.executable, '-B', str(update), '--dry-run', '--only', 'pi'],
+                                    cwd=foreign, env=sandbox, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(str(state / 'kit/source'), result.stdout)
+            self.assertIn('NOT_CHECKED', result.stdout)
+            self.assertIn('update --no-pull --only pi', result.stdout)
+            self.assertEqual(sorted(path.relative_to(foreign) for path in foreign.rglob('*')), before)
+
     def test_portable_skills_and_references_are_self_contained(self):
         folder = ROOT / 'adapters/skills'
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}
-        self.assertEqual(names, {'plan-with-me', 'unblock', 'plan-for-me', 'docs-sync', 'orbi',
+        self.assertEqual(names, {'plan-with-me', 'unblock', 'plan-for-me', 'docs-sync', 'orbi', 'update-kit',
             'autoresearch', 'impeccable', 'lgtm', 'goal',
             'git-commit-push', 'push', 'ui-taste', 'beautify-github-readme',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
