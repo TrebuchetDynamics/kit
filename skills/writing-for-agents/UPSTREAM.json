@@ -18,7 +18,7 @@
   },
   "adaptations": [
     "Upstream bytes unchanged; SKILL.md relocated to upstream/PROTOCOL.md to prevent duplicate discovery.",
-    "Local SKILL.md owns Autowork scope, host translation, task state and delivery limits; the pinned reference owns writing technique.",
+    "Local SKILL.md owns Kit scope, host translation, task state and delivery limits; the pinned reference owns writing technique.",
     "Upstream was renamed from writing-great-skills to writing-for-agents with no alias; this copy uses the current upstream name.",
     "No upstream installer, router skill, hooks or global skill activation is imported."
   ]

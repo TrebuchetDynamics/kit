@@ -13,7 +13,7 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
 
 The pinned [upstream entry](upstream/PROTOCOL.md) is a router: it asks a host to call
-a `grilling` skill and a `domain-modeling` skill. Autowork hosts have no such skill
+a `grilling` skill and a `domain-modeling` skill. Kit hosts have no such skill
 call, so this adapter states the composition directly. Run the interview with
 [Grilling](../grilling/SKILL.md), then record what it settles with the repository's
 own documentation owners.

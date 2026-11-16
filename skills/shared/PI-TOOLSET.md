@@ -1,4 +1,4 @@
-# pi-toolset specialists inside Autowork
+# pi-toolset specialists inside Kit
 
 Read the [common contract](COMMON-CONTRACT.md) and apply the
 [shared Ponytail method](PONYTAIL.md). The selected specialist and this adapter
@@ -72,4 +72,4 @@ broad upgrades, production access, paid services or global configuration changes
 
 The upstream evaluation receipt describes upstream observations only. Offline
 packaging tests and read-only decision probes do not establish live campaign
-reliability, model adherence or improvement over existing Autowork workflows.
+reliability, model adherence or improvement over existing Kit workflows.

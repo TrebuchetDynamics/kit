@@ -47,7 +47,7 @@ See [paused GitHub/Orbi cutover](github-native.md).
 | Component | Source / contract | Responsibility |
 | --- | --- | --- |
 | Hermes registration | [entry point](../__init__.py), [workflow aliases](../scripts/workflow_commands.py), [research aliases](../scripts/autoresearch_commands.py) | Provision bundled skills/shared resources, defaults and cron scripts; register commands and literal arguments |
-| Hermes diagnostics | [bundle](../scripts/bundle.py), [menu policy](../scripts/telegram_menu_policy.py) | Separate core registration from integration readiness and prioritize public commands |
+| Hermes maintenance | [bundle](../scripts/bundle.py), [menu policy](../scripts/telegram_menu_policy.py) | Own `hermes kit` maintenance registration; separate core registration from integration readiness and prioritize public commands |
 | Fleet installation | [orchestrator](../scripts/setup_bundle.py), [preflight](../scripts/setup_preflight.py), [finalization](../scripts/setup_runtime.py) | Validate prerequisites, install resources/configuration, inspect profiles and refresh supported gateways |
 | Portable packages | [Claude marketplace](../.claude-plugin/marketplace.json), [Codex manifest](../.codex-plugin/plugin.json), [marketplace](../.agents/plugins/marketplace.json), [Pi manifest](../package.json), [Pi extension](../adapters/pi.mjs) | Discover explicit portable workflows without Hermes configuration dependencies |
 | Portable behavior | [host contract](../adapters/skills/COMMON.md) | Use the current host's tools and preserve its permissions, memory and credentials |
@@ -505,15 +505,21 @@ replacement host/profile does not satisfy a missing original delivery target.
 
 ## Rename to Autowork (2026-10-16)
 
-The current product is Kit; `autowork` survives in Hermes terminal maintenance commands and existing state/package identifiers. pi-autowork
-is retired and unsupported, not an execution namespace or development target.
+The current product is Kit. Hermes terminal maintenance uses `hermes kit`;
+`hermes autowork` is unavailable, with no functional alias, redirect or replacement
+chat skill. Existing internal state/package identifiers remain compatibility
+contracts, not an executable Autowork interface. pi-autowork is retired and
+unsupported, not an execution namespace or development target.
 Use current manifests and [installation](installation.md) for package names and
 supported transitional settings. The retired `hermes-toolset` namespace has no
 compatibility executor or automatic settings/cron migration.
 
-Terminal maintenance uses `hermes autowork doctor --json` for inventory and
-`hermes autowork update [--check]` for synchronous maintenance with a printed receipt.
-No chat-maintenance replacement is registered. Keep `AUTOWORK_EXECUTION_COMMON`, `# autowork:` cron markers,
+Terminal maintenance uses `hermes kit doctor --json` for inventory and
+`hermes kit update [--check]` for synchronous maintenance with a printed receipt.
+The existing setup/update/pin/doctor/finalize actions, options, scopes, exit codes
+and profile selection are unchanged. Hermes owns foreign-command collision rules;
+Kit does not overwrite another owner or patch Hermes. No chat-maintenance
+replacement is registered. Keep `AUTOWORK_EXECUTION_COMMON`, `# autowork:` cron markers,
 and existing private `maintenance/toolset-update/` / `.toolset-imports.json` state
 identities. A source rename does not reinstall profiles, reset private state or
 restart hosts; live adoption remains a separately authorized operation.

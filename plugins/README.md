@@ -9,7 +9,7 @@ From the repository root:
 
 The public command performs full setup by default: bundled skills, plugin
 installation and enablement, profile configuration, verification,
-and live gateway command refresh. `install-plugins.sh` and `hermes autowork setup` use the
+and live gateway command refresh. `install-plugins.sh` and `hermes kit setup` use the
 same orchestrator. `--bundle-only` limits setup to this bundle; `--no-reload`
 explicitly defers live command wiring. No separate per-profile wiring is needed.
 
@@ -78,5 +78,5 @@ Addy engineering protocols are pinned under `skills/engineering/` and distribute
 with the bundle; they no longer require an external skill-source entry. That pack is
 a reference, not a command or registered skill on any host.
 Ponytail is likewise pinned and bundled on all four hosts. Its six skills and optional
-read-only map script use Autowork's existing installer; no external Ponytail plugin,
+read-only map script use Kit's existing installer; no external Ponytail plugin,
 mode hooks, band UI or telemetry is installed. Existing external installs are preserved.

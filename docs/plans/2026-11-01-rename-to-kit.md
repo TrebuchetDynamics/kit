@@ -3,8 +3,8 @@
 ## Decision
 
 Kit is the toolset; GitHub Issues own executable plans and Orbi owns delivery.
-pi-autowork is retired and unsupported. Current identity is distinct from retained terminal maintenance
-names and compatibility with existing installed profiles. This document keeps that
+pi-autowork is retired and unsupported. Terminal maintenance uses `hermes kit`, with no `hermes autowork` alias or redirect.
+Existing installed-profile settings and internal state retain their compatibility contracts. This document keeps that
 contract and outstanding live proof, not completed rename-stage reports.
 
 ## Target identity
@@ -13,6 +13,7 @@ contract and outstanding live proof, not completed rename-stage reports.
 | --- | --- |
 | Repository | `TrebuchetDynamics/kit` |
 | Hermes plugin | `kit` |
+| Hermes maintenance | `hermes [-p PROFILE] kit <action/options>` |
 | Namespaced skills | `kit:<skill>`; Claude `/kit:<skill>` and Codex `$kit:<skill>` |
 | Pi commands | Unprefixed |
 | Local package metadata | `@trebuchet/kit` |
