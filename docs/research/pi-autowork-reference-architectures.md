@@ -218,7 +218,7 @@ These findings refine the existing adapter boundary; none justifies replacing ou
 ## Fixture coverage (TOOLSET-116-c1)
 
 The stale-result and cancellation scenarios above are now offline fixtures in
-`skills/autowork/scripts/test_parallel_adversarial.py`, with controlled subprocess
+the retired executor's adversarial checks (preserved in Git history), with controlled subprocess
 workers (`fixtures/fake_worker.py`). Only scenarios were ported; no upstream code.
 
 | Scenario | Mirrors | Before | Now |

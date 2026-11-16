@@ -15,7 +15,8 @@ upstream) and then run the pulled installer; a checkout with local changes, no u
 or a detached HEAD is installed as it is, and says so.
 
 Each host item runs its own supported install command; a host whose CLI is not
-installed is skipped and says so, and fails when named with --only. Orbi installs
+installed is skipped and says so, and fails when named with --only, except Pi,
+which bootstraps its missing harness through pi.dev. Orbi installs
 the CLI only via uv; existing CLIs and deployments are kept. Pi-Bolt bootstraps the
 upstream native Pi build, keeps an existing one on install, and never installs its
 optional extensions. Hermes options
@@ -30,6 +31,8 @@ import os
 from pathlib import Path
 import platform
 import re
+import selectors
+import signal
 import shutil
 import shlex
 import stat
@@ -41,6 +44,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = 'TrebuchetDynamics/kit'
 PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
+PI_INSTALLER = 'https://pi.dev/install.sh'
 ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
                '1a8b2f9603f6258cb105293f238a8d3f775f3393')
 HOME = Path(os.environ.get('HOME', str(Path.home())))
@@ -83,7 +87,7 @@ class Output:
         print(message, end='', flush=True)
 
 
-def run_command(argv, output, extra_env=None):
+def run_command(argv, output, extra_env=None, timeout=None):
     """Stream both child channels, including prompts without a trailing newline.
 
     Keep a bounded diagnostic tail for quiet failures; stdin remains inherited.
@@ -95,26 +99,80 @@ def run_command(argv, output, extra_env=None):
     stream = output.verbosity > 0 or sys.stdin.isatty()
     decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
     tail = ''
-    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env) as child:
+    terminal = None
+    previous_ttou = None
+    if timeout is not None:
         try:
-            while chunk := child.stdout.read1(4096):
-                text = decoder.decode(chunk)
+            terminal = os.open('/dev/tty', os.O_RDWR)
+            if os.tcgetpgrp(terminal) != os.getpgrp():
+                os.close(terminal)
+                terminal = None
+        except OSError:
+            if terminal is not None:
+                os.close(terminal)
+            terminal = None
+        if terminal is not None:
+            previous_ttou = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+
+    def prepare_child():
+        os.setpgrp()
+        if terminal is not None:
+            # Keep native /dev/tty reads in the foreground, not SIGTTIN-stopped.
+            os.tcsetpgrp(terminal, os.getpgrp())
+
+    try:
+        deadline = time.monotonic() + timeout if timeout is not None else None
+        # A process group bounds descendants too, without detaching /dev/tty prompts.
+        with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+                              preexec_fn=prepare_child if timeout is not None else None,
+                              pass_fds=(terminal,) if terminal is not None else ()) as child:
+            try:
+                with selectors.DefaultSelector() as selector:
+                    selector.register(child.stdout, selectors.EVENT_READ)
+                    while True:
+                        remaining = None if deadline is None else max(0, deadline - time.monotonic())
+                        if remaining == 0 or not selector.select(remaining):
+                            raise subprocess.TimeoutExpired(argv, timeout)
+                        chunk = child.stdout.read1(4096)
+                        if not chunk:
+                            break
+                        text = decoder.decode(chunk)
+                        tail = (tail + text)[-16384:]
+                        if stream:
+                            output.raw(text)
+                text = decoder.decode(b'', final=True)
                 tail = (tail + text)[-16384:]
                 if stream:
                     output.raw(text)
-            text = decoder.decode(b'', final=True)
-            tail = (tail + text)[-16384:]
-            if stream:
-                output.raw(text)
-            code = child.wait()
-        except BaseException:
-            child.terminate()
-            try:
-                child.wait(timeout=5)
+                code = child.wait(timeout=None if deadline is None else max(0, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
-                child.kill()
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 child.wait()
-            raise
+                code = 124
+                tail += f'\ncommand timed out after {timeout} seconds; stopped Pi command and descendants'
+            except BaseException:
+                if timeout is not None:
+                    try:
+                        os.killpg(child.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                child.terminate()
+                try:
+                    child.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait()
+                raise
+    finally:
+        if terminal is not None:
+            try:
+                os.tcsetpgrp(terminal, os.getpgrp())
+            finally:
+                os.close(terminal)
+                signal.signal(signal.SIGTTOU, previous_ttou)
     if stream and tail and not tail.endswith('\n'):
         output.line()
     if code and not stream and tail:
@@ -265,12 +323,14 @@ def enable_pi_package(source=PI_SOURCE, settings=None):
     return f'enabled {source} package resources in {path}'
 
 
-def pi_package(source=PI_SOURCE):
+def pi_package(source=PI_SOURCE, binary=None):
     """The directory Pi installed this package source in, or None."""
-    if not shutil.which('pi'):
+    binary = binary or pi_executable()
+    if not binary:
         return None
     try:
-        lines = subprocess.run(['pi', 'list'], capture_output=True, text=True, timeout=60).stdout.splitlines()
+        lines = subprocess.run([str(binary), 'list'], stdin=subprocess.DEVNULL,
+                               capture_output=True, text=True, timeout=60).stdout.splitlines()
     except (OSError, subprocess.SubprocessError):
         return None
     for i, line in enumerate(lines):
@@ -619,27 +679,124 @@ def missing_package_skills(package):
     return sorted(shipped - present)
 
 
+def pi_executable():
+    """Locate without executing: PATH wins, then official managed/user-local paths.
+
+    Keep a broken known installation visible so bootstrap cannot replace it.
+    Do not resolve symlinks: the managed launcher owns its release/Node selection.
+    """
+    agent = pi_settings_path().parent
+    managed = os.environ.get('PI_MANAGED_INSTALL_ROOT')
+    candidates = [shutil.which('pi')]
+    if managed:
+        candidates.append(Path(managed).parent / 'bin/pi')
+    candidates += [agent / 'bin/pi', HOME / '.local/bin/pi', HOME / 'bin/pi',
+                   HOME / '.bin/pi', HOME / 'local/bin/pi']
+    for candidate in candidates:
+        if candidate and os.path.lexists(candidate):
+            return Path(candidate).absolute()
+    return None
+
+
+def pi_version(binary):
+    """Bounded non-agent probe of the exact executable we will reuse."""
+    try:
+        result = subprocess.run([str(binary), '--version'], stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, errors='replace', timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise OSError(f'{binary}: Pi executable probe failed: {exc}; repair this installation '
+                      'and retry ./install.sh --only pi') from exc
+    text = (result.stdout + result.stderr).strip()
+    if result.returncode or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+[^\n]*', result.stdout.strip()):
+        raise OSError(f'{binary}: Pi executable probe failed (exit {result.returncode}): '
+                      f'{failure_summary(text)}; repair Pi/Node/npm and retry ./install.sh --only pi')
+    return result.stdout.strip()
+
+
+def install_pi_harness(output):
+    """Bootstrap only an absent Pi. Upstream owns prerequisite prompts and placement."""
+    binary = pi_executable()
+    if binary:
+        version = pi_version(binary)
+        if output.verbosity:
+            output.line(f'  {binary}: {version} (existing Pi kept)')
+        return binary
+    for command in ('curl', 'sh'):
+        if not shutil.which(command):
+            raise OSError(f'Pi bootstrap requires {command}; install it and retry ./install.sh --only pi')
+    with tempfile.TemporaryDirectory(prefix='kit-pi-') as directory:
+        installer = Path(directory) / 'install.sh'
+        installer.touch(mode=0o600)
+        commands = [
+            ('Pi installer download failed',
+             ['curl', '--disable', '--proto', '=https', '--proto-redir', '=https',
+              '--tlsv1.2', '--location', '--max-redirs', '5', '--connect-timeout', '15',
+              '--max-time', '300', '--max-filesize', '1048576', '--fail', '--silent',
+              '--show-error', '--output', str(installer), PI_INSTALLER]),
+            ('Pi upstream bootstrap failed', ['sh', str(installer)]),
+        ]
+        for stage, argv in commands:
+            if output.verbosity > 1:
+                output.line('  $ ' + shlex.join(argv), 'command')
+            # Captured stdout makes upstream's [ -t 1 ] startup guard false.
+            # Inherit stdin and /dev/tty prompts; never supply prerequisite consent.
+            code, text = run_command(argv, output, extra_env={'PI_LEGACY_INSTALL': '0'}, timeout=600)
+            if code:
+                raise OSError(f'{stage} (exit {code}): {failure_summary(text)}; '
+                              'resolve the reported cause (Node >=22.19.0/npm if requested), '
+                              'then retry ./install.sh --only pi; completed upstream changes remain')
+            if not 0 < installer.stat().st_size <= 1048576:
+                raise OSError('Pi installer download is empty or exceeds its size limit; '
+                              'check https://pi.dev and retry ./install.sh --only pi')
+    binary = pi_executable()
+    if not binary:
+        raise OSError('Pi bootstrap completed without a discoverable executable; inspect upstream output '
+                      'and the Pi agent bin directory, repair the installation or PATH, '
+                      'then retry ./install.sh --only pi')
+    version = pi_version(binary)
+    if output.verbosity:
+        output.line(f'  {binary}: {version}')
+    return binary
+
+
+def install_pi_package(output=None, mode='install'):
+    """Use one verified absolute Pi for the existing package freshness contract."""
+    output = output or Output()
+    binary = install_pi_harness(output)
+    package = pi_package(binary=binary)
+    stale = missing_package_skills(package) if package else []
+    if package and mode != 'update' and not stale:
+        return f'{PI_SOURCE} already installed at {package}; kept'
+    action = 'update' if package else 'install'
+    reason = ('update requested' if mode == 'update' else f'skills missing: {", ".join(stale)}') if package else ''
+    if reason and output.verbosity:
+        output.line(f'  refreshing {package} ({reason})')
+    argv = [str(binary), action, PI_SOURCE]
+    if output.verbosity > 1:
+        output.line('  $ ' + shlex.join(argv), 'command')
+    code, text = run_command(argv, output, timeout=600)
+    if code:
+        raise OSError(f'Pi package {action} failed (exit {code}): {failure_summary(text)}; '
+                      'repair the reported cause and retry ./install.sh --only pi')
+    package = pi_package(binary=binary)
+    missing = missing_package_skills(package) if package else []
+    if not package or missing:
+        detail = f'skills still missing: {", ".join(missing)}' if package else 'package is not registered at an existing directory'
+        raise OSError(f'Pi package {action} did not complete: {detail}; '
+                      'check Pi output and PI_OFFLINE (offline mode skips package updates), '
+                      'then retry ./install.sh --only pi')
+    return f'{binary}: {action} {PI_SOURCE}'
+
+
 def items(hermes_args, output=None, mode='install'):
-    package = pi_package()
-    pi = Item('pi', 'Pi package + bundled Ponytail', needs='pi', note='needs Node 22+')
-    if package:
-        stale = missing_package_skills(package)
-        if mode == 'update' or stale:
-            reason = 'update requested' if mode == 'update' else f'skills missing: {", ".join(stale)}'
-            pi.note = f'installed at {package}; refreshing ({reason})'
-            # A refresh that cannot reach the source fails this item with the cause;
-            # an installed package that is merely stale is not reported as current.
-            pi.steps.append(Step(f'pi update {PI_SOURCE} (the installed package is out of date: {reason})',
-                                 ['pi', 'update', PI_SOURCE]))
-        else:
-            pi.note = f'installed at {package}; use install.sh update to refresh'
-            pi.steps.append(Step(f'keep the installed Pi package at {package}',
-                                 run=lambda: f'{PI_SOURCE} already installed at {package}; kept'))
-    else:
-        pi.steps.append(Step(f'pi install {PI_SOURCE}', ['pi', 'install', PI_SOURCE]))
-    # `pi config` filters outlive the install, so enable the package resources here.
-    pi.steps.append(Step('enable the package skills and commands in Pi settings',
-                         run=enable_pi_package))
+    pi = Item('pi', 'Pi package + bundled Ponytail',
+              note='reuses existing Pi or bootstraps from pi.dev; Node >=22.19.0 and npm required',
+              steps=[Step(f'reuse and verify an absolute Pi executable, or download {PI_INSTALLER} '
+                          'with HTTP failure checking and run the captured sh installer (native prerequisite prompts); '
+                          f'pi install {PI_SOURCE} when absent, pi update {PI_SOURCE} when stale or update requested; '
+                          'otherwise keep the installed package',
+                          run=lambda: install_pi_package(output, mode)),
+                     Step('enable the package skills and commands in Pi settings', run=enable_pi_package)])
     return [
         pi,
         pi_bolt_item(output, mode=mode),
@@ -766,7 +923,7 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
     output = output or Output()
     results = []
     # Private machine-readable progress for update_bundle.py, separate from native output.
-    report = os.environ.get('AUTOWORK_INSTALL_REPORT')
+    report = None if dry_run else os.environ.get('AUTOWORK_INSTALL_REPORT')
     if report:
         Path(report).write_text('')
 

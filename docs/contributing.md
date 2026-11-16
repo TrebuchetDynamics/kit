@@ -18,8 +18,7 @@ local task records are preserved migration evidence, not a second queue.
 
 Select work within accepted scope, establish actual workspace/process ownership
 and preserve unrelated changes. Use an isolated worktree when concurrent writing
-needs it. `/work` supports explicit manual implementation; `/autowork` only
-redirects to GitHub/Orbi. Orbi remains paused pending live qualification.
+needs it. Retained fix/apply modes keep their own scope and ownership/review/PR gates. Orbi remains paused pending live qualification.
 
 Make a scoped change, run affected acceptance checks and independent review, and
 commit only attributable verified work. Use the issue/PR's actual evidence for
@@ -68,7 +67,7 @@ hermes gateway restart
 
 For a local symlink installation, edit this checkout and restart instead. New commands are
 discovered on startup, not watched live. A restart does not refresh a skill already
-copied into the profile's native skill directory; use `/autowork update` for that.
+copied into the profile's native skill directory; use `hermes autowork update` for that.
 Telegram's menu has limited capacity; the bundle prioritizes only the five workflow
 commands in [`scripts/telegram_menu_policy.py`](../scripts/telegram_menu_policy.py).
 

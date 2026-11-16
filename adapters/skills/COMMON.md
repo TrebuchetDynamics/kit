@@ -18,7 +18,7 @@ only the selected workflow and relevant references. Resolve links relative to th
 loaded skill file. For a named command, use host-discovered skill metadata or an
 explicit file link. Do not infer `skills/<command>/SKILL.md` from the command name.
 The canonical primary workflows are Plan With Me, Plan For Me,
-Docs Sync and Autowork. Autoresearch remains independently discoverable with all
+Docs Sync. Autoresearch remains independently discoverable with all
 13 research selectors. Grill Me is Plan With Me's challenge mode, not a separate
 public skill; Pi retains `/grill-me` as a compatibility command. In native skill
 invocation (`/kit:plan-with-me` in Claude Code), select `plan-with-me`
@@ -41,7 +41,8 @@ Explicit invocation authorizes the documented default action within user scope.
 Questions-only/read-only/no-write/no-commit/no-push restrictions propagate through
 all handoffs. Product intent is distinct from proposals and current behavior.
 GitHub Issues are the one executable backlog. Orbi owns automatic issue-to-PR
-delivery; `/work` is explicit manual delivery with coordinated ownership. Never
+delivery; retained fix/apply modes keep their own accepted scope, coordinated
+ownership, independent review and PR gates. Planning stops after publication. Never
 fabricate completion, review, attribution or live qualification. Python 3 is needed
 only for bundled helpers, not for a questions-only interview.
 

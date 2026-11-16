@@ -20,14 +20,13 @@ class EngineeringVendorTests(unittest.TestCase):
         spec.loader.exec_module(module)
         with tempfile.TemporaryDirectory() as td:
             home = Path(td)
-            selected = [ROOT / 'skills' / name for name in ('autowork', 'docs-sync', 'engineering')]
+            selected = [ROOT / 'skills' / name for name in ('docs-sync', 'engineering')]
             self.assertEqual(module.install(ROOT / 'skills', [('fixture', home)], skills=selected, report=lambda _: None), 0)
-            self.assertTrue((home / 'skills/autowork/SKILL.md').is_file())
-            self.assertFalse((home / 'skills/autowork/scripts').exists())
+            for name in ('autowork', 'work', 'pending', 'blockers'):
+                self.assertFalse((home / 'skills' / name).exists())
             self.assertEqual((home / 'skills/docs-sync/scripts/docs.py').read_bytes(),
                              (ROOT / 'skills/docs-sync/scripts/docs.py').read_bytes())
             self.assertFalse((ROOT / 'pi-autowork').exists())
-            self.assertIn('Orbi', (home / 'skills/autowork/SKILL.md').read_text())
 
     def test_exact_protocol_selection_has_no_implicit_phase_bundle(self):
         result = subprocess.run(['python3', str(PACK/'scripts/route.py'),

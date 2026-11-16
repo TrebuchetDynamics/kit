@@ -63,37 +63,55 @@
       ]
     },
     "architecture": {
-      "reason": "Source-evidence gap: TOOLSET-461 rechecked the pin at 9e2cc1ad without completing current-source reverification; the 282-file covered closure and the current component map remain unchecked, and the map links pi-autowork engine/task-store sources outside covers. See docs/project.md#role-source-evidence-gaps.",
+      "reason": "Current component map and registration/package ownership reviewed against native implementations, publisher and lifecycle client. Model adherence, installed host behavior and Orbi live qualification remain separate.",
       "status": "maintained",
       "path": "docs/project.md#current-components",
       "covers": [
         "__init__.py",
+        "scripts/autowork_bootstrap.py",
+        "src/autowork_bootstrap.py",
+        "src/autowork_runtime/plugin.py",
         "scripts/bundle.py",
         "scripts/workflow_commands.py",
         "scripts/autoresearch_commands.py",
+        "src/autowork_runtime/commands",
+        "src/autowork_runtime/telegram_menu_policy.py",
+        "scripts/github_issues.py",
         "skills",
-        "adapters/pi.mjs"
+        "adapters/pi.mjs",
+        "package.json",
+        ".claude-plugin",
+        ".codex-plugin",
+        ".agents/plugins"
       ],
-      "verified_at": "41aaad8fccfe"
+      "verified_at": "ee69b26646f59b5ff4a98e3b07800bd6b4b305b3"
     },
     "prd": {
       "status": "maintained",
       "path": "docs/project.md#accepted-requirements"
     },
     "test-plan": {
-      "reason": "Source-evidence gap: TOOLSET-461 rechecked the pin at 9e2cc1ad without completing current-source reverification; current inventory/qualification claims across the 67 covered files remain unchecked (the Paseo compiler version there was corrected). Documented engine and Docs Sync test modules also fall outside covers. See docs/project.md#role-source-evidence-gaps.",
+      "reason": "Offline inventory and CI source mapping reviewed, including maintained bundled test roots. Focused checks do not imply that the full suite, installed backends or live qualification ran.",
       "status": "maintained",
       "path": "docs/testing.md",
       "covers": [
         "scripts/check.py",
-        "tests"
+        "scripts/affected_tests.py",
+        ".github/workflows/test.yml",
+        "tests",
+        "skills/docs-sync/scripts",
+        "skills/git-commit-push/scripts"
       ],
-      "verified_at": "41aaad8fccfe"
+      "verified_at": "ee69b26646f59b5ff4a98e3b07800bd6b4b305b3"
     },
     "source-layout": {
       "status": "maintained",
       "path": "docs/project.md#current-components",
-      "covers": ["src/autowork_runtime", "src/autowork_bootstrap.py", "scripts"]
+      "covers": [
+        "src/autowork_runtime",
+        "src/autowork_bootstrap.py",
+        "scripts"
+      ]
     },
     "changelog": {
       "status": "maintained",
@@ -104,31 +122,42 @@
       "path": "docs/onboarding.md"
     },
     "workflows": {
-      "reason": "Source-evidence gap: TOOLSET-461 rechecked the pin at 9e2cc1ad without completing current-source reverification; current alias, routing and menu claims remain unchecked, and the three covered registrar entrypoints now delegate to src/ implementations outside covers. Those registrars alone do not qualify the task-store workflow instructions. See docs/project.md#role-source-evidence-gaps.",
+      "reason": "Command aliases, literal routing and menu ownership reviewed through native implementations and Pi dispatch. Canonical skill contracts own instructions; model execution and Telegram delivery remain unqualified.",
       "status": "maintained",
       "path": "docs/workflows.md",
       "covers": [
         "scripts/workflow_commands.py",
         "scripts/autoresearch_commands.py",
-        "scripts/telegram_menu_policy.py"
+        "scripts/telegram_menu_policy.py",
+        "src/autowork_runtime/plugin.py",
+        "src/autowork_runtime/commands",
+        "src/autowork_runtime/telegram_menu_policy.py",
+        "adapters/pi.mjs",
+        "skills"
       ],
-      "verified_at": "8738cc636fdc"
+      "verified_at": "ee69b26646f59b5ff4a98e3b07800bd6b4b305b3"
     },
     "removal": {
       "status": "maintained",
       "path": "docs/uninstall.md"
     },
     "cross-host": {
-      "reason": "Source-evidence gap: TOOLSET-461 rechecked the pin at 9e2cc1ad without completing current-source reverification; current adapter/package/runner claims across the 36 covered files remain unchecked. Historical install/discovery records are not current model or host qualification. See docs/project.md#role-source-evidence-gaps.",
+      "reason": "Current portable package, registration and installer source contracts reviewed. Historical host versions/counts are retained as historical evidence; current model/host qualification is not claimed.",
       "status": "maintained",
       "path": "docs/cross-host.md",
       "covers": [
         "adapters",
         ".claude-plugin",
         ".codex-plugin",
-        "scripts/github_issues.py"
+        ".agents/plugins",
+        "package.json",
+        "scripts/github_issues.py",
+        "scripts/install_menu.py",
+        "install.sh",
+        "tests/test_portable_package.py",
+        "tests/portable_pi.test.mjs"
       ],
-      "verified_at": "41aaad8fccfe"
+      "verified_at": "ee69b26646f59b5ff4a98e3b07800bd6b4b305b3"
     },
     "memory": {
       "status": "maintained",

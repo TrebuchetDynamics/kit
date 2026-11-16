@@ -5,18 +5,18 @@ Status: Accepted
 ## Scope
 
 Borrow Addy Osmani's adherence mechanics without replacing Kit's task store,
-explicit-only commands or `ask-kit` router. Pilot the sections on three
+explicit-only commands or `ask-kit` router. Pilot the sections on the retained
 high-risk skills, add the shared Definition of Done and operating behavior, and
 cover the pilot with Tier 1 and Tier 2 checks.
 
 ## Task 1: pilot adherence sections
 
 Add `## Common Rationalizations` and `## Red Flags` before `## Boundaries` in
-`autowork`, `plan-for-me` and `ponytail-review`. Keep the single completion line.
+`plan-for-me` and `ponytail-review`. Keep the single completion line.
 Link the shared Definition of Done. Add the operating-behavior section to
 `COMMON-CONTRACT.md`. Update `docs/skill-standard.md` and `writing-for-agents`.
 
-Acceptance: the three pilot skills name their real excuses and red flags; each links
+Acceptance: the retained pilot skills name their real excuses and red flags; each links
 the shared Definition of Done; the standard and writing guide require the pattern;
 Tier 1 structural and Tier 2 routing/description checks pass.
 
@@ -41,7 +41,7 @@ Checks: the skill-standard and routing checks for the expanded set.
 ## Task 3: Tier 3 trace evals
 
 Add `scripts/skill_trace_eval.py`, `evals/tier3/<skill>.json` specs and synthetic
-pass/fail trace fixtures for the six high-risk skills. Add
+pass/fail trace fixtures for the retained high-risk skills. Add
 `tests/test_skill_trace_evals.py` and document the trace/spec format.
 
 Acceptance: every spec has a passing fixture; a forbidden write fails the review

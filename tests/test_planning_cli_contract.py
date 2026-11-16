@@ -33,7 +33,7 @@ class PlanningCliContractTests(unittest.TestCase):
                 self.assertIn('UNSAVED', text)
                 for command in ('autowork tasks add', 'autowork tasks validate', 'autowork tasks prepare'):
                     self.assertNotIn(command, text)
-        for name in ('plan-for-me', 'plan-with-me', 'docs-sync', 'work', 'autowork', 'pending'):
+        for name in ('plan-for-me', 'plan-with-me', 'docs-sync', 'unblock'):
             text = prose(f'adapters/skills/{name}/SKILL.md')
             self.assertIn(f'../../../skills/{name}/SKILL.md', text)
             self.assertIn('../COMMON.md', text)
@@ -58,15 +58,6 @@ class PlanningCliContractTests(unittest.TestCase):
                          'immutable'):
             self.assertIn(required, center)
 
-    def test_runtime_handoffs_do_not_revive_old_executor(self):
-        runner = prose('skills/autowork/SKILL.md')
-        self.assertIn('never starts, resumes, installs or schedules', runner)
-        self.assertIn('Orbi', runner)
-        manual = prose('skills/work/SKILL.md')
-        self.assertIn('Labels are not an atomic lock', manual)
-        self.assertIn('fresh context window', manual)
-        self.assertIn('independent review', manual)
-        self.assertIn('GitHub', prose('skills/pending/SKILL.md'))
 
 
 if __name__ == '__main__':

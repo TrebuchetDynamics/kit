@@ -9,14 +9,25 @@ license: MIT
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) and the
 [shared communication rules](../shared/COMMUNICATION.md) within this workflow's
 scope, guided by the [GitHub-native contract](../../docs/github-native.md). This skill is a lifecycle
-client for one repository's existing Orbi deployment: it is not an executor,
+client for one repository's Orbi deployment: it is not an executor,
 queue, daemon or second scheduler.
 
-`/orbi [status|setup|start|stop]` runs
+`/orbi [status|setup|start|stop|help]` runs
 `python3 -B <this-skill>/scripts/orbi_control.py` with the same action and
-`--repo-dir PATH --config PATH --dry-run --json`. The default action is
+`--repo-dir PATH --config PATH --dry-run --json`. For a new deployment, setup
+also accepts `--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]`.
+Legacy missing-provider recovery additionally requires explicit `--config PATH
+--resume-setup` and those complete matching selectors; it cannot change a selection.
+The default action is
 `status`; never run bare `orbi`, which is the Runner's one-tick entry. Use the
 helper, not hand-written `systemctl`, unit files or `orbi setup` commands.
+
+**Help first.** For a help or command-inventory request, run the helper's `help`
+action and report the observed output instead of composing a reference from
+memory. Help needs no repository or deployment and works on every platform;
+it accepts and ignores `--repo-dir`, `--config`, `--dry-run` and setup inputs. Do not bind a
+repository or read deployment state for this route. Use the steps below for
+lifecycle actions.
 
 ## Steps
 
@@ -29,9 +40,29 @@ helper, not hand-written `systemctl`, unit files or `orbi setup` commands.
    states and ready queue. Status is read-only; missing evidence is
    `unavailable`.
 3. **Prepare.** Run `setup` (preview with `--dry-run`). It stages the verified
-   pinned source, writes the native config and `.orbi/env`, reuses provider
-   metadata without credentials and validates with a non-activating `orbi
-   check`. It reports `prepared`; it never installs or enables a timer.
+   pinned source, atomically publishes provider metadata and `.orbi/env` before
+   publishing the native config last, and validates with a non-activating `orbi check`.
+   Before locks or deployment writes it checks transport, ownership, inactive/no-worker
+   evidence and available prerequisites. A missing bootstrap also requires readable
+   `uv tool list` conflict evidence and records interpreter selection; absent/older
+   system Python selects uv provisioning of `3.14`, not a prerequisite blocker.
+   Provisioning/network success and staged validation cannot be promised by preflight. For the first deployment, supply
+   `--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]`
+   using published metadata from Pi's local catalog, not authentication files.
+   Without these flags, setup reuses verified metadata from a visible deployment.
+   Incomplete selectors, invalid metadata, literal credentials and symlink paths
+   are refused before writes. Bootstrap flags cannot override an existing target;
+   omit them to reuse its selection. The sole exception is explicit bounded
+   `--resume-setup` for a legacy missing deployment-local `.orbi/pi-providers.json`:
+   require the exact saved provider/model/reasoning, official supported pin, local
+   ownership and inactive/no-worker evidence; omitted thinking inherits the saved value.
+   It fills only an absent provider, or reuses identical bytes on repetition. Present
+   conflicting/invalid files, external paths and changed pins need deliberate repair.
+   New configs preserve the verified origin's
+   SSH/HTTPS transport without rewriting remotes. It reports `prepared` with
+   `activated: false`; it never installs or enables a timer. This means setup invoked
+   no activation, not proof of scheduler inactivity; report scheduler observations separately.
+   Existing transport mismatch requires deployment-local config repair, never an origin rewrite.
 4. **Start.** Run `start` only after the owner asks for scheduling and existing
    explicit pauses, cutover requirements and human-only gates are resolved for
    that deployment. Orbi remains paused and live-unqualified until its separate
@@ -47,7 +78,18 @@ helper, not hand-written `systemctl`, unit files or `orbi setup` commands.
    make the state look clean.
 6. **Report evidence.** Name the repository, deployment, unit, pin, source and
    scheduler states you actually read, and the commands you ran. Keep provider
-   identifiers and non-secret evidence only.
+   identifiers and non-secret evidence only. Report preparation, scheduler
+   activation and live delivery separately. If non-activating validation fails
+   after writes, inspect and repair the partial deployment, then rerun helper
+   `setup` without bootstrap flags. Do not use activating upstream setup as a
+   preparation repair; inspect scheduler state with `status`. Read `steps`, `target`,
+   `original_error` and `error.mutated`: lock writes count, and a failed mutating
+   attempt is `mutation: possible`, not verified completion. A killed process cannot
+   render a receipt; retry safety comes from actual complete/absent files. Preserve
+   recovery evidence and never automatically retry an unchanged timeout.
+   If the installed helper lacks these flags, report its absolute loaded path and
+   available Kit revision and recommend a separately authorized skill update. A stale
+   installed skill is not an unsupported transport or a reason to rewrite origin.
 
 Use `status` on macOS; lifecycle mutations there are refused before any side
 effect. Linux is the only mutation platform in this version.
@@ -56,6 +98,7 @@ effect. Linux is the only mutation platform in this version.
 
 | Rationalization | Reality |
 | --- | --- |
+| "I remember the commands, so I can compose the help table." | Run the helper's `help` action and report its observed output; memory is not the authoritative reference. |
 | "Setup already installs units, so enabling now is harmless." | Upstream setup and install-units enable timers at this pin. Setup must leave scheduling inactive until an explicit start. |
 | "A second deployment is easy; more slots deliver faster." | One repository has one task pool. A duplicate pool causes double claims; the helper refuses ambiguous matches and unit conflicts. |
 | "PYTHONPATH isolates the source, so the uv tool dir can stay shared." | A first tick or packaging change can reinstall the shared tool and change another deployment's launcher. Set `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` with `PYTHONPATH`. |
@@ -98,8 +141,7 @@ effect. Linux is the only mutation platform in this version.
   repository it manages.
 - Not `/plan-with-me` or `/plan-for-me`: planning authorizes no live service
   change.
-- Not `/autowork`: that command only inspects the Orbi handoff and never starts
-  the retired runner.
+- Not an implementation coordinator or a fallback to the retired runner.
 - Not a cross-machine lock or capacity guarantee: visibility covers local
   deployments; report remote ownership as unavailable.
 

@@ -120,7 +120,7 @@ class WorkflowContractTests(unittest.TestCase):
                     self.assertEqual(len(result.failures), 0 if passes else 1, result.failures)
 
     def test_active_docs_do_not_assume_shared_skills_install(self):
-        for folder in ('autowork', 'docs-sync', 'git-commit-push'):
+        for folder in ('docs-sync', 'git-commit-push'):
             for source in (ROOT / 'skills' / folder).rglob('*.md'):
                 with self.subTest(source=source):
                     self.assertNotIn('~/.hermes/shared-skills/', source.read_text())

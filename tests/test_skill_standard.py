@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BANNED_OPENERS = ('use when', 'use to', 'use for', 'use if', 'use after', 'use before')
 # Hermes installs Graphify's own skill into profiles, so Autowork ships the adapter only.
 ADAPTER_ONLY = {'graphify'}
-PILOT = ('autowork', 'orbi', 'work', 'plan-for-me', 'ponytail-review',
+PILOT = ('orbi', 'plan-for-me', 'ponytail-review',
          'git-commit-push', 'push', 'unblock', 'docs-sync', 'plan-with-me')
 
 
@@ -53,18 +53,38 @@ class SkillStandardTests(unittest.TestCase):
                     with self.subTest(file=str(path.relative_to(ROOT)), line=number, link=target):
                         self.assertTrue((path.parent / target).exists(), f'{target} does not resolve')
 
-    def test_lgtm_is_a_yes_skill_not_a_second_approval_round(self):
+    def test_lgtm_inherits_planning_authority_without_a_second_approval_round(self):
         skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())
-        adapter = ' '.join((ROOT / 'adapters/skills/lgtm/SKILL.md').read_text().split())
         self.assertIn('LGTM is a yes', skill)
         self.assertIn('low-effort', skill)
-        self.assertIn('accept every recommendation', skill)
-        self.assertIn('question round', skill)
-        self.assertIn('default first, ask last', skill.lower())
-        self.assertNotIn('Not a plan approval', skill)
-        self.assertIn('LGTM is a yes', adapter)
-        self.assertIn('low-effort', adapter)
-        self.assertIn('question round', adapter)
+        self.assertIn('originating workflow and last unambiguous user-authorized action', skill)
+        for owner in ('RESEARCH-PLAN.md#planning-artifact-and-authority-contract',
+                      'PLANNING-CRAFT.md#consequential-uncertainty'):
+            self.assertIn(f'../shared/{owner}', skill)
+        for rule in ('one clear recommendation', 'only ambiguous choices unresolved',
+                     'explicit acceptance of all named choices',
+                     'does not authorize implementation',
+                     'already-authorized implementation, commit and push',
+                     'harmless delegated engineering defaults'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, skill)
+        for obsolete in ('accept every recommendation', 'accept all six',
+                         'LGTM accepts the first stated recommendation'):
+            self.assertNotIn(obsolete, skill)
+
+    def test_lgtm_portable_adapter_has_no_second_approval_policy(self):
+        path = ROOT / 'adapters/skills/lgtm/SKILL.md'
+        text = path.read_text()
+        self.assertIn('disable-model-invocation: true', text)
+        self.assertIn('../../../skills/lgtm/SKILL.md', text)
+        self.assertIn('../COMMON.md', text)
+        # A reference-only body: no local fast path, examples or approval defaults.
+        body = text.split('---', 2)[2]
+        prose = [line for line in body.splitlines() if line.strip() and not line.startswith('#')]
+        self.assertTrue(prose)
+        for line in prose:
+            self.assertRegex(line, r'\]\([^)]+\)', line)
+        self.assertNotIn('accept every recommendation', text)
 
     def test_every_native_skill_states_boundaries_and_a_done_line(self):
         for path in self.skills('skills'):
@@ -96,10 +116,8 @@ class SkillStandardTests(unittest.TestCase):
 
     def test_sibling_pairs_name_each_other(self):
         # The pairs from docs/skill-standard.md, in both directions.
-        pairs = [('work', 'autowork'), ('plan-with-me', 'plan-for-me'), ('grilling', 'grill-me'),
+        pairs = [('plan-with-me', 'plan-for-me'), ('grilling', 'grill-me'),
                  ('grilling', 'grill-with-docs'), ('grill-me', 'grill-with-docs'),
-                 ('autowork', 'autonomous-codebase-improver'),
-                 ('autowork', 'improve-codebase-architecture'),
                  ('bug-harvest', 'unused-code'), ('bug-harvest', 'test-optimizer'),
                  ('unused-code', 'split-folder'),
                  ('git-commit-push', 'ponytail-review'),

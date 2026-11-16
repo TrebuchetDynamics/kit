@@ -16,9 +16,9 @@ work or cancel unresolved product acceptance.
 
 Kit keeps `/plan-with-me` and `/plan-for-me`: both publish issue-based plans under
 the same handoff contract. Orbi is the separate delivery project, not a renamed
-Kit executor. `/work` supports explicit manual implementation. `/autowork` is only
-a compatibility redirect; retained Hermes maintenance commands and marketplace
-names are not support for the removed runner. No command rename is implied.
+Kit executor. Retained fix/apply modes preserve their accepted scope and shared
+ownership/review/PR gates; planning stops after publication. Hermes terminal
+maintenance commands and marketplace names are not support for the removed runner.
 Orbi stays paused until its separate qualification gates pass.
 
 Owner questions and external inputs are tracked in GitHub Issues. The former
@@ -91,13 +91,22 @@ python3 scripts/github_issues.py --repo OWNER/REPO --batch /tmp/batch.json --app
 
 Keep stable keys across retries. The helper inventories all issue states, reuses
 exact matches, refuses duplicates/changed contracts/closed or owned work, creates
-all issues and edges before readiness, and reads back the graph. A failed apply
-can leave an undispatched partial batch; retry the same input after fixing the
-cause. Readiness publication itself is not atomic: a failure there can leave some
-complete issues ready, but their complete graph already exists. Inspect actual
-ownership before retrying. Serialize publishers of the same batch; GitHub offers
-no atomic issue-create idempotency key. Do not use this helper to overwrite an
-existing edited issue; reconcile that issue fresh through supported GitHub tools.
+all issues and edges before readiness, and verifies the entire batch before any
+readiness publication. Immediately before each issue's `ai-ready` POST, it freshly
+checks title/body, open state, readiness/ownership, epic classification, the exact
+native `blockedBy` ID set and native parent against the complete saved spec.
+Observed drift or a failed read stops publication with an issue-specific error;
+the final check never repairs changed dependencies or parents.
+
+A failed apply can leave an undispatched partial batch, or leave earlier issues
+ready while a later issue remains `ai-planning`. Earlier readiness and foreign
+edits are preserved, not rolled back. Inspect actual ownership and reconcile the
+cause through supported GitHub tools before retrying the same stable-key input;
+do not blindly replay it to overwrite drift. Publication is still non-atomic:
+another client can edit after a final read and before the separate label write.
+Serialize publishers of the same batch; this rule is not cross-client exclusion,
+and GitHub offers no atomic issue-create idempotency key or read/label transaction.
+Do not use this helper to overwrite an existing edited issue.
 
 ## Cutover
 
@@ -166,13 +175,28 @@ Do not serve one repository from multiple deployments or machines.
 
 ### Kit lifecycle skill
 
-Use [`/orbi [status|setup|start|stop]`](../skills/orbi/SKILL.md) for one
+Use [`/orbi [status|setup|start|stop|help]`](../skills/orbi/SKILL.md) for one
 repository's deployment. Bare invocation reads status; `--repo-dir` selects the
 canonical repository and `--config` selects its existing native configuration.
 Setup prepares without activating scheduling. Start requires separate scheduling
 authorization with existing pauses and cutover gates resolved. Stop disables only
 owned timers and reports draining until active workers finish; missing evidence
-is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only.
+is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only. `help` prints the action reference read-only and needs no repository.
+
+On Linux, status names the state it observed: `absent` when no deployment owns
+the repository, and `unavailable` when scheduler evidence cannot be verified. With
+readable scheduler evidence, it reports `running` while any service is active,
+activating or reloading; `draining` when no service is running but one is
+deactivating. Otherwise it reports `prepared` when an owned timer is enabled or
+active, and `stopped` when services are inactive or failed and no owned timer is
+enabled or active. macOS status reports local deployment metadata but leaves
+active scheduler state `unavailable`.
+
+Each mutation reports its own outcome: `setup` says `prepared` (staging, not
+scheduler activation), `start` says `started` or `already-running`, and `stop`
+says `draining` or `stopped`; `--dry-run` says `planned` for all three. Thus `stop`
+can report `draining` while a subsequent status still reports `running`: an active
+worker is preserved, not killed, and status does not remember a global pause.
 
 The [lifecycle reference](../skills/orbi/references/lifecycle.md) owns prerequisite,
 retention, pinned-source and deployment-local uv isolation details. Native units
@@ -272,7 +296,13 @@ qualification evidence.
 
 ## Human acceptance is a separate gate
 
-The supported host setting `human_review_gate = true` posts one acceptance
+New deployments prepared by `/orbi setup` default to `human_review_gate = false`,
+disabling the optional human-acceptance label gate, not required CI or independent
+AI review. Setup preserves an existing deployment's explicitly selected policy.
+Branch/admin protections, credential isolation and external authorization rules
+remain unchanged, including any operations-specific human-only gates.
+
+The optional supported host setting `human_review_gate = true` posts one acceptance
 checklist when a PR opens and holds a delivery whose machine-unverifiable column
 is non-empty. Only a human applies `ai-human-review`; the agent and Runner must
 never add or remove it. An empty machine-unverifiable column is the intended pass

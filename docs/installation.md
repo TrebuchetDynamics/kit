@@ -35,8 +35,9 @@ with their complete portable skill suites, including [bundled Ponytail](cross-ho
 All Kit skills apply its shared method within their existing authority; no
 separate Ponytail plugin, hooks or persistent modes are installed. Existing external
 Ponytail installs are not changed or removed. `--full` (`--all`) is the default; `--skip` excludes components. Host CLIs
-for plugin items must already be installed: full mode reports missing hosts as skipped, while
-`--only` reports a requested missing host as failed. Hermes is optional. A simple
+for Hermes, Claude Code and Codex must already be installed: full mode reports missing hosts as skipped, while
+`--only` reports a requested missing host as failed. Pi is the exception: selecting it
+bootstraps a missing harness from pi.dev before installing Kit. Hermes is optional. A simple
 shell launcher whose target is missing or not executable also counts as unavailable;
 full mode skips it without running Hermes setup. When your own host settings already
 configure the autowork marketplace from another source, the installer keeps that
@@ -93,6 +94,51 @@ that cannot reach the source fails the Pi item with its cause and a nonzero exit
 and the next install retries it. Empty package filters are still reconciled so
 skills and commands remain enabled. `./install.sh update --only pi` refreshes an
 existing package unconditionally, or installs it when absent.
+
+After Pi reports success, Kit reads the package registration again and checks for
+every shipped skill folder. Missing registration or skills makes installation fail
+before package filters are changed. For example, `PI_OFFLINE=1` can make Pi skip
+updates with exit code zero; Kit reports the incomplete result and the retry action.
+
+### Pi harness bootstrap
+
+`./install.sh --no-pull --only pi` reuses a working Pi or installs a missing harness
+through the [official pi.dev installer](https://pi.dev/install.sh), then installs
+and enables Kit in the same invocation. Full mode and the menu also select Pi when
+its harness is missing; `--skip pi` leaves it untouched. This does not install or
+replace Pi-Bolt.
+
+Pi on `PATH` takes precedence. Otherwise the installer checks the managed
+`${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/bin/pi` launcher, the agent directory beside
+`PI_MANAGED_INSTALL_ROOT` when set, and user-local `~/.local/bin`, `~/bin`, `~/.bin`
+and `~/local/bin`. It verifies `--version` and reuses that absolute executable for
+package list/install/update, without requiring a shell restart or parent PATH change.
+A broken existing executable fails with a repair instruction, not a forced replacement.
+
+Bootstrap needs `curl`, `sh`, network access and upstream-supported Linux/macOS.
+Kit downloads the script privately with HTTP failure checking before executing it
+unmodified with `sh`. It explicitly keeps upstream managed installation enabled;
+there is no global npm fallback or invented unattended flag. Upstream requires
+Node.js **22.19.0 or newer** and npm. Its native prerequisite prompts/refusal remain
+in force: Kit never supplies consent, invokes sudo itself or provisions Node itself.
+Without a usable terminal, install the prerequisites yourself and retry.
+
+Output is captured and streamed using the normal verbosity rules. Download, bootstrap
+and package commands each have a ten-minute outer limit (the download also has curl's
+five-minute limit). A timeout stops the command and its descendants, reports failure
+and leaves completed upstream changes in place; prerequisite prompts remain interactive
+within that limit. Captured stdout suppresses upstream's terminal-only offer to start an agent. Upstream may offer a
+shell-profile PATH edit via the terminal; it is optional, not forced by Kit.
+Kit starts no agent/model/service and changes no credentials. The suite's existing
+active-integration restart phase still applies. Preview/list/menu cancellation run
+no Pi host command or download and write nothing, including no preview receipt.
+
+Download, bootstrap, executable verification or package failures report the cause
+and return nonzero; independent selected components continue. Upstream partial
+changes are not rolled back. Repair the reported cause and retry
+`./install.sh --no-pull --only pi`. Offline tests use isolated homes and fake official
+installer responses; they are not evidence of a real download/install, model run or
+live rollout.
 
 ### Pi-Bolt native executable
 
@@ -385,13 +431,18 @@ unfinished work through [GitHub migration](github-native.md#cutover).
 
 ## Update all profiles
 
-Run `/autowork update` in an authorized Hermes CLI or gateway chat. It starts a
-background updater; use `/autowork update status` for its durable result, not the
-initial “requested” message as proof of completion. The status is a short summary that
-fits one chat message (outcome, revisions, files written, local edits, healed settings
-and menus, gateway restart); `/autowork update status full` shows the whole receipt as JSON. `/autowork update --check`
-fetches upstream and previews changes without advancing checkouts or writing
-profile skills/configuration. It still writes Git fetch metadata and its receipt.
+Run terminal `hermes autowork update` from an authorized profile. It waits for
+the updater and prints a structured receipt with outcome, revisions, files, local
+edits, settings, menus and gateway restart status. `hermes autowork update --check`
+fetches upstream and previews without advancing checkouts or writing profile skills/
+configuration; it still writes Git fetch metadata and its receipt. There is no
+chat-maintenance command or terminal update-status form.
+
+Old profile payloads, including retired skills, need an authorized normal update
+and host reload. Provisioning deliberately preserves existing copies: source deletion
+or reinstall alone does not retire them. Updates remove retired first-party files,
+including edited/categorized copies, while retaining backups and unrelated profile/
+recovery data; an unchanged retry is a no-op.
 
 After a changed all-profile update activates successfully, the updater also runs
 that fetched release's `install.sh --full --skip hermes,pi -q` once from its updated
@@ -454,16 +505,13 @@ reports `pending` and joins it instead of starting another one, so a burst of
 updates restarts the gateway once; that restart loads the newest release, and its
 outcome reaches the latest receipt with `gateway_restart_covers`, the number of
 updates it covers. The waiter never restarts while an update is still applying
-files: it shares the update lock and waits for the next check. `/autowork update status` then shows the waiter's latest chat-turn
-count, or the seconds left and turns a requested restart is draining
-(`gateway_restart_progress` in the full receipt). Once a requested restart has
-finished, the next `/autowork update status` or update records its outcome on the receipt:
-`completed` with `gateway_restart_result` (the new gateway's PID and start time,
-which profiles' Telegram bots logged a menu resend after the restart and which did
-not, and any forced-drain interruptions from the gateway log), or `restart_failed`
-when the restart ended with the old gateway still running. The outcome is also kept in
-`restart.json`, so when a later update has already replaced that receipt, status shows
-it as `Last gateway restart` (`last_gateway_restart` in the full receipt). To restart immediately anyway, run `hermes gateway restart` yourself;
+files: it shares the update lock and waits for the next check. The waiter records
+its outcome in the durable receipt; a subsequent update also records a completed
+requested restart. `completed` includes `gateway_restart_result` (new gateway PID,
+start time, observed menu resends and interruptions); `restart_failed` means the
+old gateway still runs. `restart.json` retains the outcome. These receipt fields
+are evidence, not a promise of the former chat summary. To restart immediately
+anyway, run `hermes gateway restart` under your normal service authority;
 Hermes then waits for chat turns up to `agent.restart_after_turn_timeout`. Drift,
 error and check results carry no `gateway_restart` field. Only the gateway recorded
 in the root's `gateway.pid` is detected and restarted; a separately running
@@ -496,8 +544,7 @@ Only one update or check runs at a time. A second one waits up to 10 seconds (a
 deferred-restart waiter holds the lock only briefly per check), then exits with
 code 3 and `{"status": "busy", "running": {...}}` naming the running update's PID,
 mode (`update` or `check`) and start time; it changes nothing and leaves that
-update's receipt in place. In chat, `/autowork update` says which update is running
-and starts nothing.
+update's receipt in place.
 
 A named-profile invocation still targets every existing live profile under the
 same Hermes root. The updater fetches the official Kit `main` branch,
@@ -537,8 +584,8 @@ Existing setup prerequisites still apply; this is not a policy-neutral operation
 `maintenance/toolset-update/latest.json` in the root Hermes home records status,
 source revisions, profiles, reset or removed `local_edits` and the backup location.
 Managed-checkout recovery has separate merge evidence; ordinary skill-copy reset
-is not a three-way merge. For updates started from chat,
-`run.log` holds updater and setup output (terminal updates print it);
+is not a three-way merge. Terminal updates print updater/setup output;
+`run.log` holds requested gateway restart output;
 per-run backups include original skill files and a manifest. An `incomplete` result
 may follow partial application: preserve the backups, fix the reported cause and
 rerun. There is no automatic rollback. A stopped gateway is reported by setup;
@@ -550,8 +597,8 @@ Historical byte matching does not establish compatibility with an active run or
 its pinned execution files, manifests or evidence; update receipts do not qualify
 that compatibility. Existing conversations may
 retain already-loaded instructions; open a new conversation to load updated skills.
-The new `/autowork update` handler itself first needs the normal plugin reload if
-upgrading from a version that does not register it.
+Plugin registration and stale Telegram menus require the normal authorized
+update/reload path; source changes alone do not refresh running hosts.
 
 ### Managed checkout recovery
 
@@ -614,8 +661,8 @@ native scanner acceptance, a live profile reinstall or Telegram delivery.
 A source install links each profile's `plugins/autowork` to the checkout, so
 the profile loads whatever that checkout holds at the next gateway restart,
 including commits that were never released. A profile whose plugin is its own clone
-changes only when an update advances it. `/autowork update status` and
-`hermes autowork doctor` list the linked profiles; nothing converts them
+changes only when an update advances it.
+`hermes autowork doctor --json` lists the linked profiles; nothing converts them
 automatically.
 
 To pin one profile, preview it, then run it:
@@ -660,7 +707,7 @@ or attest that external binary; instruction loading has a documented fallback.
 
 ## Deploy an exact local revision to selected profiles
 
-The legacy `/autowork update` remains the all-profile upstream update. For an
+`hermes autowork update` remains the all-profile upstream update. For an
 already reviewed local fix, use the scoped updater from a clean checkout:
 
 ```bash

@@ -12,8 +12,8 @@ review → merge gates). Read [README.md](README.md) and
   `ai-ready`, regardless of author; publish that label last, after complete
   content and native `blockedBy` dependencies exist. Epics and incomplete
   planning do not execute. There is no local task store and no `tasks/` sync.
-- `/plan-with-me` and `/plan-for-me` publish GitHub Issues. `/work` is the
-  explicit manual alternative; `/autowork` is a compatibility redirect only.
+- `/plan-with-me` and `/plan-for-me` publish GitHub Issues and stop. Retained
+  fix/apply modes keep their own accepted scope and shared ownership/review/PR gates.
 - `pi-autowork` (executor, CLI, Paseo plugin) is retired, unsupported and
   removed. Do not develop, repair, restore, install or restart it. Preserve
   existing tasks, worktrees, attempts and recovery evidence; never remove an active

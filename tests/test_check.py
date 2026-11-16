@@ -59,7 +59,7 @@ class OfflineCheckTests(unittest.TestCase):
         self.write('tests/test_unit.py', sentinel)
         self.write('tests/native/test_runtime.py', sentinel)
         self.write('vendor/examples/test_external.py', sentinel)
-        self.write('skills/autowork/references/vendor/test_external.py', sentinel)
+        self.write('skills/docs-sync/references/vendor/test_external.py', sentinel)
         self.write('tests/integration_bundle.py', sentinel)
         self.write('tests/integration_plugin.py', sentinel)
         result = self.run_check('--list')

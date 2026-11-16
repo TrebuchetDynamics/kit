@@ -2,7 +2,7 @@
 
 Exact entry points, flags, settings and environment variables this bundle reads.
 Each entry names its source of truth; when they disagree, the source wins and this
-page has drifted. Conversational workflow commands (`/autowork`, `/docs_sync`,
+page has drifted. Conversational workflow commands (`/docs_sync`,
 `/plan_with_me` and the rest) are listed in [workflows](workflows.md#commands);
 procedures and their side effects are in [installation](installation.md).
 
@@ -35,27 +35,13 @@ live profile under the same Hermes root.
 | `--no-reload` | Defer live gateway wiring explicitly. |
 | `--hermes-home ROOT` | Hermes root containing `profiles/` (default: `HERMES_HOME`, else `~/.hermes`). |
 
-## Chat: `/autowork status`, `list` and `update`
+## Inventory and delivery status
 
-Source: [`scripts/bundle.py`](../scripts/bundle.py) `handle_chat`, `list_commands`, `start_update`,
-`update_status`, `repository_status`. Works in CLI chat and Telegram.
-
-| Form | Effect |
-| --- | --- |
-| `/autowork status` or `/autowork status NAME` | Static removed-executor notice directing to GitHub Issues/PRs and `orbi status`/`orbi doctor`; no subprocess or task-store read. |
-| `/autowork plugin status` | Bundle version, revision and profile; ready workflow commands; last update; plugin load status and setup gaps (the former status overview). |
-| `/autowork list` | Every available command with its owner and Telegram spelling. |
-| `/autowork list TEXT` | Commands whose name or owner contains `TEXT`, for example `/autowork list graphify`. |
-| `/autowork update` | Starts the all-profile updater in the background and returns immediately. |
-| `/autowork update --check` | Starts an upstream check only. |
-| `/autowork update status` | Summarizes the durable result from `maintenance/toolset-update/latest.json` at the Hermes root in a few lines, and lists profiles linked to a working checkout. |
-| `/autowork update status full` | Shows that whole receipt as JSON. |
-| `/autowork` with other arguments | GitHub/Orbi compatibility handoff; explicit implementation requests route to `/work`. |
-
-Legacy repository/fleet status is unavailable: the executor is removed. Use
-GitHub issue/PR evidence and read-only Orbi diagnostics for current delivery;
-Orbi remains paused and live-unqualified. Native plugin status, list and update
-remain separate from executor status and from live qualification.
+Use terminal `hermes autowork doctor --json` for registration and plugin diagnostics.
+Use `hermes autowork update` or `hermes autowork update --check` for synchronous
+maintenance and its printed receipt. These are not chat-output equivalents.
+GitHub issue/PR evidence and read-only Orbi diagnostics own delivery status; Orbi
+remains paused and live-unqualified.
 
 ## Source-checkout scripts
 
@@ -78,7 +64,7 @@ relative to this repository.
 | Helper | Commands | Reference |
 | --- | --- | --- |
 | [`skills/docs-sync/scripts/docs.py`](../skills/docs-sync/scripts/docs.py) | `validate`, `check`, `stale`, `profiles` | `docs.py --help`; [role manifest](../skills/docs-sync/references/document-scaffold.md#optional-role-manifest) |
-| [`skills/orbi/scripts/orbi_control.py`](../skills/orbi/scripts/orbi_control.py) | `status` (default), `setup`, `start`, `stop`; `--repo-dir`, `--config`, `--dry-run`, `--json` | Python 3.11+; [lifecycle and safety boundaries](../skills/orbi/references/lifecycle.md) |
+| [`skills/orbi/scripts/orbi_control.py`](../skills/orbi/scripts/orbi_control.py) | `status` (default), `setup`, `start`, `stop`, `help` (read-only, needs no repository); `--repo-dir`, `--config`, `--dry-run`, `--json` | Python 3.11+; [lifecycle and safety boundaries](../skills/orbi/references/lifecycle.md) |
 
 ## Removed executor helpers
 
@@ -131,7 +117,7 @@ are preserved. See [installation](installation.md#install) for the policy and
 
 | Variable | Read by | Meaning |
 | --- | --- | --- |
-| `HERMES_HOME` | Setup, skill installer, `install-plugins.sh` | Default Hermes root when `--hermes-home` is absent. A named-profile home (`ROOT/profiles/NAME`) resolves to `ROOT`. Defaults to `~/.hermes`. `/autowork update` uses the running profile's Hermes root the same way. |
+| `HERMES_HOME` | Setup, skill installer, `install-plugins.sh` | Default Hermes root when `--hermes-home` is absent. A named-profile home (`ROOT/profiles/NAME`) resolves to `ROOT`. Defaults to `~/.hermes`. `hermes autowork update` resolves the profile's Hermes root the same way. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`, `TELEGRAM_HOME_CHANNEL` | Update menu healing, from each profile's `.env` (not the process environment) | For each distinct bot token, the chats whose leftover command lists the updater checks; see [installation](installation.md#update-all-profiles). |
 
 ## Files and state
@@ -141,6 +127,6 @@ are preserved. See [installation](installation.md#install) for the policy and
 | `ROOT/maintenance/toolset-update/latest.json` | Updater | Latest update receipt: status, revisions, profiles, local edits, backup location, and the gateway restart's state or recorded outcome (`gateway_restart`, `gateway_restart_result`). |
 | `ROOT/maintenance/toolset-update/restart.json` | Updater | The last gateway restart the updater requested (process ID), or its deferred-restart waiter (process ID, latest chat-turn count), plus `covers`, the updates that restart will load; used to report progress, avoid overlapping restarts and record the outcome on each covered update. Once finished, also `finished` and the recorded `outcome`, which status shows when a later receipt replaced the covered one. |
 | `ROOT/maintenance/toolset-update/pinned/NAME-*/` | `hermes autowork pin` | One pin: `record.json` (profile, link, target, revision), the saved `link`, and after unpinning the kept clone (`unpinned-*`). |
-| `ROOT/maintenance/toolset-update/run.log` | Updater | Output of updates started with `/autowork update` and of gateway restarts the updater requests; terminal `hermes autowork update` prints to the terminal. |
+| `ROOT/maintenance/toolset-update/run.log` | Updater | Gateway restarts requested by the updater; `hermes autowork update` prints update output and its receipt to the terminal. |
 | `tasks/items/`, `tasks/goals/`, `tasks/evidence/` (project) | Preserved legacy evidence | Read-only migration inputs, not a second queue; do not delete during removal. |
 | `docs/roles.json` (project, optional) | Docs Sync | Document role manifest. |

@@ -2,7 +2,7 @@
   "name": "plan-for-me-pass",
   "skill": "plan-for-me",
   "model": "fixture",
-  "note": "Synthetic trace fixture; not a model run.",
+  "note": "Synthetic writable fresh helper-publication pilot; not a model run or remote receipt.",
   "events": [
     {
       "type": "tool",
@@ -10,12 +10,13 @@
       "path": "src/parser.py"
     },
     {
-      "type": "write",
-      "path": "tasks/items/PLAN-1.md"
+      "type": "command",
+      "command": "python3 scripts/github_issues.py --repo OWNER/REPO --batch /tmp/batch.json --apply",
+      "exit": 0
     },
     {
       "type": "final",
-      "text": "Saved the plan and task record."
+      "text": "Published https://github.com/OWNER/REPO/issues/1: ready, no dependencies. Helper readback succeeded; implementation and live delivery unverified."
     }
   ]
 }

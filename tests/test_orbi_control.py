@@ -103,6 +103,8 @@ for rule in rules:
         os.makedirs(os.path.dirname(target), exist_ok=True)
         with open(target, "w", encoding="utf-8") as handle:
             handle.write(text)
+    for target, mode in (rule.get("chmod") or {{}}).items():
+        os.chmod(target, mode)
     if rule.get("exec"):
         subprocess.run(rule["exec"], env=os.environ, check=False)
     if rule.get("sleep"):
@@ -298,15 +300,33 @@ class Harness:
                 'exit': 0 if enabled.get(index) else 1})
         return rules
 
-    def run(self, action, *, platform='linux', dry_run=False, env=None, config=None):
-        argv = [action, '--repo-dir', str(self.repo), '--json']
+    def run(self, action, *, platform='linux', dry_run=False, env=None, config=None,
+            options=(), failure=None):
+        argv = [action, '--repo-dir', str(self.repo), '--json', *options]
         if config is not None:
             argv.extend(['--config', str(config)])
         if dry_run:
             argv.append('--dry-run')
         out, err = io.StringIO(), io.StringIO()
-        code = helper.main(argv, env=dict(env or self.env), platform=platform,
-                           stdout=out, stderr=err)
+        # Inject before/after a publication or mutating bootstrap/check stage.
+        # The real operation still runs for after-failures, exposing interrupted state.
+        def invoke():
+            return helper.main(argv, env=dict(env or self.env), platform=platform,
+                               stdout=out, stderr=err)
+        if failure:
+            name, when, error = failure
+            original = getattr(helper, name)
+
+            def interrupted(*args, **kwargs):
+                if when == 'before':
+                    raise error
+                original(*args, **kwargs)
+                raise error
+
+            with mock.patch.object(helper, name, side_effect=interrupted):
+                code = invoke()
+        else:
+            code = invoke()
         document = json.loads(out.getvalue()) if out.getvalue().strip() else None
         return code, document, err.getvalue()
 
@@ -343,7 +363,10 @@ class SetupBoundaryTests(unittest.TestCase):
 
     def assert_no_activation(self, calls):
         for call in calls:
-            self.assertNotEqual(call['tool'], 'systemctl', call)
+            if call['tool'] == 'systemctl':
+                self.assertTrue(call['argv'][:2] == ['--user', 'show']
+                                and ('ActiveState' in call['argv'] or 'FragmentPath' in call['argv'])
+                                or call['argv'][:2] == ['--user', 'is-enabled'], call)
             if call['tool'] == 'orbi':
                 self.assertNotIn(call['argv'][0] if call['argv'] else '',
                                  {'setup', 'install-units'}, call)
@@ -360,7 +383,7 @@ class SetupBoundaryTests(unittest.TestCase):
         self.assertEqual(config['engine_source_track'], helper.PIN_TRACK)
         self.assertEqual(config['max_concurrency'], 1)
         self.assertTrue(config['keep_failed_worktrees'])
-        self.assertTrue(config['human_review_gate'])
+        self.assertIs(config['human_review_gate'], False)
         self.assertEqual(config['pi_provider'], 'openrouter')
         self.assertEqual(config['pi_model'], 'vendor/model-a')
         env = env_dict((self.h.deploy / '.orbi/env').read_text())
@@ -392,7 +415,7 @@ class SetupBoundaryTests(unittest.TestCase):
         self.assertFalse(dry_tmp.deploy.exists())
         self.assertEqual(snapshot(dry_tmp.home), before)
         dry_calls = dry_tmp.calls()
-        self.assertFalse([c for c in dry_calls if c['tool'] in {'systemctl', 'uv'}])
+        self.assertFalse([c for c in dry_calls if c['tool'] == 'uv'])
         self.assert_no_activation(dry_calls)
 
         # Missing uv: precise prerequisite failure, no writes.
@@ -434,9 +457,15 @@ class SetupBoundaryTests(unittest.TestCase):
             f'repo_dir = "{conflict.root}/repo-a"\n'
             f'deploy_home = "{foreign}"\n'
             'unit_name = "' + helper.derive_unit_name(REPO) + '"\n')
+        before = snapshot(conflict.home)
         code, doc, err = conflict.run('setup')
-        self.assertNotEqual(code, 0)
+        self.assertEqual(code, 2, err)
         self.assertEqual(doc['error']['code'], 'unit_conflict')
+        self.assertIn(str(foreign / 'orbi.toml'), doc['error']['message'])
+        self.assertEqual(doc['error']['fix'],
+                         'keep one deployment per repository and do not duplicate unit ownership')
+        self.assertEqual(snapshot(conflict.home), before)
+        self.assert_no_activation(conflict.calls())
         self.assertFalse(conflict.deploy.exists())
 
         # Unknown existing files or symlinks are never adopted.
@@ -483,20 +512,26 @@ class SetupBoundaryTests(unittest.TestCase):
         self.assertEqual(doc['error']['code'], 'ambiguous_deployment')
         self.assertFalse(duplicate.deploy.exists())
 
-        # Existing setup is idempotent and keeps its own (old) pin.
+        # Existing setup is idempotent and keeps its explicit policy and (old) pin.
         first = snapshot(self.h.deploy)
         code, doc, err = self.h.run('setup')
         self.assertEqual(code, 0, err)
         self.assertEqual(snapshot(self.h.deploy), first)
         config_text = (self.h.deploy / 'orbi.toml').read_text()
         (self.h.deploy / 'orbi.toml').write_text(
-            config_text.replace(helper.PIN_TRACK, 'sha:' + OLD_PIN))
+            config_text.replace(helper.PIN_TRACK, 'sha:' + OLD_PIN)
+            .replace('human_review_gate = false', 'human_review_gate = true'))
+        first = snapshot(self.h.deploy)
         self.h.deploy_head = OLD_PIN
         self.h.rules()
         self.h.clear_calls()
         code, doc, err = self.h.run('setup')
         self.assertEqual(code, 0, err)
         self.assertEqual(self.h.config()['engine_source_track'], 'sha:' + OLD_PIN)
+        self.assertIs(self.h.config()['human_review_gate'], True)
+        self.assertEqual(snapshot(self.h.deploy), first)
+        self.assertFalse(doc['activated'])
+        self.assert_no_activation(self.h.calls())
         self.assertFalse([c for c in self.h.calls() if c['tool'] == 'git'
                           and set(c['argv']) & {'clone', 'checkout', 'fetch'}])
         self.assert_a_unchanged()
@@ -586,10 +621,792 @@ class SetupBoundaryTests(unittest.TestCase):
 
     def assertNoActivationCalls(self, calls):
         for call in calls:
-            self.assertFalse(call['tool'] == 'systemctl', call)
+            if call['tool'] == 'systemctl':
+                self.assertTrue(call['argv'][:2] == ['--user', 'show']
+                                and ('ActiveState' in call['argv'] or 'FragmentPath' in call['argv'])
+                                or call['argv'][:2] == ['--user', 'is-enabled'], call)
             if call['tool'] == 'orbi':
                 self.assertNotIn(call['argv'][0] if call['argv'] else '',
                                  {'setup', 'install-units'}, call)
+
+
+class FirstDeploymentTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.h = Harness(Path(self.tmp.name))  # deliberately no donor deployment
+        self.metadata = {'providers': {'openai': {
+            'baseUrl': 'https://api.openai.com/v1',
+            'api': 'openai-responses',
+            'models': [{'id': 'gpt-6.1-sol', 'contextWindow': 272000,
+                        'maxTokens': 128000}],
+        }}}
+        self.catalog = self.h.home / 'models.json'
+        self.catalog.write_text(json.dumps(self.metadata))
+        self.options = ['--pi-providers', str(self.catalog), '--pi-provider', 'openai',
+                        '--pi-model', 'gpt-6.1-sol', '--pi-thinking', 'high']
+
+    def test_first_deployment_explicit_preview_and_preparation(self):
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('setup', options=self.options, dry_run=True)
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(doc['status'], 'planned')
+        self.assertFalse(doc['activated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        code, doc, err = self.h.run('setup', options=self.options)
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(doc['status'], 'prepared')
+        self.assertFalse(doc['activated'])
+        config = self.h.config()
+        self.assertEqual((config['pi_provider'], config['pi_model'], config['pi_thinking']),
+                         ('openai', 'gpt-6.1-sol', 'high'))
+        self.assertEqual(json.loads((self.h.deploy / '.orbi/pi-providers.json').read_text()),
+                         self.metadata)
+        calls = self.h.calls()
+        self.assertTrue(any(c['tool'] == 'orbi' and c['argv'][0] == 'check'
+                            for c in calls))
+        SetupBoundaryTests.assert_no_activation(self, calls)
+
+    def test_missing_metadata_has_a_first_deployment_repair(self):
+        before = snapshot(self.h.home)
+        for dry_run in (True, False):
+            code, doc, err = self.h.run('setup', dry_run=dry_run)
+            self.assertNotEqual(code, 0)
+            self.assertEqual(doc['error']['code'], 'provider_unavailable')
+            self.assertFalse(doc['error']['mutated'])
+            self.assertIn('--pi-providers', doc['error']['fix'])
+            self.assertEqual(snapshot(self.h.home), before)
+
+    def test_invalid_explicit_metadata_fails_before_writes_without_secrets(self):
+        cases = ('missing', 'invalid-json', 'not-object', 'providers-list',
+                 'provider-not-object', 'unknown-provider', 'unknown-model',
+                 'models-not-list', 'missing-context', 'invalid-limit', 'missing-api',
+                 'missing-base-url', 'literal-credential', 'bad-variable',
+                 'literal-header', 'model-literal-header', 'override-literal-header',
+                 'overrides-not-object', 'override-not-object',
+                 'symlink', 'symlink-parent')
+        for case in cases:
+            with self.subTest(case=case):
+                h = Harness(Path(self.tmp.name) / case)
+                metadata = json.loads(json.dumps(self.metadata))
+                entry = metadata['providers']['openai']
+                catalog = h.home / 'models.json'
+                expected = 'provider_unavailable'
+                if case == 'not-object':
+                    metadata = []
+                elif case == 'providers-list':
+                    metadata['providers'] = ['openai']
+                elif case == 'provider-not-object':
+                    metadata['providers']['openai'] = 'invalid'
+                elif case == 'unknown-provider':
+                    metadata['providers'] = {'other': entry}
+                elif case == 'unknown-model':
+                    entry['models'][0]['id'] = 'other'
+                elif case == 'models-not-list':
+                    entry['models'] = 'invalid'
+                elif case == 'missing-context':
+                    del entry['models'][0]['contextWindow']
+                elif case == 'invalid-limit':
+                    entry['models'][0]['maxTokens'] = False
+                elif case == 'missing-api':
+                    del entry['api']
+                elif case == 'missing-base-url':
+                    del entry['baseUrl']
+                elif case in {'literal-credential', 'bad-variable'}:
+                    entry['apiKey'] = SECRET if case == 'literal-credential' else '$' + SECRET
+                    expected = 'credential_copy_refused'
+                elif case in {'literal-header', 'model-literal-header', 'override-literal-header'}:
+                    target = entry if case == 'literal-header' else entry['models'][0]
+                    if case == 'override-literal-header':
+                        entry['modelOverrides'] = {'other-model': {}}
+                        target = entry['modelOverrides']['other-model']
+                    target['headers'] = {'Authorization': 'Bearer ' + SECRET}
+                    expected = 'credential_copy_refused'
+                elif case == 'overrides-not-object':
+                    entry['modelOverrides'] = []
+                elif case == 'override-not-object':
+                    entry['modelOverrides'] = {'other-model': None}
+                catalog.write_text(SECRET + '{' if case == 'invalid-json'
+                                   else json.dumps(metadata))
+                if case == 'missing':
+                    catalog.unlink()
+                elif case == 'symlink':
+                    original = h.home / 'original.json'
+                    catalog.rename(original)
+                    catalog.symlink_to(original)
+                    expected = 'unknown_target'
+                elif case == 'symlink-parent':
+                    alias = h.home / 'alias'
+                    alias.symlink_to(h.home, target_is_directory=True)
+                    catalog = alias / 'models.json'
+                    expected = 'unknown_target'
+                before = snapshot(h.home)
+                options = ['--pi-providers', str(catalog), '--pi-provider', 'openai',
+                           '--pi-model', 'gpt-6.1-sol']
+                for dry_run in (True, False):
+                    code, doc, err = h.run('setup', options=options, dry_run=dry_run)
+                    self.assertNotEqual(code, 0, (doc, err))
+                    self.assertEqual(doc['error']['code'], expected)
+                    self.assertFalse(doc['error']['mutated'])
+                    self.assertNotIn(SECRET, json.dumps(doc) + err)
+                    self.assertEqual(snapshot(h.home), before)
+                    self.assertFalse(any(c['tool'] != 'git' for c in h.calls()))
+
+    def test_incomplete_and_non_setup_selectors_are_refused(self):
+        before = snapshot(self.h.home)
+        options = (['--pi-thinking', 'high'], self.options[:2], self.options[2:6],
+                   self.options[:4], [*self.options[:5], ''],
+                   [*self.options[:6], '--pi-thinking', ' '])
+        for action, selection in [('setup', item) for item in options] + [
+                (action, self.options) for action in ('status', 'start', 'stop')]:
+            with self.subTest(action=action, selection=selection):
+                code, doc, err = self.h.run(action, options=selection)
+                self.assertEqual(code, 2, (doc, err))
+                self.assertEqual(doc['error']['code'], 'invalid_provider_selection')
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+                self.assertEqual(self.h.calls(), [])
+
+    def test_bootstrap_cannot_overwrite_existing_selection(self):
+        a = self.h.add_deployment_a()
+        code, doc, err = self.h.run('setup', options=self.options)
+        self.assertEqual(code, 0, (doc, err))
+        config_path = self.h.deploy / 'orbi.toml'
+        # Existing deployments retain deliberate transport and pin choices.
+        config_path.write_text(config_path.read_text().replace(
+            helper.PIN_TRACK, 'sha:' + OLD_PIN))
+        self.h.deploy_head = OLD_PIN
+        self.h.rules()
+        before = snapshot(self.h.home)
+        for dry_run in (True, False):
+            self.h.clear_calls()
+            code, doc, err = self.h.run('setup', options=self.options, dry_run=dry_run)
+            self.assertEqual(code, 2, (doc, err))
+            self.assertEqual(doc['error']['code'], 'provider_override_refused')
+            self.assertEqual(snapshot(self.h.home), before)
+            self.assertFalse(any(c['tool'] != 'git' for c in self.h.calls()))
+        code, doc, err = self.h.run('setup')
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertEqual(snapshot(a['deploy']), a['snapshot'])
+
+    def test_check_failure_recovers_without_activation(self):
+        self.h.rules({'tool': 'orbi', 'argv_contains': ['check'], 'exit': 1,
+                      'stderr': 'check=transport reason="transport mismatch" '
+                                'fix="orbi setup --config target"'})
+        code, doc, err = self.h.run('setup', options=self.options)
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'validation_failed')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertIn('partially prepared', doc['error']['fix'])
+        self.assertIn('`/orbi setup` without bootstrap inputs', doc['error']['fix'])
+        self.assertNotIn('orbi setup --config target', doc['error']['fix'])
+        self.h.rules()
+        code, doc, err = self.h.run('setup')
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(doc['status'], 'prepared')
+        self.assertFalse(doc['activated'])
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
+    def test_references_and_model_level_api_need_no_credential_copy(self):
+        entry = self.metadata['providers']['openai']
+        entry['models'][0]['api'] = entry.pop('api')
+        for index, reference in enumerate(('$OPENAI_API_KEY', '${OPENAI_API_KEY}')):
+            with self.subTest(reference=reference):
+                h = Harness(Path(self.tmp.name) / ('reference-' + str(index)))
+                entry['apiKey'] = reference
+                entry['headers'] = {'Authorization': reference}
+                entry['models'][0]['headers'] = {'X-Api-Key': reference}
+                entry['modelOverrides'] = {'other-model': {'headers': {'X-Api-Key': reference}}}
+                catalog = h.home / 'models.json'
+                catalog.write_text(json.dumps(self.metadata))
+                code, doc, err = h.run('setup', options=[
+                    '--pi-providers', str(catalog), '--pi-provider', 'openai',
+                    '--pi-model', 'gpt-6.1-sol'])
+                self.assertEqual(code, 0, (doc, err))
+                self.assertNotIn('pi_thinking', h.config())
+                self.assertEqual(json.loads((h.deploy / '.orbi/pi-providers.json').read_text()),
+                                 self.metadata)
+                self.assertNotIn('OPENAI_API_KEY=', (h.deploy / '.orbi/env').read_text())
+                SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_donor_credentials_also_fail_before_writes(self):
+        a = self.h.add_deployment_a()
+        a['metadata']['providers']['openrouter']['apiKey'] = SECRET
+        (a['deploy'] / '.orbi/pi-providers.json').write_text(json.dumps(a['metadata']))
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('setup')
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'credential_copy_refused')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+
+    def test_unsupported_transport_fails_before_writes(self):
+        before = snapshot(self.h.home)
+        for origin in ('http://github.com/example/kit.git',
+                       'git://github.com/example/kit.git',
+                       'https://notgithub.com/example/kit.git'):
+            with self.subTest(origin=origin):
+                self.h.rules({'tool': 'git', 'argv_contains': ['config', 'remote.origin.url'],
+                              'stdout': origin + '\n'})
+                code, doc, err = self.h.run('setup', options=self.options)
+                self.assertEqual(code, 2, (doc, err))
+                self.assertEqual(doc['error']['code'], 'transport_unsupported')
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+                self.assertFalse(any(c['tool'] != 'git' for c in self.h.calls()))
+
+    def test_origin_transport_is_preserved(self):
+        for index, (origin, transport) in enumerate((
+                ('git@github.com:example/kit.git', 'ssh'),
+                ('ssh://git@github.com/example/kit.git', 'ssh'),
+                ('https://github.com/example/kit.git', 'https'))):
+            with self.subTest(origin=origin):
+                h = Harness(Path(self.tmp.name) / str(index))
+                h.add_deployment_a()  # donor path also preserves SSH
+                h.rules({'tool': 'git',
+                         'argv_contains': [str(h.repo), 'config', 'remote.origin.url'],
+                         'stdout': origin + '\n'})
+                code, doc, err = h.run('setup')
+                self.assertEqual(code, 0, (doc, err))
+                self.assertEqual(h.config()['git_transport'], transport)
+                self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
+                self.assertFalse(any(c['tool'] == 'git' and
+                                     set(c['argv']) & {'set-url', 'remote'}
+                                     for c in h.calls()))
+                SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+
+class SetupRecoveryTests(unittest.TestCase):
+    setUp = FirstDeploymentTests.setUp
+    def test_preflight_tool_list_refuses_before_lock(self):
+        self.h.bootstrap.unlink()
+        for rule, expected in (({'stdout': 'orbi-cli 1.0'}, 'bootstrap_conflict'),
+                               ({'exit': 1, 'stderr': SECRET}, 'bootstrap_unverified')):
+            with self.subTest(expected=expected):
+                self.h.rules({'tool': 'uv', 'argv_contains': ['tool', 'list'], **rule})
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('setup', options=self.options)
+                self.assertNotEqual(code, 0)
+                self.assertEqual(doc['error']['code'], expected)
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+                self.assertNotIn(SECRET, json.dumps(doc) + err)
+
+    def test_setup_requires_verified_timer_enablement(self):
+        self.assertEqual(self.h.run('setup', options=self.options)[0], 0)
+        for state, status, expected in (('enabled-runtime', 0, 'setup_busy'),
+                                        ('', 1, 'scheduler_unavailable'),
+                                        ('enabled', 1, 'scheduler_unavailable')):
+            with self.subTest(state=state, status=status):
+                self.h.rules({'tool': 'systemctl', 'argv_contains': ['is-enabled'],
+                              'stdout': state + '\n', 'exit': status, 'stderr': SECRET},
+                             *self.h.scheduler_rules())
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('setup')
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertEqual(doc['error']['code'], expected)
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+                self.assertNotIn(SECRET, json.dumps(doc) + err)
+                SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
+    def test_setup_refuses_unverified_loaded_service_ownership(self):
+        self.assertEqual(self.h.run('setup', options=self.options)[0], 0)
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        self.h.rules({'tool': 'systemctl',
+                      'argv_contains': ['show', f'{prefix}@1.service', 'FragmentPath'],
+                      'exit': 1, 'stderr': SECRET})
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('setup')
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'scheduler_unavailable')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
+    def test_malformed_resume_paths_and_unreadable_env_have_receipts(self):
+        self.assertEqual(self.h.run('setup', options=self.options)[0], 0)
+        config = self.h.deploy / 'orbi.toml'
+        original = config.read_bytes()
+        provider = self.h.deploy / '.orbi/pi-providers.json'
+        provider.unlink()
+        options = [*self.options, '--resume-setup']
+        for field in ('deploy_home', 'repo_dir', 'pi_providers', 'pi_provider', 'pi_model',
+                      'pi_thinking', 'git_transport', 'engine_source_track'):
+            with self.subTest(field=field):
+                config.write_text(re.sub(rf'^{field} = .*$', field + ' = 42',
+                                         original.decode(), flags=re.MULTILINE))
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('setup', config=config, options=options)
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertEqual(doc['error']['code'], 'config_invalid')
+                self.assertEqual(doc['steps'][-1]['status'], 'failed')
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+        config.write_bytes(original + b'# invalid UTF-8: ' + SECRET.encode() + b'\xff\n')
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('setup', config=config, options=options)
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'config_invalid')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+        config.write_bytes(original)
+        env = self.h.deploy / '.orbi/env'
+        env.write_bytes(b'CUSTOM=' + SECRET.encode() + b'\xff\n')
+        # Resume may publish the missing provider before discovering an invalid env encoding.
+        code, doc, err = self.h.run('setup', config=config, options=options)
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'file_encoding_invalid')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(doc['steps'][-1]['step'], 'write_isolation_env')
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+        self.assertEqual(env.read_bytes(), b'CUSTOM=' + SECRET.encode() + b'\xff\n')
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
+    def test_publication_interruptions_resume_config_last(self):
+        for name in ('write_provider_metadata', 'write_env', 'write_config'):
+            for when in ('before', 'after'):
+                with self.subTest(name=name, when=when):
+                    h = Harness(Path(self.tmp.name) / (name + when))
+                    h.add_deployment_a()
+                    code, doc, err = h.run('setup', failure=(name, when, OSError(SECRET)))
+                    self.assertNotEqual(code, 0)
+                    self.assertEqual(doc['error']['code'], 'filesystem_error')
+                    self.assertTrue(doc['error']['mutated'])
+                    self.assertFalse(doc['activated'])
+                    self.assertEqual(doc['steps'][-1]['status'], 'failed')
+                    self.assertEqual(doc['steps'][-1]['mutation'], 'possible')
+                    self.assertNotIn(SECRET, json.dumps(doc) + err)
+                    config = h.deploy / 'orbi.toml'
+                    if config.exists():
+                        self.assertTrue((h.deploy / '.orbi/env').is_file())
+                        self.assertTrue((h.deploy / '.orbi/pi-providers.json').is_file())
+                    code, doc, err = h.run('setup')
+                    self.assertEqual(code, 0, (doc, err))
+                    self.assertEqual((h.deploy / '.orbi/env').stat().st_mode & 0o777, 0o600)
+                    self.assertEqual((h.deploy / '.orbi/pi-providers.json').stat().st_mode & 0o777,
+                                     0o600)
+                    SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_explicit_legacy_resume_is_bounded_and_idempotent(self):
+        code, doc, err = self.h.run('setup', options=self.options)
+        self.assertEqual(code, 0, (doc, err))
+        config = self.h.deploy / 'orbi.toml'
+        original = config.read_bytes()
+        provider = self.h.deploy / '.orbi/pi-providers.json'
+        provider.unlink()
+        options = [*self.options[:6], '--resume-setup']  # omitted thinking inherits high
+        for repeat in range(2):
+            code, doc, err = self.h.run('setup', config=config, options=options)
+            self.assertEqual(code, 0, (doc, err))
+            self.assertEqual(config.read_bytes(), original)
+            self.assertEqual(json.loads(provider.read_text()), self.metadata)
+            self.assertFalse(doc['activated'])
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('setup', config=config,
+                                   options=[*options, '--pi-thinking', 'low'])
+        self.assertEqual(code, 2, (doc, err))
+        self.assertEqual(doc['error']['code'], 'resume_refused')
+        self.assertEqual(snapshot(self.h.home), before)
+
+    def test_existing_transport_mismatch_precedes_writes(self):
+        self.assertEqual(self.h.run('setup', options=self.options)[0], 0)
+        config = self.h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace('git_transport = "https"',
+                                                    'git_transport = "ssh"'))
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('setup')
+        self.assertEqual(code, 2, (doc, err))
+        self.assertEqual(doc['error']['code'], 'transport_mismatch')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+
+    def test_mutating_stage_timeout_receipt_never_retries(self):
+        for name in ('stage_checkout', 'install_bootstrap', 'run_orbi_check'):
+            with self.subTest(name=name):
+                h = Harness(Path(self.tmp.name) / name)
+                h.add_deployment_a()
+                if name == 'install_bootstrap':
+                    h.bootstrap.unlink()
+                code, doc, err = h.run('setup', failure=(name, 'before', helper.ControlError(
+                    'command_timeout', 'timed out', fix='inspect manually; never retry unchanged')))
+                self.assertNotEqual(code, 0)
+                self.assertEqual(doc['error']['code'], 'command_timeout')
+                self.assertTrue(doc['error']['mutated'])
+                self.assertTrue(doc['steps'][:-1])
+                self.assertEqual(doc['steps'][-1]['status'], 'failed')
+                self.assertEqual(doc['steps'][-1]['mutation'], 'possible')
+                self.assertFalse(doc['activated'])
+
+
+    def test_python_selection_and_command_order(self):
+        for variant, selected in (('compatible', 'python3'), ('older', '3.14'), ('absent', '3.14')):
+            with self.subTest(variant=variant):
+                h = Harness(Path(self.tmp.name) / variant)
+                h.add_deployment_a()
+                h.bootstrap.unlink()
+                (h.bin / 'python3').symlink_to(h.bin / '_fake.py')
+                h.rules({'tool': 'python3', 'exit': 0 if variant == 'compatible' else 1})
+                which = helper.Context.which
+
+                def find(ctx, name):
+                    return None if name == 'python3' and variant == 'absent' else which(ctx, name)
+
+                with mock.patch.object(helper.Context, 'which', find):
+                    before = snapshot(h.home)
+                    code, doc, err = h.run('setup', dry_run=True)
+                    self.assertEqual(code, 0, (doc, err))
+                    self.assertEqual(doc['prerequisites']['python'], selected)
+                    self.assertEqual(snapshot(h.home), before)
+                    self.assertEqual(doc['deployment']['source'], 'unverified')
+                    for name in ('stage_checkout', 'install_bootstrap', 'validate_non_activating'):
+                        self.assertIn({'step': name, 'status': 'planned'}, doc['steps'])
+                    h.clear_calls()
+                    # Fake successful install creates the real fake launcher executable.
+                    h.rules({'tool': 'python3', 'exit': 0 if variant == 'compatible' else 1},
+                            {'tool': 'uv', 'argv_contains': ['tool', 'install'],
+                             'write': {str(h.bootstrap): (h.bin / '_fake.py').read_text()},
+                             'chmod': {str(h.bootstrap): 0o755}})
+                    code, doc, err = h.run('setup')
+                    self.assertEqual(code, 0, (doc, err))
+                calls = h.calls()
+                listing = next(i for i, c in enumerate(calls)
+                               if c['tool'] == 'uv' and c['argv'] == ['tool', 'list'])
+                clone = next(i for i, c in enumerate(calls)
+                             if c['tool'] == 'git' and c['argv'][0] == 'clone')
+                install = next(c for c in calls if c['tool'] == 'uv' and 'install' in c['argv'])
+                self.assertLess(listing, clone)
+                self.assertEqual(install['argv'][4], selected)
+                self.assertNotIn('--force', install['argv'])
+                SetupBoundaryTests.assert_no_activation(self, calls)
+
+    def test_tool_list_timeout_is_read_only_and_not_retried(self):
+        self.h.bootstrap.unlink()
+        before = snapshot(self.h.home)
+        run = helper.Context.run
+        attempts = []
+
+        def timed(ctx, argv, **kwargs):
+            if list(argv)[1:] == ['tool', 'list']:
+                attempts.append(argv)
+                raise helper.ControlError('command_timeout', 'private timeout ' + SECRET)
+            return run(ctx, argv, **kwargs)
+
+        with mock.patch.object(helper.Context, 'run', timed):
+            code, doc, err = self.h.run('setup', options=self.options)
+        self.assertNotEqual(code, 0)
+        self.assertEqual(doc['error']['code'], 'command_timeout')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+
+    def test_resume_unsafe_states_preserve_every_file(self):
+        cases = ('model', 'provider', 'thinking', 'content', 'invalid-provider', 'malformed',
+                 'external-provider', 'invalid-provider-path', 'external-config', 'changed-pin', 'changed-head',
+                 'unknown-checkout', 'symlink-provider', 'symlink-env', 'foreign-owner',
+                 'duplicate', 'foreign-unit', 'active-worker', 'unknown-worker', 'enabled-timer')
+        for case in cases:
+            with self.subTest(case=case):
+                h = Harness(Path(self.tmp.name) / case)
+                h.add_deployment_a()
+                self.assertEqual(h.run('setup')[0], 0)
+                config = h.deploy / 'orbi.toml'
+                provider = h.deploy / '.orbi/pi-providers.json'
+                catalog = h.home / 'models.json'
+                catalog.write_bytes(provider.read_bytes())
+                provider.unlink()
+                options = ['--resume-setup', '--pi-providers', str(catalog),
+                           '--pi-provider', 'openrouter', '--pi-model', 'vendor/model-a']
+                if case in ('model', 'provider'):
+                    options[-1 if case == 'model' else -3] = 'other'
+                elif case == 'thinking':
+                    options += ['--pi-thinking', 'high']
+                elif case in ('content', 'invalid-provider'):
+                    provider.write_text('{bad ' + SECRET if case == 'invalid-provider' else '{}')
+                elif case == 'malformed':
+                    config.write_text('bad=' + SECRET)
+                elif case == 'external-provider':
+                    config.write_text(config.read_text().replace('.orbi/pi-providers.json',
+                                                                str(h.home / 'external.json')))
+                elif case == 'invalid-provider-path':
+                    config.write_text(config.read_text().replace('".orbi/pi-providers.json"', '42'))
+                elif case == 'external-config':
+                    destination = h.home / 'external.toml'
+                    config.rename(destination)
+                    config = destination
+                elif case == 'changed-pin':
+                    config.write_text(config.read_text().replace(PIN, OLD_PIN))
+                elif case == 'changed-head':
+                    h.deploy_head = OLD_PIN
+                    h.rules()
+                elif case == 'unknown-checkout':
+                    h.rules({'tool': 'git', 'argv_contains': [str(h.deploy), 'remote.origin.url'],
+                             'stdout': 'https://github.com/other/not-orbi'})
+                elif case == 'symlink-provider':
+                    provider.symlink_to(catalog)
+                elif case == 'symlink-env':
+                    env = h.deploy / '.orbi/env'
+                    env.unlink()
+                    env.symlink_to(catalog)
+                elif case == 'duplicate':
+                    duplicate = h.data_home / 'duplicate'
+                    duplicate.mkdir()
+                    (duplicate / 'orbi.toml').write_bytes(config.read_bytes())
+                elif case == 'foreign-unit':
+                    prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+                    (h.unit_dir / f'{prefix}@.service').write_text(
+                        '[Service]\nEnvironment="ORBI_CONFIG=' + str(h.a['config']) + '"\n')
+                elif case in ('active-worker', 'unknown-worker', 'enabled-timer'):
+                    h.rules(*h.scheduler_rules(services={1: 'active' if case == 'active-worker'
+                                                        else 'unknown' if case == 'unknown-worker'
+                                                        else 'inactive'},
+                                               enabled={1: case == 'enabled-timer'}))
+                before = snapshot(h.home)
+                # Exercise the real uid guard without chown or another user's files.
+                with mock.patch.object(helper.os, 'getuid',
+                                       return_value=os.getuid() + (case == 'foreign-owner')):
+                    code, doc, err = h.run('setup', config=config, options=options)
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(h.home), before)
+                self.assertNotIn(SECRET, json.dumps(doc) + err)
+                self.assertTrue(doc['error']['fix'])
+                SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_resume_option_boundary_and_context_free_help(self):
+        before = snapshot(self.h.home)
+        for action, config, options in (
+                ('status', None, ['--resume-setup']),
+                ('start', None, ['--resume-setup']),
+                ('stop', None, ['--resume-setup']),
+                ('setup', None, ['--resume-setup', *self.options]),
+                ('setup', self.h.home / 'missing.toml', ['--resume-setup'])):
+            code, doc, err = self.h.run(action, config=config, options=options)
+            self.assertEqual(code, 2, (doc, err))
+            self.assertEqual(doc['error']['code'], 'invalid_resume_selection')
+            self.assertFalse(doc['error']['mutated'])
+        code, doc, err = self.h.run('help', config='/missing', options=['--resume-setup'])
+        self.assertEqual(code, 0, (doc, err))
+        self.assertIn('--resume-setup', doc['options'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertEqual(self.h.calls(), [])
+
+    def test_lock_rechecks_concurrent_changes(self):
+        import contextlib
+        for change in ('config', 'provider', 'env', 'duplicate', 'unit', 'worker', 'pin', 'origin',
+                       'bootstrap'):
+            with self.subTest(change=change):
+                h = Harness(Path(self.tmp.name) / change)
+                h.add_deployment_a()
+                self.assertEqual(h.run('setup')[0], 0)
+                config = h.deploy / 'orbi.toml'
+                provider = h.deploy / '.orbi/pi-providers.json'
+                catalog = h.home / 'models.json'
+                catalog.write_bytes(provider.read_bytes())
+                provider.unlink()
+                locked = helper.locked
+                changed = []
+
+                @contextlib.contextmanager
+                def concurrent(ctx, key):
+                    with locked(ctx, key):
+                        if change in ('config', 'env'):
+                            path = config if change == 'config' else h.deploy / '.orbi/env'
+                            path.write_text(path.read_text() + '# concurrent change\n')
+                        elif change == 'provider':
+                            provider.write_text('{}')
+                        elif change == 'duplicate':
+                            duplicate = h.data_home / 'duplicate'
+                            duplicate.mkdir()
+                            (duplicate / 'orbi.toml').write_bytes(config.read_bytes())
+                        elif change == 'unit':
+                            prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+                            (h.unit_dir / f'{prefix}@.service').write_text(
+                                '[Service]\nEnvironment="ORBI_CONFIG=' + str(h.a['config']) + '"\n')
+                        elif change == 'worker':
+                            h.rules(*h.scheduler_rules(services={1: 'active'}))
+                        elif change == 'pin':
+                            h.deploy_head = OLD_PIN
+                            h.rules()
+                        elif change == 'bootstrap':
+                            h.bootstrap.unlink()
+                        else:
+                            h.rules({'tool': 'git', 'argv_contains': [str(h.repo), 'remote.origin.url'],
+                                     'stdout': 'git@github.com:example/kit.git'})
+                        changed.append(snapshot(h.home))
+                        yield
+
+                with mock.patch.object(helper, 'locked', concurrent):
+                    code, doc, err = h.run('setup', config=config, options=[
+                        '--resume-setup', '--pi-providers', str(catalog),
+                        '--pi-provider', 'openrouter', '--pi-model', 'vendor/model-a'])
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertTrue(doc['error']['mutated'])  # acquiring the lock wrote
+                self.assertEqual(doc['steps'][-1]['step'], 'recheck_target')
+                self.assertEqual(snapshot(h.home), changed[0])
+                SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_atomic_replace_failure_preserves_original_bytes_and_modes(self):
+        self.assertEqual(self.h.run('setup', options=self.options)[0], 0)
+        path = self.h.deploy / '.orbi/env'
+        original = 'CUSTOM_ENTRY=preserved\nPATH=/old\n'
+        path.write_text(original)
+        path.chmod(0o640)
+        before = snapshot(self.h.deploy)
+        with mock.patch.object(helper.os, 'replace', side_effect=OSError(SECRET)):
+            code, doc, err = self.h.run('setup')
+        self.assertNotEqual(code, 0)
+        self.assertEqual(doc['error']['code'], 'filesystem_error')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.deploy), before)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+        code, doc, err = self.h.run('setup')
+        self.assertEqual(code, 0, (doc, err))
+        self.assertIn('CUSTOM_ENTRY=preserved', path.read_text())
+        self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+        self.assertEqual((self.h.deploy / 'orbi.toml').stat().st_mode & 0o777, 0o644)
+
+    def test_conflicting_unpublished_files_refuse_before_lock(self):
+        for relative in ('.orbi/env', '.orbi/pi-providers.json'):
+            with self.subTest(relative=relative):
+                h = Harness(Path(self.tmp.name) / Path(relative).name)
+                h.add_deployment_a()
+                (h.deploy / '.orbi').mkdir(parents=True)
+                (h.deploy / relative).write_text(SECRET)
+                before = snapshot(h.home)
+                code, doc, err = h.run('setup')
+                self.assertEqual(code, 2, (doc, err))
+                self.assertEqual(doc['error']['code'], 'publication_conflict')
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(h.home), before)
+                self.assertNotIn(SECRET, json.dumps(doc) + err)
+
+    def test_public_cli_success_and_failure_journey(self):
+        argv = [sys.executable, '-B', str(HELPER), 'setup', '--repo-dir', str(self.h.repo),
+                '--json', *self.options]
+        proc = subprocess.run(argv, env=self.h.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)['status'], 'prepared')
+        self.assertFalse(json.loads(proc.stdout)['activated'])
+        config = self.h.deploy / 'orbi.toml'
+        provider = self.h.deploy / '.orbi/pi-providers.json'
+        provider.unlink()
+        argv += ['--config', str(config), '--resume-setup']
+        proc = subprocess.run(argv, env=self.h.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        provider.write_text('invalid ' + SECRET)
+        before = snapshot(self.h.home)
+        proc = subprocess.run(argv, env=self.h.env, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(proc.returncode, 0)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc['error']['code'], 'resume_refused')
+        self.assertIn('preserve', doc['error']['fix'])
+        self.assertNotIn(SECRET, proc.stdout + proc.stderr)
+        self.assertEqual(snapshot(self.h.home), before)
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
+
+    def test_atomic_create_failure_leaves_complete_or_absent_files(self):
+        for filename in ('pi-providers.json', 'env', 'orbi.toml'):
+            for when in ('before', 'after'):
+                with self.subTest(filename=filename, when=when):
+                    h = Harness(Path(self.tmp.name) / (filename + when))
+                    h.add_deployment_a()
+                    link = helper.os.link
+
+                    def interrupted(source, destination, **kwargs):
+                        if Path(destination).name == filename:
+                            if when == 'after':
+                                link(source, destination, **kwargs)
+                            raise OSError(SECRET)
+                        return link(source, destination, **kwargs)
+
+                    with mock.patch.object(helper.os, 'link', interrupted):
+                        code, doc, err = h.run('setup')
+                    self.assertNotEqual(code, 0)
+                    self.assertEqual(doc['error']['code'], 'filesystem_error')
+                    self.assertEqual(doc['steps'][-1]['mutation'], 'possible')
+                    destination = h.deploy / (filename if filename == 'orbi.toml'
+                                              else '.orbi/' + filename)
+                    self.assertEqual(destination.exists(), when == 'after')
+                    if when == 'after':
+                        if filename == 'pi-providers.json':
+                            self.assertEqual(json.loads(destination.read_text()), h.a['metadata'])
+                        elif filename == 'orbi.toml':
+                            self.assertEqual(tomllib.loads(destination.read_text())['source_repos'],
+                                             [REPO])
+                        else:
+                            self.assertEqual(env_dict(destination.read_text())['PYTHONPATH'],
+                                             str(h.deploy / 'src'))
+                    self.assertFalse(list(h.deploy.rglob('.*.????????')))
+                    self.assertNotIn(SECRET, json.dumps(doc) + err)
+                    self.assertEqual(h.run('setup')[0], 0)
+                    self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
+                    SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_completed_stages_then_exception_keep_truthful_receipt(self):
+        for name in ('stage_checkout', 'install_bootstrap', 'run_orbi_check'):
+            with self.subTest(name=name):
+                h = Harness(Path(self.tmp.name) / name)
+                h.add_deployment_a()
+                if name == 'install_bootstrap':
+                    h.bootstrap.unlink()
+                    h.rules({'tool': 'uv', 'argv_contains': ['tool', 'install'],
+                             'write': {str(h.bootstrap): (h.bin / '_fake.py').read_text()},
+                             'chmod': {str(h.bootstrap): 0o755}})
+                code, doc, err = h.run('setup', failure=(name, 'after', OSError(SECRET)))
+                self.assertNotEqual(code, 0)
+                self.assertEqual(doc['error']['code'], 'filesystem_error')
+                self.assertEqual(doc['original_error'], 'filesystem_error')
+                self.assertEqual(doc['target'], str(h.deploy / 'orbi.toml'))
+                self.assertTrue(doc['error']['mutated'])
+                self.assertEqual(doc['steps'][-1]['mutation'], 'possible')
+                self.assertTrue(doc['steps'][:-1])
+                self.assertFalse(doc['activated'])
+                self.assertNotIn(SECRET, json.dumps(doc) + err)
+                self.assertEqual(h.run('setup')[0], 0)
+                SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_new_target_ownership_rechecked_after_lock(self):
+        import contextlib
+        h = self.h
+        locked = helper.locked
+        written = []
+
+        @contextlib.contextmanager
+        def concurrent(ctx, key):
+            with locked(ctx, key):
+                h.deploy.mkdir()
+                (h.deploy / 'orbi.toml').write_text(
+                    'source_repos = ["other/repo"]\nunit_name = "foreign"\n')
+                written.append(snapshot(h.home))
+                yield
+
+        with mock.patch.object(helper, 'locked', concurrent):
+            code, doc, err = h.run('setup', options=self.options)
+        self.assertEqual(code, 2, (doc, err))
+        self.assertEqual(doc['error']['code'], 'target_changed')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(snapshot(h.home), written[0])
+        self.assertFalse((h.deploy / '.orbi').exists())
+        SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_validation_diagnostics_never_echo_child_secrets(self):
+        self.h.rules({'tool': 'orbi', 'argv_contains': ['check'], 'exit': 1,
+                      'stderr': 'check=' + SECRET + ' reason="' + SECRET + '"'})
+        code, doc, err = self.h.run('setup', options=self.options)
+        self.assertNotEqual(code, 0)
+        self.assertEqual(doc['error']['code'], 'validation_failed')
+        self.assertEqual(doc['steps'][-1]['step'], 'validate_non_activating')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
 
 
 class RuntimeIsolationTests(unittest.TestCase):
@@ -972,6 +1789,145 @@ class LifecycleSequenceTests(unittest.TestCase):
 
 
 class InterfaceAndSkillTests(unittest.TestCase):
+    def test_help_is_read_only_and_names_every_action(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(Path(tmp))
+            scratch = h.root / 'scratch'
+            scratch.mkdir()
+            before = snapshot(h.home)
+            expected = {'status': 'none', 'setup': 'staging', 'start': 'scheduler',
+                        'stop': 'scheduler', 'help': 'none'}
+            for options in ([], ['--repo-dir', '/missing/repo', '--config',
+                                  '/missing/config', '--dry-run']):
+                for json_mode in (True, False):
+                    with self.subTest(options=options, json=json_mode):
+                        result = subprocess.run(
+                            [sys.executable, '-B', str(HELPER), 'help', *options,
+                             *(['--json'] if json_mode else [])],
+                            cwd=scratch, env=dict(h.env), capture_output=True,
+                            text=True, timeout=20)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(result.stderr, '')
+                        if json_mode:
+                            document = json.loads(result.stdout)
+                            self.assertEqual(set(document), {
+                                'action', 'platform', 'mutations_supported', 'actions',
+                                'options', 'errors', 'boundaries'})
+                            self.assertEqual(document['action'], 'help')
+                            self.assertEqual(list(document['actions']), list(expected))
+                            for action, mutation in expected.items():
+                                entry = document['actions'][action]
+                                self.assertEqual(set(entry), {
+                                    'effect', 'mutates', 'platforms', 'when'})
+                                self.assertEqual(entry['mutates'], mutation)
+                                self.assertTrue(entry['effect'])
+                                self.assertTrue(entry['when'])
+                            for flag, actions in {
+                                '--repo-dir': ['status', 'setup', 'start', 'stop'],
+                                '--config': ['status', 'setup', 'start', 'stop'],
+                                '--dry-run': ['setup', 'start', 'stop'],
+                                '--json': list(expected),
+                                '--pi-providers': ['setup'],
+                                '--pi-provider': ['setup'],
+                                '--pi-model': ['setup'],
+                                '--pi-thinking': ['setup'],
+                            }.items():
+                                self.assertEqual(document['options'][flag]['applies_to'],
+                                                 actions)
+                            self.assertEqual(set(document['errors']),
+                                             {'exit', 'mutated', 'code', 'fix'})
+                            self.assertIn('Exit 0 means success or help',
+                                          document['errors']['exit'])
+                            self.assertIn('error.mutated, not the exit code',
+                                          document['errors']['mutated'])
+                            for boundary in ('no repository or deployment',
+                                             'Status is read-only',
+                                             'Only setup stages source/config',
+                                             'only start/stop touch the scheduler',
+                                             'Not an executor or scheduler',
+                                             '/unblock', '/git-commit-push',
+                                             'Local visibility only'):
+                                self.assertIn(boundary, ' '.join(document['boundaries']))
+                            self.assertNotIn(SECRET, result.stdout)
+                        else:
+                            self.assertIn('[status|setup|start|stop|help]', result.stdout)
+                            for action, mutation in expected.items():
+                                lines = [line for line in result.stdout.splitlines()
+                                         if line.startswith(f'  {action} [')]
+                                self.assertEqual(len(lines), 1)
+                                self.assertIn(f'[{mutation}]', lines[0])
+                        self.assertEqual(h.calls(), [])
+                        self.assertEqual(snapshot(h.home), before)
+
+    def test_help_reports_platform_limits(self):
+        # No repo-dir is injected: help must not bind a deployment or environment.
+        # Argparse itself uses locale/terminal variables; assert the helper context
+        # binds no environment, including the injected caller environment.
+        for platform, normalized, supported in (
+                ('linux-gnu', 'linux', True), ('darwin', 'darwin', False),
+                ('win32', 'win32', False)):
+            with self.subTest(platform=platform), \
+                    mock.patch.object(helper, 'repo_identity', side_effect=AssertionError), \
+                    mock.patch.object(helper, 'select_target', side_effect=AssertionError), \
+                    mock.patch.object(helper, 'Context', wraps=helper.Context) as context, \
+                    mock.patch.object(helper.os, 'getcwd', side_effect=AssertionError), \
+                    mock.patch.object(helper.Path, 'read_text', side_effect=AssertionError), \
+                    mock.patch.object(helper.Path, 'open', side_effect=AssertionError), \
+                    mock.patch.object(helper.subprocess, 'run', side_effect=AssertionError):
+                out = io.StringIO()
+                code = helper.main(['help', '--json'], env=mock.Mock(),
+                                   platform=platform, stdout=out)
+                self.assertEqual(code, 0)
+                self.assertEqual(context.call_args.kwargs['env'], {})
+                self.assertEqual(context.call_args.kwargs['cwd'], '.')
+                doc = json.loads(out.getvalue())
+                self.assertEqual(doc['platform'], normalized)
+                self.assertEqual(doc['mutations_supported'], supported)
+                self.assertEqual(doc['actions']['status']['platforms'], ['linux', 'darwin'])
+                self.assertEqual(doc['actions']['help']['platforms'], ['all'])
+                for action in ('setup', 'start', 'stop'):
+                    self.assertEqual(doc['actions'][action]['platforms'], ['linux'])
+
+    def test_unknown_action_points_at_help(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(Path(tmp))
+            before = snapshot(h.home)
+            for json_mode in (False, True):
+                result = subprocess.run(
+                    [sys.executable, '-B', str(HELPER), 'bogus',
+                     *(['--json'] if json_mode else [])],
+                    cwd=h.root, env=dict(h.env), capture_output=True, text=True,
+                    timeout=20)
+                self.assertEqual(result.returncode, 2)
+                if json_mode:
+                    doc = json.loads(result.stdout)
+                    self.assertEqual(doc['action'], 'bogus')
+                    self.assertEqual(doc['error']['code'], 'unknown_action')
+                    self.assertFalse(doc['error']['mutated'])
+                    self.assertEqual(doc['error']['fix'],
+                                     'run /orbi help for the supported actions and their effects')
+                else:
+                    self.assertIn('error=unknown_action', result.stderr)
+                    self.assertIn('fix=run /orbi help', result.stderr)
+                self.assertEqual(h.calls(), [])
+                self.assertEqual(snapshot(h.home), before)
+
+    def test_help_keeps_python_floor_and_argparse_usage(self):
+        out = io.StringIO()
+        with mock.patch.object(helper.sys, 'version_info', (3, 10)), \
+                mock.patch.object(helper.subprocess, 'run', side_effect=AssertionError):
+            code = helper.main(['help', '--json'], stdout=out)
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out.getvalue())['error']['code'], 'python_unsupported')
+        self.assertFalse(json.loads(out.getvalue())['error']['mutated'])
+        for flag in ('-h', '--help'):
+            result = subprocess.run([sys.executable, '-B', str(HELPER), flag],
+                                    capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('[status|setup|start|stop|help]', result.stdout)
+            for action in ('status', 'setup', 'start', 'stop', 'help'):
+                self.assertRegex(result.stdout, rf'{action} \[(none|staging|scheduler)\]')
+
     def test_default_action_is_status_and_cli_uses_argv(self):
         with tempfile.TemporaryDirectory() as tmp:
             h = Harness(Path(tmp))
@@ -999,14 +1955,19 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertIn('../shared/DEFINITION-OF-DONE.md', skill)
         self.assertIn('references/lifecycle.md', skill)
         self.assertIn('scripts/orbi_control.py', skill)
-        self.assertIn('status|setup|start|stop', skill)
+        self.assertIn('`/orbi [status|setup|start|stop|help]`', skill)
+        self.assertIn('**Help first.**', skill)
+        self.assertIn("helper's `help`", skill)
+        self.assertIn('observed output', skill)
         self.assertIn('macOS', skill)
         self.assertIn('explicit pauses, cutover requirements and human-only gates', skill)
         router = (ROOT / 'skills/ask-kit/SKILL.md').read_text()
         self.assertIn('`/orbi`', router)
         reference = (ROOT / 'skills/orbi/references/lifecycle.md').read_text()
+        self.assertIn('[status|setup|start|stop|help]', reference)
+        self.assertIn('for lifecycle actions; `help` prints a compact human block', reference)
         for topic in ('PYTHONPATH', 'UV_TOOL_DIR', 'UV_TOOL_BIN_DIR',
-                      f'sha:{PIN}', 'five', 'draining', 'is read-only'):
+                      f'sha:{PIN}', 'five', 'draining', 'is read-only', 'help'):
             self.assertIn(topic, reference)
 
 

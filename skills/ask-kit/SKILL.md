@@ -32,9 +32,8 @@ not ask for.
 2. **Make the plan executable.** `/plan-for-me` investigates and saves goals and tasks
    without an interview; `/plan-with-me` asks only what it cannot find.
 3. **Deliver through GitHub.** Orbi implements ready issues through tests, PRs,
-   independent review and merge gates. `/work` explicitly requests manual delivery
-   with coordinated ownership. `/autowork` inspects the Orbi handoff; it never starts
-   the retired runner.
+   independent review and merge gates. Retained fix/apply modes stay within their
+   accepted scope and shared ownership, review and PR gates.
    For one objective that must stay in view across many turns, use `/goal`. For many
    lanes at once, `/autonomous-codebase-improver`.
 4. **Deliver.** `/git-commit-push` commits, syncs and pushes when the request allows.
@@ -51,13 +50,12 @@ not ask for.
 | Code looks unused and you want it gone | `/unused-code` |
 | Merge every finished worktree into main | `/git-commit-push all` |
 | Commit all eligible changes, merge worktrees, sync and push main | `/push` |
-| Execute an accepted refactoring task in this session | `/work` |
 | One folder needs splitting without behavior change | `/split-folder` |
 | Modules are shallow or seams leak | `/improve-codebase-architecture` |
 | One objective needs many turns and an evidence audit | `/goal` |
-| Queue work is held and the owner must decide | `/blockers` |
+| Consequential owner intent is missing | `/plan-with-me` |
 | A runner is stalled or waiting and needs autonomous repair | `/unblock` |
-| One repository's Orbi deployment needs setup, start, status or stop | `/orbi` |
+| One repository's Orbi deployment needs setup, start, status, stop or help | `/orbi` |
 | Docs or task records drifted | `/docs-sync` |
 | A question needs measured evidence | `/autoresearch` |
 | One engineering method is missing (TDD, review, debugging) | Read [engineering](../engineering/REFERENCE.md) directly; no command |
@@ -75,7 +73,7 @@ not ask for.
 | Orientation in code before reading many files | `/graphify` |
 | Ponytail guidance, review, audit, debt or benchmarks | `/ponytail`, `/ponytail-review`,
   `/ponytail-audit`, `/ponytail-debt`, `/ponytail-gain`, `/ponytail-help` |
-| What is open, done or next | `/pending` |
+| What is open, done or next | Read GitHub Issues/PRs and existing read-only Orbi status |
 
 ## How to answer
 
@@ -89,7 +87,7 @@ not ask for.
 ## Boundaries
 
 - Not a dispatcher: it recommends a command, and the user or caller runs it.
-- Not a queue or status report; use `/pending` or `/blockers`.
+- Not a queue or status report; inspect GitHub issue/PR evidence and read-only Orbi status.
 - Not a substitute for the chosen skill's instructions; read that file.
 - Not an always-on meta-skill: it runs when invoked; the shared contract asks for a
   check, not automatic activation.

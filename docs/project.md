@@ -18,8 +18,8 @@ Status: Accepted
   GitHub Issues. An explicit objective keeps planning focused; a bare or vague request
   starts evidence-based discovery without inventing product direction.
 - Docs Sync maintains source-backed documents and GitHub issue handoffs.
-- `/autowork` is a compatibility redirect to GitHub/Orbi. `/work` performs explicit
-  manual implementation with ownership, checks and review boundaries preserved.
+- Planning stops after publication. Retained authorized fix/apply and recovery modes
+  preserve their own scope, ownership, checks, independent review and PR gates.
 - Load supporting methods only when useful, not every skill on every task. Preserve
   explicit exclusions, concurrent work, caller limits and live gates.
 - Support Hermes CLI/Telegram and native Claude Code, Codex and Pi packages.
@@ -51,17 +51,17 @@ See [paused GitHub/Orbi cutover](github-native.md).
 | Fleet installation | [orchestrator](../scripts/setup_bundle.py), [preflight](../scripts/setup_preflight.py), [finalization](../scripts/setup_runtime.py) | Validate prerequisites, install resources/configuration, inspect profiles and refresh supported gateways |
 | Portable packages | [Claude marketplace](../.claude-plugin/marketplace.json), [Codex manifest](../.codex-plugin/plugin.json), [marketplace](../.agents/plugins/marketplace.json), [Pi manifest](../package.json), [Pi extension](../adapters/pi.mjs) | Discover explicit portable workflows without Hermes configuration dependencies |
 | Portable behavior | [host contract](../adapters/skills/COMMON.md) | Use the current host's tools and preserve its permissions, memory and credentials |
+| Issue publication | [publisher](../scripts/github_issues.py), [handoff](../skills/shared/PLAN-HANDOFF.md) | Publish complete GitHub Issues and native dependencies before readiness; preserve existing ownership |
+| Orbi lifecycle client | [helper](../skills/orbi/scripts/orbi_control.py), [workflow](../skills/orbi/SKILL.md) | Inspect or explicitly prepare/start/stop one deployment; the separate Orbi project owns implementation and delivery |
 
 Native Hermes Python owners live under `src/autowork_runtime/`, loaded through
 `src/autowork_bootstrap.py` by the existing thin entrypoints. The executor source
 and integrations are absent; native maintenance is not a replacement executor.
 
-Hermes workflow registration requests skill loading in the current conversation;
-`/autowork status` answers directly. Registration does not execute a workflow.
+Hermes workflow registration requests skill loading in the current conversation.
+Registration does not execute a workflow.
 Codex and Claude Code load portable adapters. Pi commands read adapter instructions
-and send a user message, queued as a follow-up when busy. Portable `/autowork`
-redirects to GitHub/Orbi; `/work` executes in-session without starting
-a service. The [current host spellings](cross-host.md) and [README](../README.md)
+and send a user message, queued as a follow-up when busy. The [current host spellings](cross-host.md) and [README](../README.md)
 own the public catalog; engineering remains a reference pack, not another public
 coordinator. Grill Me compatibility opens Plan With Me challenge behavior.
 Independent Autoresearch and its selectors remain available; its Hermes plan
@@ -128,8 +128,8 @@ See [paused GitHub/Orbi cutover](github-native.md).
 
 Status: Accepted
 
-Planning handles consequential complexity; Orbi or explicit manual `/work`
-executes accepted outcomes without repeatedly asking permission for
+Planning handles consequential complexity; Orbi and already-authorized in-session
+fix/apply modes execute accepted outcomes without repeatedly asking permission for
 already-authorized work.
 
 - Resolve design, decomposition, interfaces, migration and acceptance before handoff.
@@ -158,8 +158,7 @@ authorizes the saved occurrence, not extra budget or scope. An at-most-one-new-b
 job keeps that limit; authorized closeout/work inside it needs no new approval.
 An explicit multi-batch/whole-spec mandate continues within its existing limits.
 Resolve a routine operating-policy question without another user permission round. Reuse
-[iteration rules](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/iteration-and-decisions.md),
-[recovery](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/owner-cycle.md) and the
+[recovery provenance](../skills/shared/PLANNING-CRAFT.md#recovery-provenance-and-qualification) and the
 [standing decision policy](autonomy.md); add no permission framework or review lane.
 Offline policy tests remain distinct from native/model qualification. These rules
 supply no money, secret, publication, deployment, destructive or live authority.
@@ -223,19 +222,21 @@ Status: Accepted
 
 ### Role source-evidence gaps
 
-The [manifest](roles.json) is not a fresh content-verification receipt. Preserve
-its explicit unresolved gaps; this document cleanup does not reverify roles or
-advance pins. Non-ancestor pins establish non-ancestry, not that an old review was
-false or current source is verified. Structural checks do not qualify runtime.
+The [manifest](roles.json) records the source baseline for each reviewed role.
+Architecture, test-plan, workflow and cross-host source maps cover the current
+registration, CI inventory, native implementations and portable manifests. Their
+baseline is a source review, not installed-host or model qualification. Other
+roles retain their own recorded baseline or missing verification; they are not
+silently marked current by this review.
 
 | Role | Required evidence boundary / unresolved coverage |
 | --- | --- |
-| [Architecture](#current-components) | Registration, all covered skills and Pi adapter still need current-source reverification; linked engine/task-store sources lie outside `covers`. |
-| [Test plan](testing.md) | Reconcile inventory and qualification claims with covered tests and documented engine/Docs Sync tests outside `covers`; listing tests is not running them. |
-| [Workflows](workflows.md) | Recheck aliases, routing and menus, following registrars into their implementation sources; task-store skill/CLI instructions need separate coverage. |
-| [Cross-host](cross-host.md) | Recheck adapter/package/runner claims; install/discovery evidence does not qualify current host/model behavior. |
-| [Reference](reference.md) | `task_prepare.py` and `task_migrate.py` are outside current coverage. |
-| [Troubleshooting](troubleshooting.md) | Task-store and Docs Sync remedies require unchecked sources beyond coverage. |
+| [Architecture](#current-components) | Current entrypoints, native registration, issue publication and lifecycle-client ownership are source-checked; workflow instruction adherence needs model evaluation. |
+| [Test plan](testing.md) | Checker, CI and bundled Docs Sync test coverage are mapped; the inventory is not a full-suite execution or live qualification. |
+| [Workflows](workflows.md) | Alias/routing/menu claims are checked against native implementations and Pi dispatch; actual model behavior and Telegram delivery remain separate. |
+| [Cross-host](cross-host.md) | Adapter/package contracts are source-checked; historical install/discovery records do not qualify every current host/model. |
+| [Reference](reference.md) | Current issue publication is mapped; historical task-store interfaces are retired, not missing implementation. |
+| [Troubleshooting](troubleshooting.md) | Current remedies still need their target's actual environment and recovery evidence. |
 | [Memory](memory.md) | Externally owned capture-policy claims need live qualification; no store access/replay is implied. |
 | [Dependencies](dependencies.md) | Impeccable/Beautify inventories and command dependency pins extend beyond current coverage. |
 | [README](../README.md), [installation](installation.md) | Covered-source reviews and structural links do not execute commands, install profiles or establish current live behavior. |
@@ -243,9 +244,9 @@ false or current source is verified. Structural checks do not qualify runtime.
 [`docs.py`](../skills/docs-sync/scripts/docs.py) accepts `reason` on mapped roles;
 `check` scans entire mapped documents, including combined roles; `stale` uses only
 `covers`, `verified_at` and Git history. It does not consume these gap notes, inspect
-content accuracy, uncommitted drift, external URLs or live behavior. The four
-unresolved architecture/test-plan/workflows/cross-host non-ancestor findings remain
-unqualified, not fresh/pass verdicts. Roles without coverage are not freshness-
+content accuracy, uncommitted drift, external URLs or live behavior. A known source
+baseline replaces unavailable historical pins only after the role's current source
+map is reviewed. It does not approve runtime behavior. Roles without coverage are not freshness-
 assessed; silence for PRD, changelog, user-guide, removal or contributing is no proof.
 
 ## Reliability bug harvest (2026-10-15)
@@ -496,24 +497,23 @@ replacement host/profile does not satisfy a missing original delivery target.
 
 ## Rename to Autowork (2026-10-16)
 
-The current product is Kit; `autowork` survives only in compatibility redirects,
-Hermes maintenance commands and existing state/package identifiers. pi-autowork
+The current product is Kit; `autowork` survives in Hermes terminal maintenance commands and existing state/package identifiers. pi-autowork
 is retired and unsupported, not an execution namespace or development target.
 Use current manifests and [installation](installation.md) for package names and
 supported transitional settings. The retired `hermes-toolset` namespace has no
 compatibility executor or automatic settings/cron migration.
 
-Maintenance recognizes exact `/autowork update|status|list` forms; other arguments
-route through the GitHub/Orbi compatibility skill, not the removed executor.
-Use `/work` for explicit manual implementation. Terminal maintenance
-uses `hermes autowork`. Keep `AUTOWORK_EXECUTION_COMMON`, `# autowork:` cron markers,
+Terminal maintenance uses `hermes autowork doctor --json` for inventory and
+`hermes autowork update [--check]` for synchronous maintenance with a printed receipt.
+No chat-maintenance replacement is registered. Keep `AUTOWORK_EXECUTION_COMMON`, `# autowork:` cron markers,
 and existing private `maintenance/toolset-update/` / `.toolset-imports.json` state
 identities. A source rename does not reinstall profiles, reset private state or
 restart hosts; live adoption remains a separately authorized operation.
 
 ## Pi agent harness bootstrap
 
-Status: Accepted requirement; positive missing-harness installation remains planned.
+Status: Accepted; implemented in the suite installer with offline bootstrap coverage.
+Real installation and live rollout remain separately unqualified.
 
 A selected Pi install component must install a missing harness from pi.dev and then
 the package in the same invocation, not silently skip Pi or require a preinstalled
@@ -531,8 +531,10 @@ a working harness is outside scope.
 Offline proof uses fake downloads/bootstrap/harnesses in isolated HOME/PATH: missing/
 existing/off-PATH harness, extension idempotence, download/bootstrap/probe failure,
 prerequisite refusal, skip/menu behavior and zero-write/no-download preview. Require
-no agent/service startup and normal source gates. Live install/plugin rollout remains
-separate; this requirement does not claim new tests or bootstrap qualification.
+no agent/service startup and normal source gates. The suite's existing active-integration
+restart phase remains unchanged. See [the supported path and recovery](installation.md#pi-harness-bootstrap).
+Offline fixtures verify the installer boundary, not a real upstream installation,
+model workflow or live install/plugin rollout.
 
 ## Per-repository Pi models and accounts
 
@@ -679,7 +681,7 @@ High-risk skills use `## Common Rationalizations` and `## Red Flags`, retain one
 and points to pinned Addy guidance for correctness, quality, integration, docs and
 ship criteria; do not add another verification checklist/coordinator.
 
-Apply the rule to Work, Plan For Me, Ponytail Review, Git Commit Push, Docs Sync
+Apply the rule to Plan For Me, Ponytail Review, Git Commit Push, Docs Sync
 and Plan With Me, and to later high-risk skills through [skill standard](skill-standard.md)
 and Writing for Agents. Shared operating behavior lives in
 `skills/shared/COMMON-CONTRACT.md`, not a second meta-skill. Keep commands explicit,

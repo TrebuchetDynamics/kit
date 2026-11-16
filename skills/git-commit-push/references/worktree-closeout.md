@@ -44,5 +44,5 @@ blanket pruning or history rewriting. Do not archive another writer's dirty work
 to evade a safety check. Report integration and cleanup separately, including
 each kept path and its exact preservation reason.
 
-The [prior closeout contract](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/worktree-closeout.md)
-remains immutable evidence; its old commands are not available in this package.
+The [shared ownership contract](../../shared/WORKTREE-ISOLATION.md) governs
+current closeout; retired executor commands are not available in this package.
