@@ -378,18 +378,23 @@ def install_tx():
         note = f' (the old one is {set_aside(target)})' if target.exists() or target.is_symlink() else ''
         shutil.copy2(source, target)
         target.chmod(0o755)
-        done.append(f'installed {target}{note}')
+        done.append(f'{target} written{note}')  # the summary row already says "installed"
+    written, kept_completions = [], []
     for shell, folder, name in (('bash', HOME / '.local/share/bash-completion/completions', 'tx'),
                                 ('zsh', HOME / '.zsh/completions', '_tx'),
                                 ('fish', HOME / '.config/fish/completions', 'tx.fish')):
         dest = folder / name
         if dest.exists() or dest.is_symlink():
+            kept_completions.append(f'{shell} completion')
             continue
         text = subprocess.run(['bash', str(source), 'completion', shell], capture_output=True, text=True).stdout
         if text:
             folder.mkdir(parents=True, exist_ok=True)
             (folder / name).write_text(text)
-    done.append('completions for bash, zsh and fish')
+            written.append(shell)
+    # Name only what was written: a kept completion can be older than this tx.
+    if written:
+        done.append('wrote completions for ' + ', '.join(written))
     kept = []
     for src, dest in ((ROOT / 'tmux/tmux.conf', HOME / '.tmux.conf'),
                       (ROOT / 'tmux/style.tmux', HOME / '.tmux/style.tmux'),
@@ -406,8 +411,8 @@ def install_tx():
         if dest.suffix == '.sh':
             dest.chmod(0o755)
         done.append(f'installed {dest}')
-    if kept:
-        done.append('kept your existing ' + ', '.join(kept))
+    if kept or kept_completions:
+        done.append('kept your existing ' + ', '.join(kept + kept_completions))
     return '; '.join(done)
 
 

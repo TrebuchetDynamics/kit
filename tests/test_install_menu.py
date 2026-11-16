@@ -1010,6 +1010,7 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         self.assertFalse(link.exists())  # removed executor has no installation path
         self.assertEqual((self.home / '.local/bin/tx').read_bytes(), (ROOT / 'tmux/tx').read_bytes())
         self.assertTrue((self.home / '.local/share/bash-completion/completions/tx').is_file())
+        self.assertIn('wrote completions for bash, zsh, fish', result.stdout)
         self.assertTrue((self.home / '.tmux.conf').is_file())  # none existed
         self.assertRegex(result.stdout, r'hermes\s+skipped\s+hermes not found')
         self.assertRegex(result.stdout, r'tx\s+installed')
@@ -1233,6 +1234,11 @@ exit 0
         for relative in paths:
             self.assertEqual((self.home / relative).read_bytes(), mine, relative)
         self.assertIn('kept your existing .tmux.conf', result.stdout)
+        # A kept completion is reported as kept, never as written, and the summary
+        # row does not repeat its own outcome word.
+        self.assertIn('bash completion, zsh completion, fish completion', result.stdout)
+        self.assertNotIn('completions for', result.stdout)
+        self.assertNotRegex(result.stdout, r'installed\s+installed')
         self.assertEqual(self.calls('pi install'), [])
         config = self.home / '.tmux.conf'
         config.unlink()

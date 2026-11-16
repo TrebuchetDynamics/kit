@@ -185,8 +185,10 @@ class PortablePackageTests(unittest.TestCase):
         pi = json.loads((ROOT / 'package.json').read_text())
         self.assertEqual(marketplace['name'], 'kit')
         self.assertEqual(plugin['name'], 'kit')
-        self.assertEqual(plugin['version'], codex['version'])
-        self.assertEqual(plugin['version'], pi['version'])
+        self.assertEqual(codex['version'], pi['version'])
+        # A pinned version takes precedence over the source commit: `claude plugin
+        # update` then reports "already at the latest version" and keeps a stale copy.
+        self.assertNotIn('version', plugin)
         # A plugin.json `skills` path adds to the default root skills/ scan, which holds
         # the Hermes-only skills; only the marketplace entry's list replaces that scan.
         for key in ('skills', 'commands', 'agents', 'hooks', 'mcpServers'):
@@ -194,6 +196,7 @@ class PortablePackageTests(unittest.TestCase):
         [entry] = marketplace['plugins']
         self.assertEqual(entry['name'], plugin['name'])
         self.assertEqual(entry['source'], './')
+        self.assertNotIn('version', entry)
         self.assertEqual(entry['skills'], ['./adapters/skills/'])
         for folder in ('commands', 'agents', 'hooks', 'bin', 'output-styles', 'monitors'):
             self.assertFalse((ROOT / folder).exists(), f'{folder}/ would load as a Claude Code component')

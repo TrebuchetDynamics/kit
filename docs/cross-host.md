@@ -363,7 +363,10 @@ the plugin itself ships no hooks, agents, MCP servers or settings. Claude Code c
 the whole repository into its plugin cache, so adapter links into `skills/` resolve
 there. Update with `claude plugin marketplace update kit` and then
 `claude plugin update kit@kit --scope SCOPE` (use the original user, project or local
-scope); remove with
+scope). The Claude manifest and its marketplace entry declare no `version`, so
+Claude Code uses the source commit as the plugin version and each new commit is an
+update; a pinned version would keep the cached copy until that string changed.
+Remove with
 `claude plugin uninstall kit@kit` (add the same `--scope` used
 to install) and `claude plugin marketplace remove kit`. Removal does not
 undo repository work or delete plans.
