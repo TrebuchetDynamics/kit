@@ -6,7 +6,7 @@ const protocols = JSON.parse(await readFile(new URL('../skills/autoresearch/UPST
 const workflows = {
   'plan-with-me': ['plan-with-me', 'Ask questions and plan together'],
   'plan-for-me': ['plan-for-me', 'Investigate, decide and save the plan'],
-  'docs-sync': ['docs-sync', 'Keep documentation and the tasks/ store accurate'],
+  'docs-sync': ['docs-sync', 'Maintain documentation and GitHub issue handoffs'],
   orbi: ['orbi', 'Prepare, start, inspect or stop one Orbi deployment'],
   autoresearch: ['autoresearch', 'Run bounded research or experiments'],
   'apk-get': ['apk-get', 'Find the app, build an ARM64 release APK and upload with s3upload'],
@@ -34,7 +34,7 @@ const workflows = {
   'grill-me': ['plan-with-me', 'Plan With Me challenge mode (compatibility)', 'challenge'],
   lgtm: ['lgtm', 'Continue the last approved action'],
   goal: ['goal', 'Keep one objective alive until evidence proves it done'],
-  unblock: ['unblock', 'Diagnose and repair stalled Autowork services'],
+  unblock: ['unblock', 'Resolve blocked GitHub work without releasing pauses'],
   'git-commit-push': ['git-commit-push', 'Commit and push, or pull and merge, owned changes'],
   push: ['push', 'Commit all, merge worktrees, sync and push main'],
 };
@@ -66,7 +66,7 @@ export default function register(pi) {
             + 'Investigate the repository first; do not ask for a goal. Follow the skill\'s '
             + 'discovery reference and save only evidence-backed work.\n\n'
           : '';
-        const message = `Use this portable Autowork workflow. Source: ${fileURLToPath(file)}\n`
+        const message = `Use this portable Kit workflow. Source: ${fileURLToPath(file)}\n`
           + boundary
           + `Resolve the workflow references from ${fileURLToPath(new URL('./', file))}.\n\n${body}\n\n`
           + (protocol ? `Selected subcommand: ${protocol}\n\n` : '')
