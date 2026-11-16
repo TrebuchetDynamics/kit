@@ -256,8 +256,10 @@ aggregate capacity guarantee. `max_concurrency` is per deployment.
 
 ## Partial failure and recovery
 
-Mutations report the step that succeeded and the step that failed with a
-precise `error=` and `fix=` line. Setup errors include `target`, `original_error`,
+Mutations report completed steps and the failed step with a precise `error=`
+and `fix=` line. JSON uses `error.mutated`; text errors explicitly include
+`mutated=True/False`. Nonzero exit alone does not mean unchanged state.
+Setup errors include `target`, `original_error`,
 completed/failed `steps`, `error.mutated`, `activated: false` and separately observed
 `scheduler` evidence (or `unavailable`). Lock creation counts as mutation. An
 attempt that may have written is marked `mutation: possible` on failure; completed
@@ -265,6 +267,29 @@ operations are distinguished from possible partial mutation. Filesystem errors
 are structured with details withheld; raw stderr, metadata and credential/env
 values are never receipts. `activated: false` means this setup invoked no
 activation, **not** proof an existing scheduler is inactive.
+
+Start/stop errors also retain `target`, deployment config/unit identity,
+`original_error`, and completed/failed `steps` at the JSON top level (not under
+`error.evidence`). A failed step names its `unit` when applicable and records
+`mutation: possible` for an attempted write, `none` for an observation failure.
+Lock acquisition/release failures count as possible writes even if no scheduler
+command ran. Preflight and dry-run failures remain mutation-free.
+
+Start reports `activation: possible` once upstream activation is attempted,
+including later timer-enable, first-tick or scheduler-read failures. Lock-only
+failure reports `activation: none`, not unchanged files. `activated_timers` lists
+only direct enables that returned successfully; it is not an exhaustive list of
+upstream activation. Stop retains `disabled_timers` only for confirmed completed
+disables. Failed and unprocessed timers may still schedule work; a failed command
+can have applied effects without completing successfully. A read-only `scheduler`
+snapshot is separate evidence, or `unavailable` if inspection failed. Recovery
+inspection never replaces the original error or completed steps.
+
+Before recovery, inspect helper `status` read-only and the failed step/unit
+privately, then deliberately repair the cause. Never automatically repeat a
+start/stop, retry an unchanged timeout, roll back with enable/disable compensation,
+or stop/kill/restart workers to undo partial application. The helper attempts no
+later timer mutations or first tick after failure.
 
 A process killed before rendering cannot emit a receipt. Infer safe retry from
 actual files: complete matching provider/env with no config can be reused by new
@@ -311,10 +336,12 @@ retry an unchanged timeout. Typical repairs:
 - `unit_conflict` or `ambiguous_deployment`: keep one task pool per repository
   and remove or repoint the duplicate config or unit ownership.
 - `source_drift` or `pin_mismatch`: check out the configured pin explicitly.
-- `setup_failed`, `install_units_failed` or a timeout during either start step:
+- `setup_failed`, `install_units_failed`, `command_failed` or `command_timeout`
+  during start activation, timer enable/disable or the first tick:
   upstream may already have activated timers or started workers. The error marks
-  activation as `possible` and includes a read-only scheduler snapshot (or
-  `unavailable`) and completed/failed steps. Inspect that evidence and the cause
+  start activation as `possible`; stop retains confirmed disables. The receipt
+  includes a read-only scheduler snapshot (or `unavailable`) and completed/failed
+  steps. Inspect that evidence and the cause
   before recovery; never repeat activation unchanged or stop workers to undo it.
   Observation failure does not replace the original activation error.
 - `scheduler_unavailable`: verify the systemd user session; status reports the
