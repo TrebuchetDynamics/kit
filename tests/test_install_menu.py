@@ -1010,7 +1010,8 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         self.assertFalse(link.exists())  # removed executor has no installation path
         self.assertEqual((self.home / '.local/bin/tx').read_bytes(), (ROOT / 'tmux/tx').read_bytes())
         self.assertTrue((self.home / '.local/share/bash-completion/completions/tx').is_file())
-        self.assertIn('wrote completions for bash, zsh, fish', result.stdout)
+        for shell in ('bash', 'zsh', 'fish'):
+            self.assertIn(f'{shell} completion written', result.stdout)
         self.assertTrue((self.home / '.tmux.conf').is_file())  # none existed
         self.assertRegex(result.stdout, r'hermes\s+skipped\s+hermes not found')
         self.assertRegex(result.stdout, r'tx\s+installed')
@@ -1219,13 +1220,19 @@ exit 0
 
     def test_tx_keeps_an_existing_tmux_config(self):
         mine = b'set -g mouse on\n# mine\n'
-        paths = ('.tmux.conf', '.tmux/style.tmux', '.tmux/git-status.sh', '.tmux/short-path.sh',
-                 '.local/share/bash-completion/completions/tx', '.zsh/completions/_tx',
-                 '.config/fish/completions/tx.fish')
+        paths = ('.tmux.conf', '.tmux/style.tmux', '.tmux/git-status.sh', '.tmux/short-path.sh')
         for relative in paths:
             path = self.home / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(mine)
+        completion_paths = ('.local/share/bash-completion/completions/tx',
+                            '.zsh/completions/_tx', '.config/fish/completions/tx.fish')
+        link_target = self.home / 'my-completion'
+        link_target.write_bytes(mine)
+        for index, relative in enumerate(completion_paths):
+            path = self.home / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.symlink_to(link_target if index != 1 else self.home / 'missing-completion')
         preview = self.install('--full', '--skip', 'hermes,pi', '--dry-run')
         self.assertEqual(preview.returncode, 0, preview.stderr)
         self.assertFalse((self.home / '.local/bin/tx').exists())
@@ -1236,7 +1243,13 @@ exit 0
         self.assertIn('kept your existing .tmux.conf', result.stdout)
         # A kept completion is reported as kept, never as written, and the summary
         # row does not repeat its own outcome word.
-        self.assertIn('bash completion, zsh completion, fish completion', result.stdout)
+        for shell, relative in zip(('bash', 'zsh', 'fish'), completion_paths):
+            path = self.home / relative
+            self.assertTrue(path.is_symlink())
+            self.assertIn(f'{shell} completion kept', result.stdout)
+            self.assertFalse(path.with_name(path.name + '.bak').exists())
+        self.assertEqual(link_target.read_bytes(), mine)
+        self.assertFalse((self.home / completion_paths[1]).exists())
         self.assertNotIn('completions for', result.stdout)
         self.assertNotRegex(result.stdout, r'installed\s+installed')
         self.assertEqual(self.calls('pi install'), [])
@@ -1247,6 +1260,34 @@ exit 0
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(config.is_symlink())
         self.assertFalse(config.exists())
+
+    def test_tx_refreshes_stale_regular_completions_with_backups(self):
+        paths = {'bash': '.local/share/bash-completion/completions/tx',
+                 'zsh': '.zsh/completions/_tx', 'fish': '.config/fish/completions/tx.fish'}
+        for shell, relative in paths.items():
+            path = self.home / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f'old {shell} completion\n')
+            path.with_name(path.name + '.bak').write_text('earlier backup\n')
+        result = self.install('--only', 'tx')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        command = self.home / '.local/bin/tx'
+        for shell, relative in paths.items():
+            generated = subprocess.run([str(command), 'completion', shell], env=self.env,
+                                       capture_output=True, timeout=10, check=True).stdout
+            self.assertTrue(generated)
+            path = self.home / relative
+            self.assertEqual(path.read_bytes(), generated)
+            self.assertEqual(path.with_name(path.name + '.bak.1').read_text(),
+                             f'old {shell} completion\n')
+            self.assertEqual(path.with_name(path.name + '.bak').read_text(), 'earlier backup\n')
+            self.assertIn(f'{shell} completion replaced', result.stdout)
+        again = self.install('--only', 'tx')
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        for shell, relative in paths.items():
+            path = self.home / relative
+            self.assertIn(f'{shell} completion kept', again.stdout)
+            self.assertFalse(path.with_name(path.name + '.bak.2').exists())
 
     def test_an_ordinary_install_refreshes_a_package_missing_a_shipped_skill(self):
         # A registered checkout older than this one lacks the skills a later release
@@ -1572,17 +1613,46 @@ fi
         self.assertEqual(elsewhere.read_text(), 'someone else\'s tx\n')
         self.assertFalse((self.home / '.local/bin/tx').is_symlink())
         self.assertEqual((self.home / '.local/bin/tx').read_bytes(), (ROOT / 'tmux/tx').read_bytes())
-        self.assertEqual(Path(os.readlink(self.home / '.local/bin/tx.bak')), elsewhere)
+        self.assertEqual(Path(os.readlink(self.home / '.local/state/kit/backups/tx.bak')), elsewhere)
 
-    def test_a_second_replacement_keeps_the_first_backup(self):
+    def test_tx_replacements_keep_only_the_newest_five_backups_off_path(self):
         command = self.home / '.local/bin/tx'
         command.parent.mkdir(parents=True)
-        for content in ('first script\n', 'second script\n'):
-            command.write_text(content)
+        legacy = command.with_name('tx.bak')
+        legacy.write_text('legacy backup\n')
+        legacy.chmod(0o755)
+        backups = self.home / '.local/state/kit/backups'
+        # Continue past six to catch retention bugs when numbered slots disappear.
+        for number in range(8):
+            command.write_text(f'script {number}\n')
+            command.chmod(0o755)
             result = self.install('--only', 'tx')
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(command.with_name('tx.bak').read_text(), 'first script\n')
-        self.assertEqual(command.with_name('tx.bak.1').read_text(), 'second script\n')
+            self.assertEqual({p.read_text() for p in backups.iterdir()},
+                             {f'script {i}\n' for i in range(max(0, number - 4), number + 1)})
+            self.assertEqual(list(command.parent.glob('tx.bak*')), [legacy])
+            self.assertEqual(command.read_bytes(), (ROOT / 'tmux/tx').read_bytes())
+        self.assertEqual(legacy.read_text(), 'legacy backup\n')
+        self.assertTrue(os.access(legacy, os.X_OK))
+
+    def test_tx_backup_failure_preserves_command_and_can_be_repaired(self):
+        command = self.home / '.local/bin/tx'
+        command.parent.mkdir(parents=True)
+        command.write_text('my old tx\n')
+        blocker = self.home / '.local/state/kit/backups'
+        blocker.parent.mkdir(parents=True)
+        blocker.write_text('not a directory\n')
+        result = self.install('--only', 'tx')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r'tx\s+failed')
+        self.assertIn('File exists', result.stdout)
+        self.assertIn(str(blocker), result.stdout)
+        self.assertEqual(command.read_text(), 'my old tx\n')
+        blocker.unlink()  # Repair the reported path and retry the same entry point.
+        result = self.install('--only', 'tx')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(command.read_bytes(), (ROOT / 'tmux/tx').read_bytes())
+        self.assertEqual((blocker / 'tx.bak').read_text(), 'my old tx\n')
 
     def test_a_filtered_pi_package_counts_as_installed(self):
         package = self.installed_package()

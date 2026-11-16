@@ -343,13 +343,27 @@ def pi_package(source=PI_SOURCE, binary=None):
     return None
 
 
-def set_aside(path):
-    """Move a file or symlink out of the way as <name>.bak, or .bak.N if that is taken,
-    so an earlier backup is never overwritten. Return where it went."""
-    backup, n = path.with_name(path.name + '.bak'), 1
-    while backup.exists() or backup.is_symlink():
-        backup, n = path.with_name(f'{path.name}.bak.{n}'), n + 1
+def set_aside(path, *, backup_dir=None):
+    """Move a file or symlink to .bak/.bak.N. With a separate backup_dir,
+    use increasing numbers and keep only the newest five; otherwise keep all."""
+    previous = []
+    if backup_dir is not None:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        pattern = re.compile(re.escape(path.name) + r'\.bak(?:\.(\d+))?')
+        for candidate in backup_dir.iterdir():
+            match = pattern.fullmatch(candidate.name)
+            if match:
+                previous.append((int(match[1] or 0), candidate))
+        previous.sort()
+        number = previous[-1][0] + 1 if previous else 0
+        backup = backup_dir / (path.name + '.bak' + (f'.{number}' if number else ''))
+    else:
+        backup, n = path.with_name(path.name + '.bak'), 1
+        while backup.exists() or backup.is_symlink():
+            backup, n = path.with_name(f'{path.name}.bak.{n}'), n + 1
     os.replace(path, backup)
+    for _, old in previous[:-4]:
+        old.unlink()
     return backup
 
 
@@ -375,26 +389,32 @@ def install_tx():
     else:
         # Move the old one, a symlink included, rather than write through it: a link
         # may point into another checkout.
-        note = f' (the old one is {set_aside(target)})' if target.exists() or target.is_symlink() else ''
+        note = ''
+        if target.exists() or target.is_symlink():
+            backup = set_aside(target, backup_dir=HOME / '.local/state/kit/backups')
+            note = f' (the old one is {backup})'
         shutil.copy2(source, target)
         target.chmod(0o755)
         done.append(f'{target} written{note}')  # the summary row already says "installed"
-    written, kept_completions = [], []
+
     for shell, folder, name in (('bash', HOME / '.local/share/bash-completion/completions', 'tx'),
                                 ('zsh', HOME / '.zsh/completions', '_tx'),
                                 ('fish', HOME / '.config/fish/completions', 'tx.fish')):
         dest = folder / name
-        if dest.exists() or dest.is_symlink():
-            kept_completions.append(f'{shell} completion')
+        if dest.is_symlink() or (dest.exists() and not dest.is_file()):
+            done.append(f'{shell} completion kept')
             continue
-        text = subprocess.run(['bash', str(source), 'completion', shell], capture_output=True, text=True).stdout
-        if text:
-            folder.mkdir(parents=True, exist_ok=True)
-            (folder / name).write_text(text)
-            written.append(shell)
-    # Name only what was written: a kept completion can be older than this tx.
-    if written:
-        done.append('wrote completions for ' + ', '.join(written))
+        text = subprocess.run(['bash', str(target), 'completion', shell],
+                              capture_output=True, check=True, timeout=30).stdout
+        if dest.is_file() and dest.read_bytes() == text:
+            done.append(f'{shell} completion kept')
+            continue
+        note, status = '', 'written'
+        if dest.is_file():
+            note, status = f' (the old one is {set_aside(dest)})', 'replaced'
+        folder.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(text)
+        done.append(f'{shell} completion {status}{note}')
     kept = []
     for src, dest in ((ROOT / 'tmux/tmux.conf', HOME / '.tmux.conf'),
                       (ROOT / 'tmux/style.tmux', HOME / '.tmux/style.tmux'),
@@ -411,8 +431,8 @@ def install_tx():
         if dest.suffix == '.sh':
             dest.chmod(0o755)
         done.append(f'installed {dest}')
-    if kept or kept_completions:
-        done.append('kept your existing ' + ', '.join(kept + kept_completions))
+    if kept:
+        done.append('kept your existing ' + ', '.join(kept))
     return '; '.join(done)
 
 

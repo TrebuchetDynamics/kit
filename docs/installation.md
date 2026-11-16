@@ -108,11 +108,33 @@ Dry-run invokes no registry probes or mutations and reports registry/migration s
 as `NOT_CHECKED`, with planned validation. Hermes also needs a Hermes
 home (`~/.hermes`, or `--hermes-home`/`HERMES_HOME`); a default home that does not
 exist yet counts as missing. The tmux launcher needs `tmux`.
-A replaced `~/.local/bin/tx` is
-kept as `<name>.bak`, then `.bak.1` and so on, so no earlier backup is lost; a
-symlinked `tx` is moved aside, never written through. Existing tmux configuration,
-helpers and shell completions are kept, including dangling symlinks; only missing
-files are installed.
+The owner's accepted tx rules (2026-11-16) for this suite installer are:
+
+- A replaced `~/.local/bin/tx` (or `AUTOWORK_BIN_DIR/tx`) moves to
+  `~/.local/state/kit/backups/tx.bak`, then `.bak.1` and increasing numbers. Only
+  the newest five command backups are kept, in replacement order. Keep this state
+  directory off `PATH`; no new `tx.bak*` executables are created in the bin directory.
+  A symlinked `tx` is moved aside, never written through.
+- Bash, zsh and fish completion files are generated from the installed `tx`.
+  Missing files are written; regular files with different content are replaced,
+  with their previous content saved beside them as `<name>.bak`, then `.bak.1`
+  and so on without overwriting earlier completion backups. Identical files,
+  symlinks (including dangling symlinks) and other non-regular targets are kept.
+  The tx detail line reports each shell completion as `written`, `replaced` or `kept`.
+- Existing tmux configuration and helpers are kept, including dangling symlinks;
+  only missing files are installed.
+
+Existing `tx.bak*` files in the bin directory are not removed automatically.
+After checking that you no longer need them for recovery, use this manual cleanup
+command in Bash (it prompts before each removal):
+
+```sh
+rm -i -- "${AUTOWORK_BIN_DIR:-$HOME/.local/bin}"/tx.bak*
+```
+
+These rules do not change the separate [tmux installer](../tmux/README.md#install):
+`tmux/install.sh` and `tx install` still use their existing timestamp backups,
+including backups beside the command in the bin directory.
 
 Output streams during each install step, including native prompts. Verbose output
 is on by default (`--verbose`) and shows shell-quoted commands; `--quiet` shows summaries and failure diagnostics,
@@ -549,8 +571,9 @@ environment variable is set; native output is not parsed as a receipt.
 `--check`, scoped local deployments, and pin/unpin operations never run the host
 installer. An `up_to_date` update skips it too: a no-op rerun does not retry failed
 host items. To retry those independently, run `./install.sh --full --skip hermes,pi`
-from the updated checkout. Existing user config, including `~/.tmux.conf` and shell
-completions, is preserved; command replacements retain the `.bak` rule above.
+from the updated checkout. Existing user config, including `~/.tmux.conf`, is
+preserved. Regular shell completions refresh with adjacent backups; command
+replacements use the bounded state-directory backups described above.
 Offline fixture checks exercise preview mode and a real `install.sh --only tx`
 without contacting host services; they do not establish live plugin acceptance.
 
