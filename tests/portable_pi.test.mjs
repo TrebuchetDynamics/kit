@@ -116,15 +116,19 @@ test('Orbi dispatch forwards lifecycle arguments and queues in a busy session', 
   const {fileURLToPath} = await import('node:url');
   const adapterFile = new URL('../adapters/skills/orbi/SKILL.md', import.meta.url);
   const adapter = await readFile(adapterFile, 'utf8');
-  const raw = 'setup --dry-run --json\n--repo-dir "/tmp/checkout $(literal)"; no push';
-  for (const idle of [true, false]) {
-    await commands.get('orbi').handler(raw, {isIdle: () => idle});
-    const [message, delivery] = messages.at(-1);
-    assert.equal(message.includes(adapter), true);
-    assert.equal(message.includes('../../../skills/orbi/SKILL.md'), true);
-    assert.equal(message.includes(`Resolve the workflow references from ${fileURLToPath(new URL('./', adapterFile))}.`), true);
-    assert.equal(message.endsWith('User request (preserve scope and restrictions):\n' + raw), true);
-    assert.deepEqual(delivery, idle ? undefined : {deliverAs: 'followUp'});
+  for (const raw of [
+    'setup --dry-run --json\n--repo-dir "/tmp/checkout $(literal)"; no push',
+    'start --dry-run --harness pi --pi-providers "/tmp/models $(literal).json" --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
+  ]) {
+    for (const idle of [true, false]) {
+      await commands.get('orbi').handler(raw, {isIdle: () => idle});
+      const [message, delivery] = messages.at(-1);
+      assert.equal(message.includes(adapter), true);
+      assert.equal(message.includes('../../../skills/orbi/SKILL.md'), true);
+      assert.equal(message.includes(`Resolve the workflow references from ${fileURLToPath(new URL('./', adapterFile))}.`), true);
+      assert.equal(message.endsWith('User request (preserve scope and restrictions):\n' + raw), true);
+      assert.deepEqual(delivery, idle ? undefined : {deliverAs: 'followUp'});
+    }
   }
   // The extension callback is dispatch only: it never shells out to a lifecycle command.
   const source = await readFile(new URL('../adapters/pi.mjs', import.meta.url), 'utf8');

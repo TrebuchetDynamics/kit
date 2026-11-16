@@ -1769,7 +1769,7 @@ def require_intended_files(ctx, target, metadata):
                                    'repair deliberately or choose a fresh deployment path', exit_code=2)
 
 
-def command_setup(ctx, args):
+def command_setup(ctx, args, *, prepared_binding=None):
     steps = []
     target = None
     target_path = args.config
@@ -1905,6 +1905,10 @@ def command_setup(ctx, args):
             report['harness'] = harness_evidence(ctx, target)
             report['harness']['observed_version'] = evidence['harness']['observed_version']
             step('validate_non_activating', lambda: run_orbi_check(ctx, target), mutating=True)
+            if prepared_binding is not None:
+                # Private handoff captured before releasing the preparation lock. Never render bytes.
+                prepared_binding.update(repo=repo, target=deployment_from(target.config_path),
+                                        identities=setup_file_identities(target))
             current, possible = 'release_lock', True
         return {'action': 'setup', 'platform': ctx.platform, 'status': 'prepared',
                 'dry_run': False, 'repo': repo.full, 'deployment': report,
@@ -1995,12 +1999,55 @@ def command_start(ctx, args):
     target = None
     steps, activated = [], []
     mutated, activation = False, 'none'
+    preparation = {'state': 'skipped'}
+    binding = {}
     current = {'step': 'preflight', 'mutation': 'none'}
     try:
         repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
-        target = select_target(ctx, repo, args.config, require=True)
+        target = select_target(ctx, repo, args.config)
+        selectors = any(getattr(args, key) is not None for key in
+                        ('pi_providers', 'pi_provider', 'pi_model', 'pi_thinking', 'harness'))
+        if target is None:
+            # A foreign config in either target location is not an absent deployment.
+            for path in (repo.path / 'orbi.toml',
+                         data_home(ctx) / f'orbi-{derive_unit_name(repo.full)}' / 'orbi.toml'):
+                if path.exists():
+                    raise ControlError('config_mismatch', 'an existing target config does not own this repository',
+                                       fix='inspect the native config and repair ownership deliberately; '
+                                           'preserve the config, pin and attempts', exit_code=2)
+            current = {'step': 'prepare_deployment', 'mutation': 'none'}
+            try:
+                prepared = command_setup(ctx, args, prepared_binding=binding)
+            except ControlError as exc:
+                preparation = {'state': 'failed', **exc.evidence}
+                raise
+            preparation = {'state': 'planned' if args.dry_run else 'prepared',
+                           'target': prepared['deployment']['config'],
+                           **{key: prepared[key] for key in
+                              ('deployment', 'steps', 'prerequisites', 'scheduler')}}
+            if args.dry_run:
+                return {**prepared, 'action': 'start', 'preparation': preparation,
+                        'activation': 'planned', 'first_tick': 'deferred',
+                        'steps': [*prepared['steps'],
+                                  {'step': 'activation_preflight', 'status': 'deferred',
+                                   'reason': 'requires staged source, published config/provider/harness and validation'},
+                                  {'step': 'activate_deployment', 'status': 'planned'}]}
+            mutated = True  # successful setup includes lock and publication writes
+            current = {'step': 'rebind_prepared_target', 'mutation': 'none'}
+            target = select_target(ctx, repo, args.config, require=True)
+            if repo_identity(ctx, repo.path) != binding['repo'] or target != binding['target']:
+                raise ControlError('target_changed', 'prepared repository or deployment binding changed',
+                                   fix='inspect concurrent changes; preserve prepared files', exit_code=2)
+            if setup_file_identities(target) != binding['identities']:
+                raise ControlError('target_changed', 'prepared deployment files changed',
+                                   fix='inspect concurrent changes; preserve prepared files', exit_code=2)
+        elif selectors:
+            raise ControlError('bootstrap_override_refused', 'start selectors are only for absent preparation',
+                               fix='omit --pi-* and --harness to reuse the saved selection; '
+                                   'use deliberate setup/repair for partial deployments', exit_code=2)
         validate_target(target, repo)
         require_unit_ownership(ctx, target)
+        identities = setup_file_identities(target)
         _source, provider = start_plan(ctx, target)
         report = new_deployment_report(ctx, target, provider)
         report['source'] = _source['state']
@@ -2024,14 +2071,22 @@ def command_start(ctx, args):
             return {'action': 'start', 'platform': ctx.platform, 'status': 'planned',
                     'dry_run': True, 'repo': repo.full, 'deployment': report,
                     'steps': steps, 'activated': False, 'scheduler': snapshot,
-                    'first_tick': 'already-active' if live else 'planned'}
+                    'first_tick': 'already-active' if live else 'planned',
+                    'preparation': preparation}
         steps = [{'step': 'reuse_existing_deployment', 'status': 'ok'}]
         current, mutated = {'step': 'lock', 'mutation': 'possible'}, True
         with locked(ctx, target.config_path):
             steps.append({'step': 'lock', 'status': 'ok', 'mutation': 'completed'})
             current = {'step': 'recheck_paths', 'mutation': 'none'}
-            validate_deployment_paths(target)
-            require_harness(ctx, target)
+            if (repo_identity(ctx, repo.path) != repo
+                    or select_target(ctx, repo, args.config, require=True) != target
+                    or setup_file_identities(target) != identities):
+                raise ControlError('target_changed', 'activation target changed after preflight',
+                                   fix='inspect concurrent config, ownership and selection changes; '
+                                       'preserve all recovery inputs', exit_code=2)
+            validate_target(target, repo)
+            require_unit_ownership(ctx, target)
+            start_plan(ctx, target)
             final_extension_env(ctx, target)
             current, activation = {'step': 'setup', 'mutation': 'possible'}, 'possible'
             run_start_step(ctx, target, 'setup', '--repo', repo.full)
@@ -2074,11 +2129,16 @@ def command_start(ctx, args):
         return {'action': 'start', 'platform': ctx.platform, 'status': state,
                 'dry_run': False, 'repo': repo.full, 'deployment': report,
                 'steps': steps, 'activated': bool(activated) or state == 'started',
-                'first_tick': first_tick}
+                'first_tick': first_tick, 'preparation': preparation}
     except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
-        exc = lifecycle_failure(ctx, target, error, target_path=args.config, steps=steps,
-                                current=current, mutated=mutated,
-                                evidence={'activation': activation, 'activated_timers': activated})
+        if preparation['state'] == 'failed':
+            # Keep setup's exact original failed operation, target and mutation evidence.
+            error.evidence = {**error.evidence, 'preparation': preparation, 'activation': 'none'}
+            raise
+        exc = lifecycle_failure(ctx, target, error, target_path=preparation.get('target', args.config),
+                                steps=steps, current=current, mutated=mutated,
+                                evidence={'activation': activation, 'activated_timers': activated,
+                                          'preparation': preparation})
         raise exc from (error if exc is not error else None)
 
 
@@ -2214,17 +2274,17 @@ def action_usage():
 
 def command_help(ctx, args):
     options = {
-        '--harness': 'setup only: pi-bolt (new default) or pi; existing managed selection is reused; legacy is not migrated',
+        '--harness': 'new setup or absent start: pi-bolt (new default) or pi; existing start rejects selectors; no migration',
         '--repo-dir': 'canonical repository checkout (default: current directory)',
         '--config': 'explicit native Orbi config for this deployment',
         '--dry-run': 'preview without locking, writing, installing or activating',
         '--json': 'print one JSON document',
         '--resume-setup': 'setup only: fill a legacy missing local provider; requires explicit '
                           '--config and complete matching --pi-* inputs; never overwrite',
-        '--pi-providers': 'regular Pi metadata JSON for new setup or explicit bounded resume (no credentials)',
+        '--pi-providers': 'regular Pi metadata JSON for new setup/absent start or explicit bounded setup resume (no credentials)',
         '--pi-provider': 'explicit provider ID; requires --pi-providers and --pi-model',
         '--pi-model': 'model ID with verified metadata; requires --pi-providers and --pi-provider',
-        '--pi-thinking': 'reasoning for new setup; resume must match saved value (omission inherits)',
+        '--pi-thinking': 'reasoning for new setup/absent start; setup resume must match saved value (omission inherits)',
     }
     return {
         'action': 'help',
@@ -2237,6 +2297,59 @@ def command_help(ctx, args):
                            'applies_to': [name for name, entry in ACTIONS.items()
                                           if flag in entry['applies']]}
                     for flag, effect in options.items()},
+        'quickstart': [
+            'Bare /orbi or status inspects only. Start prepares if absent, then activates; '
+            'an existing valid target skips preparation and retains its provider/harness.',
+            'Start requires explicit scheduling authority and resolved explicit pauses, cutover '
+            'and human-only gates. Kit remains paused and live-unqualified; help grants no waiver.',
+            'Setup prepares without scheduling. New preparation defaults to Pi-Bolt; --harness pi '
+            'selects stock Pi. Existing selections stay unchanged. A missing binary is a prerequisite, '
+            'not an automatic installation or fallback.',
+            'Use published provider/model IDs and a credential-free metadata path; omitted selectors '
+            'reuse verified donor metadata, or report the exact missing input. No donor creation needed.',
+            'Planned is a write-free preview; prepared is non-activating validation; activated is '
+            'scheduling requested, not live-qualified delivery. Absent-start preview defers source, '
+            'published-file validation and activation checks until preparation; it does not pass them.',
+            'Status separates configured harness from running-process evidence (not observed), and '
+            'configured slots from enabled/active observed units. Template rows are not enabled capacity.',
+        ],
+        'examples': [
+            {'command': '/orbi status --json', 'outcome': 'Inspect only; bare /orbi is equivalent.'},
+            {'command': '/orbi setup --dry-run --pi-providers /path/to/models.json '
+                        '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
+             'outcome': 'Preview first preparation; replace paths/IDs with verified published metadata.'},
+            {'command': '/orbi setup --harness pi --pi-providers /path/to/models.json '
+                        '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
+             'outcome': 'Prepare a new stock Pi target without scheduling.'},
+            {'command': '/orbi start --pi-providers /path/to/models.json '
+                        '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
+             'outcome': 'Only with scheduling authority: prepare absent target with Pi-Bolt, then activate. '
+                        'Omit selectors on subsequent starts.'},
+            {'command': '/orbi start --dry-run',
+             'outcome': 'Preview existing activation, or absent preparation using donor metadata; '
+                        'without a donor, add the complete first-deployment selectors above.'},
+            {'command': '/orbi stop', 'outcome': 'Disable owned timers; active services drain, never killed.'},
+        ],
+        'recovery': {
+            'harness': 'prerequisite_missing/harness_unavailable: provision the exact selected pi-bolt or pi '
+                       'separately; inspect saved routing/launcher drift deliberately. No install/fallback here.',
+            'provider': 'provider_unavailable/auth_unverified: supply --pi-providers PATH --pi-provider ID '
+                        '--pi-model ID for absent preparation, or provision the exact named existing catalog/auth '
+                        'or service reference separately; never invent capabilities or copy credentials.',
+            'config_missing': '--config must name an existing native config. Correct the path; omit --config '
+                              'only for genuinely absent preparation, not to bypass partial/foreign state.',
+            'partial_setup': 'Preserve config, pin, provider, env, launcher and attempts. Inspect the failed step; '
+                             'repair deliberately and use setup without bootstrap selectors. Only a legacy missing '
+                             'local provider permits setup --config PATH --resume-setup with complete matching '
+                             'selectors. Start never performs legacy repair or changes a saved harness.',
+            'setup_busy': 'Preparation requires verified inactivity. Inspect status and existing ownership/authority; '
+                          'do not stop workers to pass validation. Existing valid start skips preparation.',
+            'platform': 'unsupported_platform: use Linux for authorized mutations; macOS supports status/help; '
+                        'other platforms support help only.',
+            'stale_helper': 'Report the Loaded helper path and available Kit revision; request a separately '
+                            'authorized Kit update/reload. Do not change origin, upgrade an engine pin, run bare '
+                            'upstream Orbi or stop workers as a workaround.',
+        },
         'errors': {
             'exit': 'Exit 0 means success or help; a nonzero exit reports an error, '
                     'not whether a write occurred.',
@@ -2268,7 +2381,7 @@ def command_help(ctx, args):
             'not completed; confirmed timer lists exclude failed attempts. Start activation=possible '
             'means timers or workers may already run; activation=none can still include lock writes. '
             'Never retry unchanged, compensate with enable/disable, or stop workers after failure.',
-            'Status is read-only. Only setup stages source/config; only start/stop touch '
+            'Status is read-only. Setup (including absent-start preparation) stages source/config; only start/stop touch '
             'the scheduler. Dry-run performs no writes.',
             'Not an executor or scheduler: no tick, issue claim, review or merge.',
             'Not /unblock, /git-commit-push, /plan-with-me, /plan-for-me.',
@@ -2303,11 +2416,12 @@ ACTIONS = {
     },
     'start': {
         'handler': command_start,
-        'effect': 'Install scoped units, enable owned timers and request a first tick if idle.',
+        'effect': 'Prepare if absent, then install scoped units, enable owned timers and request a first tick if idle.',
         'mutates': 'scheduler',
         'platforms': ['linux'],
-        'applies': ['--repo-dir', '--config', '--dry-run', '--json'],
-        'when': 'Run for a prepared deployment after an owner scheduling request and '
+        'applies': ['--repo-dir', '--config', '--dry-run', '--json',
+                    '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--harness'],
+        'when': 'Run after an owner scheduling request; prepare only if absent, then activate after '
                 'resolution of explicit pauses, cutover requirements and human-only gates.',
     },
     'stop': {
@@ -2336,10 +2450,19 @@ def render_help(ctx, document, json_mode):
         return
     ctx.out.write(document['boundaries'][0] + '\n')
     ctx.out.write(f"Platform: {document['platform']}; "
-                  f"mutations_supported={document['mutations_supported']}\nActions:\n")
+                  f"mutations_supported={document['mutations_supported']}\nQuickstart:\n")
+    for text in document['quickstart']:
+        ctx.out.write('  ' + text + '\n')
+    ctx.out.write('Actions:\n')
     for name, entry in document['actions'].items():
         ctx.out.write(f"  {name} [{entry['mutates']}] {entry['effect']} "
                       f"Platforms: {', '.join(entry['platforms'])}. {entry['when']}\n")
+    ctx.out.write('Examples:\n')
+    for example in document['examples']:
+        ctx.out.write(f"  {example['command']}\n    {example['outcome']}\n")
+    ctx.out.write('Recovery:\n')
+    for code, text in document['recovery'].items():
+        ctx.out.write(f'  {code}: {text}\n')
     ctx.out.write('Options:\n')
     for flag, entry in document['options'].items():
         ctx.out.write(f"  {flag}: {entry['effect']}; "
@@ -2356,8 +2479,9 @@ def parse_args(argv):
     parser = argparse.ArgumentParser(
         prog='orbi_control.py',
         usage=action_usage() + ' [-h]',
-        description='Repository-scoped Orbi lifecycle controls: '
-                    + '; '.join(f"{name} [{entry['mutates']}]: {entry['effect']}"
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Repository-scoped Orbi lifecycle controls:\n'
+                    + '\n'.join(f"{name} [{entry['mutates']}]: {entry['effect']}"
                                 for name, entry in ACTIONS.items())
                     + ' Default: status. Linux mutates; macOS also supports status; '
                     'help works everywhere; minimum Python 3.11.')
@@ -2373,11 +2497,11 @@ def parse_args(argv):
     parser.add_argument('--resume-setup', action='store_true',
                         help='setup only: resume legacy missing provider with explicit --config '
                              'and complete matching --pi-* inputs')
-    parser.add_argument('--harness', choices=('pi-bolt', 'pi'), help='setup only: new default pi-bolt; explicit stock pi supported; no legacy migration')
-    parser.add_argument('--pi-providers', help='setup only: Pi metadata JSON for new setup or bounded resume')
-    parser.add_argument('--pi-provider', help='setup only: explicit provider ID')
-    parser.add_argument('--pi-model', help='setup only: explicit model ID with verified metadata')
-    parser.add_argument('--pi-thinking', help='setup only: new reasoning level, or exact saved resume value; '
+    parser.add_argument('--harness', choices=('pi-bolt', 'pi'), help='new setup or absent start: default pi-bolt; explicit stock pi supported; no legacy migration')
+    parser.add_argument('--pi-providers', help='new setup/absent start or bounded setup resume: Pi metadata JSON')
+    parser.add_argument('--pi-provider', help='new setup/absent start or bounded setup resume: explicit provider ID')
+    parser.add_argument('--pi-model', help='new setup/absent start or bounded setup resume: model ID with verified metadata')
+    parser.add_argument('--pi-thinking', help='new setup/absent start reasoning level, or exact saved setup resume value; '
                         'omitted resume thinking inherits the saved value')
     return parser.parse_args(argv)
 
@@ -2397,6 +2521,11 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
                             'scheduler': {'state': 'unavailable'},
                             'steps': [{'step': 'validate_request', 'status': 'failed',
                                        'error': exc.code, 'mutation': 'none'}]}
+        if args.action == 'start':
+            exc.evidence = {'preparation': {'state': 'skipped'}, 'activation': 'none',
+                            'target': args.config, 'original_error': exc.code,
+                            'steps': [{'step': 'validate_request', 'status': 'failed',
+                                       'error': exc.code, 'mutation': 'none'}]}
         render_error(ctx, args.action, exc, args.json)
         return exc.exit_code
     try:
@@ -2404,9 +2533,9 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             raise ControlError(
                 'unknown_action', f"unknown action '{args.action}'", exit_code=2,
                 fix='run /orbi help for the supported actions and their effects')
-        if args.harness and args.action not in ('setup', 'help'):
-            raise ControlError('invalid_harness_selection', '--harness is setup-only',
-                               fix='omit the selector; status/start use persisted selection', exit_code=2)
+        if args.harness and '--harness' not in ACTIONS[args.action]['applies'] and args.action != 'help':
+            raise ControlError('invalid_harness_selection', '--harness requires setup or absent start',
+                               fix='omit the selector to inspect the persisted selection', exit_code=2)
         selectors = (args.pi_providers, args.pi_provider, args.pi_model, args.pi_thinking)
         if args.action != 'help' and args.resume_setup and (
                 args.action != 'setup' or not args.config or not all(selectors[:3])):
@@ -2416,11 +2545,11 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
                                    '--pi-provider ID --pi-model ID, matching the saved selection', exit_code=2)
 
         if args.action != 'help' and any(value is not None for value in selectors):
-            if (args.action != 'setup' or not all(selectors[:3])
+            if ('--pi-providers' not in ACTIONS[args.action]['applies'] or not all(selectors[:3])
                     or any(value is not None and not value.strip() for value in selectors)):
                 raise ControlError(
                     'invalid_provider_selection',
-                    'bootstrap requires setup with --pi-providers, --pi-provider and --pi-model',
+                    'bootstrap requires setup or absent start with --pi-providers, --pi-provider and --pi-model',
                     fix='supply all three selectors and optionally --pi-thinking for a new '
                         'deployment, or omit all bootstrap inputs to reuse existing metadata',
                     exit_code=2)
@@ -2431,7 +2560,7 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
                     'unsupported_platform',
                     'macOS supports status only; setup/start/stop is refused before any '
                     'side effect',
-                    fix='run `/orbi status`; operate a macOS deployment with upstream orbi',
+                    fix='run `/orbi status` on macOS; use Linux for authorized lifecycle mutations',
                     exit_code=2)
             raise ControlError(
                 'unsupported_platform',
@@ -2445,11 +2574,13 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             render(ctx, document, args.json)
         return 0
     except ControlError as exc:
-        if args.action == 'setup' and 'steps' not in exc.evidence:
+        if args.action in ('setup', 'start') and 'steps' not in exc.evidence:
             exc.evidence = {**exc.evidence, 'target': args.config, 'original_error': exc.code,
                             'activated': False, 'scheduler': {'state': 'unavailable'},
                             'steps': [{'step': 'validate_request', 'status': 'failed',
                                        'error': exc.code, 'mutation': 'none'}]}
+            if args.action == 'start':
+                exc.evidence.update(preparation={'state': 'skipped'}, activation='none')
         render_error(ctx, args.action, exc, args.json)
         return exc.exit_code
 

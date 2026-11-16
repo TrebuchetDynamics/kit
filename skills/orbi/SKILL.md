@@ -14,8 +14,8 @@ queue, daemon or second scheduler.
 
 `/orbi [status|setup|start|stop|help]` runs
 `python3 -B <this-skill>/scripts/orbi_control.py` with the same action and
-`--repo-dir PATH --config PATH --dry-run --json`. For a new deployment, setup
-also accepts `--harness {pi-bolt,pi}` (default: installed Pi-Bolt) and
+`--repo-dir PATH --config PATH --dry-run --json`. For a new deployment, `setup`
+and an authorized absent-target `start` also accept `--harness {pi-bolt,pi}` (default: installed Pi-Bolt) and
 `--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]`.
 Legacy missing-provider recovery additionally requires explicit `--config PATH
 --resume-setup` and those complete matching selectors; it cannot change a selection.
@@ -82,9 +82,22 @@ lifecycle actions.
    explicit pauses, cutover requirements and human-only gates are resolved for
    that deployment. Orbi remains paused and live-unqualified until its separate
    gates permit the requested operation; installing this skill or passing offline
-   checks does not release them. It re-reads ownership, source, provider and
-   prerequisite evidence. Managed activation refuses drifted metadata/launcher,
-   missing targets, incompatible final extension PATH/HOME/agent-directory overrides
+   checks does not release them. If no deployment exists and no explicit `--config`
+   was supplied, it first runs the same non-activating preparation as `setup`, with
+   Pi-Bolt by default or explicit `--harness pi`, and complete provider selectors
+   (or verified donor metadata). No extra setup invocation or approval question is
+   needed for this already-authorized start. An existing valid/active target skips
+   preparation; omit all bootstrap/harness selectors to retain its saved selection.
+   Missing explicit configs, malformed/foreign/ambiguous/partial targets are not
+   absent: preserve evidence and use deliberate setup/repair, never automatic resume.
+   Start re-reads the exact prepared config and revalidates repository, file identities,
+   ownership, source, provider, harness and prerequisites under the activation lock.
+   Its `preparation.state` is `skipped`, `planned`, `prepared` or `failed`. Preparation
+   failure prevents activation; later failure retains preparation success and mutation
+   evidence. An absent `start --dry-run` previews preparation only and explicitly defers
+   staging-dependent validation/activation checks; it does not report those gates passed.
+   An existing target previews configured-slot activation normally. Managed activation refuses drifted metadata/launcher,
+   missing harness targets, incompatible final extension PATH/HOME/agent-directory overrides
    and inherited auth-home mismatches. It runs the supported
    upstream `setup`/`install-units` with the scoped environment, enables only
    this deployment's timers and requests one first tick when no worker runs.

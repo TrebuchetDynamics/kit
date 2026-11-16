@@ -179,7 +179,11 @@ Use [`/orbi [status|setup|start|stop|help]`](../skills/orbi/SKILL.md) for one
 repository's deployment. Bare invocation reads status; `--repo-dir` selects the
 canonical repository and `--config` selects its existing native configuration.
 Setup prepares without activating scheduling. Start requires separate scheduling
-authorization with existing pauses and cutover gates resolved. Stop disables only
+authorization with existing pauses and cutover gates resolved. If genuinely absent
+and no explicit config was supplied, start first uses the same setup preparation,
+validates non-activating, then rebinds/revalidates under the activation lock. Existing
+valid/active targets skip preparation and reject bootstrap/harness selectors; partial,
+foreign or missing explicit configs require deliberate recovery, never silent resume. Stop disables only
 owned timers and reports draining until active workers finish; missing evidence
 is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only. `help` prints the action reference read-only and needs no repository.
 
@@ -192,8 +196,8 @@ active, and `stopped` when services are inactive or failed and no owned timer is
 enabled or active. macOS status reports local deployment metadata but leaves
 active scheduler state `unavailable`.
 
-New lifecycle setup defaults to an installed Pi-Bolt executable; setup-only
-`--harness pi` explicitly selects stock Pi. A deployment-local `.orbi/harness-bin/pi`
+New lifecycle setup (including absent-start preparation) defaults to an installed
+Pi-Bolt executable; `--harness pi` explicitly selects stock Pi for new preparation. A deployment-local `.orbi/harness-bin/pi`
 exec launcher and namespaced fields in `.orbi/env` persist the choice for both
 workers and reviewers. No native Orbi harness field, global alias, automatic
 harness install or fallback is used. Existing managed selections are reused;
@@ -214,11 +218,28 @@ for serialization, legacy/unknown reporting and repair boundaries. Native Pi-Bol
 extensions, streaming/recovery and installed worker/reviewer compatibility remain
 live-unverified; static routing does not qualify delivery or release pauses.
 
+For a first authorized deployment, preview with `/orbi start --dry-run
+--pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID
+--pi-model PUBLISHED_MODEL_ID`, then remove `--dry-run` only within that authority.
+Use actual published IDs and metadata, not invented limits or credentials. Without
+selectors, verified donor metadata is reused or the exact missing input is reported.
+An absent preview is write-free and explicitly defers staging-dependent source,
+validation and activation checks. Standalone `/orbi setup --dry-run` still previews
+preparation only; `/orbi setup --harness pi` selects stock Pi for new preparation.
+Use `/orbi status` to inspect and `/orbi stop` for authorized no-kill drain.
+Context-free `/orbi help` reports the loaded helper path/default policy, parseable
+examples and recovery guidance, not the installed selected harness.
+
 Each mutation reports its own outcome: `setup` says `prepared` (staging, not
 scheduler activation), `start` says `started` or `already-running`, and `stop`
 says `draining` or `stopped`; `--dry-run` says `planned` for all three. Thus `stop`
 can report `draining` while a subsequent status still reports `running`: an active
 worker is preserved, not killed, and status does not remember a global pause.
+Start also retains `preparation.state` (`skipped`, `planned`, `prepared`, `failed`).
+Preparation failure never activates; later failure preserves successful preparation,
+actual/possible mutation evidence and the original failed operation. Activation
+timeout can mean timers/workers already run: inspect status, never automatically
+retry, roll back or stop workers. Prepared/activated is not live-qualified.
 
 The [lifecycle reference](../skills/orbi/references/lifecycle.md) owns prerequisite,
 retention, pinned-source and deployment-local uv isolation details. Native units

@@ -26,15 +26,15 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|stop|help]
 - `--config` names one existing native `orbi.toml`. Without it, visible local
   configs and installed units are discovered. Multiple configs for the same
   repository are ambiguous and refused, even with an explicit `--config`.
-- New-deployment `setup` accepts `--pi-providers PATH --pi-provider ID --pi-model ID`
-  together, plus optional `--pi-thinking LEVEL`. These flags are setup-only and
-  cannot change an existing deployment's selection. Help accepts and ignores them.
+- New-deployment `setup` and an authorized absent-target `start` accept `--pi-providers PATH --pi-provider ID --pi-model ID`
+  together, plus optional `--pi-thinking LEVEL`. Existing-target start rejects
+  these flags; omit them to retain its selection. Help accepts and ignores them.
   The metadata path is relative to the current directory unless absolute.
-- Setup-only `--harness {pi-bolt,pi}` selects an installed executable for new
-  preparation. Omission defaults to Pi-Bolt. A missing selected command is an
+- `--harness {pi-bolt,pi}` selects an installed executable for new `setup` or
+  absent-target `start` preparation. Omission defaults to Pi-Bolt. A missing selected command is an
   exact prerequisite failure, not permission to install or fall back. Existing
-  managed deployments reuse their saved selection; a matching explicit selector
-  is a no-op, a conflicting one refuses. Legacy deployments refuse a selector
+  managed deployments reuse their saved selection; setup accepts a matching explicit
+  selector as a no-op and refuses a conflicting one. Existing start rejects either. Legacy deployments refuse a selector
   with deliberate migration guidance. Help accepts and ignores it.
 - Setup-only `--resume-setup` is the explicit legacy missing-provider exception:
   require `--config PATH` and complete matching provider inputs. It never changes
@@ -206,8 +206,8 @@ published metadata) and explicitly select its provider/model and optional reason
 
 ```sh
 python3 -B <loaded-skill>/scripts/orbi_control.py setup --repo-dir /path/to/repo \
-  --pi-providers /path/to/models.json --pi-provider openai \
-  --pi-model gpt-6.1-sol --pi-thinking high --dry-run --json
+  --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID \
+  --pi-model PUBLISHED_MODEL_ID --pi-thinking SUPPORTED_LEVEL --dry-run --json
 ```
 
 Use the actual catalog's IDs and published capabilities; never invent model
@@ -256,8 +256,8 @@ missing deployment-local `.orbi/pi-providers.json`:
 ```sh
 python3 -B <loaded-skill>/scripts/orbi_control.py setup --repo-dir /path/to/repo \
   --config /path/to/deployment/orbi.toml --resume-setup \
-  --pi-providers /path/to/models.json --pi-provider openai \
-  --pi-model gpt-6.1-sol --dry-run --json
+  --pi-providers /path/to/models.json --pi-provider SAVED_PROVIDER_ID \
+  --pi-model SAVED_MODEL_ID --dry-run --json
 ```
 
 Use the **saved** IDs, not the illustrative ones. Omitted `--pi-thinking` inherits
@@ -284,23 +284,68 @@ transport or an owner-required repair.
 
 ## Start
 
-`start` requires a prepared, unambiguous target and an owner scheduling request.
-Existing explicit pauses, cutover requirements and human-only gates must first
-be resolved for that operation. The skill and offline checks do not release the
-paused/live-unqualified contract. It re-reads unit ownership,
-the pinned source, provider metadata, Node/Pi compatibility, GitHub and Pi
-authentication and the shared bootstrap. It runs upstream `setup` and
+After explicit scheduling authority and resolved gates, a first deployment can use:
+
+```text
+/orbi status
+/orbi setup --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi setup --harness pi --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi start --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi start --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi start --dry-run
+/orbi stop
+```
+
+These are alternatives, not a sequence to run blindly: standalone setup stays
+non-activating. If setup already prepared the target, omit the bootstrap/harness
+selectors on start. Replace placeholder IDs/paths with published catalog evidence;
+optional `--pi-thinking LEVEL` must also match supported reasoning. Planned,
+prepared, activated and live-qualified are distinct; stop reports drain, not a kill.
+Use context-free `/orbi help` for the loaded helper path, defaults and recovery table.
+
+`start` requires an owner scheduling request. Existing explicit pauses, cutover
+requirements and human-only gates must first be resolved for that operation. The
+skill and offline checks do not release the paused/live-unqualified contract.
+
+If no deployment exists and no explicit `--config` was supplied, start composes the
+same non-activating new-deployment preparation as `setup`: installed Pi-Bolt by
+default, or explicit `--harness pi`; complete provider inputs, or verified donor
+metadata when omitted. A missing input is an exact prerequisite failure, never a
+request to create a donor, install a harness, log in or invent model capabilities.
+Preparation must return `prepared` after non-activating validation. Start then
+rediscovers/re-reads the exact config and checks the prepared binding, file identities,
+canonical repository, ownership, source, provider, harness and prerequisites again
+under the activation lock. The setup lock is released before this lock is acquired.
+Changed ownership/config/selection holds without activation or automatic repair.
+
+An existing valid or active target skips preparation entirely, avoiding `setup_busy`
+and preserving its provider/harness/pin. Omit all `--pi-*` and `--harness` selectors
+on subsequent starts; even matching bootstrap selectors are refused. A missing
+explicit config is an error, not permission to create a target. Malformed, ambiguous,
+foreign or partial existing targets require deliberate recovery; start never performs
+`--resume-setup` (setup-only). Config-absent interrupted preparation can reuse only
+verified staged source and byte-equivalent intended files under normal setup rules.
+
+Start re-reads unit ownership, the pinned source, provider metadata, Node/Pi
+compatibility, GitHub and Pi authentication and the shared bootstrap. It runs upstream `setup` and
 `install-units` with the scoped environment, enables only instances
 `1..max_concurrency` of this deployment's timer, and starts the first service
 instance only when no instance is active or activating. A repeated start never
 restarts or duplicates a live worker.
 
-Start dry-run plans the same configured `1..max_concurrency` timer range, skipping
+For an absent target, start dry-run runs only setup's nonmutating preflight/preview.
+It reports preparation and activation as planned, with staged source, published-file
+validation and activation preflight explicitly deferred/unrun. It does not run
+`start_plan` on nonexistent files or imply those gates passed. Unknown prerequisites
+fail honestly. It creates no deployment directory, lock, launcher, config, source
+fetch, bootstrap or timer writes.
+
+For an existing target, start dry-run plans the same configured `1..max_concurrency` timer range, skipping
 already-active timers. Its separate `scheduler` snapshot retains the broader
 observed inventory, including out-of-config units; those observations are not
 planned activations. Preview performs no mutation.
 
-Start resumes only the explicitly named deployment. It never issues issue
+Start activates only the bound deployment. It never issues issue
 pauses or blocked work and never touches another deployment. Enforced
 administrators, strict required CI, independent review and human-only
 acceptance stay in place; a doctor warning about enforced admins never
@@ -405,6 +450,14 @@ operations are distinguished from possible partial mutation. Filesystem errors
 are structured with details withheld; raw stderr, metadata and credential/env
 values are never receipts. `activated: false` means this setup invoked no
 activation, **not** proof an existing scheduler is inactive.
+
+Start results and errors include `preparation` with `state: skipped|planned|prepared|failed`
+and target/steps/harness/prerequisite evidence when available. A preparation failure
+preserves its original operation/code/steps and invokes no activation. If preparation
+wrote files and later activation preflight fails, `error.mutated` remains true,
+preparation remains `prepared` and activation is `none`. Inspect and repair the cause;
+there is no automatic retry or rollback. Preparation, activation and live qualification
+are separate outcomes.
 
 Start/stop errors also retain `target`, deployment config/unit identity,
 `original_error`, and completed/failed `steps` at the JSON top level (not under

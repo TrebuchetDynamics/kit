@@ -70,7 +70,7 @@ relative to this repository.
 | --- | --- | --- |
 | [`skills/update-kit/scripts/update_kit.py`](../skills/update-kit/scripts/update_kit.py) | No argument: refresh fixed upstream `main` and run `install.sh update --no-pull`; `--only`, `--skip`, `--all`/`--full`, verbosity/color and explicit Hermes options; `--dry-run`/`--read-only`/`--questions-only`/`--list`: no-write/no-probe preview | Python 3.11+, Git/bash/lsof, Linux/macOS; resolve from loaded skill resources, not cwd; [persistent source, restrictions and receipts](installation.md#update-kit) |
 | [`skills/docs-sync/scripts/docs.py`](../skills/docs-sync/scripts/docs.py) | `validate`, `check`, `stale`, `profiles` | `docs.py --help`; [role manifest](../skills/docs-sync/references/document-scaffold.md#optional-role-manifest) |
-| [`skills/orbi/scripts/orbi_control.py`](../skills/orbi/scripts/orbi_control.py) | `status` (default), `setup`, `start`, `stop`, `help` (read-only, needs no repository); `--repo-dir`, `--config`, `--dry-run`, `--json` | Python 3.11+; [lifecycle and safety boundaries](../skills/orbi/references/lifecycle.md) |
+| [`skills/orbi/scripts/orbi_control.py`](../skills/orbi/scripts/orbi_control.py) | `status` (default), `setup`, `start` (prepare if absent, then activate), `stop`, `help` (read-only, needs no repository); `--repo-dir`, `--config`, `--dry-run`, `--json`; new preparation: `--harness {pi-bolt,pi}`, complete `--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]`; `--resume-setup` is setup-only | Python 3.11+; [lifecycle and safety boundaries](../skills/orbi/references/lifecycle.md) |
 
 ## Removed executor helpers
 

@@ -33,7 +33,7 @@ is limited, so some commands must be typed directly.
 
 | Hermes CLI chat | Telegram | Purpose |
 | --- | --- | --- |
-| `/orbi [status\|setup\|start\|stop\|help]` | `/orbi` | [Repository-scoped lifecycle controls](../skills/orbi/SKILL.md): bare status is read-only, setup prepares without activation, authorized start schedules, stop drains without killing workers; Linux controls, macOS status-only; help prints the action reference read-only on any platform |
+| `/orbi [status\|setup\|start\|stop\|help]` | `/orbi` | [Repository-scoped lifecycle controls](../skills/orbi/SKILL.md): bare status is read-only, setup prepares without activation, authorized start prepares if absent then schedules, stop drains without killing workers; Linux controls, macOS status-only; help prints the action reference read-only on any platform |
 | `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only clean unmerged ones, keep dirty and locked worktrees |
 | `/lgtm` | `/lgtm` | [Continue within inherited authority](../skills/lgtm/SKILL.md): accept unambiguous choices, clarify only ambiguous planning choices; standalone plan approval does not authorize implementation |
@@ -46,6 +46,19 @@ is limited, so some commands must be typed directly.
 | `/impeccable` | `/impeccable` | Design and front-end quality workflow |
 | `/ui-taste` | `/ui_taste` | Uizze's UI Taste playbooks for building, polishing and reviewing web and iOS interfaces |
 | `/beautify-github-readme` | `/beautify_github_readme` | Redesign or audit a GitHub README with project-native SVG assets |
+
+For the Orbi first-deployment journey, `/orbi help` gives context-free examples and
+recovery. Only after explicit scheduling authority and resolved pauses/gates, use
+`/orbi start --dry-run --pi-providers /path/to/models.json --pi-provider
+PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID` to preview, then remove
+`--dry-run` to prepare/validate and activate. New preparation defaults to installed
+Pi-Bolt; `--harness pi` selects stock Pi. Existing valid targets skip preparation;
+omit selectors to preserve their saved routing. Missing explicit `--config` and
+partial targets require deliberate repair, not automatic setup/resume. An absent
+preview defers staging-dependent checks; planned, prepared, activated and
+live-qualified remain distinct. Standalone setup never schedules; status inspects
+configured harness/slots separately from process/observed-unit evidence, and stop
+drains without killing workers. See the [lifecycle reference](../skills/orbi/references/lifecycle.md#start).
 
 Both planners use the pinned Autoresearch planning method and shared
 [planning craft](../skills/shared/PLANNING-CRAFT.md). They save decisions in their

@@ -12,6 +12,7 @@ import io
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -530,7 +531,8 @@ class HarnessSelectionTests(unittest.TestCase):
         for action in ('status', 'start', 'stop'):
             code, doc, _ = self.h.run(action, options=['--harness', 'pi'])
             self.assertNotEqual(code, 0)
-            self.assertEqual(doc['error']['code'], 'invalid_harness_selection')
+            self.assertEqual(doc['error']['code'], 'bootstrap_override_refused' if action == 'start'
+                             else 'invalid_harness_selection')
 
     def test_config_last_retry_reuses_partial_explicit_selection(self):
         code, failure, _ = self.h.run('setup', options=['--harness', 'pi'],
@@ -1120,6 +1122,225 @@ class FirstDeploymentTests(unittest.TestCase):
         self.options = ['--pi-providers', str(self.catalog), '--pi-provider', 'openai',
                         '--pi-model', 'gpt-6.1-sol', '--pi-thinking', 'high']
 
+    def test_first_start_prepares_validates_and_activates_once(self):
+        for kind in (None, 'pi', 'donor'):
+            with self.subTest(harness=kind):
+                h = self.h if kind is None else Harness(Path(self.tmp.name) / kind)
+                if kind == 'donor':
+                    h.add_deployment_a()
+                    options = []
+                else:
+                    options = self.options + (['--harness', kind] if kind else [])
+                result = subprocess.run(
+                    [sys.executable, '-B', str(HELPER), 'start', '--repo-dir', str(h.repo),
+                     '--json', *options], env=h.env, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+                doc = json.loads(result.stdout)
+                self.assertEqual(doc['action'], 'start')
+                self.assertEqual(doc['preparation']['state'], 'prepared')
+                self.assertEqual(doc['deployment']['harness']['requested_kind'],
+                                 'pi' if kind == 'pi' else 'pi-bolt')
+                self.assertEqual(doc['status'], 'started')
+                operations = [c['argv'][0] for c in h.calls() if c['tool'] == 'orbi']
+                self.assertEqual(operations.count('check'), 1)
+                self.assertEqual(operations.count('setup'), 1)
+                self.assertEqual(operations.count('install-units'), 1)
+                self.assertLess(operations.index('check'), operations.index('setup'))
+                self.assertTrue((h.deploy / 'orbi.toml').is_file())
+                self.assertEqual(sum(c['tool'] == 'git' and 'clone' in c['argv']
+                                     for c in h.calls()), 1)
+                if kind == 'donor':
+                    self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
+
+    def test_first_start_preparation_failure_never_activates(self):
+        self.h.rules({'tool': 'orbi', 'argv_contains': ['check'], 'exit': 1})
+        code, doc, err = self.h.run('start', options=self.options)
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['action'], 'start')
+        self.assertEqual(doc['error']['code'], 'validation_failed')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(doc['preparation']['state'], 'failed')
+        self.assertEqual(doc['preparation']['steps'][-1]['step'], 'validate_non_activating')
+        self.assertEqual(doc['activation'], 'none')
+        self.assertTrue((self.h.deploy / 'orbi.toml').is_file())
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
+    def test_absent_start_cli_preview_is_write_free_and_defers_activation_checks(self):
+        before = snapshot(self.h.home)
+        result = subprocess.run(
+            [sys.executable, '-B', str(HELPER), 'start', '--repo-dir', str(self.h.repo),
+             '--json', '--dry-run', *self.options], env=self.h.env,
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        doc = json.loads(result.stdout)
+        self.assertEqual(doc['preparation']['state'], 'planned')
+        self.assertEqual(doc['deployment']['source'], 'unverified')
+        self.assertEqual(doc['deployment']['harness']['state'], 'unknown')
+        self.assertEqual(doc['activation'], 'planned')
+        self.assertFalse(doc['activated'])
+        self.assertIn({'step': 'validate_non_activating', 'status': 'planned'}, doc['steps'])
+        self.assertEqual(doc['steps'][-2]['status'], 'deferred')
+        self.assertEqual(snapshot(self.h.home), before)
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+        self.assertFalse(any(c['tool'] == 'git' and set(c['argv']) & {'clone', 'fetch'}
+                             for c in self.h.calls()))
+        self.assertFalse(any(c['tool'] == 'orbi' and c['argv'][0] == 'check'
+                             for c in self.h.calls()))
+
+    def test_start_preparation_prerequisite_failures_are_honest_and_write_free(self):
+        before = snapshot(self.h.home)
+        for dry_run in (True, False):
+            code, doc, err = self.h.run('start', dry_run=dry_run)
+            self.assertNotEqual(code, 0, (doc, err))
+            self.assertEqual(doc['error']['code'], 'provider_unavailable')
+            self.assertFalse(doc['error']['mutated'])
+            self.assertEqual(doc['preparation']['state'], 'failed')
+            self.assertIn('--pi-providers', doc['error']['fix'])
+            self.assertEqual(snapshot(self.h.home), before)
+        (self.h.bin / 'pi-bolt').unlink()
+        code, doc, err = self.h.run('start', options=self.options, dry_run=True)
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'prerequisite_missing')
+        self.assertIn('pi-bolt', doc['error']['message'])
+        self.assertFalse(doc['error']['mutated'])
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
+    def test_interrupted_preparation_retry_and_activation_timeout_keep_receipts(self):
+        code, doc, err = self.h.run('start', options=self.options,
+                                    failure=('write_config', 'before', OSError(SECRET)))
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['preparation']['state'], 'failed')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(doc['steps'][-1]['step'], 'write_config')
+        self.assertFalse((self.h.deploy / 'orbi.toml').exists())
+        saved = (self.h.deploy / '.orbi/env').read_bytes()
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+        timeout_error = helper.ControlError('command_timeout', 'fixture upstream setup timeout')
+        with mock.patch.object(helper, 'run_start_step', side_effect=timeout_error) as activation:
+            code, doc, err = self.h.run('start', options=self.options)
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['preparation']['state'], 'prepared')
+        self.assertEqual(doc['error']['code'], 'command_timeout')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(doc['activation'], 'possible')
+        self.assertEqual(doc['activated_timers'], [])
+        self.assertEqual(activation.call_count, 1)
+        self.assertEqual((self.h.deploy / '.orbi/env').read_bytes(), saved)
+        self.assertNotIn(SECRET, json.dumps(doc))
+
+    def test_post_preparation_failure_retains_success_and_mutation(self):
+        with mock.patch.object(helper, 'start_plan', side_effect=helper.ControlError(
+                'bootstrap_unverified', 'fixture activation preflight failure')):
+            code, doc, err = self.h.run('start', options=self.options)
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'bootstrap_unverified')
+        self.assertEqual(doc['original_error'], 'bootstrap_unverified')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(doc['preparation']['state'], 'prepared')
+        self.assertEqual(doc['activation'], 'none')
+        self.assertEqual(doc['preparation']['steps'][-1]['step'], 'validate_non_activating')
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
+    def test_prepared_binding_drift_is_held_before_activation(self):
+        original_lock = helper.locked
+        for drift in ('config', 'provider', 'ownership', 'repo', 'harness', 'source', 'unit'):
+            with self.subTest(drift=drift):
+                h = Harness(Path(self.tmp.name) / drift)
+                count = 0
+
+                @contextlib.contextmanager
+                def changed_lock(ctx, key):
+                    nonlocal count
+                    count += 1
+                    if count == 2:  # setup lock is released before activation lock
+                        if drift == 'config':
+                            path = h.deploy / 'orbi.toml'
+                            path.write_text(path.read_text().replace('max_concurrency = 1',
+                                                                     'max_concurrency = 2'))
+                        elif drift == 'provider':
+                            (h.deploy / '.orbi/pi-providers.json').write_text('{}')
+                        elif drift == 'ownership':
+                            (h.repo / 'orbi.toml').write_text((h.deploy / 'orbi.toml').read_text())
+                        elif drift == 'repo':
+                            h.rules({'tool': 'git', 'argv_contains': [str(h.repo), 'remote.origin.url'],
+                                     'stdout': 'https://github.com/foreign/repo.git\n'})
+                        elif drift == 'source':
+                            h.deploy_head = OLD_PIN
+                            h.rules()
+                        elif drift == 'unit':
+                            prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+                            (h.unit_dir / f'{prefix}@.service').write_text(
+                                '[Service]\nEnvironment="ORBI_CONFIG=/foreign/orbi.toml"\n')
+                        else:
+                            (h.deploy / '.orbi/harness-bin/pi').write_text('# changed launcher\n')
+                    with original_lock(ctx, key):
+                        yield
+
+                with mock.patch.object(helper, 'locked', changed_lock):
+                    code, doc, err = h.run('start', options=self.options)
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertEqual(doc['error']['code'], {
+                    'ownership': 'ambiguous_deployment', 'source': 'source_drift',
+                    'unit': 'unit_conflict'}.get(drift, 'target_changed'))
+                self.assertTrue(doc['error']['mutated'])
+                self.assertEqual(doc['preparation']['state'], 'prepared')
+                self.assertEqual(doc['activation'], 'none')
+                self.assertEqual(count, 2)
+                SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_existing_active_start_skips_preparation_and_rejects_selectors(self):
+        code, doc, err = self.h.run('setup', options=self.options)
+        self.assertEqual(code, 0, (doc, err))
+        self.h.rules(*self.h.scheduler_rules(services={1: 'active'}, timers={1: 'active'},
+                                            enabled={1: True}))
+        before = snapshot(self.h.home)
+        with mock.patch.object(helper, 'command_setup', side_effect=AssertionError):
+            for dry_run in (True, False):
+                self.h.clear_calls()
+                code, doc, err = self.h.run('start', dry_run=dry_run)
+                self.assertEqual(code, 0, (doc, err))
+                self.assertEqual(doc['preparation']['state'], 'skipped')
+                self.assertEqual(doc['first_tick'], 'already-active')
+                self.assertEqual(snapshot(self.h.home), before)
+                self.assertFalse(any(c['tool'] == 'systemctl' and
+                                     set(c['argv']) & {'enable', 'start'} for c in self.h.calls()))
+                for options in (self.options, ['--harness', 'pi-bolt']):
+                    code, doc, err = self.h.run('start', options=options, dry_run=dry_run)
+                    self.assertEqual(code, 2, (doc, err))
+                    self.assertEqual(doc['error']['code'], 'bootstrap_override_refused')
+                    self.assertFalse(doc['error']['mutated'])
+                    self.assertEqual(snapshot(self.h.home), before)
+
+    def test_start_refuses_existing_partial_foreign_and_explicit_missing_targets(self):
+        for state in ('explicit-missing', 'foreign', 'partial', 'resume'):
+            with self.subTest(state=state):
+                h = Harness(Path(self.tmp.name) / state)
+                config, options = None, []
+                if state == 'explicit-missing':
+                    config = h.deploy / 'orbi.toml'
+                elif state == 'resume':
+                    options = ['--resume-setup', '--config', str(h.deploy / 'orbi.toml'), *self.options]
+                else:
+                    code, doc, err = h.run('setup', options=self.options)
+                    self.assertEqual(code, 0, (doc, err))
+                    if state == 'foreign':
+                        path = h.deploy / 'orbi.toml'
+                        path.write_text(path.read_text().replace(REPO, 'foreign/repo'))
+                    else:
+                        (h.deploy / '.orbi/pi-providers.json').unlink()
+                before = snapshot(h.home)
+                h.clear_calls()
+                with mock.patch.object(helper, 'command_setup', side_effect=AssertionError):
+                    code, doc, err = h.run('start', config=config, options=options)
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertEqual(doc['error']['code'], {
+                    'explicit-missing': 'config_missing', 'foreign': 'config_mismatch',
+                    'partial': 'provider_unavailable', 'resume': 'invalid_resume_selection'}[state])
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(doc['preparation']['state'], 'skipped')
+                self.assertEqual(snapshot(h.home), before)
+                SetupBoundaryTests.assert_no_activation(self, h.calls())
+
     def test_first_deployment_explicit_preview_and_preparation(self):
         before = snapshot(self.h.home)
         code, doc, err = self.h.run('setup', options=self.options, dry_run=True)
@@ -1232,7 +1453,7 @@ class FirstDeploymentTests(unittest.TestCase):
                    self.options[:4], [*self.options[:5], ''],
                    [*self.options[:6], '--pi-thinking', ' '])
         for action, selection in [('setup', item) for item in options] + [
-                (action, self.options) for action in ('status', 'start', 'stop')]:
+                (action, self.options) for action in ('status', 'stop')]:
             with self.subTest(action=action, selection=selection):
                 code, doc, err = self.h.run(action, options=selection)
                 self.assertEqual(code, 2, (doc, err))
@@ -2829,7 +3050,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                             document = json.loads(result.stdout)
                             self.assertEqual(set(document), {
                                 'action', 'platform', 'mutations_supported', 'actions',
-                                'options', 'errors', 'boundaries'})
+                                'options', 'errors', 'boundaries', 'quickstart', 'examples', 'recovery'})
                             self.assertEqual(document['action'], 'help')
                             self.assertEqual(list(document['actions']), list(expected))
                             for action, mutation in expected.items():
@@ -2844,10 +3065,12 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                 '--config': ['status', 'setup', 'start', 'stop'],
                                 '--dry-run': ['setup', 'start', 'stop'],
                                 '--json': list(expected),
-                                '--pi-providers': ['setup'],
-                                '--pi-provider': ['setup'],
-                                '--pi-model': ['setup'],
-                                '--pi-thinking': ['setup'],
+                                '--pi-providers': ['setup', 'start'],
+                                '--pi-provider': ['setup', 'start'],
+                                '--pi-model': ['setup', 'start'],
+                                '--pi-thinking': ['setup', 'start'],
+                                '--harness': ['setup', 'start'],
+                                '--resume-setup': ['setup'],
                             }.items():
                                 self.assertEqual(document['options'][flag]['applies_to'],
                                                  actions)
@@ -2859,7 +3082,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                           document['errors']['mutated'])
                             for boundary in ('no repository or deployment',
                                              'Status is read-only',
-                                             'Only setup stages source/config',
+                                             'Setup (including absent-start preparation) stages source/config',
                                              'only start/stop touch the scheduler',
                                              'Not an executor or scheduler',
                                              '/unblock', '/git-commit-push',
@@ -2875,6 +3098,27 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                 self.assertIn(f'[{mutation}]', lines[0])
                         self.assertEqual(h.calls(), [])
                         self.assertEqual(snapshot(h.home), before)
+
+    def test_help_examples_parse_without_effects_and_explain_recovery(self):
+        out = io.StringIO()
+        self.assertEqual(helper.main(['help', '--json'], stdout=out), 0)
+        doc = json.loads(out.getvalue())
+        self.assertEqual(set(doc['recovery']), {'harness', 'provider', 'config_missing',
+                                              'partial_setup', 'setup_busy', 'platform', 'stale_helper'})
+        for example in doc['examples']:
+            words = shlex.split(example['command'])
+            self.assertEqual(words.pop(0), '/orbi')
+            args = helper.parse_args(words)
+            self.assertIn(args.action, helper.ACTIONS)
+            with mock.patch.dict(helper.ACTIONS[args.action], handler=lambda ctx, args: {}):
+                self.assertEqual(helper.main(words, platform='linux', stdout=io.StringIO()), 0)
+        text = io.StringIO()
+        self.assertEqual(helper.main(['help'], stdout=text), 0)
+        self.assertLess(text.getvalue().index('Quickstart:'), text.getvalue().index('Options:'))
+        self.assertLess(text.getvalue().index('Examples:'), text.getvalue().index('Limits and next steps:'))
+        for term in ('Pi-Bolt', '--harness pi', 'configured slots', 'running-process',
+                     'live-qualified', 'explicit pauses', 'Loaded helper:'):
+            self.assertIn(term, text.getvalue())
 
     def test_help_reports_platform_limits(self):
         # No repo-dir is injected: help must not bind a deployment or environment.
