@@ -46,19 +46,34 @@ python3 "<skill-dir>/scripts/capture.py" URL [URL ...] \
 - Each capture sets a fixed viewport, `device_scale_factor=1`, the requested color
   scheme and reduced motion, then waits for network idle, the optional selector and
   `document.fonts`, plus a short settle floor. Waits come from page state, not sleeps.
-- Output is `{page}-{class}-{width}x{height}-{scheme}.png` plus `report.md` and
-  `captures.json` in the output directory. Use an ignored directory, or a task-scoped
-  path, so captures never land in a commit by accident.
+- Output is `{page}-{sha256}-{class}-{width}x{height}-{scheme}.png` plus `report.md`
+  and `captures.json` in the output directory. The readable path-derived page prefix
+  is at most 48 characters and excludes query text. The SHA-256 hex digest uses the
+  complete original URL string, including scheme, host/port, path, query and fragment.
+  Different URL strings retain distinct artifacts even when their content matches.
+- Exact repeated URL strings and viewport size pairs are deduplicated in first-seen
+  order within one invocation: one result per unique URL/size/color-scheme combination.
+  Rerunning the same inputs in the same directory may replace those same captures;
+  this is not cross-run version storage.
+- Use an ignored directory, or a task-scoped path, so captures never land in a commit
+  by accident. Hashing is identity, not anonymization: report URLs and diagnostics
+  remain potentially sensitive.
 
 ## Verify before reporting
 
 1. Read the exit status: `0` all captured, `1` a capture failed, `2` a usage refusal or
-   horizontal overflow under `--fail-on-overflow`.
-2. Read `report.md`: each row states the real pixel size and the overflow result. A
-   full-page capture is wider than the viewport only when the page overflows; a capture
-   narrower than the viewport is truncated and failed.
-3. Check the named failures: a bad URL, a timeout, a missing selector, console errors or
-   failed requests. Fix the cause or report it; never present a failed capture as a pass.
+   horizontal overflow under `--fail-on-overflow`. Browser diagnostics alone do not
+   change the exit status. `captured` means completion, not page or visual correctness;
+   completed captures with diagnostics say `captured with diagnostics`.
+2. Read `report.md`: each row states capture status, real pixel size, overflow and
+   console-error/failed-request counts. Per-capture details associate recorded diagnostics
+   with the URL, viewport and color scheme; the summary gives totals and exit limits.
+   `captures.json` retains raw diagnostic lists and actual artifact paths. Markdown
+   escapes untrusted values as plain text. A full-page capture is wider than the viewport
+   only when the page overflows; a narrower capture is truncated and failed.
+3. Check capture failures (a bad URL, a timeout or a missing selector) and recorded
+   console errors or failed requests. Fix the cause or report it; never present a
+   failed capture as a pass or a completed capture as a page-clean result.
 4. Look at one image per breakpoint yourself when the claim is visual. A file that exists
    proves a render happened, not that the layout is correct.
 

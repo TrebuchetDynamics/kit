@@ -6,13 +6,15 @@ Usage:
 
 Each capture records the file path, the real pixel size, whether the page scrolls
 horizontally at that width, console errors and failed requests. Exit status is 0 when
-every capture succeeded, 1 when any capture failed, and 2 for a usage refusal or a
-horizontal overflow when --fail-on-overflow was requested.
+every capture completed (not visual correctness), 1 when any capture failed, and 2
+for a usage refusal or a horizontal overflow when --fail-on-overflow was requested.
 
 The Playwright Python package and a browser must already be installed. This script
 installs nothing and reads no credentials: it opens http(s) and file URLs only.
 """
 import argparse
+import hashlib
+import html
 import json
 import re
 import sys
@@ -23,6 +25,9 @@ from urllib.parse import urlparse
 STANDARD_SIZES = ('375x667', '768x1024', '1440x900')
 MIN_WIDTH, MAX_WIDTH = 200, 3840
 MIN_HEIGHT, MAX_HEIGHT = 200, 2160
+EXIT_LIMITS = ('Exit status: 0 when all captures completed; 1 if a capture failed; '
+               '2 for usage refusal or overflow under --fail-on-overflow. '
+               'Browser diagnostics alone do not change the exit status.')
 
 
 @dataclass
@@ -69,10 +74,8 @@ def page_slug(url):
     else:
         path = parsed.path.strip('/')
         name = path.replace('/', '-') if path else 'index'
-        if parsed.query:
-            name += '-q' + re.sub(r'[^a-z0-9]+', '-', parsed.query.lower()).strip('-')[:40]
     slug = re.sub(r'[^a-zA-Z0-9]+', '-', name).strip('-').lower()
-    return slug or 'page'
+    return slug[:48] or 'page'
 
 
 def validate_url(url):
@@ -106,7 +109,8 @@ def capture_one(browser, url, width, height, scheme, out_dir, settle_ms, timeout
             page.wait_for_timeout(settle_ms)
         result.overflow = page.evaluate(
             '() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1')
-        name = f'{page_slug(url)}-{result.label}-{width}x{height}-{scheme}.png'
+        digest = hashlib.sha256(url.encode('utf-8')).hexdigest()
+        name = f'{page_slug(url)}-{digest}-{result.label}-{width}x{height}-{scheme}.png'
         target = out_dir / name
         page.screenshot(path=str(target), full_page=full_page, animations='disabled')
         result.path = str(target)
@@ -138,27 +142,58 @@ def png_size(path):
     return int.from_bytes(data[16:20], 'big'), int.from_bytes(data[20:24], 'big')
 
 
+def markdown_text(text):
+    """Render untrusted values as plain text, never Markdown or HTML structure."""
+    return re.sub(r'[\\`*_{}\[\]()#+.!|~\r\n-]',
+                  lambda match: f'&#{ord(match.group())};', html.escape(text, quote=False))
+
+
+def capture_state(result):
+    if result.error:
+        return 'FAILED'
+    if result.console_errors or result.failed_requests:
+        return 'captured with diagnostics'
+    return 'captured'
+
+
 def write_reports(results, out_dir):
     payload = [result.__dict__ for result in results]
     (out_dir / 'captures.json').write_text(json.dumps(payload, indent=2) + '\n')
     lines = ['# Responsive captures', '',
-             f'{len(results)} capture(s). Each row is one page, width and color scheme.', '',
-             '| Page | Breakpoint | Scheme | Size | Overflow | File |',
-             '| --- | --- | --- | --- | --- | --- |']
+             f'{len(results)} capture(s). Each row is one page, viewport and color scheme.', '',
+             '| Page | Breakpoint | Scheme | Status | Size | Overflow | Console errors | Failed requests | File |',
+             '| --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     for r in results:
         size = f'{r.pixel_width}x{r.pixel_height}' if r.pixel_width else 'not captured'
-        status = 'FAILED' if r.error else ('yes' if r.overflow else 'no')
-        lines.append(f'| {r.url} | {r.label} {r.width}x{r.height} | {r.scheme} | {size} | '
-                     f'{status} | `{Path(r.path).name or "-"}` |')
+        overflow = 'unknown' if r.overflow is None else ('yes' if r.overflow else 'no')
+        lines.append(f'| {markdown_text(r.url)} | {r.label} {r.width}x{r.height} | '
+                     f'{markdown_text(r.scheme)} | {capture_state(r)} | {size} | {overflow} | '
+                     f'{len(r.console_errors)} | {len(r.failed_requests)} | '
+                     f'{markdown_text(Path(r.path).name or "-")} |')
     failed = [r for r in results if r.error]
     overflow = [r for r in results if r.overflow]
     lines += ['', '## Result', '']
     lines.append(f'- Captured: {len(results) - len(failed)} of {len(results)}.')
     lines.append(f'- Horizontal overflow: {len(overflow)} capture(s).')
-    for r in failed:
-        lines.append(f'- Failed: {r.url} {r.width}x{r.height} {r.scheme}: {r.error}')
-    for r in overflow:
-        lines.append(f'- Overflow: {r.url} at {r.width}px ({r.scheme}).')
+    lines.append(f'- Console errors: {sum(len(r.console_errors) for r in results)}.')
+    lines.append(f'- Failed requests: {sum(len(r.failed_requests) for r in results)}.')
+    lines += ['', 'Captured means capture completion, not visual correctness. Inspect images '
+              'before visual claims.', '', EXIT_LIMITS, '', '## Capture details']
+    for index, r in enumerate(results, 1):
+        lines += ['', f'### Capture {index}', '',
+                  f'Page: {markdown_text(r.url)}; viewport: {r.width}x{r.height}; '
+                  f'color scheme: {markdown_text(r.scheme)}.', '',
+                  f'- Status: {capture_state(r)}.',
+                  f'- Console errors: {len(r.console_errors)}.',
+                  f'- Failed requests: {len(r.failed_requests)}.']
+        if r.error:
+            lines.append(f'- Failed: {markdown_text(r.error)}')
+        if r.overflow:
+            lines.append('- Overflow: horizontal overflow detected.')
+        for error in r.console_errors:
+            lines.append(f'- Console error: {markdown_text(error)}')
+        for request in r.failed_requests:
+            lines.append(f'- Failed request: {markdown_text(request)}')
     lines += ['', 'Full-page pixel height varies with content; only the width and the '
                   'minimum height are checked here.']
     (out_dir / 'report.md').write_text('\n'.join(lines) + '\n')
@@ -182,6 +217,8 @@ def main():
     parser.add_argument('--fail-on-overflow', action='store_true',
                         help='exit 2 when a capture scrolls horizontally')
     args = parser.parse_args()
+    args.urls = list(dict.fromkeys(args.urls))
+    args.sizes = list(dict.fromkeys(args.sizes))
 
     try:
         for url in args.urls:
@@ -209,9 +246,11 @@ def main():
                                              args.settle_ms, args.timeout, args.selector,
                                              not args.no_full_page, args.motion)
                         results.append(result)
-                        state = 'FAILED' if result.error else ('overflow' if result.overflow else 'ok')
-                        print(f'{state:9} {result.label:7} {width}x{height} {scheme:5} '
-                              f'{Path(result.path).name or result.error}')
+                        print(f'{capture_state(result)} {result.label:7} {width}x{height} {scheme:5} '
+                              f'{Path(result.path).name or result.error}; '
+                              f'overflow={result.overflow}; '
+                              f'{len(result.console_errors)} console error(s); '
+                              f'{len(result.failed_requests)} failed request(s)')
         finally:
             browser.close()
 
@@ -219,7 +258,11 @@ def main():
     failed = [r for r in results if r.error]
     overflow = [r for r in results if r.overflow]
     print(f'\n{len(results) - len(failed)}/{len(results)} captured; {len(overflow)} with horizontal '
-          f'overflow. Report: {args.out / "report.md"}')
+          f'overflow; {sum(len(r.console_errors) for r in results)} console error(s); '
+          f'{sum(len(r.failed_requests) for r in results)} failed request(s). '
+          f'Report: {args.out / "report.md"}')
+    print('Captured means capture completion, not visual correctness. Inspect images before visual claims.')
+    print(EXIT_LIMITS)
     if failed:
         return 1
     if overflow and args.fail_on_overflow:
