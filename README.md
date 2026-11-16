@@ -211,9 +211,19 @@ prerequisites and preparation. For a first deployment, supply credential-free Pi
 provider metadata with `--pi-providers PATH --pi-provider ID --pi-model ID` and
 optional `--pi-thinking LEVEL`, or reuse a verified selection from a visible
 deployment; see [provider bootstrap](skills/orbi/references/lifecycle.md#first-deployment-provider-bootstrap).
-Pi authentication must already work; setup does not automate login or guarantee
-provisioning. New configs derive `git_transport` from the verified SSH/HTTPS origin
+For stored-auth providers, Pi authentication must already work. Custom catalogs
+with declared key/header references require service-ready deployment env values,
+not shell-only keys; setup does not automate login or guarantee provisioning. New configs derive `git_transport` from the verified SSH/HTTPS origin
 without rewriting it; existing selections and pins are preserved.
+
+New lifecycle setup defaults to **Pi-Bolt**, already installed on the caller's
+PATH; setup-only `--harness pi` explicitly selects stock Pi. There is no automatic
+harness installation or silent fallback. Setup/status/start identify configured
+selection and executable evidence in `deployment.harness`, not measured use by a
+running worker. Existing deployments are not silently migrated. See
+[harness selection and evidence](skills/orbi/references/lifecycle.md#harness-selection-and-evidence)
+for deployment-local routing, drift refusal, service credential references and
+unverified live compatibility.
 
 For interrupted preparation, follow [partial-failure recovery](skills/orbi/references/lifecycle.md#partial-failure-and-recovery).
 The [bounded `--resume-setup` path](skills/orbi/references/lifecycle.md#explicit-bounded-legacy-resume)

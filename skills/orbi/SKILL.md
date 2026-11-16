@@ -15,7 +15,8 @@ queue, daemon or second scheduler.
 `/orbi [status|setup|start|stop|help]` runs
 `python3 -B <this-skill>/scripts/orbi_control.py` with the same action and
 `--repo-dir PATH --config PATH --dry-run --json`. For a new deployment, setup
-also accepts `--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]`.
+also accepts `--harness {pi-bolt,pi}` (default: installed Pi-Bolt) and
+`--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]`.
 Legacy missing-provider recovery additionally requires explicit `--config PATH
 --resume-setup` and those complete matching selectors; it cannot change a selection.
 The default action is
@@ -36,15 +37,16 @@ lifecycle actions.
    config and installed unit ownership. A repository with no deployment is
    `absent`, not an empty queue.
 2. **Status.** Run `status` (or `status --json`) for the deployment state,
-   pinned source, shared bootstrap, provider metadata, target timers, service
-   states and ready queue. Distinguish configured slots, enabled timers, active
-   timers and running service units: shared template availability is not instance
-   enablement. Report, for example, “3 configured slots, 3 enabled timers; observed
-   instances 1–5,” not “5 installed slots.” Counts are local scan evidence, not
-   deployment health or model/delivery proof. Status is read-only; missing evidence
-   is `unavailable`.
+   pinned source, selected harness/executable evidence, shared bootstrap, provider
+   metadata, target timers, service states and ready queue. Distinguish configured
+   slots, enabled timers, active timers and running service units: shared template
+   availability is not instance enablement. Report, for example, “3 configured slots,
+   3 enabled timers; observed instances 1–5,” not “5 installed slots.” Counts are local
+   scan evidence, not deployment health or model/delivery proof. Status is read-only;
+   missing evidence is `unavailable`.
 3. **Prepare.** Run `setup` (preview with `--dry-run`). It stages the verified
-   pinned source, atomically publishes provider metadata and `.orbi/env` before
+   pinned source, atomically publishes provider metadata, the deployment-local
+   `.orbi/harness-bin/pi` exec launcher and `.orbi/env` before
    publishing the native config last, and validates with a non-activating `orbi check`.
    Before locks or deployment writes it checks transport, ownership, inactive/no-worker
    evidence and available prerequisites. A missing bootstrap also requires readable
@@ -54,6 +56,15 @@ lifecycle actions.
    `--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]`
    using published metadata from Pi's local catalog, not authentication files.
    Without these flags, setup reuses verified metadata from a visible deployment.
+   New preparation defaults to Pi-Bolt; explicit `--harness pi` selects stock Pi.
+   Resolve the installed command before writes; missing means install it separately,
+   never fallback or automatic installation. Repeated setup reuses managed selection;
+   conflicting selectors refuse, and legacy deployments remain unmanaged/unmigrated.
+   Declared key/header references must be nonempty in persisted deployment env and
+   compatible final extension env, not merely the shell. This is
+   `references_available`, not authentication or inference. Without references,
+   use the selected target's non-refreshing stored-auth check in the pinned auth home;
+   missing provider/catalog/auth input holds as `auth_unverified`.
    Incomplete selectors, invalid metadata, literal credentials and symlink paths
    are refused before writes. Bootstrap flags cannot override an existing target;
    omit them to reuse its selection. The sole exception is explicit bounded
@@ -72,7 +83,9 @@ lifecycle actions.
    that deployment. Orbi remains paused and live-unqualified until its separate
    gates permit the requested operation; installing this skill or passing offline
    checks does not release them. It re-reads ownership, source, provider and
-   prerequisite evidence, runs the supported
+   prerequisite evidence. Managed activation refuses drifted metadata/launcher,
+   missing targets, incompatible final extension PATH/HOME/agent-directory overrides
+   and inherited auth-home mismatches. It runs the supported
    upstream `setup`/`install-units` with the scoped environment, enables only
    this deployment's timers and requests one first tick when no worker runs.
 5. **Stop.** Run `stop` to disable only this deployment's owned timer instances,
@@ -81,7 +94,11 @@ lifecycle actions.
    is `unavailable`, never `stopped`. Never kill, stop or restart a service to
    make the state look clean.
 6. **Report evidence.** Name the repository, deployment, unit, pin, source and
-   scheduler states you actually read, and the commands you ran. Keep provider
+   scheduler states you actually read, and the commands you ran. Include
+   `deployment.harness`: configured selection and resolved-now executable identity
+   are not proof of what a running worker uses. Status performs no harness/auth
+   probe and invents no version. Absent means unconfigured; Pi-Bolt is only the new
+   setup default. Legacy service resolution is unknown without a stored PATH. Keep provider
    identifiers and non-secret evidence only. Report preparation, scheduler
    activation and live delivery separately. One deployment/pool may have several
    slots; template-only rows do not establish a duplicate pool or a scheduling

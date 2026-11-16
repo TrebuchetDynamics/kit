@@ -36,6 +36,7 @@ import json
 import os
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import stat
@@ -61,8 +62,10 @@ CHECK_TIMEOUT = 300
 ACTIVE_STATES = frozenset({'active', 'activating', 'reloading'})
 DRAIN_STATES = frozenset({'active', 'activating', 'reloading', 'deactivating'})
 INACTIVE_STATES = frozenset({'inactive', 'failed'})
-OWNED_ENV_KEYS = ('PATH', 'PYTHONPATH', 'UV_TOOL_DIR', 'UV_TOOL_BIN_DIR',
+OWNED_ENV_KEYS = ('HOME', 'PATH', 'PYTHONPATH', 'UV_TOOL_DIR', 'UV_TOOL_BIN_DIR',
                   'PYTHONDONTWRITEBYTECODE')
+HARNESS_KEYS = ('KIT_ORBI_HARNESS', 'KIT_ORBI_HARNESS_EXECUTABLE',
+                'KIT_ORBI_HARNESS_SOURCE')
 ENV_HEADER = '# Managed by /orbi lifecycle controls; unrelated entries are preserved.'
 
 
@@ -99,6 +102,7 @@ class Deployment:
     repo_dir: Path | None
     pin: str
     max_concurrency: int
+    harness_selection: dict | None = None  # unpublished setup intent, never native TOML
 
     @property
     def prefix(self) -> str:
@@ -373,39 +377,238 @@ def repo_identity(ctx, repo_dir):
                 git_transport=transport)
 
 
-def service_path(ctx, deploy_home):
+def persisted_env(deployment):
+    """Pinned config._load_deploy_env_file literal parsing; never evaluate a shell."""
+    path = checked_path(deployment.env_path, 'env file')
+    values = {}
+    if path.is_file():
+        for line in path.read_bytes().decode('utf-8').splitlines():
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            line = line.removeprefix('export ')
+            if '=' not in line:
+                raise ControlError('env_invalid', 'deployment .orbi/env requires KEY=VALUE lines',
+                                   fix='repair the env file privately; preserve credential bytes', exit_code=2)
+            key, value = line.split('=', 1)
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                value = value[1:-1]
+            values[key.strip()] = value
+    return values
+
+
+def env_literal(value, *, path=False):
+    """Common native-loader/systemd single-quoted EnvironmentFile subset."""
+    if (not isinstance(value, str) or not value or value != value.strip()
+            or any(c in value for c in "'\"\\")
+            or any(ord(c) < 32 or 127 <= ord(c) <= 159 or c in '\u2028\u2029' for c in value)
+            or (path and (not Path(value).is_absolute() or ':' in value))):
+        raise ControlError('env_value_unsupported',
+                           'a managed env value/path cannot round-trip through native Orbi and systemd',
+                           fix='use absolute colon-free paths without quotes, backslashes, controls or '
+                               'edge whitespace; interior spaces are supported')
+    return "'" + value + "'"
+
+
+def launcher_path(deployment):
+    return deployment.deploy_home / '.orbi/harness-bin/pi'
+
+
+def launcher_text(executable):
+    return '#!/bin/sh\nexec ' + shlex.quote(executable) + ' "$@"\n'
+
+
+def harness_evidence(ctx, deployment):
+    if deployment is None:
+        return {'management': 'legacy', 'requested_kind': None,
+                'selection_source': 'legacy', 'launcher': None, 'executable': None,
+                'state': 'unknown', 'reason': 'unconfigured; new setup defaults to pi-bolt'}
+    evidence = {'management': 'legacy', 'requested_kind': None, 'selection_source': 'legacy',
+                'launcher': None, 'executable': None, 'state': 'unknown'}
+    try:
+        values = persisted_env(deployment)
+        fields = [key in values for key in HARNESS_KEYS]
+        launcher = launcher_path(deployment)
+        if not any(fields) and not deployment.harness_selection and not launcher.exists() and not launcher.is_symlink():
+            stored = values.get('PATH')
+            if stored is not None:
+                try:
+                    for part in stored.split(':'):
+                        env_literal(part, path=True)
+                except ControlError:
+                    return {**evidence, 'resolution': 'stored PATH is not reliably interpretable; '
+                            'service resolution unverified'}
+            found = shutil.which('pi', path=stored if stored is not None else ctx.env.get('PATH'))
+            evidence.update(executable=str(Path(found).resolve()) if found else None,
+                            state=('verified' if found else 'unavailable') if stored else 'unknown',
+                            resolution='stored PATH' if stored is not None else
+                                       'ambient helper only; service resolution unverified')
+            return evidence
+        evidence.update(management='managed', launcher=str(launcher), state='drift')
+        selection = deployment.harness_selection
+        if selection is None:
+            if not all(fields):
+                return {**evidence, 'reason': 'missing or partial harness metadata'}
+            selection = dict(zip(('kind', 'executable', 'source'), (values[k] for k in HARNESS_KEYS)))
+        if selection['kind'] not in ('pi-bolt', 'pi') or selection['source'] not in ('default', 'explicit'):
+            return {**evidence, 'reason': 'invalid harness metadata'}
+        env_literal(selection['executable'], path=True)
+        evidence.update(requested_kind=selection['kind'], executable=selection['executable'],
+                        selection_source=selection['source'])
+        file_identity(deployment.env_path)
+        file_identity(launcher)
+        executable = Path(selection['executable'])
+        if (not executable.is_file() or not os.access(executable, os.X_OK)
+                or str(executable.resolve()) != str(executable)):
+            return {**evidence, 'state': 'unavailable', 'reason': 'selected executable unavailable or redirected'}
+        planned = selection is deployment.harness_selection and not deployment.config_path.exists()
+        if planned and not any(fields):
+            return {**evidence, 'state': 'unknown', 'reason': 'launcher/env publication planned'}
+        if not all(fields):
+            return {**evidence, 'reason': 'missing harness metadata'}
+        if tuple(values[k] for k in HARNESS_KEYS) != tuple(selection[k] for k in ('kind', 'executable', 'source')):
+            return {**evidence, 'reason': 'persisted selection differs from setup intent'}
+        for key, expected in (('PYTHONPATH', str(deployment.deploy_home / 'src')),
+                              ('UV_TOOL_DIR', str(deployment.deploy_home / '.orbi/uv-tools')),
+                              ('UV_TOOL_BIN_DIR', str(deployment.deploy_home / '.orbi/bin')),
+                              ('PYTHONDONTWRITEBYTECODE', '1')):
+            if values.get(key) != expected:
+                return {**evidence, 'reason': 'deployment isolation env drift'}
+        # Managed values have one exact literal representation; duplicates cannot hide drift.
+        lines = deployment.env_path.read_bytes().decode('utf-8').splitlines()
+        for key in (*HARNESS_KEYS, *OWNED_ENV_KEYS):
+            matching = [line for line in lines if re.match(r'^(?:export\s+)?' + key + r'\s*=', line.strip())]
+            if key not in values or matching != [key + '=' + env_literal(values[key])]:
+                return {**evidence, 'reason': 'managed env metadata/serialization drift'}
+        env_literal(values['HOME'], path=True)
+        for part in values['PATH'].split(':'):
+            env_literal(part, path=True)
+        if values['PATH'].split(':')[0] != str(launcher.parent):
+            return {**evidence, 'reason': 'PATH does not begin with the owned harness directory'}
+        if (not launcher.is_file() or not os.access(launcher, os.X_OK)
+                or launcher.read_bytes() != launcher_text(selection['executable']).encode('utf-8')):
+            return {**evidence, 'reason': 'launcher missing, altered or not executable'}
+        if shutil.which('pi', path=values['PATH']) != str(launcher):
+            return {**evidence, 'reason': 'scoped pi does not resolve through the owned launcher'}
+        if planned:
+            return {**evidence, 'state': 'unknown', 'reason': 'config publication planned; saved routing verified'}
+        return {**evidence, 'state': 'verified'}
+    except (ControlError, OSError, UnicodeError):
+        return {**evidence, 'management': 'managed' if launcher_path(deployment).exists() else evidence['management'],
+                'state': 'drift', 'reason': 'harness/env identity cannot be verified'}
+
+
+def require_harness(ctx, deployment):
+    evidence = harness_evidence(ctx, deployment)
+    if evidence['management'] == 'managed' and evidence['state'] != 'verified':
+        # A fresh setup may probe the absolute target before publishing anything.
+        if deployment.harness_selection and not deployment.config_path.exists() and evidence['state'] == 'unknown':
+            return evidence
+        raise ControlError('harness_' + evidence['state'],
+                           evidence.get('reason', 'harness cannot be verified'),
+                           fix='inspect persisted harness fields, owned launcher and selected executable; '
+                               'repair deliberately, never regenerate from the current default',
+                           evidence={'deployment': {'harness': evidence}})
+    return evidence
+
+
+def select_harness(ctx, deployment, requested, *, new):
+    if not new:
+        evidence = require_harness(ctx, deployment)
+        if requested and evidence['management'] == 'legacy':
+            raise ControlError('harness_migration_required', 'legacy deployment is unmanaged',
+                               fix='omit --harness to preserve routing; migrate deliberately in a separately '
+                                   'authorized deployment operation, not setup')
+        if requested and requested != evidence['requested_kind']:
+            raise ControlError('harness_conflict', 'selector conflicts with the persisted harness',
+                               fix='omit --harness or use the saved kind; changing it requires deliberate migration')
+        return
+    stored = persisted_env(deployment)
+    if any(k in stored for k in HARNESS_KEYS):
+        if (not all(k in stored for k in HARNESS_KEYS) or stored[HARNESS_KEYS[0]] not in ('pi-bolt', 'pi')
+                or stored[HARNESS_KEYS[2]] not in ('default', 'explicit')):
+            raise ControlError('harness_drift', 'partial or malformed unpublished harness fields',
+                               fix='preserve preparation evidence and repair deliberately')
+        kind = stored[HARNESS_KEYS[0]]
+        if requested and requested != kind:
+            raise ControlError('harness_conflict', 'selector conflicts with unpublished saved harness',
+                               fix='reuse saved selection; preserve preparation evidence')
+        executable = stored[HARNESS_KEYS[1]]
+        source = stored[HARNESS_KEYS[2]]
+        found = executable
+    else:
+        kind = requested or 'pi-bolt'
+        found = ctx.which(kind)
+        source = 'explicit' if requested else 'default'
+        executable = str(Path(found).resolve()) if found else None
+    if not found or not Path(found).is_file() or not os.access(found, os.X_OK):
+        raise ControlError('prerequisite_missing', f"required harness '{kind}' is not executable on caller PATH",
+                           fix=f'install {kind} separately and retry; no fallback or automatic harness installation')
+    env_literal(executable, path=True)
+    if str(Path(executable).resolve()) != executable:
+        raise ControlError('harness_drift', 'saved harness executable redirected',
+                           fix='repair selected target deliberately; no fallback')
+    deployment.harness_selection = {'kind': kind, 'executable': executable,
+                                    'source': source}
+    # Validate all generated managed values/paths before locks or writes.
+    for value in (str(deployment.deploy_home), str(home_dir(ctx))):
+        env_literal(value, path=True)
+    env_values(ctx, deployment)
+
+
+def service_path(ctx, deployment):
+    values = persisted_env(deployment)
+    if 'PATH' in values and (not deployment.harness_selection or all(k in values for k in HARNESS_KEYS)):
+        return values['PATH']  # Managed and legacy deployments retain stored routing.
+    deploy_home = deployment.deploy_home
     entries = [str(deploy_home / '.orbi/bin'), str(home_dir(ctx) / '.local/bin')]
     for command in ('node', 'pi'):
         found = ctx.which(command)
         if found:
             entries.append(str(Path(found).parent))
     entries.extend(['/usr/local/bin', '/usr/bin', '/bin'])
-    entries.extend(part for part in ctx.env.get('PATH', '').split(os.pathsep) if part)
+    entries.extend(ctx.env.get('PATH', '').split(':'))
+    if deployment.harness_selection:
+        entries.insert(0, str(launcher_path(deployment).parent))
     unique = []
     for entry in entries:
         if entry not in unique:
             unique.append(entry)
-    return os.pathsep.join(unique)
+    return ':'.join(unique)
 
 
-def scoped_env(ctx, deploy_home):
+def scoped_env(ctx, deployment):
     env = dict(ctx.env)
-    env['PATH'] = service_path(ctx, deploy_home)
-    env['PYTHONPATH'] = str(deploy_home / 'src')
-    env['UV_TOOL_DIR'] = str(deploy_home / '.orbi/uv-tools')
-    env['UV_TOOL_BIN_DIR'] = str(deploy_home / '.orbi/bin')
-    env['PYTHONDONTWRITEBYTECODE'] = '1'
+    env.update(persisted_env(deployment))  # file, not ambient shell, owns service credentials/routing
+    env.update(env_values(ctx, deployment))
     return env
 
 
-def env_values(ctx, deploy_home):
-    return {
-        'PATH': service_path(ctx, deploy_home),
+def env_values(ctx, deployment):
+    deploy_home = deployment.deploy_home
+    values = {
+        'PATH': service_path(ctx, deployment),
         'PYTHONPATH': str(deploy_home / 'src'),
         'UV_TOOL_DIR': str(deploy_home / '.orbi/uv-tools'),
         'UV_TOOL_BIN_DIR': str(deploy_home / '.orbi/bin'),
         'PYTHONDONTWRITEBYTECODE': '1',
     }
+    selection = deployment.harness_selection
+    stored = persisted_env(deployment)
+    if selection or any(k in stored for k in HARNESS_KEYS):
+        values['HOME'] = stored.get('HOME', str(home_dir(ctx)))
+    if selection:
+        values.update(zip(HARNESS_KEYS, (selection[k] for k in ('kind', 'executable', 'source'))))
+    else:
+        stored = persisted_env(deployment)
+        values.update((k, stored[k]) for k in HARNESS_KEYS if k in stored)
+    if selection or any(k in values for k in HARNESS_KEYS):
+        for key, value in values.items():
+            env_literal(value, path=key in ('HOME', 'PYTHONPATH', 'UV_TOOL_DIR', 'UV_TOOL_BIN_DIR'))
+        for part in values['PATH'].split(':'):
+            env_literal(part, path=True)
+    return values
 
 
 def file_identity(path):
@@ -469,34 +672,51 @@ def atomic_publish(path, text, *, mode=0o600, reuse_only=False):
             temporary.unlink(missing_ok=True)
 
 
-def render_env(ctx, deployment, *, fresh=False):
+def render_env(ctx, deployment):
     path = checked_path(deployment.env_path, 'env file')
-    existing = path.read_text(encoding='utf-8') if path.is_file() and not fresh else ''
-    values = env_values(ctx, deployment.deploy_home)
-    lines = existing.splitlines()
+    # Preserve unrelated bytes, including CRLF, whitespace, quotes and missing final LF.
+    existing = path.read_bytes().decode('utf-8') if path.is_file() else ''
+    values = env_values(ctx, deployment)
     rendered, seen = [], set()
-    for line in lines:
-        match = re.match(r'^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$', line)
+    for line in existing.splitlines(keepends=True):
+        match = re.match(r'^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)', line)
         if match and match.group(1) in values:
             key = match.group(1)
-            if key in seen:
-                continue
-            rendered.append(f'{key}={values[key]}')
-            seen.add(key)
+            if key not in seen:
+                legacy_path = key == 'PATH' and not any(k in values for k in HARNESS_KEYS)
+                rendered.append(line if legacy_path else f'{key}={env_literal(values[key])}\n')
+                seen.add(key)
         else:
             rendered.append(line)
     if not existing:
-        rendered = [ENV_HEADER, *rendered]
-    for key in OWNED_ENV_KEYS:
-        if key not in seen:
-            rendered.append(f'{key}={values[key]}')
-    text = '\n'.join(rendered).rstrip('\n') + '\n'
-    return text
+        rendered = [ENV_HEADER + '\n']
+    missing = [key for key in values if key not in seen]
+    additions = [f'{key}={env_literal(values[key])}\n' for key in missing]
+    if missing and rendered and not rendered[-1].endswith(('\n', '\r')):
+        # Prepend, rather than adding a terminator to an unrelated final line.
+        rendered = additions + rendered
+    else:
+        rendered.extend(additions)
+    return ''.join(rendered)
+
+
+def has_managed_env_fields(deployment):
+    return any(k in persisted_env(deployment) for k in (*OWNED_ENV_KEYS, *HARNESS_KEYS))
 
 
 def write_env(ctx, deployment, *, reuse_only=False):
-    atomic_publish(deployment.env_path, render_env(ctx, deployment, fresh=reuse_only),
-                   reuse_only=reuse_only)
+    # A pre-provisioned credential-only file is not partial Kit preparation.
+    # Preserve its bytes/mode while appending managed fields. Once any owned
+    # field exists, config-last retry requires byte-identical intended content.
+    reuse_only = reuse_only and has_managed_env_fields(deployment)
+    atomic_publish(deployment.env_path, render_env(ctx, deployment), reuse_only=reuse_only)
+
+
+def write_launcher(deployment):
+    if deployment.harness_selection:
+        atomic_publish(launcher_path(deployment),
+                       launcher_text(deployment.harness_selection['executable']),
+                       mode=0o755, reuse_only=True)
 
 
 def provider_path(deployment):
@@ -671,7 +891,7 @@ def bootstrap_evidence(ctx, deployment):
         return 'incompatible', path
     if not path.exists():
         return 'missing', path
-    proc = ctx.run([str(path), '--version'], env=scoped_env(ctx, deployment.deploy_home),
+    proc = ctx.run([str(path), '--version'], env=scoped_env(ctx, deployment),
                    allow_failure=True)
     return ('compatible' if proc.returncode == 0 else 'incompatible'), path
 
@@ -731,29 +951,112 @@ def gh_auth(ctx):
     return {'state': 'ok'}
 
 
-def pi_auth(ctx, provider):
-    pi = ctx.which('pi')
+def final_extension_env(ctx, deployment):
+    """Mirror pinned pi_session.pi_extension_env + pi_process's final child merge.
+
+    prepare_pi_agent_dir later supplies the per-run PI_CODING_AGENT_DIR and links
+    HOME/.pi/agent/auth.json. We never create that profile during preflight.
+    """
+    env = scoped_env(ctx, deployment)
+    values = persisted_env(deployment)
+    expected_home = values.get('HOME', str(home_dir(ctx)))
+    expected_agent = str(Path(expected_home) / '.pi/agent')
+    if (ctx.env.get('HOME', str(home_dir(ctx))) != expected_home or env.get('HOME') != expected_home or
+            env.get('PI_CODING_AGENT_DIR', expected_agent) != expected_agent):
+        raise ControlError('auth_home_mismatch', 'inherited HOME/PI_CODING_AGENT_DIR differs from pinned auth home',
+                           fix='remove incompatible inherited or persisted overrides; pinned runs link HOME/.pi/agent/auth.json')
+    extensions = {}
+    entries = deployment.data.get('pi_extensions', [])
+    if not isinstance(entries, list):
+        raise ControlError('config_invalid', 'pi_extensions must be an array of tables',
+                           fix='repair native extension configuration deliberately')
+    for item in entries:
+        if (not isinstance(item, dict) or type(item.get('enabled', True)) is not bool
+                or not isinstance(item.get('env', {}), dict)
+                or not all(isinstance(k, str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', k)
+                           and isinstance(v, str) for k, v in item.get('env', {}).items())):
+            raise ControlError('config_invalid', 'invalid pi_extensions environment',
+                               fix='repair native extension configuration deliberately')
+        if item.get('enabled', True):
+            extensions.update(item.get('env', {}))
+    managed = require_harness(ctx, deployment)['management'] == 'managed'
+    for key in ('PATH', 'HOME', 'PI_CODING_AGENT_DIR'):
+        if key in extensions and (key == 'PI_CODING_AGENT_DIR' or extensions[key] != env.get(key)):
+            if managed or key != 'PATH':
+                raise ControlError('extension_env_mismatch', f'enabled extension overrides {key} incompatibly',
+                                   fix=f'repair enabled extension {key} deliberately; do not bypass routing/auth home')
+    return values, extensions
+
+
+def pi_auth(ctx, deployment, provider, *, metadata=None):
+    metadata = metadata or load_provider_metadata(deployment)
+    stored, extensions = final_extension_env(ctx, deployment)
+    providers = [provider['provider']]
+    review = deployment.data.get('review_pi_provider') or provider['provider']
+    if review not in providers:
+        providers.append(review)
+    evidence = []
+    env = scoped_env(ctx, deployment)
+    selected = require_harness(ctx, deployment)
+    pi = ((selected['launcher'] if selected['state'] == 'verified' else selected['executable'])
+          if selected['management'] == 'managed' else
+          shutil.which('pi', path=env['PATH']))
     if not pi:
-        raise ControlError('prerequisite_missing',
-                           "required command 'pi' is not available on PATH",
-                           fix='install Pi and configure its model provider')
-    proc = ctx.run([pi, 'auth', 'check', '--provider', provider, '--no-refresh'],
-                   allow_failure=True, timeout=60)
-    if proc.returncode != 0:
-        raise ControlError(
-            'pi_auth_unavailable',
-            f"Pi authentication is not ready for provider '{provider}'",
-            fix=f'run pi auth login {provider}; /orbi never copies or prints credentials')
-    return {'state': 'ok', 'provider': provider}
+        raise ControlError('prerequisite_missing', "required command 'pi' is unavailable in deployment PATH",
+                           fix='repair deployment routing and configure its provider; no fallback')
+    for identity in providers:
+        entry = (metadata or {}).get('providers', {}).get(identity)
+        if not isinstance(entry, dict):
+            raise ControlError('auth_unverified', f'provider {identity} missing from deployment catalog',
+                               fix=f'provision published metadata/auth input for provider {identity}')
+        try:
+            sanitized_metadata({'providers': {identity: entry}})
+        except ControlError as exc:
+            raise ControlError('auth_unverified', f'provider {identity} has invalid credential metadata',
+                               fix=exc.fix) from exc
+        refs = set()
+        for item in (entry, *(entry.get('models') or []),
+                     *entry.get('modelOverrides', {}).values()):
+            for value in ([item['apiKey']] if 'apiKey' in item else []) + list(item.get('headers', {}).values()):
+                match = re.fullmatch(r'\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})', value) if isinstance(value, str) else None
+                if not match:
+                    raise ControlError('auth_unverified', f'provider {identity} has unsupported credential input',
+                                       fix='use declared $VARIABLE or ${VARIABLE} references, never literal credentials')
+                refs.add(match.group(1) or match.group(2))
+        if refs:
+            for name in sorted(refs):
+                # Native config validates references before extension env is merged;
+                # require both service config-load and final-child availability.
+                if not stored.get(name) or not extensions.get(name, stored.get(name)):
+                    raise ControlError('credential_reference_missing',
+                                       f'provider {identity} requires {name} in deployment .orbi/env and final child environment',
+                                       fix=f'provision nonempty {name} separately in {deployment.env_path}; '
+                                           'shell-only variables are not service-ready; values are never copied')
+            evidence.append({'provider': identity, 'state': 'references_available', 'references': sorted(refs)})
+            continue
+        # Use the real user catalog/auth home, not a temporary per-run profile.
+        # A deployment-only custom provider with no references cannot be proven by
+        # upstream schema validation; the selected executable must support it here.
+        auth_env = {**stored, **env_values(ctx, deployment), 'HOME': str(home_dir(ctx)),
+                    'PI_CODING_AGENT_DIR': str(home_dir(ctx) / '.pi/agent')}
+        proc = ctx.run([pi, 'auth', 'check', '--provider', identity, '--no-refresh'],
+                       env=auth_env, allow_failure=True, timeout=60)
+        if proc.returncode != 0:
+            raise ControlError('auth_unverified', f'stored authentication/catalog check unavailable for provider {identity}',
+                               fix=f'configure provider {identity} in the existing user catalog/auth home, '
+                                   'or declare complete service credential references in deployment metadata')
+        evidence.append({'state': 'stored_auth_checked', 'provider': identity})
+    return evidence
 
 
-def prerequisites(ctx, deployment, *, action, provider=None, allow_bootstrap_install):
+def prerequisites(ctx, deployment, *, action, provider=None, metadata=None, allow_bootstrap_install):
     names = [('git', 'https://git-scm.com'), ('gh', 'https://cli.github.com')]
     if action in ('setup', 'start'):
         names.append(('uv', 'https://docs.astral.sh/uv/'))
     require_commands(ctx, names)
     node_evidence(ctx)
     gh_auth(ctx)
+    final_extension_env(ctx, deployment)
     state, path = bootstrap_evidence(ctx, deployment)
     if state == 'incompatible':
         raise ControlError(
@@ -767,9 +1070,17 @@ def prerequisites(ctx, deployment, *, action, provider=None, allow_bootstrap_ins
             f'the shared user-local bootstrap {path} is missing',
             fix='run `/orbi setup` to install it, or uv tool install --editable '
                 f'{deployment.deploy_home}')
-    if provider:
-        pi_auth(ctx, provider['provider'])
-    evidence = {'bootstrap': state, 'bootstrap_path': str(path)}
+    harness = require_harness(ctx, deployment)
+    auth = pi_auth(ctx, deployment, provider, metadata=metadata) if provider else []
+    env = scoped_env(ctx, deployment)
+    executable = (harness['launcher'] if harness['management'] == 'managed' and harness['state'] == 'verified'
+                  else harness['executable'] or shutil.which('pi', path=env['PATH']))
+    version = ctx.run([executable, '--version'], env=env, allow_failure=True) if executable else None
+    if version is None or version.returncode != 0:
+        raise ControlError('harness_unavailable', 'selected harness --version probe failed',
+                           fix='repair the selected executable; no fallback or installation')
+    evidence = {'bootstrap': state, 'bootstrap_path': str(path), 'auth': auth,
+                'harness': {**harness, 'observed_version': version.stdout.strip()[:200]}}
     if state == 'missing':
         evidence['python'] = bootstrap_preflight(ctx)
     return evidence
@@ -1007,6 +1318,7 @@ def plan_new_deployment(ctx, repo, deployments, args):
         source_repos=(repo.full,), unit_name=unit_name, deploy_home=deploy_home,
         repo_dir=repo.path, pin=PIN_TRACK, max_concurrency=1)
     validate_deployment_paths(deployment)
+    select_harness(ctx, deployment, args.harness, new=True)
     if args.pi_providers is not None:
         selection = dataclasses.replace(deployment, data={
             **deployment.data, 'pi_providers': str(checked_path(args.pi_providers, 'provider file')),
@@ -1055,8 +1367,9 @@ def locked(ctx, key):
 
 
 def orbi(ctx, deployment, *argv, timeout=CHECK_TIMEOUT, allow_failure=False):
+    require_harness(ctx, deployment)
     bootstrap = home_dir(ctx) / '.local/bin/orbi'
-    return ctx.run([str(bootstrap), *argv], env=scoped_env(ctx, deployment.deploy_home),
+    return ctx.run([str(bootstrap), *argv], env=scoped_env(ctx, deployment),
                    timeout=timeout, allow_failure=allow_failure)
 
 
@@ -1261,14 +1574,16 @@ def status_linux(ctx, repo, explicit_config):
     if target is None:
         return {'action': 'status', 'platform': 'linux', 'repo': repo.full,
                 'repo_dir': str(repo.path),
-                'deployment': {'state': 'absent'},
+                'deployment': {'state': 'absent', 'harness': harness_evidence(ctx, None)},
                 'scheduler': {'state': 'unavailable',
                               'reason': 'no deployment config owns this repository',
                               'timers': {}, 'services': {}},
                 'queue': queue, 'doctor': {'state': 'skipped'}}
     validate_target(target, repo)
     source = source_evidence(ctx, target)
-    bootstrap, _ = bootstrap_evidence(ctx, target)
+    harness = harness_evidence(ctx, target)
+    bootstrap = (bootstrap_evidence(ctx, target)[0] if (harness['state'] == 'verified' or harness['management'] == 'legacy' and harness['state'] == 'unknown')
+                 else 'unavailable')
     provider = provider_evidence(target)
     snapshot = safe_scheduler_snapshot(ctx, target)
     document = {
@@ -1284,10 +1599,12 @@ def status_linux(ctx, repo, explicit_config):
             'bootstrap': bootstrap,
             'provider': provider,
             'slots': target.max_concurrency,
+            'harness': harness,
         },
         'scheduler': snapshot,
         'queue': queue,
-        'doctor': doctor_evidence(ctx, target),
+        'doctor': (doctor_evidence(ctx, target) if (harness['state'] == 'verified' or harness['management'] == 'legacy' and harness['state'] == 'unknown')
+                   else {'state': 'skipped', 'reason': 'harness unavailable/drifted'}),
     }
     return document
 
@@ -1307,14 +1624,16 @@ def status_darwin(ctx, repo, explicit_config):
     if target is None:
         return {'action': 'status', 'platform': 'darwin', 'repo': repo.full,
                 'repo_dir': str(repo.path),
-                'deployment': {'state': 'absent'},
+                'deployment': {'state': 'absent', 'harness': harness_evidence(ctx, None)},
                 'scheduler': {'state': 'launchd', 'labels': [],
                               'active': 'unavailable',
                               'reason': 'no deployment config owns this repository'},
                 'queue': queue, 'doctor': {'state': 'skipped'}}
     validate_target(target, repo)
     source = source_evidence(ctx, target)
-    bootstrap, _ = bootstrap_evidence(ctx, target)
+    harness = harness_evidence(ctx, target)
+    bootstrap = (bootstrap_evidence(ctx, target)[0] if (harness['state'] == 'verified' or harness['management'] == 'legacy' and harness['state'] == 'unknown')
+                 else 'unavailable')
     provider = provider_evidence(target)
     return {
         'action': 'status', 'platform': 'darwin', 'repo': repo.full,
@@ -1325,17 +1644,20 @@ def status_darwin(ctx, repo, explicit_config):
             'pin': target.pin, 'source': source['state'],
             'bootstrap': bootstrap, 'provider': provider,
             'slots': target.max_concurrency,
+            'harness': harness,
         },
         'scheduler': {'state': 'launchd', 'labels': plist_labels(ctx, target),
                       'active': 'unavailable',
                       'reason': 'macOS is status-only; active state needs launchctl'},
         'queue': queue,
-        'doctor': doctor_evidence(ctx, target),
+        'doctor': (doctor_evidence(ctx, target) if (harness['state'] == 'verified' or harness['management'] == 'legacy' and harness['state'] == 'unknown')
+                   else {'state': 'skipped', 'reason': 'harness unavailable/drifted'}),
     }
 
 
-def new_deployment_report(deployment, provider):
-    return {'config': str(deployment.config_path),
+def new_deployment_report(ctx, deployment, provider):
+    return {'harness': harness_evidence(ctx, deployment),
+            'config': str(deployment.config_path),
             'deploy_home': str(deployment.deploy_home),
             'unit_name': deployment.unit_name,
             'pin': deployment.pin,
@@ -1425,13 +1747,22 @@ def resume_inputs(ctx, target, repo, args):
 def setup_file_identities(target):
     return {path: file_identity(path) for path in (
         target.deploy_home, target.config_path, target.deploy_home / '.orbi',
-        target.env_path, target.deploy_home / '.orbi/pi-providers.json',
+        target.env_path, launcher_path(target).parent, launcher_path(target),
+        target.deploy_home / '.orbi/pi-providers.json',
         *([target.provider_file] if target.provider_file else []))}
 
 
 def require_intended_files(ctx, target, metadata):
-    for path, text in ((target.deploy_home / '.orbi/pi-providers.json', provider_text(metadata)),
-                       (target.env_path, render_env(ctx, target, fresh=True))):
+    intended = [(target.deploy_home / '.orbi/pi-providers.json', provider_text(metadata)),
+                (target.env_path, render_env(ctx, target))]
+    if target.harness_selection:
+        intended.append((launcher_path(target), launcher_text(target.harness_selection['executable'])))
+    for path, text in intended:
+        if path == launcher_path(target) and path.exists() and not os.access(path, os.X_OK):
+            raise ControlError('publication_conflict', 'unpublished launcher is not executable',
+                               fix='preserve evidence and repair its mode deliberately', exit_code=2)
+        if path == target.env_path and not has_managed_env_fields(target):
+            continue
         if path.exists() and path.read_bytes() != text.encode('utf-8'):
             raise ControlError('publication_conflict', 'unpublished setup file differs from intended bytes',
                                fix='preserve the conflicting provider/env file and inspect it; '
@@ -1473,6 +1804,7 @@ def command_setup(ctx, args):
                         'for a legacy missing local provider use explicit --config --resume-setup '
                         'with the complete matching selectors; otherwise repair deliberately', exit_code=2)
             validate_target(target, repo)
+            select_harness(ctx, target, args.harness, new=False)
             require_setup_transport(repo, target)
             require_unit_ownership(ctx, target)
             if args.resume_setup:
@@ -1490,13 +1822,15 @@ def command_setup(ctx, args):
         identities = setup_file_identities(target)
         steps.append({'step': 'preflight_target', 'status': 'ok'})
         evidence = step('preflight_prerequisites', lambda: prerequisites(
-            ctx, target, action='setup', provider=provider, allow_bootstrap_install=True))
+            ctx, target, action='setup', provider=provider, metadata=metadata, allow_bootstrap_install=True))
         snapshot = step('preflight_activity', lambda: require_setup_idle(ctx, target))
-        report = new_deployment_report(target, provider)
+        report = new_deployment_report(ctx, target, provider)
         report['source'] = source['state']
         planned = ['stage_checkout'] if new else ['reuse_existing_deployment']
         if new or args.resume_setup:
             planned.append('write_provider_metadata')
+        if new:
+            planned.append('write_harness_launcher')
         planned += ['write_isolation_env']
         if new:
             planned.append('write_config')
@@ -1557,6 +1891,8 @@ def command_setup(ctx, args):
             if new or args.resume_setup:
                 step('write_provider_metadata', lambda: write_provider_metadata(target, metadata),
                      mutating=True)
+            if new:
+                step('write_harness_launcher', lambda: write_launcher(target), mutating=True)
             step('write_isolation_env', lambda: write_env(ctx, target, reuse_only=new), mutating=True)
             if new:
                 step('write_config', lambda: write_config(target, repo, provider), mutating=True)
@@ -1565,6 +1901,9 @@ def command_setup(ctx, args):
                 step('recheck_bootstrap', lambda: bootstrap_preflight(ctx))
                 step('install_bootstrap', lambda: install_bootstrap(ctx, target, evidence['python']),
                      mutating=True)
+            require_harness(ctx, target)
+            report['harness'] = harness_evidence(ctx, target)
+            report['harness']['observed_version'] = evidence['harness']['observed_version']
             step('validate_non_activating', lambda: run_orbi_check(ctx, target), mutating=True)
             current, possible = 'release_lock', True
         return {'action': 'setup', 'platform': ctx.platform, 'status': 'prepared',
@@ -1585,7 +1924,9 @@ def command_setup(ctx, args):
                 fix='inspect deployment-local permissions and files privately; preserve recovery inputs '
                     'and repair the cause before rerunning setup')
         exc.mutated = exc.mutated or mutated
-        exc.evidence = {**exc.evidence, 'target': str(target.config_path) if target else target_path,
+        exc.evidence = {**exc.evidence,
+                        'deployment': {'harness': harness_evidence(ctx, target)} if target else None,
+                        'target': str(target.config_path) if target else target_path,
                         'original_error': exc.code, 'activated': False,
                         'scheduler': exc.evidence.get('scheduler', snapshot),
                         'steps': [*steps, {'step': current, 'status': 'failed', 'error': exc.code,
@@ -1598,6 +1939,7 @@ def command_setup(ctx, args):
 
 
 def start_plan(ctx, target):
+    require_harness(ctx, target)
     source = require_source(ctx, target)
     provider = require_provider(target)
     prerequisites(ctx, target, action='start', provider=provider,
@@ -1627,7 +1969,8 @@ def lifecycle_failure(ctx, target, error, *, target_path, steps, current, mutate
     exc.evidence = {**exc.evidence, **evidence,
                     'target': str(target.config_path) if target else target_path,
                     'deployment': ({'config': str(target.config_path),
-                                    'unit_name': target.unit_name, 'pin': target.pin}
+                                    'unit_name': target.unit_name, 'pin': target.pin,
+                                    'harness': harness_evidence(ctx, target)}
                                    if target else None),
                     'original_error': exc.code, 'scheduler': snapshot,
                     'steps': [*steps, {**current, 'status': 'failed', 'error': exc.code}]}
@@ -1659,7 +2002,7 @@ def command_start(ctx, args):
         validate_target(target, repo)
         require_unit_ownership(ctx, target)
         _source, provider = start_plan(ctx, target)
-        report = new_deployment_report(target, provider)
+        report = new_deployment_report(ctx, target, provider)
         report['source'] = _source['state']
         if args.dry_run:
             snapshot = scheduler_snapshot(ctx, target)
@@ -1688,6 +2031,8 @@ def command_start(ctx, args):
             steps.append({'step': 'lock', 'status': 'ok', 'mutation': 'completed'})
             current = {'step': 'recheck_paths', 'mutation': 'none'}
             validate_deployment_paths(target)
+            require_harness(ctx, target)
+            final_extension_env(ctx, target)
             current, activation = {'step': 'setup', 'mutation': 'possible'}, 'possible'
             run_start_step(ctx, target, 'setup', '--repo', repo.full)
             steps.append({'step': 'upstream_setup', 'status': 'ok'})
@@ -1777,7 +2122,8 @@ def command_stop(ctx, args):
             return {'action': 'stop', 'platform': ctx.platform, 'status': 'planned',
                     'dry_run': True, 'repo': repo.full,
                     'deployment': {'config': str(target.config_path),
-                                   'unit_name': target.unit_name, 'pin': target.pin},
+                                   'unit_name': target.unit_name, 'pin': target.pin,
+                                    'harness': harness_evidence(ctx, target)},
                     'disabled_timers': names, 'pending_services': pending,
                     'steps': [{'step': 'disable_target_timers', 'status': 'planned',
                                'timers': names}]}
@@ -1801,7 +2147,8 @@ def command_stop(ctx, args):
         return {'action': 'stop', 'platform': ctx.platform, 'status': state,
                 'dry_run': False, 'repo': repo.full,
                 'deployment': {'config': str(target.config_path),
-                               'unit_name': target.unit_name, 'pin': target.pin},
+                               'unit_name': target.unit_name, 'pin': target.pin,
+                                    'harness': harness_evidence(ctx, target)},
                 'disabled_timers': disabled, 'pending_services': pending,
                 'steps': [{'step': 'disable_target_timers', 'status': 'ok',
                            'timers': disabled}]}
@@ -1862,11 +2209,12 @@ def action_usage():
     return ('python3 -B orbi_control.py [' + '|'.join(ACTIONS) + '] '
             '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] '
             '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] '
-            '[--resume-setup]')
+            '[--resume-setup] [--harness {pi-bolt,pi}]')
 
 
 def command_help(ctx, args):
     options = {
+        '--harness': 'setup only: pi-bolt (new default) or pi; existing managed selection is reused; legacy is not migrated',
         '--repo-dir': 'canonical repository checkout (default: current directory)',
         '--config': 'explicit native Orbi config for this deployment',
         '--dry-run': 'preview without locking, writing, installing or activating',
@@ -1949,7 +2297,7 @@ ACTIONS = {
         'mutates': 'staging',
         'platforms': ['linux'],
         'applies': ['--repo-dir', '--config', '--dry-run', '--json',
-                    '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--resume-setup'],
+                    '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--resume-setup', '--harness'],
         'when': 'Run to prepare one unambiguous repository deployment with verified '
                 'prerequisites, preserving existing pins and active workers.',
     },
@@ -2025,6 +2373,7 @@ def parse_args(argv):
     parser.add_argument('--resume-setup', action='store_true',
                         help='setup only: resume legacy missing provider with explicit --config '
                              'and complete matching --pi-* inputs')
+    parser.add_argument('--harness', choices=('pi-bolt', 'pi'), help='setup only: new default pi-bolt; explicit stock pi supported; no legacy migration')
     parser.add_argument('--pi-providers', help='setup only: Pi metadata JSON for new setup or bounded resume')
     parser.add_argument('--pi-provider', help='setup only: explicit provider ID')
     parser.add_argument('--pi-model', help='setup only: explicit model ID with verified metadata')
@@ -2055,6 +2404,9 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             raise ControlError(
                 'unknown_action', f"unknown action '{args.action}'", exit_code=2,
                 fix='run /orbi help for the supported actions and their effects')
+        if args.harness and args.action not in ('setup', 'help'):
+            raise ControlError('invalid_harness_selection', '--harness is setup-only',
+                               fix='omit the selector; status/start use persisted selection', exit_code=2)
         selectors = (args.pi_providers, args.pi_provider, args.pi_model, args.pi_thinking)
         if args.action != 'help' and args.resume_setup and (
                 args.action != 'setup' or not args.config or not all(selectors[:3])):
