@@ -508,7 +508,8 @@ restart hosts; live adoption remains a separately authorized operation.
 
 ## Pi agent harness bootstrap
 
-Status: Accepted requirement; positive missing-harness installation remains planned.
+Status: Accepted; implemented in the suite installer with offline bootstrap coverage.
+Real installation and live rollout remain separately unqualified.
 
 A selected Pi install component must install a missing harness from pi.dev and then
 the package in the same invocation, not silently skip Pi or require a preinstalled
@@ -526,8 +527,10 @@ a working harness is outside scope.
 Offline proof uses fake downloads/bootstrap/harnesses in isolated HOME/PATH: missing/
 existing/off-PATH harness, extension idempotence, download/bootstrap/probe failure,
 prerequisite refusal, skip/menu behavior and zero-write/no-download preview. Require
-no agent/service startup and normal source gates. Live install/plugin rollout remains
-separate; this requirement does not claim new tests or bootstrap qualification.
+no agent/service startup and normal source gates. The suite's existing active-integration
+restart phase remains unchanged. See [the supported path and recovery](installation.md#pi-harness-bootstrap).
+Offline fixtures verify the installer boundary, not a real upstream installation,
+model workflow or live install/plugin rollout.
 
 ## Per-repository Pi models and accounts
 
