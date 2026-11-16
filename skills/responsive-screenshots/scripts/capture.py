@@ -145,7 +145,7 @@ def png_size(path):
 def markdown_text(text):
     """Render untrusted values as plain text, never Markdown or HTML structure."""
     return re.sub(r'[\\`*_{}\[\]()#+.!|~\r\n-]',
-                  lambda match: f'&#{ord(match.group())};', html.escape(text))
+                  lambda match: f'&#{ord(match.group())};', html.escape(text, quote=False))
 
 
 def capture_state(result):

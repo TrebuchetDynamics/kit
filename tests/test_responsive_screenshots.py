@@ -169,7 +169,7 @@ class CaptureContractTests(unittest.TestCase):
 
     def test_diagnostics_are_raw_in_json_and_safely_associated_in_markdown(self):
         url = 'https://example.com/<img src=x onerror=alert(1)>|`[page]\nnext'
-        console = 'console | `code` <script>alert(1)</script>\n# injected'
+        console = 'console | `code` <script>alert(1)</script>\n# injected can\'t load "settings"'
         request = dict(method='GET', url='https://example.com/<bad>|`req`\nnext',
                        failure='failed | `why` <b>unsafe</b>\nnext')
         request_text = f"{request['method']} {request['url']} {request['failure']}"
@@ -205,7 +205,7 @@ class CaptureContractTests(unittest.TestCase):
             self.assertIn('| 0 | 0 |', rows[0])
             # Literal expected escapes are an oracle independent of the implementation helper.
             escaped_console = ('console &#124; &#96;code&#96; &lt;script&gt;alert&#40;1&#41;'
-                               '&lt;/script&gt;&#10;&#35; injected')
+                               '&lt;/script&gt;&#10;&#35; injected can\'t load "settings"')
             self.assertIn(escaped_console, report)
             self.assertIn('&lt;img src=x onerror=alert&#40;1&#41;&gt;&#124;&#96;&#91;page&#93;'
                           '&#10;next', report)
