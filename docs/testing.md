@@ -41,8 +41,8 @@ instead of relying on the host.
 
 ### Other offline checks
 
-`tests/test_bundle_repo_status.py` checks the static removed-executor status
-notice without launching a subprocess. Native plugin status/list/update remain
+`tests/test_project_status.py` checks current project contracts and preserved live
+qualification boundaries. Native plugin status/list/update remain
 maintenance operations; their registration tests do not qualify live Telegram
 routing, gateway activation or model execution.
 

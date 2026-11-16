@@ -93,6 +93,11 @@ for it. Empty package filters are still reconciled so skills and commands
 remain enabled. `./install.sh update --only pi` refreshes an existing package
 unconditionally, or installs it when absent.
 
+After Pi reports success, Kit reads the package registration again and checks for
+every shipped skill folder. Missing registration or skills makes installation fail
+before package filters are changed. For example, `PI_OFFLINE=1` can make Pi skip
+updates with exit code zero; Kit reports the incomplete result and the retry action.
+
 ### Pi harness bootstrap
 
 `./install.sh --no-pull --only pi` reuses a working Pi or installs a missing harness
