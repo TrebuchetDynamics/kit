@@ -732,8 +732,7 @@ exit 0
         self.assertIn(f'{NEW} already installed', result.stdout)
 
     def test_an_installed_package_is_updated_and_its_runners_move_onto_it(self):
-        (self.home / 'pi-installed').write_text(NEW + '\n')
-        (self.home / 'pkg/kit').mkdir(parents=True)
+        self.installed_package()
         result = self.install('update', '--only', 'pi')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.calls('pi install'), [])
