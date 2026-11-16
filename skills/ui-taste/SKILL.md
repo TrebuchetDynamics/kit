@@ -28,8 +28,8 @@ Adapter-local references linked below resolve relative to this SKILL.md.
   that names neither uses UI Taste. [Impeccable](../impeccable/SKILL.md) stays the
   choice for its own commands (`/impeccable <command>`, its `init`, hooks, doctor
   and pin tooling); do not load both for the same task.
-- **Scheduled work is read-only by default.** Scheduled, cron or Autowork-driven
-  runs audit only unless their TODO task scope authorizes UI edits; use the
+- **Scheduled work is read-only by default.** Scheduled, cron or unattended
+  runs audit only unless their accepted task scope authorizes UI edits; use the
   protocol's audit playbook and report findings.
 - **Paid Uizze tools stay optional.** Call `find_ui_references` or
   `find_ui_materials` only when the host already exposes them in this session.

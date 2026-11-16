@@ -3,6 +3,7 @@
 from functools import partial
 import hashlib
 import json
+import logging
 from pathlib import Path
 import re
 import subprocess
@@ -115,7 +116,7 @@ def inventory():
                                     if info['name'].partition(':')[0] in wanted),
             'missing_skills': missing_skills, 'unchecked_skill_sources': unchecked_sources,
             'commands': rows, 'telegram_menu_hidden': hidden, 'telegram_menu_limit': menu_limit,
-            'note': 'Menu capacity is limited; typed commands remain available; inspect hermes autowork doctor --json.'}
+            'note': 'Menu capacity is limited; typed commands remain available; inspect hermes kit doctor --json.'}
 
 
 def update_home():
@@ -143,7 +144,7 @@ def linked_lines(rows):
     names = ', '.join(r['profile'] for r in rows)
     targets = ', '.join(sorted({r['target'] for r in rows}))
     return [f'Linked to a working checkout ({targets}); any gateway restart loads its current files: {names}',
-            'Preview pinning one to its current revision: hermes autowork pin NAME --dry-run']
+            'Preview pinning one to its current revision: hermes kit pin NAME --dry-run']
 
 
 def setup_parser(parser):
@@ -216,7 +217,7 @@ def diagnose(report, *, core_only=False):
 
 
 def format_diagnosis(report):
-    lines = [f"Autowork — {report['scope']} check: {report['status']}",
+    lines = [f"Kit — {report['scope']} check: {report['status']}",
              f"Core: {report['core_status']} (bundled skill and command registration)",
              f"Integrations: {report['integrations_status']}"]
     lines.extend('  ' + error for error in report['core_errors'])
@@ -268,6 +269,15 @@ def handle_cli(args):
 
 
 def register_bundle(ctx, invoke):
+    from hermes_cli.plugins import get_plugin_manager
+
     register_imported_skills(ctx, invoke)
-    ctx.register_cli_command('autowork', help='Install, update and diagnose the Autowork bundle',
+    # Hermes leases CLI slots by replacement; keep another plugin's owner just
+    # as we keep foreign chat commands. Never force a maintenance takeover.
+    existing = get_plugin_manager()._cli_commands.get('kit')
+    if existing is not None and existing.get('plugin') not in OWNER_NAMES:
+        logging.getLogger(__name__).warning('Skipping hermes kit: CLI command already exists (owner: %s).',
+                                            existing.get('plugin'))
+        return
+    ctx.register_cli_command('kit', help='Install, update and diagnose the Kit bundle',
                              setup_fn=setup_parser, handler_fn=handle_cli)
