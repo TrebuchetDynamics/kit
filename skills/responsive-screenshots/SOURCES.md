@@ -5,7 +5,7 @@ The idea for this workflow comes from the `playwright-responsive-screenshots` sk
 read at revision `17b45a90a69608ebd6630d865da20711cf432013`.
 
 That repository states no license, so **no upstream file or text is copied here**. This
-workflow is written for Autowork, and it differs on purpose:
+workflow is written for Kit, and it differs on purpose:
 
 - It runs a bundled Python script against the Playwright library instead of requiring
   four MCP browser tools, so it works on every host and keeps the capture reproducible.

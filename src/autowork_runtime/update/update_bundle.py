@@ -448,7 +448,7 @@ def finalize_profiles(source, root, profiles, retries=()):
             plugin.symlink_to(source, target_is_directory=True)
         enable = subprocess.run(['hermes', '-p', name, 'plugins', 'enable', plugin_name(home)],
                                 env=env, timeout=120)
-        final = subprocess.run(['hermes', '-p', name, 'autowork', 'finalize',
+        final = subprocess.run(['hermes', '-p', name, 'kit', 'finalize',
                                 '--hermes-home', str(root), '--bundle-only'], env=env, timeout=120)
         results.append({'profile': name, 'status': 'ready' if enable.returncode == final.returncode == 0 else 'incomplete',
                         'enable_exit': enable.returncode, 'finalize_exit': final.returncode})
@@ -459,7 +459,7 @@ def finalize_profiles(source, root, profiles, retries=()):
         for row in results:
             if row['status'] == 'ready' or row['enable_exit']:
                 continue
-            final = subprocess.run(['hermes', '-p', row['profile'], 'autowork', 'finalize', '--hermes-home', str(root),
+            final = subprocess.run(['hermes', '-p', row['profile'], 'kit', 'finalize', '--hermes-home', str(root),
                                     '--bundle-only'], env=env, timeout=120)
             row.update(status='ready' if final.returncode == 0 else 'incomplete', finalize_exit=final.returncode)
     return results
@@ -717,7 +717,7 @@ def restart_when_quiet(root, homes, folder, *, update_id, gateway, window=QUIET_
                         gateway_restart_action=f'The gateway was not free of chat turns for {hours} h, so it was not '
                                                'restarted. Run `hermes gateway restart` when convenient (Hermes then '
                                                'waits for chat turns up to agent.restart_after_turn_timeout), or rerun '
-                                               'hermes autowork update.')
+                                               'hermes kit update.')
                     return 'deferred_expired'
         sleep(poll)
 
@@ -1193,8 +1193,8 @@ def pin_profile(root, name, *, dry_run=False, upstream=UPSTREAM):
         raise ValueError('Symlinked updater state')
     backup = state / 'pinned' / f'{name}-{time.time_ns()}'
     result = {**row, 'status': 'would_pin' if dry_run else 'pinned', 'backup': str(backup),
-              'note': 'The profile keeps this revision; only hermes autowork update advances it. The gateway loads the '
-                      'clone at its next restart. Undo with: hermes autowork pin --unpin ' + name}
+              'note': 'The profile keeps this revision; only hermes kit update advances it. The gateway loads the '
+                      'clone at its next restart. Undo with: hermes kit pin --unpin ' + name}
     if dry_run:
         return result
     state.mkdir(parents=True, exist_ok=True)
@@ -2124,7 +2124,7 @@ def main(argv=None):
             result['local_edits'] = plan.get('local_edits', [])
             if plan['drift']:
                 result.update(status='incomplete',
-                              action='Review the listed native skill files, back up customizations or intentional pins, and reconcile them with the fetched revision before rerunning hermes autowork update. No checkout or profile changes were applied.')
+                              action='Review the listed native skill files, back up customizations or intentional pins, and reconcile them with the fetched revision before rerunning hermes kit update. No checkout or profile changes were applied.')
             elif args.check:
                 result['status'] = 'update_available' if changed or missing else 'up_to_date'
             else:
@@ -2180,7 +2180,7 @@ def main(argv=None):
                               'records its outcome. Cron runs continue in their own workers; schedules persist.')
         except (ValueError, OSError, subprocess.SubprocessError) as error:
             result.update(status='incomplete', error=str(error),
-                          action='Resolve the named checkout/file error and rerun hermes autowork update. Partial changes, if any, are retained with backups.')
+                          action='Resolve the named checkout/file error and rerun hermes kit update. Partial changes, if any, are retained with backups.')
         save()
         print(json.dumps(result, indent=2))
         return int(result['status'] == 'incomplete')

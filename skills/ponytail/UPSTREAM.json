@@ -53,5 +53,5 @@
   },
   "transform": "Protocol and license bytes unchanged. SKILL.md becomes PROTOCOL.md to avoid nested discovery; ponytail-map.js becomes .cjs for the ESM package, with a documented bounded-read fix.",
   "excluded": "Upstream plugin/extension registration, hooks other than the manually invoked map helper, global mode/config writes, band/telemetry, installers, publishers and benchmark execution.",
-  "adaptations": "Autowork entry skills and shared/PONYTAIL.md own scope, commands and precedence. Upstream help is retained as source only, not displayed; gain is attributed to upstream, not measured here."
+  "adaptations": "Kit entry skills and shared/PONYTAIL.md own scope, commands and precedence. Upstream help is retained as source only, not displayed; gain is attributed to upstream, not measured here."
 }

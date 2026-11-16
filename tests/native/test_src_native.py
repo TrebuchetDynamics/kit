@@ -91,7 +91,7 @@ roots = [Path({str(self.root)!r}), Path({str(other)!r})]
 sys.modules['hermes_constants'] = types.SimpleNamespace(get_hermes_home=lambda: roots[0].parent / 'profile')
 sys.modules['hermes_cli.commands'] = types.SimpleNamespace(resolve_command=lambda name: None)
 sys.modules['hermes_cli.plugins'] = types.SimpleNamespace(get_plugin_commands=lambda: {{}},
-    get_plugin_manager=lambda: types.SimpleNamespace(list_plugin_skill_metadata=lambda: []))
+    get_plugin_manager=lambda: types.SimpleNamespace(list_plugin_skill_metadata=lambda: [], _cli_commands={{}}))
 sys.modules['gateway.session_context'] = types.SimpleNamespace(get_session_env=lambda *args: '')
 # Unqualified modules and files in cwd must never supply a native peer.
 for name in ('bundle', 'runtime_defaults', 'telegram_menu_policy', 'autowork_bootstrap'):
