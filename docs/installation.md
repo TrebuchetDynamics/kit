@@ -83,11 +83,14 @@ which supports none of those three and can restart gateways on ordinary updates,
 Hermes item instead of being ignored. Host security and dependency prompts still
 apply; full mode does not supply consent flags.
 
-Ordinary installs reuse an already registered Pi package when its directory exists;
-a stale registration with a missing directory is reinstalled. They do not run
-`pi update`. Empty package filters are still reconciled so skills and commands
-remain enabled. `./install.sh update --only pi` explicitly updates an existing
-package, or installs it when absent.
+Ordinary installs reuse an already registered Pi package when its directory exists
+and ships every skill folder this checkout ships; a stale registration with a missing
+directory is reinstalled, and a package missing a skill folder a release added (for
+example `orbi`) is refreshed with `pi update` so the missing `/skill:<name>` and
+command appear. A complete package stays untouched, so an install needs no network
+for it. Empty package filters are still reconciled so skills and commands
+remain enabled. `./install.sh update --only pi` refreshes an existing package
+unconditionally, or installs it when absent.
 
 ### Pi-Bolt native executable
 
