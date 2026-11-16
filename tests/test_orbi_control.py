@@ -894,6 +894,79 @@ class SetupRecoveryTests(unittest.TestCase):
                 self.assertEqual(snapshot(self.h.home), before)
                 self.assertNotIn(SECRET, json.dumps(doc) + err)
 
+    def test_setup_requires_verified_timer_enablement(self):
+        self.assertEqual(self.h.run('setup', options=self.options)[0], 0)
+        for state, status, expected in (('enabled-runtime', 0, 'setup_busy'),
+                                        ('', 1, 'scheduler_unavailable'),
+                                        ('enabled', 1, 'scheduler_unavailable')):
+            with self.subTest(state=state, status=status):
+                self.h.rules({'tool': 'systemctl', 'argv_contains': ['is-enabled'],
+                              'stdout': state + '\n', 'exit': status, 'stderr': SECRET},
+                             *self.h.scheduler_rules())
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('setup')
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertEqual(doc['error']['code'], expected)
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+                self.assertNotIn(SECRET, json.dumps(doc) + err)
+                SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
+    def test_setup_refuses_unverified_loaded_service_ownership(self):
+        self.assertEqual(self.h.run('setup', options=self.options)[0], 0)
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        self.h.rules({'tool': 'systemctl',
+                      'argv_contains': ['show', f'{prefix}@1.service', 'FragmentPath'],
+                      'exit': 1, 'stderr': SECRET})
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('setup')
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'scheduler_unavailable')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
+    def test_malformed_resume_paths_and_unreadable_env_have_receipts(self):
+        self.assertEqual(self.h.run('setup', options=self.options)[0], 0)
+        config = self.h.deploy / 'orbi.toml'
+        original = config.read_bytes()
+        provider = self.h.deploy / '.orbi/pi-providers.json'
+        provider.unlink()
+        options = [*self.options, '--resume-setup']
+        for field in ('deploy_home', 'repo_dir', 'pi_providers', 'pi_provider', 'pi_model',
+                      'pi_thinking', 'git_transport', 'engine_source_track'):
+            with self.subTest(field=field):
+                config.write_text(re.sub(rf'^{field} = .*$', field + ' = 42',
+                                         original.decode(), flags=re.MULTILINE))
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('setup', config=config, options=options)
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertEqual(doc['error']['code'], 'config_invalid')
+                self.assertEqual(doc['steps'][-1]['status'], 'failed')
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+        config.write_bytes(original + b'# invalid UTF-8: ' + SECRET.encode() + b'\xff\n')
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('setup', config=config, options=options)
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'config_invalid')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+        config.write_bytes(original)
+        env = self.h.deploy / '.orbi/env'
+        env.write_bytes(b'CUSTOM=' + SECRET.encode() + b'\xff\n')
+        # Resume may publish the missing provider before discovering an invalid env encoding.
+        code, doc, err = self.h.run('setup', config=config, options=options)
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'file_encoding_invalid')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(doc['steps'][-1]['step'], 'write_isolation_env')
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+        self.assertEqual(env.read_bytes(), b'CUSTOM=' + SECRET.encode() + b'\xff\n')
+        SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+
     def test_publication_interruptions_resume_config_last(self):
         for name in ('write_provider_metadata', 'write_env', 'write_config'):
             for when in ('before', 'after'):

@@ -231,7 +231,7 @@ def read_toml(path):
                            fix='run the helper with a compatible Python')
     try:
         return tomllib.loads(Path(path).read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
         raise ControlError('config_invalid',
                            f'cannot read the native Orbi config {path}: {exc.__class__.__name__}',
                            fix='repair or remove the config, then rerun status') from exc
@@ -240,6 +240,12 @@ def read_toml(path):
 def deployment_from(config_path, data=None):
     path = checked_path(config_path, 'config')
     data = read_toml(path) if data is None else data
+    for key in ('deploy_home', 'repo_dir', 'pi_providers', 'pi_provider', 'pi_model',
+                'pi_thinking', 'git_transport', 'engine_source_track'):
+        if key in data and not isinstance(data[key], str):
+            raise ControlError('config_invalid', f'{path} has a non-string {key}',
+                               fix='repair the native config deliberately; preserve recovery inputs',
+                               exit_code=2)
     source_repos = data.get('source_repos')
     if (not isinstance(source_repos, list) or not source_repos
             or not all(isinstance(item, str) and '/' in item for item in source_repos)):
@@ -1079,7 +1085,21 @@ def systemctl_state(ctx, unit):
 
 def timer_enabled(ctx, unit):
     proc = ctx.run(['systemctl', '--user', 'is-enabled', unit], allow_failure=True)
-    return proc.stdout.strip() == 'enabled'
+    state = proc.stdout.strip()
+    # systemctl(1)'s is-enabled table: runtime enablement is still enablement;
+    # failed/unknown evidence must never be interpreted as disabled scheduling.
+    if proc.returncode == 0:
+        if state in {'enabled', 'enabled-runtime', 'alias'}:
+            return True
+        if state in {'static', 'indirect', 'generated', 'transient'}:
+            return False
+    elif proc.returncode > 0 and state in {'disabled', 'masked', 'masked-runtime',
+                                          'linked', 'linked-runtime'}:
+        return False
+    raise ControlError('scheduler_unavailable', 'timer enablement could not be verified',
+                       fix='restore readable systemctl --user is-enabled evidence before preparation',
+                       evidence={'scheduler': {'state': 'unavailable',
+                                               'reason': 'timer enablement could not be verified'}})
 
 
 def scheduler_snapshot(ctx, deployment):
@@ -1088,11 +1108,14 @@ def scheduler_snapshot(ctx, deployment):
         timer = f'{deployment.prefix}@{index}.timer'
         service = f'{deployment.prefix}@{index}.service'
         fragment = systemctl_show(ctx, timer, 'FragmentPath')
-        if fragment.returncode != 0 and not fragment.stdout.strip():
+        if fragment.returncode != 0:
             return {'state': 'unavailable',
                     'reason': 'the systemd user session is not readable'}
         installed = bool(fragment.stdout.strip())
         service_fragment = systemctl_show(ctx, service, 'FragmentPath')
+        if service_fragment.returncode != 0:
+            return {'state': 'unavailable',
+                    'reason': 'loaded service ownership could not be verified'}
         owned = False
         if service_fragment.stdout.strip():
             owned = installed_config(Path(service_fragment.stdout.strip()),
@@ -1484,11 +1507,19 @@ def command_setup(ctx, args):
                 'dry_run': False, 'repo': repo.full, 'deployment': report,
                 'prerequisites': evidence, 'scheduler': snapshot,
                 'steps': steps, 'activated': False, 'warnings': []}
-    except (ControlError, OSError) as error:
-        exc = error if isinstance(error, ControlError) else ControlError(
-            'filesystem_error', 'setup filesystem operation failed (details withheld)',
-            fix='inspect deployment-local permissions and files privately; preserve recovery inputs '
-                'and repair the cause before rerunning setup')
+    except (ControlError, OSError, UnicodeError) as error:
+        if isinstance(error, ControlError):
+            exc = error
+        elif isinstance(error, UnicodeError):
+            exc = ControlError(
+                'file_encoding_invalid', 'setup input is not valid UTF-8 (details withheld)',
+                fix='inspect the failed step and repair file encoding privately; '
+                    'preserve original bytes and all recovery inputs')
+        else:
+            exc = ControlError(
+                'filesystem_error', 'setup filesystem operation failed (details withheld)',
+                fix='inspect deployment-local permissions and files privately; preserve recovery inputs '
+                    'and repair the cause before rerunning setup')
         exc.mutated = exc.mutated or mutated
         exc.evidence = {**exc.evidence, 'target': str(target.config_path) if target else target_path,
                         'original_error': exc.code, 'activated': False,

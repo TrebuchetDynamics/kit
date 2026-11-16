@@ -119,8 +119,9 @@ Python selects the existing uv `3.14` provisioning fallback. The selection is in
 Dry-run lists checked prerequisites separately from planned/unrun staging,
 installation and validation; it cannot qualify checks requiring a staged deployment.
 Ownership, file identities, source and inactive/no-worker evidence are rechecked
-under lock. Unknown activity is not permission to repair. Setup refuses enabled
-or active target timers as well as active/unknown worker states; separately
+under lock. Unknown activity or unreadable timer enablement is not permission to
+repair. Setup refuses enabled (including runtime-enabled) or active target timers
+as well as active/unknown worker states; separately
 authorized stop/drain and readable inactive evidence are required first.
 
 Files use same-directory atomic publication: complete bytes or absence, not
@@ -297,6 +298,9 @@ retry an unchanged timeout. Typical repairs:
   inspecting origin/config; never rewrite origin as a preparation repair.
 - `prerequisite_missing`: install the named command; no sudo is used.
 - `bootstrap_unverified`: repair readable `uv tool list` evidence before writes.
+- `file_encoding_invalid`: inspect the failed step and repair UTF-8 encoding
+  privately, preserving original bytes and recovery inputs. Invalid native config
+  encoding is reported as `config_invalid`.
 - `filesystem_error`: inspect local permissions/files privately and repair the
   cause; the failure step may have partially mutated even though publication is atomic.
 - `setup_busy`: obtain separate stop/drain authorization and verify inactivity;
