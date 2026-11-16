@@ -1932,6 +1932,244 @@ class LifecycleSequenceTests(unittest.TestCase):
         harness.clear_calls()
         return harness
 
+    def test_shared_templates_are_not_enabled_capacity(self):
+        h = self.fresh()
+        config = h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace('max_concurrency = 1',
+                                                   'max_concurrency = 3'))
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        h.rules(*h.scheduler_rules(enabled={1: True, 2: True, 3: True}))
+        before = snapshot(h.home)
+        code, status, err = h.run('status')
+        self.assertEqual(code, 0, err)
+        code, preview, err = h.run('start', dry_run=True)
+        self.assertEqual(code, 0, err)
+        # Assert both public outputs before inspecting the additive schema.
+        self.assertEqual(preview['steps'][1]['timers'],
+                         [f'{prefix}@{i}.timer' for i in range(1, 4)])
+        scheduler = status['scheduler']
+        self.assertEqual(scheduler['inventory'], {
+            'scope': 'local-target-prefix', 'scan_first': 1, 'scan_last': 5,
+            'outside_scan': 'unobserved', 'configured_slots': 3,
+            'configured_slots_covered': True,
+            'counts': {'enabled_timers': {'state': 'ok', 'value': 3},
+                       'active_timers': {'state': 'ok', 'value': 0},
+                       'running_services': {'state': 'ok', 'value': 0}}})
+        self.assertEqual(len(scheduler['services']), 5)
+        for index in range(1, 6):
+            for kind in ('timer', 'service'):
+                record = scheduler[kind + 's'][f'{prefix}@{index}.{kind}']
+                self.assertEqual(record['configured'], index <= 3)
+                self.assertEqual(record['fragment_kind'], 'template')
+                self.assertTrue(record['installed'])  # legacy availability only
+                self.assertTrue(record['owned'])
+        self.assertEqual(preview['scheduler'], scheduler)
+        self.assertFalse(preview['activated'])
+        self.assertEqual(snapshot(h.home), before)
+        SetupBoundaryTests.assert_no_activation(self, h.calls())
+        expected_reads = []
+        for index in range(1, 6):
+            timer, service = f'{prefix}@{index}.timer', f'{prefix}@{index}.service'
+            expected_reads.extend([
+                ['--user', 'show', timer, '-p', 'FragmentPath', '--value'],
+                ['--user', 'show', service, '-p', 'FragmentPath', '--value'],
+                ['--user', 'show', '-p', 'ActiveState', '--value', service],
+                ['--user', 'is-enabled', timer],
+                ['--user', 'show', '-p', 'ActiveState', '--value', timer]])
+        self.assertEqual([c['argv'] for c in h.calls() if c['tool'] == 'systemctl'],
+                         expected_reads * 2)
+
+        # Exercise the actual CLI's text/JSON rendering, not just flatten().
+        for json_mode in (False, True):
+            result = subprocess.run(
+                [sys.executable, '-B', str(HELPER), 'status', '--repo-dir', str(h.repo),
+                 *(['--json'] if json_mode else [])], env=h.env,
+                capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            if json_mode:
+                self.assertEqual(json.loads(result.stdout)['scheduler'], scheduler)
+            else:
+                for line in ('scheduler.inventory.configured_slots=3',
+                             'scheduler.inventory.scan_last=5',
+                             'scheduler.inventory.counts.enabled_timers.value=3',
+                             f'scheduler.services.{prefix}@4.service.configured=False',
+                             f'scheduler.timers.{prefix}@5.timer.fragment_kind=template'):
+                    self.assertIn(line + '\n', result.stdout)
+        self.assertEqual(snapshot(h.home), before)
+
+    def test_inventory_counts_independent_activity_runtime_and_surplus(self):
+        h = self.fresh()
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        cases = (
+            ('enabled-only', {}, {}, {1: True}, [], (1, 0, 0)),
+            ('timer-only', {}, {1: 'active'}, {}, [], (0, 1, 0)),
+            ('service-only', {1: 'active'}, {}, {}, [], (0, 0, 1)),
+            ('service-states', {1: 'active', 2: 'activating', 3: 'reloading',
+                                4: 'deactivating'}, {1: 'activating', 2: 'active'},
+             {}, [], (0, 1, 3)),
+            ('surplus', {4: 'active'}, {5: 'active'}, {4: True}, [], (1, 1, 1)),
+            ('runtime', {}, {}, {}, [{'tool': 'systemctl',
+                'argv_contains': ['is-enabled', f'{prefix}@4.timer'],
+                'stdout': 'enabled-runtime\n'}], (1, 0, 0)),
+        )
+        for name, services, timers, enabled, extra, expected in cases:
+            with self.subTest(case=name):
+                h.rules(*extra, *h.scheduler_rules(services=services, timers=timers,
+                                                  enabled=enabled))
+                before = snapshot(h.home)
+                code, doc, err = h.run('status')
+                self.assertEqual(code, 0, err)
+                counts = doc['scheduler']['inventory']['counts']
+                self.assertEqual(counts, dict(zip(
+                    ('enabled_timers', 'active_timers', 'running_services'),
+                    ({'state': 'ok', 'value': n} for n in expected))))
+                self.assertFalse(doc['scheduler']['services'][f'{prefix}@4.service']['configured'])
+                self.assertFalse(doc['scheduler']['timers'][f'{prefix}@5.timer']['configured'])
+                self.assertEqual(snapshot(h.home), before)
+
+    def test_inventory_incomplete_reads_are_not_zero(self):
+        h = self.fresh()
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        timer, service = f'{prefix}@1.timer', f'{prefix}@1.service'
+        cases = (
+            ('timer-fragment', ['show', timer, 'FragmentPath'], '', 1, (None, None, None)),
+            ('service-fragment', ['show', service, 'FragmentPath'], '', 1, (None, None, None)),
+            ('enablement', ['is-enabled', timer], '', 1, (None, None, None)),
+            ('timer-state-failed', ['show', 'ActiveState', timer], 'inactive\n', 1, (0, None, 0)),
+            ('timer-state-empty', ['show', 'ActiveState', timer], '', 0, (0, None, 0)),
+            ('timer-state-unknown', ['show', 'ActiveState', timer], 'unexpected\n', 0, (0, None, 0)),
+            ('service-state', ['show', 'ActiveState', service], '', 1, (0, 0, None)),
+        )
+        for name, argv, output, exit_code, expected in cases:
+            with self.subTest(case=name):
+                h.rules({'tool': 'systemctl', 'argv_contains': argv,
+                         'stdout': output, 'exit': exit_code}, *h.scheduler_rules())
+                before = snapshot(h.home)
+                code, doc, err = h.run('status')
+                self.assertEqual(code, 0, err)
+                inventory = doc['scheduler']['inventory']
+                self.assertEqual(inventory['configured_slots'], 1)
+                self.assertEqual((inventory['scan_first'], inventory['scan_last']), (1, 5))
+                for metric, value in zip(('enabled_timers', 'active_timers', 'running_services'),
+                                         expected):
+                    self.assertEqual(inventory['counts'][metric], {
+                        'state': 'unavailable' if value is None else 'ok', 'value': value})
+                self.assertEqual(snapshot(h.home), before)
+                if name.startswith('timer-state'):
+                    self.assertEqual(doc['scheduler']['state'], 'ok')  # legacy state unchanged
+        out = io.StringIO()
+        helper.render(helper.Context(stdout=out), doc, False)
+        self.assertIn('scheduler.inventory.counts.running_services.state=unavailable\n', out.getvalue())
+        self.assertIn('scheduler.inventory.counts.running_services.value=None\n', out.getvalue())
+
+    def test_inventory_fragment_absence_ownership_and_instance_evidence(self):
+        h = self.fresh()
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        h.rules(*h.scheduler_rules(installed=False))
+        code, doc, err = h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['scheduler']['timers'], {})  # legacy emission rule
+        for record in doc['scheduler']['services'].values():
+            self.assertEqual(record['fragment_kind'], 'absent')
+            self.assertFalse(record['installed'])
+            self.assertFalse(record['owned'])
+        for count in doc['scheduler']['inventory']['counts'].values():
+            self.assertEqual(count, {'state': 'ok', 'value': 0})
+
+        # Observe an instance-specific fragment, not the shared template.
+        service, timer = f'{prefix}@1.service', f'{prefix}@1.timer'
+        service_path, timer_path = h.root / service, h.root / timer
+        timer_path.write_text('[Timer]\n')
+        service_path.write_text(f'[Service]\nEnvironment="ORBI_CONFIG={h.deploy}/orbi.toml"\n')
+        instance_rules = [
+            {'tool': 'systemctl', 'argv_contains': ['show', service, 'FragmentPath'],
+             'stdout': str(service_path)},
+            {'tool': 'systemctl', 'argv_contains': ['show', timer, 'FragmentPath'],
+             'stdout': str(timer_path)}]
+        h.rules(*instance_rules, *h.scheduler_rules())
+        code, doc, err = h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['scheduler']['services'][service]['fragment_kind'], 'instance')
+        self.assertEqual(doc['scheduler']['timers'][timer]['fragment_kind'], 'instance')
+        timer_path.unlink()
+        code, doc, err = h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['scheduler']['timers'][timer]['fragment_kind'], 'unknown')
+        counts = doc['scheduler']['inventory']['counts']
+        for metric in ('enabled_timers', 'active_timers'):
+            self.assertEqual(counts[metric], {'state': 'unavailable', 'value': None})
+        self.assertEqual(counts['running_services'], {'state': 'ok', 'value': 0})
+        timer_path.write_text('[Timer]\n')
+
+        for name, content in (
+                ('foreign', f'Environment="ORBI_CONFIG={h.a["config"]}"\n'),
+                ('unattributed', '[Service]\n'),
+                ('ambiguous', f'Environment="ORBI_CONFIG={h.deploy}/orbi.toml"\n'
+                              f'Environment="ORBI_CONFIG={h.a["config"]}"\n'),
+                ('invalid-encoding', b'\xff'),
+                ('unreadable', None)):
+            with self.subTest(case=name):
+                if content is None:
+                    service_path.unlink()
+                elif isinstance(content, bytes):
+                    service_path.write_bytes(content)
+                else:
+                    service_path.write_text(content)
+                before = snapshot(h.home)
+                code, doc, err = h.run('status')
+                self.assertEqual(code, 0, err)
+                for count in doc['scheduler']['inventory']['counts'].values():
+                    self.assertEqual(count, {'state': 'unavailable', 'value': None})
+                if name in {'foreign', 'unattributed'}:
+                    self.assertFalse(doc['scheduler']['services'][service]['owned'])
+                self.assertEqual(snapshot(h.home), before)
+        self.assertEqual(helper.fragment_kind(str(service_path), service), 'unknown')
+        timer_path.rename(h.root / 'unexpected.timer')
+        self.assertEqual(helper.fragment_kind(str(h.root / 'unexpected.timer'), timer), 'unknown')
+
+    def test_inventory_exception_capacity_and_preview_coverage(self):
+        h = self.fresh()
+        config = h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace('max_concurrency = 1',
+                                                   'max_concurrency = 6'))
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        h.rules(*h.scheduler_rules(timers={1: 'active', 4: 'active'}))
+        before = snapshot(h.home)
+        code, doc, err = h.run('start', dry_run=True)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['steps'][1]['timers'],
+                         [f'{prefix}@{i}.timer' for i in (2, 3, 5, 6)])
+        inventory = doc['scheduler']['inventory']
+        self.assertEqual(inventory['configured_slots'], 6)
+        self.assertFalse(inventory['configured_slots_covered'])
+        self.assertEqual(inventory['outside_scan'], 'unobserved')
+        self.assertEqual(len(doc['scheduler']['services']), 5)
+        for error in (helper.ControlError('scheduler_unavailable', 'read failed'),
+                      PermissionError('private details'), UnicodeError('private details'),
+                      subprocess.SubprocessError('private details')):
+            with self.subTest(error=type(error).__name__):
+                with mock.patch.object(helper, 'scheduler_snapshot', side_effect=error):
+                    code, doc, err = h.run('status')
+                self.assertEqual(code, 0, err)
+                inventory = doc['scheduler']['inventory']
+                self.assertEqual(inventory['configured_slots'], 6)
+                self.assertEqual(inventory['scan_last'], 5)
+                self.assertFalse(inventory['configured_slots_covered'])
+                for count in inventory['counts'].values():
+                    self.assertEqual(count, {'state': 'unavailable', 'value': None})
+                self.assertNotIn('private details', json.dumps(doc))
+        self.assertEqual(snapshot(h.home), before)
+        SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_absent_deployment_has_no_linux_inventory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(Path(tmp))
+            for platform in ('linux', 'darwin'):
+                code, doc, err = h.run('status', platform=platform)
+                self.assertEqual(code, 0, err)
+                self.assertEqual(doc['deployment']['state'], 'absent')
+                self.assertNotIn('inventory', doc['scheduler'])
+
     def test_lifecycle_sequence(self):
         for name, services, timers, enabled, state, stop_state, expect_tick in self.CASES:
             with self.subTest(case=name):
@@ -2022,6 +2260,7 @@ class LifecycleSequenceTests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(doc['platform'], 'darwin')
         self.assertEqual(doc['scheduler']['state'], 'launchd')
+        self.assertNotIn('inventory', doc['scheduler'])
         self.assertFalse([c for c in h.calls() if c['tool'] == 'systemctl'])
         for action in ('setup', 'start', 'stop'):
             for dry_run in (False, True):
