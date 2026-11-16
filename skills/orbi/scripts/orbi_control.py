@@ -1102,44 +1102,102 @@ def timer_enabled(ctx, unit):
                                                'reason': 'timer enablement could not be verified'}})
 
 
+def scheduler_inventory(deployment):
+    """The scan describes local evidence, not total deployment capacity/activity."""
+    return {'scope': 'local-target-prefix', 'scan_first': 1, 'scan_last': MAX_INSTANCES,
+            'outside_scan': 'unobserved', 'configured_slots': deployment.max_concurrency,
+            'configured_slots_covered': deployment.max_concurrency <= MAX_INSTANCES,
+            'counts': {name: {'state': 'unavailable', 'value': None}
+                       for name in ('enabled_timers', 'active_timers', 'running_services')}}
+
+
+def unavailable_scheduler(deployment, reason):
+    return {'state': 'unavailable', 'reason': reason, 'timers': {}, 'services': {},
+            'inventory': scheduler_inventory(deployment)}
+
+
+def fragment_kind(fragment, unit):
+    if not fragment:
+        return 'absent'
+    path = Path(fragment)
+    try:
+        path.read_text()
+    except (OSError, UnicodeError):
+        return 'unknown'
+    if path.name == unit:
+        return 'instance'
+    if path.name == re.sub(r'@\d+\.', '@.', unit):
+        return 'template'
+    return 'unknown'
+
+
 def scheduler_snapshot(ctx, deployment):
     timers, services = {}, {}
+    inventory = scheduler_inventory(deployment)
+    ownership_complete = True
     for index in range(1, MAX_INSTANCES + 1):
         timer = f'{deployment.prefix}@{index}.timer'
         service = f'{deployment.prefix}@{index}.service'
         fragment = systemctl_show(ctx, timer, 'FragmentPath')
         if fragment.returncode != 0:
-            return {'state': 'unavailable',
-                    'reason': 'the systemd user session is not readable'}
-        installed = bool(fragment.stdout.strip())
+            return unavailable_scheduler(deployment, 'the systemd user session is not readable')
+        timer_fragment = fragment.stdout.strip()
+        installed = bool(timer_fragment)
         service_fragment = systemctl_show(ctx, service, 'FragmentPath')
         if service_fragment.returncode != 0:
-            return {'state': 'unavailable',
-                    'reason': 'loaded service ownership could not be verified'}
+            return unavailable_scheduler(deployment, 'loaded service ownership could not be verified')
+        service_path = service_fragment.stdout.strip()
         owned = False
-        if service_fragment.stdout.strip():
-            owned = installed_config(Path(service_fragment.stdout.strip()),
-                                     home_dir(ctx)) == deployment.config_path
+        if service_path:
+            owned = installed_config(Path(service_path), home_dir(ctx)) == deployment.config_path
+            # Legacy owned remains unchanged. Ambiguous/foreign fragments cannot
+            # support numeric target counts, even if the first binding matches.
+            if not owned or len(re.findall(r'\bORBI_CONFIG=', Path(service_path).read_text())) != 1:
+                ownership_complete = False
+        if installed and not owned:
+            ownership_complete = False
         state = systemctl_state(ctx, service)
         services[service] = {'state': state, 'owned': owned,
-                             'installed': bool(service_fragment.stdout.strip())}
+                             'installed': bool(service_path),
+                             'configured': index <= deployment.max_concurrency,
+                             'fragment_kind': fragment_kind(service_path, service)}
         if installed:
-            timers[timer] = {'installed': True, 'owned': owned,
-                             'enabled': timer_enabled(ctx, timer),
-                             'active': systemctl_state(ctx, timer)}
-    if any(item['state'] not in DRAIN_STATES | INACTIVE_STATES
-           for item in services.values()):
+            try:
+                enabled = timer_enabled(ctx, timer)
+            except ControlError as exc:
+                exc.evidence['scheduler'] = unavailable_scheduler(deployment, exc.message)
+                raise
+            timers[timer] = {'installed': True, 'owned': owned, 'enabled': enabled,
+                             'active': systemctl_state(ctx, timer),
+                             'configured': index <= deployment.max_concurrency,
+                             'fragment_kind': fragment_kind(timer_fragment, timer)}
+    known_states = DRAIN_STATES | INACTIVE_STATES
+    values = dict.fromkeys(inventory['counts'])
+    if ownership_complete:
+        timer_fragments_known = all(item['fragment_kind'] != 'unknown' for item in timers.values())
+        if timer_fragments_known:
+            values['enabled_timers'] = sum(item['enabled'] for item in timers.values())
+            if all(item['active'] in known_states for item in timers.values()):
+                values['active_timers'] = sum(item['active'] == 'active' for item in timers.values())
+        if all(item['fragment_kind'] != 'unknown'
+               and (not item['installed'] or item['state'] in known_states)
+               for item in services.values()):
+            values['running_services'] = sum(item['installed'] and item['owned']
+                                             and item['state'] in ACTIVE_STATES
+                                             for item in services.values())
+    inventory['counts'] = {name: {'state': 'ok' if value is not None else 'unavailable',
+                                 'value': value} for name, value in values.items()}
+    if any(item['state'] not in known_states for item in services.values()):
         return {'state': 'unavailable', 'reason': 'some service states could not be verified',
-                'timers': timers, 'services': services}
-    return {'state': 'ok', 'timers': timers, 'services': services}
+                'timers': timers, 'services': services, 'inventory': inventory}
+    return {'state': 'ok', 'timers': timers, 'services': services, 'inventory': inventory}
 
 
 def safe_scheduler_snapshot(ctx, deployment):
     try:
         return scheduler_snapshot(ctx, deployment)
-    except (ControlError, OSError):
-        return {'state': 'unavailable', 'reason': 'scheduler evidence could not be read',
-                'timers': {}, 'services': {}}
+    except (ControlError, OSError, UnicodeError):
+        return unavailable_scheduler(deployment, 'scheduler evidence could not be read')
 
 
 def deployment_state(snapshot):
@@ -1202,11 +1260,7 @@ def status_linux(ctx, repo, explicit_config):
     source = source_evidence(ctx, target)
     bootstrap, _ = bootstrap_evidence(ctx, target)
     provider = provider_evidence(target)
-    try:
-        snapshot = scheduler_snapshot(ctx, target)
-    except ControlError as exc:
-        snapshot = {'state': 'unavailable', 'reason': exc.message,
-                    'timers': {}, 'services': {}}
+    snapshot = safe_scheduler_snapshot(ctx, target)
     document = {
         'action': 'status', 'platform': 'linux', 'repo': repo.full,
         'repo_dir': str(repo.path),
@@ -1576,8 +1630,10 @@ def command_start(ctx, args):
             raise ControlError('scheduler_unavailable',
                                f"cannot read the target scheduler: {snapshot.get('reason')}",
                                fix='verify the systemd user session, then rerun')
-        pending = [timer for timer, item in snapshot['timers'].items()
-                   if item['owned'] and not item['active'] == 'active']
+        pending = [f'{target.prefix}@{index}.timer'
+                   for index in range(1, target.max_concurrency + 1)
+                   if snapshot['timers'].get(f'{target.prefix}@{index}.timer', {}).get('active')
+                   != 'active']
         live = [name for name, item in snapshot['services'].items()
                 if item['state'] in ACTIVE_STATES]
         steps = [{'step': 'reuse_existing_deployment', 'status': 'ok'},
@@ -1587,7 +1643,7 @@ def command_start(ctx, args):
                   'mode': 'already-active' if live else 'requested'}]
         return {'action': 'start', 'platform': ctx.platform, 'status': 'planned',
                 'dry_run': True, 'repo': repo.full, 'deployment': report,
-                'steps': steps, 'activated': False,
+                'steps': steps, 'activated': False, 'scheduler': snapshot,
                 'first_tick': 'already-active' if live else 'planned'}
     steps = [{'step': 'reuse_existing_deployment', 'status': 'ok'}]
     with locked(ctx, target.config_path):

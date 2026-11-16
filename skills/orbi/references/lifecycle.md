@@ -217,6 +217,11 @@ authentication and the shared bootstrap. It runs upstream `setup` and
 instance only when no instance is active or activating. A repeated start never
 restarts or duplicates a live worker.
 
+Start dry-run plans the same configured `1..max_concurrency` timer range, skipping
+already-active timers. Its separate `scheduler` snapshot retains the broader
+observed inventory, including out-of-config units; those observations are not
+planned activations. Preview performs no mutation.
+
 Start resumes only the explicitly named deployment. It never issues issue
 pauses or blocked work and never touches another deployment. Enforced
 administrators, strict required CI, independent review and human-only
@@ -225,8 +230,8 @@ authorizes a protection change.
 
 ## Stop, status and drain
 
-`stop` enumerates this deployment's owned timer instances, including installed
-surplus instances up to the pinned five-instance bound, and runs only
+`stop` enumerates this deployment's owned timer instances, including observed
+out-of-config instances within the five-instance observation bound, and runs only
 `systemctl --user disable --now <timer>`. It never runs `stop`, `kill` or
 `restart` on a service. A pre-existing invocation may finish; later issue
 phases may wait for a start. Re-read the service states and report `draining`
@@ -241,6 +246,61 @@ at this pin, so use read-only `orbi doctor` plus explicit `gh`, scheduler and
 local reads. Missing evidence is `unavailable`, never an empty queue. Status
 and dry-run create no config, lock, receipt or scratch file and suppress child
 Python bytecode writes.
+
+### Interpreting Linux scheduler inventory
+
+For a bound Linux target, `deployment.slots` and
+`scheduler.inventory.configured_slots` come from native `max_concurrency`.
+They describe configured capacity, not observed enablement or activity. Every
+emitted timer/service record adds `configured` (index within that capacity) and
+`fragment_kind`: `template` for a readable shared `@.timer`/`@.service` fragment,
+`instance` for a readable instance-specific fragment, `absent` for a known empty
+FragmentPath, or `unknown` when the filename/read cannot establish its kind.
+Legacy `installed` means only nonempty FragmentPath, not enabled/deployed capacity;
+`owned` remains bound to the service fragment's `ORBI_CONFIG`, never inferred
+from template availability. Absent timer fragments retain the existing omission
+from `timers`; service records cover every scanned index.
+
+`scheduler.inventory` exposes `scope: local-target-prefix`, `scan_first: 1`,
+`scan_last: 5` (the current `MAX_INSTANCES`) and `outside_scan: unobserved`.
+`configured_slots_covered` is false when configured capacity exceeds this scan;
+positive concurrency above five remains valid. Counts describe only owned
+observed units within that bound, including out-of-config ones, not exhaustive
+whole-deployment or remote activity:
+
+- `counts.enabled_timers`: explicit enablement, including runtime-enabled timers.
+- `counts.active_timers`: timer ActiveState is exactly `active`.
+- `counts.running_services`: service ActiveState is `active`, `activating` or
+  `reloading`. `deactivating` remains drain evidence, not a running-service count.
+
+Each metric is `{state: ok, value: integer}` only with complete evidence for that
+metric, including ownership; incomplete/failed reads or foreign/ambiguous ownership
+produce `{state: unavailable, value: null}`, not zero. Known absent fragments
+contribute zero. Exceptions may make all counts unavailable, while configured
+capacity and scan bounds remain visible. Unknown timer activity invalidates its
+active count even if legacy snapshot `state` is `ok`. JSON exposes these fields;
+text mode flattens them, for example
+`scheduler.inventory.counts.enabled_timers.value=3` (unavailable values render as
+`None`, with `state=unavailable`). Absent deployments and macOS do not invent Linux
+inventory counts.
+
+For example, a config with three slots, templates visible for 1–5 and only 1–3
+enabled means **3 configured slots, 3 enabled timers; observed instances 1–5**.
+Rows 4/5 have `configured: false` and `fragment_kind: template`; template presence
+alone is not enabled surplus. Genuine out-of-config enablement/activity is visible
+in those rows' `enabled`, `active` or service `state` and in the observed counts.
+Disabled does not mean impossible to activate manually; enabled does not mean
+currently running. A service-unit state proves neither a working model nor a
+completed delivery, and counts do not establish global deployment health.
+
+One deployment/task pool can have several slot timers; that is not several
+repositories or duplicate pools claiming the same queue. Compare native config,
+explicit enablement and observed activity before naming a scheduling defect.
+Never manually enable instances 4/5 just to match `MAX_INSTANCES`. Use read-only
+status for observation: `setup --dry-run` is preparation preflight, not a harmless
+health substitute. `setup_busy` while scheduling/workers are active is an expected
+refusal, not evidence of extra instances. Any repair still requires its own
+scope/authority; this inventory authorizes no scheduler mutation.
 
 macOS supports status and help; setup/start/stop are refused before side effects.
 Other platforms support help only; lifecycle actions fail clearly. Secrets never appear in commands, output or

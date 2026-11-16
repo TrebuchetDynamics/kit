@@ -37,8 +37,12 @@ lifecycle actions.
    `absent`, not an empty queue.
 2. **Status.** Run `status` (or `status --json`) for the deployment state,
    pinned source, shared bootstrap, provider metadata, target timers, service
-   states and ready queue. Status is read-only; missing evidence is
-   `unavailable`.
+   states and ready queue. Distinguish configured slots, enabled timers, active
+   timers and running service units: shared template availability is not instance
+   enablement. Report, for example, “3 configured slots, 3 enabled timers; observed
+   instances 1–5,” not “5 installed slots.” Counts are local scan evidence, not
+   deployment health or model/delivery proof. Status is read-only; missing evidence
+   is `unavailable`.
 3. **Prepare.** Run `setup` (preview with `--dry-run`). It stages the verified
    pinned source, atomically publishes provider metadata and `.orbi/env` before
    publishing the native config last, and validates with a non-activating `orbi check`.
@@ -72,14 +76,20 @@ lifecycle actions.
    upstream `setup`/`install-units` with the scoped environment, enables only
    this deployment's timers and requests one first tick when no worker runs.
 5. **Stop.** Run `stop` to disable only this deployment's owned timer instances,
-   including installed surplus instances. Active services finish: report
+   including observed out-of-config instances. Active services finish: report
    `draining` with the pending units until they stop. Missing service evidence
    is `unavailable`, never `stopped`. Never kill, stop or restart a service to
    make the state look clean.
 6. **Report evidence.** Name the repository, deployment, unit, pin, source and
    scheduler states you actually read, and the commands you ran. Keep provider
    identifiers and non-secret evidence only. Report preparation, scheduler
-   activation and live delivery separately. If non-activating validation fails
+   activation and live delivery separately. One deployment/pool may have several
+   slots; template-only rows do not establish a duplicate pool or a scheduling
+   defect. Compare native config, explicit enablement and observed activity first;
+   never enable 4/5 merely to match the scan bound. Use read-only status to observe:
+   `setup --dry-run` is preparation preflight and `setup_busy` is an expected
+   refusal while scheduling/workers are active, not evidence of extra instances.
+   Any repair still needs separate scope/authority. If non-activating validation fails
    after writes, inspect and repair the partial deployment, then rerun helper
    `setup` without bootstrap flags. Do not use activating upstream setup as a
    preparation repair; inspect scheduler state with `status`. Read `steps`, `target`,
