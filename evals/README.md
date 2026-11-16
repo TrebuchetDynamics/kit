@@ -161,6 +161,57 @@ separate per-invocation evidence yields a missing required-success event.
 Exit 0 means the trace satisfies the spec. Exit 1 means a required event is missing
 or a forbidden action occurred. Exit 2 means the JSON is malformed.
 
+## Opt-in local planning smoke (Pi)
+
+Use `scripts/planning_smoke.py` to exercise one portable planning skill with a real
+configured model in a disposable Git repository. This is a paid/live operation,
+separate from `scripts/check.py` and CI. Select an authenticated provider/model;
+the helper does not log in or install a host:
+
+```sh
+python3 scripts/planning_smoke.py --provider PROVIDER_ID --model MODEL_ID \
+  --output-dir /tmp/kit-plan-with-me-evidence
+python3 scripts/planning_smoke.py --provider PROVIDER_ID --model MODEL_ID \
+  --skill plan-for-me --output-dir /tmp/kit-plan-for-me-evidence
+```
+
+Each output directory must be new and outside Kit and the existing Pi agent
+configuration. It is created private (mode 0700) and retains the fixture, JSONL,
+stderr, final response and receipt, including on failure. Keep it outside Git.
+This helper supports Linux/macOS (POSIX process groups). `--timeout SECONDS`
+bounds each Pi invocation and kills its process group before the final fixture
+snapshot on timeout. `--pi PATH` selects an executable;
+`--agent-dir PATH` selects the existing authentication/catalog source.
+The temporary agent directory uses empty settings and links existing `auth.json`
+and `models.json` when present; credentials are not copied. Normal Pi authentication
+may refresh the linked auth file. Packages, extensions, MCP, context discovery,
+themes and prompt templates are disabled; the selected portable skill is loaded
+explicitly. Existing profile settings and services are not changed. This is
+resource isolation, not a filesystem or network sandbox.
+
+The smoke leaves read/bash/edit/write tools available, asks for no local or GitHub
+writes and compares all fixture files/directories, including `.git`, afterward.
+It requires successful reads of the README and canonical skill, a normally completed
+nonempty assistant response, and no write/edit tool attempts. Exit 0 without a
+response fails. Inspect `final.txt` and shell commands in `session.jsonl` yourself:
+Plan With Me should ask one relevant unresolved question; Plan For Me should give
+a bounded plan with explicit assumptions, without an interview. The automated
+receipt does not judge answer quality, arbitrary shell side effects or remote state.
+It is not the writable-publication Tier 3 pilot or Orbi qualification.
+
+To test shipped contents rather than checkout files, run `npm pack --ignore-scripts
+--pack-destination /tmp/CHOSEN_DIRECTORY`, unpack that archive outside the checkout,
+and pass `--kit-root /path/to/unpacked/package`. Both fixture and loaded skill paths
+remain recorded privately. No installed Pi package or real project is modified.
+
+The helper uses native `/skill:plan-with-me` or `/skill:plan-for-me` expansion.
+In Pi 1.5.2, the short extension command in `--mode json -p` was observed to exit 0
+with only a session header: its fire-and-forget `sendUserMessage` is not awaited by
+single-shot command dispatch. See the pinned [command dispatch](https://github.com/earendil-works/pi/blob/v1.5.2/packages/coding-agent/src/core/agent-session.ts)
+and [print lifecycle](https://github.com/earendil-works/pi/blob/v1.5.2/packages/coding-agent/src/modes/print-mode.ts).
+This limitation does not establish the behavior of interactive/RPC commands or other
+Pi releases. Do not count the process exit alone as model evidence.
+
 ## Limits
 
 The checked-in traces are synthetic fixtures. A passing fixture proves the grader and
