@@ -1904,11 +1904,20 @@ def command_setup(ctx, args, *, prepared_binding=None):
             require_harness(ctx, target)
             report['harness'] = harness_evidence(ctx, target)
             report['harness']['observed_version'] = evidence['harness']['observed_version']
+            if prepared_binding is not None:
+                # Bind the inputs actually submitted to validation, not later changed bytes.
+                validated_target = deployment_from(target.config_path)
+                validated_identities = setup_file_identities(target)
             step('validate_non_activating', lambda: run_orbi_check(ctx, target), mutating=True)
             if prepared_binding is not None:
-                # Private handoff captured before releasing the preparation lock. Never render bytes.
-                prepared_binding.update(repo=repo, target=deployment_from(target.config_path),
-                                        identities=setup_file_identities(target))
+                current, possible = 'recheck_validated_target', False
+                if (deployment_from(target.config_path) != validated_target
+                        or setup_file_identities(target) != validated_identities):
+                    raise ControlError('target_changed', 'deployment files changed during validation',
+                                       fix='inspect concurrent changes; preserve prepared files', exit_code=2)
+                # Private handoff retained through activation. Never render file bytes.
+                prepared_binding.update(repo=repo, target=validated_target,
+                                        identities=validated_identities)
             current, possible = 'release_lock', True
         return {'action': 'setup', 'platform': ctx.platform, 'status': 'prepared',
                 'dry_run': False, 'repo': repo.full, 'deployment': report,
@@ -2047,7 +2056,8 @@ def command_start(ctx, args):
                                    'use deliberate setup/repair for partial deployments', exit_code=2)
         validate_target(target, repo)
         require_unit_ownership(ctx, target)
-        identities = setup_file_identities(target)
+        # A newly prepared target keeps its validated baseline across both preflights.
+        identities = binding['identities'] if binding else setup_file_identities(target)
         _source, provider = start_plan(ctx, target)
         report = new_deployment_report(ctx, target, provider)
         report['source'] = _source['state']

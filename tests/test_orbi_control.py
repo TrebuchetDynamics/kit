@@ -1241,6 +1241,44 @@ class FirstDeploymentTests(unittest.TestCase):
         self.assertEqual(doc['preparation']['steps'][-1]['step'], 'validate_non_activating')
         SetupBoundaryTests.assert_no_activation(self, self.h.calls())
 
+    def test_start_holds_drift_during_validation_and_after_rebind(self):
+        for phase in ('validation', 'rebind'):
+            with self.subTest(phase=phase):
+                h = Harness(Path(self.tmp.name) / phase)
+                original_check = helper.run_orbi_check
+                original_validate = helper.validate_target
+                changed = False
+
+                def change(target):
+                    nonlocal changed
+                    changed = True
+                    # Valid metadata with changed bytes must not become a new baseline.
+                    path = target.deploy_home / '.orbi/pi-providers.json'
+                    path.write_text(path.read_text() + '\n')
+
+                def check(ctx, target):
+                    result = original_check(ctx, target)
+                    if phase == 'validation':
+                        change(target)
+                    return result
+
+                def validate(target, repo):
+                    original_validate(target, repo)
+                    if phase == 'rebind' and not changed:
+                        change(target)
+
+                with mock.patch.object(helper, 'run_orbi_check', check), \
+                        mock.patch.object(helper, 'validate_target', validate):
+                    code, doc, err = h.run('start', options=self.options)
+                self.assertTrue(changed)
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertEqual(doc['error']['code'], 'target_changed')
+                self.assertTrue(doc['error']['mutated'])
+                self.assertEqual(doc['preparation']['state'],
+                                 'failed' if phase == 'validation' else 'prepared')
+                self.assertEqual(doc['activation'], 'none')
+                SetupBoundaryTests.assert_no_activation(self, h.calls())
+
     def test_prepared_binding_drift_is_held_before_activation(self):
         original_lock = helper.locked
         for drift in ('config', 'provider', 'ownership', 'repo', 'harness', 'source', 'unit'):
