@@ -182,29 +182,49 @@ temp_dir=''
 trap '[[ -z $temp_dir ]] || rm -rf -- "$temp_dir"' EXIT
 if $setup; then
     [[ -f $script_dir/plugin.yaml ]] || die 'Bundle plugin.yaml is missing'
+    # Resolve EVERY profile before the first link, config write or external install.
+    bundle_targets=()
     for profile in "${profiles[@]}"; do
         profile_dir=$hermes_root
         [[ $profile == default ]] || profile_dir=$hermes_root/profiles/$profile
-        target=$profile_dir/plugins/autowork
-        if [[ -e $target || -L $target ]]; then
-            if [[ ! -f $target/plugin.yaml ]]; then
-                printf 'Error: existing bundle path is not a plugin: %s\n' "$target" >&2
-                failed=$((failed + 1))
-                continue
+        target=$(python3 -B - "$script_dir" "$profile_dir" <<'PYIDENTITY'
+import importlib.util, sys
+from pathlib import Path
+source, home = map(Path, sys.argv[1:])
+spec = importlib.util.spec_from_file_location('setup_identity', source / 'scripts/update_bundle.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+try:
+    print(module.setup_plugin_dir(home, source))
+except (ValueError, OSError) as error:
+    print('Error: ' + str(error), file=sys.stderr)
+    sys.exit(1)
+PYIDENTITY
+        ) || exit 1
+        bundle_targets+=("$target")
+    done
+    for ((index=0; index<${#profiles[@]}; index++)); do
+        profile=${profiles[index]}
+        target=${bundle_targets[index]}
+        if [[ ! -e $target ]]; then
+            if $dry_run; then
+                printf 'Plan: link kit into %s\n' "$profile"
+            else
+                mkdir -p -- "${target%/*}"
+                ln -s -- "$script_dir" "$target"
             fi
-        elif $dry_run; then
-            printf 'Plan: link autowork into %s\n' "$profile"
-        else
-            mkdir -p -- "$profile_dir/plugins"
-            ln -s -- "$script_dir" "$target"
         fi
         if ! apply_bundle_defaults "$profile"; then
             failed=$((failed + 1))
             continue
         fi
         if $dry_run; then
-            printf 'Plan: enable autowork (%s)\n' "$profile"
-        elif ! HERMES_HOME=$hermes_root hermes -p "$profile" plugins enable autowork; then
+            printf 'Plan: enable kit (%s)\n' "$profile"
+        elif HERMES_HOME=$hermes_root timeout 120 hermes -p "$profile" plugins enable kit; then
+            :
+        else
+            status=$?
+            printf 'Error: Kit enablement failed (%s, exit %s; 120-second limit). Inspect Hermes and rerun setup; existing sources were retained.\n' "$profile" "$status" >&2
             failed=$((failed + 1))
         fi
     done
@@ -355,7 +375,7 @@ if $setup && ! $bundle_only; then
     for profile in "${profiles[@]}"; do
         profile_dir=$hermes_root
         [[ $profile == default ]] || profile_dir=$hermes_root/profiles/$profile
-        if [[ -f $profile_dir/plugins/autowork/plugin.yaml ]] || $dry_run; then
+        if [[ -f $profile_dir/plugins/kit/plugin.yaml || -f $profile_dir/plugins/autowork/plugin.yaml ]] || $dry_run; then
             apply_bundle_defaults "$profile" || failed=$((failed + 1))
         fi
     done

@@ -38,7 +38,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix='toolset-registration-') as directory:
             probe = Path(directory)
             (probe / 'plugins').mkdir()
-            (probe / 'plugins/autowork').symlink_to(source, target_is_directory=True)
+            (probe / 'plugins/kit').symlink_to(source, target_is_directory=True)
             (probe / 'config.yaml').write_text(PROBE_CONFIG)
             os.environ['HERMES_HOME'] = str(probe)
             os.chdir(probe)  # avoid project plugin discovery from the caller's cwd
