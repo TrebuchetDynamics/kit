@@ -30,7 +30,7 @@ inside `upstream/`, except its README audit: run this skill's
   Before asking, reuse scope already answered for the current task: corrections and
   repeat invocations continue it unless the user changes it. Ask only when that
   context leaves scope genuinely unknown; do not restart the interview.
-  Scheduled, cron or Autowork-driven runs audit only unless their TODO task scope
+  Scheduled, cron or unattended runs audit only unless their accepted task scope
   authorizes README or asset edits.
 - **The README is documentation.** Its claims, commands and safety statements are
   Docs Sync facts. A redesign may reorder and shorten copy but must not drop a

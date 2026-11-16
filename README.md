@@ -103,7 +103,7 @@ install with the interactive default:
 ```sh
 hermes plugins install TrebuchetDynamics/kit
 hermes plugins enable kit
-hermes autowork doctor --core
+hermes kit doctor --core
 ```
 
 The opt-out does not undo prior changes or stop full setup from configuring
@@ -335,8 +335,9 @@ Existing task records, worktrees and attempts/recovery evidence are preserved,
 not executed. Historical contracts and
 unresolved qualification are available at the
 [immutable pre-removal revision](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork).
-This is evidence, not an installation fallback. Hermes terminal maintenance
-(`hermes autowork`) and marketplace identifiers retain their current names.
+This is evidence, not an installation fallback. Hermes terminal maintenance uses
+`hermes kit`. The obsolete `hermes autowork` command has no alias or redirect.
+Marketplace identifiers are unchanged.
 Use GitHub Issues/PRs and read-only Orbi diagnostics for delivery status.
 
 Preserve task data, attempts, worktrees and recovery state. Orbi stays paused
@@ -372,8 +373,8 @@ acceptable.
 **Claude Code and Codex:** update the marketplace and plugin through their CLI. See
 [cross-host updates](docs/cross-host.md) for the exact commands.
 
-**Hermes:** `hermes autowork update` updates every live profile;
-`hermes autowork update --check` previews it. See
+**Hermes:** `hermes kit update` updates every live profile;
+`hermes kit update --check` previews it. See
 [update behavior and recovery](docs/installation.md#update-all-profiles). Files updated
 does not mean a gateway is running the new code; inspect the printed receipt for
 pending activation. Old profile skills require an authorized normal update and reload;

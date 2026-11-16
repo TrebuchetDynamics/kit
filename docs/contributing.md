@@ -67,7 +67,7 @@ hermes gateway restart
 
 For a local symlink installation, edit this checkout and restart instead. New commands are
 discovered on startup, not watched live. A restart does not refresh a skill already
-copied into the profile's native skill directory; use `hermes autowork update` for that.
+copied into the profile's native skill directory; use `hermes kit update` for that.
 Telegram's menu has limited capacity; the bundle prioritizes only the five workflow
 commands in [`scripts/telegram_menu_policy.py`](../scripts/telegram_menu_policy.py).
 

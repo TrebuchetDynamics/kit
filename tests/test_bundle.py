@@ -23,6 +23,7 @@ class BundleTests(unittest.TestCase):
         self.commands = {'ponytail-review': {'plugin': 'ponytail', 'handler': object()}}
         self.skills = ['ponytail:ponytail', 'ponytail:ponytail-review', 'hermes-speech:configure-allmodels-speech']
         self.manager = types.SimpleNamespace(
+            _cli_commands={},
             list_plugin_skill_metadata=lambda: [{'name': n} for n in self.skills],
             find_plugin_skill=lambda n: self.path,
         )
@@ -65,26 +66,40 @@ class BundleTests(unittest.TestCase):
         source = Path(self.tmp.name) / 'source'
         (source / 'scripts').mkdir(parents=True)
         (source / 'scripts/update_bundle.py').write_text(
-            'import json, sys\n'
-            'print(json.dumps({"status": "incomplete", "arguments": sys.argv[1:], '
-            '"action": "Repair fixture source before retrying."}), flush=True)\n'
-            'raise SystemExit(7)\n')
+            'import json, os, sys\n'
+            'code = int(os.environ["FIXTURE_EXIT"])\n'
+            'print(json.dumps({"status": "incomplete" if code else "complete", "arguments": sys.argv[1:], '
+            '"action": "Repair fixture source before retrying." if code else ""}), flush=True)\n'
+            'raise SystemExit(code)\n')
         # Invoke the public terminal handler in a child so its inherited stdout is real.
         code = (
-            'import argparse, importlib.util; from pathlib import Path; '
+            'import argparse, importlib.util, types; from pathlib import Path; '
             f'spec=importlib.util.spec_from_file_location("fixture_bundle", {str(ROOT / "scripts/bundle.py")!r}); '
             'm=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); '
             f'm.ROOT=Path({str(source)!r}); '
-            'p=argparse.ArgumentParser(); m.setup_parser(p); '
-            'raise SystemExit(m.handle_cli(p.parse_args(["update", "--check", "--hermes-home", "/fixture home"])))'
+            'commands={}; m.register_imported_skills=lambda *a: None; '
+            'import sys; sys.modules["hermes_cli.plugins"]=types.SimpleNamespace('
+            'get_plugin_manager=lambda: types.SimpleNamespace(_cli_commands={})); '
+            'ctx=types.SimpleNamespace(register_cli_command=lambda name, **kw: commands.update({name: kw})); '
+            'm.register_bundle(ctx, None); '
+            'assert set(commands) == {"kit"}; '
+            'p=argparse.ArgumentParser(prog="hermes"); sub=p.add_subparsers(required=True); '
+            'kit=sub.add_parser("kit"); commands["kit"]["setup_fn"](kit); '
+            'kit.set_defaults(func=commands["kit"]["handler_fn"]); '
+            'args=p.parse_args(["kit", "update", "--check", "--hermes-home", "/fixture home"]); '
+            'raise SystemExit(args.func(args))'
         )
-        result = subprocess.run([__import__('sys').executable, '-c', code],
-                                capture_output=True, text=True, timeout=30)
-        self.assertEqual(result.returncode, 7, result.stderr)
-        receipt = json.loads(result.stdout)
-        self.assertEqual(receipt['status'], 'incomplete')
-        self.assertEqual(receipt['arguments'], ['--hermes-home', '/fixture home', '--check'])
-        self.assertEqual(receipt['action'], 'Repair fixture source before retrying.')
+        import os
+        for expected_code in (0, 7):
+            with self.subTest(exit=expected_code):
+                result = subprocess.run([__import__('sys').executable, '-c', code],
+                                        env=dict(os.environ, FIXTURE_EXIT=str(expected_code)),
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, expected_code, result.stderr)
+                receipt = json.loads(result.stdout)
+                self.assertEqual(receipt['status'], 'incomplete' if expected_code else 'complete')
+                self.assertEqual(receipt['arguments'], ['--hermes-home', '/fixture home', '--check'])
+                self.assertEqual(receipt['action'], 'Repair fixture source before retrying.' if expected_code else '')
 
     def test_inventory_keeps_optional_ponytail_handlers_for_upgrade_readiness(self):
         names = {p.parent.name for p in (ROOT / 'skills').glob('*/SKILL.md')}
@@ -155,6 +170,39 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0], ['python3', str(ROOT / 'scripts/setup_bundle.py'),
             '--dry-run', '--yes-deps', '--bundle-only', '--no-reload', '--hermes-home', '/tmp/home with spaces'])
         self.assertNotIn('shell', run.call_args.kwargs)
+
+    def test_update_uses_selected_profiles_root_without_explicit_override(self):
+        import sys
+        parser = argparse.ArgumentParser()
+        self.bundle.setup_parser(parser)
+        root = Path(self.tmp.name) / 'hermes root'
+        for home in (root, root / 'profiles/work'):
+            with self.subTest(home=home), \
+                 patch.dict('sys.modules', {'hermes_constants': types.SimpleNamespace(get_hermes_home=lambda: home)}), \
+                 patch.object(self.bundle.subprocess, 'run', return_value=types.SimpleNamespace(returncode=7)) as run:
+                self.assertEqual(self.bundle.handle_cli(parser.parse_args(['update'])), 7)
+            run.assert_called_once_with([sys.executable, str(ROOT / 'scripts/update_bundle.py'),
+                                         '--hermes-home', str(root)], cwd=ROOT, check=False)
+
+    def test_finalize_forwards_profile_scope_options_and_preserves_receipt_exit(self):
+        import contextlib
+        import io
+        parser = argparse.ArgumentParser()
+        self.bundle.setup_parser(parser)
+        args = parser.parse_args(['finalize', '--hermes-home', '/fixture home',
+                                  '--bundle-only', '--no-reload'])
+        runtime = self.bundle._AUTOWORK_COMPAT.peer(vars(self.bundle), 'setup_runtime')
+        report = {'fixture': 'selected profile inventory'}
+        receipt = {'status': 'incomplete', 'action': 'Repair fixture registration.'}
+        output = io.StringIO()
+        with patch.object(self.bundle, 'inventory', return_value=report), \
+             patch.object(runtime, 'finalize', return_value=(receipt, 7)) as finalize, \
+             contextlib.redirect_stdout(output):
+            self.assertEqual(self.bundle.handle_cli(args), 7)
+        finalize.assert_called_once_with(ROOT, report, args)
+        self.assertEqual((args.hermes_home, args.bundle_only, args.no_reload),
+                         ('/fixture home', True, True))
+        self.assertEqual(json.loads(output.getvalue()), receipt)
 
     def test_setup_parser_requires_action_and_supports_doctor(self):
         parser = argparse.ArgumentParser()

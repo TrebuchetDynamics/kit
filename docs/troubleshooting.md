@@ -4,12 +4,12 @@ Symptom-first fixes for installing and using Kit. Each entry links to
 the owning guide; procedures are not repeated here. Start with the diagnostics:
 
 ```sh
-hermes autowork doctor --core     # bundled skills and commands only
-hermes autowork doctor --json     # full stack, machine-readable
+hermes kit doctor --core     # bundled skills and commands only
+hermes kit doctor --json     # full stack, machine-readable
 ```
 
 Use GitHub Issues/PRs and read-only Orbi diagnostics for delivery status.
-`hermes autowork doctor --json` reports command owners and registration/setup
+`hermes kit doctor --json` reports command owners and registration/setup
 gaps; Hermes' `/commands` omits plugin commands. Diagnostics never prove that a
 model ran, a worker is available or a Telegram message was delivered.
 
@@ -17,7 +17,7 @@ model ran, a worker is available or a Telegram message was delivered.
 
 ### A workflow command is not recognized
 
-- **Check:** `hermes autowork doctor --json` and `hermes autowork doctor --core`.
+- **Check:** `hermes kit doctor --json` and `hermes kit doctor --core`.
 - **Plugin not loaded or not enabled in this profile:** plugins are enabled per
   profile. Run `hermes -p PROFILE plugins enable kit`; see
   [first use](onboarding.md).
@@ -35,13 +35,13 @@ model ran, a worker is available or a Telegram message was delivered.
 ### A command is missing from Telegram's picker but works when typed
 
 This is expected. Menu capacity is limited, and compatibility spellings such as
-`/autoresearch_plan` are deliberately not advertised. `hermes autowork doctor --json` reports registration
+`/autoresearch_plan` are deliberately not advertised. `hermes kit doctor --json` reports registration
 (Hermes' `/commands` omits plugin commands); see [workflow commands in the picker](onboarding.md#workflow-commands-in-telegrams-picker).
 
 ### Telegram still shows retired or old commands
 
 Handlers refresh on plugin reload, but the bot menu refreshes only when the
-gateway reconnects. `hermes autowork update` restarts the running root gateway once when it
+gateway reconnects. `hermes kit update` restarts the running root gateway once when it
 changed anything and every profile activated cleanly, but only while no chat turn is
 in flight (`gateway_restart: requested`); otherwise it reports `deferred` and a
 waiter restarts at the first quiet moment within 6 hours, never forcing
@@ -110,7 +110,7 @@ Hermes; see the [README](../README.md#first-use-in-your-project).
 
 ### Check the update result
 
-`hermes autowork update` waits and prints its receipt. Inspect its real exit code,
+`hermes kit update` waits and prints its receipt. Inspect its real exit code,
 `status`, `error` and `action`; `incomplete` can retain partial changes and backups.
 Repair the named cause before retrying. A pending/deferred restart is not activation.
 
@@ -133,8 +133,8 @@ See [update all profiles](installation.md#update-all-profiles) for the full rule
 ### A restart rolled out changes no update released
 
 Profiles linked to a working checkout load its current files at every gateway
-restart. `hermes autowork doctor --json` lists them; pin the ones that should change only
-through updates with `hermes autowork pin NAME` (preview with `--dry-run`).
+restart. `hermes kit doctor --json` lists them; pin the ones that should change only
+through updates with `hermes kit pin NAME` (preview with `--dry-run`).
 See [linked profiles](installation.md#linked-profiles-and-pinned-clones).
 
 ### The bundle broke after moving or deleting its checkout
@@ -180,6 +180,6 @@ structure and local references, not content accuracy or runtime qualification.
 
 ## Still stuck
 
-Collect `hermes autowork doctor --json`, the relevant receipt or log and the exact
+Collect `hermes kit doctor --json`, the relevant receipt or log and the exact
 command you ran. Run `python3 scripts/check.py` from a source checkout to rule out
 a local bundle regression; see [testing](testing.md).

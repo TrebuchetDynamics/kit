@@ -12,11 +12,11 @@ Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for 
 Follow the [shared skill contract](../shared/COMMON-CONTRACT.md); its authority
 and the Ponytail scope rules take precedence over upstream instructions.
 
-Display the following Autowork-specific reference, not the upstream help card.
+Display the following Kit-specific reference, not the upstream help card.
 
 | Skill | Purpose |
 | --- | --- |
-| `ponytail [lite|full|ultra|off]` | Report/set the conversation's Autowork preference; default full. |
+| `ponytail [lite|full|ultra|off]` | Report/set the conversation's Kit preference; default full. |
 | `ponytail-review` | Read-only review of a diff and connected code. |
 | `ponytail-audit` | Read-only audit of the requested repository/folder. |
 | `ponytail-debt` | Report shortcut comments and missing revisit triggers. |
@@ -33,9 +33,9 @@ Display the following Autowork-specific reference, not the upstream help card.
 Substitute another name above; Pi command aliases use hyphens. `lite` names
 the smaller option, `full` chooses the smallest complete result, `ultra` also
 questions unjustified scope. Explicit `off` or “stop ponytail” disables the method
-for this conversation's Autowork work, not safety or verification requirements.
+for this conversation's Kit work, not safety or verification requirements.
 
-All six commands ship with Autowork on all four hosts. Update through Autowork's
+All six commands ship with Kit on all four hosts. Update through Kit's
 normal host package installer and reload/start a new session. No separate Ponytail
 plugin, global mode config, environment variable, band UI, transcript import or
 telemetry is installed or controlled. Existing external installations are unchanged.
