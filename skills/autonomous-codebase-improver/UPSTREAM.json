@@ -31,7 +31,7 @@
   "adaptations": [
     "Upstream bytes unchanged; SKILL.md relocated to upstream/PROTOCOL.md to prevent duplicate discovery.",
     "Local SKILL.md and shared/PI-TOOLSET.md own scope, task state, host translation, limits and delivery.",
-    "The upstream ../../shared/COMMON-CONTRACT.md link resolves to Autoworks existing shared contract in the installed layout.",
+    "The upstream ../../shared/COMMON-CONTRACT.md link resolves to Kit’s existing shared contract in the installed layout.",
     "No upstream extensions, installers, controllers or global skills are imported."
   ]
 }

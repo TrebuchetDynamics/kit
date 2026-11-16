@@ -39,11 +39,22 @@ for Hermes, Claude Code and Codex must already be installed: full mode reports m
 `--only` reports a requested missing host as failed. Pi is the exception: selecting it
 bootstraps a missing harness from pi.dev before installing Kit. Hermes is optional. A simple
 shell launcher whose target is missing or not executable also counts as unavailable;
-full mode skips it without running Hermes setup. When your own host settings already
-configure the autowork marketplace from another source, the installer keeps that
-source and installs from it: Claude Code refuses a second source for one marketplace
-name. The installer never rewrites your settings or that source. Availability
-detection does not start host CLIs or change their settings. Hermes also needs a Hermes
+full mode skips it without running Hermes setup. Fresh portable installs use Claude marketplace `kit` and Codex marketplace
+`kit-marketplace`; the plugin name remains `kit`. During an actual install, the
+installer validates canonical and legacy registrations and installed Kit IDs before
+marketplace/plugin changes. Owned canonical sources are reused without removal or
+re-addition; Claude updates preserve installed scope, while Codex snapshot upgrades
+leave an installed plugin's effective enablement/scope alone. Legacy/coexisting,
+foreign, unknown or stale sources hold that component for
+[manual migration or host qualification](cross-host.md#legacy-marketplace-migration).
+No registry/settings rewrite or cache uninstall is attempted. Codex requires
+`plugin marketplace list --json` and filtered `plugin list --marketplace NAME --json`
+for both names; Claude requires `plugin list --json`. Missing interfaces or invalid
+output fail closed. Codex lists show effective configuration, not all persisted
+scopes. CLI initialization may write cache/auth state; these are not read-only
+probes. Availability detection does not start host CLIs or change settings.
+Dry-run invokes no registry probes or mutations and reports registry/migration status
+as `NOT_CHECKED`, with planned validation. Hermes also needs a Hermes
 home (`~/.hermes`, or `--hermes-home`/`HERMES_HOME`); a default home that does not
 exist yet counts as missing. The tmux launcher needs `tmux`.
 A replaced `~/.local/bin/tx` is
@@ -59,10 +70,9 @@ transcript in quiet mode is limited to its last 16,384 characters. Colors are
 automatic on terminals (`NO_COLOR=1` or `TERM=dumb` disables them); use
 `--color always`, `--color never`, or `--color auto` to override. Each summary
 reports installed, planned, skipped and failed components with total elapsed
-time. A failed command stops that component, continues independent components,
-and causes a nonzero exit. A Claude marketplace-add that reports the source
-already present, an existing registration, or a stale source entry is treated as
-holding the goal rather than as a failure.
+time. A failed command or marketplace qualification refusal stops that component,
+continues independent components, and causes a nonzero exit. A source mismatch
+or stale legacy registration is not treated as installation success.
 For a structured updater receipt, the summary includes its status, cause (including
 per-profile recovery errors) and supported next action, rather than its closing
 JSON brace. Non-JSON or truncated output gets a bounded diagnostic fallback.
@@ -225,8 +235,8 @@ bindings and capture policies are preserved. Kit does not provision external mem
 ```sh
 hermes plugins install TrebuchetDynamics/kit
 hermes plugins enable kit
-hermes autowork setup --yes-deps
-hermes autowork doctor
+hermes kit setup --yes-deps
+hermes kit doctor
 ```
 
 This Hermes install fetches Git source from `TrebuchetDynamics/kit`, not an npm
@@ -240,7 +250,7 @@ existing live profile:
 bash install-plugins.sh --yes-deps
 ```
 
-The Hermes item in `install.sh`, `install-plugins.sh`, and `hermes autowork setup`
+The Hermes item in `install.sh`, `install-plugins.sh`, and `hermes kit setup`
 share the same complete setup path: bundled skills, plugin installation/enablement, profile
 configuration, per-profile readiness checks, and running-gateway command
 refresh. No manual symlinks or per-profile enable commands are needed. Use
@@ -251,7 +261,7 @@ check returns nonzero and reports setup as incomplete.
 
 Plugins are enabled per profile. For a named profile, use that profile's home for
 the link and `hermes -p PROFILE plugins enable kit` to enable it.
-`hermes autowork setup` installs and enables the sources in
+`hermes kit setup` installs and enables the sources in
 [plugins/PLUGINS.md](../plugins/PLUGINS.md), including any external skill repositories
 it lists (currently none), Graphify's Hermes integration and speech support. It also links and enables
 Kit itself in every existing live profile, preserving existing plugin
@@ -310,7 +320,7 @@ those steps. Saving interview decisions through docs-sync additionally requires
 the relevant file/terminal tools. Direct source evidence is sufficient for routine
 task and document repairs; Graphify is useful for uncertain cross-component
 relationships, or required when the request explicitly calls for it.
-Use `hermes autowork setup --dry-run` to preview target profiles.
+Use `hermes kit setup --dry-run` to preview target profiles.
 
 ### Verify a pre-rename profile
 
@@ -359,7 +369,7 @@ layouts fail visibly instead of being assumed compatible.
 
 A failed preflight exits nonzero before changing profile configuration, plugins,
 skills or memory. This guarantee starts at the setup orchestrator: invoking it
-through `hermes autowork setup` may already have loaded the plugin and applied its
+through `hermes kit setup` may already have loaded the plugin and applied its
 runtime defaults. Use `bash install-plugins.sh --dry-run` for a preview that does not boot
 Hermes. The internal `--sources-only` adapter and standalone helper scripts are
 not the complete setup entry point.
@@ -433,9 +443,9 @@ unfinished work through [GitHub migration](github-native.md#cutover).
 
 ## Update all profiles
 
-Run terminal `hermes autowork update` from an authorized profile. It waits for
+Run terminal `hermes kit update` from an authorized profile. It waits for
 the updater and prints a structured receipt with outcome, revisions, files, local
-edits, settings, menus and gateway restart status. `hermes autowork update --check`
+edits, settings, menus and gateway restart status. `hermes kit update --check`
 fetches upstream and previews without advancing checkouts or writing profile skills/
 configuration; it still writes Git fetch metadata and its receipt. There is no
 chat-maintenance command or terminal update-status form.
@@ -531,15 +541,15 @@ same way when only some chats fail; an unreachable Bot API is reported and never
 fails the update.
 
 `status` is the chat form handled by the plugin; it is not a positional argument
-to the terminal command `hermes autowork update`. Terminal update forms below wait
+to the terminal command `hermes kit update`. Terminal update forms below wait
 for completion. The durable result is stored at the Hermes installation root in
 `maintenance/toolset-update/latest.json`; named profiles share that update status.
 
 Terminal equivalents wait for completion:
 
 ```sh
-hermes autowork update --check
-hermes autowork update
+hermes kit update --check
+hermes kit update
 ```
 
 Only one update or check runs at a time. A second one waits up to 10 seconds (a
@@ -625,7 +635,7 @@ worker-handoff locks are held, the complete original checkout (including `.git`)
 is moved into an owned backup, and native installation publishes the staged local
 URI without force or enablement. Selected links to that canonical checkout remain
 links; their source is recovered once. Additional native metadata fields and other
-plugins' records are retained, and the Autowork record keeps its trusted source
+plugins' records are retained, and the bundle record keeps its trusted source
 binding. New unselected consumers or foreign source/profile edits on retry defer
 instead of becoming a new baseline.
 
@@ -664,14 +674,14 @@ A source install links each profile's `plugins/autowork` to the checkout, so
 the profile loads whatever that checkout holds at the next gateway restart,
 including commits that were never released. A profile whose plugin is its own clone
 changes only when an update advances it.
-`hermes autowork doctor --json` lists the linked profiles; nothing converts them
+`hermes kit doctor --json` lists the linked profiles; nothing converts them
 automatically.
 
 To pin one profile, preview it, then run it:
 
 ```sh
-hermes autowork pin NAME --dry-run
-hermes autowork pin NAME
+hermes kit pin NAME --dry-run
+hermes kit pin NAME
 ```
 
 Pinning clones the checkout at the revision the link resolves to now, saves the
@@ -680,7 +690,7 @@ place, so the profile stays on the same revision. It refuses, writing nothing, w
 the checkout has uncommitted changes (the profile would lose them on its next
 restart), when that revision is not yet on upstream `main` as last fetched (the next
 update could not advance the clone), or while an update runs. The gateway loads the
-clone at its next restart. `hermes autowork pin --unpin NAME` restores the
+clone at its next restart. `hermes kit pin --unpin NAME` restores the
 saved link and moves the clone beside it instead of deleting it; it also takes
 `--dry-run`.
 
@@ -699,8 +709,8 @@ available when installing over an older profile; use the normal updater to refre
 existing skill contents. If the old external Ponytail plugin owns a command, setup
 and doctor require the corresponding `kit:ponytail-*` skill registration and
 report it under `bundled_skill_fallbacks`; they do not treat the external command
-as an Autowork handler or remove it. Other foreign command collisions remain errors.
-`hermes autowork doctor --core` checks registration; full setup and full diagnostics
+as a Kit handler or remove it. Other foreign command collisions remain errors.
+`hermes kit doctor --core` checks registration; full setup and full diagnostics
 still apply to external integrations such as Graphify. This does not install
 the entire public skill catalog or guarantee optional browser/service readiness.
 Impeccable’s upstream launcher may download its versioned engine on first use
@@ -709,7 +719,7 @@ or attest that external binary; instruction loading has a documented fallback.
 
 ## Deploy an exact local revision to selected profiles
 
-`hermes autowork update` remains the all-profile upstream update. For an
+`hermes kit update` remains the all-profile upstream update. For an
 already reviewed local fix, use the scoped updater from a clean checkout:
 
 ```bash

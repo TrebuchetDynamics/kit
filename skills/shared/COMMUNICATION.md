@@ -2,7 +2,7 @@
 
 ## Scope and authority
 
-Use ASD-STE100 Simplified Technical English for user-facing English in every Autowork skill. This includes questions, progress reports, plans, reviews and explanations. Apply it to new or changed documentation within the task scope. Read these rules once per task. Reuse them across skill handoffs.
+Use ASD-STE100 Simplified Technical English for user-facing English in every Kit skill. This includes questions, progress reports, plans, reviews and explanations. Apply it to new or changed documentation within the task scope. Read these rules once per task. Reuse them across skill handoffs.
 
 Use short sentences, clear actions and consistent project terms. Keep the necessary context. Do not remove facts or uncertainty to make a reply shorter. This writing rule also applies when Ponytail is off.
 
@@ -104,7 +104,7 @@ Preserve quantities, units, logical operators and boundaries, state names, count
 2. Language and meaning review: compare the original and revised text for actor, action, object, condition, sequence, simultaneity, obligation, uncertainty, quantities, units, boundaries, counting, and exceptions. For API prose also compare request/response identifiers, status codes, and compatibility. Flag unresolved meaning instead of guessing a cleaner interpretation.
 3. Repository verification: check the documented commands, configuration, interfaces, requirements, generated ownership, operations, and release claims against available repository evidence. Execute only checks authorized by the task. Passing a language check does not authorize destructive operations or establish technical correctness.
 
-Review the diff. Confirm that style changes did not alter technical meaning or protected literals. Do not turn a small bug fix into a repository-wide style rewrite. In Audit/read-only mode, report language findings and proposed wording without editing any file or task record. Do not create speculative autowork tasks for general style churn.
+Review the diff. Confirm that style changes did not alter technical meaning or protected literals. Do not turn a small bug fix into a repository-wide style rewrite. In Audit/read-only mode, report language findings and proposed wording without editing any file or task record. Do not create speculative tasks for general style churn.
 
 ## Strict conformance and reporting
 

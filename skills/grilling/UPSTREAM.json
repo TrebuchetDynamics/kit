@@ -18,8 +18,8 @@
   },
   "adaptations": [
     "Upstream bytes unchanged; SKILL.md relocated to upstream/PROTOCOL.md to prevent duplicate discovery.",
-    "Local SKILL.md owns Autowork scope, host translation, review gates and delivery limits.",
-    "Upstream is user-invoked and calls sibling skills; the local adapter states the composition directly because Autowork hosts expose commands, not a Skill tool.",
+    "Local SKILL.md owns Kit scope, host translation, review gates and delivery limits.",
+    "Upstream is user-invoked and calls sibling skills; the local adapter states the composition directly because Kit hosts expose commands, not a Skill tool.",
     "No upstream installer, router skill, hooks or global skill activation is imported."
   ]
 }

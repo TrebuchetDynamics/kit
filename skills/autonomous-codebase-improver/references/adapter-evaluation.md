@@ -1,6 +1,6 @@
 # Adapter evaluation scenarios
 
-These scenarios check Autowork's local adaptation, not the pinned upstream alone.
+These scenarios check Kit's local adaptation, not the pinned upstream alone.
 They supplement the [upstream pressure scenarios](../upstream/references/pressure-scenarios.md).
 The [local authority rules](../SKILL.md#local-authority-rules) and
 [host adaptation](../../shared/PI-TOOLSET.md) govern conflicting upstream examples.

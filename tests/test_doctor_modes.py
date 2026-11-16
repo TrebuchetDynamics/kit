@@ -51,7 +51,7 @@ class DoctorModes(unittest.TestCase):
             self.assertEqual((code, json.loads(output)['linked_profiles']), (0, rows))
             code, output = self.run_doctor('--core')
         self.assertIn('any gateway restart loads its current files: work', output)
-        self.assertIn('hermes autowork pin NAME --dry-run', output)
+        self.assertIn('hermes kit pin NAME --dry-run', output)
 
     def test_pin_command_runs_the_updater_for_one_profile(self):
         parser = argparse.ArgumentParser()
@@ -114,6 +114,7 @@ class DoctorModes(unittest.TestCase):
     def test_human_output_distinguishes_registration_from_live_use(self):
         code, output = self.run_doctor('--core')
         self.assertEqual(code, 0)
+        self.assertIn('Kit — core check: ready', output)
         self.assertIn('Core: ready', output)
         self.assertIn('Integrations: unavailable', output)
         self.assertIn('sample-addon', output)

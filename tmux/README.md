@@ -95,7 +95,7 @@ The repository package declares:
 { "bin": { "tx": "tmux/tx" } }
 ```
 
-So `tx` is available when this package (autowork) is installed or linked by npm. The tmux config and status helper scripts still require `tx install`, `./install.sh`, or manual copying.
+So `tx` is available when this package (Kit) is installed or linked by npm. The tmux config and status helper scripts still require `tx install`, `./install.sh`, or manual copying.
 
 ## Screen resizing
 
