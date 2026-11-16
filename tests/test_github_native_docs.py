@@ -139,6 +139,33 @@ class GithubNativeDocsTests(unittest.TestCase):
                 "shared bootstrap"):
             self.assertIn(phrase, lifecycle)
 
+    def test_readme_setup_matches_shipped_bootstrap_and_recovery(self):
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        setup = compact(section(readme, 'Using Orbi', level=3))
+        for phrase in (
+                'credential-free Pi provider metadata',
+                '--pi-providers PATH --pi-provider ID --pi-model ID',
+                '--pi-thinking LEVEL',
+                'reuse a verified selection from a visible deployment',
+                'Pi authentication must already work',
+                'does not automate login or guarantee provisioning',
+                'verified SSH/HTTPS origin without rewriting it',
+                'existing selections and pins are preserved',
+                '--resume-setup',
+                'missing deployment-local provider file',
+                '--config PATH',
+                'matching provider inputs',
+                'does not activate scheduling or qualify live recovery, isolation or delivery'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, setup)
+        for anchor in ('first-deployment-provider-bootstrap',
+                       'explicit-bounded-legacy-resume',
+                       'partial-failure-and-recovery'):
+            self.assertIn(f'skills/orbi/references/lifecycle.md#{anchor}', setup)
+        self.assertNotIn('issues/43', setup)
+        self.assertNotIn('unresolved limitation', setup)
+        self.assertIn('**Orbi remains paused and live-unqualified**', readme)
+
     def test_local_links_and_anchors_resolve(self):
         repo = docs.Repo(ROOT)
         self.assertEqual(docs.check_document(repo, "github-native", DOC_PATH), [])
