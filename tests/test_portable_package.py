@@ -30,6 +30,9 @@ class PortablePackageTests(unittest.TestCase):
         self.assertFalse(any('pi-autowork' in entry or entry.startswith('src/')
                              for entry in pi['files']))
         marketplace = json.loads((ROOT / '.agents/plugins/marketplace.json').read_text())
+        self.assertEqual(marketplace['name'], 'kit-marketplace')
+        self.assertEqual(codex['name'], 'kit')
+        self.assertEqual(marketplace['plugins'][0]['name'], 'kit')
         self.assertEqual(marketplace['plugins'][0]['source'], {'source': 'local', 'path': '.'})
 
     def test_archive_contains_only_portable_delivery_resources(self):
@@ -174,6 +177,7 @@ class PortablePackageTests(unittest.TestCase):
         marketplace = json.loads((ROOT / '.claude-plugin/marketplace.json').read_text())
         codex = json.loads((ROOT / '.codex-plugin/plugin.json').read_text())
         pi = json.loads((ROOT / 'package.json').read_text())
+        self.assertEqual(marketplace['name'], 'kit')
         self.assertEqual(plugin['name'], 'kit')
         self.assertEqual(plugin['version'], codex['version'])
         self.assertEqual(plugin['version'], pi['version'])
