@@ -39,11 +39,22 @@ for Hermes, Claude Code and Codex must already be installed: full mode reports m
 `--only` reports a requested missing host as failed. Pi is the exception: selecting it
 bootstraps a missing harness from pi.dev before installing Kit. Hermes is optional. A simple
 shell launcher whose target is missing or not executable also counts as unavailable;
-full mode skips it without running Hermes setup. When your own host settings already
-configure the autowork marketplace from another source, the installer keeps that
-source and installs from it: Claude Code refuses a second source for one marketplace
-name. The installer never rewrites your settings or that source. Availability
-detection does not start host CLIs or change their settings. Hermes also needs a Hermes
+full mode skips it without running Hermes setup. Fresh portable installs use Claude marketplace `kit` and Codex marketplace
+`kit-marketplace`; the plugin name remains `kit`. During an actual install, the
+installer validates canonical and legacy registrations and installed Kit IDs before
+marketplace/plugin changes. Owned canonical sources are reused without removal or
+re-addition; Claude updates preserve installed scope, while Codex snapshot upgrades
+leave an installed plugin's effective enablement/scope alone. Legacy/coexisting,
+foreign, unknown or stale sources hold that component for
+[manual migration or host qualification](cross-host.md#legacy-marketplace-migration).
+No registry/settings rewrite or cache uninstall is attempted. Codex requires
+`plugin marketplace list --json` and filtered `plugin list --marketplace NAME --json`
+for both names; Claude requires `plugin list --json`. Missing interfaces or invalid
+output fail closed. Codex lists show effective configuration, not all persisted
+scopes. CLI initialization may write cache/auth state; these are not read-only
+probes. Availability detection does not start host CLIs or change settings.
+Dry-run invokes no registry probes or mutations and reports registry/migration status
+as `NOT_CHECKED`, with planned validation. Hermes also needs a Hermes
 home (`~/.hermes`, or `--hermes-home`/`HERMES_HOME`); a default home that does not
 exist yet counts as missing. The tmux launcher needs `tmux`.
 A replaced `~/.local/bin/tx` is
@@ -59,10 +70,9 @@ transcript in quiet mode is limited to its last 16,384 characters. Colors are
 automatic on terminals (`NO_COLOR=1` or `TERM=dumb` disables them); use
 `--color always`, `--color never`, or `--color auto` to override. Each summary
 reports installed, planned, skipped and failed components with total elapsed
-time. A failed command stops that component, continues independent components,
-and causes a nonzero exit. A Claude marketplace-add that reports the source
-already present, an existing registration, or a stale source entry is treated as
-holding the goal rather than as a failure.
+time. A failed command or marketplace qualification refusal stops that component,
+continues independent components, and causes a nonzero exit. A source mismatch
+or stale legacy registration is not treated as installation success.
 For a structured updater receipt, the summary includes its status, cause (including
 per-profile recovery errors) and supported next action, rather than its closing
 JSON brace. Non-JSON or truncated output gets a bounded diagnostic fallback.
