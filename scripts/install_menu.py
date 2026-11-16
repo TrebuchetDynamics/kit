@@ -772,6 +772,13 @@ def install_pi_package(output=None, mode='install'):
     if code:
         raise OSError(f'Pi package {action} failed (exit {code}): {failure_summary(text)}; '
                       'repair the reported cause and retry ./install.sh --only pi')
+    package = pi_package(binary=binary)
+    missing = missing_package_skills(package) if package else []
+    if not package or missing:
+        detail = f'skills still missing: {", ".join(missing)}' if package else 'package is not registered at an existing directory'
+        raise OSError(f'Pi package {action} did not complete: {detail}; '
+                      'check Pi output and PI_OFFLINE (offline mode skips package updates), '
+                      'then retry ./install.sh --only pi')
     return f'{binary}: {action} {PI_SOURCE}'
 
 
