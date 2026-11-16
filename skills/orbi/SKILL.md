@@ -87,6 +87,12 @@ lifecycle actions.
    attempt is `mutation: possible`, not verified completion. A killed process cannot
    render a receipt; retry safety comes from actual complete/absent files. Preserve
    recovery evidence and never automatically retry an unchanged timeout.
+   Start/stop failures can be partially applied: read completed/failed units,
+   confirmed `activated_timers`/`disabled_timers` and the read-only scheduler
+   snapshot (or `unavailable`). Start `activation: possible` is not success;
+   `activation: none` may still include lock writes. Failed attempts are not
+   confirmed completions. Inspect `status` before deliberate recovery; do not
+   compensate with timer changes or stop workers after failure.
    If the installed helper lacks these flags, report its absolute loaded path and
    available Kit revision and recommend a separately authorized skill update. A stale
    installed skill is not an unsupported transport or a reason to rewrite origin.
