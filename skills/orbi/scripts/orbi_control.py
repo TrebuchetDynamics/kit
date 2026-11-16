@@ -402,7 +402,7 @@ def env_literal(value, *, path=False):
     """Common native-loader/systemd single-quoted EnvironmentFile subset."""
     if (not isinstance(value, str) or not value or value != value.strip()
             or any(c in value for c in "'\"\\")
-            or any(ord(c) < 32 or ord(c) == 127 for c in value)
+            or any(ord(c) < 32 or 127 <= ord(c) <= 159 or c in '\u2028\u2029' for c in value)
             or (path and (not Path(value).is_absolute() or ':' in value))):
         raise ControlError('env_value_unsupported',
                            'a managed env value/path cannot round-trip through native Orbi and systemd',
@@ -432,6 +432,13 @@ def harness_evidence(ctx, deployment):
         launcher = launcher_path(deployment)
         if not any(fields) and not deployment.harness_selection and not launcher.exists() and not launcher.is_symlink():
             stored = values.get('PATH')
+            if stored is not None:
+                try:
+                    for part in stored.split(':'):
+                        env_literal(part, path=True)
+                except ControlError:
+                    return {**evidence, 'resolution': 'stored PATH is not reliably interpretable; '
+                            'service resolution unverified'}
             found = shutil.which('pi', path=stored if stored is not None else ctx.env.get('PATH'))
             evidence.update(executable=str(Path(found).resolve()) if found else None,
                             state=('verified' if found else 'unavailable') if stored else 'unknown',
@@ -455,7 +462,8 @@ def harness_evidence(ctx, deployment):
         if (not executable.is_file() or not os.access(executable, os.X_OK)
                 or str(executable.resolve()) != str(executable)):
             return {**evidence, 'state': 'unavailable', 'reason': 'selected executable unavailable or redirected'}
-        if selection is deployment.harness_selection and not deployment.config_path.exists():
+        planned = selection is deployment.harness_selection and not deployment.config_path.exists()
+        if planned and not any(fields):
             return {**evidence, 'state': 'unknown', 'reason': 'launcher/env publication planned'}
         if not all(fields):
             return {**evidence, 'reason': 'missing harness metadata'}
@@ -483,6 +491,8 @@ def harness_evidence(ctx, deployment):
             return {**evidence, 'reason': 'launcher missing, altered or not executable'}
         if shutil.which('pi', path=values['PATH']) != str(launcher):
             return {**evidence, 'reason': 'scoped pi does not resolve through the owned launcher'}
+        if planned:
+            return {**evidence, 'state': 'unknown', 'reason': 'config publication planned; saved routing verified'}
         return {**evidence, 'state': 'verified'}
     except (ControlError, OSError, UnicodeError):
         return {**evidence, 'management': 'managed' if launcher_path(deployment).exists() else evidence['management'],
@@ -999,6 +1009,11 @@ def pi_auth(ctx, deployment, provider, *, metadata=None):
         if not isinstance(entry, dict):
             raise ControlError('auth_unverified', f'provider {identity} missing from deployment catalog',
                                fix=f'provision published metadata/auth input for provider {identity}')
+        try:
+            sanitized_metadata({'providers': {identity: entry}})
+        except ControlError as exc:
+            raise ControlError('auth_unverified', f'provider {identity} has invalid credential metadata',
+                               fix=exc.fix) from exc
         refs = set()
         for item in (entry, *(entry.get('models') or []),
                      *entry.get('modelOverrides', {}).values()):

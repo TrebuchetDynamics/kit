@@ -552,6 +552,39 @@ class HarnessSelectionTests(unittest.TestCase):
         self.assertEqual(doc['deployment']['harness']['executable'], str(self.h.bin / 'pi'))
         self.assertEqual((self.h.deploy / '.orbi/env').read_bytes(), saved)
 
+    def test_unpublished_routing_drift_refuses_before_retry_writes(self):
+        code, failure, _ = self.h.run('setup',
+                                    failure=('write_config', 'before', OSError(SECRET)))
+        self.assertNotEqual(code, 0, failure)
+        env_path = self.h.deploy / '.orbi/env'
+        original = env_path.read_bytes()
+        env_path.write_bytes(re.sub(rb'^PATH=.*$', b"PATH='/usr/bin:/bin'",
+                                    original, flags=re.MULTILINE))
+        before = snapshot(self.h.home)
+        code, doc, _ = self.h.run('setup')
+        self.assertNotEqual(code, 0, doc)
+        self.assertEqual(doc['error']['code'], 'harness_drift')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertFalse((self.h.deploy / 'orbi.toml').exists())
+
+    def test_malformed_existing_credential_metadata_is_bounded_and_redacted(self):
+        self.assertEqual(self.h.run('setup')[0], 0)
+        catalog = self.h.deploy / '.orbi/pi-providers.json'
+        original = json.loads(catalog.read_text())
+        for key, value in (('headers', [SECRET]), ('modelOverrides', [SECRET]),
+                           ('modelOverrides', {'model': SECRET})):
+            with self.subTest(key=key, value=value):
+                data = json.loads(json.dumps(original))
+                data['providers']['openrouter'][key] = value
+                catalog.write_text(json.dumps(data))
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('start', dry_run=True)
+                self.assertNotEqual(code, 0, doc)
+                self.assertEqual(doc['error']['code'], 'auth_unverified')
+                self.assertNotIn(SECRET, json.dumps(doc) + err)
+                self.assertEqual(snapshot(self.h.home), before)
+
     def test_final_child_extension_environment_contract(self):
         self.assertEqual(self.h.run('setup')[0], 0)
         config = self.h.deploy / 'orbi.toml'
@@ -632,6 +665,18 @@ class HarnessSelectionTests(unittest.TestCase):
         self.assertEqual(code, 0, doc)
         self.assertEqual(doc['deployment']['harness']['state'], 'unknown')
         self.assertIn('service resolution unverified', doc['deployment']['harness']['resolution'])
+        # Relative/empty PATH components resolve against a process cwd, not
+        # necessarily the service WorkingDirectory; do not claim service evidence.
+        for path in ('.:/usr/bin', ':/usr/bin'):
+            env_path.write_text('PATH=' + path + '\n')
+            before = snapshot(self.h.home)
+            code, doc, _ = self.h.run('status')
+            self.assertEqual(code, 0, doc)
+            evidence = doc['deployment']['harness']
+            self.assertEqual(evidence['state'], 'unknown')
+            self.assertIsNone(evidence['executable'])
+            self.assertIn('service resolution unverified', evidence['resolution'])
+            self.assertEqual(snapshot(self.h.home), before)
 
     def test_managed_drift_and_unavailable_preserve_evidence(self):
         self.assertEqual(self.h.run('setup')[0], 0)
@@ -695,12 +740,14 @@ class HarnessSelectionTests(unittest.TestCase):
             ns['_load_deploy_env_file'](spaced.deploy)
             self.assertEqual(dict(os.environ), helper.persisted_env(target))
         for value in ("/bad'quote", '/bad"quote', '/bad\\slash', '/bad\nline',
-                      '/bad\x00nul', '/bad\tcontrol', '/bad\x7fdel', ' /edge', '/edge ',
+                      '/bad\x00nul', '/bad\tcontrol', '/bad\x7fdel', '/bad\x85nel',
+                      '/bad\u2028line', '/bad\u2029paragraph', ' /edge', '/edge ',
                       '/bad:colon', 'relative'):
             with self.subTest(value=repr(value)):
                 with self.assertRaises(helper.ControlError):
                     helper.env_literal(value, path=True)
-        for suffix in ('quoted"', "quoted'", 'back\\slash', 'control\n', 'colon:part'):
+        for suffix in ('quoted"', "quoted'", 'back\\slash', 'control\n',
+                       'unicode\x85control', 'colon:part'):
             with self.subTest(suffix=repr(suffix)):
                 h = Harness(Path(self.tmp.name) / ('invalid-' + suffix))
                 h.add_deployment_a()

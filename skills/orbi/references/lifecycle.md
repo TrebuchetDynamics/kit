@@ -138,7 +138,7 @@ Setup/status/start include `deployment.harness` with `management` (`managed` or
 resolved-now file/executable evidence, **not observation of a running process**.
 Setup records an `observed_version` only after the selected `--version` probe;
 status performs no harness/auth probe, refresh, install or write. A preview's
-unpublished launcher is `unknown`, not verified. No deployment is unconfigured:
+unpublished launcher is `unknown`, not verified. No deployment means unconfigured:
 Pi-Bolt is only the new-setup default, not an active selection.
 
 Legacy configs without these fields keep their stored PATH and remain unmanaged.

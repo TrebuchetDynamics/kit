@@ -126,7 +126,13 @@ class PortablePackageTests(unittest.TestCase):
                 cwd=foreign, capture_output=True, text=True, timeout=60, env=sandbox)
             self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
             report = json.loads(status.stdout)
-            self.assertEqual(report['deployment'], {'state': 'absent'})
+            self.assertEqual(report['deployment'], {
+                'state': 'absent',
+                'harness': {'management': 'legacy', 'requested_kind': None,
+                            'selection_source': 'legacy', 'launcher': None,
+                            'executable': None, 'state': 'unknown',
+                            'reason': 'unconfigured; new setup defaults to pi-bolt'},
+            })
             self.assertEqual(report['scheduler']['state'], 'unavailable')
             self.assertEqual(report['queue']['state'], 'unavailable')
             self.assertEqual(sorted(path.relative_to(checkout) for path in checkout.rglob('*')),
