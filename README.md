@@ -255,12 +255,14 @@ scheduler activation or worker starts. See [Orbi CLI installation](docs/installa
 Pi-Bolt is included by default; use `./install.sh --only pi-bolt` or `--skip pi-bolt`.
 It installs the upstream native Pi build through the
 [official installer](https://pi-bolt.opensec.in/install.sh) and links `pi-bolt` in the
-Kit binary directory. A working `pi-bolt` is kept on install and refreshed by
-`./install.sh update`. The upstream run is non-interactive and installs no optional
-extensions. See [Pi-Bolt installation](docs/installation.md#pi-bolt-native-executable).
+Kit binary directory. Every install and `./install.sh update` refresh it with the
+upstream installer rather than keeping an existing build. The upstream run is
+non-interactive and installs no optional extensions. See [Pi-Bolt installation](docs/installation.md#pi-bolt-native-executable).
 
-Ordinary installs reuse the installed Pi package. `./install.sh update` explicitly
-refreshes it. Settings reconciliation still runs, as does the service-restart phase.
+Every install refreshes the installed Pi package with `pi update`, and so does
+`./install.sh update`: a complete-looking skill folder set is not proof of current
+content, so a kept package is never an option. Settings reconciliation still runs,
+as does the service-restart phase.
 
 </details>
 
