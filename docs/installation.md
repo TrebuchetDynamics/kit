@@ -17,6 +17,57 @@ payload together; a single copied
 installer is not standalone. Preflight rejects missing declared source payloads
 before installation stages. This layout does not change setup targets or policy.
 
+## Update Kit
+
+Explicit `/update-kit` loads [one canonical workflow](../skills/update-kit/SKILL.md)
+on every packaged host. Its [standard-library helper](../skills/update-kit/scripts/update_kit.py)
+requires Python 3.11+, Git, bash and lsof on Linux/macOS. It downloads the complete
+`https://github.com/TrebuchetDynamics/kit.git`, branch `main`, into the persistent
+`${XDG_DATA_HOME:-$HOME/.local/share}/kit/source`. `XDG_DATA_HOME` must be absolute;
+correct it or unset it on an error. Keep it on persistent storage, not `/tmp` or a
+host package/plugin cache. No project/developer checkout is discovered or adopted.
+Keep source after installation because native installs can link to it.
+
+Before execution, the workflow explains the [full-suite effects](#full-suite-from-a-checkout):
+all available components by default, possible Pi/Pi-Bolt bootstrap and active supported
+integration restarts. It delegates native prompts, availability/skips, verbose output
+and nonzero partial-failure behavior rather than implementing host update logic.
+For example, `/update-kit --only pi,tx` narrows outer components. A restriction that
+still selects Hermes while excluding another component is refused before mutation:
+Hermes can run a nested **broader full-suite** refresh. Exclude Hermes (for example
+`--only pi,tx` or `--skip hermes`) or separately authorize unrestricted full-suite
+behavior. Outer flags do not constrain nested updates. Menu selection is not supported
+by the updater; use explicit flags. No-restarts requests are refused before mutation;
+`--no-reload` does not suppress the final restart phase.
+
+Read-only/questions-only/`--dry-run` (also `--list`) shows intended source path/argv
+with unavailable facts `NOT_CHECKED`. It does not clone, fetch, create directories
+or locks, probe hosts or write caches. Resolve the helper from the loaded skill,
+not cwd; direct invocation is `python3 -B <loaded-skill>/scripts/update_kit.py --dry-run`.
+
+The helper serializes update-kit invocations through installation. This is **not**
+a global/native Hermes lock: preexisting live/unknown consumers and concurrent
+native ownership hold. Resolve native ownership receipts and wait for idle owners
+before retrying. It conservatively checks source open files/processes, linked Hermes
+gateway receipts and native updater locks; scan uncertainty also holds. A fresh
+clone is staged in a unique sibling; failures retain that directory for diagnosis.
+Existing source requires updater provenance, same-user ownership, non-symlink safe
+paths, fixed origin, clean attached `main`, no extra worktrees and no local-ahead or
+diverged history. Repair holds manually while preserving source, edits, history and
+evidence; the helper never resets, stashes, cleans, forces, repins or deletes it.
+
+It fetches only fixed upstream and fast-forwards `main`, then invokes that fetched
+checkout's `bash install.sh update --no-pull` once, including equal-SHA reinstalls.
+`--no-pull` suppresses only the outer installer pull; unrestricted Hermes native
+updates may fetch source and launch another full-suite refresh. The receipt reports
+old, helper-selected and final SHA, explicitly noting secondary changes. It does
+not promise a single immutable revision across nested updates. Installer output
+owns component outcomes; nonzero/partial failure propagates and successful host
+items remain installed, not rolled back. Repair the reported cause and retry only
+compatible selected failures. Reload/reopen the current agent session for discovery;
+package refresh does not reload a running agent. Installation, activation and live
+qualification remain separate, and Orbi stays paused.
+
 ## Full suite from a checkout
 
 `./install.sh` installs the full suite for every available host with verbose output.

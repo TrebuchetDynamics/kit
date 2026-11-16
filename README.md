@@ -321,6 +321,7 @@ states its own boundaries and what "done" means.
 **Operate**
 
 - `/ask-kit` — ask which of the above fits.
+- `/update-kit` — refresh dedicated upstream source and rerun the suite installer.
 - `/orbi` — inspect or explicitly manage one repository's Orbi deployment.
 - GitHub Issues and Orbi diagnostics — see [delivery setup](docs/github-native.md).
 
@@ -373,6 +374,15 @@ production credentials, and start with repositories where an automatic local com
 acceptable.
 
 ## Updating
+
+**Full suite:** explicitly invoke `/update-kit` (Claude Code: `/kit:update-kit`;
+Codex: `$kit:update-kit`; Hermes also accepts `/update_kit`). It keeps the complete
+upstream `main` checkout at `${XDG_DATA_HOME:-$HOME/.local/share}/kit/source` and
+reruns its installer, even at the same revision. Default scope may bootstrap
+Pi/Pi-Bolt and restart active supported integrations. Restricted Hermes cascades
+and no-restarts requests are refused before mutation; `--no-reload` does not prevent
+final restarts. See [Update Kit safety, preview and recovery](docs/installation.md#update-kit).
+Reload the current agent session afterward; installation is not live qualification.
 
 **Pi:** update the package with
 `pi update git:github.com/TrebuchetDynamics/kit`.

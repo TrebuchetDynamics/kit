@@ -6,6 +6,7 @@ WORKFLOWS = (
     ('plan_with_me', 'plan-with-me', None, 'Ask me questions and save our plan'),
     ('plan_for_me', 'plan-for-me', None, 'Investigate, choose an approach and save the plan'),
     ('docs_sync', 'docs-sync', None, 'Keep repository documentation and tasks accurate'),
+    ('update_kit', 'update-kit', None, 'Refresh upstream Kit and reinstall the suite'),
 )
 
 
@@ -21,7 +22,7 @@ def register(ctx, skills, invoke):
 
     paths = {name: path for name, _, path in skills}
     occupied = set(get_plugin_commands()) | {command for name, command, _ in skills
-                                             if name not in {"docs-sync", "plan-with-me", "plan-for-me"}}
+                                             if name not in {"docs-sync", "plan-with-me", "plan-for-me", "update-kit"}}
     for public, skill, subcommand, description in WORKFLOWS:
         if skill not in paths:
             continue

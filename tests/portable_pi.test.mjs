@@ -7,7 +7,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 46);
+  assert.equal(commands.size, 47);
   assert.equal(commands.has('orbi'), true);
   assert.equal(commands.has('push'), true);
   assert.equal(commands.has('unblock'), true);
@@ -71,7 +71,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   }
   for (const [name, skill] of Object.entries({
     'plan-with-me': 'plan-with-me', 'plan-for-me': 'plan-for-me', 'docs-sync': 'docs-sync',
-    orbi: 'orbi', autoresearch: 'autoresearch',
+    orbi: 'orbi', 'update-kit': 'update-kit', autoresearch: 'autoresearch',
     impeccable: 'impeccable', 'ui-taste': 'ui-taste',
     'beautify-github-readme': 'beautify-github-readme', 'grill-me': 'plan-with-me',
     lgtm: 'lgtm', goal: 'goal', unblock: 'unblock',
@@ -90,6 +90,21 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   })) {
     await commands.get(name).handler('questions only', {isIdle: () => true});
     await assertWorkflow(skill);
+  }
+});
+
+test('Update Kit dispatch is explicit-only, literal and queues while busy', async () => {
+  const commands = new Map(), messages = [];
+  register({registerCommand: (name, handler) => commands.set(name, handler),
+    sendUserMessage: (...args) => messages.push(args)});
+  const raw = '--only pi --hermes-home "space $(literal); home"\nno restarts';
+  for (const idle of [true, false]) {
+    await commands.get('update-kit').handler(raw, {isIdle: () => idle});
+    const [message, delivery] = messages.at(-1);
+    assert.match(message, /disable-model-invocation: true/);
+    assert.equal(message.includes('../../../skills/update-kit/SKILL.md'), true);
+    assert.equal(message.endsWith(raw), true);
+    assert.deepEqual(delivery, idle ? undefined : {deliverAs: 'followUp'});
   }
 });
 
@@ -189,6 +204,8 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     'skills/shared/COMMUNICATION.md',
     'skills/orbi/SKILL.md', 'skills/orbi/references/lifecycle.md',
     'skills/orbi/scripts/orbi_control.py',
+    'skills/update-kit/SKILL.md', 'skills/update-kit/scripts/update_kit.py',
+    'adapters/skills/update-kit/SKILL.md', 'adapters/skills/update-kit/agents/openai.yaml',
     'adapters/skills/orbi/SKILL.md', 'adapters/skills/orbi/agents/openai.yaml',
     'scripts/github_issues.py', 'scripts/worktree_paths.py', 'scripts/checkout_lock.py',
     'docs/github-native.md']) {
@@ -255,7 +272,7 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
-    assert.equal(skillCount, 33);
+    assert.equal(skillCount, 34);
     // Execute the packaged CommonJS helper under Kit's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
@@ -285,7 +302,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 46);
+    assert.equal(commands.size, 47);
     assert.equal(commands.has('orbi'), true);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {

@@ -8,6 +8,7 @@ const workflows = {
   'plan-for-me': ['plan-for-me', 'Investigate, decide and save the plan'],
   'docs-sync': ['docs-sync', 'Maintain documentation and GitHub issue handoffs'],
   orbi: ['orbi', 'Prepare, start, inspect or stop one Orbi deployment'],
+  'update-kit': ['update-kit', 'Refresh upstream Kit and reinstall the suite'],
   autoresearch: ['autoresearch', 'Run bounded research or experiments'],
   'apk-get': ['apk-get', 'Find the app, build an ARM64 release APK and upload with s3upload'],
   'test-optimizer': ['test-optimizer', 'Reduce redundant tests while preserving real regression protection'],
