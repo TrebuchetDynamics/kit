@@ -52,7 +52,10 @@ def env_dict(text):
         if not line or line.startswith('#') or '=' not in line:
             continue
         key, _, value = line.partition('=')
-        values[key.strip().removeprefix('export ').strip()] = value.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('\"', "'"):
+            value = value[1:-1]
+        values[key.strip().removeprefix('export ').strip()] = value
     return values
 
 
@@ -73,6 +76,8 @@ def snapshot(path):
 
 FAKE_SOURCE = '''#!{python}
 import json, os, subprocess, sys, time
+os.environ.setdefault("FAKE_CALLS", {calls!r})
+os.environ.setdefault("FAKE_RULES", {rules!r})
 name = os.path.basename(sys.argv[0])
 argv = sys.argv[1:]
 record = {{
@@ -154,9 +159,12 @@ class Harness:
 
     def _tools(self):
         tool = self.bin / '_fake.py'
-        tool.write_text(FAKE_SOURCE.format(python=sys.executable))
+        tool.write_text(FAKE_SOURCE.format(python=sys.executable, calls=str(self.calls_path), rules=str(self.rules_path)))
         tool.chmod(0o755)
-        for name in ('git', 'uv', 'gh', 'node', 'pi', 'orbi', 'systemctl', 'launchctl'):
+        for name in ('pi', 'pi-bolt'):
+            (self.bin / name).write_text(tool.read_text())
+            (self.bin / name).chmod(0o755)
+        for name in ('git', 'uv', 'gh', 'node', 'orbi', 'systemctl', 'launchctl'):
             (self.bin / name).symlink_to(tool)
         self.bootstrap.symlink_to(tool)
 
@@ -185,6 +193,8 @@ class Harness:
             {'tool': 'node', 'argv_contains': [], 'stdout': 'v24.19.0\n'},
             {'tool': 'pi', 'argv_contains': ['auth', 'check'], 'stdout': 'ready\n'},
             {'tool': 'pi', 'argv_contains': [], 'stdout': 'pi 1.0.0\n'},
+            {'tool': 'pi-bolt', 'argv_contains': ['auth', 'check'], 'stdout': 'ready\n'},
+            {'tool': 'pi-bolt', 'argv_contains': [], 'stdout': 'pi-bolt fixture\n'},
             {'tool': 'orbi', 'argv_contains': ['--version'], 'stdout': 'orbi 0.7.41\n'},
             {'tool': 'orbi', 'argv_contains': ['check'], 'stdout': 'prerequisites=ok checks=12\n'},
             {'tool': 'orbi', 'argv_contains': ['doctor'], 'stdout': 'slots: 0/1\n'},
@@ -347,6 +357,418 @@ class Harness:
 
     def config(self):
         return tomllib.loads((self.deploy / 'orbi.toml').read_text())
+
+
+# Verbatim source from orbi-build/orbi at
+# ce97e015ca433a9312e5bdf69353be58ab394fd9: src/orbi/config.py and pi_session.py.
+PINNED_ENV_LOADER = r'''def _load_deploy_env_file(deploy_home: Path) -> None:
+    """Merge `<deploy_home>/.orbi/env` into the process environment.
+
+    The documented env-file-first flow (getting-started step 4) writes the
+    provider key to this gitignored file, and the installed unit loads it
+    via `EnvironmentFile` at service start — the CLI process does not, so
+    `orbi setup` and friends must read it themselves or the documented
+    step 4 -> 5 flow fails verbatim. Plain systemd EnvironmentFile syntax:
+    `KEY=VALUE` lines, optional `export ` prefix, matching single/double
+    quotes stripped, blank lines and `#` comments skipped. A variable
+    already exported in the shell wins (`setdefault`): the shell export is
+    the documented override for manual ticks. A missing file is a no-op
+    (a keyless local server needs no env file at all); a line without `=`
+    is a misconfiguration and fails fast.
+    """
+    env_file = deploy_home / ".orbi" / "env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[len("export "):]
+        if "=" not in stripped:
+            raise ValueError(
+                f"malformed line in env file {env_file}: {stripped!r} "
+                "(expected KEY=VALUE)"
+            )
+        name, value = stripped.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if (
+            len(value) >= 2
+            and value[0] == value[-1]
+            and value[0] in ('"', "'")
+        ):
+            value = value[1:-1]
+        os.environ.setdefault(name, value)
+'''
+PINNED_EXTENSION_ENV = r'''def pi_extension_env(config) -> dict[str, str]:
+    """Return extension variables for the Pi child only; never log them."""
+    values: dict[str, str] = {}
+    for extension in config.pi_extensions:
+        if extension["enabled"]:
+            values.update(extension["env"])
+    return values
+'''
+
+class HarnessSelectionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.h = Harness(Path(self.tmp.name))
+        self.h.add_deployment_a()
+        # Real, distinct executables: resolving a normal installed symlink is supported.
+        self.bolt = self.h.bin / 'bolt target'
+        self.bolt.write_text('#!' + sys.executable + '\n'
+            'import json, os, signal, sys\n'
+            'with open(' + repr(str(self.h.root / 'bolt-calls.jsonl')) + ', "a") as f: '
+            'f.write(json.dumps({"argv":sys.argv[1:], "PATH":os.environ.get("PATH"), '
+            '"HOME":os.environ.get("HOME"), "agent":os.environ.get("PI_CODING_AGENT_DIR")}) + "\\n")\n'
+            'if sys.argv[1:] == ["--version"]: print("bolt fixture"); sys.exit(0)\n'
+            'if sys.argv[1:3] == ["auth", "check"]: sys.exit(0)\n'
+            'if sys.argv[1:] == ["signal"]: os.kill(os.getpid(), signal.SIGTERM)\n'
+            'print(json.dumps({"argv": sys.argv[1:], "pid": os.getpid(), '
+            '"inherited": os.environ.get("PROBE")}))\n'
+            'sys.exit(23)\n')
+        self.bolt.chmod(0o755)
+        (self.h.bin / 'pi-bolt').unlink()
+        (self.h.bin / 'pi-bolt').symlink_to(self.bolt)
+
+    def test_default_launcher_real_worker_reviewer_exec_and_receipts(self):
+        self.h.rules({'tool': 'orbi', 'argv_contains': ['check'], 'exec': ['pi', '--version']})
+        code, doc, err = self.h.run('setup')
+        self.assertEqual(code, 0, (doc, err))
+        evidence = doc['deployment']['harness']
+        self.assertEqual(evidence['requested_kind'], 'pi-bolt')
+        self.assertEqual(evidence['selection_source'], 'default')
+        self.assertEqual(evidence['state'], 'verified')
+        self.assertEqual(evidence['executable'], str(self.bolt))
+        traces = [json.loads(line) for line in (self.h.root / 'bolt-calls.jsonl').read_text().splitlines()]
+        self.assertIn(['auth', 'check', '--provider', 'openrouter', '--no-refresh'], [t['argv'] for t in traces])
+        self.assertGreaterEqual(sum(t['argv'] == ['--version'] for t in traces), 2)
+        for trace in traces:
+            self.assertEqual(trace['PATH'].split(':')[0], str(self.h.deploy / '.orbi/harness-bin'))
+            self.assertEqual(trace['HOME'], str(self.h.home))
+        target = helper.deployment_from(self.h.deploy / 'orbi.toml')
+        hostile_bin = self.h.root / 'hostile'
+        hostile_bin.mkdir()
+        (hostile_bin / 'pi').write_text('#!/bin/sh\nexit 77\n')
+        (hostile_bin / 'pi').chmod(0o755)
+        hostile = dict(self.h.env, PATH=str(hostile_bin) + ':' + self.h.env['PATH'], PROBE='inherited')
+        env = helper.scoped_env(helper.Context(env=hostile), target)
+        self.assertEqual(__import__('shutil').which('pi', path=env['PATH']),
+                         evidence['launcher'])
+        for role in ('implement', 'review'):
+            argv = ['--print', '--session-dir', role + ' space', '', 'a"b', '$literal']
+            proc = subprocess.Popen(['pi', *argv], env=env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True)
+            out, _ = proc.communicate(timeout=10)
+            self.assertEqual(proc.returncode, 23)
+            observed = json.loads(out)
+            self.assertEqual(observed['argv'], argv)
+            self.assertEqual(observed['pid'], proc.pid)  # exec, not a wrapper child
+            self.assertEqual(observed['inherited'], 'inherited')
+        proc = subprocess.run(['pi', 'signal'], env=env, capture_output=True, timeout=10)
+        self.assertEqual(proc.returncode, -15)
+        for action in ('status', 'start'):
+            code, receipt, err = self.h.run(action, dry_run=action == 'start', env=hostile)
+            self.assertEqual(code, 0, (receipt, err))
+            self.assertEqual(receipt['deployment']['harness']['executable'], str(self.bolt))
+
+    def test_missing_default_never_falls_back_or_writes(self):
+        (self.h.bin / 'pi-bolt').unlink()
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('setup')
+        self.assertNotEqual(code, 0)
+        self.assertEqual(doc['error']['code'], 'prerequisite_missing')
+        self.assertIn('pi-bolt', json.dumps(doc))
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        proc = subprocess.run([sys.executable, '-B', str(HELPER), 'setup',
+            '--repo-dir', str(self.h.repo), '--json'], env=self.h.env,
+            capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(proc.returncode, 0)
+        failure = json.loads(proc.stdout)
+        self.assertEqual(failure['error']['code'], 'prerequisite_missing')
+        self.assertIn('pi-bolt', failure['error']['message'])
+        self.assertFalse(failure['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+
+    def test_selection_reuse_conflict_and_drift(self):
+        self.assertEqual(self.h.run('setup', options=['--harness', 'pi'])[0], 0)
+        self.assertEqual(self.h.run('setup')[1]['deployment']['harness']['requested_kind'], 'pi')
+        before = snapshot(self.h.home)
+        code, doc, _ = self.h.run('setup', options=['--harness', 'pi-bolt'])
+        self.assertNotEqual(code, 0)
+        self.assertEqual(doc['error']['code'], 'harness_conflict')
+        self.assertEqual(snapshot(self.h.home), before)
+        launcher = self.h.deploy / '.orbi/harness-bin/pi'
+        launcher.write_text('#!/bin/sh\nexit 0\n')
+        code, doc, _ = self.h.run('status')
+        self.assertEqual(code, 0)
+        self.assertEqual(doc['deployment']['harness']['state'], 'drift')
+        self.assertNotEqual(self.h.run('start', dry_run=True)[0], 0)
+
+
+    def test_public_cli_stock_pi_and_help_are_explicit_and_nonmutating(self):
+        argv = [sys.executable, '-B', str(HELPER), 'setup', '--repo-dir', str(self.h.repo),
+                '--harness', 'pi', '--json']
+        proc = subprocess.run(argv, env=self.h.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        evidence = json.loads(proc.stdout)['deployment']['harness']
+        self.assertEqual(evidence['requested_kind'], 'pi')
+        self.assertEqual(evidence['selection_source'], 'explicit')
+        before = snapshot(self.h.home)
+        for action in ('status', 'start'):
+            code, text, err = self.h.run(action, dry_run=action == 'start', json_mode=False)
+            self.assertEqual(code, 0, (text, err))
+            self.assertIn('deployment.harness.requested_kind=pi', text)
+            self.assertIn('deployment.harness.state=verified', text)
+        code, doc, _ = self.h.run('help', options=['--harness', 'pi-bolt'])
+        self.assertEqual(code, 0, doc)
+        self.assertIn('new default', doc['options']['--harness']['effect'])
+        self.assertEqual(snapshot(self.h.home), before)
+        for action in ('status', 'start', 'stop'):
+            code, doc, _ = self.h.run(action, options=['--harness', 'pi'])
+            self.assertNotEqual(code, 0)
+            self.assertEqual(doc['error']['code'], 'invalid_harness_selection')
+
+    def test_config_last_retry_reuses_partial_explicit_selection(self):
+        code, failure, _ = self.h.run('setup', options=['--harness', 'pi'],
+                                    failure=('write_config', 'before', OSError(SECRET)))
+        self.assertNotEqual(code, 0)
+        self.assertTrue(failure['error']['mutated'])
+        self.assertFalse((self.h.deploy / 'orbi.toml').exists())
+        saved = (self.h.deploy / '.orbi/env').read_bytes()
+        hostile = self.h.root / 'alternate'
+        hostile.mkdir()
+        for name in ('pi', 'pi-bolt'):
+            (hostile / name).write_text('#!/bin/sh\nexit 77\n')
+            (hostile / name).chmod(0o755)
+        code, doc, _ = self.h.run('setup', env=dict(self.h.env,
+            PATH=str(hostile) + ':' + self.h.env['PATH']))
+        self.assertEqual(code, 0, doc)
+        self.assertEqual(doc['deployment']['harness']['requested_kind'], 'pi')
+        self.assertEqual(doc['deployment']['harness']['selection_source'], 'explicit')
+        self.assertEqual(doc['deployment']['harness']['executable'], str(self.h.bin / 'pi'))
+        self.assertEqual((self.h.deploy / '.orbi/env').read_bytes(), saved)
+
+    def test_final_child_extension_environment_contract(self):
+        self.assertEqual(self.h.run('setup')[0], 0)
+        config = self.h.deploy / 'orbi.toml'
+        original = config.read_bytes()
+        target = helper.deployment_from(config)
+        env = helper.scoped_env(helper.Context(env=self.h.env), target)
+        ns = {}
+        exec(PINNED_EXTENSION_ENV, ns)
+        from types import SimpleNamespace
+        for key, value in (('PATH', '/hostile'), ('HOME', '/other'),
+                           ('PI_CODING_AGENT_DIR', str(self.h.home / '.pi/agent')),
+                           ('PATH', env['PATH']), ('HOME', env['HOME'])):
+            with self.subTest(key=key, value=value):
+                extension = {'source': 'npm:fixture@1.0.0', 'enabled': True, 'env': {key: value}}
+                pi_env = ns['pi_extension_env'](SimpleNamespace(pi_extensions=[extension]))
+                pi_env['PI_CODING_AGENT_DIR'] = '/worktree/.orbi/pi-agent'
+                # Exact final merge from pinned src/orbi/pi_process.py, spawn_pi.
+                native_child = {k: v for k, v in {**env, **pi_env}.items()
+                                if k != 'ORBI_TELEGRAM_BOT_TOKEN'}
+                self.assertEqual(native_child['PI_CODING_AGENT_DIR'], '/worktree/.orbi/pi-agent')
+                config.write_bytes(original + ('\n[[pi_extensions]]\nsource = "npm:fixture@1.0.0"\n'
+                    '[pi_extensions.env]\n' + key + ' = ' + json.dumps(value) + '\n').encode())
+                before = snapshot(self.h.home)
+                self.h.clear_calls()
+                code, doc, _ = self.h.run('start', dry_run=True)
+                compatible = key != 'PI_CODING_AGENT_DIR' and native_child[key] == env[key]
+                self.assertEqual(code == 0, compatible, doc)
+                if not compatible:
+                    self.assertEqual(doc['error']['code'], 'extension_env_mismatch')
+                    self.assertIn(key, doc['error']['message'])
+                self.assertEqual(snapshot(self.h.home), before)
+                SetupBoundaryTests.assert_no_activation(self, self.h.calls())
+        config.write_bytes(original + b'\n[[pi_extensions]]\nsource = "npm:fixture@1.0.0"\nenabled = false\n[pi_extensions.env]\nPATH = "/hostile"\n')
+        self.assertEqual(self.h.run('start', dry_run=True)[0], 0)
+        for location in ('ambient', 'ambient-home', 'persisted'):
+            config.write_bytes(original)
+            env_path = self.h.deploy / '.orbi/env'
+            prior = env_path.read_bytes()
+            overrides = dict(self.h.env)
+            if location == 'ambient':
+                overrides['PI_CODING_AGENT_DIR'] = '/foreign/profile'
+            elif location == 'ambient-home':
+                overrides['HOME'] = '/foreign/home'
+            else:
+                env_path.write_bytes(re.sub(rb'^HOME=.*$', b"HOME='/foreign/home'", prior, flags=re.MULTILINE))
+            code, doc, _ = self.h.run('start', dry_run=True, env=overrides)
+            self.assertNotEqual(code, 0)
+            self.assertEqual(doc['error']['code'], 'auth_home_mismatch')
+            env_path.write_bytes(prior)
+
+    def test_legacy_unmigrated_and_absent_unknown_evidence(self):
+        code, doc, _ = self.h.run('status')
+        self.assertEqual(code, 0)
+        self.assertIsNone(doc['deployment']['harness']['requested_kind'])
+        self.assertIn('unconfigured', doc['deployment']['harness']['reason'])
+        self.assertEqual(self.h.run('setup')[0], 0)
+        env_path = self.h.deploy / '.orbi/env'
+        env_path.write_text(''.join(line for line in env_path.read_text().splitlines(keepends=True)
+                                   if not line.startswith('KIT_ORBI_')))
+        (self.h.deploy / '.orbi/harness-bin/pi').unlink()
+        stored_path = env_dict(env_path.read_text())['PATH']
+        for action in ('setup', 'status', 'start'):
+            code, doc, _ = self.h.run(action, dry_run=action == 'start')
+            self.assertEqual(code, 0, doc)
+            evidence = doc['deployment']['harness']
+            self.assertEqual(evidence['management'], 'legacy')
+            self.assertIsNone(evidence['requested_kind'])
+            self.assertEqual(evidence['executable'], str(self.h.bin / 'pi'))
+            self.assertEqual(env_dict(env_path.read_text())['PATH'], stored_path)
+        before = snapshot(self.h.home)
+        code, doc, _ = self.h.run('setup', options=['--harness', 'pi'])
+        self.assertNotEqual(code, 0)
+        self.assertEqual(doc['error']['code'], 'harness_migration_required')
+        self.assertEqual(snapshot(self.h.home), before)
+        env_path.write_text(''.join(line for line in env_path.read_text().splitlines(keepends=True)
+                                   if not line.startswith('PATH=')))
+        code, doc, _ = self.h.run('status')
+        self.assertEqual(code, 0, doc)
+        self.assertEqual(doc['deployment']['harness']['state'], 'unknown')
+        self.assertIn('service resolution unverified', doc['deployment']['harness']['resolution'])
+
+    def test_managed_drift_and_unavailable_preserve_evidence(self):
+        self.assertEqual(self.h.run('setup')[0], 0)
+        env_path = self.h.deploy / '.orbi/env'
+        launcher = self.h.deploy / '.orbi/harness-bin/pi'
+        env_before, launcher_before = env_path.read_bytes(), launcher.read_bytes()
+        for case in ('partial', 'invalid', 'duplicate', 'path', 'missing-launcher', 'symlink', 'nonexec', 'missing-target'):
+            with self.subTest(case=case):
+                if case == 'partial':
+                    env_path.write_bytes(b'\n'.join(line for line in env_before.split(b'\n')
+                                                   if not line.startswith(b'KIT_ORBI_HARNESS_SOURCE=')))
+                elif case == 'invalid':
+                    env_path.write_bytes(env_before.replace(b"KIT_ORBI_HARNESS='pi-bolt'", b"KIT_ORBI_HARNESS='invalid'"))
+                elif case == 'duplicate':
+                    env_path.write_bytes(env_before + b"KIT_ORBI_HARNESS='pi-bolt'\n")
+                elif case == 'path':
+                    env_path.write_bytes(re.sub(rb"^PATH=.*$", b"PATH='/usr/bin:/bin'", env_before, flags=re.MULTILINE))
+                elif case == 'missing-launcher':
+                    launcher.unlink()
+                elif case == 'symlink':
+                    launcher.unlink()
+                    launcher.symlink_to(self.bolt)
+                elif case == 'nonexec':
+                    launcher.chmod(0o600)
+                else:
+                    self.bolt.rename(self.bolt.with_suffix('.saved'))
+                before = snapshot(self.h.home)
+                code, doc, _ = self.h.run('status')
+                self.assertEqual(code, 0, doc)
+                self.assertIn(doc['deployment']['harness']['state'], ('drift', 'unavailable'))
+                for action in ('setup', 'start'):
+                    code, failure, _ = self.h.run(action, dry_run=True)
+                    self.assertNotEqual(code, 0, failure)
+                    self.assertFalse(failure['error']['mutated'])
+                    self.assertIn('harness', failure['deployment'])
+                self.assertEqual(snapshot(self.h.home), before)
+                env_path.write_bytes(env_before)
+                if launcher.is_symlink():
+                    launcher.unlink()
+                launcher.write_bytes(launcher_before)
+                launcher.chmod(0o755)
+                if not self.bolt.exists():
+                    self.bolt.with_suffix('.saved').rename(self.bolt)
+
+    def test_env_literals_native_loader_and_unrelated_bytes(self):
+        spaced = Harness(Path(self.tmp.name) / 'interior space')
+        spaced.add_deployment_a()
+        (spaced.deploy / '.orbi').mkdir(parents=True)
+        env_path = spaced.deploy / '.orbi/env'
+        unrelated = b'# original\r\nCREDENTIAL="literal \\ value"\r\nOTHER=  keep spacing  \nLAST=no-final-newline'
+        env_path.write_bytes(unrelated)
+        env_path.chmod(0o640)
+        code, doc, _ = spaced.run('setup')
+        self.assertEqual(code, 0, doc)
+        self.assertTrue(env_path.read_bytes().endswith(unrelated))
+        self.assertEqual(env_path.stat().st_mode & 0o777, 0o640)
+        target = helper.deployment_from(spaced.deploy / 'orbi.toml')
+        ns = {'Path': Path, 'os': os}
+        exec(PINNED_ENV_LOADER, ns)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            ns['_load_deploy_env_file'](spaced.deploy)
+            self.assertEqual(dict(os.environ), helper.persisted_env(target))
+        for value in ("/bad'quote", '/bad"quote', '/bad\\slash', '/bad\nline',
+                      '/bad\x00nul', '/bad\tcontrol', '/bad\x7fdel', ' /edge', '/edge ',
+                      '/bad:colon', 'relative'):
+            with self.subTest(value=repr(value)):
+                with self.assertRaises(helper.ControlError):
+                    helper.env_literal(value, path=True)
+        for suffix in ('quoted"', "quoted'", 'back\\slash', 'control\n', 'colon:part'):
+            with self.subTest(suffix=repr(suffix)):
+                h = Harness(Path(self.tmp.name) / ('invalid-' + suffix))
+                h.add_deployment_a()
+                before = snapshot(h.home)
+                code, failure, _ = h.run('setup')
+                self.assertNotEqual(code, 0, failure)
+                self.assertFalse(failure['error']['mutated'])
+                self.assertEqual(snapshot(h.home), before)
+
+    def test_custom_provider_auth_references_reviewer_and_redaction(self):
+        self.assertEqual(self.h.run('setup')[0], 0)
+        config = self.h.deploy / 'orbi.toml'
+        config.write_text(config.read_text() + '\nreview_pi_provider = "custom-review"\nreview_pi_model = "review-model"\n')
+        catalog = self.h.deploy / '.orbi/pi-providers.json'
+        data = json.loads(catalog.read_text())
+        data['providers']['openrouter']['apiKey'] = '$IMPLEMENT_KEY'
+        data['providers']['custom-review'] = {
+            'baseUrl': 'https://custom.invalid/v1', 'api': 'openai-completions',
+            'apiKey': '${REVIEW_KEY}', 'headers': {'X-Custom': '$HEADER_KEY'},
+            'models': [{'id': 'review-model', 'contextWindow': 100, 'maxTokens': 50}]}
+        catalog.write_text(json.dumps(data))
+        # The global catalog does not contain either custom deployment selection.
+        user_models = self.h.home / '.pi/agent/models.json'
+        user_models.parent.mkdir(parents=True)
+        user_models.write_text('{"providers":{}}')
+        original_catalog = user_models.read_bytes()
+        self.h.rules({'tool': 'pi-bolt', 'argv_contains': ['auth', 'check'], 'exit': 2})
+        env_path = self.h.deploy / '.orbi/env'
+        prior = env_path.read_bytes()
+        keys = ('IMPLEMENT_KEY', 'REVIEW_KEY', 'HEADER_KEY')
+        ambient = dict(self.h.env, **{key: SECRET for key in keys})
+        # Even shell-only values cannot qualify service readiness.
+        code, failure, _ = self.h.run('start', dry_run=True, env=ambient)
+        self.assertNotEqual(code, 0)
+        self.assertEqual(failure['error']['code'], 'credential_reference_missing')
+        self.assertIn('IMPLEMENT_KEY', failure['error']['message'])
+        env_path.write_bytes(prior + b'IMPLEMENT_KEY=' + SECRET.encode() + b'\n')
+        code, failure, _ = self.h.run('start', dry_run=True, env=ambient)
+        self.assertNotEqual(code, 0)
+        self.assertIn('HEADER_KEY', failure['error']['message'])
+        credentials = b''.join(key.encode() + b'=' + SECRET.encode() + b'\r\n' for key in keys)
+        env_path.write_bytes(prior + credentials)
+        before = snapshot(self.h.home)
+        self.h.clear_calls()
+        (self.h.root / 'bolt-calls.jsonl').unlink()
+        code, doc, err = self.h.run('setup')
+        self.assertEqual(code, 0, doc)
+        traces = [json.loads(line) for line in (self.h.root / 'bolt-calls.jsonl').read_text().splitlines()]
+        self.assertFalse(any(t['argv'][:2] == ['auth', 'check'] for t in traces))
+        self.assertEqual([item['state'] for item in doc['prerequisites']['auth']],
+                         ['references_available', 'references_available'])
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertEqual(user_models.read_bytes(), original_catalog)
+        self.assertFalse(any(c['argv'][:2] == ['auth', 'check'] for c in self.h.calls()))
+        config.write_text(config.read_text() + '\n[[pi_extensions]]\nsource = "npm:fixture@1.0.0"\n[pi_extensions.env]\nREVIEW_KEY = ""\n')
+        self.assertEqual(self.h.run('start', dry_run=True)[1]['error']['code'], 'credential_reference_missing')
+        # Without declared references a failed selected-harness stored-auth check
+        # must remain auth_unverified, not a config/schema authentication pass.
+        data['providers']['openrouter'].pop('apiKey')
+        catalog.write_text(json.dumps(data))
+        # Custom target in this class is an independent executable; make its
+        # supported auth check fail rather than relying on fake tool-name rules.
+        self.bolt.write_text('#!/bin/sh\nexit 2\n')
+        code, failure, _ = self.h.run('start', dry_run=True)
+        self.assertNotEqual(code, 0)
+        self.assertEqual(failure['error']['code'], 'auth_unverified')
+        self.assertIn('openrouter', failure['error']['message'])
 
 
 class SetupBoundaryTests(unittest.TestCase):
@@ -825,6 +1247,9 @@ class FirstDeploymentTests(unittest.TestCase):
                 entry['modelOverrides'] = {'other-model': {'headers': {'X-Api-Key': reference}}}
                 catalog = h.home / 'models.json'
                 catalog.write_text(json.dumps(self.metadata))
+                # Service readiness requires a pre-existing file reference, not shell-only auth.
+                (h.deploy / '.orbi').mkdir(parents=True)
+                (h.deploy / '.orbi/env').write_text('OPENAI_API_KEY=' + SECRET + '\n')
                 code, doc, err = h.run('setup', options=[
                     '--pi-providers', str(catalog), '--pi-provider', 'openai',
                     '--pi-model', 'gpt-6.1-sol'])
@@ -832,7 +1257,9 @@ class FirstDeploymentTests(unittest.TestCase):
                 self.assertNotIn('pi_thinking', h.config())
                 self.assertEqual(json.loads((h.deploy / '.orbi/pi-providers.json').read_text()),
                                  self.metadata)
-                self.assertNotIn('OPENAI_API_KEY=', (h.deploy / '.orbi/env').read_text())
+                self.assertIn('OPENAI_API_KEY=' + SECRET + '\n', (h.deploy / '.orbi/env').read_text())
+                self.assertNotIn(SECRET, json.dumps(doc) + err)
+                self.assertEqual(doc['prerequisites']['auth'][0]['state'], 'references_available')
                 SetupBoundaryTests.assert_no_activation(self, h.calls())
 
     def test_donor_credentials_also_fail_before_writes(self):
@@ -962,18 +1389,18 @@ class SetupRecoveryTests(unittest.TestCase):
         config.write_bytes(original)
         env = self.h.deploy / '.orbi/env'
         env.write_bytes(b'CUSTOM=' + SECRET.encode() + b'\xff\n')
-        # Resume may publish the missing provider before discovering an invalid env encoding.
+        # Managed selection validation now refuses invalid env encoding before any writes.
         code, doc, err = self.h.run('setup', config=config, options=options)
         self.assertNotEqual(code, 0, (doc, err))
-        self.assertEqual(doc['error']['code'], 'file_encoding_invalid')
-        self.assertTrue(doc['error']['mutated'])
-        self.assertEqual(doc['steps'][-1]['step'], 'write_isolation_env')
+        self.assertEqual(doc['error']['code'], 'harness_drift')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(doc['steps'][-1]['step'], 'preflight_target')
         self.assertNotIn(SECRET, json.dumps(doc) + err)
         self.assertEqual(env.read_bytes(), b'CUSTOM=' + SECRET.encode() + b'\xff\n')
         SetupBoundaryTests.assert_no_activation(self, self.h.calls())
 
     def test_publication_interruptions_resume_config_last(self):
-        for name in ('write_provider_metadata', 'write_env', 'write_config'):
+        for name in ('write_provider_metadata', 'write_launcher', 'write_env', 'write_config'):
             for when in ('before', 'after'):
                 with self.subTest(name=name, when=when):
                     h = Harness(Path(self.tmp.name) / (name + when))
@@ -1259,7 +1686,9 @@ class SetupRecoveryTests(unittest.TestCase):
     def test_atomic_replace_failure_preserves_original_bytes_and_modes(self):
         self.assertEqual(self.h.run('setup', options=self.options)[0], 0)
         path = self.h.deploy / '.orbi/env'
-        original = 'CUSTOM_ENTRY=preserved\nPATH=/old\n'
+        # Exercise legacy isolation repair; managed metadata drift is intentionally refused.
+        (self.h.deploy / '.orbi/harness-bin/pi').unlink()
+        original = 'CUSTOM_ENTRY=preserved\nPATH=' + self.h.env['PATH'] + '\n'
         path.write_text(original)
         path.chmod(0o640)
         before = snapshot(self.h.deploy)
@@ -1287,7 +1716,8 @@ class SetupRecoveryTests(unittest.TestCase):
                 before = snapshot(h.home)
                 code, doc, err = h.run('setup')
                 self.assertEqual(code, 2, (doc, err))
-                self.assertEqual(doc['error']['code'], 'publication_conflict')
+                self.assertEqual(doc['error']['code'],
+                                 'env_invalid' if relative == '.orbi/env' else 'publication_conflict')
                 self.assertFalse(doc['error']['mutated'])
                 self.assertEqual(snapshot(h.home), before)
                 self.assertNotIn(SECRET, json.dumps(doc) + err)

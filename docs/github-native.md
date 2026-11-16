@@ -192,6 +192,28 @@ active, and `stopped` when services are inactive or failed and no owned timer is
 enabled or active. macOS status reports local deployment metadata but leaves
 active scheduler state `unavailable`.
 
+New lifecycle setup defaults to an installed Pi-Bolt executable; setup-only
+`--harness pi` explicitly selects stock Pi. A deployment-local `.orbi/harness-bin/pi`
+exec launcher and namespaced fields in `.orbi/env` persist the choice for both
+workers and reviewers. No native Orbi harness field, global alias, automatic
+harness install or fallback is used. Existing managed selections are reused;
+legacy deployments keep their stored routing and are not silently migrated.
+Setup/status/start report `deployment.harness` as configured/resolved-now evidence,
+not observed running-process use. Drift/unavailable targets and incompatible
+final extension PATH/HOME/agent-directory overrides block managed activation.
+
+Declared provider key/header references must be available in persisted deployment
+env and compatible final extension env, not just the caller shell. This reports
+`references_available`, not successful authentication/inference. A custom deployment
+catalog need not exist in the global catalog for this route. With no references,
+the selected executable must pass its supported non-refreshing stored-auth check
+in the pinned user auth home; otherwise preflight holds as `auth_unverified`.
+No temporary auth profile, credential copying or user-catalog mutation is used.
+See [harness evidence](../skills/orbi/references/lifecycle.md#harness-selection-and-evidence)
+for serialization, legacy/unknown reporting and repair boundaries. Native Pi-Bolt
+extensions, streaming/recovery and installed worker/reviewer compatibility remain
+live-unverified; static routing does not qualify delivery or release pauses.
+
 Each mutation reports its own outcome: `setup` says `prepared` (staging, not
 scheduler activation), `start` says `started` or `already-running`, and `stop`
 says `draining` or `stopped`; `--dry-run` says `planned` for all three. Thus `stop`
