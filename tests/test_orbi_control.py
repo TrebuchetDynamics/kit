@@ -1783,6 +1783,48 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                     if action == 'start':
                         self.assertEqual(doc['activation'], 'none' if phase == 'acquire' else 'possible')
 
+    def test_unlock_failure_does_not_replace_failed_timer_operation(self):
+        original_flock = helper.fcntl.flock
+        handles = []
+
+        def broken_unlock(handle, operation):
+            if operation == helper.fcntl.LOCK_UN:
+                handles.append(handle)
+                raise OSError(SECRET)
+            return original_flock(handle, operation)
+
+        for action, operation, step, completed_key in (
+                ('start', 'enable', 'activate_timer', 'activated_timers'),
+                ('stop', 'disable', 'disable_timer', 'disabled_timers')):
+            for failure in ('exit', 'timeout'):
+                with self.subTest(action=action, failure=failure):
+                    timers = [f'{self.prefix}@{i}.timer' for i in (1, 2)]
+                    failed = ['--user', operation, '--now', timers[-1]]
+                    self.h.rules({'tool': 'systemctl', 'argv_contains': failed,
+                                  'exit': 7, 'stderr': SECRET,
+                                  'sleep': 2 if failure == 'timeout' else 0},
+                                 *self.h.scheduler_rules())
+                    self.h.clear_calls()
+                    with mock.patch.object(helper.fcntl, 'flock', broken_unlock), \
+                            self.bounded_run(failed):
+                        try:
+                            code, doc, err = self.h.run(action)
+                        finally:
+                            # Close even on the red path: a retained traceback can
+                            # otherwise hold the lock and block the next subtest.
+                            closed = bool(handles) and all(h.closed for h in handles)
+                            for handle in handles:
+                                handle.close()
+                            handles.clear()
+                    self.assertEqual(code, 1, err)
+                    expected = 'command_timeout' if failure == 'timeout' else 'command_failed'
+                    self.assert_receipt(doc, expected, step, timers[-1],
+                                        (completed_key, timers[:-1]))
+                    self.assertTrue(closed, 'lock handle must close even if unlock fails')
+                    self.assertEqual(self.mutations(),
+                                     [['--user', operation, '--now', t] for t in timers])
+                    self.assertNotIn(SECRET, err)
+
     def test_preflight_filesystem_and_dry_run_errors_remain_mutation_free(self):
         for action in ('start', 'stop'):
             for dry_run in (False, True):

@@ -1036,12 +1036,22 @@ def locked(ctx, key):
     checked_path(path, 'lock file')
     file_identity(path)
     handle = path.open('a+')
+    failed = True
     try:
         fcntl.flock(handle, fcntl.LOCK_EX)
         yield
+        failed = False
     finally:
-        fcntl.flock(handle, fcntl.LOCK_UN)
-        handle.close()
+        try:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+            finally:
+                handle.close()
+        except OSError:
+            # Cleanup must not replace the original lifecycle failure. Closing
+            # the handle is still attempted even when explicit unlock fails.
+            if not failed:
+                raise
 
 
 def orbi(ctx, deployment, *argv, timeout=CHECK_TIMEOUT, allow_failure=False):
