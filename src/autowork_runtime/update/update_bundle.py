@@ -65,33 +65,59 @@ MANIFEST_NAMES = ('kit', PLUGIN)
 
 
 def _manifest_name(directory):
-    """The plugin name a directory's own manifest declares, or '' when it has none."""
+    """Read only an unambiguous top-level manifest identity; never guess from a slot."""
     try:
         text = (directory / 'plugin.yaml').read_text(encoding='utf-8')
-    except OSError:
-        return ''
-    match = re.search(r'^name:\s*[\'\"]?([A-Za-z0-9_-]+)', text, re.M)
-    return match.group(1) if match else ''
+    except (OSError, UnicodeError) as error:
+        raise ValueError(f'Cannot read plugin identity: {directory}/plugin.yaml; preserve and repair it') from error
+    names = re.findall(r'^name:.*$', text, re.M)
+    match = re.fullmatch(r"name:\s*(?:([A-Za-z0-9_-]+)|'([A-Za-z0-9_-]+)'|\"([A-Za-z0-9_-]+)\")\s*(?:#.*)?", names[0]) if len(names) == 1 else None
+    if not match or next(x for x in match.groups() if x) not in MANIFEST_NAMES:
+        raise ValueError(f'Invalid or foreign plugin identity: {directory}/plugin.yaml; preserve local changes and reconcile it')
+    return next(x for x in match.groups() if x)
+
+
+def plugin_slots(home):
+    return [home / 'plugins' / name for name in MANIFEST_NAMES]
+
+
+def consumer_slots(root):
+    return [slot for home in (root, *root.glob('profiles/*')) for slot in plugin_slots(home)]
 
 
 def plugin_dir(home):
-    """An existing install wins whichever name its manifest carries.
+    """Fresh Kit target or the single verified physical slot, including legacy paths.
 
-    A native install of the renamed plugin lands in `plugins/kit`, while profiles
-    installed before the rename own `plugins/autowork`. Prefer what is there instead of
-    creating a second copy of the same plugin under the other name.
+    Two registrations are unsafe even when they alias one source. Caller-specific
+    source/provenance checks still apply before adopting or updating the slot.
     """
-    plugins = home / 'plugins'
-    for name in MANIFEST_NAMES:
-        if _manifest_name(plugins / name) == name:
-            return plugins / name
-    return plugins / PLUGIN
+    existing = [p for p in plugin_slots(home) if p.exists() or p.is_symlink()]
+    for path in existing:
+        identity = _manifest_name(path)
+        if path.name == 'kit' and identity != 'kit':
+            raise ValueError(f'Conflicting canonical plugin identity at {path}; preserve and reconcile it')
+    if len(existing) > 1:
+        paths = ', '.join(f'{p} -> {p.resolve()}' for p in existing)
+        raise ValueError(f'Duplicate Kit registrations: {paths}; reconcile registrations before installation/update; neither was removed')
+    return existing[0] if existing else home / 'plugins/kit'
 
 
 def plugin_name(home):
-    """The name to pass to `hermes plugins enable` for the install this tool owns."""
     directory = plugin_dir(home)
-    return _manifest_name(directory) or (PLUGIN if directory.name == PLUGIN else directory.name)
+    return _manifest_name(directory) if directory.exists() else 'kit'
+
+
+def setup_plugin_dir(home, source):
+    """Setup only adopts the selected Kit source; old manifests require an update."""
+    target = plugin_dir(home)
+    if target.exists():
+        if target.resolve() != source.resolve():
+            raise ValueError(f'Bundle path {target} points to another checkout {target.resolve()}; expected {source.resolve()}; update the existing installation explicitly')
+        if _manifest_name(target) != 'kit':
+            raise ValueError(f'Legacy manifest at {target}; preserve it and update to Kit before setup (Autowork is unsupported)')
+    elif _manifest_name(source) != 'kit':
+        raise ValueError(f'Setup source {source} must declare Kit; update the source before installing')
+    return target
 
 
 class GitFailure(ValueError):
@@ -174,7 +200,8 @@ def managed_evidence(repo, profiles, upstream, *, admitted_head=None):
     if metadata.exists() and metadata.stat().st_uid != os.getuid():
         raise ValueError(f'Uncertain native install metadata ownership: {metadata}')
     records = json.loads(metadata.read_text()) if metadata.exists() else {}
-    record = records.get(PLUGIN) if isinstance(records, dict) else None
+    key = repo.name if isinstance(records, dict) and repo.name in records else _manifest_name(repo)
+    record = records.get(key) if isinstance(records, dict) else None
     if not isinstance(record, dict) or not _same_remote(str(record.get('source', '')), upstream):
         raise ValueError(f'Unregistered or untrusted source {repo}; preserve the checkout and use a reviewed native installation')
     head = git(repo, 'rev-parse', 'HEAD').decode().strip()
@@ -188,7 +215,7 @@ def managed_evidence(repo, profiles, upstream, *, admitted_head=None):
     if head != admitted_head and head != record.get('revision') and head not in tips:
         raise ValueError(f'Ahead/diverged local work or unproven HEAD in {repo}; preserve local commits before updating')
     return {'owner': name, 'home': str(home), 'metadata': {PLUGIN: record}, 'head': head,
-            'tracking_tips': tips, 'upstream': upstream}
+            'tracking_tips': tips, 'upstream': upstream, 'metadata_key': key}
 
 
 def safe_path(path):
@@ -262,6 +289,8 @@ def skill_destination(home, relative, roots):
 
 def prepare(source, profiles, *, upstream=UPSTREAM):
     """Fetch trusted main, then preflight ALL sources and destinations before writes."""
+    for _, home in profiles:
+        plugin_dir(home)
     sources = {}
     writes = []
     drift = []  # Legacy receipt key: profile edits are now merged into local_edits.
@@ -446,7 +475,9 @@ def finalize_profiles(source, root, profiles, retries=()):
         if not plugin.exists():
             plugin.parent.mkdir(parents=True, exist_ok=True)
             plugin.symlink_to(source, target_is_directory=True)
-        enable = subprocess.run(['hermes', '-p', name, 'plugins', 'enable', plugin_name(home)],
+        if plugin_name(home) != 'kit':
+            raise ValueError(f'Legacy manifest at {plugin}; update the source to Kit before activation')
+        enable = subprocess.run(['hermes', '-p', name, 'plugins', 'enable', 'kit'],
                                 env=env, timeout=120)
         final = subprocess.run(['hermes', '-p', name, 'kit', 'finalize',
                                 '--hermes-home', str(root), '--bundle-only'], env=env, timeout=120)
@@ -1301,14 +1332,18 @@ def bind_recovered_source(home, evidence, revision, stage):
         fcntl.flock(lock, fcntl.LOCK_EX)
         safe_path(path)
         records = json.loads(path.read_text())
-        current = records.get(PLUGIN)
+        key = evidence.get('metadata_key', PLUGIN)
+        native_key = _manifest_name(stage)
+        current = records.get(native_key)
         old = evidence['metadata'][PLUGIN]
         if not isinstance(current, dict):
             raise ValueError('Native install lost managed source metadata')
         if current != old and (current.get('revision') != revision
                 or current.get('source') not in (old['source'], stage.as_uri())):
             raise ValueError('Managed source metadata changed during recovery; preserve it and reconcile')
-        records[PLUGIN] = {**old, **current, 'source': old['source'], 'revision': revision}
+        records[native_key] = {**old, **current, 'source': old['source'], 'revision': revision}
+        if key != native_key:
+            records[key] = {**old, **current, 'source': old['source'], 'revision': revision}
         with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
             temporary = Path(stream.name)
             stream.write((json.dumps(records, indent=2) + '\n').encode())
@@ -1321,11 +1356,18 @@ def bind_recovered_source(home, evidence, revision, stage):
             raise ValueError('Managed source metadata readback failed')
 
 
-def recovery_consumers(root, profiles):
-    selected = {plugin_dir(home) for _, home in profiles}
-    targets = {plugin.resolve() for plugin in selected}
-    for plugin in [root / 'plugins/autowork', *root.glob('profiles/*/plugins/autowork')]:
-        if plugin not in selected and plugin.resolve() in targets:
+def recovery_consumers(root, profiles, *, pending=None):
+    selected = set()
+    for _, home in profiles:
+        slots = [p for p in plugin_slots(home) if p.exists() or p.is_symlink()]
+        if (pending and len(slots) == 1 and slots[0].is_symlink()
+                and slots[0].resolve() in pending):
+            selected.add(slots[0])  # journaled shared link, temporarily dangling during publication
+        else:
+            selected.add(plugin_dir(home))
+    targets = {plugin.resolve() for plugin in selected} | set(pending or ())
+    for plugin in consumer_slots(root):
+        if (plugin.exists() or plugin.is_symlink()) and plugin not in selected and plugin.resolve() in targets:
             raise ValueError(f'Unselected shared consumer {plugin}; reconcile ownership before recovery')
     for home in {root, *(home for _, home in profiles)}:
         pidfile = home / 'gateway.pid'
@@ -1353,11 +1395,12 @@ def recovery_consumers(root, profiles):
             raise ValueError(reason)
 
 
-def recovery_freshness(root, profiles, run):
-    recovery_consumers(root, profiles)
+def recovery_freshness(root, profiles, run, *, pending=None):
+    recovery_consumers(root, profiles, pending=pending)
     for name, home in profiles:
         row = run['profiles'][name]
-        plugin = plugin_dir(home)
+        plugin = (Path(row.get('plugin_path', str(home / 'plugins/autowork'))) if pending and name in run['managed']['shared']
+                  else plugin_dir(home))
         if name in run['managed']['shared']:
             if not plugin.is_symlink() or os.readlink(plugin) != row.get('original_link'):
                 raise ValueError('Shared consumer link changed since preflight')
@@ -1439,6 +1482,8 @@ def scoped_update(root, source, revision, names, python, *, check=False, _recove
     root = root_home(root)
     tree = source_tree(source, revision)
     profiles = selected_profiles(root, names)
+    for _, home in profiles:
+        plugin_dir(home)
     state = root / 'maintenance/toolset-update'
     if any(p.is_symlink() for p in (state, *state.parents)):
         raise ValueError('Symlinked updater state')
@@ -1478,7 +1523,17 @@ def scoped_update(root, source, revision, names, python, *, check=False, _recove
                 reason = active_consumers(home, name) if row.get('phase') != 'ready' else None
                 if reason:
                     raise ValueError(reason)
-                plugin = plugin_dir(home)
+                discovered = plugin_dir(home)
+                plugin = Path(row.get('plugin_path', str(discovered)))
+                if plugin not in plugin_slots(home):
+                    raise ValueError(f'Unsafe saved plugin path: {plugin}')
+                if discovered.exists() and discovered != plugin:
+                    # Native install may have committed before its result was journaled.
+                    if row.get('phase') != 'slot_saved':
+                        raise ValueError(f'Plugin slot changed: {discovered}; expected {plugin}')
+                    source_tree(discovered, revision)
+                    check_tree(discovered, tree)
+                row['plugin_path'] = str(plugin)
                 if any(p.is_symlink() for p in plugin.parents):
                     raise ValueError('Symlinked plugin parent')
                 original = backup / name / 'plugin'
@@ -1576,7 +1631,7 @@ def scoped_update(root, source, revision, names, python, *, check=False, _recove
                         if not shared:
                             metadata = home / 'plugins/.install-metadata.json'
                             safe_path(metadata)
-                            record = json.loads(metadata.read_text()).get(PLUGIN, {})
+                            record = json.loads(metadata.read_text()).get(_recovery['sources'][name].get('metadata_key', PLUGIN), {})
                             if (record.get('revision') != revision or record.get('source') !=
                                     _recovery['sources'][name]['metadata'][PLUGIN]['source']):
                                 raise ValueError('Completed recovery source binding changed')
@@ -1709,7 +1764,16 @@ def scoped_update(root, source, revision, names, python, *, check=False, _recove
                                     raise ValueError('Plugin slot changed during interrupted update')
                                 plugin.rename(original)
                             plugin.parent.mkdir(parents=True, exist_ok=True)
-                            native_call('install', home, stage, revision, python)
+                            installed = plugin_dir(home)
+                            if not installed.exists():
+                                native_call('install', home, stage, revision, python)
+                                installed = plugin_dir(home)
+                            source_tree(installed, revision)
+                            check_tree(installed, tree)
+                            if installed != plugin:
+                                if plugin.exists() or plugin.is_symlink():
+                                    raise ValueError(f'Plugin slot changed during native publication: {plugin}')
+                                installed.rename(plugin)
                             source_tree(plugin, revision)
                             check_tree(plugin, tree)
                         row['phase'] = 'installed'
@@ -1869,7 +1933,7 @@ def finish_ordinary_recovery(root, recovery):
         if name not in run['managed']['shared']:
             metadata = home / 'plugins/.install-metadata.json'
             safe_path(metadata)
-            record = json.loads(metadata.read_text()).get(PLUGIN, {})
+            record = json.loads(metadata.read_text()).get(run['managed']['sources'][name].get('metadata_key', PLUGIN), {})
             if record.get('revision') != run['revision'] or record.get('source') != run['managed']['sources'][name]['metadata'][PLUGIN]['source']:
                 raise ValueError('Final recovery source binding changed')
     status = 'updated' if plan['writes'] or any(row['before'] != row['after']
@@ -1877,6 +1941,40 @@ def finish_ordinary_recovery(root, recovery):
     run.update(ordinary_pending=False, status=status)
     save_transaction(receipt, run)
     return run
+
+
+def resume_native_slots(root, profiles, run, *, check=False):
+    """Finish an interrupted native publication before resolving shared physical links.
+
+    Native Hermes installs by manifest name. Only a journaled, byte-verified Kit
+    candidate may be returned to the saved legacy physical slot; no unknown output
+    or duplicate registration is moved or removed.
+    """
+    moves = []
+    for name, home in profiles:
+        row = run['profiles'].get(name, {})
+        if row.get('phase') != 'slot_saved' or name in run['managed']['shared']:
+            continue
+        target = Path(row.get('plugin_path', row.get('original_source') or str(home / 'plugins/autowork')))
+        candidate = home / 'plugins/kit'
+        if target not in plugin_slots(home):
+            raise ValueError(f'Unsafe saved plugin path: {target}')
+        if target == candidate or target.exists() or target.is_symlink() or not candidate.exists():
+            continue
+        if candidate.is_symlink() or any(p.is_symlink() for p in target.parents):
+            raise ValueError(f'Unsafe native publication path: {candidate}')
+        original = Path(run['backup']) / name / 'plugin'
+        source_tree(original, row['original_revision'])
+        check_tree(original, row['original_tree'])
+        source_tree(candidate, run['revision'])
+        check_tree(candidate, run['tree'])
+        moves.append((candidate, target))
+    if moves:
+        recovery_freshness(root, profiles, run, pending={target for _, target in moves})
+        if not check:
+            for candidate, target in moves:
+                candidate.rename(target)
+    return bool(moves)
 
 
 def automatic_recovery(root, profiles, *, plan=None, prior=None, check=False):
@@ -1890,6 +1988,10 @@ def automatic_recovery(root, profiles, *, plan=None, prior=None, check=False):
             raise ValueError('Unsafe recovery source record')
         if set(names) - {name for name, _ in profiles}:
             raise ValueError('Original recovery consumers are no longer selected; reconcile before retrying')
+        pending_slot = resume_native_slots(root, [(name, dict(profiles)[name]) for name in names], prior, check=check)
+        if pending_slot and check:
+            return {**prior, 'status': 'update_available',
+                    'action': 'Verified native publication awaits physical-slot restoration; rerun without --check to resume'}
         if not source.exists():
             if any(row.get('phase') for row in prior['profiles'].values()):
                 raise ValueError('Original recovery stage is missing after publication began')
@@ -1922,8 +2024,8 @@ def automatic_recovery(root, profiles, *, plan=None, prior=None, check=False):
         managed['ordinary'] = [name for name, _ in profiles if name not in names]
         # Existing but non-live/unselected profiles may also consume the canonical slot.
         selected = {plugin_dir(home) for name, home in profiles if name in names}
-        for plugin in [root / 'plugins/autowork', *root.glob('profiles/*/plugins/autowork')]:
-            if plugin not in selected and plugin.resolve() in recovering:
+        for plugin in consumer_slots(root):
+            if (plugin.exists() or plugin.is_symlink()) and plugin not in selected and plugin.resolve() in recovering:
                 raise ValueError(f'Unselected shared consumer {plugin}; reconcile its ownership before recovery')
         recovery_consumers(root, [(name, home) for name, home in profiles if name in names])
         if check:
@@ -2024,11 +2126,23 @@ def main(argv=None):
         return int(result['status'] == 'incomplete')
     live_profiles = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle').live_profiles
     root = root_home(args.hermes_home)
+    state_dir = root / 'maintenance/toolset-update'
+    try:
+        recovery_receipt = state_dir / 'recovery.json'
+        safe_path(recovery_receipt)
+        prior = json.loads(recovery_receipt.read_text()) if recovery_receipt.exists() else None
+        # Incomplete native publication is resolved under the transaction lock;
+        # its journal may account for temporarily dangling legacy consumers.
+        if not state_dir.exists() and (not prior or prior.get('status') != 'incomplete'):
+            for _, home in live_profiles(root):
+                plugin_dir(home)
+    except (ValueError, OSError) as error:
+        print(json.dumps({'status': 'incomplete', 'error': str(error)}, indent=2))
+        return 1
     if args.dry_run:
         print(json.dumps({'status': 'preview', 'profiles': [name for name, _ in live_profiles(root)],
                           'action': 'No network, staging or profile writes; rerun without --dry-run to update'}, indent=2))
         return 0
-    state_dir = root / 'maintenance/toolset-update'
     if not root.is_dir() or any(p.is_symlink() for p in (state_dir, state_dir.parent)):
         raise ValueError('Missing home or symlinked update state directory')
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -2059,6 +2173,14 @@ def main(argv=None):
             finish_restart(root, state_dir, locked=True)
         except (ValueError, OSError):
             pass
+        try:
+            profiles = live_profiles(root)
+            if not prior or prior.get('status') != 'incomplete':
+                for _, home in profiles:
+                    plugin_dir(home)
+        except (ValueError, OSError) as error:
+            print(json.dumps({'status': 'incomplete', 'error': str(error)}, indent=2))
+            return 1
         result = {'status': 'running', 'pid': os.getpid(), 'started_ns': time.time_ns(),
                   'mode': 'check' if args.check else 'update'}
         receipt = state_dir / 'latest.json'
@@ -2071,7 +2193,6 @@ def main(argv=None):
         save()
         try:
             source = _AUTOWORK_LAYOUT.root
-            profiles = live_profiles(root)
             recovery_receipt = state_dir / 'recovery.json'
             safe_path(recovery_receipt)
             prior = json.loads(recovery_receipt.read_text()) if recovery_receipt.exists() else None

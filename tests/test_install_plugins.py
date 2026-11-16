@@ -54,6 +54,89 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
     def calls(self):
         return self.log.read_text().splitlines() if self.log.exists() else []
 
+    def test_identity_matrix_before_any_component_mutation(self):
+        for case in ('canonical', 'legacy-kit', 'legacy-manifest', 'same-source', 'distinct-source', 'foreign', 'missing', 'malformed'):
+            with self.subTest(case=case):
+                plugins = self.hermes_root / 'profiles/coder/plugins'
+                if plugins.exists():
+                    shutil.rmtree(plugins)
+                plugins.mkdir()
+                if case in ('canonical', 'same-source', 'distinct-source'):
+                    (plugins / 'kit').symlink_to(self.repo)
+                if case in ('legacy-kit', 'same-source'):
+                    (plugins / 'autowork').symlink_to(self.repo)
+                elif case not in ('canonical',):
+                    legacy = plugins / 'autowork'
+                    legacy.mkdir()
+                    if case != 'missing':
+                        (legacy / 'plugin.yaml').write_text({
+                            'legacy-manifest': 'name: autowork\n',
+                            'distinct-source': 'name: kit\n',
+                            'foreign': 'name: other\n',
+                            'malformed': 'name: [kit]\n',
+                        }[case])
+                    (legacy / 'private-state').write_bytes(b'keep\x00evidence')
+                self.log.unlink(missing_ok=True)
+                result = self.run_installer('--setup')
+                if case in ('canonical', 'legacy-kit'):
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn('|-p coder plugins enable kit', '\n'.join(self.calls()))
+                    self.assertEqual((plugins / ('kit' if case == 'canonical' else 'autowork')).resolve(), self.repo)
+                    self.assertFalse((plugins / ('autowork' if case == 'canonical' else 'kit')).exists())
+                else:
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn(str(plugins), result.stderr)
+                    self.assertEqual(self.calls(), [], 'identity failure must precede every component mutation')
+                    if (plugins / 'autowork/private-state').exists():
+                        self.assertEqual((plugins / 'autowork/private-state').read_bytes(), b'keep\x00evidence')
+
+    def test_public_setup_entrypoint_preview_success_and_duplicate_failure(self):
+        copy_sources(self.repo, entries=('install-skills.sh',))
+        skill = self.repo / 'skills/demo'
+        skill.mkdir(parents=True)
+        (skill / 'SKILL.md').write_text('fixture skill\n')
+        runtime = self.root / 'hermes_cli/plugins.py'
+        runtime.parent.mkdir()
+        runtime.write_text('def inject_message(origin=None): pass\ndef register_skill(): pass\n')
+        # Native strict-YAML validation is a host boundary, not a test dependency.
+        validator = self.root / '.venv/bin/python'
+        validator.parent.mkdir(parents=True)
+        validator.write_text('#!/bin/sh\ncase "$2" in */src/autowork_runtime/install/preflight_config.py) ;; *) exit 99 ;; esac\n[ "$3" = --core ] || exit 99\n')
+        validator.chmod(0o755)
+        self.env['HOME'] = str(self.root)
+        command = ['bash', str(self.script), '--bundle-only', '--no-reload']
+        def run(*args):
+            return subprocess.run([*command, *args], cwd=self.root, env=self.env,
+                                  text=True, capture_output=True, timeout=30)
+        preview = run('--dry-run')
+        self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
+        self.assertIn('plugins/kit', preview.stdout)
+        self.assertEqual(self.calls(), [])
+        self.assertFalse((self.hermes_root / 'skills').exists())
+        result = run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Bundle setup complete', result.stdout)
+        for name, home in [('default', self.hermes_root),
+                           ('coder', self.hermes_root / 'profiles/coder'),
+                           ('research', self.hermes_root / 'profiles/research')]:
+            self.assertEqual((home / 'plugins/kit').resolve(), self.repo)
+            self.assertFalse((home / 'plugins/autowork').exists())
+            self.assertEqual((home / 'skills/demo/SKILL.md').read_text(), 'fixture skill\n')
+            self.assertIn(str(self.hermes_root) + f'|-p {name} kit finalize --hermes-home {self.hermes_root} --bundle-only --no-reload', self.calls())
+        self.assertFalse(any('enable autowork' in row for row in self.calls()))
+        legacy = self.hermes_root / 'profiles/coder/plugins/autowork'
+        legacy.symlink_to(self.repo)
+        self.log.unlink()
+        result = run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Duplicate Kit registrations', result.stdout)
+        self.assertIn('reconcile registrations', result.stdout)
+        self.assertEqual(self.calls(), [])
+        self.assertTrue(legacy.is_symlink())
+        # Owner resolves the duplicate registration, not its source or private state.
+        legacy.unlink()
+        self.assertEqual(run('--dry-run').returncode, 0)
+
     def test_profile_scopes_and_running_outside_repository(self):
         result = self.run_installer()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -200,8 +283,8 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
     def test_setup_applies_gateway_default_only_where_bundle_is_installed(self):
         self.manifest.write_text('https://hermes-agent.nousresearch.com/docs/plugins/example-plugin default profile only\n')
         plugin = self.hermes_root / 'profiles/coder/plugins/autowork'
-        plugin.mkdir(parents=True)
-        (plugin / 'plugin.yaml').write_text('name: autowork\n')
+        plugin.parent.mkdir(parents=True)
+        plugin.symlink_to(self.repo)
         result = self.run_installer('--setup')
         self.assertEqual(result.returncode, 0, result.stderr)
         for profile in ('coder', 'default'):
@@ -211,8 +294,8 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
     def test_setup_uses_each_installed_profiles_explicit_or_default_policy(self):
         self.manifest.write_text('https://hermes-agent.nousresearch.com/docs/plugins/example-plugin default profile only\n')
         plugin = self.hermes_root / 'profiles/coder/plugins/autowork'
-        plugin.mkdir(parents=True)
-        (plugin / 'plugin.yaml').write_text('name: autowork\n')
+        plugin.parent.mkdir(parents=True)
+        plugin.symlink_to(self.repo)
         (self.hermes_root / 'profiles/coder/config.yaml').write_text(
             'plugins:\n  entries:\n    kit:\n      settings:\n        runtime_policy: autonomous\n')
         (self.hermes_root / 'profiles/research/config.yaml').write_text(
@@ -242,8 +325,8 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
         for name, home in [('default', self.hermes_root),
                            ('coder', self.hermes_root / 'profiles/coder'),
                            ('research', self.hermes_root / 'profiles/research')]:
-            self.assertEqual((home / 'plugins/autowork').resolve(), self.repo)
-            self.assertIn(str(self.hermes_root) + f'|-p {name} plugins enable autowork', self.calls())
+            self.assertEqual((home / 'plugins/kit').resolve(), self.repo)
+            self.assertIn(str(self.hermes_root) + f'|-p {name} plugins enable kit', self.calls())
         self.assertFalse((self.hermes_root / 'profiles/deleted/plugins').exists())
         self.assertFalse((self.hermes_root / 'profiles/ghost/plugins').exists())
         self.assertFalse(any('plugins install' in c or 'skills install' in c for c in self.calls()))
@@ -264,7 +347,7 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
         calls = self.calls()
         for profile in ('default', 'coder', 'research'):
             prefix = str(self.hermes_root) + f'|-p {profile} '
-            enabled = calls.index(prefix + 'plugins enable autowork')
+            enabled = calls.index(prefix + 'plugins enable kit')
             for setting in ('plugins.entries.kit.allow_gateway_injection true',
                             'approvals.mode manual', 'approvals.destructive_slash_confirm true',
                             'approvals.mcp_reload_confirm true', 'agent.max_turns 90',
@@ -292,7 +375,7 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
             calls = self.calls()
             prefix = str(self.hermes_root) + '|-p '
             self.assertFalse([c for c in calls if c.startswith(prefix + 'coder config set')], calls)
-            self.assertIn(prefix + 'coder plugins enable autowork', calls)
+            self.assertIn(prefix + 'coder plugins enable kit', calls)
             for profile in ('default', 'research'):
                 for setting in ('plugins.entries.kit.allow_gateway_injection true',
                                 'approvals.mode manual', 'skills.platform_disabled {}'):

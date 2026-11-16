@@ -32,6 +32,16 @@ hermes -p PROFILE plugins disable kit
 hermes -p PROFILE plugins remove kit
 ```
 
+Fresh installs use `plugins/kit`. A verified older installation may still occupy
+`plugins/autowork` while its manifest declares Kit; do not infer the enable/removal
+identity from the directory name. Inspect the actual manifest and native inventory
+before removal. An old Autowork manifest is migration evidence, not a supported
+maintenance CLI. If both physical slots exist, stop and reconcile ownership rather
+than deleting either source or using reinstall as cleanup. Preserve
+`.toolset-imports.json`, journals, backups, tasks, attempts and worktrees; no runtime
+move/purge is part of Kit adoption. Actual native loader discovery of retained
+legacy physical slots remains separately unverified.
+
 These are Hermes' native removal commands. `plugins remove` also deletes the whole
 `plugins.entries.kit` entry, including that opt-out, so set the opt-out
 again before any later reinstall. Repeat for each profile you intend to remove. A shared gateway can still have loaded handlers: restart it through your

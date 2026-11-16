@@ -418,13 +418,18 @@ def hermes_home(hermes_args):
 
 
 def hermes_installed(hermes_args):
-    """The Hermes home when a profile already has its own Autowork plugin checkout (a
-    `hermes plugins install` clone): those are updated, not linked to this checkout."""
+    """Discover managed clones under either identity without duplicating installation."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('install_identity', ROOT / 'scripts/update_bundle.py')
+    updater = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(updater)
     home, _ = hermes_home(hermes_args)
-    for plugin in [home / 'plugins/autowork', *home.glob('profiles/*/plugins/autowork')]:
+    installed = False
+    for profile in (home, *home.glob('profiles/*')):
+        plugin = updater.plugin_dir(profile)
         if (plugin / '.git').exists() and plugin.resolve() != ROOT.resolve():
-            return home
-    return None
+            installed = True
+    return home if installed else None
 
 
 SETUP_ONLY = ('--bundle-only', '--no-reload', '--yes-deps')
@@ -432,7 +437,10 @@ SETUP_ONLY = ('--bundle-only', '--no-reload', '--yes-deps')
 
 def hermes_item(hermes_args):
     label = 'Hermes plugin + bundled Ponytail (every live profile)'
-    home = hermes_installed(hermes_args)
+    try:
+        home = hermes_installed(hermes_args)
+    except (ValueError, OSError) as error:
+        return Item('hermes', label, needs='hermes', refuse=str(error))
     if home:
         argv = [sys.executable, str(ROOT / 'scripts/update_bundle.py'), '--hermes-home', str(home)]
         # A Hermes profile that rewrites a skill file while the bundle writes it fails the

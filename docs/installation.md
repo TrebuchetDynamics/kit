@@ -245,6 +245,22 @@ skills, or `--no-reload` to explicitly defer gateway wiring. Dependency consent
 and native security scans still apply; a blocked dependency or failed readiness
 check returns nonzero and reports setup as incomplete.
 
+Fresh native/source installs and isolated registration probes use `plugins/kit`
+and enable `kit`; setup finalizes through `hermes -p PROFILE kit finalize`.
+Setup reuses a canonical link or a verified `plugins/autowork` link to the selected
+checkout **when its manifest already declares Kit**. A supported old Autowork
+manifest is migration input for an authorized normal update, not a plugin that
+fresh setup enables. Managed clones under either physical name route to the updater,
+not a second linked installation.
+
+Both slots are checked before setup mutates components. Two registrations refuse,
+even if they resolve to the same source; missing/malformed manifests and foreign
+sources also hold with path/source diagnostics. Preserve both paths and private
+state, reconcile the reported registration/ownership with its owner, then repeat
+the preview. No runtime directory move or purge is needed. Expected source-install
+symlinks remain supported; other existing safety checks still apply. `--dry-run`
+performs no installation, enablement or reload.
+
 Plugins are enabled per profile. For a named profile, use that profile's home for
 the link and `hermes -p PROFILE plugins enable kit` to enable it.
 `hermes kit setup` installs and enables the sources in
@@ -606,7 +622,8 @@ checkouts. A shallow checkout gets one trusted fetch with at most 1,000 addition
 history levels; if negative ancestry remains shallow, recovery defers rather than
 assuming a rewrite. Equal/fast-forward updates retain their normal path.
 
-Automatic recovery requires a same-user standalone `plugins/autowork` checkout,
+Automatic recovery requires a same-user standalone `plugins/kit` checkout (or a
+verified retained `plugins/autowork` physical slot),
 the expected plugin identity, a native `plugins/.install-metadata.json` record
 bound to the trusted upstream, and HEAD matching its saved installed revision or
 a trusted tracking tip captured **before fetch**. A clean tree or matching URL
@@ -619,8 +636,10 @@ The updater stages the exact trusted fetched main commit and reuses the scoped
 native transaction below: all selected consumers are preflighted and scanned,
 worker-handoff locks are held, the complete original checkout (including `.git`)
 is moved into an owned backup, and native installation publishes the staged local
-URI without force or enablement. Selected links to that canonical checkout remain
-links; their source is recovered once. Additional native metadata fields and other
+URI without force or enablement. When native admission uses the manifest-named Kit
+slot, the verified candidate returns to the journaled physical slot before readiness;
+interrupted publication retains its original backup and resumable evidence. Selected
+links to that canonical checkout remain links; their source is recovered once. Additional native metadata fields and other
 plugins' records are retained, and the bundle record keeps its trusted source
 binding. New unselected consumers or foreign source/profile edits on retry defer
 instead of becoming a new baseline.
@@ -656,8 +675,9 @@ native scanner acceptance, a live profile reinstall or Telegram delivery.
 
 ### Linked profiles and pinned clones
 
-A source install links each profile's `plugins/autowork` to the checkout, so
-the profile loads whatever that checkout holds at the next gateway restart,
+A fresh source install links each profile's `plugins/kit` to the checkout; verified
+legacy physical slots remain in place. Both names participate in shared-consumer
+and live-use protections. The profile loads whatever that checkout holds at the next gateway restart,
 including commits that were never released. A profile whose plugin is its own clone
 changes only when an update advances it.
 `hermes kit doctor --json` lists the linked profiles; nothing converts them
