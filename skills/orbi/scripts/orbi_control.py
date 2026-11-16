@@ -1036,12 +1036,22 @@ def locked(ctx, key):
     checked_path(path, 'lock file')
     file_identity(path)
     handle = path.open('a+')
+    failed = True
     try:
         fcntl.flock(handle, fcntl.LOCK_EX)
         yield
+        failed = False
     finally:
-        fcntl.flock(handle, fcntl.LOCK_UN)
-        handle.close()
+        try:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+            finally:
+                handle.close()
+        except OSError:
+            # Cleanup must not replace the original lifecycle failure. Closing
+            # the handle is still attempted even when explicit unlock fails.
+            if not failed:
+                raise
 
 
 def orbi(ctx, deployment, *argv, timeout=CHECK_TIMEOUT, allow_failure=False):
@@ -1196,7 +1206,7 @@ def scheduler_snapshot(ctx, deployment):
 def safe_scheduler_snapshot(ctx, deployment):
     try:
         return scheduler_snapshot(ctx, deployment)
-    except (ControlError, OSError, UnicodeError):
+    except (ControlError, OSError, UnicodeError, subprocess.SubprocessError):
         return unavailable_scheduler(deployment, 'scheduler evidence could not be read')
 
 
@@ -1595,97 +1605,136 @@ def start_plan(ctx, target):
     return source, provider
 
 
-def run_start_step(ctx, target, command, *args, steps, timeout=CHECK_TIMEOUT):
-    """Upstream may activate before failing; observe, never retry or roll back."""
-    try:
-        proc = orbi(ctx, target, command, '--config', str(target.config_path),
-                    *args, timeout=timeout, allow_failure=True)
-        if proc.returncode != 0:
-            raise ControlError(command.replace('-', '_') + '_failed',
-                               f'upstream `orbi {command}` failed')
-    except ControlError as exc:
-        raise ControlError(
-            exc.code, f'upstream `orbi {command}` did not complete successfully; '
-            'timers may already be activated and workers may be running',
-            fix=f'inspect `/orbi status` and the failed {command} before recovery; '
-                'do not repeat activation unchanged or stop active workers',
-            mutated=True,
-            evidence={'activation': 'possible',
-                      'scheduler': safe_scheduler_snapshot(ctx, target),
-                      'steps': [*steps, {'step': command, 'status': 'failed',
-                                         'error': exc.code}]}) from exc
+def lifecycle_failure(ctx, target, error, *, target_path, steps, current, mutated, evidence):
+    """Retain completed work; recovery is observation only, never compensation."""
+    if isinstance(error, ControlError):
+        exc = error
+    elif isinstance(error, UnicodeError):
+        exc = ControlError('file_encoding_invalid',
+                           'lifecycle input is not valid UTF-8 (details withheld)',
+                           fix='inspect and repair file encoding privately; preserve recovery inputs')
+    elif isinstance(error, OSError):
+        exc = ControlError('filesystem_error',
+                           'lifecycle filesystem operation failed (details withheld)',
+                           fix='inspect deployment-local permissions and files privately; '
+                               'preserve recovery inputs and repair the cause')
+    else:
+        exc = ControlError('command_failed', 'lifecycle subprocess failed (details withheld)',
+                           fix='inspect the failed command privately and repair the cause')
+    exc.mutated = exc.mutated or mutated
+    snapshot = (safe_scheduler_snapshot(ctx, target) if mutated and target else
+                exc.evidence.get('scheduler', {'state': 'unavailable'}))
+    exc.evidence = {**exc.evidence, **evidence,
+                    'target': str(target.config_path) if target else target_path,
+                    'deployment': ({'config': str(target.config_path),
+                                    'unit_name': target.unit_name, 'pin': target.pin}
+                                   if target else None),
+                    'original_error': exc.code, 'scheduler': snapshot,
+                    'steps': [*steps, {**current, 'status': 'failed', 'error': exc.code}]}
+    if evidence.get('activation') == 'possible':
+        exc.message += '; timers may already be activated and workers may be running'
+    exc.fix = (exc.fix + '; ' if exc.fix else '') + (
+        'inspect `/orbi status` and the failed step before deliberate recovery; '
+        'do not repeat activation or a timeout unchanged, or stop active workers')
+    return exc
+
+
+def run_start_step(ctx, target, command, *args, timeout=CHECK_TIMEOUT):
+    proc = orbi(ctx, target, command, '--config', str(target.config_path),
+                *args, timeout=timeout, allow_failure=True)
+    if proc.returncode != 0:
+        raise ControlError(command.replace('-', '_') + '_failed',
+                           f'upstream `orbi {command}` failed',
+                           fix=f'inspect the failed {command} privately')
 
 
 def command_start(ctx, args):
-    repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
-    target = select_target(ctx, repo, args.config, require=True)
-    validate_target(target, repo)
-    require_unit_ownership(ctx, target)
-    _source, provider = start_plan(ctx, target)
-    report = new_deployment_report(target, provider)
-    report['source'] = _source['state']
-    if args.dry_run:
-        snapshot = scheduler_snapshot(ctx, target)
-        if snapshot['state'] != 'ok':
-            raise ControlError('scheduler_unavailable',
-                               f"cannot read the target scheduler: {snapshot.get('reason')}",
-                               fix='verify the systemd user session, then rerun')
-        pending = [f'{target.prefix}@{index}.timer'
-                   for index in range(1, target.max_concurrency + 1)
-                   if snapshot['timers'].get(f'{target.prefix}@{index}.timer', {}).get('active')
-                   != 'active']
-        live = [name for name, item in snapshot['services'].items()
-                if item['state'] in ACTIVE_STATES]
-        steps = [{'step': 'reuse_existing_deployment', 'status': 'ok'},
-                 {'step': 'activate_timers', 'status': 'planned',
-                  'timers': pending},
-                 {'step': 'first_tick', 'status': 'planned',
-                  'mode': 'already-active' if live else 'requested'}]
-        return {'action': 'start', 'platform': ctx.platform, 'status': 'planned',
-                'dry_run': True, 'repo': repo.full, 'deployment': report,
-                'steps': steps, 'activated': False, 'scheduler': snapshot,
-                'first_tick': 'already-active' if live else 'planned'}
-    steps = [{'step': 'reuse_existing_deployment', 'status': 'ok'}]
-    with locked(ctx, target.config_path):
-        validate_deployment_paths(target)
-        run_start_step(ctx, target, 'setup', '--repo', repo.full, steps=steps)
-        steps.append({'step': 'upstream_setup', 'status': 'ok'})
-        run_start_step(ctx, target, 'install-units', steps=steps, timeout=MUTATION_TIMEOUT)
-        steps.append({'step': 'install_units', 'status': 'ok'})
-        snapshot = scheduler_snapshot(ctx, target)
-        if snapshot['state'] != 'ok':
-            raise ControlError('scheduler_unavailable',
-                               f"cannot read the target scheduler: {snapshot.get('reason')}",
-                               fix='verify the systemd user session, then rerun',
-                               mutated=True)
-        activated = []
-        for index in range(1, target.max_concurrency + 1):
-            timer = f'{target.prefix}@{index}.timer'
-            item = snapshot['timers'].get(timer)
-            if item and item['active'] == 'active':
-                steps.append({'step': 'activate_timer', 'unit': timer,
-                              'status': 'already-active'})
-                continue
-            ctx.run(['systemctl', '--user', 'enable', '--now', timer],
-                    timeout=MUTATION_TIMEOUT)
-            activated.append(timer)
-            steps.append({'step': 'activate_timer', 'unit': timer, 'status': 'enabled'})
-        live = [name for name, item in snapshot['services'].items()
-                if item['state'] in ACTIVE_STATES]
-        if live:
-            first_tick = 'already-active'
-            state = 'already-running'
-            steps.append({'step': 'first_tick', 'status': 'already-active'})
-        else:
-            ctx.run(['systemctl', '--user', 'start',
-                     f'{target.prefix}@1.service'], timeout=MUTATION_TIMEOUT)
-            first_tick = 'requested'
-            state = 'started'
-            steps.append({'step': 'first_tick', 'status': 'requested'})
-    return {'action': 'start', 'platform': ctx.platform, 'status': state,
-            'dry_run': False, 'repo': repo.full, 'deployment': report,
-            'steps': steps, 'activated': bool(activated) or state == 'started',
-            'first_tick': first_tick}
+    target = None
+    steps, activated = [], []
+    mutated, activation = False, 'none'
+    current = {'step': 'preflight', 'mutation': 'none'}
+    try:
+        repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
+        target = select_target(ctx, repo, args.config, require=True)
+        validate_target(target, repo)
+        require_unit_ownership(ctx, target)
+        _source, provider = start_plan(ctx, target)
+        report = new_deployment_report(target, provider)
+        report['source'] = _source['state']
+        if args.dry_run:
+            snapshot = scheduler_snapshot(ctx, target)
+            if snapshot['state'] != 'ok':
+                raise ControlError('scheduler_unavailable',
+                                   f"cannot read the target scheduler: {snapshot.get('reason')}",
+                                   fix='verify the systemd user session, then rerun')
+            pending = [f'{target.prefix}@{index}.timer'
+                       for index in range(1, target.max_concurrency + 1)
+                       if snapshot['timers'].get(f'{target.prefix}@{index}.timer', {}).get('active')
+                       != 'active']
+            live = [name for name, item in snapshot['services'].items()
+                    if item['state'] in ACTIVE_STATES]
+            steps = [{'step': 'reuse_existing_deployment', 'status': 'ok'},
+                     {'step': 'activate_timers', 'status': 'planned',
+                      'timers': pending},
+                     {'step': 'first_tick', 'status': 'planned',
+                      'mode': 'already-active' if live else 'requested'}]
+            return {'action': 'start', 'platform': ctx.platform, 'status': 'planned',
+                    'dry_run': True, 'repo': repo.full, 'deployment': report,
+                    'steps': steps, 'activated': False, 'scheduler': snapshot,
+                    'first_tick': 'already-active' if live else 'planned'}
+        steps = [{'step': 'reuse_existing_deployment', 'status': 'ok'}]
+        current, mutated = {'step': 'lock', 'mutation': 'possible'}, True
+        with locked(ctx, target.config_path):
+            steps.append({'step': 'lock', 'status': 'ok', 'mutation': 'completed'})
+            current = {'step': 'recheck_paths', 'mutation': 'none'}
+            validate_deployment_paths(target)
+            current, activation = {'step': 'setup', 'mutation': 'possible'}, 'possible'
+            run_start_step(ctx, target, 'setup', '--repo', repo.full)
+            steps.append({'step': 'upstream_setup', 'status': 'ok'})
+            current = {'step': 'install-units', 'mutation': 'possible'}
+            run_start_step(ctx, target, 'install-units', timeout=MUTATION_TIMEOUT)
+            steps.append({'step': 'install_units', 'status': 'ok'})
+            current = {'step': 'observe_scheduler', 'mutation': 'none'}
+            snapshot = scheduler_snapshot(ctx, target)
+            if snapshot['state'] != 'ok':
+                raise ControlError('scheduler_unavailable',
+                                   f"cannot read the target scheduler: {snapshot.get('reason')}",
+                                   fix='verify the systemd user session')
+            for index in range(1, target.max_concurrency + 1):
+                timer = f'{target.prefix}@{index}.timer'
+                item = snapshot['timers'].get(timer)
+                if item and item['active'] == 'active':
+                    steps.append({'step': 'activate_timer', 'unit': timer,
+                                  'status': 'already-active'})
+                    continue
+                current = {'step': 'activate_timer', 'unit': timer, 'mutation': 'possible'}
+                ctx.run(['systemctl', '--user', 'enable', '--now', timer],
+                        timeout=MUTATION_TIMEOUT)
+                activated.append(timer)
+                steps.append({'step': 'activate_timer', 'unit': timer, 'status': 'enabled'})
+            live = [name for name, item in snapshot['services'].items()
+                    if item['state'] in ACTIVE_STATES]
+            if live:
+                first_tick = 'already-active'
+                state = 'already-running'
+                steps.append({'step': 'first_tick', 'status': 'already-active'})
+            else:
+                service = f'{target.prefix}@1.service'
+                current = {'step': 'first_tick', 'unit': service, 'mutation': 'possible'}
+                ctx.run(['systemctl', '--user', 'start', service], timeout=MUTATION_TIMEOUT)
+                first_tick = 'requested'
+                state = 'started'
+                steps.append({'step': 'first_tick', 'status': 'requested'})
+            current = {'step': 'release_lock', 'mutation': 'possible'}
+        return {'action': 'start', 'platform': ctx.platform, 'status': state,
+                'dry_run': False, 'repo': repo.full, 'deployment': report,
+                'steps': steps, 'activated': bool(activated) or state == 'started',
+                'first_tick': first_tick}
+    except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
+        exc = lifecycle_failure(ctx, target, error, target_path=args.config, steps=steps,
+                                current=current, mutated=mutated,
+                                evidence={'activation': activation, 'activated_timers': activated})
+        raise exc from (error if exc is not error else None)
 
 
 def owned_timers(ctx, target, snapshot):
@@ -1707,47 +1756,60 @@ def pending_services(ctx, target):
 
 
 def command_stop(ctx, args):
-    repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
-    target = select_target(ctx, repo, args.config, require=True)
-    validate_target(target, repo)
-    require_unit_ownership(ctx, target)
-    snapshot = scheduler_snapshot(ctx, target)
-    if snapshot['state'] != 'ok':
-        raise ControlError('scheduler_unavailable',
-                           f"cannot read the target scheduler: {snapshot.get('reason')}",
-                           fix='verify the systemd user session, then rerun')
-    owned = owned_timers(ctx, target, snapshot)
-    if args.dry_run:
-        names = [timer for timer, _ in owned]
-        pending = pending_services(ctx, target)
-        return {'action': 'stop', 'platform': ctx.platform, 'status': 'planned',
-                'dry_run': True, 'repo': repo.full,
+    target = None
+    steps, disabled, pending = [], [], []
+    mutated = False
+    current = {'step': 'preflight', 'mutation': 'none'}
+    try:
+        repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
+        target = select_target(ctx, repo, args.config, require=True)
+        validate_target(target, repo)
+        require_unit_ownership(ctx, target)
+        snapshot = scheduler_snapshot(ctx, target)
+        if snapshot['state'] != 'ok':
+            raise ControlError('scheduler_unavailable',
+                               f"cannot read the target scheduler: {snapshot.get('reason')}",
+                               fix='verify the systemd user session, then rerun')
+        owned = owned_timers(ctx, target, snapshot)
+        if args.dry_run:
+            names = [timer for timer, _ in owned]
+            pending = pending_services(ctx, target)
+            return {'action': 'stop', 'platform': ctx.platform, 'status': 'planned',
+                    'dry_run': True, 'repo': repo.full,
+                    'deployment': {'config': str(target.config_path),
+                                   'unit_name': target.unit_name, 'pin': target.pin},
+                    'disabled_timers': names, 'pending_services': pending,
+                    'steps': [{'step': 'disable_target_timers', 'status': 'planned',
+                               'timers': names}]}
+        current, mutated = {'step': 'lock', 'mutation': 'possible'}, True
+        with locked(ctx, target.config_path):
+            steps.append({'step': 'lock', 'status': 'ok', 'mutation': 'completed'})
+            for timer, item in owned:
+                current = {'step': 'disable_timer', 'unit': timer, 'mutation': 'possible'}
+                ctx.run(['systemctl', '--user', 'disable', '--now', timer],
+                        timeout=MUTATION_TIMEOUT)
+                disabled.append(timer)
+                steps.append({'step': 'disable_timer', 'unit': timer, 'status': 'disabled'})
+            current = {'step': 'observe_drain', 'mutation': 'none'}
+            pending = pending_services(ctx, target)
+            if any(item['state'] not in DRAIN_STATES for item in pending):
+                raise ControlError(
+                    'scheduler_unavailable', 'timers were disabled but worker drain is unverified',
+                    fix='inspect service states with `/orbi status`; do not stop active workers')
+            current = {'step': 'release_lock', 'mutation': 'possible'}
+        state = 'draining' if pending else 'stopped'
+        return {'action': 'stop', 'platform': ctx.platform, 'status': state,
+                'dry_run': False, 'repo': repo.full,
                 'deployment': {'config': str(target.config_path),
                                'unit_name': target.unit_name, 'pin': target.pin},
-                'disabled_timers': names, 'pending_services': pending,
-                'steps': [{'step': 'disable_target_timers', 'status': 'planned',
-                           'timers': names}]}
-    disabled = []
-    with locked(ctx, target.config_path):
-        for timer, item in owned:
-            ctx.run(['systemctl', '--user', 'disable', '--now', timer],
-                    timeout=MUTATION_TIMEOUT)
-            disabled.append(timer)
-        pending = pending_services(ctx, target)
-    if any(item['state'] not in DRAIN_STATES for item in pending):
-        raise ControlError(
-            'scheduler_unavailable', 'timers were disabled but worker drain is unverified',
-            fix='inspect service states with `/orbi status`; do not stop active workers',
-            mutated=bool(disabled),
-            evidence={'disabled_timers': disabled, 'pending_services': pending})
-    state = 'draining' if pending else 'stopped'
-    return {'action': 'stop', 'platform': ctx.platform, 'status': state,
-            'dry_run': False, 'repo': repo.full,
-            'deployment': {'config': str(target.config_path),
-                           'unit_name': target.unit_name, 'pin': target.pin},
-            'disabled_timers': disabled, 'pending_services': pending,
-            'steps': [{'step': 'disable_target_timers', 'status': 'ok',
-                       'timers': disabled}]}
+                'disabled_timers': disabled, 'pending_services': pending,
+                'steps': [{'step': 'disable_target_timers', 'status': 'ok',
+                           'timers': disabled}]}
+    except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
+        exc = lifecycle_failure(ctx, target, error, target_path=args.config, steps=steps,
+                                current=current, mutated=mutated,
+                                evidence={'disabled_timers': disabled, 'pending_services': pending})
+        raise exc from (error if exc is not error else None)
 
 
 def flatten(value, prefix=''):
@@ -1783,7 +1845,8 @@ def render_error(ctx, action, exc, json_mode):
     if json_mode:
         ctx.out.write(json.dumps(document, indent=2) + '\n')
     else:
-        ctx.err.write(f'error={exc.code} message={exc.message} fix={exc.fix}\n')
+        ctx.err.write(f'error={exc.code} message={exc.message} fix={exc.fix} '
+                      f'mutated={exc.mutated}\n')
         for line in flatten(exc.evidence):
             ctx.err.write(line + '\n')
 
@@ -1830,7 +1893,9 @@ def command_help(ctx, args):
             'exit': 'Exit 0 means success or help; a nonzero exit reports an error, '
                     'not whether a write occurred.',
             'mutated': 'error.mutated, not the exit code, reports actual or possible writes, '
-                       'including locks; inspect steps and actual files before recovery (use --json).',
+                       'including locks (text: mutated=True/False). Start/stop errors retain '
+                       'completed/failed steps, target units and a read-only scheduler snapshot '
+                       '(or unavailable); inspect status and actual files before deliberate recovery.',
             'code': 'error.code classifies the failure; codes are owned by the raising code.',
             'fix': 'error.fix gives the repair action; unknown actions point to /orbi help.',
         },
@@ -1851,6 +1916,10 @@ def command_help(ctx, args):
             'Setup activated=false means no activation invoked here, not proof an existing '
             'scheduler is inactive. Scheduler observations are separate. A killed process cannot '
             'emit a receipt; infer retry safety from actual files. Never retry a timeout unchanged.',
+            'Start/stop can fail after partial application. A failed mutation is possible, '
+            'not completed; confirmed timer lists exclude failed attempts. Start activation=possible '
+            'means timers or workers may already run; activation=none can still include lock writes. '
+            'Never retry unchanged, compensate with enable/disable, or stop workers after failure.',
             'Status is read-only. Only setup stages source/config; only start/stop touch '
             'the scheduler. Dry-run performs no writes.',
             'Not an executor or scheduler: no tick, issue claim, review or merge.',

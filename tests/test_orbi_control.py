@@ -6,6 +6,7 @@ scheduler, credentials or host deployment is touched. The fixture deployment
 "A" stands for an unrelated running deployment that every scenario must
 preserve.
 """
+import contextlib
 import importlib.util
 import io
 import json
@@ -301,8 +302,10 @@ class Harness:
         return rules
 
     def run(self, action, *, platform='linux', dry_run=False, env=None, config=None,
-            options=(), failure=None):
-        argv = [action, '--repo-dir', str(self.repo), '--json', *options]
+            options=(), failure=None, json_mode=True):
+        argv = [action, '--repo-dir', str(self.repo), *options]
+        if json_mode:
+            argv.append('--json')
         if config is not None:
             argv.extend(['--config', str(config)])
         if dry_run:
@@ -327,7 +330,9 @@ class Harness:
                 code = invoke()
         else:
             code = invoke()
-        document = json.loads(out.getvalue()) if out.getvalue().strip() else None
+        document = out.getvalue()
+        if json_mode:
+            document = json.loads(document) if document.strip() else None
         return code, document, err.getvalue()
 
     def run_external(self, executable, env_overrides, *, refresh=False):
@@ -1612,6 +1617,302 @@ class RuntimeIsolationTests(unittest.TestCase):
                     self.assertEqual(snapshot(self.a['deploy']), self.a_snapshot)
 
 
+class PartialLifecycleReceiptTests(unittest.TestCase):
+    def setUp(self):
+        self.h = LifecycleSequenceTests.fresh(self)
+        self.prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        self.config = self.h.deploy / 'orbi.toml'
+        self.config.write_text(self.config.read_text().replace('max_concurrency = 1',
+                                                             'max_concurrency = 2'))
+        self.h.env['PRIVATE_SENTINEL'] = SECRET
+
+    def mutations(self):
+        return [c['argv'] for c in self.h.calls() if c['tool'] == 'systemctl'
+                and set(c['argv']) & {'enable', 'disable', 'start', 'stop', 'kill', 'restart'}]
+
+    def bounded_run(self, failed):
+        original = helper.Context.run
+
+        def run(ctx, argv, **kwargs):
+            if [str(part) for part in argv] == ['systemctl', *failed]:
+                kwargs['timeout'] = 0.2
+            return original(ctx, argv, **kwargs)
+        return mock.patch.object(helper.Context, 'run', run)
+
+    def assert_receipt(self, doc, code, step, unit, completed):
+        self.assertEqual(doc['error']['code'], code)
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(doc['target'], str(self.config))
+        self.assertEqual(doc['deployment']['unit_name'], helper.derive_unit_name(REPO))
+        self.assertEqual(doc['original_error'], code)
+        self.assertEqual(doc['steps'][-1], {'step': step, 'unit': unit,
+                                         'status': 'failed', 'error': code,
+                                         'mutation': 'possible'})
+        self.assertEqual(doc[completed[0]], completed[1])
+        self.assertIn('/orbi status', doc['error']['fix'])
+        self.assertNotIn('evidence', doc['error'])
+        self.assertNotIn(SECRET, json.dumps(doc))
+
+    def test_partial_disable_timeout_and_exit_receipts(self):
+        for failed_index in (1, 2):
+            for failure in ('exit', 'timeout'):
+                for json_mode in (True, False):
+                    with self.subTest(index=failed_index, failure=failure, json=json_mode):
+                        timers = [f'{self.prefix}@{i}.timer' for i in range(1, failed_index + 1)]
+                        failed = ['--user', 'disable', '--now', timers[-1]]
+                        self.h.rules({'tool': 'systemctl', 'argv_contains': ['disable', timers[-1]],
+                                      'exit': 7, 'stderr': SECRET,
+                                      'sleep': 2 if failure == 'timeout' else 0},
+                                     *self.h.scheduler_rules(timers={i: 'active' for i in range(1, 6)},
+                                                             enabled={i: True for i in range(1, 6)}))
+                        self.h.clear_calls()
+                        with self.bounded_run(failed):
+                            code, doc, err = self.h.run('stop', json_mode=json_mode)
+                        expected = 'command_timeout' if failure == 'timeout' else 'command_failed'
+                        self.assertEqual(code, 1)
+                        self.assertEqual(self.mutations(), [['--user', 'disable', '--now', t]
+                                                           for t in timers])
+                        if json_mode:
+                            self.assert_receipt(doc, expected, 'disable_timer', timers[-1],
+                                                ('disabled_timers', timers[:-1]))
+                            self.assertEqual(doc['scheduler']['state'], 'ok')
+                            self.assertTrue(doc['scheduler']['timers'][timers[-1]]['enabled'])
+                        else:
+                            self.assertIn('error=' + expected, err)
+                            self.assertIn('mutated=True', err)
+                            self.assertIn('target=' + str(self.config), err)
+                            self.assertIn('unit=' + timers[-1], err)
+                            self.assertIn('disabled_timers=' + ','.join(timers[:-1]) + '\n', err)
+                            self.assertIn('mutation=possible', err)
+                            self.assertNotIn(SECRET, err)
+                        self.assertEqual(snapshot(self.h.a['deploy']), self.h.a['snapshot'])
+
+    def test_start_direct_failures_retain_upstream_and_completed_timers(self):
+        for failed_step in ('enable_first', 'enable_later', 'first_tick'):
+            for failure in ('exit', 'timeout', 'snapshot_unavailable'):
+                with self.subTest(step=failed_step, failure=failure):
+                    timers = [f'{self.prefix}@{i}.timer' for i in (1, 2)]
+                    service = f'{self.prefix}@1.service'
+                    index = 1 if failed_step == 'enable_first' else 2
+                    failed_unit = service if failed_step == 'first_tick' else timers[index - 1]
+                    failed = (['--user', 'start', service] if failed_step == 'first_tick'
+                              else ['--user', 'enable', '--now', failed_unit])
+                    marker = self.h.root / 'failed'
+                    marker.unlink(missing_ok=True)
+                    self.h.rules({'tool': 'systemctl', 'argv_contains': failed,
+                                  'exit': 7, 'stderr': SECRET, 'write': {str(marker): 'possible'},
+                                  'sleep': 2 if failure == 'timeout' else 0},
+                                 *([{'tool': 'systemctl', 'argv_contains': ['show'],
+                                     'if_exists': str(marker), 'exit': 1, 'stderr': SECRET}]
+                                   if failure == 'snapshot_unavailable' else []),
+                                 *self.h.scheduler_rules())
+                    self.h.clear_calls()
+                    with self.bounded_run(failed):
+                        code, doc, err = self.h.run('start')
+                    self.assertEqual(code, 1, err)
+                    expected = 'command_timeout' if failure == 'timeout' else 'command_failed'
+                    completed = timers if failed_step == 'first_tick' else timers[:index - 1]
+                    self.assert_receipt(doc, expected,
+                                        'first_tick' if failed_step == 'first_tick' else 'activate_timer',
+                                        failed_unit, ('activated_timers', completed))
+                    self.assertEqual(doc['activation'], 'possible')
+                    self.assertIn('may already be activated', doc['error']['message'])
+                    self.assertEqual([s['step'] for s in doc['steps'][:4]],
+                                     ['reuse_existing_deployment', 'lock', 'upstream_setup', 'install_units'])
+                    self.assertEqual(self.mutations(),
+                                     [['--user', 'enable', '--now', t] for t in completed] + [failed])
+                    commands = [c['argv'][0] for c in self.h.calls() if c['tool'] == 'orbi'
+                                and c['argv'][0] in {'setup', 'install-units'}]
+                    self.assertEqual(commands, ['setup', 'install-units'])
+                    mutations = self.mutations()
+                    operations = [(c['tool'], c['argv'][0] if c['tool'] == 'orbi' else c['argv'])
+                                  for c in self.h.calls()
+                                  if (c['tool'] == 'orbi' and c['argv'][0] in {'setup', 'install-units'})
+                                  or (c['tool'] == 'systemctl' and c['argv'] in mutations)]
+                    self.assertEqual(operations, [('orbi', 'setup'), ('orbi', 'install-units')]
+                                     + [('systemctl', argv) for argv in mutations])
+                    if failure == 'snapshot_unavailable':
+                        self.assertEqual(doc['scheduler']['state'], 'unavailable')
+
+    def test_post_activation_observation_and_failed_recovery_snapshot(self):
+        marker = self.h.root / 'installed'
+        self.h.rules({'tool': 'orbi', 'argv_contains': ['install-units'],
+                      'write': {str(marker): 'installed'}},
+                     {'tool': 'systemctl', 'argv_contains': ['show'],
+                      'if_exists': str(marker), 'exit': 1, 'stderr': SECRET},
+                     *self.h.scheduler_rules())
+        code, doc, err = self.h.run('start')
+        self.assertEqual(code, 1, err)
+        self.assertEqual(doc['error']['code'], 'scheduler_unavailable')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(doc['activation'], 'possible')
+        self.assertEqual(doc['steps'][-1]['step'], 'observe_scheduler')
+        self.assertEqual(doc['steps'][-1]['mutation'], 'none')
+        self.assertIn({'step': 'install_units', 'status': 'ok'}, doc['steps'])
+        self.assertEqual(doc['scheduler']['state'], 'unavailable')
+        self.assertEqual(self.mutations(), [])
+        self.assertNotIn(SECRET, json.dumps(doc))
+
+    def test_lock_only_and_release_errors_are_structured_and_redacted(self):
+        original = helper.locked
+        for action in ('start', 'stop'):
+            for phase in ('acquire', 'release'):
+                with self.subTest(action=action, phase=phase):
+                    self.h.rules(*self.h.scheduler_rules())
+                    self.h.clear_calls()
+
+                    @contextlib.contextmanager
+                    def broken_lock(ctx, key):
+                        with original(ctx, key):
+                            if phase == 'acquire':
+                                raise PermissionError(SECRET)
+                            yield
+                            raise OSError(SECRET)
+
+                    with mock.patch.object(helper, 'locked', broken_lock):
+                        code, doc, err = self.h.run(action)
+                    self.assertEqual(code, 1, err)
+                    self.assertEqual(doc['error']['code'], 'filesystem_error')
+                    self.assertTrue(doc['error']['mutated'])
+                    self.assertEqual(doc['steps'][-1]['step'],
+                                     'lock' if phase == 'acquire' else 'release_lock')
+                    self.assertEqual(doc['target'], str(self.config))
+                    self.assertNotIn(SECRET, json.dumps(doc))
+                    if phase == 'acquire':
+                        self.assertEqual(self.mutations(), [])
+                    if action == 'start':
+                        self.assertEqual(doc['activation'], 'none' if phase == 'acquire' else 'possible')
+
+    def test_unlock_failure_does_not_replace_failed_timer_operation(self):
+        original_flock = helper.fcntl.flock
+        handles = []
+
+        def broken_unlock(handle, operation):
+            if operation == helper.fcntl.LOCK_UN:
+                handles.append(handle)
+                raise OSError(SECRET)
+            return original_flock(handle, operation)
+
+        for action, operation, step, completed_key in (
+                ('start', 'enable', 'activate_timer', 'activated_timers'),
+                ('stop', 'disable', 'disable_timer', 'disabled_timers')):
+            for failure in ('exit', 'timeout'):
+                with self.subTest(action=action, failure=failure):
+                    timers = [f'{self.prefix}@{i}.timer' for i in (1, 2)]
+                    failed = ['--user', operation, '--now', timers[-1]]
+                    self.h.rules({'tool': 'systemctl', 'argv_contains': failed,
+                                  'exit': 7, 'stderr': SECRET,
+                                  'sleep': 2 if failure == 'timeout' else 0},
+                                 *self.h.scheduler_rules())
+                    self.h.clear_calls()
+                    with mock.patch.object(helper.fcntl, 'flock', broken_unlock), \
+                            self.bounded_run(failed):
+                        try:
+                            code, doc, err = self.h.run(action)
+                        finally:
+                            # Close even on the red path: a retained traceback can
+                            # otherwise hold the lock and block the next subtest.
+                            closed = bool(handles) and all(h.closed for h in handles)
+                            for handle in handles:
+                                handle.close()
+                            handles.clear()
+                    self.assertEqual(code, 1, err)
+                    expected = 'command_timeout' if failure == 'timeout' else 'command_failed'
+                    self.assert_receipt(doc, expected, step, timers[-1],
+                                        (completed_key, timers[:-1]))
+                    self.assertTrue(closed, 'lock handle must close even if unlock fails')
+                    self.assertEqual(self.mutations(),
+                                     [['--user', operation, '--now', t] for t in timers])
+                    self.assertNotIn(SECRET, err)
+
+    def test_preflight_filesystem_and_dry_run_errors_remain_mutation_free(self):
+        for action in ('start', 'stop'):
+            for dry_run in (False, True):
+                with self.subTest(action=action, dry_run=dry_run):
+                    self.h.clear_calls()
+                    before = snapshot(self.h.home)
+                    with mock.patch.object(helper, 'require_unit_ownership',
+                                           side_effect=PermissionError(SECRET)):
+                        code, doc, err = self.h.run(action, dry_run=dry_run)
+                    self.assertEqual(code, 1, err)
+                    self.assertFalse(doc['error']['mutated'])
+                    self.assertEqual(doc['error']['code'], 'filesystem_error')
+                    self.assertNotIn(SECRET, json.dumps(doc))
+                    self.assertEqual(snapshot(self.h.home), before)
+                    self.assertEqual(self.mutations(), [])
+
+    def test_observation_exceptions_and_unreadable_recovery_keep_primary_error(self):
+        original = helper.scheduler_snapshot
+        for action in ('start', 'stop'):
+            for kind in ('control', 'subprocess'):
+                with self.subTest(action=action, kind=kind):
+                    marker = self.h.root / 'mutated'
+                    marker.unlink(missing_ok=True)
+                    self.h.rules({'tool': 'orbi', 'argv_contains': ['install-units'],
+                                  'write': {str(marker): 'installed'}},
+                                 {'tool': 'systemctl', 'argv_contains': ['disable'],
+                                  'write': {str(marker): 'disabled'}}, *self.h.scheduler_rules())
+                    reads = []
+
+                    def broken_snapshot(ctx, target):
+                        if not marker.exists():
+                            return original(ctx, target)
+                        reads.append('read')
+                        if len(reads) > 1:
+                            raise UnicodeError(SECRET)
+                        if kind == 'control':
+                            raise helper.ControlError('command_timeout', 'original read timed out',
+                                                      fix='repair original read', exit_code=3)
+                        raise subprocess.CalledProcessError(7, ['fake'], output=SECRET, stderr=SECRET)
+
+                    with mock.patch.object(helper, 'scheduler_snapshot', broken_snapshot), \
+                            mock.patch.object(helper, 'pending_services', broken_snapshot):
+                        code, doc, err = self.h.run(action)
+                    self.assertEqual(code, 3 if kind == 'control' else 1, err)
+                    self.assertEqual(doc['error']['code'],
+                                     'command_timeout' if kind == 'control' else 'command_failed')
+                    self.assertTrue(doc['error']['mutated'])
+                    self.assertEqual(doc['steps'][-1]['mutation'], 'none')
+                    self.assertEqual(doc['scheduler']['state'], 'unavailable')
+                    self.assertEqual(len(reads), 2)
+                    self.assertNotIn(SECRET, json.dumps(doc))
+                    if kind == 'control':
+                        self.assertIn('repair original read', doc['error']['fix'])
+                    if action == 'stop':
+                        self.assertEqual(len(doc['disabled_timers']), helper.MAX_INSTANCES)
+                    else:
+                        self.assertEqual(doc['activation'], 'possible')
+                        self.assertIn({'step': 'install_units', 'status': 'ok'}, doc['steps'])
+
+    def test_real_cli_start_stop_success_then_partial_failure(self):
+        for action, operation, state, step, completed_key in (
+                ('start', 'enable', 'started', 'activate_timer', 'activated_timers'),
+                ('stop', 'disable', 'stopped', 'disable_timer', 'disabled_timers')):
+            with self.subTest(action=action):
+                self.h.rules(*self.h.scheduler_rules())
+                argv = [sys.executable, '-B', str(HELPER), action,
+                        '--repo-dir', str(self.h.repo), '--json']
+                success = subprocess.run(argv, env=self.h.env, capture_output=True,
+                                         text=True, timeout=30)
+                self.assertEqual(success.returncode, 0, success.stderr)
+                self.assertEqual(json.loads(success.stdout)['status'], state)
+                timer = f'{self.prefix}@2.timer'
+                self.h.rules({'tool': 'systemctl',
+                              'argv_contains': ['--user', operation, '--now', timer],
+                              'exit': 7, 'stderr': SECRET}, *self.h.scheduler_rules())
+                self.h.clear_calls()
+                failed = subprocess.run(argv, env=self.h.env, capture_output=True,
+                                        text=True, timeout=30)
+                self.assertEqual(failed.returncode, 1, failed.stderr)
+                doc = json.loads(failed.stdout)
+                self.assert_receipt(doc, 'command_failed', step, timer,
+                                    (completed_key, [f'{self.prefix}@1.timer']))
+                self.assertEqual(self.mutations(),
+                                 [['--user', operation, '--now', f'{self.prefix}@{i}.timer']
+                                  for i in (1, 2)])
+                self.assertNotIn(SECRET, failed.stdout + failed.stderr)
+
+
 class LifecycleSequenceTests(unittest.TestCase):
     CASES = (
         ('active', {1: 'active'}, {1: 'active'}, {1: True}, 'running', 'draining', False),
@@ -1844,7 +2145,8 @@ class LifecycleSequenceTests(unittest.TestCase):
         self.assertEqual(inventory['outside_scan'], 'unobserved')
         self.assertEqual(len(doc['scheduler']['services']), 5)
         for error in (helper.ControlError('scheduler_unavailable', 'read failed'),
-                      PermissionError('private details'), UnicodeError('private details')):
+                      PermissionError('private details'), UnicodeError('private details'),
+                      subprocess.SubprocessError('private details')):
             with self.subTest(error=type(error).__name__):
                 with mock.patch.object(helper, 'scheduler_snapshot', side_effect=error):
                     code, doc, err = h.run('status')
