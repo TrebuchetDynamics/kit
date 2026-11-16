@@ -185,7 +185,7 @@ case "${PI_FIXTURE_STAGE:-}" in
 esac
 ''')
 
-    def test_missing_pi_bootstraps_and_enables_in_one_invocation_then_reuses(self):
+    def test_missing_pi_bootstraps_and_enables_in_one_invocation_then_refreshes(self):
         self.missing_pi()
         settings = self.home / '.pi/agent/settings.json'
         settings.parent.mkdir(parents=True)
@@ -206,14 +206,15 @@ esac
         self.assertTrue(curl[0].endswith('https://pi.dev/install.sh'))
         original['packages'][0] = NEW
         self.assertEqual(json.loads(settings.read_text()), original)
-        before = settings.read_bytes(), settings.stat().st_mtime_ns
         self.log.write_text('')
         result = self.install('--only', 'pi')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('already installed', result.stdout)
-        self.assertEqual(self.calls('pi '), ['pi --version', 'pi list'])
-        self.assertEqual(self.calls('curl'), [])
-        self.assertEqual((settings.read_bytes(), settings.stat().st_mtime_ns), before)
+        # A registered package is never kept: every install refreshes it, so an edited
+        # or removed skill cannot stay live behind a complete-looking skill folder set.
+        self.assertIn(f'refreshing {self.home / "pkg/kit"}', result.stdout)
+        self.assertEqual(self.calls('pi '), ['pi --version', 'pi list', f'pi update {NEW}', 'pi list'])
+        self.assertEqual(self.calls('curl'), [])  # a present harness is still not re-downloaded
+        self.assertEqual(json.loads(settings.read_text()), original)
         self.assertEqual(profile.read_text(), '# keep my profile\n')
         self.assertFalse(self.calls('systemctl --user try-restart'))
         self.assertFalse(list(self.home.glob('kit-pi-*')))
@@ -646,19 +647,17 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         self.assertFalse(list(self.home.glob('kit-pi-bolt-*')))
         self.assertFalse((self.home / '.profile').exists())
 
-    def test_pi_bolt_reuses_a_working_install_and_update_refreshes(self):
+    def test_pi_bolt_refreshes_on_install_and_on_update(self):
         first = self.install('--only', 'pi-bolt')
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
-        binary = self.home / '.local/bin/pi-bolt'
-        before = binary.stat().st_mtime_ns
+        self.assertEqual(len(self.calls('pi-bolt-installer')), 1)
         second = self.install('--only', 'pi-bolt')
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertIn('already installed', second.stdout)
-        self.assertEqual(binary.stat().st_mtime_ns, before)
-        self.assertEqual(len(self.calls('pi-bolt-installer')), 1)
+        self.assertNotIn('kept', second.stdout)
+        self.assertEqual(len(self.calls('pi-bolt-installer')), 2)  # install refreshes too
         updated = self.install('update', '--only', 'pi-bolt')
         self.assertEqual(updated.returncode, 0, updated.stdout + updated.stderr)
-        self.assertEqual(len(self.calls('pi-bolt-installer')), 2)
+        self.assertEqual(len(self.calls('pi-bolt-installer')), 3)
 
     def test_pi_bolt_uses_the_selected_bin_directory(self):
         destination = self.home / 'custom bin'
@@ -789,9 +788,8 @@ fi
         settings.write_text(json.dumps({'packages': [{'source': NEW, 'skills': [], 'extensions': []}]}))
         second = self.install('--only', 'pi')
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertIn('already installed', second.stdout)
         self.assertEqual(self.calls('pi install'), [f'pi install {NEW}'])
-        self.assertEqual(self.calls('pi update'), [])
+        self.assertEqual(self.calls('pi update'), [f'pi update {NEW}'])  # never kept
         self.assertEqual(json.loads(settings.read_text())['packages'], [NEW])
         self.assertIn('Restart active Kit services', second.stdout)
 
@@ -1012,7 +1010,7 @@ exit 0
 
     def test_an_ordinary_install_refreshes_a_package_missing_a_shipped_skill(self):
         # A registered checkout older than this one lacks the skills a later release
-        # added (orbi). Keeping it left Pi without `/skill:orbi` and `/orbi` entirely.
+        # added (orbi). A kept package left Pi without `/skill:orbi` and `/orbi` entirely.
         self.installed_package(only=['plan-with-me'])
         result = self.install('--only', 'pi')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -1021,21 +1019,22 @@ exit 0
         self.assertRegex(result.stdout, r'skills missing: .*\borbi\b')
         self.assertRegex(result.stdout, r'pi\s+installed')
 
-    def test_an_ordinary_install_keeps_a_package_that_ships_every_skill(self):
+    def test_an_ordinary_install_refreshes_a_package_that_ships_every_skill(self):
+        # Complete skill folders are not proof of current content: every install
+        # refreshes, so edited or removed skills cannot stay live unnoticed.
         self.installed_package()
         result = self.install('--only', 'pi')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.calls('pi update'), [])
-        self.assertIn(f'{NEW} already installed', result.stdout)
+        self.assertEqual(self.calls('pi update'), [f'pi update {NEW}'])
+        self.assertIn('every install refreshes the installed package', result.stdout)
+        self.assertNotIn('already installed', result.stdout)
 
-    def test_a_refreshed_package_is_kept_by_the_next_install(self):
+    def test_every_install_refreshes_the_package_and_update_does_too(self):
         self.installed_package(only=['plan-with-me'])
-        first = self.install('--only', 'pi')
-        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
-        second = self.install('--only', 'pi')
-        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertIn(f'{NEW} already installed', second.stdout)
-        self.assertEqual(len(self.calls('pi update')), 1)  # one refresh, not one per install
+        for args in (('--only', 'pi'), ('--only', 'pi'), ('update', '--only', 'pi')):
+            result = self.install(*args)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(self.calls('pi update')), 3)  # one refresh per run, never kept
 
     def test_a_refresh_that_cannot_reach_the_source_fails_the_item(self):
         # The package is installed but the suite's skills stay incomplete: report the
@@ -1331,7 +1330,7 @@ fi
         result = self.install('--only', 'pi')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('pi install'), [])
-        self.assertEqual(self.calls('pi update'), [])
+        self.assertEqual(self.calls('pi update'), [f'pi update {NEW}'])
         self.assertFalse((self.home / '.local/bin/autowork').exists())
 
     def test_install_clears_empty_pi_filters_that_hide_skills_and_commands(self):

@@ -84,16 +84,18 @@ which supports none of those three and can restart gateways on ordinary updates,
 Hermes item instead of being ignored. Host security and dependency prompts still
 apply; full mode does not supply consent flags.
 
-Ordinary installs reuse an already registered Pi package when its directory exists
-and ships every skill folder this checkout ships; a stale registration with a missing
-directory is reinstalled, and a package missing a skill folder a release added (for
-example `orbi`) is refreshed with `pi update` so the missing `/skill:<name>` and
-command appear. A complete package stays untouched, so an install needs no network
-for it; an unreadable package directory is kept rather than assumed stale. A refresh
-that cannot reach the source fails the Pi item with its cause and a nonzero exit,
-and the next install retries it. Empty package filters are still reconciled so
-skills and commands remain enabled. `./install.sh update --only pi` refreshes an
-existing package unconditionally, or installs it when absent.
+Every install and every `update` refresh an already registered Pi package with
+`pi update`; a registration whose directory is missing is installed instead. A
+complete-looking skill folder set is not proof of current content, so a kept package
+is never an option: an edited or removed skill in the installed checkout reaches Pi
+on the next run, and a skill folder a release added (for example `orbi`) appears with
+its `/skill:<name>` and command. The reason line names what is out of date — an
+update request, a missing skill folder, or the ordinary refresh. A refresh that
+cannot reach the source fails the Pi item with its cause and a nonzero exit, and the
+next install retries it. An unreadable package directory is not reported as
+incomplete by the post-refresh check. Empty package filters are still reconciled so
+skills and commands remain enabled. `./install.sh --only pi` does the same for one
+component.
 
 After Pi reports success, Kit reads the package registration again and checks for
 every shipped skill folder. Missing registration or skills makes installation fail
@@ -143,9 +145,9 @@ live rollout.
 ### Pi-Bolt native executable
 
 Default/full/menu and `update` include `pi-bolt`. Use `./install.sh --only pi-bolt`
-to install it alone or `--skip pi-bolt` to leave it untouched. A working `pi-bolt`
-in the selected binary directory is kept on install; explicit selection and `update`
-run the upstream installer again.
+to install it alone or `--skip pi-bolt` to leave it untouched. Every install and
+`update` runs the upstream installer again: a present `pi-bolt` is refreshed rather
+than kept, so a stale native build never survives an install.
 
 Kit downloads the [official installer](https://pi-bolt.opensec.in/install.sh) into a
 private temporary file with HTTPS-only redirects, five redirects at most, a 15-second

@@ -4,22 +4,26 @@
     install.sh                every available component, live output and exact commands
     install.sh --menu         a checkbox menu on a terminal (arrows, Space, Enter)
     install.sh --full          the full suite for available hosts, no menu (--all also works)
-    install.sh update          explicitly refresh the installed suite (same items as --full)
+    install.sh update          the same refresh as the default (same items as --full)
     install.sh --only tx,pi    just these; --skip hermes leaves those out
     install.sh --list          the items and whether each host is available
     install.sh --dry-run ...   print each command instead of running it
     install.sh --no-pull       install this checkout as it is
 
-Install and update first bring this checkout up to date (`git pull --ff-only` of its
-upstream) and then run the pulled installer; a checkout with local changes, no upstream
-or a detached HEAD is installed as it is, and says so.
+There is no keep-on-install mode: `install` and `update` run the same items and
+refresh them, and differ only in the report wording. Both first bring this checkout
+up to date (`git pull --ff-only` of its upstream) and then run the pulled installer; a
+checkout with local changes, no upstream or a detached HEAD is installed as it is,
+and says so.
 
 Each host item runs its own supported install command; a host whose CLI is not
 installed is skipped and says so, and fails when named with --only, except Pi,
-which bootstraps its missing harness through pi.dev. Orbi installs
-the CLI only via uv; existing CLIs and deployments are kept. Pi-Bolt bootstraps the
-upstream native Pi build, keeps an existing one on install, and never installs its
-optional extensions. Hermes options
+which bootstraps its missing harness through pi.dev. Every selected component is
+refreshed on both `install` and `update`: the Pi package and Pi-Bolt are updated
+even when a previous copy looks current, because a kept copy silently goes stale.
+Orbi installs the CLI only via uv; existing CLIs and deployments are kept so a
+pinned deployment is never replaced. Pi-Bolt bootstraps or refreshes the upstream
+native Pi build and never installs its optional extensions. Hermes options
 (--hermes-home, --bundle-only, --no-reload, --yes-deps) apply to the Hermes item.
 Standard library only.
 """
@@ -598,15 +602,10 @@ def pi_bolt_version(destination):
     return version.stdout.strip()
 
 
-def install_pi_bolt(output=None, update=False):
-    """Reuse a working executable on install; upstream owns signatures and updates."""
+def install_pi_bolt(output=None):
+    """Always run the official installer; a kept executable silently goes stale."""
     output = output or Output()
     destination = BIN.absolute()
-    if not update and (destination / 'pi-bolt').is_file():
-        try:
-            return f'{destination / "pi-bolt"}: {pi_bolt_version(destination)} (already installed; kept)'
-        except (OSError, subprocess.SubprocessError):
-            pass  # Broken destination: retry the official installer, never force placement.
     for command in ('curl', 'sh'):
         if not shutil.which(command):
             raise OSError(f'Pi-Bolt requires {command}; install it and retry --only pi-bolt')
@@ -640,7 +639,7 @@ def install_pi_bolt(output=None, update=False):
     return f'{destination / "pi-bolt"}: {version}'
 
 
-def pi_bolt_item(output=None, mode='install'):
+def pi_bolt_item(output=None):
     system, machine = platform.system(), platform.machine().lower()
     supported = ((system == 'Darwin' and machine in ('arm64', 'aarch64'))
                  or (system == 'Linux' and machine in ('x86_64', 'amd64', 'aarch64', 'arm64')))
@@ -648,11 +647,11 @@ def pi_bolt_item(output=None, mode='install'):
     return Item('pi-bolt', 'Pi-Bolt native Pi executable',
                 note='native Pi build; reuses ~/.pi/agent; optional extensions stay off',
                 missing='' if supported else f'unsupported Pi-Bolt platform: {system} {machine} (needs GNU/Linux x86-64/ARM64 or macOS Apple silicon)',
-                steps=[Step(('refresh Pi-Bolt; ' if mode == 'update' else 'reuse a working destination or bootstrap Pi-Bolt; ')
-                            + f'download {PI_BOLT_INSTALLER} privately when needed; run unmodified sh installer '
+                steps=[Step('refresh Pi-Bolt or bootstrap it when absent; '
+                            f'download {PI_BOLT_INSTALLER} privately; run unmodified sh installer '
                             f'with PIBOLT_BIN_DIR={destination} PIBOLT_YES=1 PIBOLT_EXTENSIONS=no; '
                             f'verify {destination}/pi-bolt --version',
-                            run=lambda: install_pi_bolt(output, update=mode == 'update'))])
+                            run=lambda: install_pi_bolt(output))])
 
 
 def skill_folders(folder):
@@ -668,10 +667,10 @@ def skill_folders(folder):
 def missing_package_skills(package):
     """Skill folders this checkout ships that the installed package checkout lacks.
 
-    An ordinary install keeps a registered package instead of running `pi install`,
-    so a release that adds a skill never reaches Pi: the skill has no `/skill:<name>`
-    and no command. A package whose skill folders are complete is still kept, so an
-    install stays offline-safe; only a provably stale one is refreshed.
+    Every install runs `pi update`, so this is the post-refresh proof: a package that
+    still lacks a shipped folder has not reached Pi, and the skill has no
+    `/skill:<name>` and no command. It stays the only local freshness signal, so an
+    unreadable package directory is never treated as stale.
     """
     shipped, present = skill_folders(ROOT / 'adapters/skills'), skill_folders(package / 'adapters/skills')
     if not shipped or present is None:
@@ -760,15 +759,27 @@ def install_pi_harness(output):
 
 
 def install_pi_package(output=None, mode='install'):
-    """Use one verified absolute Pi for the existing package freshness contract."""
+    """Refresh the package on every install and update; a kept copy goes stale.
+
+    Keeping a package whose skill folders merely exist leaves edited and removed
+    skills live forever, so `install` no longer short-circuits to `kept`: it runs the
+    same `pi update` as `update` and proves the result afterwards. The reason line
+    still names what made a copy out of date. A refresh that cannot reach the source
+    fails this item with its cause instead of claiming a complete install.
+    """
     output = output or Output()
     binary = install_pi_harness(output)
     package = pi_package(binary=binary)
-    stale = missing_package_skills(package) if package else []
-    if package and mode != 'update' and not stale:
-        return f'{PI_SOURCE} already installed at {package}; kept'
     action = 'update' if package else 'install'
-    reason = ('update requested' if mode == 'update' else f'skills missing: {", ".join(stale)}') if package else ''
+    reason = ''
+    if package:
+        stale = missing_package_skills(package)
+        if mode == 'update':
+            reason = 'update requested'
+        elif stale:
+            reason = f'skills missing: {", ".join(stale)}'
+        else:
+            reason = 'every install refreshes the installed package'
     if reason and output.verbosity:
         output.line(f'  refreshing {package} ({reason})')
     argv = [str(binary), action, PI_SOURCE]
@@ -793,13 +804,13 @@ def items(hermes_args, output=None, mode='install'):
               note='reuses existing Pi or bootstraps from pi.dev; Node >=22.19.0 and npm required',
               steps=[Step(f'reuse and verify an absolute Pi executable, or download {PI_INSTALLER} '
                           'with HTTP failure checking and run the captured sh installer (native prerequisite prompts); '
-                          f'pi install {PI_SOURCE} when absent, pi update {PI_SOURCE} when stale or update requested; '
-                          'otherwise keep the installed package',
+                          f'pi install {PI_SOURCE} when absent, otherwise always pi update {PI_SOURCE} '
+                          'so a shipped, edited or removed skill reaches Pi; no kept copy',
                           run=lambda: install_pi_package(output, mode)),
                      Step('enable the package skills and commands in Pi settings', run=enable_pi_package)])
     return [
         pi,
-        pi_bolt_item(output, mode=mode),
+        pi_bolt_item(output),
         Item('tx', 'tx tmux session launcher', note='keeps your existing ~/.tmux.conf',
              steps=[Step(f'install {BIN}/tx and completions', run=install_tx)]),
         hermes_item(hermes_args),
