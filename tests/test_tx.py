@@ -19,7 +19,8 @@ class TxTests(unittest.TestCase):
             if config is not None:
                 path.write_text(config)
             env = {**os.environ, 'TX_CONFIG': str(path),
-                   'TX_COLOR': 'never', 'TX_TMUX': 'true'}
+                   'TX_COLOR': 'never', 'TX_TMUX': 'true',
+                   'TX_COMPLETION_COMMAND': str(TX)}
             return subprocess.run(['bash', str(TX), *args], env=env, capture_output=True, text=True, timeout=30)
 
     def test_tx_has_no_autowork_commands(self):
@@ -52,6 +53,11 @@ class TxTests(unittest.TestCase):
                                    'which'])
         help_text = self.tx('help').stdout
         self.assertIn('tx kill <alias>', help_text)
+        self.assertIn('tx remove <alias-or-pattern> [alias-or-pattern ...]', help_text)
+        self.assertIn('tx remove hw1 hw2 hw3 hw4', help_text)
+        self.assertIn("tx remove 'hw*'", help_text)
+        self.assertIn('Every selector must match', help_text)
+        self.assertIn('caller shell before tx runs', help_text)
         self.assertNotIn('__complete_', help_text)
 
     def test_completion_aliases_use_the_config_parser_without_tmux(self):
@@ -96,6 +102,27 @@ class TxTests(unittest.TestCase):
                 result = self.bash_complete([command, 'samp'])
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.splitlines(), ['sample', 'sample2'])
+
+    def test_bash_completes_later_remove_operands(self):
+        for words in (['remove', 'other', 'samp'],
+                      ['remove', 'other', 'sample', 'samp']):
+            with self.subTest(words=words):
+                result = self.bash_complete(words)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), ['sample', 'sample2'])
+
+    def test_completion_generators_retain_alias_command_discovery(self):
+        for shell in ('bash', 'fish', 'zsh'):
+            with self.subTest(shell=shell):
+                result = self.tx('completion', shell)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if shell == 'zsh':
+                    # Zsh embeds the command-table discovery at generation time.
+                    self.assertIn('alias_commands=(kill\n-k\n--kill\nremove\nedit\nwhich)',
+                                  result.stdout)
+                else:
+                    self.assertIn('__complete_alias_commands', result.stdout)
+                self.assertIn('__complete_aliases', result.stdout)
 
     def test_install_print_paths_is_read_only(self):
         with tempfile.TemporaryDirectory(prefix='autowork-tx-install-') as folder:
@@ -152,6 +179,184 @@ class TxTests(unittest.TestCase):
         self.assertIn('tmux/', package['files'])
         self.assertFalse(any('pi-autowork' in path for path in package['files']))
         self.assertTrue(os.access(TX, os.X_OK), TX)
+
+
+class TxRemoveTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='tx-remove-')
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.path = self.root / 'session.config'
+        self.target = self.root / 'target'
+        self.target.mkdir()
+        self.sentinel = self.target / 'keep.txt'
+        self.sentinel.write_bytes(b'untouched\n')
+        self.cwd = self.root / 'empty'
+        self.cwd.mkdir()
+        self.log = self.root / 'tmux.log'
+        self.fake = self.root / 'tmux'
+        shutil.copy(ROOT / 'tests/fixtures/fake_tmux.sh', self.fake)
+        self.fake.chmod(0o755)
+        self.env = {**os.environ, 'TX_CONFIG': str(self.path),
+                    'TX_COLOR': 'never', 'TX_TMUX': str(self.fake),
+                    'FAKE_TMUX_LOG': str(self.log), 'LC_ALL': 'C'}
+        self.original = (
+            f'# keep\r\nWORK={self.target}\r\n'
+            '  hw2,hw1,keep = $WORK  \r\n\r\n'
+            'hw4=/missing/target\r\nhw3=$WORK\r\n'
+            'Hw1,other=$WORK\r\n').encode()
+        self.path.write_bytes(self.original)
+
+    def run_tx(self, *args, script=None):
+        command = (['bash', str(TX), *args] if script is None else
+                   ['bash', '--noprofile', '--norc', '-c',
+                    f'source {shlex.quote(str(TX))}\n{script}'])
+        return subprocess.run(command, env=self.env, cwd=self.cwd,
+                              capture_output=True, text=True, timeout=30)
+
+    def assert_no_side_effects(self):
+        self.assertFalse(self.log.exists(), 'remove must not invoke tmux')
+        self.assertEqual(self.sentinel.read_bytes(), b'untouched\n')
+        self.assertEqual(sorted(p.name for p in self.target.iterdir()), ['keep.txt'])
+        self.assertEqual(list(self.root.glob('session.config.tmp.*')), [])
+
+    def assert_removed_hardware(self, result):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), [
+            f'removed: hw2={self.target}', f'removed: hw1={self.target}',
+            'removed: hw4=/missing/target', f'removed: hw3={self.target}'])
+        self.assertEqual(self.path.read_bytes(), (
+            f'# keep\r\nWORK={self.target}\r\n'
+            '  keep = $WORK  \r\n\r\nHw1,other=$WORK\r\n').encode())
+        reloaded = self.run_tx('__complete_aliases')
+        self.assertEqual(reloaded.returncode, 0, reloaded.stderr)
+        self.assertEqual(reloaded.stdout.splitlines(), ['Hw1', 'keep', 'other'])
+        self.assert_no_side_effects()
+
+    def test_remove_four_literal_operands(self):
+        self.assert_removed_hardware(self.run_tx('remove', 'hw1', 'hw2', 'hw3', 'hw4'))
+
+    def test_remove_literal_wildcard_operand(self):
+        self.assert_removed_hardware(self.run_tx('remove', 'hw*'))
+
+    def test_remove_mixed_overlapping_selectors_uses_original_snapshot(self):
+        self.assert_removed_hardware(
+            self.run_tx('remove', 'hw3', 'hw', 'hw*', 'hw1', 'hw?', 'hw*'))
+
+    def test_basic_patterns_and_wildcard_all(self):
+        for selector, removed in [('hw?', ['hw2', 'hw1', 'hw4', 'hw3']),
+                                  ('hw[1-4]', ['hw2', 'hw1', 'hw4', 'hw3']),
+                                  ('hw[!5]', ['hw2', 'hw1', 'hw4', 'hw3']),
+                                  ('hw[[:digit:]]', ['hw2', 'hw1', 'hw4', 'hw3']),
+                                  ('hw[!()]', ['hw2', 'hw1', 'hw4', 'hw3']),
+                                  ('*', ['hw2', 'hw1', 'keep', 'hw4', 'hw3', 'Hw1', 'other'])]:
+            with self.subTest(selector=selector):
+                self.path.write_bytes(self.original)
+                result = self.run_tx('remove', selector)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual([line.split('=', 1)[0] for line in result.stdout.splitlines()],
+                                 [f'removed: {alias}' for alias in removed])
+                if selector == '*':
+                    self.assertEqual(self.path.read_bytes(),
+                                     f'# keep\r\nWORK={self.target}\r\n\r\n'.encode())
+                else:
+                    self.assert_removed_hardware(result)
+                self.assert_no_side_effects()
+
+    def test_literal_and_prefix_still_select_one_exact_shortest_alphabetical_alias(self):
+        for selector, alias in [('hw', 'hw1'), ('hw2', 'hw2'), ('h', 'h'), ('long', 'longer')]:
+            with self.subTest(selector=selector):
+                original = b'hw2,hw1,h,longest,longer=/missing\n'
+                self.path.write_bytes(original)
+                result = self.run_tx('remove', selector)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, f'removed: {alias}=/missing\n')
+                kept = [a for a in ['hw2', 'hw1', 'h', 'longest', 'longer'] if a != alias]
+                self.assertEqual(self.path.read_bytes(), (','.join(kept) + '=/missing\n').encode())
+                self.assert_no_side_effects()
+
+    def test_late_rejected_selectors_are_atomic_even_in_a_conditional(self):
+        for selector, diagnostic in [('unknown', 'unknown alias: unknown'),
+                                     ('absent*', "no aliases match selector: 'absent*'"),
+                                     ('hw[', "no aliases match selector: 'hw['"),
+                                     ('w*', "no aliases match selector: 'w*'"),
+                                     ('hw??', "no aliases match selector: 'hw??'"),
+                                     ('@(hw*)', "no aliases match selector: '@(hw*)'"),
+                                     ('', "empty selector: ''"),
+                                     ('hw1,hw2', 'unknown alias: hw1,hw2')]:
+            for conditional in (False, True):
+                with self.subTest(selector=selector, conditional=conditional):
+                    command = shlex.join(['main', 'remove', 'hw1', selector])
+                    result = (self.run_tx(script=f'if {command}; then exit 0; else exit 7; fi')
+                              if conditional else self.run_tx('remove', 'hw1', selector))
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn(diagnostic, result.stderr)
+                    self.assertEqual(result.stdout, '')
+                    self.assertEqual(self.path.read_bytes(), self.original)
+                    self.assert_no_side_effects()
+
+    def test_no_operands_is_usage_error_even_without_config(self):
+        self.path.unlink()
+        result = self.run_tx('remove')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('remove: expected at least one alias or pattern', result.stderr)
+        self.assertNotIn('config not found', result.stderr)
+        self.assert_no_side_effects()
+
+    def test_publication_failures_are_atomic_even_in_a_conditional(self):
+        failures = [
+            ('config_render_alias_line() { CFG_LINES[$1]="not a config row"; }', 'cannot parse'),
+            ('''printf() {
+  if [[ "$1" == '%s\\n' && "${2:-}" == '# keep'* ]]; then
+    builtin printf 'injected write failure\\n' >&2
+    return 7
+  fi
+  builtin printf "$@"
+}''', 'injected write failure'),
+            ('mv() { builtin printf "injected rename failure\\n" >&2; return 7; }',
+             'injected rename failure'),
+            ('resolve_alias() { builtin printf "injected resolver failure\\n" >&2; return 7; }',
+             'injected resolver failure'),
+        ]
+        for injection, diagnostic in failures:
+            for conditional in (False, True):
+                with self.subTest(injection=injection, conditional=conditional):
+                    command = 'main remove hw1 hw2'
+                    if conditional:
+                        command = f'if {command}; then exit 0; else exit 7; fi'
+                    result = self.run_tx(script=f'{injection}\n{command}')
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn(diagnostic, result.stderr)
+                    self.assertEqual(result.stdout, '')
+                    self.assertEqual(self.path.read_bytes(), self.original)
+                    self.assert_no_side_effects()
+
+    def test_batch_stages_and_publishes_once(self):
+        stages = self.root / 'stages'
+        publishes = self.root / 'publishes'
+        result = self.run_tx(script=f'''
+mktemp() {{ echo stage >> {shlex.quote(str(stages))}; command mktemp "$@"; }}
+mv() {{ echo publish >> {shlex.quote(str(publishes))}; command mv "$@"; }}
+if main remove hw1 'hw*' hw2; then :; else exit 7; fi
+''')
+        self.assert_removed_hardware(result)
+        self.assertEqual(stages.read_text().splitlines(), ['stage'])
+        self.assertEqual(publishes.read_text().splitlines(), ['publish'])
+
+    def test_sourced_bulk_helper_isolates_matching_options(self):
+        result = self.run_tx(script="config_load; shopt -s extglob nocasematch; "
+                                    "config_remove_aliases 'hw*'; "
+                                    "shopt -q extglob nocasematch")
+        self.assert_removed_hardware(result)
+
+    def test_default_bash_passes_unquoted_glob_in_empty_cwd(self):
+        # No startup files/options or filenames can expand this token before tx sees it.
+        env = {key: value for key, value in self.env.items()
+               if key not in ('BASH_ENV', 'BASHOPTS', 'SHELLOPTS', 'GLOBIGNORE')}
+        result = subprocess.run(
+            ['bash', '--noprofile', '--norc', '-c', f'{shlex.quote(str(TX))} remove hw*'],
+            env=env, cwd=self.cwd, capture_output=True, text=True, timeout=30)
+        self.assert_removed_hardware(result)
 
 
 class TxConfigModuleTests(unittest.TestCase):

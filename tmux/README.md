@@ -242,10 +242,41 @@ tx doctor
 tx which ga
 tx edit asul azul
 tx remove oldalias
+tx remove hw1 hw2 hw3 hw4
+tx remove 'hw*'
 tx ga
 ```
 
 `tx edit` renames exactly one alias to one new alias, including when prompted. Comma-separated replacement names and names already in use are rejected.
+
+`tx remove <alias-or-pattern> [alias-or-pattern ...]` accepts one or more nonempty
+selectors. A literal selects one alias: exact names win, otherwise the shortest
+prefix match wins (alphabetical tie-breaker). A selector containing `*`, `?` or
+bracket classes matches complete configured alias names case-sensitively and
+selects every match, not paths or session names. For example:
+
+```sh
+tx remove hw1 'hw[2-4]' 'hw?'  # mixed/overlapping selectors are deduplicated
+tx remove '*'                # remove every alias row; keep comments and variables
+```
+
+All selectors resolve against the original config before any change. Unknown
+literals, no-match patterns (including unmatched brackets), and empty selectors
+fail the entire request without changing the config or printing success receipts.
+Correct the rejected selector and retry. A successful batch replaces the config
+once and prints one `removed: alias=target` line per distinct alias in config
+row/key order. Unselected aliases sharing a row are retained. Removal only edits
+config entries: it never kills/starts sessions or deletes directories/files, and
+aliases whose target directories are missing can still be removed.
+
+Quote patterns in **Bash, Zsh and Fish**: prefer `tx remove 'hw*'`, or escape the
+wildcard as `tx remove hw\*`. In default Bash, unquoted `hw*` passes through when
+no filename matches; matching files or shell options can change that behavior.
+Zsh normally rejects an unmatched unquoted glob before running `tx`; Fish can
+also reject unmatched globs. Other unquoted patterns may expand to filenames.
+`tx` treats the actual arguments it receives as selectors: it cannot recover the
+original token or distinguish expanded filenames from intentional alias names.
+No shell-option changes or completion installation are needed to use selectors.
 
 Alias mutations validate the complete staged config before replacing the original file. Rejected updates leave the original config unchanged and remove the staging file. Valid updates preserve comments, variables, row order, spacing, and existing CRLF line endings.
 
@@ -258,7 +289,8 @@ source ~/.local/share/bash-completion/completions/tx
 Type `tx samp` and press Tab to complete configured aliases such as `sample`.
 If several aliases share the prefix, Tab extends the common prefix; press Tab
 again to list matches. Alias arguments also complete after `kill`, `remove`,
-`edit`, and `which`. Completion reads the config each time, including aliases
+`edit`, and `which`, including second and later operands of `remove`. Completion
+reads the config each time, including aliases
 whose sessions are stopped or whose directories do not yet exist.
 
 Manual completion output is also available:
