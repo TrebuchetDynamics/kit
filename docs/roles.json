@@ -10,14 +10,19 @@
         "scripts/bundle.py",
         "plugins/defaults.json",
         "scripts/update_bundle.py",
-        "scripts/runtime_defaults.py"
+        "scripts/runtime_defaults.py",
+        "src/autowork_runtime/bundle.py",
+        "src/autowork_runtime/update/update_bundle.py",
+        "src/autowork_runtime/runtime_defaults.py",
+        "scripts/install_menu.py"
       ],
-      "verified_at": "9e2cc1ad"
+      "verified_at": "61e8e4b7",
+      "reason": "Reviewed installation, defaults and updater contracts at the source baseline; isolated host results and remaining live limits are in docs/cross-host.md."
     },
     "reference": {
       "status": "created",
       "path": "docs/reference.md",
-      "verified_at": "9e2cc1ad",
+      "verified_at": "61e8e4b7",
       "covers": [
         "scripts/bundle.py",
         "scripts/setup_bundle.py",
@@ -30,8 +35,19 @@
         "scripts/telegram_menu_policy.py",
         "scripts/check.py",
         "scripts/github_issues.py",
-        "skills/docs-sync/scripts/docs.py"
-      ]
+        "skills/docs-sync/scripts/docs.py",
+        "src/autowork_runtime/bundle.py",
+        "src/autowork_runtime/install/setup_bundle.py",
+        "src/autowork_runtime/update/update_bundle.py",
+        "src/autowork_runtime/install/install_skills.py",
+        "src/autowork_runtime/install/install_graphify.py",
+        "src/autowork_runtime/runtime_defaults.py",
+        "src/autowork_runtime/telegram_menu_policy.py",
+        "scripts/install_menu.py",
+        "skills/orbi/scripts/orbi_control.py",
+        "skills/update-kit/scripts/update_kit.py"
+      ],
+      "reason": "Reviewed public CLI flags, policy settings, helper boundaries and their native implementation owners. Command availability is separate from live service qualification."
     },
     "install-upgrade": {
       "status": "maintained",
@@ -46,24 +62,39 @@
         "plugins/PLUGINS.md",
         "plugins/defaults.json",
         "scripts/runtime_defaults.py",
-        "skills/grill-me/SKILL.md"
+        "skills/grill-me/SKILL.md",
+        "src/autowork_runtime/install/setup_bundle.py",
+        "src/autowork_runtime/install/setup_preflight.py",
+        "src/autowork_runtime/install/setup_runtime.py",
+        "src/autowork_runtime/update/update_bundle.py",
+        "src/autowork_runtime/update/update_bundle_native.py",
+        "src/autowork_runtime/runtime_defaults.py",
+        "scripts/install_menu.py"
       ],
-      "verified_at": "9e2cc1ad"
+      "verified_at": "61e8e4b7",
+      "reason": "Reviewed suite refresh, same-release native setup, policy opt-out and source/identity preservation contracts. Portable host installs/updates were exercised in isolated homes; no Hermes fleet or service activation was tested."
     },
     "troubleshooting": {
       "status": "created",
       "path": "docs/troubleshooting.md",
-      "verified_at": "9e2cc1ad",
+      "verified_at": "61e8e4b7",
       "covers": [
         "scripts/bundle.py",
         "scripts/setup_runtime.py",
         "scripts/update_bundle.py",
         "scripts/runtime_defaults.py",
-        "scripts/telegram_menu_policy.py"
-      ]
+        "scripts/telegram_menu_policy.py",
+        "src/autowork_runtime/bundle.py",
+        "src/autowork_runtime/install/setup_runtime.py",
+        "src/autowork_runtime/update/update_bundle.py",
+        "src/autowork_runtime/runtime_defaults.py",
+        "src/autowork_runtime/telegram_menu_policy.py",
+        "src/autowork_runtime/plugin.py"
+      ],
+      "reason": "Reviewed diagnosis fields, command ownership, native updater/restart boundaries and exact-slot recovery. No original-host or messaging recovery is claimed."
     },
     "architecture": {
-      "reason": "Current component map and registration/package ownership reviewed against native implementations, publisher and lifecycle client. Model adherence, installed host behavior and Orbi live qualification remain separate.",
+      "reason": "Reviewed current component ownership, native bootstrap, portable registration, publisher and lifecycle boundaries. Installed Pi/Codex question-only smoke is bounded evidence, not general delivery qualification.",
       "status": "maintained",
       "path": "docs/project.md#current-components",
       "covers": [
@@ -82,16 +113,22 @@
         "package.json",
         ".claude-plugin",
         ".codex-plugin",
-        ".agents/plugins"
+        ".agents/plugins",
+        "src/autowork_runtime/bundle.py",
+        "src/autowork_runtime/commands/workflow_commands.py",
+        "src/autowork_runtime/commands/autoresearch_commands.py",
+        "src/autowork_runtime/install",
+        "src/autowork_runtime/update",
+        "skills/update-kit/scripts/update_kit.py"
       ],
-      "verified_at": "ee69b26646f59b5ff4a98e3b07800bd6b4b305b3"
+      "verified_at": "61e8e4b7"
     },
     "prd": {
       "status": "maintained",
       "path": "docs/project.md#accepted-requirements"
     },
     "test-plan": {
-      "reason": "Offline inventory and CI source mapping reviewed, including maintained bundled test roots. Focused checks do not imply that the full suite, installed backends or live qualification ran.",
+      "reason": "Reviewed maintained offline inventory, CI shards and changed source/test contracts. Focused checks and installed smoke do not imply every offline suite or live delivery gate ran.",
       "status": "maintained",
       "path": "docs/testing.md",
       "covers": [
@@ -102,7 +139,7 @@
         "skills/docs-sync/scripts",
         "skills/git-commit-push/scripts"
       ],
-      "verified_at": "ee69b26646f59b5ff4a98e3b07800bd6b4b305b3"
+      "verified_at": "61e8e4b7"
     },
     "source-layout": {
       "status": "maintained",
@@ -111,7 +148,9 @@
         "src/autowork_runtime",
         "src/autowork_bootstrap.py",
         "scripts"
-      ]
+      ],
+      "verified_at": "61e8e4b7",
+      "reason": "Reviewed same-release native loading, scripts entrypoints, install/update/commands ownership and portable payload boundaries; legacy internal names do not restore the retired executor."
     },
     "changelog": {
       "status": "maintained",
@@ -122,7 +161,7 @@
       "path": "docs/onboarding.md"
     },
     "workflows": {
-      "reason": "Command aliases, literal routing and menu ownership reviewed through native implementations and Pi dispatch. Canonical skill contracts own instructions; model execution and Telegram delivery remain unqualified.",
+      "reason": "Reviewed native and Pi command routing, explicit Update Kit, shared planning and Orbi boundaries against canonical skills. No Telegram or full publication/delivery acceptance is claimed.",
       "status": "maintained",
       "path": "docs/workflows.md",
       "covers": [
@@ -133,16 +172,18 @@
         "src/autowork_runtime/commands",
         "src/autowork_runtime/telegram_menu_policy.py",
         "adapters/pi.mjs",
-        "skills"
+        "skills",
+        "src/autowork_runtime/commands/workflow_commands.py",
+        "src/autowork_runtime/commands/autoresearch_commands.py"
       ],
-      "verified_at": "ee69b26646f59b5ff4a98e3b07800bd6b4b305b3"
+      "verified_at": "61e8e4b7"
     },
     "removal": {
       "status": "maintained",
       "path": "docs/uninstall.md"
     },
     "cross-host": {
-      "reason": "Current portable package, registration and installer source contracts reviewed. Historical host versions/counts are retained as historical evidence; current model/host qualification is not claimed.",
+      "reason": "Reviewed current manifests, adapter registration, installer source/scope admission and host update contracts; see bounded isolated install/update and model smoke evidence in this page.",
       "status": "maintained",
       "path": "docs/cross-host.md",
       "covers": [
@@ -157,7 +198,7 @@
         "tests/test_portable_package.py",
         "tests/portable_pi.test.mjs"
       ],
-      "verified_at": "ee69b26646f59b5ff4a98e3b07800bd6b4b305b3"
+      "verified_at": "61e8e4b7"
     },
     "memory": {
       "status": "maintained",
@@ -165,8 +206,15 @@
       "covers": [
         "scripts/setup_preflight.py",
         "scripts/runtime_defaults.py",
-        "plugins/defaults.json"
-      ]
+        "plugins/defaults.json",
+        "src/autowork_runtime/install/setup_preflight.py",
+        "src/autowork_runtime/runtime_defaults.py",
+        "src/autowork_runtime/install/preflight_config.py",
+        "install-plugins.sh",
+        "plugins/PLUGINS.md"
+      ],
+      "verified_at": "61e8e4b7",
+      "reason": "Reviewed native preflight shape checks, runtime policy patch and source installer: existing providers/stores are preserved and no external memory provider is installed. Actual capture/recall was not tested."
     },
     "dependencies": {
       "status": "maintained",
@@ -182,7 +230,8 @@
         "skills/engineering/UPSTREAM.json",
         "skills/ui-taste/UPSTREAM.json"
       ],
-      "verified_at": "9e2cc1ad"
+      "verified_at": "61e8e4b7",
+      "reason": "Reviewed current declared integrations, portable payload, pinned vendored manifests, installer selection and licensing limits. No suite-wide dependency lock or external license completeness is claimed."
     },
     "contributing": {
       "status": "maintained",

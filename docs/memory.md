@@ -1,7 +1,10 @@
 # Memory and retained data
 
-Sources: [setup preflight](../scripts/setup_preflight.py),
-[runtime policy](../scripts/runtime_defaults.py) and [bundle defaults](../plugins/defaults.json).
+Sources: [native setup preflight](../src/autowork_runtime/install/setup_preflight.py),
+[configuration validation](../src/autowork_runtime/install/preflight_config.py),
+[runtime policy](../src/autowork_runtime/runtime_defaults.py),
+[source installer](../install-plugins.sh) and [bundle defaults](../plugins/defaults.json).
+The `scripts/` Python entrypoints load these same-release native implementations.
 
 Kit does not install or select an external memory provider. Full setup and
 bundle-only setup preserve existing provider selection, store bindings and records.

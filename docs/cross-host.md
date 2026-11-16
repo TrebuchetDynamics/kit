@@ -611,29 +611,36 @@ node --test tests/portable_pi.test.mjs
 claude plugin validate . --strict   # needs the Claude Code CLI
 ```
 
-Validated locally with Claude Code 2.1.300: `claude plugin validate . --strict`
-passed, and a marketplace add and install into an isolated configuration directory
-listed exactly the 13 adapter skills (no root `skills/` entries, hooks, agents or MCP
-servers) with all adapter links resolving in the installed copy. No Claude Code model
-session has run a workflow from it yet.
+Installed checks on Linux at source `61e8e4b7` used Pi 1.5.2, Claude Code
+2.1.322 and Codex CLI 0.167.2 in separate configuration directories. Native Git
+installation and update commands succeeded on all three. Claude's component
+inventory listed 34 adapter skills, zero agents, hooks, MCP servers and LSP
+servers; the Codex installed payload also contained 34 adapter entries. Pi RPC
+reported 47 Kit extension commands. These are tested versions and counts for that
+source, not minimum-version guarantees or evidence that every workflow ran.
 
-Validated locally with Codex CLI 0.162.1 and Pi 1.2.0: native marketplace/plugin
-and Pi installation into isolated temporary homes, Codex app-server skill discovery
-and Pi's installed resource loader discovered 11 portable skills and Pi loaded 25
-commands, including the then-spelled `/grill_me` compatibility command and all 13
-research selectors. That run
-predates UI Taste, Beautify GitHub README and the Git Pull Merge merge into Git Commit
-Push. Those historical counts do not describe the current package. Current adapter
-discovery comes from `package.json`, the host manifests and `adapters/skills/`;
-`tests/portable_pi.test.mjs` checks the current registered command set. Earlier host
-installation records do not qualify the current package on every host.
-Archive extraction tests check installed references, literal
-arguments and queued commands without checkout files. No credentials or configured live accounts are used. These are
-tested versions, not an established minimum-version guarantee.
-These checks do not prove model output quality, Git delivery or Telegram execution.
-The model smoke test is the questions-only invocation above: one useful question,
-no repository edits. Follow it with planning and a bounded disposable-repo task
-when you want to qualify end-to-end behavior with your configured model.
+Claude's ordinary `plugin validate` passed with a warning that root `CLAUDE.md`
+is not loaded as plugin project context. `--strict` returned 1 for that warning;
+it must not be reported as passing on this version. The validator also reported
+an advisory missing directory-listing icon. Kit's adapters load their own shared
+and canonical instructions; they do not rely on root `CLAUDE.md` being injected.
+No Claude model workflow was run: the isolated host reported no authentication.
+
+Pi and Codex each ran the installed Plan With Me adapter with `gpt-6.1-sol`, low
+reasoning, and the explicit questions-only caching prompt above. Pi used
+`openai-codex`, RPC dispatch and read-only tools; Codex used a read-only sandbox.
+Each returned one relevant question and left the initially empty target directory
+empty. Existing authentication was referenced through owner-local links, not copied
+into the package. This establishes one bounded installed model smoke per host,
+not full planning publication, response quality across tasks, Orbi delivery,
+Hermes/Telegram execution or production acceptance. Real host profiles were not
+selected as install/update targets.
+
+Archive extraction tests separately check installed references, literal arguments
+and queued commands without checkout files or configured live accounts. Follow
+the question-only smoke with a separately scoped planning/publication and delivery
+exercise to qualify those remaining behaviors. Earlier versions and package counts
+remain in Git history; they do not qualify the current source.
 
 Host documentation: [Claude Code plugins](https://code.claude.com/docs/en/plugins/manifest-reference),
 [Claude Code marketplaces](https://code.claude.com/docs/en/plugins/marketplace-reference),
