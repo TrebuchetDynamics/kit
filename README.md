@@ -69,7 +69,7 @@ in force. See [Pi bootstrap and recovery](docs/installation.md#pi-harness-bootst
 
 ```sh
 claude plugin marketplace add TrebuchetDynamics/kit
-claude plugin install kit@autowork
+claude plugin install kit@kit
 ```
 
 ### Codex
@@ -78,8 +78,10 @@ Requires a CLI with plugin support:
 
 ```sh
 codex plugin marketplace add TrebuchetDynamics/kit --ref main
-codex plugin add kit@autowork-marketplace
+codex plugin add kit@kit-marketplace
 ```
+
+Existing Autowork marketplace registrations require [manual migration](docs/cross-host.md#legacy-marketplace-migration); the suite installer does not migrate them.
 
 ### Paseo
 
@@ -336,7 +338,8 @@ not executed. Historical contracts and
 unresolved qualification are available at the
 [immutable pre-removal revision](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork).
 This is evidence, not an installation fallback. Hermes terminal maintenance
-(`hermes autowork`) and marketplace identifiers retain their current names.
+(`hermes autowork`) retains its name. Fresh portable installs use Kit marketplace
+identities; [legacy marketplace migration](docs/cross-host.md#legacy-marketplace-migration) is manual.
 Use GitHub Issues/PRs and read-only Orbi diagnostics for delivery status.
 
 Preserve task data, attempts, worktrees and recovery state. Orbi stays paused

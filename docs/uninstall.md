@@ -8,6 +8,33 @@ Source: [runtime configuration writes](../scripts/runtime_defaults.py),
 [setup configuration writes](../install-plugins.sh), and
 [native skill provisioning](../scripts/install_skills.py).
 
+## Portable marketplace removal and migration
+
+Fresh Claude Code installs use `kit@kit`; Codex uses `kit@kit-marketplace`.
+For intentional removal, use the original Claude scope:
+
+```sh
+claude plugin uninstall kit@kit --scope SCOPE --keep-data
+claude plugin marketplace remove kit --scope SCOPE
+codex plugin remove kit@kit-marketplace
+codex plugin marketplace remove kit-marketplace
+```
+
+Replace `SCOPE` with the original `user`, `project` or `local` scope; managed
+registrations need the administrator. Review other plugins before marketplace
+removal, which can remove more than Kit. Preserve private configuration/source/data
+backups and recovery evidence first. Claude `--keep-data` preserves its data
+directory, not all options/secrets or transfer to another ID. No Codex keep-data or
+automatic rollback guarantee is made. These commands do not undo repository work.
+
+Legacy `autowork` / `autowork-marketplace` registrations require
+[separately authorized manual migration](cross-host.md#legacy-marketplace-migration).
+The installer never removes them, even when a recorded directory is stale.
+Inspect the same effective configuration context and inherited/project overrides;
+Codex effective lists do not cover all persisted scopes. Verify one intended active
+Kit registration afterward. Source removal/rename is not installed-host cleanup or
+live migration evidence.
+
 ## Before installation
 
 Keep a private backup of each target profile's `config.yaml` and an inventory of
