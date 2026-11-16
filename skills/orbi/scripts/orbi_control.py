@@ -38,6 +38,8 @@ import re
 import shutil
 import subprocess
 import sys
+import stat
+import tempfile
 from pathlib import Path
 
 try:
@@ -229,7 +231,7 @@ def read_toml(path):
                            fix='run the helper with a compatible Python')
     try:
         return tomllib.loads(Path(path).read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
         raise ControlError('config_invalid',
                            f'cannot read the native Orbi config {path}: {exc.__class__.__name__}',
                            fix='repair or remove the config, then rerun status') from exc
@@ -238,6 +240,12 @@ def read_toml(path):
 def deployment_from(config_path, data=None):
     path = checked_path(config_path, 'config')
     data = read_toml(path) if data is None else data
+    for key in ('deploy_home', 'repo_dir', 'pi_providers', 'pi_provider', 'pi_model',
+                'pi_thinking', 'git_transport', 'engine_source_track'):
+        if key in data and not isinstance(data[key], str):
+            raise ControlError('config_invalid', f'{path} has a non-string {key}',
+                               fix='repair the native config deliberately; preserve recovery inputs',
+                               exit_code=2)
     source_repos = data.get('source_repos')
     if (not isinstance(source_repos, list) or not source_repos
             or not all(isinstance(item, str) and '/' in item for item in source_repos)):
@@ -400,10 +408,70 @@ def env_values(ctx, deploy_home):
     }
 
 
-def write_env(ctx, deployment):
-    path = checked_path(deployment.env_path, 'env file')
+def file_identity(path):
+    """Private comparison only: never render file contents/digests in a receipt."""
+    path = checked_path(path, 'setup path')
+    for component in (path, *path.parents):
+        if component.exists() and component.stat().st_uid != os.getuid():
+            raise ControlError('foreign_owner', 'a setup path is not owned by the current user',
+                               fix='have the owner repair deployment-local ownership deliberately',
+                               exit_code=2)
+        if component.exists():
+            break
+    if not path.exists():
+        return None
+    info = path.stat()
+    if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
+        raise ControlError('unknown_target', 'setup requires regular files and directories',
+                           fix='inspect the deployment-local path without removing recovery inputs',
+                           exit_code=2)
+    return (info.st_dev, info.st_ino, info.st_uid, info.st_mode,
+            path.read_bytes() if path.is_file() else None)
+
+
+def atomic_publish(path, text, *, mode=0o600, reuse_only=False):
+    """Publish complete bytes in the same directory; never clobber new targets."""
+    path = checked_path(path, 'publication path')
+    before = file_identity(path)
+    payload = text.encode('utf-8')
+    if before is not None:
+        if not path.is_file():
+            raise ControlError('unknown_target', 'publication target is not a regular file',
+                               fix='inspect the target and preserve recovery evidence', exit_code=2)
+        if before[-1] == payload:
+            return
+        if reuse_only:
+            raise ControlError('publication_conflict', 'existing setup file differs from intended bytes',
+                               fix='inspect the conflicting deployment-local file; repair deliberately '
+                                   'or choose a fresh deployment path; never overwrite recovery inputs',
+                               exit_code=2)
+        mode = stat.S_IMODE(before[3])
     path.parent.mkdir(parents=True, exist_ok=True)
-    existing = path.read_text(encoding='utf-8') if path.is_file() else ''
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.' + path.name + '.',
+                                         delete=False) as handle:
+            temporary = Path(handle.name)
+            os.fchmod(handle.fileno(), mode)
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if file_identity(path) != before:
+            raise ControlError('target_changed', 'publication target changed during setup',
+                               fix='inspect the concurrent change and rerun preflight deliberately',
+                               exit_code=2)
+        if before is None:
+            os.link(temporary, path)  # atomic create-if-absent, not replacement
+        else:
+            os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def render_env(ctx, deployment, *, fresh=False):
+    path = checked_path(deployment.env_path, 'env file')
+    existing = path.read_text(encoding='utf-8') if path.is_file() and not fresh else ''
     values = env_values(ctx, deployment.deploy_home)
     lines = existing.splitlines()
     rendered, seen = [], set()
@@ -423,15 +491,22 @@ def write_env(ctx, deployment):
         if key not in seen:
             rendered.append(f'{key}={values[key]}')
     text = '\n'.join(rendered).rstrip('\n') + '\n'
-    if not existing or text != existing:
-        path.write_text(text, encoding='utf-8')
-    path.chmod(0o600)
+    return text
+
+
+def write_env(ctx, deployment, *, reuse_only=False):
+    atomic_publish(deployment.env_path, render_env(ctx, deployment, fresh=reuse_only),
+                   reuse_only=reuse_only)
 
 
 def provider_path(deployment):
     value = deployment.data.get('pi_providers')
     if not value:
         return None
+    if not isinstance(value, str):
+        raise ControlError('config_invalid', 'pi_providers must name a regular metadata file',
+                           fix='repair the native provider path deliberately, preserving recovery inputs',
+                           exit_code=2)
     candidate = Path(value)
     if not candidate.is_absolute():
         for base in (deployment.config_path.parent, deployment.deploy_home):
@@ -694,19 +769,34 @@ def prerequisites(ctx, deployment, *, action, provider=None, allow_bootstrap_ins
                 f'{deployment.deploy_home}')
     if provider:
         pi_auth(ctx, provider['provider'])
-    return {'bootstrap': state, 'bootstrap_path': str(path)}
+    evidence = {'bootstrap': state, 'bootstrap_path': str(path)}
+    if state == 'missing':
+        evidence['python'] = bootstrap_preflight(ctx)
+    return evidence
 
 
-def install_bootstrap(ctx, deployment):
+def bootstrap_preflight(ctx):
     selected = select_python(ctx)
     uv = ctx.which('uv')
-    listing = ctx.run([uv, 'tool', 'list'], allow_failure=True)
-    if listing.returncode == 0 and 'orbi-cli' in listing.stdout:
+    try:
+        listing = ctx.run([uv, 'tool', 'list'], allow_failure=True)
+    except ControlError as exc:
+        raise ControlError(exc.code, 'uv tool list evidence is unavailable',
+                           fix='inspect uv tool list manually; do not retry a timeout unchanged') from exc
+    if listing.returncode != 0:
+        raise ControlError('bootstrap_unverified', 'uv tool list evidence is unavailable',
+                           fix='repair uv tool list before preparation; no conflict-free claim is possible')
+    if 'orbi-cli' in listing.stdout:
         raise ControlError(
             'bootstrap_conflict',
             'the user-local orbi tool environment exists but its launcher is missing',
             fix='inspect `uv tool list` and repair or remove the conflicting installation '
                 'manually; /orbi never force-reinstalls shared tools')
+    return selected
+
+
+def install_bootstrap(ctx, deployment, selected):
+    uv = ctx.which('uv')
     env = dict(ctx.env)
     env['PYTHONDONTWRITEBYTECODE'] = '1'
     ctx.run([uv, 'tool', 'install', '--editable', '--python', selected,
@@ -751,15 +841,16 @@ def write_config(deployment, repo, provider):
     if provider.get('thinking'):
         lines.append(f'pi_thinking = {json.dumps(provider["thinking"])}')
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    atomic_publish(path, '\n'.join(lines) + '\n', mode=0o644, reuse_only=True)
+
+
+def provider_text(metadata):
+    return json.dumps(sanitized_metadata(metadata), indent=2) + '\n'
 
 
 def write_provider_metadata(deployment, metadata):
-    path = checked_path(deployment.deploy_home / '.orbi/pi-providers.json', 'provider file')
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(sanitized_metadata(metadata), indent=2) + '\n',
-                    encoding='utf-8')
-    path.chmod(0o600)
+    path = deployment.deploy_home / '.orbi/pi-providers.json'
+    atomic_publish(path, provider_text(metadata), reuse_only=True)
 
 
 def validate_deployment_paths(deployment):
@@ -938,9 +1029,12 @@ def locked(ctx, key):
         raise ControlError('unsupported_platform',
                            'serialized lifecycle mutation needs a POSIX file lock',
                            fix='run mutations on Linux', exit_code=2)
-    folder = cache_home(ctx) / 'orbi-control'
+    folder = checked_path(cache_home(ctx) / 'orbi-control', 'lock directory')
+    file_identity(folder)
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / (hashlib.sha256(str(key).encode('utf-8')).hexdigest()[:16] + '.lock')
+    checked_path(path, 'lock file')
+    file_identity(path)
     handle = path.open('a+')
     try:
         fcntl.flock(handle, fcntl.LOCK_EX)
@@ -956,26 +1050,11 @@ def orbi(ctx, deployment, *argv, timeout=CHECK_TIMEOUT, allow_failure=False):
                    timeout=timeout, allow_failure=allow_failure)
 
 
-def parse_check_failure(stderr):
-    fields = {}
-    for key in ('check', 'reason', 'fix', 'docs'):
-        match = re.search(rf'\b{key}=("(?:[^"\\]|\\.)*"|\S+)', stderr)
-        if match:
-            value = match.group(1)
-            if value.startswith('"'):
-                value = value[1:-1].replace('\\"', '"')
-            fields[key] = value
-    return fields
-
-
 def run_orbi_check(ctx, deployment):
     proc = orbi(ctx, deployment, 'check', '--config', str(deployment.config_path),
                 allow_failure=True)
     if proc.returncode != 0:
-        fields = parse_check_failure(proc.stderr)
-        reason = fields.get('reason') or f'exit {proc.returncode}'
-        check = fields.get('check')
-        message = f'orbi check failed at {check}: {reason}' if check else f'orbi check failed: {reason}'
+        message = f'orbi check failed with exit {proc.returncode}; inspect diagnostics privately'
         raise ControlError(
             'validation_failed', message,
             fix='inspect and repair the partially prepared native config/provider metadata; '
@@ -1006,7 +1085,21 @@ def systemctl_state(ctx, unit):
 
 def timer_enabled(ctx, unit):
     proc = ctx.run(['systemctl', '--user', 'is-enabled', unit], allow_failure=True)
-    return proc.stdout.strip() == 'enabled'
+    state = proc.stdout.strip()
+    # systemctl(1)'s is-enabled table: runtime enablement is still enablement;
+    # failed/unknown evidence must never be interpreted as disabled scheduling.
+    if proc.returncode == 0:
+        if state in {'enabled', 'enabled-runtime', 'alias'}:
+            return True
+        if state in {'static', 'indirect', 'generated', 'transient'}:
+            return False
+    elif proc.returncode > 0 and state in {'disabled', 'masked', 'masked-runtime',
+                                          'linked', 'linked-runtime'}:
+        return False
+    raise ControlError('scheduler_unavailable', 'timer enablement could not be verified',
+                       fix='restore readable systemctl --user is-enabled evidence before preparation',
+                       evidence={'scheduler': {'state': 'unavailable',
+                                               'reason': 'timer enablement could not be verified'}})
 
 
 def scheduler_snapshot(ctx, deployment):
@@ -1015,17 +1108,21 @@ def scheduler_snapshot(ctx, deployment):
         timer = f'{deployment.prefix}@{index}.timer'
         service = f'{deployment.prefix}@{index}.service'
         fragment = systemctl_show(ctx, timer, 'FragmentPath')
-        if fragment.returncode != 0 and not fragment.stdout.strip():
+        if fragment.returncode != 0:
             return {'state': 'unavailable',
                     'reason': 'the systemd user session is not readable'}
         installed = bool(fragment.stdout.strip())
         service_fragment = systemctl_show(ctx, service, 'FragmentPath')
+        if service_fragment.returncode != 0:
+            return {'state': 'unavailable',
+                    'reason': 'loaded service ownership could not be verified'}
         owned = False
         if service_fragment.stdout.strip():
             owned = installed_config(Path(service_fragment.stdout.strip()),
                                      home_dir(ctx)) == deployment.config_path
         state = systemctl_state(ctx, service)
-        services[service] = {'state': state, 'owned': owned}
+        services[service] = {'state': state, 'owned': owned,
+                             'installed': bool(service_fragment.stdout.strip())}
         if installed:
             timers[timer] = {'installed': True, 'owned': owned,
                              'enabled': timer_enabled(ctx, timer),
@@ -1184,62 +1281,256 @@ def new_deployment_report(deployment, provider):
             'git_transport': deployment.data.get('git_transport')}
 
 
+def require_setup_transport(repo, target):
+    if repo.git_transport is None:
+        raise ControlError('transport_unsupported', 'the origin is not supported SSH or HTTPS',
+                           fix='use a supported canonical checkout; never rewrite origin as a setup repair',
+                           exit_code=2)
+    configured = target.data.get('git_transport')
+    if configured is not None and configured != repo.git_transport:
+        raise ControlError('transport_mismatch', 'origin and native config transport disagree',
+                           fix='inspect origin and deliberately repair deployment-local git_transport; '
+                               'never run git remote set-url or activating upstream setup', exit_code=2)
+
+
+def require_setup_idle(ctx, target):
+    snapshot = scheduler_snapshot(ctx, target)
+    if snapshot.get('state') != 'ok':
+        raise ControlError('scheduler_unavailable', 'setup cannot verify inactive/no-worker evidence',
+                           fix='restore read-only systemd user-session evidence; do not repair while '
+                               'worker activity is unknown', evidence={'scheduler': snapshot})
+    if (any(item.get('installed') and not item['owned']
+            for item in snapshot['services'].values())
+            or any(not item['owned'] for item in snapshot['timers'].values())):
+        raise ControlError('unit_conflict', 'loaded scheduler units have unverifiable target ownership',
+                           fix='inspect loaded unit fragments and repair deployment-local ownership '
+                               'deliberately; never adopt foreign units', exit_code=2,
+                           evidence={'scheduler': snapshot})
+    if (any(item['state'] not in INACTIVE_STATES for item in snapshot['services'].values())
+            or any(item['enabled'] or item['active'] not in INACTIVE_STATES
+                   for item in snapshot['timers'].values())):
+        raise ControlError('setup_busy', 'setup requires inactive scheduling and no live workers',
+                           fix='request a separately authorized stop/drain and verify inactivity; '
+                               'preserve workers and recovery inputs', evidence={'scheduler': snapshot})
+    return snapshot
+
+
+def resume_inputs(ctx, target, repo, args):
+    fix = ('inspect and deliberately repair the deployment-local config/provider evidence; '
+           'preserve all files, pin and origin; bounded --resume-setup cannot adopt this state')
+    for valid, reason, repair in (
+            (target.config_path == target.deploy_home / 'orbi.toml',
+             'resume config is not deployment-local orbi.toml',
+             'inspect config placement and use the owned deployment-local config'),
+            (target.repo_dir == repo.path,
+             'resume config does not name the canonical repo_dir',
+             'deliberately repair the native repo_dir after verifying canonical ownership'),
+            (target.pin == PIN_TRACK,
+             'resume config does not retain the supported source pin',
+             'inspect the saved pin; restoring or changing it requires deliberate owner repair'),
+            (target.provider_file == target.deploy_home / '.orbi/pi-providers.json',
+             'resume provider path is not deployment-local .orbi/pi-providers.json',
+             'inspect the saved pi_providers path; external provider paths require deliberate repair')):
+        if not valid:
+            raise ControlError('resume_refused', reason,
+                               fix=repair + '; preserve all evidence, selections and origin', exit_code=2)
+    if (args.pi_provider != target.data.get('pi_provider')
+            or args.pi_model != target.data.get('pi_model')
+            or (args.pi_thinking is not None
+                and args.pi_thinking != target.data.get('pi_thinking'))):
+        raise ControlError('resume_refused', 'resume provider/model/reasoning differs from saved selection',
+                           fix='supply the exact saved IDs and reasoning (or omit thinking to inherit); '
+                               'never change the saved selection through resume', exit_code=2)
+    if ensure_staging_path(ctx, target.deploy_home, SUPPORTED_PIN) != 'reused':
+        raise ControlError('resume_refused', 'resume needs an existing official pinned staged checkout',
+                           fix=fix, exit_code=2)
+    selection = dataclasses.replace(target, data={**target.data,
+        'pi_providers': str(checked_path(args.pi_providers, 'provider source'))})
+    provider = require_provider(selection)
+    provider['thinking'] = target.data.get('pi_thinking')
+    metadata = sanitized_metadata(load_provider_metadata(selection))
+    path = target.provider_file
+    if path.exists() and path.read_bytes() != provider_text(metadata).encode('utf-8'):
+        raise ControlError('resume_refused', 'present provider file differs from verified intended bytes',
+                           fix='preserve the present provider file; inspect and repair it deliberately; '
+                               '--resume-setup only fills an absent file or reuses identical bytes',
+                           exit_code=2)
+    return provider, metadata
+
+
+def setup_file_identities(target):
+    return {path: file_identity(path) for path in (
+        target.deploy_home, target.config_path, target.deploy_home / '.orbi',
+        target.env_path, target.deploy_home / '.orbi/pi-providers.json',
+        *([target.provider_file] if target.provider_file else []))}
+
+
+def require_intended_files(ctx, target, metadata):
+    for path, text in ((target.deploy_home / '.orbi/pi-providers.json', provider_text(metadata)),
+                       (target.env_path, render_env(ctx, target, fresh=True))):
+        if path.exists() and path.read_bytes() != text.encode('utf-8'):
+            raise ControlError('publication_conflict', 'unpublished setup file differs from intended bytes',
+                               fix='preserve the conflicting provider/env file and inspect it; '
+                                   'repair deliberately or choose a fresh deployment path', exit_code=2)
+
+
 def command_setup(ctx, args):
-    repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
-    explicit = args.config
-    deployments = load_deployments(ctx, repo, explicit)
-    target = select_target(ctx, repo, explicit)
-    if target is not None:
-        if any(getattr(args, key) is not None for key in
-               ('pi_providers', 'pi_provider', 'pi_model', 'pi_thinking')):
-            raise ControlError(
-                'provider_override_refused', 'bootstrap inputs cannot replace an existing selection',
-                fix='omit --pi-* bootstrap inputs to reuse the existing deployment; '
-                    'repair its native provider config deliberately if incomplete', exit_code=2)
-        validate_target(target, repo)
-        require_unit_ownership(ctx, target)
-        provider = require_provider(target)
-        source = require_source(ctx, target)
-        metadata = None
-        new = False
-    else:
-        target, provider, metadata = plan_new_deployment(
-            ctx, repo, deployments, args)
-        source = {'state': 'verified', 'expected': SUPPORTED_PIN, 'head': SUPPORTED_PIN}
-        new = True
-    evidence = prerequisites(ctx, target, action='setup', provider=provider,
-                             allow_bootstrap_install=True)
-    report = new_deployment_report(target, provider)
-    report['source'] = source['state']
-    if args.dry_run:
-        steps = [{'step': 'resolve_repository', 'status': 'ok'},
-                 {'step': 'reuse_existing_deployment' if not new else 'stage_checkout',
-                  'status': 'planned'},
-                 {'step': 'write_isolation_env', 'status': 'planned'},
-                 {'step': 'validate_non_activating', 'status': 'planned'}]
-        return {'action': 'setup', 'platform': ctx.platform, 'status': 'planned',
-                'dry_run': True, 'repo': repo.full, 'deployment': report,
-                'steps': steps, 'activated': False, 'warnings': []}
-    steps = [{'step': 'resolve_repository', 'status': 'ok'}]
-    with locked(ctx, target.config_path):
-        validate_deployment_paths(target)
-        if new:
-            steps.append(stage_checkout(ctx, target.deploy_home, SUPPORTED_PIN))
-            validate_deployment_paths(target)
-            write_config(target, repo, provider)
-            steps.append({'step': 'write_config', 'status': 'created'})
-            write_provider_metadata(target, metadata)
-            steps.append({'step': 'write_provider_metadata', 'status': 'created'})
+    steps = []
+    target = None
+    target_path = args.config
+    mutated = False
+    current = 'resolve_repository'
+    possible = False
+    snapshot = {'state': 'unavailable', 'reason': 'scheduler not yet observed'}
+
+    def step(name, operation, *, mutating=False):
+        nonlocal current, possible, mutated
+        current, possible = name, mutating
+        mutated = mutated or mutating
+        value = operation()
+        steps.append({'step': name, 'status': 'ok',
+                      **({'mutation': 'completed'} if mutating else {})})
+        possible = False
+        return value
+
+    try:
+        repo = step('resolve_repository', lambda: repo_identity(ctx, args.repo_dir or ctx.cwd))
+        current = 'preflight_target'
+        target_path = args.config or str(data_home(ctx) / f'orbi-{derive_unit_name(repo.full)}' / 'orbi.toml')
+        deployments = load_deployments(ctx, repo, args.config)
+        target = select_target(ctx, repo, args.config)
+        new = target is None
+        if not new:
+            if not args.resume_setup and any(getattr(args, key) is not None for key in
+                   ('pi_providers', 'pi_provider', 'pi_model', 'pi_thinking')):
+                raise ControlError(
+                    'provider_override_refused', 'bootstrap inputs cannot replace an existing selection',
+                    fix='omit --pi-* bootstrap inputs to reuse the existing deployment; '
+                        'for a legacy missing local provider use explicit --config --resume-setup '
+                        'with the complete matching selectors; otherwise repair deliberately', exit_code=2)
+            validate_target(target, repo)
+            require_setup_transport(repo, target)
+            require_unit_ownership(ctx, target)
+            if args.resume_setup:
+                provider, metadata = resume_inputs(ctx, target, repo, args)
+            else:
+                provider, metadata = require_provider(target), None
+            source = require_source(ctx, target)
         else:
-            steps.append({'step': 'reuse_existing_deployment', 'status': 'reused'})
-        write_env(ctx, target)
-        steps.append({'step': 'write_isolation_env', 'status': 'ok'})
+            if args.resume_setup:
+                raise ControlError('resume_refused', 'resume requires an existing explicit native config',
+                                   fix='use new setup without --resume-setup', exit_code=2)
+            target, provider, metadata = plan_new_deployment(ctx, repo, deployments, args)
+            source = {'state': 'unverified'}  # staging/verification has not run yet
+            require_intended_files(ctx, target, metadata)
+        identities = setup_file_identities(target)
+        steps.append({'step': 'preflight_target', 'status': 'ok'})
+        evidence = step('preflight_prerequisites', lambda: prerequisites(
+            ctx, target, action='setup', provider=provider, allow_bootstrap_install=True))
+        snapshot = step('preflight_activity', lambda: require_setup_idle(ctx, target))
+        report = new_deployment_report(target, provider)
+        report['source'] = source['state']
+        planned = ['stage_checkout'] if new else ['reuse_existing_deployment']
+        if new or args.resume_setup:
+            planned.append('write_provider_metadata')
+        planned += ['write_isolation_env']
+        if new:
+            planned.append('write_config')
         if evidence['bootstrap'] == 'missing':
-            steps.append(install_bootstrap(ctx, target))
-        steps.append(run_orbi_check(ctx, target))
-    return {'action': 'setup', 'platform': ctx.platform, 'status': 'prepared',
-            'dry_run': False, 'repo': repo.full, 'deployment': report,
-            'steps': steps, 'activated': False, 'warnings': []}
+            planned.append('install_bootstrap')
+        planned.append('validate_non_activating')
+        if args.dry_run:
+            return {'action': 'setup', 'platform': ctx.platform, 'status': 'planned',
+                    'dry_run': True, 'repo': repo.full, 'deployment': report,
+                    'prerequisites': evidence, 'scheduler': snapshot,
+                    'steps': steps + [{'step': name, 'status': 'planned'} for name in planned],
+                    'activated': False, 'warnings': []}
+        current, possible, mutated = 'lock', True, True
+        with locked(ctx, target.config_path):
+            steps.append({'step': 'lock', 'status': 'ok', 'mutation': 'completed'})
+            current, possible = 'recheck_target', False
+            # Compare private file identities/bytes and rediscover ownership under lock.
+            if setup_file_identities(target) != identities:
+                raise ControlError('target_changed', 'deployment files changed after preflight',
+                                   fix='inspect the concurrent changes; rerun preflight deliberately',
+                                   exit_code=2)
+            if repo_identity(ctx, repo.path) != repo:
+                raise ControlError('target_changed', 'canonical repository identity changed after preflight',
+                                   fix='inspect the canonical checkout and origin; never rewrite remotes',
+                                   exit_code=2)
+            selected = select_target(ctx, repo, args.config)
+            if (new and selected is not None) or (not new and selected != target):
+                raise ControlError('target_changed', 'deployment ownership changed after preflight',
+                                   fix='inspect duplicate/concurrent deployment ownership', exit_code=2)
+            if new:
+                # Repeat all unit/ownership checks, without silently adopting new selectors.
+                rechecked, _, _ = plan_new_deployment(ctx, repo, load_deployments(ctx, repo), args)
+                if rechecked != target:
+                    raise ControlError('target_changed', 'new deployment target changed',
+                                       fix='inspect concurrent setup changes', exit_code=2)
+                require_intended_files(ctx, target, metadata)
+            else:
+                validate_target(target, repo)
+                require_unit_ownership(ctx, target)
+                require_source(ctx, target)
+                if args.resume_setup:
+                    resume_inputs(ctx, target, repo, args)
+                else:
+                    require_provider(target)
+            snapshot = require_setup_idle(ctx, target)
+            bootstrap_state, _ = bootstrap_evidence(ctx, target)
+            if bootstrap_state != evidence['bootstrap']:
+                raise ControlError('target_changed', 'shared bootstrap changed after preflight',
+                                   fix='inspect the shared launcher and rerun preflight deliberately; '
+                                       'never replace another deployment launcher', exit_code=2)
+            if bootstrap_state == 'missing':
+                bootstrap_preflight(ctx)
+            steps.append({'step': 'recheck_target', 'status': 'ok'})
+            if new:
+                step('stage_checkout', lambda: stage_checkout(ctx, target.deploy_home, SUPPORTED_PIN),
+                     mutating=True)
+                report['source'] = 'verified'
+            if new or args.resume_setup:
+                step('write_provider_metadata', lambda: write_provider_metadata(target, metadata),
+                     mutating=True)
+            step('write_isolation_env', lambda: write_env(ctx, target, reuse_only=new), mutating=True)
+            if new:
+                step('write_config', lambda: write_config(target, repo, provider), mutating=True)
+            if evidence['bootstrap'] == 'missing':
+                # Recheck conflict evidence before the later mutation-possible install.
+                step('recheck_bootstrap', lambda: bootstrap_preflight(ctx))
+                step('install_bootstrap', lambda: install_bootstrap(ctx, target, evidence['python']),
+                     mutating=True)
+            step('validate_non_activating', lambda: run_orbi_check(ctx, target), mutating=True)
+            current, possible = 'release_lock', True
+        return {'action': 'setup', 'platform': ctx.platform, 'status': 'prepared',
+                'dry_run': False, 'repo': repo.full, 'deployment': report,
+                'prerequisites': evidence, 'scheduler': snapshot,
+                'steps': steps, 'activated': False, 'warnings': []}
+    except (ControlError, OSError, UnicodeError) as error:
+        if isinstance(error, ControlError):
+            exc = error
+        elif isinstance(error, UnicodeError):
+            exc = ControlError(
+                'file_encoding_invalid', 'setup input is not valid UTF-8 (details withheld)',
+                fix='inspect the failed step and repair file encoding privately; '
+                    'preserve original bytes and all recovery inputs')
+        else:
+            exc = ControlError(
+                'filesystem_error', 'setup filesystem operation failed (details withheld)',
+                fix='inspect deployment-local permissions and files privately; preserve recovery inputs '
+                    'and repair the cause before rerunning setup')
+        exc.mutated = exc.mutated or mutated
+        exc.evidence = {**exc.evidence, 'target': str(target.config_path) if target else target_path,
+                        'original_error': exc.code, 'activated': False,
+                        'scheduler': exc.evidence.get('scheduler', snapshot),
+                        'steps': [*steps, {'step': current, 'status': 'failed', 'error': exc.code,
+                                          'mutation': 'possible' if possible else 'none'}]}
+        if exc.code == 'config_invalid':
+            exc.fix = 'inspect and deliberately repair the native config; preserve all recovery inputs '
+        if not exc.fix:
+            exc.fix = 'inspect the failed setup step and actual files; preserve all recovery inputs'
+        raise exc from (error if exc is not error else None)
 
 
 def start_plan(ctx, target):
@@ -1451,7 +1742,8 @@ def command_status(ctx, args):
 def action_usage():
     return ('python3 -B orbi_control.py [' + '|'.join(ACTIONS) + '] '
             '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] '
-            '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]]')
+            '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] '
+            '[--resume-setup]')
 
 
 def command_help(ctx, args):
@@ -1460,10 +1752,12 @@ def command_help(ctx, args):
         '--config': 'explicit native Orbi config for this deployment',
         '--dry-run': 'preview without locking, writing, installing or activating',
         '--json': 'print one JSON document',
-        '--pi-providers': 'regular Pi metadata JSON for a new deployment (no credentials)',
+        '--resume-setup': 'setup only: fill a legacy missing local provider; requires explicit '
+                          '--config and complete matching --pi-* inputs; never overwrite',
+        '--pi-providers': 'regular Pi metadata JSON for new setup or explicit bounded resume (no credentials)',
         '--pi-provider': 'explicit provider ID; requires --pi-providers and --pi-model',
         '--pi-model': 'model ID with verified metadata; requires --pi-providers and --pi-provider',
-        '--pi-thinking': 'optional Pi reasoning level for a new deployment',
+        '--pi-thinking': 'reasoning for new setup; resume must match saved value (omission inherits)',
     }
     return {
         'action': 'help',
@@ -1479,8 +1773,8 @@ def command_help(ctx, args):
         'errors': {
             'exit': 'Exit 0 means success or help; a nonzero exit reports an error, '
                     'not whether a write occurred.',
-            'mutated': 'error.mutated, not the exit code, reports whether anything '
-                       'was written; inspect it before recovery (use --json).',
+            'mutated': 'error.mutated, not the exit code, reports actual or possible writes, '
+                       'including locks; inspect steps and actual files before recovery (use --json).',
             'code': 'error.code classifies the failure; codes are owned by the raising code.',
             'fix': 'error.fix gives the repair action; unknown actions point to /orbi help.',
         },
@@ -1491,7 +1785,16 @@ def command_help(ctx, args):
             'support help only.',
             'Help needs no repository or deployment and reads no deployment, config, '
             'environment values or scheduler; it runs no subprocess and performs no writes.',
-            'Help accepts and ignores --repo-dir, --config and --dry-run.',
+            'Help accepts and ignores --repo-dir, --config, --dry-run and all setup inputs.',
+            'Loaded helper: ' + str(Path(__file__).resolve()) + '. If flags are missing in an '
+            'older installed helper, report its path and available Kit revision, then request '
+            'a separately authorized Kit update/reload; never rewrite project origin.',
+            'Setup supports new preparation, existing valid reuse without selectors, or explicit '
+            'bounded --resume-setup for a legacy missing local provider with matching selectors. '
+            'Other incomplete/changed states require deliberate repair preserving evidence.',
+            'Setup activated=false means no activation invoked here, not proof an existing '
+            'scheduler is inactive. Scheduler observations are separate. A killed process cannot '
+            'emit a receipt; infer retry safety from actual files. Never retry a timeout unchanged.',
             'Status is read-only. Only setup stages source/config; only start/stop touch '
             'the scheduler. Dry-run performs no writes.',
             'Not an executor or scheduler: no tick, issue claim, review or merge.',
@@ -1521,7 +1824,7 @@ ACTIONS = {
         'mutates': 'staging',
         'platforms': ['linux'],
         'applies': ['--repo-dir', '--config', '--dry-run', '--json',
-                    '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking'],
+                    '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--resume-setup'],
         'when': 'Run to prepare one unambiguous repository deployment with verified '
                 'prerequisites, preserving existing pins and active workers.',
     },
@@ -1594,10 +1897,14 @@ def parse_args(argv):
     parser.add_argument('--dry-run', action='store_true',
                         help='show the plan without locking, writing, installing or activating')
     parser.add_argument('--json', action='store_true', help='print one JSON document')
-    parser.add_argument('--pi-providers', help='setup only: Pi metadata JSON for a new deployment')
+    parser.add_argument('--resume-setup', action='store_true',
+                        help='setup only: resume legacy missing provider with explicit --config '
+                             'and complete matching --pi-* inputs')
+    parser.add_argument('--pi-providers', help='setup only: Pi metadata JSON for new setup or bounded resume')
     parser.add_argument('--pi-provider', help='setup only: explicit provider ID')
     parser.add_argument('--pi-model', help='setup only: explicit model ID with verified metadata')
-    parser.add_argument('--pi-thinking', help='setup only: optional Pi reasoning level')
+    parser.add_argument('--pi-thinking', help='setup only: new reasoning level, or exact saved resume value; '
+                        'omitted resume thinking inherits the saved value')
     return parser.parse_args(argv)
 
 
@@ -1611,6 +1918,11 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             'python_unsupported',
             f'orbi_control.py requires Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or newer',
             fix='run it with the documented compatible Python before any mutation')
+        if args.action == 'setup':
+            exc.evidence = {'target': args.config, 'original_error': exc.code, 'activated': False,
+                            'scheduler': {'state': 'unavailable'},
+                            'steps': [{'step': 'validate_request', 'status': 'failed',
+                                       'error': exc.code, 'mutation': 'none'}]}
         render_error(ctx, args.action, exc, args.json)
         return exc.exit_code
     try:
@@ -1619,6 +1931,13 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
                 'unknown_action', f"unknown action '{args.action}'", exit_code=2,
                 fix='run /orbi help for the supported actions and their effects')
         selectors = (args.pi_providers, args.pi_provider, args.pi_model, args.pi_thinking)
+        if args.action != 'help' and args.resume_setup and (
+                args.action != 'setup' or not args.config or not all(selectors[:3])):
+            raise ControlError('invalid_resume_selection',
+                               '--resume-setup requires setup, explicit --config and complete --pi-* inputs',
+                               fix='use setup --config PATH --resume-setup --pi-providers PATH '
+                                   '--pi-provider ID --pi-model ID, matching the saved selection', exit_code=2)
+
         if args.action != 'help' and any(value is not None for value in selectors):
             if (args.action != 'setup' or not all(selectors[:3])
                     or any(value is not None and not value.strip() for value in selectors)):
@@ -1649,6 +1968,11 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             render(ctx, document, args.json)
         return 0
     except ControlError as exc:
+        if args.action == 'setup' and 'steps' not in exc.evidence:
+            exc.evidence = {**exc.evidence, 'target': args.config, 'original_error': exc.code,
+                            'activated': False, 'scheduler': {'state': 'unavailable'},
+                            'steps': [{'step': 'validate_request', 'status': 'failed',
+                                       'error': exc.code, 'mutation': 'none'}]}
         render_error(ctx, args.action, exc, args.json)
         return exc.exit_code
 
