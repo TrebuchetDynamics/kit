@@ -38,6 +38,7 @@ is limited, so some commands must be typed directly.
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only clean unmerged ones, keep dirty and locked worktrees |
 | `/lgtm` | `/lgtm` | [Continue within inherited authority](../skills/lgtm/SKILL.md): accept unambiguous choices, clarify only ambiguous planning choices; standalone plan approval does not authorize implementation |
 | `/docs_sync` | `/docs_sync` | Maintain repository documentation |
+| `/update-kit` (also `/update_kit`) | `/update_kit` | [Refresh dedicated upstream source and reinstall the suite](../skills/update-kit/SKILL.md); explicit only, full-suite/restart effects, restricted Hermes cascades refused; [preview and ownership](installation.md#update-kit) |
 | `/plan_with_me` | `/plan_with_me` | Resolve missing intent, then publish complete GitHub Issues |
 | `/plan_for_me` | `/plan_for_me` | Investigate accepted scope and publish complete GitHub Issues without an interview |
 | `/grill-me` | `/grill_me` | Stress-test a plan through questions |
@@ -99,6 +100,7 @@ Public skill names match the workflow names. Source directories stay stable for 
 | `/plan_with_me` | `plan-with-me` | None |
 | `/plan_for_me` | `plan-for-me` | `/autoresearch:plan` (CLI), `/autoresearch_plan` (Telegram); runs the Autoresearch skill's plan protocol with the same planning adaptations |
 | `/docs_sync` | `docs-sync` | None |
+| `/update_kit` | `update-kit` | `/update-kit` (same literal arguments) |
 
 Grill Me is the challenge mode of Plan With Me; its old command still works but
 is not advertised as a separate plugin skill. Autoresearch protocols remain
