@@ -58,7 +58,7 @@ independently proven private helper only if in scope and its checks pass.
 
 ## Boundaries
 
-- Not a refactor inside a file or a module extraction; use `/autowork` with a task
+- Not a refactor inside a file or a module extraction; publish a GitHub issue with a task
   and a check that passes before and after.
 - Not a folder topology change; use `/split-folder`.
 - Not an architecture review; use `/improve-codebase-architecture`.

@@ -93,6 +93,10 @@ class GithubNativeDocsTests(unittest.TestCase):
     def test_human_review_gate_is_human_only_and_not_a_protection_substitute(self):
         gate = compact(section(TEXT, "Human acceptance is a separate gate"))
         for phrase in (
+                "`/orbi setup` default to `human_review_gate = false`",
+                "not required CI or independent AI review",
+                "Setup preserves an existing deployment's explicitly selected policy",
+                "external authorization rules remain unchanged",
                 "human_review_gate = true",
                 "ai-human-review",
                 "Only a human applies",
@@ -114,6 +118,53 @@ class GithubNativeDocsTests(unittest.TestCase):
                 "blob/v0.7.41/src/orbi/merge_exec.py",
                 "blob/v0.7.41/src/orbi/example_config.toml"):
             self.assertIn(source, TEXT)
+
+    def test_lifecycle_skill_names_observed_states_and_platform_limits(self):
+        lifecycle = compact(section(TEXT, "Kit lifecycle skill", level=3))
+        for phrase in (
+                "`/orbi [status|setup|start|stop|help]`",
+                "Bare invocation reads status",
+                "Setup prepares without activating scheduling",
+                "On Linux, status names the state it observed",
+                "`absent`",
+                "`prepared` when an owned timer is enabled or active",
+                "`running` while any service is active, activating or reloading",
+                "`draining` when no service is running but one is deactivating",
+                "`stopped` when services are inactive or failed",
+                "`stop` can report `draining` while a subsequent status still reports `running`",
+                "`unavailable`",
+                "Linux supports lifecycle changes",
+                "macOS is status-only",
+                "macOS status reports local deployment metadata but leaves active scheduler state `unavailable`",
+                "shared bootstrap"):
+            self.assertIn(phrase, lifecycle)
+
+    def test_readme_setup_matches_shipped_bootstrap_and_recovery(self):
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        setup = compact(section(readme, 'Using Orbi', level=3))
+        for phrase in (
+                'credential-free Pi provider metadata',
+                '--pi-providers PATH --pi-provider ID --pi-model ID',
+                '--pi-thinking LEVEL',
+                'reuse a verified selection from a visible deployment',
+                'Pi authentication must already work',
+                'does not automate login or guarantee provisioning',
+                'verified SSH/HTTPS origin without rewriting it',
+                'existing selections and pins are preserved',
+                '--resume-setup',
+                'missing deployment-local provider file',
+                '--config PATH',
+                'matching provider inputs',
+                'does not activate scheduling or qualify live recovery, isolation or delivery'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, setup)
+        for anchor in ('first-deployment-provider-bootstrap',
+                       'explicit-bounded-legacy-resume',
+                       'partial-failure-and-recovery'):
+            self.assertIn(f'skills/orbi/references/lifecycle.md#{anchor}', setup)
+        self.assertNotIn('issues/43', setup)
+        self.assertNotIn('unresolved limitation', setup)
+        self.assertIn('**Orbi remains paused and live-unqualified**', readme)
 
     def test_local_links_and_anchors_resolve(self):
         repo = docs.Repo(ROOT)

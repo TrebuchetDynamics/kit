@@ -6,48 +6,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CycleGuidanceTests(unittest.TestCase):
-    def test_caller_controlled_continuation_uses_github_and_preserves_scope(self):
-        manual = (ROOT / 'skills/work/SKILL.md').read_text()
-        for requirement in ('Honor a supplied issue or scope', 'Continue eligible work',
-                            'caller', 'A session end starts no replacement service'):
-            self.assertIn(requirement, manual)
-        for path in ('skills/autowork/SKILL.md', 'adapters/skills/autowork/SKILL.md'):
-            text = (ROOT / path).read_text()
-            self.assertIn('Orbi', text)
-            self.assertNotIn('autowork start .', text)
-
-
-    def test_ready_native_and_portable_guidance_use_one_github_contract(self):
-        native = (ROOT / 'skills/autowork/SKILL.md').read_text()
-        portable = (ROOT / 'adapters/skills/autowork/SKILL.md').read_text()
-        self.assertIn('../shared/PLAN-HANDOFF.md', native)
-        self.assertIn('../../../skills/autowork/SKILL.md', portable)
-        for text in (native, portable):
-            self.assertNotIn('--owner-pid', text)
-            self.assertNotIn('autowork tasks prepare', text)
-
-    def test_autowork_never_falls_back_to_legacy_execution(self):
-        native = (ROOT / 'skills/autowork/SKILL.md').read_text()
-        self.assertIn('never starts, resumes, installs or schedules', native)
-        self.assertIn('no fallback executor', native)
-        self.assertIn('routes explicitly to `/work`', native)
 
     def test_default_guidance_does_not_route_through_native_card_tools(self):
-        paths = ('skills/autowork/SKILL.md', 'skills/work/SKILL.md',
-                 'skills/shared/ENGINEERING-CYCLE.md')
+        paths = ('skills/shared/ENGINEERING-CYCLE.md',)
         for path in paths:
             with self.subTest(path=path):
                 text = (ROOT / path).read_text()
                 for obsolete in ('hermes kanban', 'start_goal.py', 'reconcile.py',
                                  '--goal-max-turns', '--max-retries', '100-turn default'):
                     self.assertNotIn(obsolete, text)
-
-
-    def test_legacy_scheduled_policy_is_not_an_active_entrypoint(self):
-        core = (ROOT / 'skills/autowork/SKILL.md').read_text()
-        self.assertNotIn('references/scheduled-policy.md', core)
-        self.assertIn('executor, CLI and integrations are removed', core)
-        self.assertIn('No legacy runner', (ROOT / 'skills/plan-for-me/SKILL.md').read_text())
 
     def test_cycle_routes_available_skills_and_preserves_authority(self):
         policy = ROOT / 'skills/shared/ENGINEERING-CYCLE.md'
@@ -61,7 +28,7 @@ class CycleGuidanceTests(unittest.TestCase):
                             'tasks/todo.md', 'review acceptance', 'NOT_CHECKED'):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
-        for path in ('docs-sync/SKILL.md', 'autowork/SKILL.md'):
+        for path in ('docs-sync/SKILL.md', 'unblock/SKILL.md'):
             self.assertIn('PLAN-HANDOFF.md', (ROOT / 'skills' / path).read_text())
 
     def test_supporting_guidance_does_not_reintroduce_phase_checklists(self):

@@ -1,8 +1,8 @@
 # Repository engineering cycle
 
 Optional routing reference: consult when a method is needed and its selection is
-unclear. GitHub Issues own executable work; `/work` implements explicitly accepted
-manual scope. `/autowork` is a compatibility redirect, not an executor. Orbi remains
+unclear. GitHub Issues own executable work; retained fix/apply modes implement only
+their explicitly accepted scope under ownership, PR and review gates. Orbi remains
 paused and live-unqualified. Engineering protocols add techniques, never authority.
 
 Caller scope and saved stop/batch limits control continuation. Default interactive
@@ -19,23 +19,22 @@ Legacy task records and recovery state stay preserved migration evidence.
 
 ## One coordinator, supporting skills on demand
 
-Autowork is the default coordinator for authorized repository development. It owns
-selection, execution handoff, reconciliation and closeout. An explicitly requested
-specialist command stays within its own scope; it does not secretly start Autowork.
+Orbi owns issue-to-PR delivery. An explicitly requested specialist command stays
+within its own scope and returns evidence to its existing execution owner.
 Installation makes skills available, not mandatory to invoke. Every workflow
 applies the [shared Ponytail method](PONYTAIL.md) as its baseline, not an extra
 workflow or review loop; load detailed protocols only for the relevant choice.
 
 | Current need | Smallest workflow |
 | --- | --- |
-| Ready task with clear checks | Explicit `/work` implementation; no research or documentation prepass. |
+| Ready task with clear checks | Orbi delivery or an already-authorized fix/apply mode; no research or documentation prepass. |
 | Known small repair, empty queue | Record one bounded task and execute; no research ceremony. |
-| Unresolved hypothesis, tradeoff or measured optimization | Bounded Autoresearch, then return findings to the same Autowork task. |
+| Unresolved hypothesis, tradeoff or measured optimization | Bounded Autoresearch, then return findings to the same issue and execution owner. |
 | Affected docs, accepted decisions or task metadata | Narrow docs-sync Maintain; no repository bootstrap. |
 | User requirements that evidence cannot answer | plan-with-me; Grill Me only for requested/advisable adversarial questioning. |
 | Specific engineering method gap | Engineering reference adapter and the relevant protocol only. |
 | Slow, redundant or low-signal tests, or a suite past the [test budget](#test-budget) | Engineering `--protocol test-suite-optimization`: audit by default; authorized apply verifies one bounded batch. |
-| Material implementation or simplification choice | [Ponytail](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/ponytail.md): smallest complete change, with concrete reuse and verification evidence. |
+| Material implementation or simplification choice | [Ponytail](PONYTAIL.md): smallest complete change, with concrete reuse and verification evidence. |
 | Review of that implementation | Pinned Ponytail review criteria in the existing required review lane; no external plugin or extra reviewer. |
 | UI/design work | Impeccable when relevant; no design pass for unrelated changes. |
 
@@ -44,7 +43,7 @@ one relevant method at a time and stop when the gap is resolved; the table below
 is a menu, not a checklist. Do not reread unchanged supporting instructions within
 the same task or add a second review/planning loop merely because a skill exists.
 Explicit user-required methods and actual acceptance/review gates still apply.
-A helper called by Autowork returns findings, changed paths, checks and task IDs to
+A helper called by the execution owner returns findings, changed paths, checks and task IDs to
 that coordinator; it never starts another picker, backlog or scheduler. Reuse the
 same task record and receipt. Record a skill's application only when it materially
 changes a decision or artifact; never manufacture receipts for unused skills.
@@ -138,7 +137,7 @@ never relabel it Accepted merely because the engineering choice is reversible.
 
 ## Load the skill needed at the current step
 
-Resolve bundled skills through `kit:docs-sync` and `kit:autowork`, or their
+Resolve bundled skills through qualified names such as `kit:docs-sync`, or their
 actual loaded SKILL.md paths. The engineering pack is a [reference](../engineering/REFERENCE.md),
 not a registered skill: read it or the selected protocol directly when a method is
 needed. Its pinned Addy snapshot is the default; select one technique with
@@ -228,8 +227,8 @@ coverage. Mark unavailable required checks NOT_CHECKED, never pretend they passe
    A usable backlog skips another bootstrap or broad audit.
 2. For explicitly authorized whole-spec execution, restrict selection to accepted
    issues and dependency-ready work. Read issues, PRs and native dependencies,
-   inspect actual process/workspace ownership and source freshness, then use
-   `/work` for explicitly authorized current-session implementation. No native card admission,
+   inspect actual process/workspace ownership and source freshness, then implement
+   only within the invoking workflow's already-authorized scope. No native card admission,
    board lookup or mandatory worker is required. Optional delegation uses the
    current host's tools only when useful and authorized.
 3. Implement, run discriminating checks and update scoped documentation. Retain
@@ -249,8 +248,8 @@ coverage. Mark unavailable required checks NOT_CHECKED, never pretend they passe
    operations and verification requirements). Record `doc_impact` as `not_needed`
    with a source-backed reason, `updated` with paths and passing readback/checks,
    or `pending` with the concrete gap and resume action. Workers update in-scope
-   component docs and route shared docs to the coordinator/DOCS-MAINTAINER. See the
-   [parallel report contract](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/autowork/references/parallel-workers.md#documentation-impact-evidence).
+   component docs and route shared docs to the coordinator/DOCS-MAINTAINER. Apply the
+   [shared completion contract](DEFINITION-OF-DONE.md).
    In sequential native/portable execution, resolve bundled Docs Sync in the actual
    host and run scoped Maintain only for a concrete delta, before final closure.
    No full bootstrap or global manifest is required. Do not change unrelated policy or Acceptance. Read back affected docs

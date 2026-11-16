@@ -20,9 +20,11 @@ def main():
     manager = get_plugin_manager()
     manager.discover_and_load()
     commands = get_plugin_commands()
-    assert 'autowork' in commands, 'autowork did not load'
+    assert 'plan-with-me' in commands, 'planning workflow did not load'
+    for name in ('autowork', 'work', 'pending', 'blockers'):
+        assert name not in commands
     # The command's module is the actual loaded plugin package; its bundle module is loaded.
-    report = sys.modules[commands['autowork']['handler'].func.__module__ + '.bundle'].inventory()
+    report = sys.modules[commands['git-commit-push']['handler'].func.__module__ + '.bundle'].inventory()
     checked_skills = 0
     for name, info in get_skill_commands().items():
         assert resolve_skill_command_key(name.lstrip('/').replace('-', '_')) == name, name

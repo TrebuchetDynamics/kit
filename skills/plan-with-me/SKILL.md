@@ -27,9 +27,9 @@ pages, teaching, investor briefs, jurisdiction changes, long interviews and live
 gates, load the matching section of [special cases](references/special-cases.md).
 
 `/plan_with_me` (`/plan-with-me` also works in CLI) starts an interview about the
-current repository; arguments narrow the topic. `/plan_with_me blockers [repo|name]`
-is [`/blockers`](../blockers/SKILL.md): routine planning repairs first, then genuine
-owner questions, easiest first, planning each task that needs it with this skill
+current repository; arguments narrow the topic, including literal input beginning
+with `blockers`. For held work, inspect saved decisions and current issue/PR evidence
+before asking for missing intent
 ([special cases](references/special-cases.md#blockers-and-recovery)). Its default
 scope includes saving answered decisions and maintaining affected docs. Only
 `questions only`, `read-only`, `no changes` or `dry run` means no file changes; an
@@ -39,6 +39,9 @@ It does not perform code changes or start a service. Standalone planning narrows
 this occurrence despite earlier unrelated implementation permission; an
 Orbi-owned planning substep returns to that same coordinator without execution
 inside the substep.
+
+For recovery, changed baselines or stale audits, apply the shared
+[recovery, provenance and qualification rules](../shared/PLANNING-CRAFT.md#recovery-provenance-and-qualification).
 
 ## Challenge mode
 
@@ -123,10 +126,8 @@ Explicit no-dispatch requests withhold readiness. Read-only/questions-only/no-wr
 or dry-run requests make no local or GitHub writes. Failed persistence is **UNSAVED**,
 not a complete handoff or a reason to create a second queue.
 
-Report issue URLs, decisions and planner calls, unresolved choices, native
-dependencies and actual checks. Readiness is not pickup, PR delivery or merge.
-An existing Orbi deployment can consume published work immediately. Stop planning
-without implementing or starting a service. A delivery-owned substep returns to
+Use the shared [progress and final receipt](../shared/PLAN-HANDOFF.md#progress-and-final-receipt).
+Stop planning without implementing or starting a service. A delivery-owned substep returns to
 its same coordinator. Runtime failure without new product uncertainty goes back
 to that coordinator with the existing issue, failed operation and candidate evidence;
 do not create replacement work or reopen the product interview.
@@ -161,7 +162,7 @@ plan is not execution.
 ## Boundaries
 
 - Not unattended discovery; use `/plan-for-me`.
-- Not implementation; Orbi delivers published issues; `/work` is an explicit manual alternative.
+- Not implementation; Orbi delivers published issues through PR and review gates.
 - Challenge mode loads `/grill-me`; the interview engine is `/grilling`.
 
 **Done when:** open questions are answered, and the plan and its tasks are saved and validated.

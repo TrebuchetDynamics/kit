@@ -208,8 +208,8 @@ def opted_out_settings(raw):
     """What an opted-out profile still receives: the bundle's own Telegram menu entries.
 
     The opt-out keeps a profile's approval, turn, injection and skill settings. Every
-    profile had opted out, which also froze the menu, so commands added since (/blockers)
-    never reached a Telegram menu."""
+    profile had opted out, which also froze the menu; retirement must still remove
+    stale entries without changing their runtime policy."""
     return _AUTOWORK_COMPAT.peer(globals(), 'telegram_menu_policy').menu_patch(raw)
 
 

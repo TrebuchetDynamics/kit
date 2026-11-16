@@ -2,6 +2,7 @@
 import re
 import tomllib
 import unittest
+from unittest.mock import patch
 import yaml
 import test_plugin as fixture
 
@@ -48,6 +49,29 @@ class WorkflowCommands(unittest.TestCase):
         self.assertTrue(self.ctx.messages[-1][0].endswith('plan ' + raw))
         for retired in ('repo-docs', 'repo_docs', 'repo-interview', 'repo_interview'):
             self.assertNotIn(retired, self.ctx.commands)
+
+    def test_orbi_route_forwards_lifecycle_arguments_without_a_service_call(self):
+        # `/orbi` is a thin explicit-only route: loading and invoking it forwards the
+        # user's words verbatim and runs no service or install command itself.
+        self.skill('orbi')
+        with patch('subprocess.run') as run:
+            self.plugin.register(self.ctx)
+            raw = ('setup --dry-run --json\n'
+                   '--repo-dir "/tmp/checkout $(literal)"; no push')
+            self.ctx.commands['orbi'](raw)
+            run.assert_not_called()
+        prompt, _ = self.ctx.messages[-1]
+        self.assertIn('skill_view(name="kit:orbi")', prompt)
+        injected, arguments = prompt.split('User arguments:\n', 1)
+        self.assertEqual(arguments, raw)
+        self.assertNotIn('checkout', injected)
+        self.assertNotIn('../shared/RESEARCH-PLAN.md', prompt)
+
+    def test_orbi_route_preserves_an_existing_command_owner(self):
+        self.skill('orbi')
+        self.existing['orbi'] = {'plugin': 'other'}
+        self.plugin.register(self.ctx)
+        self.assertNotIn('orbi', self.ctx.commands)
 
     def test_plan_for_me_is_registered_and_installed_from_its_own_source(self):
         source = fixture.ROOT / 'skills/plan-for-me/SKILL.md'
@@ -127,7 +151,7 @@ class WorkflowCommands(unittest.TestCase):
     def test_pilot_command_descriptions_are_distinct_and_routed(self):
         router = (fixture.ROOT / 'skills/ask-kit/SKILL.md').read_text()
         descriptions = {}
-        for name in ('autowork', 'plan-for-me', 'ponytail-review',
+        for name in ('plan-for-me', 'ponytail-review',
                      'git-commit-push', 'docs-sync', 'plan-with-me'):
             with self.subTest(name=name):
                 text = (fixture.ROOT / f'skills/{name}/SKILL.md').read_text()

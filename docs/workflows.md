@@ -4,35 +4,10 @@ GitHub Issues own executable work; Orbi owns delivery. Kit plans and supplies
 explicit skills. **pi-autowork is retired and unsupported**: do not develop or
 restart it. See [support, setup and migration](github-native.md).
 
-## Blockers resolves held work and owner questions
-
-`/blockers` inspects blocked GitHub issues, PR/check failures and owner questions,
-including blocked work with no dependents and no question. It repairs routine local
-causes within the accepted task and verifies the resulting state, rather than
-merely saving another continuation note. Retained code, candidate identity,
-attempt counts and required tests/review remain authoritative.
-
-Recovery uses the existing execution owner and supported task workflow. Live or
-unknown ownership remains protected; no competing repair session, slot clearing,
-service restart, pause resumption, credential use, deployment or push is implied.
-A real resource wait or missing external prerequisite can remain held. Ask only
-for consequential intent or unavailable authority/input; do not ask again for
-answers already saved. A failed review, dead worker or merge conflict is an
-engineering hold, not a product decision: preserve its findings and candidate,
-use the bounded repair/recovery path, and keep the incident visible after that
-budget ends. Explicit planning/questions-only requests perform no
-execution; read-only requests also write nothing.
-
-Report actual repairs separately from saved answers, pending owner handoffs,
-ordinary waits and external gates. A disappearing question is not task completion,
-and a saved answer is not proof that a held task advanced. Static skill tests and
-offline command-routing fixtures verify these instructions and routing, not live
-model adherence, successful recovery or service delivery.
-
 ## Unblock repairs blocked GitHub work
 
 `/unblock` diagnoses GitHub issues, PR/check failures and actual ownership. It
-repairs authorized local causes through `/work`; it never revives the removed
+repairs authorized local causes within its own recovery scope; it never revives the removed
 executor or enables paused Orbi. See [Unblock](../skills/unblock/SKILL.md).
 
 ## Bundled Ponytail
@@ -48,26 +23,20 @@ available as `kit:ponytail` and `kit:ponytail-review` (and the other names).
 
 ## Commands
 
-`/autowork status [NAME]` returns a static removed-executor notice. Use GitHub
-Issues/PRs and read-only `orbi status`/`orbi doctor` for current delivery status.
-Use `/autowork plugin status` for the bundle version and revision, the profile serving
-the chat, ready workflow commands, the last update, plugin load status and setup gaps. These are registered capabilities, not a claim
-that every tool is enabled in the current chat. Hermes's `/toolsets` lists tool
-groups; plugins that provide skills, commands, or hooks need not appear there.
-Use `/autowork list` in CLI chat or Telegram for the installed command inventory,
-or `/autowork list graphify` to filter it. `hermes autowork doctor --core` checks the bundled command layer and lists external
-gaps separately. Plain `doctor` requires the full stack; add `--json` for automation. Imported native commands keep their own handlers;
-imported plugin skills without commands receive aliases. Telegram's menu has a
-capacity limit, so some commands must be typed rather than selected in the menu.
+Use GitHub Issues/PRs and read-only `orbi status`/`orbi doctor` for current
+delivery status. For Hermes inventory and plugin setup diagnostics, use terminal
+`hermes autowork doctor --json`; `--core` checks only bundled registration.
+`hermes autowork update` and `hermes autowork update --check` run synchronously
+and print their receipt. No chat-maintenance command is provided. Imported native
+commands keep their handlers; existing owners win collisions. Telegram menu capacity
+is limited, so some commands must be typed directly.
 
 | Hermes CLI chat | Telegram | Purpose |
 | --- | --- | --- |
-| `/autowork` | `/autowork` | Compatibility redirect to GitHub/Orbi; no executor or service startup |
-| `/orbi [status\|setup\|start\|stop]` | `/orbi` | [Repository-scoped lifecycle controls](../skills/orbi/SKILL.md): bare status is read-only, setup prepares without activation, authorized start schedules, stop drains without killing workers; Linux controls, macOS status-only |
-| `/work` | `/work` | Auto-select and complete tasks in this session; continue through useful offline work without starting a runner |
+| `/orbi [status\|setup\|start\|stop\|help]` | `/orbi` | [Repository-scoped lifecycle controls](../skills/orbi/SKILL.md): bare status is read-only, setup prepares without activation, authorized start schedules, stop drains without killing workers; Linux controls, macOS status-only; help prints the action reference read-only on any platform |
 | `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only clean unmerged ones, keep dirty and locked worktrees |
-| `/lgtm` | `/lgtm` | Accept the latest recommendation, including a question round, and continue |
+| `/lgtm` | `/lgtm` | [Continue within inherited authority](../skills/lgtm/SKILL.md): accept unambiguous choices, clarify only ambiguous planning choices; standalone plan approval does not authorize implementation |
 | `/docs_sync` | `/docs_sync` | Maintain repository documentation |
 | `/plan_with_me` | `/plan_with_me` | Resolve missing intent, then publish complete GitHub Issues |
 | `/plan_for_me` | `/plan_for_me` | Investigate accepted scope and publish complete GitHub Issues without an interview |
@@ -76,8 +45,6 @@ capacity limit, so some commands must be typed rather than selected in the menu.
 | `/impeccable` | `/impeccable` | Design and front-end quality workflow |
 | `/ui-taste` | `/ui_taste` | Uizze's UI Taste playbooks for building, polishing and reviewing web and iOS interfaces |
 | `/beautify-github-readme` | `/beautify_github_readme` | Redesign or audit a GitHub README with project-native SVG assets |
-| `/autowork status [NAME]` | `/autowork status [NAME]` | Static removed-executor notice; use GitHub/Orbi for delivery status |
-| `/autowork plugin status` | `/autowork plugin status` | Inspect registered capabilities and setup gaps; `/autowork update [--check\|status [full]]` updates all profiles |
 
 Both planners use the pinned Autoresearch planning method and shared
 [planning craft](../skills/shared/PLANNING-CRAFT.md). They save decisions in their
@@ -132,7 +99,6 @@ Public skill names match the workflow names. Source directories stay stable for 
 | `/plan_with_me` | `plan-with-me` | None |
 | `/plan_for_me` | `plan-for-me` | `/autoresearch:plan` (CLI), `/autoresearch_plan` (Telegram); runs the Autoresearch skill's plan protocol with the same planning adaptations |
 | `/docs_sync` | `docs-sync` | None |
-| `/autowork` | `autowork` | None; Autogoal is retired |
 
 Grill Me is the challenge mode of Plan With Me; its old command still works but
 is not advertised as a separate plugin skill. Autoresearch protocols remain
@@ -140,7 +106,7 @@ accessible through their commands and the Plan For Me adapter. Autoresearch comp
 spellings remain typeable but are deliberately omitted from Telegram menu
 advertising, not merely displaced by capacity. Plan With Me and Docs Sync do not
 register the old repo-interview or repo-docs aliases. The Telegram menu prioritizes
-the five current workflow commands, then `/ui_taste`, `/beautify_github_readme`,
+the three current planning/documentation workflow commands, then `/ui_taste`, `/beautify_github_readme`,
 `/impeccable`, `/lgtm` and `/git_commit_push`.
 Hermes' default menu holds 60 entries and its built-ins alone exceed that, so each
 prioritized command displaces the lowest-ranked built-in (currently `/yolo`,
@@ -151,7 +117,7 @@ negative tests prevent accidental reintroduction. Updating source does not refre
 an already-running gateway's command registry: use supported plugin reload and
 verify activation before claiming the new names work in messaging.
 
-Docs Sync and `/work` decide routine engineering choices autonomously within the
+Docs Sync and retained fix/apply modes decide routine engineering choices autonomously within the
 accepted scope. The executing session (or an optional authorized delegate) works
 from the selected task, accepted decisions, scope, checks
 and completion rules. For a concrete method gap or explicit request, they select one
@@ -164,8 +130,8 @@ loading a skill alone is not proof of applying it.
 The [engineering cycle](../skills/shared/ENGINEERING-CYCLE.md) is an optional routing
 reference when method selection is unclear. A ready task needs no routing prepass.
 A documentation-only `/docs_sync` request does not launch workers. To continue
-through a spec, publish complete issues for Orbi or explicitly ask `/work` to
-implement that accepted spec within its stated scope and actual ownership.
+through a spec, publish complete issues for Orbi. Already-authorized fix/apply modes preserve
+their stated scope and actual ownership.
 Manual implementation includes authorized recovery and closeout. Review acceptance and
 executed evidence precede canonical closure; no push or deployment is implied.
 Skill availability and support files are checked at use time; a missing skill is
@@ -176,15 +142,6 @@ Update current behavior and operating instructions where needed; report remainin
 documentation gaps with their resume condition. GitHub issues, PRs, checks and
 reviews retain delivery evidence. A docs pass is not worker execution, merge or
 live acceptance, and no retired executor report schema is required.
-
-## Work: select a task and execute here
-
-`/work` explicitly implements accepted GitHub work in the current session. Inspect
-issues, native dependencies and actual ownership; respect supplied issue/scope,
-caller limits and pauses. Do not compete with an Orbi-owned worker. Run affected
-checks and required review, report actual delivery evidence, and retain unfinished
-qualification. The command starts no service or replacement session. See
-[Work](../skills/work/SKILL.md).
 
 ## Autoresearch
 
@@ -217,7 +174,7 @@ GitHub Issues own executable plans and progress. Autoresearch persists accepted
 findings through [Plan Handoff](../skills/shared/PLAN-HANDOFF.md); do-not-implement
 still permits that planning handoff, while explicit read-only/chat-only/no-write
 or dry-run writes nothing. Existing legacy records stay migration evidence.
-Manual implementation uses `/work`, never the removed executor.
+Retained authorized implementation never uses the removed executor.
 
 The [Hermes adapter](../skills/autoresearch/SKILL.md) connects research to docs-sync:
 findings update existing documents, matching issues are reused, and accepted gaps
@@ -228,8 +185,7 @@ Upstream flags and analytical methods are retained; host-specific tools, generic
 confirmation prompts, experimental Git handling and documentation handoffs follow
 the adapter. Claude-only hooks are not installed.
 
-`/autowork` is a compatibility redirect, not an execution command. Retained Hermes
-maintenance names and private state identities do not restore the removed runner.
+Retained Hermes terminal maintenance names and private state identities do not restore the removed runner.
 
 ## State machine
 
@@ -408,11 +364,11 @@ one command, and sends you to that skill's `## Boundaries` when two look close.
 
 The main flow is `/grilling` (or `/grill-with-docs` in a repository, `/grill-me` for an
 existing plan), then `/plan-for-me` or `/plan-with-me` to publish GitHub Issues,
-then Orbi delivery. `/work` is the explicit manual alternative; `/git-commit-push`
+then Orbi delivery. `/git-commit-push`
 handles separately authorized local publication. On-ramps cover a bug (`/bug-harvest`), a bloated suite
 (`/test-optimizer`), dead code (`/unused-code`), a folder split
 (`/split-folder`), shallow modules (`/improve-codebase-architecture`), a held
-queue (`/blockers`), drifted docs (`/docs-sync`) and measured research
+queue (`/unblock` within its recovery scope), drifted docs (`/docs-sync`) and measured research
 (`/autoresearch`).
 
 The router grants no authority. Scope, review gates, publication and live operations
@@ -436,8 +392,8 @@ challenge shallow modules, leaking seams, duplicated rules, concrete bugs and me
 performance costs. It verifies graph leads in source and ranks defects before structural
 waste. Default review writes an HTML candidate report to the OS temp directory; a
 no-write request gets an inline report. Missing Graphify falls back to native search.
-Explicit `fix`, `patch` or `optimize` requests continue through `/work` for one
-bounded finding, with regression evidence, affected checks and Ponytail review in the
+Explicit `fix`, `patch` or `optimize` requests implement one
+bounded finding within the skill's accepted scope, with regression evidence, affected checks and Ponytail review in the
 existing review lane. Unresolved design or ADR choices still need a decision; no new
 commit, push or deployment authority is implied.
 
@@ -478,7 +434,7 @@ workers or independently registered slash commands. See [provenance and updates]
 ### Automatic planning during execution
 
 Planning resolves consequential design, dependency and product choices and saves
-an executable issue with scope, decisions, acceptance and checks. `/work` executes
+an executable issue with scope, decisions, acceptance and checks. The existing execution owner implements
 that task without another permission round: choose reversible details, implement,
 test, repair and finish authorized closeout. It can adapt a failed implementation
 on the same task while preserving accepted behavior and checks.
@@ -492,11 +448,11 @@ proof that a worker ran or a task completed.
 
 ### Direct repository execution
 
-Use `/work` for explicitly requested manual implementation. GitHub Issues own
+Retained fix/apply modes implement only their accepted scope. GitHub Issues own
 scope and native dependencies. Coordinate actual ownership, use isolated task
 worktrees under the canonical `.worktrees/`, run affected checks and required
-review, and preserve candidates/recovery evidence. `/autowork` is only a
-GitHub/Orbi redirect, not an executor or parallel-worker API.
+review and PR gates, and preserve candidates/recovery evidence. No retained skill
+is a replacement implementation coordinator.
 
 ### Parallel workers
 
@@ -511,7 +467,7 @@ runners and tests share a batch when their dependencies and authority permit it.
 One useful slice is not a one-file limit. The coordinator chooses routine batch
 boundaries and reuses valid exact-source evidence where repository policy allows;
 required review and changed-input checks still run. Use the current
-[Work contract](../skills/work/SKILL.md), not retired executor protocols.
+[shared completion contract](../skills/shared/DEFINITION-OF-DONE.md), not retired executor protocols.
 
 A delivered slice is reported by its behavior and commit/integration stage, with
 parent status and remaining acceptance separately. An open parent is not evidence
@@ -577,7 +533,7 @@ additional commands.
 
 ## Tasks query skill
 
-Use `/pending` and GitHub Issues/PRs for read-only backlog inspection. Legacy local
+Use GitHub Issues/PRs and existing read-only Orbi status for backlog inspection. Legacy local
 records are preserved migration evidence. The [earlier task-query requirements](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/workflows.md#tasks-query-skill)
 retain unresolved obligations; their executor interfaces no longer ship.
 
@@ -596,8 +552,7 @@ or permission to resume a schedule.
 ## Scheduling behavior
 
 Kit does not schedule or revive pi-autowork. Existing job IDs, settings, schedules,
-pause state and recovery evidence remain intact. `/autowork` is a GitHub/Orbi
-compatibility redirect, not a cron executor. Orbi remains paused and live-unqualified.
+pause state and recovery evidence remain intact. Orbi remains paused and live-unqualified.
 Setup confirmation, actual execution and message delivery require separate evidence;
 a changed prompt or installed skill proves none of them.
 

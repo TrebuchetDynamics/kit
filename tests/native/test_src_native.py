@@ -107,15 +107,12 @@ plugins = [read(root, '__init__.py', 'native_' + str(i), True) for i, root in en
 for plugin, root in zip(plugins, roots):
     ctx = Context()
     plugin.register(ctx)
-    assert ctx.skills['autowork'] == root / 'skills/autowork/SKILL.md'
-    handler = ctx.commands['autowork']
-    bundle = importlib.import_module(handler.func.__module__ + '.bundle')
+    assert ctx.skills['plan-with-me'] == root / 'skills/plan-with-me/SKILL.md'
+    handler = ctx.commands['plan-with-me']
+    bundle = plugin._AUTOWORK_COMPAT.peer(plugin.__dict__, 'bundle')
     assert bundle.__file__ == str(root / 'scripts/bundle.py')
-    bundle.start_update = lambda **kwargs: 'patched update'
-    assert handler('update') == 'patched update'
-    plugin.blockers_args = lambda raw: 'patched target'
     ctx.commands['plan_with_me']('blockers')
-    assert ctx.messages[-1][0].endswith('User arguments:\npatched target')
+    assert ctx.messages[-1][0].endswith('User arguments:\nblockers')
     setup = plugin._AUTOWORK_COMPAT.peer(bundle.__dict__, 'setup_runtime')
     setup.finalize = lambda selected, report, args: ({{'root': str(selected)}}, 7)
     bundle.inventory = lambda: {{}}

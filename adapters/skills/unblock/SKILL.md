@@ -1,6 +1,6 @@
 ---
 name: unblock
-description: "Resolve Autowork blockers and resume authorized work."
+description: "Resolve blocked GitHub work without releasing pauses."
 disable-model-invocation: true
 ---
 

@@ -28,6 +28,9 @@ security-remediation exceptions, requests to finish faster, game animation or le
 expansion, and validation-performance planning, load the matching section of
 [special cases](references/special-cases.md).
 
+For recovery, changed baselines or stale audits, apply the shared
+[recovery, provenance and qualification rules](../shared/PLANNING-CRAFT.md#recovery-provenance-and-qualification).
+
 ## Route the request
 
 Decide from the request's meaning, not from a short phrase list:
@@ -117,10 +120,8 @@ Explicit no-dispatch requests withhold readiness. Read-only/questions-only/no-wr
 or dry-run requests make no local or GitHub writes. Failed persistence is **UNSAVED**,
 not a complete handoff or a reason to create a second queue.
 
-Report issue URLs, decisions and planner calls, unresolved choices, native
-dependencies and actual checks. Readiness is not pickup, PR delivery or merge.
-An existing Orbi deployment can consume published work immediately. Stop planning
-without implementing or starting a service. A delivery-owned substep returns to
+Use the shared [progress and final receipt](../shared/PLAN-HANDOFF.md#progress-and-final-receipt).
+Stop planning without implementing or starting a service. A delivery-owned substep returns to
 its same coordinator. Runtime failure without new product uncertainty goes back
 to that coordinator with the existing issue, failed operation and candidate evidence;
 do not create replacement work or reopen the product interview.
@@ -155,7 +156,7 @@ saved plan is not execution.
 ## Boundaries
 
 - Not an interactive interview; use `/plan-with-me`.
-- Not implementation; Orbi delivers published issues; `/work` is an explicit manual alternative.
+- Not implementation; Orbi delivers published issues through PR and review gates.
 - Not an Orbi-owned execution; return to that coordinator.
 
 **Done when:** open questions are answered or kept on affected tasks, and the plan and its tasks are saved and validated.

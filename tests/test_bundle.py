@@ -1,10 +1,8 @@
 import argparse
 import json
-import os
 import importlib.util
 from pathlib import Path
 import tempfile
-import time
 import types
 import unittest
 from unittest.mock import patch
@@ -48,324 +46,45 @@ class BundleTests(unittest.TestCase):
     def invoke(self, ctx, name, path, args, namespace='kit'):
         self.messages.append((namespace, name, args))
 
-    def test_chat_update_is_not_treated_as_inventory_filter(self):
-        with patch.object(self.bundle, 'start_update', return_value='started') as start:
-            self.assertEqual(self.bundle.handle_chat('update'), 'started')
-            start.assert_called_once_with(check=False)
-        with patch.object(self.bundle, 'start_update', return_value='checking') as start:
-            self.assertEqual(self.bundle.handle_chat('update --check'), 'checking')
-            start.assert_called_once_with(check=True)
-        with patch.object(self.bundle, 'update_status', return_value='updated'):
-            self.assertEqual(self.bundle.handle_chat('update status'), 'updated')
-        self.assertIn('Usage:', self.bundle.handle_chat('update --force'))
+    def test_chat_maintenance_helpers_are_removed(self):
+        for name in ('handle_chat', 'maintenance_reply', 'start_update', 'update_status',
+                     'list_commands', 'overview'):
+            self.assertFalse(hasattr(self.bundle, name), name)
 
-    def test_autowork_maintenance_forms_are_exact(self):
-        with patch.object(self.bundle, 'handle_chat', return_value='update') as chat, \
-                patch.object(self.bundle, 'list_commands', return_value='listed') as listing:
-            for args in ('update', 'UPDATE --check', 'update status', 'update status full'):
-                self.assertEqual(self.bundle.maintenance_reply(args), 'update')
-            self.assertIn('executor has been removed', self.bundle.maintenance_reply('status'))
-            self.assertEqual(self.bundle.maintenance_reply('plugin status'), 'listed')
-            listing.assert_called_with('')
-            self.assertEqual(self.bundle.maintenance_reply('list sample-addon'), 'listed')
-            listing.assert_called_with('list sample-addon')
-            for args in ('', 'update the README', 'status of task 4',
-                         'list the open tasks', 'next task'):
-                self.assertIsNone(self.bundle.maintenance_reply(args), args)
-            self.assertEqual(chat.call_count, 4)
+    def test_terminal_parser_keeps_only_supported_actions(self):
+        parser = argparse.ArgumentParser()
+        self.bundle.setup_parser(parser)
+        for action in ('update', 'setup', 'finalize', 'pin', 'doctor'):
+            argv = {'finalize': ['--hermes-home', '/fixture'], 'pin': ['fixture']}.get(action, [])
+            self.assertEqual(parser.parse_args([action, *argv]).action, action)
+        self.assertEqual(set(parser._subparsers._group_actions[0].choices),
+                         {'update', 'setup', 'finalize', 'pin', 'doctor'})
 
-    def test_update_cli_uses_dedicated_updater(self):
-        args=argparse.Namespace(action='update', check=True, hermes_home='/tmp/home')
-        with patch.object(self.bundle.subprocess, 'run', return_value=types.SimpleNamespace(returncode=0)) as run:
-            self.assertEqual(self.bundle.handle_cli(args), 0)
-            self.assertIn(str(ROOT/'scripts/update_bundle.py'),run.call_args.args[0])
-            self.assertIn('--check',run.call_args.args[0])
-
-    def test_chat_update_receipt_keeps_paths_as_literal_json_not_attachments(self):
-        home = Path(self.tmp.name)
-        folder = home / 'maintenance/toolset-update'
-        folder.mkdir(parents=True)
-        receipt = {
-            'status': 'incomplete',
-            'error': f'Local skill conflict: {self.path}; reconcile this file',
-            'detail': 'A customization contains ``` and `quoted` text',
-        }
-        saved = json.dumps(receipt)
-        (folder / 'latest.json').write_text(saved)
-        linked = [{'profile': 'example', 'target': str(self.path), 'revision': 'a' * 40}]
-        for current in (None, [], linked):
-            with self.subTest(linked_profiles=current), \
-                    patch.object(self.bundle, 'update_home', return_value=home), \
-                    patch.object(self.bundle, 'linked_profiles', return_value=current):
-                rendered = self.bundle.handle_chat('update status full')
-                summary = self.bundle.handle_chat('update status')
-            self.assertTrue(summary.startswith('```text\n') and summary.endswith('\n```'), summary)
-            self.assertNotIn('`', summary[len('```text\n'):-len('\n```')])
-            self.assertIn(str(self.path), summary)  # inside the fence, never a bare attachment path
-            self.assertTrue(rendered.startswith('```json\n'), rendered)
-            self.assertTrue(rendered.endswith('\n```'), rendered)
-            payload = rendered[len('```json\n'):-len('\n```')]
-            self.assertNotIn('`', payload)  # Embedded delimiters cannot expose paths.
-            expected: dict[str, object] = dict(receipt)
-            if current is not None:
-                expected['linked_profiles'] = [{k: row[k] for k in ('profile', 'target')} for row in current]
-            self.assertEqual(json.loads(payload), expected)
-            self.assertEqual((folder / 'latest.json').read_text(), saved)
-
-    def test_new_cli_receipt_is_not_hidden_by_older_chat_request(self):
-        home=Path(self.tmp.name);folder=home/'maintenance/toolset-update';folder.mkdir(parents=True)
-        (folder/'request.json').write_text(json.dumps({'pid':111,'started_ns':1}))
-        (folder/'latest.json').write_text(json.dumps({'pid':222,'started_ns':2,'status':'updated'}))
-        with patch.object(self.bundle,'update_home',return_value=home):
-            self.assertIn('updated',self.bundle.update_status())
-
-    def test_dead_duplicate_request_does_not_hide_current_result(self):
-        home=Path(self.tmp.name);folder=home/'maintenance/toolset-update';folder.mkdir(parents=True)
-        (folder/'request.json').write_text(json.dumps({'pid':111,'started_ns':2}))
-        (folder/'latest.json').write_text(json.dumps({'pid':222,'started_ns':1,'status':'updated'}))
-        with patch.object(self.bundle,'update_home',return_value=home), patch.object(self.bundle.os,'kill',side_effect=ProcessLookupError):
-            result=self.bundle.update_status()
-            self.assertIn('updated',result)
-            self.assertIn('did not produce',result)
-
-    def test_status_shows_what_a_pending_gateway_restart_waits_on(self):
-        home = Path(self.tmp.name); folder = home / 'maintenance/toolset-update'; folder.mkdir(parents=True)
-        (folder / 'latest.json').write_text(json.dumps({'pid': 2, 'started_ns': 1, 'status': 'updated', 'gateway_restart': 'requested'}))
-        drain = {'restart_pid': 9, 'seconds_left': 1525, 'waiting_on': ['chat turn agent:demo running 8m32s']}
-        with patch.object(self.bundle, 'update_home', return_value=home):
-            with patch.object(self.bundle, 'gateway_drain', return_value=drain):
-                self.assertEqual(json.loads(self.bundle.update_status(full=True).strip('`json\n'))['gateway_restart_progress'], drain)
-                summary = self.bundle.update_status()
-                self.assertIn('draining (1525s left, 1 turn(s))', summary)
-                self.assertIn('waiting on chat turn agent:demo running 8m32s', summary)
-            self.assertIn('completed or not tracked', self.bundle.update_status(full=True))
-            self.assertIn('Gateway restart: requested, done', self.bundle.update_status())
-
-    def test_status_shows_a_deferred_restart_and_a_stopped_waiter(self):
-        home = Path(self.tmp.name); folder = home / 'maintenance/toolset-update'; folder.mkdir(parents=True)
-        (folder / 'latest.json').write_text(json.dumps({'pid': 2, 'started_ns': 1, 'status': 'updated', 'gateway_restart': 'deferred'}))
-        waiting = {'state': 'deferred', 'waiter_pid': 9, 'chat_turns': 2}
-        with patch.object(self.bundle, 'update_home', return_value=home):
-            with patch.object(self.bundle, 'gateway_drain', return_value=waiting):
-                self.assertEqual(json.loads(self.bundle.update_status(full=True).strip('`json\n'))['gateway_restart_progress'], waiting)
-                summary = self.bundle.update_status()
-                self.assertIn('Gateway restart: deferred, waiting for no chat turn in flight (2 at last check)', summary)
-                self.assertNotIn('draining', summary)
-            with patch.object(self.bundle, 'gateway_drain', return_value=None):
-                summary = self.bundle.update_status()
-                self.assertIn('waiter is not running', summary)
-                self.assertNotIn(', done', summary)
-        (folder / 'latest.json').write_text(json.dumps({'pid': 2, 'started_ns': 1, 'status': 'updated',
-            'gateway_restart': 'deferred_expired', 'gateway_restart_action': 'Run hermes gateway restart when convenient.'}))
-        with patch.object(self.bundle, 'update_home', return_value=home):
-            summary = self.bundle.update_status()
-        self.assertIn('Gateway restart: deferred_expired', summary)
-        self.assertIn('Gateway restart action: Run hermes gateway restart when convenient.', summary)
-
-    def test_status_finishes_a_completed_restart_and_summarizes_it(self):
-        home = Path(self.tmp.name); folder = home / 'maintenance/toolset-update'; folder.mkdir(parents=True)
-        (folder / 'latest.json').write_text(json.dumps({'pid': 2, 'started_ns': 1, 'status': 'updated', 'gateway_restart': 'requested'}))
-        done = {'gateway_restart': 'completed', 'gateway_restart_result': {
-            'gateway_pid': 4321, 'gateway_started': '2026-10-15T12:15:16', 'menus_resent': ['alpha', 'default'],
-            'menus_not_seen': ['beta'], 'interrupted': ['Gateway drain timed out after 30.0s with 1 in-flight cron job(s)']}}
-        with patch.object(self.bundle, 'update_home', return_value=home), \
-             patch.object(self.bundle, 'gateway_drain', return_value=None), \
-             patch.object(self.bundle, 'finish_restart', return_value=done) as finish:
-            summary = self.bundle.update_status()
-            full = json.loads(self.bundle.update_status(full=True).strip('`json\n'))
-        finish.assert_called_with(home, folder)
-        self.assertIn('Gateway restart: completed, new gateway PID 4321', summary)
-        self.assertIn('Menus resent: alpha, default; not seen: beta', summary)
-        self.assertIn('Interrupted: Gateway drain timed out after 30.0s with 1 in-flight cron job(s)', summary)
-        self.assertNotIn('done', summary)
-        self.assertEqual(full['gateway_restart_result']['gateway_pid'], 4321)
-
-    def test_chat_update_while_another_runs_names_it_and_starts_nothing(self):
-        home = Path(self.tmp.name); folder = home / 'maintenance/toolset-update'; folder.mkdir(parents=True)
-        owner = {'pid': 4321, 'mode': 'update', 'started': '2026-10-15T12:11:14'}
-        fake = type('Updater', (), {'running_update': staticmethod(lambda folder: owner)})
-        with patch.object(self.bundle, 'update_home', return_value=home), \
-             patch.object(self.bundle, '_updater', return_value=fake), \
-             patch.object(self.bundle.subprocess, 'Popen') as popen:
-            reply = self.bundle.start_update(check=True)
-        popen.assert_not_called()
-        self.assertFalse((folder / 'request.json').exists())
-        self.assertIn('4321', reply)
-        self.assertIn('update', reply)
-        self.assertIn('12:11:14', reply)
-        self.assertIn('Nothing was started', reply)
-
-    def test_status_says_how_many_updates_one_restart_covers(self):
-        home = Path(self.tmp.name); folder = home / 'maintenance/toolset-update'; folder.mkdir(parents=True)
-        (folder / 'latest.json').write_text(json.dumps({'pid': 2, 'started_ns': 1, 'status': 'updated',
-            'gateway_restart': 'pending'}))
-        waiting = {'state': 'deferred', 'waiter_pid': 9, 'chat_turns': 1, 'covers': 3}
-        with patch.object(self.bundle, 'update_home', return_value=home), \
-             patch.object(self.bundle, 'gateway_drain', return_value=waiting):
-            self.assertIn('covers 3 updates', self.bundle.update_status())
-        (folder / 'latest.json').write_text(json.dumps({'pid': 2, 'started_ns': 1, 'status': 'updated',
-            'gateway_restart': 'requested', 'gateway_restart_covers': 2}))
-        with patch.object(self.bundle, 'update_home', return_value=home), \
-             patch.object(self.bundle, 'gateway_drain', return_value=None):
-            self.assertIn('covers 2 updates', self.bundle.update_status())
-
-    def _chat_updater(self, body):
-        """Point start_update at a disposable updater script; never the real one."""
-        checkout = Path(self.tmp.name) / 'checkout'
-        (checkout / 'scripts').mkdir(parents=True, exist_ok=True)
-        (checkout / 'scripts/update_bundle.py').write_text(body)
-        self.bundle.ROOT = checkout
-
-    def _wait_exited(self, pid):
-        # The gateway never waits on the child, so an exited child stays a zombie.
-        stat = Path(f'/proc/{pid}/stat')
-        if not stat.parent.exists():
-            self.skipTest('needs /proc to observe an unreaped child')
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            if stat.read_text().rsplit(')', 1)[1].split()[0] == 'Z':
-                return
-            time.sleep(0.05)
-        self.fail('chat-started updater did not exit')
-
-    def test_refused_chat_update_child_reports_latest_receipt_not_starting(self):
-        home = Path(self.tmp.name) / 'home'
-        folder = home / 'maintenance/toolset-update'
-        folder.mkdir(parents=True)
-        (folder / 'latest.json').write_text(json.dumps({'pid': 1, 'started_ns': 1, 'status': 'updated'}))
-        # Like a lock-refused updater: exits without writing a receipt.
-        self._chat_updater('raise SystemExit(1)\n')
-        with patch.object(self.bundle, 'update_home', return_value=home):
-            self.assertIn('requested', self.bundle.start_update())
-            self._wait_exited(json.loads((folder / 'request.json').read_text())['pid'])
-            result = self.bundle.update_status()
-        self.assertNotIn('starting', result)
-        self.assertIn('Toolset update: updated', result)
-        self.assertIn('did not produce', result)
-
-    def test_killed_chat_update_child_reports_stopped_not_running(self):
-        home = Path(self.tmp.name) / 'home'
-        folder = home / 'maintenance/toolset-update'
-        self._chat_updater(
-            'import json, os, signal, sys, time\n'
-            'from pathlib import Path\n'
-            'folder = Path(sys.argv[sys.argv.index("--hermes-home") + 1]) / "maintenance/toolset-update"\n'
-            'receipt = {"pid": os.getpid(), "started_ns": time.time_ns(), "status": "running"}\n'
-            '(folder / "latest.json").write_text(json.dumps(receipt))\n'
-            'os.kill(os.getpid(), signal.SIGKILL)\n')
-        with patch.object(self.bundle, 'update_home', return_value=home):
-            self.assertIn('requested', self.bundle.start_update())
-            pid = json.loads((folder / 'request.json').read_text())['pid']
-            self._wait_exited(pid)
-            self.assertEqual(json.loads((folder / 'latest.json').read_text())['pid'], pid)
-            result = self.bundle.update_status()
-        self.assertIn('Update process stopped without a final receipt', result)
-
-    def test_status_shows_the_last_restart_a_later_receipt_does_not_cover(self):
-        home = Path(self.tmp.name); folder = home / 'maintenance/toolset-update'; folder.mkdir(parents=True)
-        (folder / 'latest.json').write_text(json.dumps({'pid': 2, 'started_ns': 888, 'status': 'up_to_date',
-                                                        'gateway_restart': 'not_needed'}))
-        outcome = {'gateway_restart': 'completed', 'gateway_restart_result': {
-            'gateway_pid': 4242, 'menus_resent': ['a', 'b'], 'menus_not_seen': ['c'], 'interrupted': []}}
-        marker = {'pid': 1, 'requested_ns': 1792101011783225329, 'covers': [777], 'finished': 'completed', 'outcome': outcome}
-        (folder / 'restart.json').write_text(json.dumps(marker))
-        with patch.object(self.bundle, 'update_home', return_value=home), \
-                patch.object(self.bundle, 'gateway_drain', return_value=None), \
-                patch.object(self.bundle, 'linked_profiles', return_value=[]):
-            summary = self.bundle.update_status()
-            self.assertIn('Last gateway restart (requested 2026-10-15', summary)
-            self.assertIn('completed, PID 4242, menus resent 2 of 3', summary)
-            (folder / 'restart.json').write_text(json.dumps({**marker, 'covers': [888]}))
-            self.assertNotIn('Last gateway restart', self.bundle.update_status())
-
-    def test_status_lists_profiles_linked_to_a_working_checkout(self):
-        home = Path(self.tmp.name); folder = home / 'maintenance/toolset-update'; folder.mkdir(parents=True)
-        (folder / 'latest.json').write_text(json.dumps({'pid': 2, 'started_ns': 1, 'status': 'up_to_date',
-                                                        'linked_profiles': [{'profile': 'stale', 'target': '/old'}]}))
-        rows = [{'profile': f'profile{i}', 'target': '/src/autowork', 'link': '/src/autowork',
-                 'revision': 'a' * 40, 'dirty': False, 'released': True} for i in range(8)]
-        with patch.object(self.bundle, 'update_home', return_value=home), \
-                patch.object(self.bundle, 'linked_profiles', return_value=rows):
-            summary = self.bundle.update_status()
-            full = json.loads(self.bundle.update_status(full=True).strip('`json\n'))
-        self.assertIn('Linked to a working checkout (/src/autowork); any gateway restart loads its current files: '
-                      + ', '.join(r['profile'] for r in rows), summary)
-        self.assertIn('hermes autowork pin NAME --dry-run', summary)
-        self.assertNotIn('stale', summary)
-        self.assertEqual(full['linked_profiles'][0], {'profile': 'profile0', 'target': '/src/autowork'})
-        self.assertLess(len(summary), 600)
-        with patch.object(self.bundle, 'update_home', return_value=home), \
-                patch.object(self.bundle, 'linked_profiles', return_value=[]):
-            self.assertNotIn('Linked', self.bundle.update_status())
-
-    def test_status_summary_fits_one_chat_message(self):
-        home = Path(self.tmp.name); folder = home / 'maintenance/toolset-update'; folder.mkdir(parents=True)
-        names = [f'profile{i}' for i in range(10)]
-        receipt = {'status': 'updated', 'pid': 1, 'started_ns': 1, 'profiles': names,
-                   'sources': {f'/h/{n}/plugins/autowork': {'before': '10ef9be' + 'a' * 33, 'after': '2187e98' + 'b' * 33} for n in names},
-                   'skill_files': 500, 'drift': [], 'local_edits': [{'action': 'removed', 'path': '/h/p2/skills/old/SKILL.md'}] * 3
-                   + [{'action': 'reset', 'path': '/h/p1/skills/blockers/SKILL.md'}],
-                   'backup': '/h/maintenance/toolset-update/x', 'settings_healed': [],
-                   'activation': [{'profile': n, 'status': 'ready', 'enable_exit': 0, 'finalize_exit': 0} for n in names],
-                   'chat_menus_healed': [{'profile': 'profile1', 'status': 'unreachable', 'failed': ['...5095'], 'error': 'HTTPError'},
-                                         {'profile': 'profile4', 'status': 'cleared', 'chats': ['...9244']}],
-                   'gateway_restart': 'requested', 'note': 'n' * 300}
-        (folder / 'latest.json').write_text(json.dumps(receipt))
-        with patch.object(self.bundle, 'update_home', return_value=home), \
-                patch.object(self.bundle, 'gateway_drain', return_value=None):
-            summary = self.bundle.handle_chat('update status')
-        self.assertLess(len(summary), 600)
-        for part in ('Toolset update: updated, 10 profile(s); at 2187e98 (from 10ef9be)', 'Skill files written: 500; local edits: 3 removed, 1 reset',
-                     'Reset to the release or removed with it, the profile had edited them (old copies in '
-                     '/h/maintenance/toolset-update/x): /h/p2/skills/old/SKILL.md',
-                     'Chat menus: cleared profile4; unreachable profile1', 'Gateway restart: requested, done',
-                     'Full receipt: /autowork update status full'):
-            self.assertIn(part, summary)
-
-    def test_status_reports_host_item_outcomes_in_one_line(self):
-        lines = self.bundle.summarize_update({'status': 'updated', 'hosts': [
-            {'item': 'autowork', 'status': 'installed', 'exit': 0},
-            {'item': 'tx', 'status': 'timeout', 'exit': None},
-            {'item': 'claude', 'status': 'failed', 'exit': 7},
-            {'item': 'codex', 'status': 'skipped', 'exit': None}]})
-        self.assertIn('Hosts: autowork installed; tx timeout; claude failed (exit 7); codex skipped', lines)
-        self.assertIn('Toolset update: updated, 0 profile(s)', lines)
-
-    def test_running_receipt_owned_by_other_user_is_still_running(self):
-        home = Path(self.tmp.name)
-        folder = home / 'maintenance/toolset-update'
-        folder.mkdir(parents=True)
-        (folder / 'latest.json').write_text(json.dumps({'pid': 4242, 'started_ns': 1, 'status': 'running'}))
-        with patch.object(self.bundle, 'update_home', return_value=home), \
-                patch.object(self.bundle.os, 'kill', side_effect=PermissionError):
-            result = self.bundle.update_status()
-        self.assertNotIn('Cannot read update receipt', result)
-        self.assertIn('Toolset update: running', result)
-
-    def test_chat_update_accepts_symlinked_hermes_home(self):
-        real = Path(self.tmp.name) / 'real-home'
-        real.mkdir()
-        link = Path(self.tmp.name) / 'dot-hermes'
-        link.symlink_to(real, target_is_directory=True)
-        self._chat_updater('raise SystemExit(0)\n')
-        with patch.object(self.bundle, 'update_home', return_value=link):
-            result = self.bundle.start_update()
-        self.assertNotIn('refused', result)
-        self.assertIn('requested', result)
-        request = json.loads((real / 'maintenance/toolset-update/request.json').read_text())
-        self._wait_exited(request['pid'])
-        os.waitpid(request['pid'], 0)
-
-    def test_chat_update_still_refuses_symlinked_state_directory(self):
-        home = Path(self.tmp.name) / 'home'
-        (home / 'maintenance').mkdir(parents=True)
-        elsewhere = Path(self.tmp.name) / 'elsewhere'
-        elsewhere.mkdir()
-        (home / 'maintenance/toolset-update').symlink_to(elsewhere, target_is_directory=True)
-        self._chat_updater('raise SystemExit(0)\n')
-        with patch.object(self.bundle, 'update_home', return_value=home):
-            self.assertIn('symlinked update state directory', self.bundle.start_update())
-        self.assertFalse((elsewhere / 'request.json').exists())
+    def test_terminal_update_waits_prints_receipt_and_preserves_exit(self):
+        import subprocess
+        source = Path(self.tmp.name) / 'source'
+        (source / 'scripts').mkdir(parents=True)
+        (source / 'scripts/update_bundle.py').write_text(
+            'import json, sys\n'
+            'print(json.dumps({"status": "incomplete", "arguments": sys.argv[1:], '
+            '"action": "Repair fixture source before retrying."}), flush=True)\n'
+            'raise SystemExit(7)\n')
+        # Invoke the public terminal handler in a child so its inherited stdout is real.
+        code = (
+            'import argparse, importlib.util; from pathlib import Path; '
+            f'spec=importlib.util.spec_from_file_location("fixture_bundle", {str(ROOT / "scripts/bundle.py")!r}); '
+            'm=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); '
+            f'm.ROOT=Path({str(source)!r}); '
+            'p=argparse.ArgumentParser(); m.setup_parser(p); '
+            'raise SystemExit(m.handle_cli(p.parse_args(["update", "--check", "--hermes-home", "/fixture home"])))'
+        )
+        result = subprocess.run([__import__('sys').executable, '-c', code],
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 7, result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual(receipt['status'], 'incomplete')
+        self.assertEqual(receipt['arguments'], ['--hermes-home', '/fixture home', '--check'])
+        self.assertEqual(receipt['action'], 'Repair fixture source before retrying.')
 
     def test_inventory_keeps_optional_ponytail_handlers_for_upgrade_readiness(self):
         names = {p.parent.name for p in (ROOT / 'skills').glob('*/SKILL.md')}
@@ -508,55 +227,6 @@ class BundleTests(unittest.TestCase):
         self.assertNotIn('hindsight', report['missing_plugins'])
         self.assertEqual(report['plugins'], [])
 
-    def report(self):
-        return {'plugins': [{'name': 'ponytail', 'version': '5.1.0', 'enabled': True,
-                             'tools': 0, 'commands': 6, 'hooks': 2, 'error': None}],
-                'plugin_skills': ['ponytail:ponytail', 'ponytail:ponytail-help'],
-                'commands': [{'command': 'ponytail', 'telegram': 'ponytail', 'source': 'ponytail'},
-                             {'command': 'docs-sync', 'telegram': 'docs_sync', 'source': 'kit'}],
-                'missing_plugins': [], 'missing_skills': ['blocked-skill'],
-                'unchecked_skill_sources': [], 'telegram_menu_hidden': 12}
-
-    def test_default_summary_reports_capabilities_and_gaps_without_command_dump(self):
-        report = self.report()
-        report['plugins'].insert(0, {'name': 'kit', 'version': '0.2.0', 'enabled': True,
-                                     'tools': 0, 'commands': 44, 'hooks': 0, 'error': None})
-        report['plugin_skills'] += ['kit:autowork', 'kit:docs-sync']
-        report['commands'].append({'command': 'autowork', 'telegram': 'autowork', 'source': 'kit'})
-        report['missing_plugins'] = ['hermes-speech']
-        with patch.object(self.bundle, 'inventory', return_value=report), \
-                patch.object(self.bundle, '_identity', return_value=('abc1234', 'work')), \
-                patch.object(self.bundle, '_last_update', return_value='Last update: updated, 5 min ago, at abc1234 · /autowork update status'):
-            output = self.bundle.list_commands('')
-        lines = output.splitlines()
-        self.assertEqual(lines[0], 'Autowork 0.2.0 (abc1234) · profile work')
-        self.assertEqual(lines[1], 'Ready: /docs_sync /autowork · 2 skills, 3 commands in all')
-        self.assertIn('ponytail 5.1.0: loaded — 6 commands, 2 skills, 2 hooks', output)
-        self.assertIn('Needs setup: plugins hermes-speech; skills blocked-skill → hermes autowork setup', output)
-        self.assertIn('Telegram menu hides 12 commands', output)
-        self.assertNotIn('/docs-sync', output)
-        self.assertNotIn('Counts show', output)
-        self.assertLessEqual(len(lines), 8)
-
-    def test_list_filter_shows_only_matches_and_distinct_telegram_aliases(self):
-        with patch.object(self.bundle, 'inventory', return_value=self.report()):
-            output = self.bundle.list_commands('list docs-sync')
-            ponytail = self.bundle.list_commands('list ponytail')
-        self.assertIn('/docs-sync (Telegram: /docs_sync)', output)
-        self.assertNotIn('/ponytail —', output)
-        self.assertNotIn('/ponytail /ponytail', ponytail)
-
-    def test_summary_distinguishes_failed_disabled_and_missing_plugins(self):
-        report = self.report()
-        report['plugins'][0]['error'] = 'load failed'
-        report['plugins'].append({'name': 'other', 'enabled': False})
-        report['missing_plugins'] = ['absent']
-        with patch.object(self.bundle, 'inventory', return_value=report):
-            output = self.bundle.list_commands('')
-        self.assertIn('ponytail 5.1.0: error', output)
-        self.assertIn('load failed', output)
-        self.assertIn('other: disabled', output)
-        self.assertIn('absent', output)
 
 
 if __name__ == '__main__':

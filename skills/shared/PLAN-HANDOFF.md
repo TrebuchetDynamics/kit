@@ -61,9 +61,14 @@ Kit must keep incomplete batches out of dispatch:
 4. Read back every issue, governing source, epic link and native dependency. Fix
    incomplete contracts, cycles and unresolved references before publication.
 5. Add `ai-ready` as the **final publication phase**, only after the entire batch
-   and its edges are verified. Then remove `ai-planning` from published issues.
-   Dependent issues may carry `ai-ready`; Orbi waits on their native dependencies.
-   Never add readiness to epics, explicit pauses, completed issues or owned work.
+   and its edges are verified. Immediately before each actual readiness POST,
+   freshly verify the issue's title/body, open state, readiness/ownership and epic
+   classification, exact native `blockedBy` ID set and native parent against its
+   saved complete spec. Refuse observed drift or failed reads with an issue-specific
+   error; do not repair changed edges or parents during this final check. Then
+   remove `ai-planning` from published issues. Dependent issues may carry `ai-ready`;
+   Orbi waits on their native dependencies. Never add readiness to epics, explicit
+   pauses, completed issues or owned work.
 6. Read back labels and report issue URLs, ready/waiting/proposed status, dependencies
    and exact checks. Label publication is not pickup, implementation or merge.
 
@@ -76,6 +81,15 @@ idempotency key. The helper refuses ambiguous matches, changed saved contracts,
 closed records and Orbi-owned issues rather than overwriting them. For refinement,
 read the issue fresh, reconcile only the intended delta, and preserve current
 ownership and dependencies; do not replay an old full snapshot.
+
+Failure may leave a partial batch: earlier issues stay ready, while the refused
+issue stays `ai-planning` unless another client changed its labels. Preserve that
+readiness and foreign edits; there is no automatic rollback. Inspect ownership and
+reconcile the cause before retrying the same stable-key input, never blindly retry
+to overwrite drift. The whole-batch barrier and final per-issue refresh are not a
+transaction: concurrent edits remain possible between the final reads and separate
+label write. One publisher per batch is required, not a cross-client lock or a
+guarantee against all concurrent clients.
 
 The default-label workflow runs on opening/reopening, not on every edit or label
 removal: explicit pauses and Orbi's recovery states must not be automatically
@@ -100,20 +114,35 @@ exact failure and retry command. Do not create a substitute executable queue or
 claim a saved handoff. Read-only/questions-only/no-write/dry-run means no GitHub,
 label, document or scratch writes. A preview proves no remote persistence.
 
+## Progress and final receipt
+
+Normally send one useful progress update and a final receipt. Additional updates
+are justified by material blockers or long-running work, not a rigid message quota.
+Keep the receipt compact: issue links, decisions and planner calls, scoped unresolved
+choices, ready/waiting/proposed state, native dependencies, actual checks and unmet
+gates. Distinguish recovery acceptance from application/device qualification using
+[the shared recovery policy](PLANNING-CRAFT.md#recovery-provenance-and-qualification).
+
+Readiness is not pickup, PR delivery or merge. Distinguish a generic possible
+consumer from an observed deployment: pickup or timers require current evidence,
+not an assumed scheduler or a historical report. Kit remains paused and
+live-unqualified; publication does not release that pause.
+
 ## Execution handoff
 
 Writable planning publishes readiness automatically under the default policy and
 then stops; it does not run implementation, start a service or launch a competing
-worker. An already-running Orbi deployment may immediately consume published
-issues. Explicit no-dispatch requests keep `ai-planning` and omit readiness.
+worker. A generic already-running consumer may act on readiness; that possibility
+is not an observation of this deployment. Explicit no-dispatch requests keep
+`ai-planning` and omit readiness.
 A planning substep of an existing delivery returns to that same coordinator.
 
 Orbi per repository owns Pi implementation → tests → PR → independent review →
 merge gates. Read its configured `orbi status` and `orbi doctor` output alongside
 GitHub issues/PRs before reporting pickup or health. See
-[deployment and cutover](../../docs/github-native.md). No `/autowork` invocation
-may start the retired runner. Manual `/work` is an explicit exception to automatic
-execution: coordinate ownership first and still deliver via PR and required gates.
+[deployment and cutover](../../docs/github-native.md). Never start the retired
+runner. Retained authorized fix/apply modes keep their scope, coordinate actual
+ownership and still deliver via PR, independent review and required gates.
 
 ## Scoped Skills convention
 

@@ -383,13 +383,18 @@ unfinished work through [GitHub migration](github-native.md#cutover).
 
 ## Update all profiles
 
-Run `/autowork update` in an authorized Hermes CLI or gateway chat. It starts a
-background updater; use `/autowork update status` for its durable result, not the
-initial “requested” message as proof of completion. The status is a short summary that
-fits one chat message (outcome, revisions, files written, local edits, healed settings
-and menus, gateway restart); `/autowork update status full` shows the whole receipt as JSON. `/autowork update --check`
-fetches upstream and previews changes without advancing checkouts or writing
-profile skills/configuration. It still writes Git fetch metadata and its receipt.
+Run terminal `hermes autowork update` from an authorized profile. It waits for
+the updater and prints a structured receipt with outcome, revisions, files, local
+edits, settings, menus and gateway restart status. `hermes autowork update --check`
+fetches upstream and previews without advancing checkouts or writing profile skills/
+configuration; it still writes Git fetch metadata and its receipt. There is no
+chat-maintenance command or terminal update-status form.
+
+Old profile payloads, including retired skills, need an authorized normal update
+and host reload. Provisioning deliberately preserves existing copies: source deletion
+or reinstall alone does not retire them. Updates remove retired first-party files,
+including edited/categorized copies, while retaining backups and unrelated profile/
+recovery data; an unchanged retry is a no-op.
 
 After a changed all-profile update activates successfully, the updater also runs
 that fetched release's `install.sh --full --skip hermes,pi -q` once from its updated
@@ -452,16 +457,13 @@ reports `pending` and joins it instead of starting another one, so a burst of
 updates restarts the gateway once; that restart loads the newest release, and its
 outcome reaches the latest receipt with `gateway_restart_covers`, the number of
 updates it covers. The waiter never restarts while an update is still applying
-files: it shares the update lock and waits for the next check. `/autowork update status` then shows the waiter's latest chat-turn
-count, or the seconds left and turns a requested restart is draining
-(`gateway_restart_progress` in the full receipt). Once a requested restart has
-finished, the next `/autowork update status` or update records its outcome on the receipt:
-`completed` with `gateway_restart_result` (the new gateway's PID and start time,
-which profiles' Telegram bots logged a menu resend after the restart and which did
-not, and any forced-drain interruptions from the gateway log), or `restart_failed`
-when the restart ended with the old gateway still running. The outcome is also kept in
-`restart.json`, so when a later update has already replaced that receipt, status shows
-it as `Last gateway restart` (`last_gateway_restart` in the full receipt). To restart immediately anyway, run `hermes gateway restart` yourself;
+files: it shares the update lock and waits for the next check. The waiter records
+its outcome in the durable receipt; a subsequent update also records a completed
+requested restart. `completed` includes `gateway_restart_result` (new gateway PID,
+start time, observed menu resends and interruptions); `restart_failed` means the
+old gateway still runs. `restart.json` retains the outcome. These receipt fields
+are evidence, not a promise of the former chat summary. To restart immediately
+anyway, run `hermes gateway restart` under your normal service authority;
 Hermes then waits for chat turns up to `agent.restart_after_turn_timeout`. Drift,
 error and check results carry no `gateway_restart` field. Only the gateway recorded
 in the root's `gateway.pid` is detected and restarted; a separately running
@@ -494,8 +496,7 @@ Only one update or check runs at a time. A second one waits up to 10 seconds (a
 deferred-restart waiter holds the lock only briefly per check), then exits with
 code 3 and `{"status": "busy", "running": {...}}` naming the running update's PID,
 mode (`update` or `check`) and start time; it changes nothing and leaves that
-update's receipt in place. In chat, `/autowork update` says which update is running
-and starts nothing.
+update's receipt in place.
 
 A named-profile invocation still targets every existing live profile under the
 same Hermes root. The updater fetches the official Kit `main` branch,
@@ -535,8 +536,8 @@ Existing setup prerequisites still apply; this is not a policy-neutral operation
 `maintenance/toolset-update/latest.json` in the root Hermes home records status,
 source revisions, profiles, reset or removed `local_edits` and the backup location.
 Managed-checkout recovery has separate merge evidence; ordinary skill-copy reset
-is not a three-way merge. For updates started from chat,
-`run.log` holds updater and setup output (terminal updates print it);
+is not a three-way merge. Terminal updates print updater/setup output;
+`run.log` holds requested gateway restart output;
 per-run backups include original skill files and a manifest. An `incomplete` result
 may follow partial application: preserve the backups, fix the reported cause and
 rerun. There is no automatic rollback. A stopped gateway is reported by setup;
@@ -548,8 +549,8 @@ Historical byte matching does not establish compatibility with an active run or
 its pinned execution files, manifests or evidence; update receipts do not qualify
 that compatibility. Existing conversations may
 retain already-loaded instructions; open a new conversation to load updated skills.
-The new `/autowork update` handler itself first needs the normal plugin reload if
-upgrading from a version that does not register it.
+Plugin registration and stale Telegram menus require the normal authorized
+update/reload path; source changes alone do not refresh running hosts.
 
 ### Managed checkout recovery
 
@@ -612,8 +613,8 @@ native scanner acceptance, a live profile reinstall or Telegram delivery.
 A source install links each profile's `plugins/autowork` to the checkout, so
 the profile loads whatever that checkout holds at the next gateway restart,
 including commits that were never released. A profile whose plugin is its own clone
-changes only when an update advances it. `/autowork update status` and
-`hermes autowork doctor` list the linked profiles; nothing converts them
+changes only when an update advances it.
+`hermes autowork doctor --json` lists the linked profiles; nothing converts them
 automatically.
 
 To pin one profile, preview it, then run it:
@@ -658,7 +659,7 @@ or attest that external binary; instruction loading has a documented fallback.
 
 ## Deploy an exact local revision to selected profiles
 
-The legacy `/autowork update` remains the all-profile upstream update. For an
+`hermes autowork update` remains the all-profile upstream update. For an
 already reviewed local fix, use the scoped updater from a clean checkout:
 
 ```bash
