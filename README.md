@@ -196,10 +196,20 @@ activation, and installing the CLI does not start workers or qualify delivery.
 
 Read [GitHub-native deployment](docs/github-native.md#one-repository-per-deployment)
 and the [current lifecycle reference](skills/orbi/references/lifecycle.md) for
-prerequisites, preparation and partial-failure recovery. First-deployment provider
-and SSH setup has an [unresolved limitation (#43)](https://github.com/TrebuchetDynamics/kit/issues/43);
-do not assume automatic provider discovery or guaranteed setup. Keep credentials
-out of Git and preserve existing pins, workers and recovery state.
+prerequisites and preparation. For a first deployment, supply credential-free Pi
+provider metadata with `--pi-providers PATH --pi-provider ID --pi-model ID` and
+optional `--pi-thinking LEVEL`, or reuse a verified selection from a visible
+deployment; see [provider bootstrap](skills/orbi/references/lifecycle.md#first-deployment-provider-bootstrap).
+Pi authentication must already work; setup does not automate login or guarantee
+provisioning. New configs derive `git_transport` from the verified SSH/HTTPS origin
+without rewriting it; existing selections and pins are preserved.
+
+For interrupted preparation, follow [partial-failure recovery](skills/orbi/references/lifecycle.md#partial-failure-and-recovery).
+The [bounded `--resume-setup` path](skills/orbi/references/lifecycle.md#explicit-bounded-legacy-resume)
+is only for an existing config's missing deployment-local provider file, with
+`--config PATH` and matching provider inputs; other incomplete states need deliberate
+repair. Setup does not activate scheduling or qualify live recovery, isolation or
+delivery. Keep credentials out of Git and preserve workers and recovery state.
 
 <details>
 <summary><strong>Install every available host and CLI component at once</strong></summary>
