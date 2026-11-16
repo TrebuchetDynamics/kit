@@ -31,6 +31,8 @@ import os
 from pathlib import Path
 import platform
 import re
+import selectors
+import signal
 import shutil
 import shlex
 import stat
@@ -85,7 +87,7 @@ class Output:
         print(message, end='', flush=True)
 
 
-def run_command(argv, output, extra_env=None):
+def run_command(argv, output, extra_env=None, timeout=None):
     """Stream both child channels, including prompts without a trailing newline.
 
     Keep a bounded diagnostic tail for quiet failures; stdin remains inherited.
@@ -97,26 +99,80 @@ def run_command(argv, output, extra_env=None):
     stream = output.verbosity > 0 or sys.stdin.isatty()
     decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
     tail = ''
-    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env) as child:
+    terminal = None
+    previous_ttou = None
+    if timeout is not None:
         try:
-            while chunk := child.stdout.read1(4096):
-                text = decoder.decode(chunk)
+            terminal = os.open('/dev/tty', os.O_RDWR)
+            if os.tcgetpgrp(terminal) != os.getpgrp():
+                os.close(terminal)
+                terminal = None
+        except OSError:
+            if terminal is not None:
+                os.close(terminal)
+            terminal = None
+        if terminal is not None:
+            previous_ttou = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+
+    def prepare_child():
+        os.setpgrp()
+        if terminal is not None:
+            # Keep native /dev/tty reads in the foreground, not SIGTTIN-stopped.
+            os.tcsetpgrp(terminal, os.getpgrp())
+
+    try:
+        deadline = time.monotonic() + timeout if timeout is not None else None
+        # A process group bounds descendants too, without detaching /dev/tty prompts.
+        with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+                              preexec_fn=prepare_child if timeout is not None else None,
+                              pass_fds=(terminal,) if terminal is not None else ()) as child:
+            try:
+                with selectors.DefaultSelector() as selector:
+                    selector.register(child.stdout, selectors.EVENT_READ)
+                    while True:
+                        remaining = None if deadline is None else max(0, deadline - time.monotonic())
+                        if remaining == 0 or not selector.select(remaining):
+                            raise subprocess.TimeoutExpired(argv, timeout)
+                        chunk = child.stdout.read1(4096)
+                        if not chunk:
+                            break
+                        text = decoder.decode(chunk)
+                        tail = (tail + text)[-16384:]
+                        if stream:
+                            output.raw(text)
+                text = decoder.decode(b'', final=True)
                 tail = (tail + text)[-16384:]
                 if stream:
                     output.raw(text)
-            text = decoder.decode(b'', final=True)
-            tail = (tail + text)[-16384:]
-            if stream:
-                output.raw(text)
-            code = child.wait()
-        except BaseException:
-            child.terminate()
-            try:
-                child.wait(timeout=5)
+                code = child.wait(timeout=None if deadline is None else max(0, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
-                child.kill()
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 child.wait()
-            raise
+                code = 124
+                tail += f'\ncommand timed out after {timeout} seconds; stopped Pi command and descendants'
+            except BaseException:
+                if timeout is not None:
+                    try:
+                        os.killpg(child.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                child.terminate()
+                try:
+                    child.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait()
+                raise
+    finally:
+        if terminal is not None:
+            try:
+                os.tcsetpgrp(terminal, os.getpgrp())
+            finally:
+                os.close(terminal)
+                signal.signal(signal.SIGTTOU, previous_ttou)
     if stream and tail and not tail.endswith('\n'):
         output.line()
     if code and not stream and tail:
@@ -678,7 +734,7 @@ def install_pi_harness(output):
                 output.line('  $ ' + shlex.join(argv), 'command')
             # Captured stdout makes upstream's [ -t 1 ] startup guard false.
             # Inherit stdin and /dev/tty prompts; never supply prerequisite consent.
-            code, text = run_command(argv, output, extra_env={'PI_LEGACY_INSTALL': '0'})
+            code, text = run_command(argv, output, extra_env={'PI_LEGACY_INSTALL': '0'}, timeout=600)
             if code:
                 raise OSError(f'{stage} (exit {code}): {failure_summary(text)}; '
                               'resolve the reported cause (Node >=22.19.0/npm if requested), '
@@ -712,7 +768,7 @@ def install_pi_package(output=None, mode='install'):
     argv = [str(binary), action, PI_SOURCE]
     if output.verbosity > 1:
         output.line('  $ ' + shlex.join(argv), 'command')
-    code, text = run_command(argv, output)
+    code, text = run_command(argv, output, timeout=600)
     if code:
         raise OSError(f'Pi package {action} failed (exit {code}): {failure_summary(text)}; '
                       'repair the reported cause and retry ./install.sh --only pi')

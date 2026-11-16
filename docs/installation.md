@@ -116,8 +116,11 @@ Node.js **22.19.0 or newer** and npm. Its native prerequisite prompts/refusal re
 in force: Kit never supplies consent, invokes sudo itself or provisions Node itself.
 Without a usable terminal, install the prerequisites yourself and retry.
 
-Output is captured and streamed using the normal verbosity rules. Captured stdout
-suppresses upstream's terminal-only offer to start an agent. Upstream may offer a
+Output is captured and streamed using the normal verbosity rules. Download, bootstrap
+and package commands each have a ten-minute outer limit (the download also has curl's
+five-minute limit). A timeout stops the command and its descendants, reports failure
+and leaves completed upstream changes in place; prerequisite prompts remain interactive
+within that limit. Captured stdout suppresses upstream's terminal-only offer to start an agent. Upstream may offer a
 shell-profile PATH edit via the terminal; it is optional, not forced by Kit.
 Kit starts no agent/model/service and changes no credentials. The suite's existing
 active-integration restart phase still applies. Preview/list/menu cancellation run

@@ -315,6 +315,46 @@ esac
         self.assertEqual(run.call_args.kwargs['timeout'], 30)
         self.assertEqual(run.call_args.kwargs['stdin'], subprocess.DEVNULL)
 
+    def test_pi_command_timeouts_stop_descendants_and_bound_silent_or_busy_hosts(self):
+        marker = self.home / 'orphan-write'
+        for script in ('sleep 30', 'exec 1>&- 2>&-; sleep 30',
+                       'while :; do printf busy; done',
+                       f'(sleep 0.5; touch "{marker}") & wait'):
+            with self.subTest(script=script):
+                # The outer timeout guards this regression even if the inner bound breaks.
+                probe = subprocess.run([sys.executable, '-c',
+                    'import json, sys; sys.path.insert(0, sys.argv[1]); import install_menu; '
+                    'print(json.dumps(install_menu.run_command(["sh", "-c", sys.argv[2]], '
+                    'install_menu.Output(verbosity=0), timeout=0.1)))',
+                    str(ROOT / 'scripts'), script], capture_output=True, text=True,
+                    env=self.env, timeout=5)
+                self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
+                self.assertIn('124,', probe.stdout)
+                self.assertIn('timed out after 0.1 seconds', probe.stdout)
+        time.sleep(0.6)
+        self.assertFalse(marker.exists(), 'timed-out installer left a running descendant')
+
+    def test_pi_timeout_failure_names_stage_and_repair(self):
+        output = install_menu.Output(verbosity=0)
+        for stage in ('download', 'bootstrap'):
+            def command(argv, output, **kwargs):
+                if stage == 'bootstrap' and argv[0] == 'curl':
+                    Path(argv[argv.index('--output') + 1]).write_text('exit 0\n')
+                    return 0, ''
+                return 124, 'command timed out'
+            with self.subTest(stage=stage), \
+                 patch.object(install_menu, 'pi_executable', return_value=None), \
+                 patch.object(install_menu, 'run_command', side_effect=command) as run:
+                with self.assertRaisesRegex(OSError, rf'{stage} failed.*timed out.*--only pi'):
+                    install_menu.install_pi_harness(output)
+                self.assertEqual(run.call_args.kwargs['timeout'], 600)
+        with patch.object(install_menu, 'install_pi_harness', return_value='/fake/pi'), \
+             patch.object(install_menu, 'pi_package', return_value=None), \
+             patch.object(install_menu, 'run_command', return_value=(124, 'command timed out')) as run:
+            with self.assertRaisesRegex(OSError, r'package install failed.*timed out.*--only pi'):
+                install_menu.install_pi_package(output)
+            self.assertEqual(run.call_args.kwargs['timeout'], 600)
+
     def test_pi_package_failure_after_bootstrap_does_not_enable_or_claim_success(self):
         self.missing_pi()
         (self.home / 'pi-fixture').write_text(PI.replace('  install) echo',
