@@ -49,13 +49,13 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
 
     def run_installer(self, *args):
         return subprocess.run(['bash', str(self.script), '--sources-only', *args], cwd=self.root,
-                              env=self.env, text=True, capture_output=True)
+                              env=self.env, text=True, capture_output=True, timeout=30)
 
     def calls(self):
         return self.log.read_text().splitlines() if self.log.exists() else []
 
     def test_identity_matrix_before_any_component_mutation(self):
-        for case in ('canonical', 'legacy-kit', 'legacy-manifest', 'same-source', 'distinct-source', 'foreign', 'missing', 'malformed'):
+        for case in ('canonical', 'legacy-kit', 'legacy-manifest', 'same-source', 'distinct-source', 'foreign', 'missing', 'malformed', 'malformed-body', 'quoted-conflict'):
             with self.subTest(case=case):
                 plugins = self.hermes_root / 'profiles/coder/plugins'
                 if plugins.exists():
@@ -74,6 +74,8 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
                             'distinct-source': 'name: kit\n',
                             'foreign': 'name: other\n',
                             'malformed': 'name: [kit]\n',
+                            'malformed-body': 'name: kit\nsettings: [\n',
+                            'quoted-conflict': 'name: kit\n"name": autowork\n',
                         }[case])
                     (legacy / 'private-state').write_bytes(b'keep\x00evidence')
                 self.log.unlink(missing_ok=True)
@@ -89,6 +91,21 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
                     self.assertEqual(self.calls(), [], 'identity failure must precede every component mutation')
                     if (plugins / 'autowork/private-state').exists():
                         self.assertEqual((plugins / 'autowork/private-state').read_bytes(), b'keep\x00evidence')
+
+    def test_bundle_enable_timeout_reports_failure(self):
+        limiter = self.bin / 'timeout'
+        limiter.write_text('#!/bin/sh\n[ "$1" = 120 ] || exit 99\nshift\nprintf "%s\\n" "$*" >> "$TIMEOUT_LOG"\nexit 124\n')
+        limiter.chmod(0o755)
+        trace = self.root / 'timeouts'
+        self.env['TIMEOUT_LOG'] = str(trace)
+        result = self.run_installer('--bundle-only')
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(trace.read_text().splitlines(), [
+            f'hermes -p {name} plugins enable kit' for name in ('default', 'coder', 'research')])
+        self.assertFalse(any('plugins enable' in row for row in self.calls()))
+        self.assertIn('3 failed', result.stdout)
+        self.assertIn('Kit enablement failed (coder, exit 124; 120-second limit)', result.stderr)
+        self.assertIn('Inspect Hermes and rerun setup', result.stderr)
 
     def test_public_setup_entrypoint_preview_success_and_duplicate_failure(self):
         copy_sources(self.repo, entries=('install-skills.sh',))

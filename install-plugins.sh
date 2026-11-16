@@ -220,7 +220,11 @@ PYIDENTITY
         fi
         if $dry_run; then
             printf 'Plan: enable kit (%s)\n' "$profile"
-        elif ! HERMES_HOME=$hermes_root hermes -p "$profile" plugins enable kit; then
+        elif HERMES_HOME=$hermes_root timeout 120 hermes -p "$profile" plugins enable kit; then
+            :
+        else
+            status=$?
+            printf 'Error: Kit enablement failed (%s, exit %s; 120-second limit). Inspect Hermes and rerun setup; existing sources were retained.\n' "$profile" "$status" >&2
             failed=$((failed + 1))
         fi
     done

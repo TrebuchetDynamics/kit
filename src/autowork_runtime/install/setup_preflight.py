@@ -113,7 +113,7 @@ def preflight(repo, root, profiles, *, bundle_only=False):
     errors, plan = [], []
     if sys.version_info < (3, 12):
         errors.append('Setup requires Python 3.12 or newer')
-    for binary in ('bash', 'python3', 'hermes', *(() if bundle_only else ('git',))):
+    for binary in ('bash', 'python3', 'hermes', 'timeout', *(() if bundle_only else ('git',))):
         if not shutil.which(binary):
             errors.append(f'Required executable missing: {binary}')
     required = ('install-skills.sh', 'install-plugins.sh', 'scripts/install_skills.py', 'scripts/runtime_defaults.py',

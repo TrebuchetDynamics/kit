@@ -70,11 +70,22 @@ def _manifest_name(directory):
         text = (directory / 'plugin.yaml').read_text(encoding='utf-8')
     except (OSError, UnicodeError) as error:
         raise ValueError(f'Cannot read plugin identity: {directory}/plugin.yaml; preserve and repair it') from error
-    names = re.findall(r'^name:.*$', text, re.M)
-    match = re.fullmatch(r"name:\s*(?:([A-Za-z0-9_-]+)|'([A-Za-z0-9_-]+)'|\"([A-Za-z0-9_-]+)\")\s*(?:#.*)?", names[0]) if len(names) == 1 else None
-    if not match or next(x for x in match.groups() if x) not in MANIFEST_NAMES:
+    try:
+        import yaml
+    except ImportError as error:
+        raise ValueError(f'PyYAML is required to verify plugin identity: {directory}/plugin.yaml') from error
+    try:
+        # Inspect YAML nodes, not a line regex: quoted/explicit keys and broken
+        # content elsewhere must not conceal an ambiguous or malformed manifest.
+        manifest = yaml.compose(text, Loader=yaml.SafeLoader)
+    except yaml.YAMLError as error:
+        raise ValueError(f'Invalid plugin manifest: {directory}/plugin.yaml; preserve and repair it') from error
+    names = [value for key, value in manifest.value
+             if isinstance(key, yaml.ScalarNode) and key.value == 'name'] if isinstance(manifest, yaml.MappingNode) else []
+    if (len(names) != 1 or not isinstance(names[0], yaml.ScalarNode)
+            or names[0].tag != 'tag:yaml.org,2002:str' or names[0].value not in MANIFEST_NAMES):
         raise ValueError(f'Invalid or foreign plugin identity: {directory}/plugin.yaml; preserve local changes and reconcile it')
-    return next(x for x in match.groups() if x)
+    return names[0].value
 
 
 def plugin_slots(home):
@@ -1988,10 +1999,6 @@ def automatic_recovery(root, profiles, *, plan=None, prior=None, check=False):
             raise ValueError('Unsafe recovery source record')
         if set(names) - {name for name, _ in profiles}:
             raise ValueError('Original recovery consumers are no longer selected; reconcile before retrying')
-        pending_slot = resume_native_slots(root, [(name, dict(profiles)[name]) for name in names], prior, check=check)
-        if pending_slot and check:
-            return {**prior, 'status': 'update_available',
-                    'action': 'Verified native publication awaits physical-slot restoration; rerun without --check to resume'}
         if not source.exists():
             if any(row.get('phase') for row in prior['profiles'].values()):
                 raise ValueError('Original recovery stage is missing after publication began')
@@ -2072,6 +2079,11 @@ def automatic_recovery(root, profiles, *, plan=None, prior=None, check=False):
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise ValueError(f'Worker handoff is active for {name}')
+        if prior is not None:
+            pending_slot = resume_native_slots(root, selected, prior, check=check)
+            if pending_slot and check:
+                return {**prior, 'status': 'update_available',
+                        'action': 'Verified native publication awaits physical-slot restoration; rerun without --check to resume'}
         return scoped_update(root, source, revision, names, None, check=check,
                              _recovery=managed, _locked=True)
 
@@ -2133,9 +2145,17 @@ def main(argv=None):
         prior = json.loads(recovery_receipt.read_text()) if recovery_receipt.exists() else None
         # Incomplete native publication is resolved under the transaction lock;
         # its journal may account for temporarily dangling legacy consumers.
-        if not state_dir.exists() and (not prior or prior.get('status') != 'incomplete'):
-            for _, home in live_profiles(root):
-                plugin_dir(home)
+        if not prior or prior.get('status') != 'incomplete':
+            try:
+                profiles = live_profiles(root)
+            except (ValueError, OSError):
+                # A prior restart's outcome must survive profile enumeration failure.
+                # Defer that error until its receipt is finalized under the lock.
+                if not state_dir.exists() or args.dry_run:
+                    raise
+            else:
+                for _, home in profiles:
+                    plugin_dir(home)
     except (ValueError, OSError) as error:
         print(json.dumps({'status': 'incomplete', 'error': str(error)}, indent=2))
         return 1
@@ -2168,18 +2188,29 @@ def main(argv=None):
                                               'with kill <PID>; the lock frees itself when it exits.'}, indent=2))
                     return 3
                 time.sleep(0.2)
+        profile_error = None
+        try:
+            profiles = live_profiles(root)
+        except (ValueError, OSError) as error:
+            profile_error = error
+        try:
+            # Re-read after lock contention before deciding whether the journal may
+            # account for an incomplete native publication's dangling shared links.
+            safe_path(recovery_receipt)
+            prior = json.loads(recovery_receipt.read_text()) if recovery_receipt.exists() else None
+            if profile_error is None and (not prior or prior.get('status') != 'incomplete'):
+                for _, home in profiles:
+                    plugin_dir(home)
+        except (ValueError, OSError) as error:
+            print(json.dumps({'status': 'incomplete', 'error': str(error)}, indent=2))
+            return 1
         try:
             # Record a finished restart on the receipt it covers before this run replaces it.
             finish_restart(root, state_dir, locked=True)
         except (ValueError, OSError):
             pass
-        try:
-            profiles = live_profiles(root)
-            if not prior or prior.get('status') != 'incomplete':
-                for _, home in profiles:
-                    plugin_dir(home)
-        except (ValueError, OSError) as error:
-            print(json.dumps({'status': 'incomplete', 'error': str(error)}, indent=2))
+        if profile_error is not None:
+            print(json.dumps({'status': 'incomplete', 'error': str(profile_error)}, indent=2))
             return 1
         result = {'status': 'running', 'pid': os.getpid(), 'started_ns': time.time_ns(),
                   'mode': 'check' if args.check else 'update'}

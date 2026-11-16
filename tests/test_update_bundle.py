@@ -2,6 +2,7 @@
 import importlib.util
 import contextlib
 import io
+import fcntl
 import json
 from pathlib import Path
 import subprocess
@@ -68,7 +69,7 @@ class PluginDirectoryTests(unittest.TestCase):
             self.assertFalse((home / 'plugins/kit').exists())
 
     def test_ambiguous_or_unreadable_identity_refuses_without_changes(self):
-        for case in ('same-source', 'distinct-source', 'missing', 'malformed', 'conflicting', 'foreign', 'dangling'):
+        for case in ('same-source', 'distinct-source', 'missing', 'malformed', 'malformed-body', 'conflicting', 'quoted-conflict', 'foreign', 'dangling'):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
                 home = Path(tmp)
                 legacy = self.make(home, 'autowork')
@@ -85,7 +86,9 @@ class PluginDirectoryTests(unittest.TestCase):
                 else:
                     (legacy / 'plugin.yaml').write_text({
                         'malformed': 'name: [kit]\n',
+                        'malformed-body': 'name: kit\nsettings: [\n',
                         'conflicting': 'name: kit\nname: autowork\n',
+                        'quoted-conflict': 'name: kit\n"name": autowork\n',
                         'foreign': 'name: foreign\n',
                     }[case])
                 before = sorted(str(p) for p in home.rglob('*'))
@@ -138,6 +141,23 @@ class UpdateTests(unittest.TestCase):
         self.assertFalse((self.home / 'maintenance').exists())
         self.assertTrue((self.home / 'plugins/autowork').is_symlink())
         self.assertTrue((self.home / 'plugins/kit').is_symlink())
+
+    def test_existing_update_state_does_not_bypass_identity_admission(self):
+        (self.home / 'plugins/kit').symlink_to(self.repo)
+        state = self.home / 'maintenance/toolset-update'
+        state.mkdir(parents=True)
+        receipt = state / 'latest.json'
+        receipt.write_bytes(b'{"status": "up_to_date"}\n')
+        peer = self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle')
+        for args in (['--dry-run'], []):
+            with self.subTest(args=args), patch.object(peer, 'live_profiles', self.setup_stub.live_profiles), \
+                 patch.object(self.mod, 'finish_restart', side_effect=AssertionError('identity admission first')), \
+                 contextlib.redirect_stdout(io.StringIO()) as output:
+                code = self.mod.main(['--hermes-home', str(self.home), *args])
+                self.assertEqual(code, 1, output.getvalue())
+            self.assertIn('Duplicate Kit registrations', output.getvalue())
+            self.assertEqual(receipt.read_bytes(), b'{"status": "up_to_date"}\n')
+            self.assertEqual(sorted(p.name for p in state.iterdir()), ['latest.json'])
 
     def test_native_releases_keep_peers_and_source_payload_local(self):
         releases = [copy_sources(self.root / name) for name in ('one', 'two')]
@@ -1664,6 +1684,17 @@ class ManagedRecoveryTests(unittest.TestCase):
                     self.assertTrue((fixture.home / 'plugins/kit').is_dir())
                     self.assertFalse(fixture.repo.exists())
                     self.assertEqual(json.loads((fixture.home / 'maintenance/toolset-update/recovery.json').read_text()), saved)
+                    # Every selected handoff must be locked before restoring a slot,
+                    # including a shared consumer whose source is temporarily absent.
+                    shared_lock = fixture.profiles[1][1] / 'autowork/goal-handoff.lock'
+                    with shared_lock.open('a') as worker:
+                        fcntl.flock(worker, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        code, held = fixture.run_update()
+                        self.assertEqual(code, 1, held)
+                        self.assertIn('Worker handoff is active', str(held))
+                        self.assertTrue((fixture.home / 'plugins/kit').is_dir())
+                        self.assertFalse(fixture.repo.exists())
+                        self.assertEqual(json.loads((fixture.home / 'maintenance/toolset-update/recovery.json').read_text()), saved)
                 (fixture.remote / 'skills/demo/SKILL.md').write_text('later upstream release\n')
                 fixture.git(fixture.remote, 'commit', '-am', 'upstream moved during interruption')
                 if point == 'ordinary':

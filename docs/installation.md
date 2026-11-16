@@ -258,7 +258,9 @@ check returns nonzero and reports setup as incomplete.
 Fresh native/source installs and isolated registration probes use `plugins/kit`
 and enable `kit`; setup finalizes through `hermes -p PROFILE kit finalize`.
 Setup reuses a canonical link or a verified `plugins/autowork` link to the selected
-checkout **when its manifest already declares Kit**. A supported old Autowork
+checkout **when its manifest already declares Kit**. Source setup requires the
+`timeout` executable and bounds each Kit enablement to 120 seconds; a timeout
+reports incomplete setup, not successful activation. A supported old Autowork
 manifest is migration input for an authorized normal update, not a plugin that
 fresh setup enables. Managed clones under either physical name route to the updater,
 not a second linked installation.
