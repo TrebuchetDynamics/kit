@@ -349,3 +349,13 @@ The executor TUI and provider bridge are removed. The
 [prior provider qualification boundary](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/testing.md#pi-provider-setup-in-the-tui)
 remains evidence, not a supported setup path. Ordinary Pi provider configuration
 belongs to Pi; removal does not alter interactive credentials or model settings.
+
+## Local planning model smoke
+
+The [opt-in Pi planning smoke](../evals/README.md#opt-in-local-planning-smoke-pi)
+runs Plan With Me or Plan For Me against a disposable repository with existing
+authentication and explicit portable-skill loading. It retains private evidence
+and rejects an empty response, failed reads, write/edit attempts or changed fixture
+files. Review answer semantics and shell activity separately. It neither publishes
+issues nor qualifies Orbi delivery. `tests/test_planning_smoke.py` uses a fake Pi
+for the runner's failure boundaries; the offline inventory never calls a model.
