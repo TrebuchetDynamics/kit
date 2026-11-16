@@ -186,7 +186,7 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | Bare skill invocation or `status` | Read-only status for the repository; missing evidence is unavailable, not an empty queue. |
 | `help` | Read-only action reference, without a repository or deployment. |
 | `setup` | Prepare source/configuration without scheduling or timer activation. |
-| `start` | Activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
+| `start` | Prepare if absent, then activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
 | `stop` | Disable owned timers without killing active workers; report draining while they finish. |
 
 Linux supports lifecycle changes. macOS supports status and help only.
@@ -217,13 +217,29 @@ not shell-only keys; setup does not automate login or guarantee provisioning. Ne
 without rewriting it; existing selections and pins are preserved.
 
 New lifecycle setup defaults to **Pi-Bolt**, already installed on the caller's
-PATH; setup-only `--harness pi` explicitly selects stock Pi. There is no automatic
+PATH; `--harness pi` explicitly selects stock Pi for new setup or absent-start preparation. There is no automatic
 harness installation or silent fallback. Setup/status/start identify configured
 selection and executable evidence in `deployment.harness`, not measured use by a
 running worker. Existing deployments are not silently migrated. See
 [harness selection and evidence](skills/orbi/references/lifecycle.md#harness-selection-and-evidence)
 for deployment-local routing, drift refusal, service credential references and
 unverified live compatibility.
+
+An authorized first start can prepare and activate in one invocation:
+
+```text
+/orbi start --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi start --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+```
+
+Replace placeholders with published catalog IDs/paths. Preview checks prerequisites
+without writes and explicitly defers staging-dependent validation/activation checks.
+Actual preparation must validate before activation. Existing valid/active targets
+skip preparation; omit bootstrap/harness selectors on subsequent starts. Explicit
+`--config` must exist; partial/foreign targets are not absent. Results retain
+`preparation.state` separately from activation and live qualification. `/orbi help`
+provides setup/stock-Pi/status/stop examples and targeted recovery; configured slots
+and harness evidence are not enabled capacity or running-process proof.
 
 For interrupted preparation, follow [partial-failure recovery](skills/orbi/references/lifecycle.md#partial-failure-and-recovery).
 The [bounded `--resume-setup` path](skills/orbi/references/lifecycle.md#explicit-bounded-legacy-resume)
