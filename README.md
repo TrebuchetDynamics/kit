@@ -108,6 +108,10 @@ hermes plugins enable kit
 hermes kit doctor --core
 ```
 
+Fresh Hermes installs use `plugins/kit` and enable `kit`. Verified legacy physical
+slots are retained for safe update discovery, not supported Autowork operation;
+[duplicate/foreign registrations block setup](docs/installation.md#install).
+
 The opt-out does not undo prior changes or stop full setup from configuring
 external integrations. Existing memory providers and stores are preserved.
 
@@ -399,12 +403,14 @@ source deletion or reinstall alone does not retire preserved native copies.
 ### Renamed from hermes-toolset
 
 This project was called hermes-toolset before 0.3.0, and its plugin was called
-`autowork` until the Kit rename. There is no compatibility layer for the old plugin
-name: the command namespace is `kit:` and the settings key is
+`autowork` until the Kit rename. There is no executable compatibility alias:
+the command namespace is `kit:` and the settings key is
 `plugins.entries.kit`. Settings under `plugins.entries.autowork` keep being read for
-one release, so an opt-out you already set still applies. Remove an older installation
-and [install](#install) again in each host. Preserve existing job state during
-migration; do not rewire legacy Autowork cron execution for new work.
+one release, so an opt-out you already set still applies. For Hermes,
+[update the verified existing installation](docs/installation.md#update-all-profiles)
+without creating a second copy or deleting recovery state. Source delivery alone
+does not adopt a release into an installed profile or activate running hosts.
+Preserve existing job state; do not rewire legacy Autowork cron execution for new work.
 
 </details>
 

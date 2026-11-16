@@ -305,6 +305,13 @@ dirty, locally advanced or active/shared-unsafe sources defer. Recovery preserve
 compatible native skill edits and requests no runtime restart. `--skip hermes`
 leaves Hermes out; preview runs no updater or recovery network operation. This
 Hermes-specific path does not replace portable hosts' own update commands below.
+Fresh Hermes installation/probes use `plugins/kit` and enable `kit`. Verified
+legacy physical slots are discovery/migration inputs only: no supported Autowork
+CLI or executor is restored. Setup/update refuse duplicate registrations, including
+same-source aliases, before component mutation; preserve the paths and reconcile
+ownership rather than reinstalling over them. See [slot identity and setup](installation.md#install).
+Source delivery is not installed adoption, native loader qualification or live activation.
+
 
 ## Claude Code
 

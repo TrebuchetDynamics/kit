@@ -1502,10 +1502,29 @@ fi
         # would refuse them as "another checkout".
         clone = self.home / '.hermes/profiles/work/plugins/autowork'
         (clone / '.git').mkdir(parents=True)
+        (clone / 'plugin.yaml').write_text('name: kit\n')
         result = self.install('--only', 'hermes', '--dry-run')
         self.assertIn(f"update_bundle.py --hermes-home {self.home / '.hermes'}", result.stdout)
         self.assertNotIn('setup_bundle.py', result.stdout)
 
+
+    def test_hermes_discovery_identity_matrix(self):
+        self.fake('hermes', LOGGING)
+        plugins = self.home / '.hermes/plugins'
+        plugins.mkdir(parents=True)
+        canonical = plugins / 'kit'
+        (canonical / '.git').mkdir(parents=True)
+        (canonical / 'plugin.yaml').write_text('name: kit\n')
+        result = self.install('--only', 'hermes', '--dry-run')
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn('update_bundle.py --hermes-home', result.stdout)
+        (plugins / 'autowork').symlink_to(canonical)
+        result = self.install('--only', 'hermes', '--dry-run')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Duplicate Kit registrations', result.stdout)
+        self.assertIn(str(canonical), result.stdout)
+        self.assertTrue((plugins / 'autowork').is_symlink())
+        self.assertEqual(self.calls('hermes'), [])
 
     def test_tx_moves_a_symlink_aside_instead_of_writing_through_it(self):
         elsewhere = self.home / 'other-checkout/tx'
@@ -1575,7 +1594,9 @@ fi
 
     def test_setup_only_hermes_options_are_refused_for_profile_clones(self):
         self.fake('hermes', LOGGING)
-        (self.home / '.hermes/profiles/work/plugins/autowork/.git').mkdir(parents=True)
+        clone = self.home / '.hermes/profiles/work/plugins/autowork'
+        (clone / '.git').mkdir(parents=True)
+        (clone / 'plugin.yaml').write_text('name: kit\n')
         for flag in ('--no-reload', '--bundle-only', '--yes-deps'):
             with self.subTest(flag=flag):
                 result = self.install('--only', 'hermes,tx', flag)
