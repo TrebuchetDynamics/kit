@@ -503,8 +503,11 @@ and Pi's installed resource loader discovered 11 portable skills and Pi loaded 2
 commands, including the then-spelled `/grill_me` compatibility command and all 13
 research selectors. That run
 predates UI Taste, Beautify GitHub README and the Git Pull Merge merge into Git Commit
-Push: the package now ships 12 skills and 26 Pi commands, checked offline by `tests/portable_pi.test.mjs`; no live Codex or Pi
-install has been rerun. Archive extraction tests check installed references, literal
+Push. Those historical counts do not describe the current package. Current adapter
+discovery comes from `package.json`, the host manifests and `adapters/skills/`;
+`tests/portable_pi.test.mjs` checks the current registered command set. Earlier host
+installation records do not qualify the current package on every host.
+Archive extraction tests check installed references, literal
 arguments and queued commands without checkout files. No credentials or configured live accounts are used. These are
 tested versions, not an established minimum-version guarantee.
 These checks do not prove model output quality, Git delivery or Telegram execution.

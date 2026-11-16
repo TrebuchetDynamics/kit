@@ -51,6 +51,8 @@ See [paused GitHub/Orbi cutover](github-native.md).
 | Fleet installation | [orchestrator](../scripts/setup_bundle.py), [preflight](../scripts/setup_preflight.py), [finalization](../scripts/setup_runtime.py) | Validate prerequisites, install resources/configuration, inspect profiles and refresh supported gateways |
 | Portable packages | [Claude marketplace](../.claude-plugin/marketplace.json), [Codex manifest](../.codex-plugin/plugin.json), [marketplace](../.agents/plugins/marketplace.json), [Pi manifest](../package.json), [Pi extension](../adapters/pi.mjs) | Discover explicit portable workflows without Hermes configuration dependencies |
 | Portable behavior | [host contract](../adapters/skills/COMMON.md) | Use the current host's tools and preserve its permissions, memory and credentials |
+| Issue publication | [publisher](../scripts/github_issues.py), [handoff](../skills/shared/PLAN-HANDOFF.md) | Publish complete GitHub Issues and native dependencies before readiness; preserve existing ownership |
+| Orbi lifecycle client | [helper](../skills/orbi/scripts/orbi_control.py), [workflow](../skills/orbi/SKILL.md) | Inspect or explicitly prepare/start/stop one deployment; the separate Orbi project owns implementation and delivery |
 
 Native Hermes Python owners live under `src/autowork_runtime/`, loaded through
 `src/autowork_bootstrap.py` by the existing thin entrypoints. The executor source
@@ -220,19 +222,21 @@ Status: Accepted
 
 ### Role source-evidence gaps
 
-The [manifest](roles.json) is not a fresh content-verification receipt. Preserve
-its explicit unresolved gaps; this document cleanup does not reverify roles or
-advance pins. Non-ancestor pins establish non-ancestry, not that an old review was
-false or current source is verified. Structural checks do not qualify runtime.
+The [manifest](roles.json) records the source baseline for each reviewed role.
+Architecture, test-plan, workflow and cross-host source maps cover the current
+registration, CI inventory, native implementations and portable manifests. Their
+baseline is a source review, not installed-host or model qualification. Other
+roles retain their own recorded baseline or missing verification; they are not
+silently marked current by this review.
 
 | Role | Required evidence boundary / unresolved coverage |
 | --- | --- |
-| [Architecture](#current-components) | Registration, all covered skills and Pi adapter still need current-source reverification; linked engine/task-store sources lie outside `covers`. |
-| [Test plan](testing.md) | Reconcile inventory and qualification claims with covered tests and documented engine/Docs Sync tests outside `covers`; listing tests is not running them. |
-| [Workflows](workflows.md) | Recheck aliases, routing and menus, following registrars into their implementation sources; task-store skill/CLI instructions need separate coverage. |
-| [Cross-host](cross-host.md) | Recheck adapter/package/runner claims; install/discovery evidence does not qualify current host/model behavior. |
-| [Reference](reference.md) | `task_prepare.py` and `task_migrate.py` are outside current coverage. |
-| [Troubleshooting](troubleshooting.md) | Task-store and Docs Sync remedies require unchecked sources beyond coverage. |
+| [Architecture](#current-components) | Current entrypoints, native registration, issue publication and lifecycle-client ownership are source-checked; workflow instruction adherence needs model evaluation. |
+| [Test plan](testing.md) | Checker, CI and bundled Docs Sync test coverage are mapped; the inventory is not a full-suite execution or live qualification. |
+| [Workflows](workflows.md) | Alias/routing/menu claims are checked against native implementations and Pi dispatch; actual model behavior and Telegram delivery remain separate. |
+| [Cross-host](cross-host.md) | Adapter/package contracts are source-checked; historical install/discovery records do not qualify every current host/model. |
+| [Reference](reference.md) | Current issue publication is mapped; historical task-store interfaces are retired, not missing implementation. |
+| [Troubleshooting](troubleshooting.md) | Current remedies still need their target's actual environment and recovery evidence. |
 | [Memory](memory.md) | Externally owned capture-policy claims need live qualification; no store access/replay is implied. |
 | [Dependencies](dependencies.md) | Impeccable/Beautify inventories and command dependency pins extend beyond current coverage. |
 | [README](../README.md), [installation](installation.md) | Covered-source reviews and structural links do not execute commands, install profiles or establish current live behavior. |
@@ -240,9 +244,9 @@ false or current source is verified. Structural checks do not qualify runtime.
 [`docs.py`](../skills/docs-sync/scripts/docs.py) accepts `reason` on mapped roles;
 `check` scans entire mapped documents, including combined roles; `stale` uses only
 `covers`, `verified_at` and Git history. It does not consume these gap notes, inspect
-content accuracy, uncommitted drift, external URLs or live behavior. The four
-unresolved architecture/test-plan/workflows/cross-host non-ancestor findings remain
-unqualified, not fresh/pass verdicts. Roles without coverage are not freshness-
+content accuracy, uncommitted drift, external URLs or live behavior. A known source
+baseline replaces unavailable historical pins only after the role's current source
+map is reviewed. It does not approve runtime behavior. Roles without coverage are not freshness-
 assessed; silence for PRD, changelog, user-guide, removal or contributing is no proof.
 
 ## Reliability bug harvest (2026-10-15)

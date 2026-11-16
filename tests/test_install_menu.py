@@ -34,7 +34,8 @@ touch "$db"
 case $1 in
   --version) echo 0.72.0 ;;
   list) echo "User packages:"; while read -r src; do [[ -n $src ]] && { echo "  $src"; echo "    $FAKE_HOME/pkg/${src##*/}"; }; done < "$db" ;;
-  install) echo "$2" >> "$db"; pkg=$FAKE_HOME/pkg/${2##*/}; mkdir -p "$pkg/adapters/skills"
+  install|update) if [[ $1 = install ]]; then echo "$2" >> "$db"; fi
+    pkg=$FAKE_HOME/pkg/${2##*/}; mkdir -p "$pkg/adapters/skills"
     for skill in "$FAKE_KIT_CHECKOUT"/adapters/skills/*/; do
       [[ -f $skill/SKILL.md ]] && mkdir -p "$pkg/adapters/skills/$(basename "$skill")" \
         && cp "$skill/SKILL.md" "$pkg/adapters/skills/$(basename "$skill")/SKILL.md"
@@ -185,7 +186,7 @@ esac
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertRegex(result.stdout, r'pi\s+installed')
         self.assertEqual(self.calls('pi-installer'), ['pi-installer 0'])
-        self.assertEqual(self.calls('pi '), ['pi --version', 'pi list', f'pi install {NEW}'])
+        self.assertEqual(self.calls('pi '), ['pi --version', 'pi list', f'pi install {NEW}', 'pi list'])
         curl = self.calls('curl')
         self.assertEqual(len(curl), 1)
         for flag in ('--fail', '--location', '--output', '--proto =https'):
@@ -214,6 +215,7 @@ esac
             ('managed/bin/pi', {'PI_MANAGED_INSTALL_ROOT': str(self.home / 'managed/install')}),
         ):
             with self.subTest(relative=relative):
+                (package / 'adapters/skills/orbi/SKILL.md').unlink(missing_ok=True)
                 binary = self.home / relative
                 binary.parent.mkdir(parents=True, exist_ok=True)
                 binary.write_text(PI)
@@ -221,7 +223,7 @@ esac
                 self.log.write_text('')
                 result = self.install('--only', 'pi', env=env)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertEqual(self.calls('pi '), ['pi --version', 'pi list', f'pi update {NEW}'])
+                self.assertEqual(self.calls('pi '), ['pi --version', 'pi list', f'pi update {NEW}', 'pi list'])
                 self.assertIn('skills missing:', result.stdout)
                 self.assertIn(str(binary), result.stdout)
                 self.assertFalse(self.calls('curl'))
@@ -357,8 +359,8 @@ esac
 
     def test_pi_package_failure_after_bootstrap_does_not_enable_or_claim_success(self):
         self.missing_pi()
-        (self.home / 'pi-fixture').write_text(PI.replace('  install) echo',
-            '  install) echo "Git transport denied" >&2; exit 23 ;;\n  unused) echo'))
+        (self.home / 'pi-fixture').write_text(PI.replace('  install|update)',
+            '  install|update) echo "Git transport denied" >&2; exit 23 ;;\n  unused)'))
         settings = self.home / '.pi/agent/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'packages': [{'source': NEW, 'skills': []}]}))
@@ -1013,6 +1015,27 @@ exit 0
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('pi update'), [])
         self.assertIn(f'{NEW} already installed', result.stdout)
+
+    def test_successful_pi_exit_without_package_resources_is_not_installation_success(self):
+        for action in ('install', 'update'):
+            with self.subTest(action=action):
+                if action == 'update':
+                    package = self.installed_package(only=['plan-with-me'])
+                else:
+                    package = self.home / 'pkg/kit'
+                self.fake('pi', PI.replace('  install|update)',
+                    '  install|update) echo "Skipped package updates (offline mode)"; exit 0 ;;\n  unused)'))
+                settings = self.home / '.pi/agent/settings.json'
+                settings.parent.mkdir(parents=True, exist_ok=True)
+                settings.write_text(json.dumps({'packages': [{'source': NEW, 'skills': []}]}))
+                before = settings.read_bytes()
+                result = self.install('--only', 'pi')
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertRegex(result.stdout, rf'pi\s+failed.*package {action} did not complete')
+                self.assertIn('PI_OFFLINE', result.stdout)
+                self.assertEqual(settings.read_bytes(), before)
+                self.assertFalse((package / 'adapters/skills/orbi/SKILL.md').exists())
+                self.assertNotIn('Open a new host session', result.stdout)
 
     def test_an_installed_package_is_updated_and_its_runners_move_onto_it(self):
         self.installed_package()
