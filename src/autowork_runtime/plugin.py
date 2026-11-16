@@ -176,7 +176,7 @@ def register(ctx):
         # Canonical folders own the current skill identities.
         if name != "grill-me" or not any(n == "plan-with-me" for n, _, _ in skills):
             ctx.register_skill(name, path)
-        if name in {"docs-sync", "plan-with-me", "plan-for-me"}:
+        if name in {"docs-sync", "plan-with-me", "plan-for-me", "update-kit"}:
             continue  # workflow_commands reserves both public spellings atomically.
         if resolve_command(command) is not None or command in existing:
             logger.warning("Skipping /%s: command already exists; use skill_view('kit:%s').",

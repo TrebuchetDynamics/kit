@@ -108,6 +108,10 @@ hermes plugins enable kit
 hermes kit doctor --core
 ```
 
+Fresh Hermes installs use `plugins/kit` and enable `kit`. Verified legacy physical
+slots are retained for safe update discovery, not supported Autowork operation;
+[duplicate/foreign registrations block setup](docs/installation.md#install).
+
 The opt-out does not undo prior changes or stop full setup from configuring
 external integrations. Existing memory providers and stores are preserved.
 
@@ -182,7 +186,7 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | Bare skill invocation or `status` | Read-only status for the repository; missing evidence is unavailable, not an empty queue. |
 | `help` | Read-only action reference, without a repository or deployment. |
 | `setup` | Prepare source/configuration without scheduling or timer activation. |
-| `start` | Activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
+| `start` | Prepare if absent, then activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
 | `stop` | Disable owned timers without killing active workers; report draining while they finish. |
 
 Linux supports lifecycle changes. macOS supports status and help only.
@@ -207,9 +211,35 @@ prerequisites and preparation. For a first deployment, supply credential-free Pi
 provider metadata with `--pi-providers PATH --pi-provider ID --pi-model ID` and
 optional `--pi-thinking LEVEL`, or reuse a verified selection from a visible
 deployment; see [provider bootstrap](skills/orbi/references/lifecycle.md#first-deployment-provider-bootstrap).
-Pi authentication must already work; setup does not automate login or guarantee
-provisioning. New configs derive `git_transport` from the verified SSH/HTTPS origin
+For stored-auth providers, Pi authentication must already work. Custom catalogs
+with declared key/header references require service-ready deployment env values,
+not shell-only keys; setup does not automate login or guarantee provisioning. New configs derive `git_transport` from the verified SSH/HTTPS origin
 without rewriting it; existing selections and pins are preserved.
+
+New lifecycle setup defaults to **Pi-Bolt**, already installed on the caller's
+PATH; `--harness pi` explicitly selects stock Pi for new setup or absent-start preparation. There is no automatic
+harness installation or silent fallback. Setup/status/start identify configured
+selection and executable evidence in `deployment.harness`, not measured use by a
+running worker. Existing deployments are not silently migrated. See
+[harness selection and evidence](skills/orbi/references/lifecycle.md#harness-selection-and-evidence)
+for deployment-local routing, drift refusal, service credential references and
+unverified live compatibility.
+
+An authorized first start can prepare and activate in one invocation:
+
+```text
+/orbi start --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi start --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+```
+
+Replace placeholders with published catalog IDs/paths. Preview checks prerequisites
+without writes and explicitly defers staging-dependent validation/activation checks.
+Actual preparation must validate before activation. Existing valid/active targets
+skip preparation; omit bootstrap/harness selectors on subsequent starts. Explicit
+`--config` must exist; partial/foreign targets are not absent. Results retain
+`preparation.state` separately from activation and live qualification. `/orbi help`
+provides setup/stock-Pi/status/stop examples and targeted recovery; configured slots
+and harness evidence are not enabled capacity or running-process proof.
 
 For interrupted preparation, follow [partial-failure recovery](skills/orbi/references/lifecycle.md#partial-failure-and-recovery).
 The [bounded `--resume-setup` path](skills/orbi/references/lifecycle.md#explicit-bounded-legacy-resume)
@@ -319,6 +349,7 @@ states its own boundaries and what "done" means.
 **Operate**
 
 - `/ask-kit` — ask which of the above fits.
+- `/update-kit` — refresh dedicated upstream source and rerun the suite installer.
 - `/orbi` — inspect or explicitly manage one repository's Orbi deployment.
 - GitHub Issues and Orbi diagnostics — see [delivery setup](docs/github-native.md).
 
@@ -372,6 +403,15 @@ acceptable.
 
 ## Updating
 
+**Full suite:** explicitly invoke `/update-kit` (Claude Code: `/kit:update-kit`;
+Codex: `$kit:update-kit`; Hermes also accepts `/update_kit`). It keeps the complete
+upstream `main` checkout at `${XDG_DATA_HOME:-$HOME/.local/share}/kit/source` and
+reruns its installer, even at the same revision. Default scope may bootstrap
+Pi/Pi-Bolt and restart active supported integrations. Restricted Hermes cascades
+and no-restarts requests are refused before mutation; `--no-reload` does not prevent
+final restarts. See [Update Kit safety, preview and recovery](docs/installation.md#update-kit).
+Reload the current agent session afterward; installation is not live qualification.
+
 **Pi:** update the package with
 `pi update git:github.com/TrebuchetDynamics/kit`.
 
@@ -391,12 +431,14 @@ source deletion or reinstall alone does not retire preserved native copies.
 ### Renamed from hermes-toolset
 
 This project was called hermes-toolset before 0.3.0, and its plugin was called
-`autowork` until the Kit rename. There is no compatibility layer for the old plugin
-name: the command namespace is `kit:` and the settings key is
+`autowork` until the Kit rename. There is no executable compatibility alias:
+the command namespace is `kit:` and the settings key is
 `plugins.entries.kit`. Settings under `plugins.entries.autowork` keep being read for
-one release, so an opt-out you already set still applies. Remove an older installation
-and [install](#install) again in each host. Preserve existing job state during
-migration; do not rewire legacy Autowork cron execution for new work.
+one release, so an opt-out you already set still applies. For Hermes,
+[update the verified existing installation](docs/installation.md#update-all-profiles)
+without creating a second copy or deleting recovery state. Source delivery alone
+does not adopt a release into an installed profile or activate running hosts.
+Preserve existing job state; do not rewire legacy Autowork cron execution for new work.
 
 </details>
 

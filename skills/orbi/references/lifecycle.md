@@ -12,7 +12,7 @@ contract nor the protection policy: read
 python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|stop|help] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
   [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
-  [--resume-setup]
+  [--resume-setup] [--harness {pi-bolt,pi}]
 ```
 
 - Omitted action means `status`. A bare `orbi` runs one Runner tick and is never
@@ -26,10 +26,16 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|stop|help]
 - `--config` names one existing native `orbi.toml`. Without it, visible local
   configs and installed units are discovered. Multiple configs for the same
   repository are ambiguous and refused, even with an explicit `--config`.
-- New-deployment `setup` accepts `--pi-providers PATH --pi-provider ID --pi-model ID`
-  together, plus optional `--pi-thinking LEVEL`. These flags are setup-only and
-  cannot change an existing deployment's selection. Help accepts and ignores them.
+- New-deployment `setup` and an authorized absent-target `start` accept `--pi-providers PATH --pi-provider ID --pi-model ID`
+  together, plus optional `--pi-thinking LEVEL`. Existing-target start rejects
+  these flags; omit them to retain its selection. Help accepts and ignores them.
   The metadata path is relative to the current directory unless absolute.
+- `--harness {pi-bolt,pi}` selects an installed executable for new `setup` or
+  absent-target `start` preparation. Omission defaults to Pi-Bolt. A missing selected command is an
+  exact prerequisite failure, not permission to install or fall back. Existing
+  managed deployments reuse their saved selection; setup accepts a matching explicit
+  selector as a no-op and refuses a conflicting one. Existing start rejects either. Legacy deployments refuse a selector
+  with deliberate migration guidance. Help accepts and ignores it.
 - Setup-only `--resume-setup` is the explicit legacy missing-provider exception:
   require `--config PATH` and complete matching provider inputs. It never changes
   a saved selection, pin or present provider file. See bounded resume below.
@@ -75,11 +81,12 @@ The deployment's `.orbi/env` carries the same isolation values the helper puts
 in every command it launches:
 
 ```
+HOME=<verified-auth-home>
 PYTHONPATH=<deploy_home>/src
 UV_TOOL_DIR=<deploy_home>/.orbi/uv-tools
 UV_TOOL_BIN_DIR=<deploy_home>/.orbi/bin
 PYTHONDONTWRITEBYTECODE=1
-PATH=<verified node bin>:<verified pi bin>:<deploy_home>/.orbi/bin:<home>/.local/bin:/usr/local/bin:/usr/bin:/bin
+PATH=<deploy_home>/.orbi/harness-bin:<deploy_home>/.orbi/bin:<home>/.local/bin:<verified tool bins>:...
 ```
 
 `PYTHONPATH` alone is insufficient: a first tick or a packaging change can run
@@ -93,15 +100,67 @@ it is not a fully self-contained deployment executable. Verify the bootstrap
 before activation and fail closed. Live isolation remains separately
 unqualified.
 
-Unrelated `.orbi/env` entries are preserved. Credentials are never copied,
+Unrelated `.orbi/env` entries and modes are preserved byte-for-byte. Credentials are never copied,
 printed or written into provider metadata; a literal credential in
 `pi_providers` is refused. Provider/model metadata must match published model
 metadata, and stored Pi authentication stays in Pi's user agent directory.
 
+### Harness selection and evidence
+
+New setup resolves `pi-bolt` (or explicit `--harness pi`) from the caller's PATH
+before any lock or write. Normal installed symlinks resolve to a verified absolute
+executable. The generated executable `.orbi/harness-bin/pi` uses a safely quoted
+shell `exec ABSOLUTE_TARGET "$@"`; it preserves argv, exit status and signals.
+Only this owned directory is prepended to the deployment PATH. No global alias,
+native harness TOML setting, upstream patch or automatic harness installation is
+used. The pinned [command builder](https://github.com/orbi-build/orbi/blob/ce97e015ca433a9312e5bdf69353be58ab394fd9/src/orbi/pi_command.py)
+calls `pi` for implementers and reviewers; both therefore use this same routing.
+
+`.orbi/env` is the persistence owner: `KIT_ORBI_HARNESS` is `pi-bolt` or `pi`,
+`KIT_ORBI_HARNESS_EXECUTABLE` is the resolved absolute target, and
+`KIT_ORBI_HARNESS_SOURCE` is `default` or `explicit`. Managed `HOME` pins the auth
+home too. Helper launches use persisted routing/credentials rather than ambient
+PATH or shell-only credentials. The [native loader](https://github.com/orbi-build/orbi/blob/ce97e015ca433a9312e5bdf69353be58ab394fd9/src/orbi/config.py)
+otherwise lets ambient variables win via `setdefault`.
+
+Managed values use single-quoted literals shared by the native loader and systemd
+`EnvironmentFile`: no single/double quotes, backslashes, NUL, newlines, controls or
+edge whitespace inside a value. Interior spaces work. Individual executable,
+deployment and PATH-component paths must be absolute and colon-free; the complete
+validated PATH is colon-joined and then quoted. Launcher shell quoting is a
+separate operation, not env-file escaping. Unsupported values fail before writes.
+Unrelated credential lines are never decoded and re-encoded for publication.
+
+Setup/status/start include `deployment.harness` with `management` (`managed` or
+`legacy`), `requested_kind` (`pi-bolt`, `pi` or null), `selection_source`
+(`default`, `explicit`, `legacy`), `launcher`, `executable` and `state`
+(`verified`, `unavailable`, `drift`, `unknown`). Verification is configured and
+resolved-now file/executable evidence, **not observation of a running process**.
+Setup records an `observed_version` only after the selected `--version` probe;
+status performs no harness/auth probe, refresh, install or write. A preview's
+unpublished launcher is `unknown`, not verified. No deployment means unconfigured:
+Pi-Bolt is only the new-setup default, not an active selection.
+
+Legacy configs without these fields keep their stored PATH and remain unmanaged.
+When reliable, status resolves that stored effective `pi` without inferring its
+kind from a version string. With no stored PATH it reports ambient helper
+resolution and unverified service resolution separately. Repeated setup does not
+migrate legacy deployments. Missing/partial metadata, an altered launcher, an
+unavailable/redirected target or changed managed routing blocks activation; inspect
+and repair deliberately, never regenerate from today's default.
+
+Pinned [Pi session preparation](https://github.com/orbi-build/orbi/blob/ce97e015ca433a9312e5bdf69353be58ab394fd9/src/orbi/pi_session.py)
+merges enabled extension env into the final child. Managed activation refuses an
+incompatible extension PATH/HOME or any extension agent-directory override, even
+though normal per-run provider preparation supplies `PI_CODING_AGENT_DIR` later.
+Byte-equivalent PATH/HOME overrides are accepted. Incompatible inherited auth-home
+or agent-directory overrides also refuse. Neither extensions nor legacy configs
+are rewritten to bypass this guard.
+
 ## Setup
 
 `setup` stages the official Orbi checkout at the verified pin, writes the
-verified provider metadata and `.orbi/env` atomically, publishes the native config
+verified provider metadata, harness launcher and `.orbi/env` atomically, publishes the native config
 last, installs a
 missing user-local bootstrap with `uv tool install --editable --python <compatible>`
 only when no conflicting installation exists, and validates with
@@ -128,7 +187,8 @@ Files use same-directory atomic publication: complete bytes or absence, not
 truncated native config/provider/env. Existing modes and unrelated env entries
 are preserved; new provider/env files are `0600`, new config is `0644`. If killed
 before config publication, a retry can reuse an official pinned staged checkout
-and byte-equivalent intended provider/env files. Conflicting files are refused
+and byte-equivalent intended provider/launcher/env files. Saved harness fields
+retain selection across a config-last retry; conflicting bytes or modes refuse. Conflicting files are refused
 before the lock, not overwritten. No recovery registry or fabricated cli-install
 receipt is created. Temporary publication files left by a killed process are
 not a readiness authority and are not automatically deleted on retry.
@@ -140,14 +200,14 @@ change is used.
 
 ### First-deployment provider bootstrap
 
-Pi must already have working authentication. No donor deployment is required:
+Authentication must already be provisioned; setup never logs in. No donor deployment is required:
 use Pi's regular local `models.json` (or another credential-free catalog with
 published metadata) and explicitly select its provider/model and optional reasoning:
 
 ```sh
 python3 -B <loaded-skill>/scripts/orbi_control.py setup --repo-dir /path/to/repo \
-  --pi-providers /path/to/models.json --pi-provider openai \
-  --pi-model gpt-6.1-sol --pi-thinking high --dry-run --json
+  --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID \
+  --pi-model PUBLISHED_MODEL_ID --pi-thinking SUPPORTED_LEVEL --dry-run --json
 ```
 
 Use the actual catalog's IDs and published capabilities; never invent model
@@ -158,7 +218,25 @@ and positive integer `contextWindow`/`maxTokens`. Literal `apiKey` values and
 provider/model header values (including `modelOverrides` headers) are refused;
 use only `$VARIABLE` or `${VARIABLE}` references for those fields. Even static
 headers must use references because arbitrary header names can carry credentials.
-Referenced values are not copied. Do not pass `auth.json` or migrate credentials.
+Referenced values are not copied. For each effective implementer/reviewer provider
+(deduplicated), preflight checks declared key/header names in the deployment's
+persisted `.orbi/env` and the final compatible extension environment. A nonempty
+shell-only key is not service-ready. Missing references name the exact variable
+and env-file location to provision **separately**; setup does not write keys.
+A pre-provisioned credential-only env file in an official pinned staged checkout
+is preserved while managed fields are appended. A fresh custom-provider setup may
+therefore need separately authorized source staging and env provisioning first.
+Env-file-only values are checked in memory without rewriting their original lines.
+This route reports `references_available`, not successful authentication/inference,
+and works when the custom provider is absent from the user's global catalog.
+
+With no declared references, preflight runs the selected target's
+`auth check --provider ID --no-refresh` against the existing `HOME/.pi/agent`
+catalog/auth home, without shell-only keys. Failure is `auth_unverified`, with the
+missing provider/catalog/auth input to repair; schema validation is not an auth
+pass. Upstream still merges deployment providers into per-run models and links
+user `auth.json`; dry-run makes no temporary profile and copies no credentials.
+Full custom-provider model invocation remains unrun. Do not pass `auth.json` or migrate credentials.
 File and parent symlinks, missing/invalid files, unknown models and incomplete selectors
 fail before locks, staging or writes. Preview creates no deployment files or
 receipts and performs no scheduler changes.
@@ -178,8 +256,8 @@ missing deployment-local `.orbi/pi-providers.json`:
 ```sh
 python3 -B <loaded-skill>/scripts/orbi_control.py setup --repo-dir /path/to/repo \
   --config /path/to/deployment/orbi.toml --resume-setup \
-  --pi-providers /path/to/models.json --pi-provider openai \
-  --pi-model gpt-6.1-sol --dry-run --json
+  --pi-providers /path/to/models.json --pi-provider SAVED_PROVIDER_ID \
+  --pi-model SAVED_MODEL_ID --dry-run --json
 ```
 
 Use the **saved** IDs, not the illustrative ones. Omitted `--pi-thinking` inherits
@@ -206,18 +284,68 @@ transport or an owner-required repair.
 
 ## Start
 
-`start` requires a prepared, unambiguous target and an owner scheduling request.
-Existing explicit pauses, cutover requirements and human-only gates must first
-be resolved for that operation. The skill and offline checks do not release the
-paused/live-unqualified contract. It re-reads unit ownership,
-the pinned source, provider metadata, Node/Pi compatibility, GitHub and Pi
-authentication and the shared bootstrap. It runs upstream `setup` and
+After explicit scheduling authority and resolved gates, a first deployment can use:
+
+```text
+/orbi status
+/orbi setup --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi setup --harness pi --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi start --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi start --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi start --dry-run
+/orbi stop
+```
+
+These are alternatives, not a sequence to run blindly: standalone setup stays
+non-activating. If setup already prepared the target, omit the bootstrap/harness
+selectors on start. Replace placeholder IDs/paths with published catalog evidence;
+optional `--pi-thinking LEVEL` must also match supported reasoning. Planned,
+prepared, activated and live-qualified are distinct; stop reports drain, not a kill.
+Use context-free `/orbi help` for the loaded helper path, defaults and recovery table.
+
+`start` requires an owner scheduling request. Existing explicit pauses, cutover
+requirements and human-only gates must first be resolved for that operation. The
+skill and offline checks do not release the paused/live-unqualified contract.
+
+If no deployment exists and no explicit `--config` was supplied, start composes the
+same non-activating new-deployment preparation as `setup`: installed Pi-Bolt by
+default, or explicit `--harness pi`; complete provider inputs, or verified donor
+metadata when omitted. A missing input is an exact prerequisite failure, never a
+request to create a donor, install a harness, log in or invent model capabilities.
+Preparation must return `prepared` after non-activating validation. Start then
+rediscovers/re-reads the exact config and checks the prepared binding, file identities,
+canonical repository, ownership, source, provider, harness and prerequisites again
+under the activation lock. The setup lock is released before this lock is acquired.
+Changed ownership/config/selection holds without activation or automatic repair.
+
+An existing valid or active target skips preparation entirely, avoiding `setup_busy`
+and preserving its provider/harness/pin. Omit all `--pi-*` and `--harness` selectors
+on subsequent starts; even matching bootstrap selectors are refused. A missing
+explicit config is an error, not permission to create a target. Malformed, ambiguous,
+foreign or partial existing targets require deliberate recovery; start never performs
+`--resume-setup` (setup-only). Config-absent interrupted preparation can reuse only
+verified staged source and byte-equivalent intended files under normal setup rules.
+
+Start re-reads unit ownership, the pinned source, provider metadata, Node/Pi
+compatibility, GitHub and Pi authentication and the shared bootstrap. It runs upstream `setup` and
 `install-units` with the scoped environment, enables only instances
 `1..max_concurrency` of this deployment's timer, and starts the first service
 instance only when no instance is active or activating. A repeated start never
 restarts or duplicates a live worker.
 
-Start resumes only the explicitly named deployment. It never issues issue
+For an absent target, start dry-run runs only setup's nonmutating preflight/preview.
+It reports preparation and activation as planned, with staged source, published-file
+validation and activation preflight explicitly deferred/unrun. It does not run
+`start_plan` on nonexistent files or imply those gates passed. Unknown prerequisites
+fail honestly. It creates no deployment directory, lock, launcher, config, source
+fetch, bootstrap or timer writes.
+
+For an existing target, start dry-run plans the same configured `1..max_concurrency` timer range, skipping
+already-active timers. Its separate `scheduler` snapshot retains the broader
+observed inventory, including out-of-config units; those observations are not
+planned activations. Preview performs no mutation.
+
+Start activates only the bound deployment. It never issues issue
 pauses or blocked work and never touches another deployment. Enforced
 administrators, strict required CI, independent review and human-only
 acceptance stay in place; a doctor warning about enforced admins never
@@ -225,8 +353,8 @@ authorizes a protection change.
 
 ## Stop, status and drain
 
-`stop` enumerates this deployment's owned timer instances, including installed
-surplus instances up to the pinned five-instance bound, and runs only
+`stop` enumerates this deployment's owned timer instances, including observed
+out-of-config instances within the five-instance observation bound, and runs only
 `systemctl --user disable --now <timer>`. It never runs `stop`, `kill` or
 `restart` on a service. A pre-existing invocation may finish; later issue
 phases may wait for a start. Re-read the service states and report `draining`
@@ -241,6 +369,61 @@ at this pin, so use read-only `orbi doctor` plus explicit `gh`, scheduler and
 local reads. Missing evidence is `unavailable`, never an empty queue. Status
 and dry-run create no config, lock, receipt or scratch file and suppress child
 Python bytecode writes.
+
+### Interpreting Linux scheduler inventory
+
+For a bound Linux target, `deployment.slots` and
+`scheduler.inventory.configured_slots` come from native `max_concurrency`.
+They describe configured capacity, not observed enablement or activity. Every
+emitted timer/service record adds `configured` (index within that capacity) and
+`fragment_kind`: `template` for a readable shared `@.timer`/`@.service` fragment,
+`instance` for a readable instance-specific fragment, `absent` for a known empty
+FragmentPath, or `unknown` when the filename/read cannot establish its kind.
+Legacy `installed` means only nonempty FragmentPath, not enabled/deployed capacity;
+`owned` remains bound to the service fragment's `ORBI_CONFIG`, never inferred
+from template availability. Absent timer fragments retain the existing omission
+from `timers`; service records cover every scanned index.
+
+`scheduler.inventory` exposes `scope: local-target-prefix`, `scan_first: 1`,
+`scan_last: 5` (the current `MAX_INSTANCES`) and `outside_scan: unobserved`.
+`configured_slots_covered` is false when configured capacity exceeds this scan;
+positive concurrency above five remains valid. Counts describe only owned
+observed units within that bound, including out-of-config ones, not exhaustive
+whole-deployment or remote activity:
+
+- `counts.enabled_timers`: explicit enablement, including runtime-enabled timers.
+- `counts.active_timers`: timer ActiveState is exactly `active`.
+- `counts.running_services`: service ActiveState is `active`, `activating` or
+  `reloading`. `deactivating` remains drain evidence, not a running-service count.
+
+Each metric is `{state: ok, value: integer}` only with complete evidence for that
+metric, including ownership; incomplete/failed reads or foreign/ambiguous ownership
+produce `{state: unavailable, value: null}`, not zero. Known absent fragments
+contribute zero. Exceptions may make all counts unavailable, while configured
+capacity and scan bounds remain visible. Unknown timer activity invalidates its
+active count even if legacy snapshot `state` is `ok`. JSON exposes these fields;
+text mode flattens them, for example
+`scheduler.inventory.counts.enabled_timers.value=3` (unavailable values render as
+`None`, with `state=unavailable`). Absent deployments and macOS do not invent Linux
+inventory counts.
+
+For example, a config with three slots, templates visible for 1–5 and only 1–3
+enabled means **3 configured slots, 3 enabled timers; observed instances 1–5**.
+Rows 4/5 have `configured: false` and `fragment_kind: template`; template presence
+alone is not enabled surplus. Genuine out-of-config enablement/activity is visible
+in those rows' `enabled`, `active` or service `state` and in the observed counts.
+Disabled does not mean impossible to activate manually; enabled does not mean
+currently running. A service-unit state proves neither a working model nor a
+completed delivery, and counts do not establish global deployment health.
+
+One deployment/task pool can have several slot timers; that is not several
+repositories or duplicate pools claiming the same queue. Compare native config,
+explicit enablement and observed activity before naming a scheduling defect.
+Never manually enable instances 4/5 just to match `MAX_INSTANCES`. Use read-only
+status for observation: `setup --dry-run` is preparation preflight, not a harmless
+health substitute. `setup_busy` while scheduling/workers are active is an expected
+refusal, not evidence of extra instances. Any repair still requires its own
+scope/authority; this inventory authorizes no scheduler mutation.
 
 macOS supports status and help; setup/start/stop are refused before side effects.
 Other platforms support help only; lifecycle actions fail clearly. Secrets never appear in commands, output or
@@ -267,6 +450,14 @@ operations are distinguished from possible partial mutation. Filesystem errors
 are structured with details withheld; raw stderr, metadata and credential/env
 values are never receipts. `activated: false` means this setup invoked no
 activation, **not** proof an existing scheduler is inactive.
+
+Start results and errors include `preparation` with `state: skipped|planned|prepared|failed`
+and target/steps/harness/prerequisite evidence when available. A preparation failure
+preserves its original operation/code/steps and invokes no activation. If preparation
+wrote files and later activation preflight fails, `error.mutated` remains true,
+preparation remains `prepared` and activation is `none`. Inspect and repair the cause;
+there is no automatic retry or rollback. Preparation, activation and live qualification
+are separate outcomes.
 
 Start/stop errors also retain `target`, deployment config/unit identity,
 `original_error`, and completed/failed `steps` at the JSON top level (not under
@@ -321,7 +512,17 @@ retry an unchanged timeout. Typical repairs:
   overwrite evidence or silently change selection or pin.
 - `transport_mismatch`: deliberately repair deployment-local transport after
   inspecting origin/config; never rewrite origin as a preparation repair.
-- `prerequisite_missing`: install the named command; no sudo is used.
+- `harness_conflict` or `harness_migration_required`: omit the selector to reuse
+  saved/legacy routing; changing harnesses requires deliberate migration.
+- `harness_drift`, `harness_unavailable` or `extension_env_mismatch`: inspect the
+  persisted fields, owned launcher, executable and final extension environment;
+  preserve evidence and deliberately repair the reported mismatch before activation.
+- `env_value_unsupported`: use supported literal values and absolute colon-free paths.
+- `credential_reference_missing` or `auth_unverified`: provision the exact named
+  service env reference or existing user catalog/auth input separately. Do not
+  expose values or treat a schema/key-presence check as inference.
+- `prerequisite_missing`: install the named command (including selected pi-bolt
+  or pi) separately; no sudo, automatic harness install or fallback is used.
 - `bootstrap_unverified`: repair readable `uv tool list` evidence before writes.
 - `file_encoding_invalid`: inspect the failed step and repair UTF-8 encoding
   privately, preserving original bytes and recovery inputs. Invalid native config

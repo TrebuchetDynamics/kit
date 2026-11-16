@@ -6,7 +6,7 @@
 Kit supports Claude Code, Codex, Pi and optional Hermes integration.
 Claude Code, Codex and Pi use the portable adapters, not the Hermes plugin
 loader. None requires Hermes installed.
-These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Orbi,
+These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Orbi, Update Kit,
 Autoresearch, Impeccable, UI Taste, Beautify GitHub README,
 LGTM, Git Commit Push, the six bundled Ponytail skills,
 and Bug Harvest, Autonomous Codebase Improver, Skill Folder Refactor, Unused Code
@@ -37,6 +37,20 @@ or `/orbi` in Pi or Hermes. All hosts load the same
 Linux lifecycle changes require the workflow's ownership and authorization gates;
 macOS is status-only. Installing the skill does not activate a deployment or
 qualify live delivery. Existing pauses and cutover gates remain in force.
+
+## Update Kit on every host
+
+Explicit `/update-kit` in Pi or Hermes (`/update_kit` also works in Hermes),
+`/kit:update-kit` in Claude Code and `$kit:update-kit` in Codex load the same
+[Update Kit workflow](../skills/update-kit/SKILL.md) and bundled helper. It refreshes
+the persistent `${XDG_DATA_HOME:-$HOME/.local/share}/kit/source` checkout and reruns
+that revision's installer. Default scope is the full suite, including possible
+Pi/Pi-Bolt bootstrap and active supported integration restarts. Restricted Hermes
+cascades/no-restarts requests hold before mutation; preview writes/probes nothing.
+See [source ownership, nested updates and recovery](installation.md#update-kit).
+Refresh does not reload the current agent: reopen/reload its session and verify
+activation separately. Discovery/package tests are not installed-host/model or
+live qualification. No automatic schedule or Orbi activation is added.
 
 ## Bundled Ponytail on every host
 
@@ -291,6 +305,13 @@ dirty, locally advanced or active/shared-unsafe sources defer. Recovery preserve
 compatible native skill edits and requests no runtime restart. `--skip hermes`
 leaves Hermes out; preview runs no updater or recovery network operation. This
 Hermes-specific path does not replace portable hosts' own update commands below.
+Fresh Hermes installation/probes use `plugins/kit` and enable `kit`. Verified
+legacy physical slots are discovery/migration inputs only: no supported Autowork
+CLI or executor is restored. Setup/update refuse duplicate registrations, including
+same-source aliases, before component mutation; preserve the paths and reconcile
+ownership rather than reinstalling over them. See [slot identity and setup](installation.md#install).
+Source delivery is not installed adoption, native loader qualification or live activation.
+
 
 ## Claude Code
 

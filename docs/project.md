@@ -52,6 +52,7 @@ See [paused GitHub/Orbi cutover](github-native.md).
 | Portable packages | [Claude marketplace](../.claude-plugin/marketplace.json), [Codex manifest](../.codex-plugin/plugin.json), [marketplace](../.agents/plugins/marketplace.json), [Pi manifest](../package.json), [Pi extension](../adapters/pi.mjs) | Discover explicit portable workflows without Hermes configuration dependencies |
 | Portable behavior | [host contract](../adapters/skills/COMMON.md) | Use the current host's tools and preserve its permissions, memory and credentials |
 | Issue publication | [publisher](../scripts/github_issues.py), [handoff](../skills/shared/PLAN-HANDOFF.md) | Publish complete GitHub Issues and native dependencies before readiness; preserve existing ownership |
+| Explicit suite refresh | [Update Kit](../skills/update-kit/SKILL.md), [helper](../skills/update-kit/scripts/update_kit.py) | Maintain dedicated persistent trusted upstream source and delegate installation; no automatic schedule, host-update fork or live qualification |
 | Orbi lifecycle client | [helper](../skills/orbi/scripts/orbi_control.py), [workflow](../skills/orbi/SKILL.md) | Inspect or explicitly prepare/start/stop one deployment; the separate Orbi project owns implementation and delivery |
 
 Native Hermes Python owners live under `src/autowork_runtime/`, loaded through
@@ -67,6 +68,13 @@ coordinator. Grill Me compatibility opens Plan With Me challenge behavior.
 Independent Autoresearch and its selectors remain available; its Hermes plan
 selector uses the pinned protocol with Plan For Me adaptations, while portable
 adapters hand planning to Plan For Me. Shared helper/reference paths remain valid.
+Update Kit is explicit-only across these hosts. Its durable source lives at
+`${XDG_DATA_HOME:-$HOME/.local/share}/kit/source`, outside project and host package
+caches. It delegates full-suite effects (including supported active-integration
+restarts) to the fetched installer; restricted Hermes cascades and no-restarts
+requests hold before mutation. Nested native refresh can advance source again;
+selected/final SHA reporting does not imply immutable installation or reload of
+an already-running agent. See [installation boundaries](installation.md#update-kit).
 Package discovery is not model execution or cross-host live qualification.
 
 ## Interface and state contract
