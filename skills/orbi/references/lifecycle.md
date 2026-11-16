@@ -10,7 +10,9 @@ contract nor the protection policy: read
 
 ```sh
 python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|stop|help] \
-  [--repo-dir PATH] [--config PATH] [--dry-run] [--json]
+  [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
+  [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
+  [--resume-setup]
 ```
 
 - Omitted action means `status`. A bare `orbi` runs one Runner tick and is never
@@ -18,7 +20,7 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|stop|help]
 - `help` takes no repository, reads no deployment and is available on every
   platform. It is the only action that needs no deployment context; `status`
   still binds a repository and reports an absent deployment. Help accepts and
-  ignores `--repo-dir`, `--config` and `--dry-run`.
+  ignores `--repo-dir`, `--config`, `--dry-run` and all setup inputs.
 - `--repo-dir` names the repository checkout; the helper resolves the canonical
   worktree, then verifies its GitHub origin against the native config.
 - `--config` names one existing native `orbi.toml`. Without it, visible local
@@ -28,6 +30,9 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|stop|help]
   together, plus optional `--pi-thinking LEVEL`. These flags are setup-only and
   cannot change an existing deployment's selection. Help accepts and ignores them.
   The metadata path is relative to the current directory unless absolute.
+- Setup-only `--resume-setup` is the explicit legacy missing-provider exception:
+  require `--config PATH` and complete matching provider inputs. It never changes
+  a saved selection, pin or present provider file. See bounded resume below.
 - `--dry-run` prints the plan. It creates no config, scratch file, lock or
   receipt and runs no install, fetch, label change or activation.
 - `--json` prints one document. Text mode prints flattened `key=value` lines
@@ -96,10 +101,36 @@ metadata, and stored Pi authentication stays in Pi's user agent directory.
 ## Setup
 
 `setup` stages the official Orbi checkout at the verified pin, writes the
-native config and `.orbi/env`, copies verified provider metadata only, installs a
+verified provider metadata and `.orbi/env` atomically, publishes the native config
+last, installs a
 missing user-local bootstrap with `uv tool install --editable --python <compatible>`
 only when no conflicting installation exists, and validates with
 `orbi check`. It reports `prepared`, not scheduler-installed or running.
+
+Before locks, staging or writes, setup checks supported transport and explicit
+metadata, path/ownership evidence, available tools/authentication and observable
+scheduler activity. An existing config's transport mismatch is a deliberate
+**deployment-local** `git_transport` repair, never `git remote set-url` or upstream
+activating setup. For a missing bootstrap, it runs the read-only system Python
+probe and `uv tool list` first. Failed or timed-out listing is unverified, not
+conflict-free. Compatible system Python selects `python3`; absent/older system
+Python selects the existing uv `3.14` provisioning fallback. The selection is in
+`prerequisites.python`. Network/provisioning failures remain possible during install.
+Dry-run lists checked prerequisites separately from planned/unrun staging,
+installation and validation; it cannot qualify checks requiring a staged deployment.
+Ownership, file identities, source and inactive/no-worker evidence are rechecked
+under lock. Unknown activity is not permission to repair. Setup refuses enabled
+or active target timers as well as active/unknown worker states; separately
+authorized stop/drain and readable inactive evidence are required first.
+
+Files use same-directory atomic publication: complete bytes or absence, not
+truncated native config/provider/env. Existing modes and unrelated env entries
+are preserved; new provider/env files are `0600`, new config is `0644`. If killed
+before config publication, a retry can reuse an official pinned staged checkout
+and byte-equivalent intended provider/env files. Conflicting files are refused
+before the lock, not overwritten. No recovery registry or fabricated cli-install
+receipt is created. Temporary publication files left by a killed process are
+not a readiness authority and are not automatically deleted on retry.
 
 Upstream `orbi setup` and `install-units` activate timers at this pin, so both
 are deliberately deferred to an explicit `start`. Setup never enables a timer
@@ -134,8 +165,43 @@ receipts and performs no scheduler changes.
 Without bootstrap flags, setup retains the existing donor-reuse path. An existing
 target always keeps its own provider/model/reasoning, config and pin; bootstrap
 flags are refused even if they repeat its selection. Rerun without them.
+The explicit bounded resume below is the only exception.
 An unrelated deployment is never changed. A prepared result proves neither
 scheduler activation nor model inference or protected delivery.
+
+### Explicit bounded legacy resume
+
+Only for an existing valid native config whose saved `pi_providers` names the
+missing deployment-local `.orbi/pi-providers.json`:
+
+```sh
+python3 -B <loaded-skill>/scripts/orbi_control.py setup --repo-dir /path/to/repo \
+  --config /path/to/deployment/orbi.toml --resume-setup \
+  --pi-providers /path/to/models.json --pi-provider openai \
+  --pi-model gpt-6.1-sol --dry-run --json
+```
+
+Use the **saved** IDs, not the illustrative ones. Omitted `--pi-thinking` inherits
+the saved value; a supplied value must match exactly. Inspect the preview, then
+remove `--dry-run`. Metadata/capabilities and credential references use normal
+validation. The canonical repo, supported source pin, official staged origin,
+local ownership, deployment-local config/provider paths and inactive/no-worker
+evidence must verify before and under lock. Resume fills only the absent provider,
+then prepares env and validates without activation. Repetition may reuse the
+identical intended provider bytes as a no-op. It never replaces a present invalid,
+changed or non-equivalent file. Malformed config, symlinks, foreign/external paths,
+duplicate ownership, a changed pin, unknown checkout or active/unknown activity
+are not resume states: preserve evidence and deliberately repair the exact
+reported config/path/ownership/source/activity problem. Normal setup still refuses
+all bootstrap selectors on existing targets, even identical selections.
+
+If an installed helper rejects `--resume-setup` (or older first-machine flags),
+report the absolute **loaded helper path** and available installed Kit package/source
+revision, not the unrelated Orbi engine pin. Use that helper's context-free `help`
+to identify its contract. Recommend a separately authorized Kit update and host
+reload; do not silently update, invoke activating upstream setup, or rewrite the
+project origin. A stale installed helper is different from a genuinely unsupported
+transport or an owner-required repair.
 
 ## Start
 
@@ -190,26 +256,51 @@ aggregate capacity guarantee. `max_concurrency` is per deployment.
 ## Partial failure and recovery
 
 Mutations report the step that succeeded and the step that failed with a
-precise `error=` and `fix=` line. Do not rerun a command unchanged after a
-timeout. Typical repairs:
+precise `error=` and `fix=` line. Setup errors include `target`, `original_error`,
+completed/failed `steps`, `error.mutated`, `activated: false` and separately observed
+`scheduler` evidence (or `unavailable`). Lock creation counts as mutation. An
+attempt that may have written is marked `mutation: possible` on failure; completed
+operations are distinguished from possible partial mutation. Filesystem errors
+are structured with details withheld; raw stderr, metadata and credential/env
+values are never receipts. `activated: false` means this setup invoked no
+activation, **not** proof an existing scheduler is inactive.
+
+A process killed before rendering cannot emit a receipt. Infer safe retry from
+actual files: complete matching provider/env with no config can be reused by new
+setup; complete valid config uses normal setup without selectors; the bounded
+legacy missing-provider case needs explicit resume. Other states need deliberate
+repair preserving all recovery inputs. Never automatically delete, roll back or
+retry an unchanged timeout. Typical repairs:
 
 - `provider_unavailable` with no deployment: supply the complete explicit
   bootstrap selectors and published local Pi metadata; creating a donor first
   is not required. For an existing partial deployment, repair its native
   `pi_providers`/`pi_provider`/`pi_model` selection deliberately, then rerun helper
-  setup without bootstrap flags. No credentials are copied.
+  setup without bootstrap flags; only the bounded missing-local-provider case can
+  use explicit `--resume-setup` with complete matching selectors. No credentials are copied.
 - `invalid_provider_selection`, `credential_copy_refused` or a symlink refusal:
   correct the selectors or use regular credential-free metadata paths, then
   preview again. These failures occur before preparation writes.
 - `provider_override_refused`: omit bootstrap flags to preserve the existing
-  target's selection. They cannot repair or replace an existing selection.
+  target's selection. They cannot replace an existing selection; the explicit
+  bounded resume fills only a missing local provider file.
 - `validation_failed` with `error.mutated: true`: files may already be prepared,
   but validation did not pass. Inspect the native config, provider metadata and
   check failure; repair the cause and rerun helper `setup` without bootstrap
   inputs (or non-activating `orbi check --config PATH`). Never run upstream
   `orbi setup`/`install-units` as routine preparation recovery. Use helper
   `status` to observe scheduler state separately, not `start` to repair metadata.
+- `resume_refused`, `publication_conflict` or `target_changed`: preserve the
+  conflicting files/concurrent change and follow the specific repair; never
+  overwrite evidence or silently change selection or pin.
+- `transport_mismatch`: deliberately repair deployment-local transport after
+  inspecting origin/config; never rewrite origin as a preparation repair.
 - `prerequisite_missing`: install the named command; no sudo is used.
+- `bootstrap_unverified`: repair readable `uv tool list` evidence before writes.
+- `filesystem_error`: inspect local permissions/files privately and repair the
+  cause; the failure step may have partially mutated even though publication is atomic.
+- `setup_busy`: obtain separate stop/drain authorization and verify inactivity;
+  do not kill workers or use setup to stop them.
 - `bootstrap_incompatible` or `bootstrap_conflict`: repair or replace the
   user-local Orbi bootstrap deliberately; never force-reinstall a shared tool
   as part of another deployment's start.
