@@ -13,6 +13,7 @@ import sys
 import tempfile
 
 SOURCE = 'https://github.com/TrebuchetDynamics/kit.git'
+TEMPORARY_ROOTS = ('/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp')
 COMPONENTS = {'pi', 'pi-bolt', 'tx', 'hermes', 'claude', 'codex', 'orbi'}
 NOTICE = ('Default scope: all available components; may bootstrap Pi/Pi-Bolt and restart active '
           'supported integrations. --no-reload does NOT suppress final restarts. Hermes may '
@@ -30,19 +31,49 @@ def _source_url():
 
 
 def run(argv, *, cwd=None, env=None, timeout=120, capture=True, pass_fds=()):
-    """Bound the whole process group, including native children; preserve terminal prompts."""
-    process = subprocess.Popen(argv, cwd=cwd, env=env, text=True, start_new_session=True,
-                               pass_fds=pass_fds,
-                               stdout=subprocess.PIPE if capture else None,
-                               stderr=subprocess.PIPE if capture else None)
+    """Bound the command's process group without detaching native terminal prompts."""
+    terminal = None
+    previous_ttou = None
+    if not capture:
+        try:
+            terminal = os.open('/dev/tty', os.O_RDWR)
+            if os.tcgetpgrp(terminal) != os.getpgrp():
+                os.close(terminal)
+                terminal = None
+        except OSError:
+            if terminal is not None:
+                os.close(terminal)
+            terminal = None
+        if terminal is not None:
+            previous_ttou = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+
+    def prepare_child():
+        # Unlike setsid(), a process group preserves native /dev/tty prompts.
+        os.setpgrp()
+        if terminal is not None:
+            os.tcsetpgrp(terminal, os.getpgrp())
+
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except BaseException:
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(process.pid, signal.SIGKILL)
-        process.wait()
-        raise
-    return subprocess.CompletedProcess(argv, process.returncode, stdout or '', stderr or '')
+        process = subprocess.Popen(argv, cwd=cwd, env=env, text=True,
+                                   preexec_fn=prepare_child,
+                                   pass_fds=(*pass_fds, terminal) if terminal is not None else pass_fds,
+                                   stdout=subprocess.PIPE if capture else None,
+                                   stderr=subprocess.PIPE if capture else None)
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except BaseException:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            raise
+        return subprocess.CompletedProcess(argv, process.returncode, stdout or '', stderr or '')
+    finally:
+        if terminal is not None:
+            try:
+                os.tcsetpgrp(terminal, os.getpgrp())
+            finally:
+                os.close(terminal)
+                signal.signal(signal.SIGTTOU, previous_ttou)
 
 
 def git(source, *args, check=True):
@@ -219,6 +250,20 @@ def ensure_idle(source, hermes_home=None):
 
 def update(source, flags, args):
     import fcntl
+    # Check whole subtrees, not just XDG_DATA_HOME == /tmp. Normalize '..' without
+    # following symlinks (safe_path rejects those separately).
+    location = Path(os.path.abspath(source))
+    home = Path(os.environ['HOME'])
+    forbidden = [*(Path(root) for root in TEMPORARY_ROOTS), home / '.cache',
+                 home / '.pi', home / '.claude/plugins', home / '.codex/plugins',
+                 home / '.hermes/plugins',
+                 Path(args.hermes_home or os.environ.get('HERMES_HOME') or home / '.hermes') / 'plugins']
+    cache = os.environ.get('XDG_CACHE_HOME')
+    if cache and Path(cache).is_absolute():
+        forbidden.append(Path(cache))
+    if any(location.is_relative_to(Path(os.path.abspath(root))) for root in forbidden):
+        raise Hold('Destination is in temporary storage or a host package/plugin cache; '
+                   'set XDG_DATA_HOME to a dedicated persistent data directory or unset it, then retry')
     # Validate before creating the parent/lock, then revalidate under destination ownership.
     for path in (source.parent.parent, source.parent, source):
         safe_path(path, owned=True)

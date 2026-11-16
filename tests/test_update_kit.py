@@ -4,7 +4,12 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import pty
+import selectors
+import signal
 import subprocess
+import sys
+import time
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -65,6 +70,9 @@ class UpdateKitTests(unittest.TestCase):
         patch.object(updater, 'run', side_effect=local_transport).start()
         # Consumer inspection is tested independently with real/fake lsof below.
         self.real_idle = updater.ensure_idle
+        self.temporary_roots = updater.TEMPORARY_ROOTS
+        # Disposable fixture homes are intentionally temporary; production has no override.
+        patch.object(updater, 'TEMPORARY_ROOTS', ()).start()
         patch.object(updater, 'ensure_idle').start()
         self.source = self.home / '.local/share/kit/source'
 
@@ -174,6 +182,23 @@ class UpdateKitTests(unittest.TestCase):
         self.assertEqual(list(self.home.iterdir()), [])
         self.assertIn('restart', self.invoke('--no-restarts')[1])
         self.assertIn('nested', self.invoke('--only', 'hermes')[1])
+
+    def test_temporary_and_host_cache_subtrees_hold_without_writes(self):
+        candidates = [*(Path(root) / 'update-kit-review-data' for root in self.temporary_roots),
+                      self.home / '.cache/data', self.home / '.pi/agent/packages/data',
+                      self.home / '.claude/plugins/cache/data', self.home / '.codex/plugins/cache/data',
+                      self.home / '.hermes/plugins/data']
+        for data in candidates:
+            with self.subTest(data=data), patch.object(updater, 'run', side_effect=AssertionError('probe')), \
+                    patch.object(updater.Path, 'mkdir', side_effect=AssertionError('write')):
+                os.environ['XDG_DATA_HOME'] = str(data)
+                # The home fixtures themselves live under /tmp; isolate the cache rule.
+                roots = () if data.is_relative_to(self.home) else self.temporary_roots
+                with patch.object(updater, 'TEMPORARY_ROOTS', roots):
+                    code, out = self.invoke('--skip', 'hermes')
+                self.assertNotEqual(code, 0, out)
+                self.assertIn('dedicated persistent data directory', out)
+        self.assertEqual(list(self.home.iterdir()), [])
 
     def test_relative_xdg_and_missing_tools_or_platform_hold(self):
         os.environ['XDG_DATA_HOME'] = 'relative'
@@ -352,6 +377,7 @@ spec = importlib.util.spec_from_file_location('update_fixture', sys.argv[1])
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 m._source_url = lambda: sys.argv[2]
+m.TEMPORARY_ROOTS = ()  # Internal fixture only: the disposable HOME lives in /tmp.
 real_run = m.run
 def local_transport(argv, **kwargs):
     argv = ['protocol.file.allow=always' if a == 'protocol.file.allow=never' else a for a in argv]
@@ -374,6 +400,57 @@ raise SystemExit(m.main(sys.argv[3:]))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('exclude Hermes', result.stderr)
         self.assertEqual(self.argv(), argv)
+
+    def test_native_prompts_keep_the_controlling_terminal(self):
+        # Exercise the real subprocess boundary, not a mocked stdin/TTY assertion.
+        program = '''
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('update_fixture', sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+result = m.run(['bash', '-c', 'echo "Native consent?"; read -r answer </dev/tty; '
+                'test "$answer" = n || exit 9; echo "refusal preserved"; exit 7'],
+               capture=False, timeout=5)
+import os
+with open('/dev/tty') as terminal:
+    assert os.tcgetpgrp(terminal.fileno()) == os.getpgrp(), 'foreground not restored'
+raise SystemExit(result.returncode)
+'''
+        pid, master = pty.fork()
+        if pid == 0:
+            os.execv(sys.executable, [sys.executable, '-B', '-c', program, str(HELPER)])
+        seen, answered, status = b'', False, None
+        try:
+            deadline = time.monotonic() + 10
+            with selectors.DefaultSelector() as selector:
+                selector.register(master, selectors.EVENT_READ)
+                while time.monotonic() < deadline:
+                    if selector.select(timeout=0.1):
+                        try:
+                            chunk = os.read(master, 4096)
+                        except OSError:
+                            break
+                        if not chunk:
+                            break
+                        seen += chunk
+                        if b'Native consent?' in seen and not answered:
+                            os.write(master, b'n\n')
+                            answered = True
+                while time.monotonic() < deadline:
+                    waited, child_status = os.waitpid(pid, os.WNOHANG)
+                    if waited:
+                        status = child_status
+                        break
+                    time.sleep(0.01)
+            self.assertIsNotNone(status, seen.decode(errors='replace'))
+            self.assertEqual(os.waitstatus_to_exitcode(status), 7, seen.decode(errors='replace'))
+            self.assertIn(b'refusal preserved', seen)
+            self.assertTrue(answered)
+        finally:
+            if status is None:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+            os.close(master)
 
     def test_forwarded_flags_match_documented_installer_contract(self):
         flags = ['--full', '--no-reload', '--bundle-only', '--yes-deps', '--quiet',
