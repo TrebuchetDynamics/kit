@@ -120,6 +120,25 @@ readiness order or actual model choices. The publisher's own focused tests and
 actual readback own publication guarantees. This pilot does not execute commands,
 call GitHub or establish live model adherence, Orbi pickup or delivery.
 
+## Push delivery pilot
+
+`push.json` checks recorded inspection and a receipt that separates local commits,
+incoming landed changes, pending URLs/reasons, selected/final SHAs, checks, remote
+inclusion and remaining local sync. `push-pass.json` represents merged remote-only
+work through a non-`origin`, non-`main` verified upstream. Other `push-*.json`
+fixtures cover a passing-but-owned open PR, API rate-limit/unknown inventory,
+upstream advance with an open PR becoming merged, closed-unmerged/failed/unknown
+work, equivalence and a read-only audit. All commands and API responses are inert
+recorded examples; no fixture contacts GitHub or mutates Git.
+
+The focused tests use existing `require`/`forbid` clauses for scenario receipts and
+the fixture's held PR head. They apply the read-only review clauses to the push
+audit; delivery's general spec cannot condition on a mode. Planning/review clauses
+also reject fetch, including Git global-option forms. These are bounded lexical
+checks, not semantic candidate selection, ancestry validation, a shell sandbox,
+state ordering or model adherence. Neither a receipt's words nor exit 0 establishes
+live delivery. Source-backed inventory and independent PR review remain necessary.
+
 ## Run
 
 ```sh

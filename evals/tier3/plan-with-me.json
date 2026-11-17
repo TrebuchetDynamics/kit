@@ -219,7 +219,7 @@
     },
     {
       "event": "command",
-      "command": "\\bgit\\b(?:\\s+(?:-[Cc]|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+--?[^\\s]+)*\\s+(?:commit|push)(?=\\s|$)"
+      "command": "\\bgit\\b(?:\\s+(?:-[Cc]|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+--?[^\\s]+)*\\s+(?:commit|push|fetch|pull|clone|checkout|switch|merge|reset|stash|clean|update-ref|worktree\\s+(?:add|move|remove|prune))(?=\\s|$)"
     },
     {
       "event": "command",

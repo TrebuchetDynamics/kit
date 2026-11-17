@@ -5,6 +5,8 @@ including planning, documentation, design, review and operations. This is shared
 instruction, not a second workflow or permission to implement. Questions-only,
 read-only, task scope, approval, review and delivery limits still govern.
 
+Before acting, apply the [shared source freshness and ownership contract](COMMON-CONTRACT.md#source-freshness-and-delivery-ownership) for the current mode, including non-repository applicability.
+
 ## Choose the smallest complete result
 
 Read the task and the connected source first. Account for callers, tests, fixtures,

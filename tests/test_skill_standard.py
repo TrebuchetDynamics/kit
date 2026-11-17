@@ -21,6 +21,42 @@ class SkillStandardTests(unittest.TestCase):
     def skills(self, folder):
         return sorted((ROOT / folder).glob('*/SKILL.md'))
 
+    def test_all_public_skills_reach_the_shared_freshness_owner(self):
+        owner = ROOT / 'skills/shared/COMMON-CONTRACT.md'
+        entrypoints = self.skills('skills') + self.skills('adapters/skills')
+        common = {owner, ROOT / 'skills/shared/PONYTAIL.md',
+                  ROOT / 'adapters/skills/COMMON.md'}
+        for entry in entrypoints:
+            seen, pending = set(), [entry]
+            while pending:
+                path = pending.pop()
+                if path in seen:
+                    continue
+                seen.add(path)
+                for link in re.findall(r'\]\(([^)\s]+)\)', path.read_text()):
+                    target = (path.parent / link.split('#')[0]).resolve()
+                    if target in common and target.is_file():
+                        pending.append(target)
+            with self.subTest(entry=str(entry.relative_to(ROOT))):
+                self.assertIn(owner, seen, 'no common-entrypoint path to freshness policy')
+        text = owner.read_text()
+        self.assertIn('## Source freshness and delivery ownership', text)
+        for mode in ('Read-only', 'Writable planning', 'Authorized implementation',
+                     'Delivery/sync', 'Non-repository'):
+            self.assertIn(mode, text)
+
+    def test_delivery_references_do_not_call_fetch_read_only(self):
+        for name in ('skills/git-commit-push/SKILL.md',
+                     'skills/git-commit-push/references/pull-merge.md'):
+            text = (ROOT / name).read_text()
+            with self.subTest(path=name):
+                self.assertNotRegex(text, r'(?i)read-only fetch|Fetch and report; change nothing')
+        push = (ROOT / 'skills/push/SKILL.md').read_text()
+        for category in ('merged upstream', 'open/owned', 'failed/blocked',
+                         'closed-unmerged', 'already included/equivalent', 'unavailable/unknown'):
+            self.assertIn(category, push)
+        self.assertIn('pagination', push)
+
     def test_descriptions_are_summaries_within_the_index(self):
         for path in self.skills('skills') + self.skills('adapters/skills'):
             with self.subTest(skill=path.relative_to(ROOT)):

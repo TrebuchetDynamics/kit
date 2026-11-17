@@ -10,7 +10,8 @@ is a git problem.
 - `/git-commit-push pull|sync|merge …` (CLI) or `/git_commit_push pull|sync|merge …` (Telegram)
   was invoked: that invocation **is** the request. The rest of the text names the source ("agent/example/t_1234", "origin/develop", "PR 52")
   or narrows scope ("audit", "dry run", "ff-only").
-- Audit: the user asks what a pull would bring in. Fetch and report; change nothing.
+- Audit: use existing refs and permitted remote metadata only; report source SHA
+  and unknown freshness. No fetch: it writes `.git`. Stop before the writable fast path.
 
 ## Pick the source first
 
@@ -18,8 +19,16 @@ is a git problem.
 |---|---|---|
 | `/git-commit-push pull`, "pull", "sync" | the branch's upstream (`@{u}`) | fast-forward, else merge |
 | "merge <branch>" / an agent card branch | that branch (fetch it first if remote) | merge commit |
-| "merge PR <n>" | `gh pr checkout`-free: `git fetch origin pull/<n>/head:pr-<n>` | merge commit |
-| audit / dry run | as above | none (report only) |
+| "merge PR <n>" | verify repository, linked task, current coordinator/PR gates and pinned source first | only explicitly authorized, released source; open Orbi PR stays with its coordinator |
+| audit / dry run | existing local refs and permitted remote metadata, no fetch | none (report freshness gaps) |
+
+Resolve the actual repository, intended base, configured upstream and push destination
+under the [shared freshness contract](../../shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership).
+All fetch/sync recipes below require authorized delivery/sync mode. No-pull/no-sync,
+no-commit (including merge commits), ff-only and host permissions remain binding.
+An explicit PR source is not a takeover of an open Orbi-owned PR; leave it untouched
+and report its coordinator's next action, even if checks pass. Merged PRs come through
+verified upstream ancestry; no PR checkout or remote ref deletion is needed.
 
 Never rebase or rewrite history, never `--force`, never `git pull --rebase`, and never `reset --hard`.
 
@@ -34,7 +43,10 @@ python3 <git-commit-push>/scripts/isolated-origin-clone.py ORIGIN NEW_PRIVATE_PA
   --expected-main EXACT_OBSERVED_ORIGIN_MAIN_SHA
 ```
 
-Resolve the existing origin and observe its exact main SHA first. Carry that
+For this origin-clone helper, verify that ORIGIN really is the configured intended
+upstream and that its main is the intended base; otherwise use the existing worktree
+isolation path with the verified base instead of coercing another repository into
+this helper. Observe its exact main SHA first. Carry that
 immutable source SHA into every candidate diff, merge and preservation check.
 A local clone names the source checkout `origin`; its `origin/main` can therefore
 be the local branch, not the fetched remote tip. Verify ref identity instead of
@@ -49,7 +61,8 @@ leaves its partial private destination retained, never deletes owner files.
 ## Fast path
 
 1. **Inspect once.**
-   - Read repo instructions, then run `git status --short --branch`, `git fetch --prune origin`,
+   - Read repo instructions, then run `git status --short --branch`, then (writable sync only)
+     `git fetch <verified-upstream-remote>`,
      `git rev-list --left-right --count HEAD...<source>` and `git log --oneline HEAD..<source>`.
    - Already up to date (`0` incoming) → NO-OP for an inbound sync. For an explicit remote merge,
      inspect outbound commits and continue authorized delivery: zero incoming does not prove the
@@ -58,6 +71,13 @@ leaves its partial private destination retained, never deletes owner files.
      unrelated ancestors transplants only its attributable commits onto fresh upstream; when the
      owner explicitly includes local main history, merge that history into the upstream-based
      candidate instead of selecting only the latest topic.
+   - Pin source, base and destination SHAs. Immediately before integration and any
+     publication, refresh relevant issue/PR ownership and verify those inputs. If
+     upstream advanced, rebuild through this normal merge path and rerun only
+     affected candidate-bound checks/review. If an owned PR merged, use upstream,
+     not its stale head. API failure is unknown coverage, not release; preserve
+     unverified work and hold unavailable required gates. No retry loop or alternate
+     credentials. Independent verified work can continue as a partial result.
 2. **Check the worktree before touching it (fleet worktrees are shared).**
    - List the files the source changes: `git diff --name-only HEAD...<source>`.
    - Intersect them with the dirty set from `git status --porcelain`. No overlap → git can update
@@ -87,35 +107,9 @@ leaves its partial private destination retained, never deletes owner files.
      exist first, and remove the worktree only after it is clean and the remote result is verified.
      If returning the original checkout to `main` is refused because of dirty paths, do not force the
      switch even when their blobs appear equal; preserve the tree and report the remaining paths.
-     - **Behind-only realignment is the bounded exception, and it needs both preconditions.** When
-       `git merge-base --is-ancestor HEAD <source>` holds (no local-only commits to lose) and
-       `git diff --cached --name-only` is empty (nothing staged, so an index refresh cannot unstage
-       a live writer's bytes), move the pointer instead of the tree: branch a safety ref at the old
-       HEAD and **keep** it, `git reset --mixed <source-sha>` (writes no worktree file), then apply the fast-forward effect
-       only to paths that were **clean by both definitions**: take the incoming paths,
-       subtract tracked modifications/deletions and all untracked paths (including ignored
-       files), then refresh clean additions/modifications and remove clean incoming deletions.
-       The helper uses NUL records and literal pathspecs; a checkout alone cannot remove paths
-       missing from the incoming tree. Before moving HEAD/index it refuses file/directory
-       transitions, directory collisions, symlink/file ancestors, unsupported Git modes and
-       hidden index flags (skip-worktree/assume-unchanged). Exact dirty/untracked/ignored file
-       collisions stay untouched. A preexisting safety ref must point at the old HEAD.
-       A path that is *untracked locally* while tracked in the source counts as dirty, not clean:
-       `git checkout <sha> -- <path>` writes unconditionally, so including it replaces a local file
-       (a generated artifact someone simply had not committed) with upstream's, and git keeps no
-       copy of untracked bytes to restore — the loss is permanent and regenerable only by its
-       author. Subtracting only tracked-modified paths is the shape that makes this look safe. Prove it in the report: hash every dirty and
-       untracked path before and after (raw byte hashes; symlink targets, not referents) and require zero changed, and confirm the
-       dirty list shrank only by paths that became identical to the new HEAD. Re-gate the areas the
-       incoming commits touched, and never run it while a writer is staged or mid-write.
-       `<git-commit-push>/scripts/behind-only-realign.sh` implements this whole procedure with the guards and the
-       before/after hash proof built in; run it instead of hand-typing the sequence, and keep its
-       report tail non-fatal (a comparison command exits non-zero by design and must not abort the
-       script before it prints the proof). If you modify it, run `tests/test_behind_only_realign.py`
-       or a disposable real-Git fixture first, keeping its ancestry/index guards, safety ref and
-       zero-changed-byte proof.
-   - Never bare `git stash`/`stash pop` in a shared worktree. If a stash is unavoidable, use
-     `git stash push -m "<unique-tag>" -- <paths>`, record its SHA, and restore with `stash apply <sha>`.
+   - Shared/live checkouts stay untouched. Preserve HEAD, index, tracked,
+     untracked and ignored files; use the isolated candidate or report local sync
+     pending. This procedure grants no behind-only reset, stash or cleanup exception.
 3. **Integrate.**
    - Upstream sync: `git merge --ff-only @{u}` when local has no unique commits. If both sides moved,
      `git merge --no-ff @{u}`, with a message naming what came in.

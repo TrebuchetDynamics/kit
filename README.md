@@ -323,8 +323,11 @@ states its own boundaries and what "done" means.
 - `/split-folder` — reorganize one folder without changing behavior.
 - `/git-commit-push` — commit, sync and push owned changes; `all` also settles finished
   worktrees into the base branch.
-- `/push` — commit all eligible changes, merge idle worktrees into `main`, sync upstream,
-  and push. Live or unfinished work stays untouched and is reported.
+- `/push` — ship eligible local work and already-merged upstream Orbi changes to
+  the verified base (normally `main`). Report open Orbi issues/PRs without taking
+  over their review route; live, unfinished or unknown work stays untouched.
+  All skills use the [mode-aware freshness contract](skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership):
+  read-only/planning does not fetch or sync Git.
 
 **Improve the codebase**
 

@@ -146,9 +146,10 @@ test('Push loads its repo-wide default and preserves narrower requests', async (
     sendUserMessage: (...args) => messages.push(args)});
   await commands.get('push').handler('', {isIdle: () => true});
   assert.match(messages[0][0], /host-neutral Push workflow/);
+  assert.match(commands.get('push').description, /landed Orbi changes/);
   assert.equal(messages[0][0].endsWith('User request (preserve scope and restrictions):\n'), true);
   assert.equal(messages[0][1], undefined);
-  const restricted = 'dry run; no push; only docs/';
+  const restricted = 'dry run; no fetch; no sync; no commit; no push; only docs/';
   await commands.get('push').handler(restricted, {isIdle: () => false});
   assert.equal(messages[1][0].endsWith(restricted), true);
   assert.deepEqual(messages[1][1], {deliverAs: 'followUp'});

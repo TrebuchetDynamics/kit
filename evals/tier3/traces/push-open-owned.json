@@ -1,0 +1,61 @@
+{
+  "name": "push-open-owned",
+  "skill": "push",
+  "model": "fixture",
+  "note": "Synthetic recorded data only; no GitHub/Git operations or model run. The grader checks event/regex/receipt presence, not truth or ordering.",
+  "context": {
+    "repository": "example/project",
+    "base": "trunk",
+    "upstream": "team/trunk",
+    "destination": "publish/refs/heads/trunk",
+    "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "destination_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "orbi_association": "linked issue and PR body run marker plus coordinator continuation, not branch prefix or author",
+    "owned_pr": {
+      "url": "https://github.com/example/project/pull/52",
+      "issue": "https://github.com/example/project/issues/12",
+      "head_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "merge_sha": null,
+      "checks": "pass",
+      "owner": "existing Orbi coordinator",
+      "classification": "open/owned"
+    }
+  },
+  "events": [
+    {
+      "type": "read",
+      "path": "skills/push/SKILL.md"
+    },
+    {
+      "type": "command",
+      "command": "git status --short --branch",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git diff --stat",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-1.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-2.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-links-and-ownership.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-52-refresh-checks-pass-still-owned.json"
+    },
+    {
+      "type": "final",
+      "text": "Local commits: none. Incoming landed: none. Pending: open/owned https://github.com/example/project/pull/52 linked https://github.com/example/project/issues/12, head eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee; passing checks do not release coordinator ownership; wait for its review/merge route. Selected/final: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Checks: no candidate changes; existing required gates not bypassed. Remote inclusion: unchanged destination aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; PR 52 not delivered. Local sync: clean; worker checkout and untracked files untouched. HELD, not repository-wide NO-OP."
+    }
+  ]
+}

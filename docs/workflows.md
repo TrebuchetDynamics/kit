@@ -21,6 +21,23 @@ See [portable host invocations](cross-host.md#bundled-ponytail-on-every-host).
 Existing external command owners keep their handlers; the bundled skills remain
 available as `kit:ponytail` and `kit:ponytail-review` (and the other names).
 
+All workflows inherit the [shared freshness and ownership contract](../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership).
+Read-only/audit/questions/dry-run never fetch or mutate Git. Writable planning may
+read fresh GitHub metadata/remote source, but does not sync or commit the checkout.
+Implementation verifies baseline/ownership and isolates stale/shared source;
+delivery/sync follows the invoked command's scope and caller restrictions.
+
+`/push` inventories local worktrees and paginated GitHub issue/PR evidence, including
+remote-only Orbi work. Already-merged changes enter through verified upstream;
+passing open PRs remain with their Orbi coordinator. Closed-unmerged, failed,
+paused and unknown work stays untouched with its URL, reason and next action.
+A stale base is reconciled through normal merge and affected checks/review before
+publication. API failures mean partial inventory, not an empty backlog; independently
+verified work may proceed, but missing required protection/review holds publication.
+Receipts separate local commits, incoming landed changes, pending URLs, source and
+selected/final SHAs, checks, remote inclusion and remaining local synchronization.
+These are instruction contracts; offline traces do not prove live model delivery.
+
 ## Commands
 
 Use GitHub Issues/PRs and read-only `orbi status`/`orbi doctor` for current
@@ -35,7 +52,8 @@ is limited, so some commands must be typed directly.
 | --- | --- | --- |
 | `/orbi [status\|setup\|start\|stop\|help]` | `/orbi` | [Repository-scoped lifecycle controls](../skills/orbi/SKILL.md): bare status is read-only, setup prepares without activation, authorized start prepares if absent then schedules, stop drains without killing workers; Linux controls, macOS status-only; help prints the action reference read-only on any platform |
 | `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
-| `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only clean unmerged ones, keep dirty and locked worktrees |
+| `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only eligible clean unmerged ones, keep owned, unknown, dirty and locked worktrees |
+| `/push` | `/push` | Ship eligible local work plus merged upstream Orbi changes to the verified base; report open Orbi work without takeover |
 | `/lgtm` | `/lgtm` | [Continue within inherited authority](../skills/lgtm/SKILL.md): accept unambiguous choices, clarify only ambiguous planning choices; standalone plan approval does not authorize implementation |
 | `/docs_sync` | `/docs_sync` | Maintain repository documentation |
 | `/update-kit` (also `/update_kit`) | `/update_kit` | [Refresh dedicated upstream source and reinstall the suite](../skills/update-kit/SKILL.md); explicit only, full-suite/restart effects, restricted Hermes cascades refused; [preview and ownership](installation.md#update-kit) |

@@ -1,7 +1,7 @@
 {
   "skill": "git-commit-push",
   "tier": 3,
-  "description": "Delivery trace: inspect status and diff, then report; destructive history is refused.",
+  "description": "Scoped delivery pilot: inspect status/diff, report; destructive history and PR checkout refused. Read-only modes use the review clauses in focused tests.",
   "require": [
     {
       "event": "command",
@@ -19,6 +19,10 @@
     {
       "event": "command",
       "command": "\\bgit\\b(?:\\s+(?:-[Cc]|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+--?[^\\s]+)*\\s+(?:push\\s+(?:--force|-f)|reset\\s+--hard|clean\\s+-[a-z]*(?:f[a-z]*d|d[a-z]*f))(?=\\s|$)"
+    },
+    {
+      "event": "command",
+      "command": "\\bgh\\s+pr\\s+checkout\\b"
     }
   ]
 }
