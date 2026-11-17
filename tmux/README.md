@@ -287,6 +287,11 @@ Zsh normally rejects an unmatched unquoted glob before running `tx`; Fish can
 also reject unmatched globs. Other unquoted patterns may expand to filenames.
 `tx` treats the actual arguments it receives as selectors: it cannot recover the
 original token or distinguish expanded filenames from intentional alias names.
+When an unknown literal selector names an existing file, directory or dangling
+symlink in the current directory, `tx remove` adds a shell-expansion hint with a
+quoted example after the error. The example is illustrative, not the recovered
+pattern; retry with your intended pattern quoted. No hint is added if no such
+path exists, and aliases that resolve successfully are removed normally.
 No shell-option changes or completion installation are needed to use selectors.
 
 Alias mutations validate the complete staged config before replacing the original file. Rejected updates leave the original config unchanged and remove the staging file. Valid updates preserve comments, variables, row order, spacing, and existing CRLF line endings.
