@@ -32,6 +32,10 @@ class FakeGitHub:
         self.events = []
         self.fail_edge = False
         self.fail_ready = False
+        self.ready_timeout = None  # (issue number, accepted before timeout)
+        self.create_timeout = None
+        self.readback_fails = False
+        self.failed = False
 
     def pages(self, path):
         if path == 'issues?state=all':
@@ -50,16 +54,28 @@ class FakeGitHub:
         if path == 'labels':
             self.label_names.add(data['name'])
             return data
+        if path.startswith('issues?state=all&'):
+            if self.failed and self.readback_fails:
+                raise publisher.PublicationError('injected recovery read failure')
+            return copy.deepcopy(list(self.issues.values()))
         if path == 'issues':
             number = len(self.issues) + 1
+            if self.create_timeout == (number, False):
+                self.failed = True
+                raise subprocess.TimeoutExpired('gh api', 60)
             self.issues[number] = dict(number=number, id=1000 + number, state='open',
                                        html_url=f'https://github.com/example/repo/issues/{number}',
                                        title=data['title'], body=data['body'],
                                        labels=[{'name': label} for label in data['labels']])
+            if self.create_timeout == (number, True):
+                self.failed = True
+                raise subprocess.TimeoutExpired('gh api', 60)
             return copy.deepcopy(self.issues[number])
         number = int(path.split('/')[1])
         issue = self.issues[number]
         if method == 'GET':
+            if self.failed and self.readback_fails:
+                raise publisher.PublicationError('injected recovery read failure')
             if path.endswith('/parent'):
                 parents = [n for n, children in self.children.items() if issue['id'] in children]
                 return copy.deepcopy(self.issues[parents[0]]) if parents else None
@@ -71,11 +87,17 @@ class FakeGitHub:
         elif path.endswith('/sub_issues'):
             self.children.setdefault(number, set()).add(data['sub_issue_id'])
         elif path.endswith('/labels'):
+            if self.ready_timeout == (number, False):
+                self.failed = True
+                raise subprocess.TimeoutExpired('gh api', 60)
             if self.fail_ready and 'ai-ready' in data['labels']:
                 raise publisher.PublicationError('injected readiness failure')
             for label in data['labels']:
                 if label not in publisher.labels(issue):
                     issue['labels'].append({'name': label})
+            if self.ready_timeout == (number, True):
+                self.failed = True
+                raise subprocess.TimeoutExpired('gh api', 60)
         elif method == 'DELETE' and path.endswith('/labels/ai-planning'):
             issue['labels'] = [label for label in issue['labels'] if label['name'] != 'ai-planning']
         else:
@@ -84,6 +106,155 @@ class FakeGitHub:
 
 
 class PublicationTests(unittest.TestCase):
+    def apply_cli(self, api, batch):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'batch.json'
+            path.write_text(json.dumps(batch))
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with patch.object(publisher, 'GitHub', return_value=api), \
+                    redirect_stdout(stdout), redirect_stderr(stderr):
+                status = publisher.main(['--repo', 'example/repo', '--batch', str(path), '--apply'])
+        return status, stdout.getvalue(), stderr.getvalue()
+
+    def partial_receipt(self, stderr):
+        diagnostic, receipt = stderr.split('\n', 1)
+        self.assertTrue(diagnostic.startswith('Publication incomplete: '))
+        result = json.loads(receipt)
+        self.assertTrue(result['partial'])
+        return {row['key']: row for row in result['issues']}
+
+    def test_cli_ready_timeout_preserves_verified_saved_and_unknown_results(self):
+        for accepted in (False, True):
+            for readback_fails in (False, True):
+                with self.subTest(accepted=accepted, readback_fails=readback_fails):
+                    api = FakeGitHub()
+                    api.ready_timeout = (2, accepted)
+                    api.readback_fails = readback_fails
+                    batch = {'issues': [task('a'), task('b'), task('c')]}
+                    status, stdout, stderr = self.apply_cli(api, batch)
+                    self.assertEqual((status, stdout), (1, ''))
+                    self.assertIn('timed out', stderr.splitlines()[0])
+                    rows = self.partial_receipt(stderr)
+                    a, b, c = (rows[key] for key in ('a', 'b', 'c'))
+                    self.assertEqual(a['url'], api.issues[1]['html_url'])
+                    self.assertEqual(a['last_verified'], {'state': 'open', 'labels': ['ai-ready']})
+                    self.assertEqual(a['attempted_phase'], 'complete')
+                    self.assertEqual(a['readiness'], 'ready')
+                    self.assertEqual(b['creation'], 'saved')
+                    self.assertEqual(b['number'], 2)
+                    self.assertEqual(b['url'], api.issues[2]['html_url'])
+                    self.assertEqual(b['attempted_phase'], 'ready_post')
+                    expected = ['ai-planning', 'ai-ready'] if accepted else ['ai-planning']
+                    self.assertEqual(sorted(publisher.labels(api.issues[2])), expected)
+                    self.assertEqual(b['last_verified']['labels'], ['ai-planning'] if readback_fails else expected)
+                    self.assertEqual(b['readiness'], 'unknown' if readback_fails else
+                                     'ready' if accepted else 'not_ready')
+                    self.assertEqual(b['unverified_write'], readback_fails)
+                    if readback_fails:
+                        self.assertIn('injected recovery read failure', b['reconciliation_error'])
+                    self.assertEqual(c['creation'], 'saved')
+                    self.assertEqual(c['url'], api.issues[3]['html_url'])
+                    self.assertEqual(c['attempted_phase'], 'verify_batch')
+                    self.assertEqual(c['last_verified']['labels'], ['ai-planning'])
+                    failed = next(i for i, event in enumerate(api.events)
+                                  if event[:2] == ('POST', 'issues/2/labels'))
+                    self.assertEqual(api.events[failed + 1:], [('GET', 'issues/2', None)])
+                    self.assertEqual(sum(event[:2] == ('POST', 'issues/2/labels')
+                                         for event in api.events), 1)
+                    # Deliberate stable-key retry reuses issues; no duplicate creates.
+                    api.ready_timeout = None
+                    api.readback_fails = False
+                    status, stdout, stderr = self.apply_cli(api, batch)
+                    self.assertEqual((status, stderr), (0, ''))
+                    self.assertEqual([row['labels'] for row in json.loads(stdout)], [['ai-ready']] * 3)
+                    self.assertEqual(len(api.issues), 3)
+
+    def test_cli_ambiguous_create_is_not_reported_as_never_attempted(self):
+        for accepted in (False, True):
+            with self.subTest(accepted=accepted):
+                api = FakeGitHub()
+                api.create_timeout = (2, accepted)
+                status, stdout, stderr = self.apply_cli(
+                    api, {'issues': [task('a'), task('b'), task('c')]})
+                self.assertEqual((status, stdout), (1, ''))
+                rows = self.partial_receipt(stderr)
+                self.assertEqual(rows['a']['creation'], 'saved')
+                self.assertEqual(rows['b']['attempted_phase'], 'create')
+                self.assertEqual(rows['b']['creation'], 'saved' if accepted else 'unknown')
+                self.assertEqual(rows['b']['unverified_write'], not accepted)
+                self.assertEqual(rows['b']['url'], api.issues[2]['html_url'] if accepted else None)
+                self.assertEqual(rows['c']['creation'], 'not_attempted')
+                self.assertIsNone(rows['c']['last_verified'])
+                self.assertIsNone(rows['c']['url'])
+                failed = next(i for i, event in enumerate(api.events)
+                              if event[0] == 'POST' and event[1] == 'issues'
+                              and publisher.marker('b') in event[2]['body'])
+                self.assertTrue(all(method == 'GET' for method, _, _ in api.events[failed + 1:]))
+                self.assertEqual(sum(method == 'POST' and path == 'issues'
+                                     for method, path, _ in api.events), 2)
+
+    def test_cli_create_recovery_failures_remain_unknown_and_bounded(self):
+        for recovery in ('read failure', 'duplicate markers', 'page limit'):
+            with self.subTest(recovery=recovery):
+                api = FakeGitHub()
+                api.create_timeout = (1, True)
+                api.readback_fails = recovery == 'read failure'
+                original = api.api
+
+                def recover(path, method='GET', data=None, **kwargs):
+                    result = original(path, method, data, **kwargs)
+                    if path.startswith('issues?state=all&'):
+                        if recovery == 'duplicate markers':
+                            return result * 2
+                        if recovery == 'page limit':
+                            return [dict(result[0], body='unrelated')] * 100
+                    return result
+
+                api.api = recover
+                status, stdout, stderr = self.apply_cli(
+                    api, {'issues': [task('a'), task('b')]})
+                self.assertEqual((status, stdout), (1, ''))
+                rows = self.partial_receipt(stderr)
+                self.assertEqual(rows['a']['creation'], 'unknown')
+                self.assertTrue(rows['a']['unverified_write'])
+                self.assertEqual(rows['a']['readiness'], 'unknown')
+                self.assertIsNone(rows['a']['url'])
+                self.assertIn('reconciliation_error', rows['a'])
+                self.assertEqual(rows['b']['creation'], 'not_attempted')
+                self.assertEqual(len(api.issues), 1)  # accepted remotely, not proven by readback
+                reads = [event for event in api.events if event[1].startswith('issues?state=all&')]
+                self.assertEqual(len(reads), 10 if recovery == 'page limit' else 1)
+                failed = next(i for i, event in enumerate(api.events) if event[:2] == ('POST', 'issues'))
+                self.assertTrue(all(event[0] == 'GET' for event in api.events[failed + 1:]))
+
+    def test_cli_foreign_owned_or_paused_state_is_observed_without_repair(self):
+        for hold in ('ai-in-progress', 'ai-paused'):
+            with self.subTest(hold=hold):
+                api = FakeGitHub()
+                original = api.api
+                foreign = {}
+
+                def claim(path, method='GET', data=None, **kwargs):
+                    result = original(path, method, data, **kwargs)
+                    if (method, path) == ('POST', 'issues/1/labels'):
+                        api.issues[2]['labels'].append({'name': hold})
+                        api.issues[2]['body'] += '\nForeign decision'
+                        foreign.update(copy.deepcopy(api.issues[2]))
+                    return result
+
+                api.api = claim
+                status, stdout, stderr = self.apply_cli(
+                    api, {'issues': [task('a'), task('b'), task('c')]})
+                self.assertEqual((status, stdout), (1, ''))
+                self.assertIn('#2: closed, owned or recovery work', stderr.splitlines()[0])
+                rows = self.partial_receipt(stderr)
+                self.assertEqual(rows['b']['last_verified']['labels'], sorted(['ai-planning', hold]))
+                self.assertEqual(rows['b']['creation'], 'saved')
+                self.assertEqual(api.issues[2], foreign)
+                self.assertEqual(publisher.labels(api.issues[3]), {'ai-planning'})
+                self.assertFalse(any(method != 'GET' and path.startswith(('issues/2/', 'issues/3/'))
+                                     for method, path, _ in api.events))
+
     def test_complete_graph_precedes_readiness_and_retry_is_idempotent(self):
         api = FakeGitHub()
         batch = {'issues': [task('epic', kind='epic'), task('base', epic='epic'),
@@ -304,7 +475,11 @@ class PublicationTests(unittest.TestCase):
                 if drift:
                     self.assertEqual(status, 1)
                     self.assertEqual(stdout.getvalue(), '')
-                    self.assertEqual(stderr.getvalue(), 'Publication incomplete: #2: dependency readback failed\n')
+                    self.assertEqual(stderr.getvalue().splitlines()[0],
+                                     'Publication incomplete: #2: dependency readback failed')
+                    rows = self.partial_receipt(stderr.getvalue())
+                    self.assertEqual(rows['a']['last_verified']['labels'], ['ai-ready'])
+                    self.assertEqual(rows['b']['attempted_phase'], 'verify_dispatch')
                     self.assertEqual(publisher.labels(api.issues[2]), {'ai-planning'})
                     self.assertEqual(api.dependencies[2], set())
                     self.assertNotIn(('POST', 'issues/2/labels', {'labels': ['ai-ready']}), api.events)
