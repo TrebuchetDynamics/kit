@@ -2185,9 +2185,8 @@ def command_stop(ctx, args):
             raise ControlError('scheduler_unavailable',
                                f"cannot read the target scheduler: {snapshot.get('reason')}",
                                fix='verify the systemd user session, then rerun')
-        owned = owned_timers(ctx, target, snapshot)
         if args.dry_run:
-            names = [timer for timer, _ in owned]
+            names = [timer for timer, _ in owned_timers(ctx, target, snapshot)]
             pending = pending_services(ctx, target)
             return {'action': 'stop', 'platform': ctx.platform, 'status': 'planned',
                     'dry_run': True, 'repo': repo.full,
@@ -2200,7 +2199,13 @@ def command_stop(ctx, args):
         current, mutated = {'step': 'lock', 'mutation': 'possible'}, True
         with locked(ctx, target.config_path):
             steps.append({'step': 'lock', 'status': 'ok', 'mutation': 'completed'})
-            for timer, item in owned:
+            current = {'step': 'observe_scheduler', 'mutation': 'none'}
+            snapshot = scheduler_snapshot(ctx, target)
+            if snapshot['state'] != 'ok':
+                raise ControlError('scheduler_unavailable',
+                                   f"cannot read the target scheduler: {snapshot.get('reason')}",
+                                   fix='verify the systemd user session, then rerun')
+            for timer, item in owned_timers(ctx, target, snapshot):
                 current = {'step': 'disable_timer', 'unit': timer, 'mutation': 'possible'}
                 ctx.run(['systemctl', '--user', 'disable', '--now', timer],
                         timeout=MUTATION_TIMEOUT)
