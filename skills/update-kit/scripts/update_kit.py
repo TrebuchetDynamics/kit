@@ -15,7 +15,7 @@ import tempfile
 SOURCE = 'https://github.com/TrebuchetDynamics/kit.git'
 TEMPORARY_ROOTS = ('/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp')
 COMPONENTS = {'pi', 'pi-bolt', 'tx', 'hermes', 'claude', 'codex', 'orbi'}
-NOTICE = ('Default scope: all available components; may bootstrap Pi/Pi-Bolt and restart active '
+NOTICE = ('Default scope: all available components; may bootstrap Pi-Bolt and restart active '
           'supported integrations. --no-reload does NOT suppress final restarts. Hermes may '
           'perform a nested broader full-suite refresh, including another source advance. '
           'Native prompts, missing-host rules and partial failures remain installer-owned.')

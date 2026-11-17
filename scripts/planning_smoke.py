@@ -84,7 +84,7 @@ def main(argv=None):
     parser.add_argument('--model', required=True)
     parser.add_argument('--skill', choices=('plan-with-me', 'plan-for-me'), default='plan-with-me')
     parser.add_argument('--thinking', default='low')
-    parser.add_argument('--pi', default='pi', help='Pi executable (default: PATH)')
+    parser.add_argument('--pi', default='pi-bolt', help='Pi executable (default: pi-bolt on PATH)')
     parser.add_argument('--kit-root', type=Path, default=ROOT, help='checkout or unpacked Pi package')
     parser.add_argument('--agent-dir', type=Path, default=Path(os.environ.get('PI_CODING_AGENT_DIR', Path.home() / '.pi/agent')))
     parser.add_argument('--output-dir', type=Path, required=True, help='new evidence directory outside Kit')

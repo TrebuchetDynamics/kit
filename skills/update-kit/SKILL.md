@@ -14,7 +14,9 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this scope and 
 
 1. **Scope.** Run only after explicit invocation. Read the caller's restrictions.
    Before execution explain: default scope includes all available components, may
-   bootstrap Pi/Pi-Bolt, and may restart active supported integrations. Native
+   bootstrap Pi-Bolt, and may restart active supported integrations.
+   Pi-Bolt is the only Pi harness Kit installs; the Kit Pi package is installed or
+   refreshed through the verified destination Pi-Bolt, never stock Pi. Native
    dependency/security prompts remain in force. Missing hosts and partial failures
    follow the [suite installer contract](../../docs/installation.md#full-suite-from-a-checkout).
    An explicit no-restarts restriction cannot be honored: `--no-reload` does **not**
