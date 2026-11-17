@@ -25,6 +25,17 @@ at `4a2dbe5`; pi-toolset's `tx` is deprecated in its favor. Installing this one 
 
 ## Install
 
+The repository-root suite installer (`./install.sh --only tx`, run from the root)
+keeps existing tmux configuration and helpers. It refreshes changed regular shell
+completion files with adjacent `.bak`/`.bak.N` backups, keeps completion symlinks
+(including dangling links), and reports each completion as written, replaced or kept.
+Replaced commands move to `~/.local/state/kit/backups/`, outside `PATH`, with only
+the newest five retained. Existing bin-directory `tx.bak*` files are left alone;
+see the [accepted rules and manual cleanup command](../docs/installation.md#full-suite-from-a-checkout).
+
+The separate installer below is unchanged: its timestamp backups can still collect
+beside `tx` on `PATH`; it does not use the suite installer's five-backup retention.
+
 From this directory:
 
 ```sh
