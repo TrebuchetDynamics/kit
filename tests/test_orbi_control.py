@@ -2668,6 +2668,64 @@ class LifecycleSequenceTests(unittest.TestCase):
         harness.clear_calls()
         return harness
 
+    def test_stop_rechecks_owned_timers_after_lock(self):
+        for observation_fails in (False, True):
+            with self.subTest(observation_fails=observation_fails):
+                h = self.fresh()
+                prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+                timers = [f'{prefix}@{i}.timer' for i in (1, 2)]
+                scheduler = h.scheduler_rules(enabled={1: True, 2: True})
+                absent = [
+                    {'tool': 'systemctl',
+                     'argv_contains': ['show', f'{prefix}@{i}.timer', 'FragmentPath'],
+                     'stdout': '\n'} for i in range(2, helper.MAX_INSTANCES + 1)]
+                disabled = [h.root / f'disabled-{i}' for i in (1, 2)]
+                mutations = []
+                for timer, marker in zip(timers, disabled):
+                    mutations.extend([
+                        {'tool': 'systemctl', 'argv_contains': ['disable', '--now', timer],
+                         'write': {str(marker): 'disabled'}},
+                        {'tool': 'systemctl', 'argv_contains': ['is-enabled', timer],
+                         'if_exists': str(marker), 'stdout': 'disabled\n', 'exit': 1}])
+                h.rules(*absent, *mutations, *scheduler)
+                locked = helper.locked
+
+                @contextlib.contextmanager
+                def concurrent(ctx, key):
+                    # A start publishes/enables timer 2 after stop's preflight.
+                    failure = ([{'tool': 'systemctl', 'argv_contains': ['show'], 'exit': 1}]
+                               if observation_fails else [])
+                    h.rules(*failure, *absent[1:], *mutations, *scheduler)
+                    with locked(ctx, key):
+                        yield
+
+                with mock.patch.object(helper, 'locked', concurrent):
+                    code, doc, err = h.run('stop')
+                if observation_fails:
+                    self.assertNotEqual(code, 0, (doc, err))
+                    self.assertEqual(doc['error']['code'], 'scheduler_unavailable')
+                    self.assertTrue(doc['error']['mutated'])
+                    self.assertEqual(doc['steps'][-1]['step'], 'observe_scheduler')
+                    self.assertEqual(doc['disabled_timers'], [])
+                else:
+                    self.assertEqual(code, 0, (doc, err))
+                    # Actual disable subprocesses must change both fixture states.
+                    self.assertTrue(all(marker.exists() for marker in disabled), doc)
+                    self.assertEqual(doc['status'], 'stopped')
+                    self.assertEqual(doc['disabled_timers'], timers)
+                    self.assertEqual(doc['steps'], [
+                        {'step': 'disable_target_timers', 'status': 'ok', 'timers': timers}])
+                    code, status, err = h.run('status')
+                    self.assertEqual(code, 0, err)
+                    self.assertFalse(any(item['enabled'] for item in
+                                         status['scheduler']['timers'].values()))
+                self.assertEqual(
+                    [c['argv'] for c in h.calls() if c['tool'] == 'systemctl'
+                     and set(c['argv']) & {'enable', 'disable', 'start', 'stop', 'kill', 'restart'}],
+                    [] if observation_fails else
+                    [['--user', 'disable', '--now', timer] for timer in timers])
+                self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
+
     def test_shared_templates_are_not_enabled_capacity(self):
         h = self.fresh()
         config = h.deploy / 'orbi.toml'
