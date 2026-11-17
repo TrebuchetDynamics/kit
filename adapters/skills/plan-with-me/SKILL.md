@@ -11,6 +11,8 @@ Use the [communication rules](../../../skills/shared/COMMUNICATION.md) for user-
 
 Read the [host contract](../COMMON.md), then follow the
 [host-neutral workflow](../../../skills/plan-with-me/SKILL.md).
+Use the current host conversation as input to its conversation intake and render
+its shared preview and receipt in chat; no transcript export is required.
 Use the same GitHub issue and Orbi contract on every host; host availability does
 not permit a fallback to the retired local task queue or runner.
 

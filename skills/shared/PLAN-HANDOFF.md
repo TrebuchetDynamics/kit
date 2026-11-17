@@ -37,6 +37,52 @@ A larger plan uses an `ai-epic` coordination issue linked to its executable chil
 epics never execute. Future evidence-dependent expansion remains in that plan,
 not a second local task graph or an automatic legacy rolling-planning job.
 
+## Conversation findings to issues
+
+Start with the current request and relevant conversation, not only the last message.
+An explicit target wins. Otherwise, a bare planning invocation after a concrete
+analysis or discussion uses those findings as its focused scope. Use project
+discovery only when neither the request nor the conversation supplies an objective.
+If several unrelated topics make the target ambiguous, name the ambiguity instead
+of silently choosing one or publishing all of them. Preserve continuing user limits;
+a prior skill's read-only default does not by itself make this new planning request
+read-only. Follow the current invocation's authority contract.
+
+1. **Collect.** Reuse findings, user answers, corrections, accepted decisions and
+   referenced artifacts already in chat. Read linked evidence when available; do
+   not require a report file, pasted transcript or rerun of the originating skill.
+   Missing or compacted evidence stays unknown. Ask only for missing consequential
+   input, not a repetition of the discussion.
+2. **Reconcile.** Check current source, open and closed issues, linked PRs and
+   ownership. Classify each in-scope topic as new work, covered by an existing issue,
+   completed, unsupported, or held for a named decision/input. Distinguish user
+   choices from planner calls and unaccepted suggestions. Recheck stale claims;
+   a polished earlier report is not proof or permission.
+3. **Decompose.** Turn distinct buildable outcomes into separate issues with the
+   contracts above. Group findings that share one fix and acceptance check; split
+   independently verifiable outcomes. Do not create one issue per chat message,
+   file, skill or implementation step, or one giant issue for unrelated outcomes.
+   Cover the full requested batch without an arbitrary issue-count target. The
+   discovery frontier cap applies to open-ended discovery, not an explicit batch.
+   Use an epic only for coordination and real native prerequisites for ordering.
+4. **Carry context.** Put the relevant decision, evidence and acceptance in each
+   issue so an Orbi worker can act without this chat. Summarize private discussion
+   without copying credentials or unrelated personal data. Use reachable sources;
+   temporary screenshot paths and “see chat above” are not durable evidence.
+   Account for every in-scope topic in the preview or its held/covered disposition.
+
+Reuse the originating skill's output, not its execution permissions:
+
+| Input | Carry into the issue | Keep separate |
+| --- | --- | --- |
+| State-machine analysis | Trigger, unsafe transition, invariant, source and a transition regression check | Hypotheses versus confirmed failures; unresolved product rules |
+| Grilling, Grill Me or Grill With Docs | Accepted answers, constraints, trade-offs and settled decisions | Skipped questions, ambiguous replies and unaccepted recommendations |
+| Bug Harvest | Reproducer, impact, current failure evidence and regression expectation | Already-fixed bugs and passing checks versus remaining defects or unrun checks |
+| UI Taste, Impeccable or screenshot review | Affected screen/state, observed defect, accepted design direction and visual/interaction acceptance | Aesthetic suggestions versus accepted changes; proposed captures versus inspected renders |
+
+These are examples, not a required skill chain. Load another method only for a
+specific evidence gap. Planning does not rerun a repair or UI-edit workflow.
+
 ## Publication and dependencies
 
 All issues default to `ai-ready`, **regardless of author**, including external
@@ -118,9 +164,61 @@ label, document or scratch writes. A preview proves no remote persistence.
 
 Normally send one useful progress update and a final receipt. Additional updates
 are justified by material blockers or long-running work, not a rigid message quota.
-Keep the receipt compact: issue links, decisions and planner calls, scoped unresolved
-choices, ready/waiting/proposed state, native dependencies, actual checks and unmet
-gates. Distinguish recovery acceptance from application/device qualification using
+Use the progress update for the **Plan preview**, after enough investigation to
+show a meaningful batch and before GitHub publication. This is visibility, not a
+new approval gate: continue authorized publication without asking “shall I create
+these?”. Honor explicit preview-only/no-write requests instead. Plan With Me still
+asks only consequential unresolved questions; settled answers need no reconfirmation.
+
+### Plan preview
+
+Lead with the intended result in plain language, not a list of tools used. Show the
+repository and counts of proposed new issues, reused issues and held topics. For
+each issue, give a short title, the observable change, its acceptance signal and
+real prerequisites. Use temporary keys such as P1 before publication, never invented
+issue numbers or URLs. Mark all new rows **proposed, not published**. Reused issue
+links must come from readback. Planned checks are not passed checks.
+
+Example shape (illustrative only):
+
+> **Plan preview — OWNER/REPO:** Make reconnect safe and explain recovery in the UI.
+> Two proposed new issues, one reused issue, one held topic. Nothing new published.
+>
+> | Issue | What changes / proof | Depends on |
+> | --- | --- | --- |
+> | P1 — Guard reconnect | Reject stale sessions; regression covers reconnect and cancellation | None |
+> | P2 — Show recovery state | Render retry/error states; interaction test and narrow-screen capture | P1 |
+> | Existing issue (verified link) | Reuse its keyboard-navigation scope and acceptance | Read-back prerequisites |
+>
+> **Held:** Automatic retry policy needs an owner decision. Independent work continues.
+> **Planner call:** Keep the current session API. **Excluded:** Authentication redesign.
+
+Use a short numbered list if a table is hard to read on the host. For large batches,
+group by outcome and keep one compact line per issue; do not silently omit topics
+or replace the plan with a count. Put full technical contracts in the issues, not
+an unreadable chat dump. Show dependency order and independent lanes without
+promising simultaneous execution or a running deployment.
+
+### Publication receipt
+
+Replace proposed keys with verified issue links after readback. Lead with the actual
+result: created, reused, held and unsaved counts, then the issue list. Each row keeps
+its outcome, native dependencies and observed disposition: ready/waiting/proposed
+for planned work; completed, owned/in progress or paused for existing work.
+“Ready” means published readiness with no unmet native prerequisite or observed
+ownership/pause hold, not pickup; “waiting” names the unmet prerequisite even when
+the issue has `ai-ready`. Unknown ownership or pause state means eligibility is
+unverified, not ready. Explicit no-dispatch work remains `ai-planning` and is
+described as held. Epics are coordination, never a next executable issue. Identify
+the first eligible issues and what they unlock, excluding completed, owned or
+paused work, or name the exact missing input if none is eligible.
+
+Finish with material decisions and planner calls, scoped unresolved choices,
+actual checks and unmet gates. A publication failure reports the actual partial
+result per issue: published, saved but held, or **UNSAVED**, plus the exact failure
+and resume action. A no-write preview says **nothing saved or dispatched** and
+shows proposed contracts inline; it must not end with a saved-plan claim. Distinguish
+recovery acceptance from application/device qualification using
 [the shared recovery policy](PLANNING-CRAFT.md#recovery-provenance-and-qualification).
 
 Readiness is not pickup, PR delivery or merge. Distinguish a generic possible

@@ -138,6 +138,51 @@ class PlanningDecisionClosureTests(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assertIn(rule, receipt)
 
+    def test_conversation_intake_preserves_evidence_and_outcome_sized_issues(self):
+        # Instruction checks only: these do not simulate a model reading a chat.
+        intake = section('skills/shared/PLAN-HANDOFF.md', 'Conversation findings to issues')
+        for rule in ('An explicit target wins', 'several unrelated topics',
+                     'Missing or compacted evidence stays unknown',
+                     'open and closed issues', 'completed, unsupported',
+                     'one fix and acceptance check', 'independently verifiable outcomes',
+                     'not an explicit batch', 'without this chat', 'Use reachable sources',
+                     'every in-scope topic', 'not its execution permissions'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, intake)
+        for source, evidence, boundary in (
+                ('State-machine analysis', 'unsafe transition', 'Hypotheses versus confirmed failures'),
+                ('Grilling, Grill Me or Grill With Docs', 'Accepted answers', 'Skipped questions'),
+                ('Bug Harvest', 'Reproducer', 'Already-fixed bugs'),
+                ('UI Taste, Impeccable or screenshot review', 'Affected screen/state', 'inspected renders')):
+            with self.subTest(source=source):
+                rows = [line for line in (ROOT / 'skills/shared/PLAN-HANDOFF.md').read_text().splitlines()
+                        if line.startswith(f'| {source} |')]
+                self.assertEqual(len(rows), 1)
+                row = rows[0]
+                self.assertIn(evidence, row)
+                self.assertIn(boundary, row)
+
+    def test_preview_and_receipt_distinguish_proposals_from_publication(self):
+        receipt = section('skills/shared/PLAN-HANDOFF.md', 'Progress and final receipt')
+        preview = receipt.split('### Plan preview', 1)[1].split('### Publication receipt', 1)[0]
+        published = receipt.split('### Publication receipt', 1)[1]
+        for rule in ('before GitHub publication', 'not a new approval gate',
+                     'preview-only/no-write', 'settled answers need no reconfirmation'):
+            self.assertIn(rule, receipt)
+        for rule in ('observable change', 'acceptance signal', 'real prerequisites',
+                     'never invented issue numbers or URLs', 'proposed, not published',
+                     'one compact line per issue', 'do not silently omit topics',
+                     'Planned checks are not passed checks'):
+            self.assertIn(rule, preview)
+        for rule in ('verified issue links', 'created, reused, held and unsaved counts',
+                     'unmet prerequisite even when the issue has `ai-ready`',
+                     'coordination, never a next executable issue', 'actual partial result per issue',
+                     'completed, owned/in progress or paused',
+                     'Unknown ownership or pause state means eligibility is unverified',
+                     'excluding completed, owned or paused work',
+                     '**UNSAVED**', '**nothing saved or dispatched**'):
+            self.assertIn(rule, published)
+
     def test_both_routes_reach_single_recovery_policy_and_receipt(self):
         for mode in ('plan-with-me', 'plan-for-me'):
             canonical = ROOT / f'skills/{mode}/SKILL.md'
@@ -147,7 +192,8 @@ class PlanningDecisionClosureTests(unittest.TestCase):
                 self.assertEqual((adapter.parent / f'../../../skills/{mode}/SKILL.md').resolve(), canonical)
                 for relative, heading in (
                         ('../shared/PLANNING-CRAFT.md', 'Recovery, provenance and qualification'),
-                        ('../shared/PLAN-HANDOFF.md', 'Progress and final receipt')):
+                        ('../shared/PLAN-HANDOFF.md', 'Progress and final receipt'),
+                        ('../shared/PLAN-HANDOFF.md', 'Conversation findings to issues')):
                     anchor = heading.lower().replace(',', '').replace(' ', '-')
                     self.assertIn(f'{relative}#{anchor}', canonical.read_text())
                     self.assertTrue(section(str((canonical.parent / relative).resolve().relative_to(ROOT)), heading))
