@@ -3,8 +3,9 @@
 
 The converter keeps recorded command text, maps read-only `cat`/`head`/`tail`/
 `sed`/`git show`/`git diff`/`git log` commands to read events, and keeps the last
-assistant text as the final event. Heredoc bodies are removed from the command
-text so a quoted example is not mistaken for an executed command.
+assistant text as the final event. Earlier visible assistant text stays in order.
+Heredoc bodies are removed from the command text so a quoted example is not
+mistaken for an executed command.
 
     python3 scripts/pi_trace_to_eval.py --skill ponytail-review \\
       --name ponytail-review-live session.jsonl -o trace.json
@@ -89,7 +90,7 @@ def _read_paths(segment):
 
 
 def convert(path, skill, name=None):
-    events, starts, final = [], {}, ''
+    events, starts, final = [], {}, None
     model = ''
     for raw in Path(path).read_text(encoding='utf-8').splitlines():
         if not raw.strip():
@@ -100,28 +101,34 @@ def convert(path, skill, name=None):
             raise ValueError(f'invalid JSONL line: {exc}') from exc
         kind = item.get('type')
         if kind == 'tool_execution_start':
-            starts[item.get('toolCallId')] = item
+            # Record attempts at invocation, not completion: a preview while an
+            # apply is in flight is already too late. Missing results stay unknown.
+            tool = item.get('toolName')
+            args = item.get('args') if isinstance(item.get('args'), dict) else {}
+            commands = []
+            if tool in ('read', 'write', 'edit') and isinstance(args.get('path'), str):
+                events.append({'type': tool, 'path': args['path']})
+            elif tool in ('bash', 'shell') and isinstance(args.get('command'), str):
+                command = strip_heredocs(args['command'])
+                for segment in _segments(command):
+                    event = {'type': 'command', 'command': segment, 'raw_command': command}
+                    commands.append(event)
+                    events.append(event)
+                    for read_path in _read_paths(segment):
+                        events.append({'type': 'read', 'path': read_path, 'derived_from': 'bash'})
+            starts[item.get('toolCallId')] = (args, commands)
         elif kind == 'tool_execution_end':
             start = starts.pop(item.get('toolCallId'), None)
             if start is None:
                 continue
-            tool = start.get('toolName')
-            args = start.get('args') if isinstance(start.get('args'), dict) else {}
-            if tool in ('read', 'write', 'edit') and isinstance(args.get('path'), str):
-                events.append({'type': tool, 'path': args['path']})
-            elif tool in ('bash', 'shell') and isinstance(args.get('command'), str):
-                simple = _simple_command(args['command'])
-                command = strip_heredocs(args['command'])
-                result = item.get('result') if isinstance(item.get('result'), dict) else {}
-                structured = result.get('structuredContent') if isinstance(result.get('structuredContent'), dict) else {}
-                exit_code = structured.get('exit_code')
-                for segment in _segments(command):
-                    event = {'type': 'command', 'command': segment, 'raw_command': command}
-                    if isinstance(exit_code, int) and not isinstance(exit_code, bool):
-                        event['exit' if simple else 'aggregate_exit_code'] = exit_code
-                    events.append(event)
-                    for read_path in _read_paths(segment):
-                        events.append({'type': 'read', 'path': read_path, 'derived_from': 'bash'})
+            args, commands = start
+            result = item.get('result') if isinstance(item.get('result'), dict) else {}
+            structured = result.get('structuredContent') if isinstance(result.get('structuredContent'), dict) else {}
+            exit_code = structured.get('exit_code')
+            if commands and isinstance(exit_code, int) and not isinstance(exit_code, bool):
+                key = 'exit' if _simple_command(args['command']) else 'aggregate_exit_code'
+                for event in commands:
+                    event[key] = exit_code
         elif kind == 'message_end' and item.get('message', {}).get('role') == 'assistant':
             message = item['message']
             if message.get('provider'):
@@ -129,9 +136,12 @@ def convert(path, skill, name=None):
             text = ''.join(part.get('text', '') for part in message.get('content', [])
                            if isinstance(part, dict) and part.get('type') == 'text')
             if text:
-                final = text
-    if final:
-        events.append({'type': 'final', 'text': final})
+                final = {'type': 'assistant', 'text': text}
+                events.append(final)
+    if final is not None:
+        events = [event for event in events if event is not final]
+        final['type'] = 'final'
+        events.append(final)
     return {'name': name or Path(path).stem, 'skill': skill, 'model': model,
             'note': 'Converted Pi trace; command heredoc bodies removed.',
             'events': events}
