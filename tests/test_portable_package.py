@@ -8,6 +8,17 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 class PortablePackageTests(unittest.TestCase):
+    def test_installation_docs_use_pi_bolt_not_stock_pi_bootstrap(self):
+        for name in ('README.md', 'docs/installation.md',
+                     'docs/dependencies.md', 'docs/cross-host.md', 'skills/update-kit/SKILL.md'):
+            with self.subTest(path=name):
+                text = (ROOT / name).read_text()
+                self.assertIn('Pi-Bolt is the only Pi harness', text)
+                self.assertNotIn('pi.dev', text)
+                self.assertNotIn('bootstrap Pi/Pi-Bolt', text)
+        self.assertIn('pi install git:github.com/TrebuchetDynamics/kit',
+                      (ROOT / 'README.md').read_text())  # manual stock Pi remains supported
+
     def test_removed_skill_resources_are_absent(self):
         for root in ('skills', 'adapters/skills'):
             for name in ('autowork', 'work', 'pending', 'blockers'):

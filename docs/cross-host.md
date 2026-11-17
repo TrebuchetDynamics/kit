@@ -45,7 +45,7 @@ Explicit `/update-kit` in Pi or Hermes (`/update_kit` also works in Hermes),
 [Update Kit workflow](../skills/update-kit/SKILL.md) and bundled helper. It refreshes
 the persistent `${XDG_DATA_HOME:-$HOME/.local/share}/kit/source` checkout and reruns
 that revision's installer. Default scope is the full suite, including possible
-Pi/Pi-Bolt bootstrap and active supported integration restarts. Restricted Hermes
+Pi-Bolt bootstrap and active supported integration restarts. Restricted Hermes
 cascades/no-restarts requests hold before mutation; preview writes/probes nothing.
 See [source ownership, nested updates and recovery](installation.md#update-kit).
 Refresh does not reload the current agent: reopen/reload its session and verify
@@ -507,7 +507,15 @@ authorization and evidence.
 
 ## Pi coding agent
 
-Requires Pi with package manifests and extension commands, and Node 22 or later. From
+Pi-Bolt is the only Pi harness Kit installs. From this checkout, use
+`./install.sh --only pi-bolt,pi` to refresh/install Pi-Bolt then the Kit package
+through its verified destination executable. `--only pi` requires that destination;
+on failure run `./install.sh --only pi-bolt,pi`. No stock `pi` is run by the installer,
+and no Node/npm bootstrap is needed for this native path. Stock Pi installed by
+you remains supported and shares the package store; it is never replaced by Kit.
+
+For manual package management in an already installed stock Pi with package
+manifests and extension commands (its own Node prerequisites still apply), from
 this checkout:
 
 ```sh
@@ -564,10 +572,12 @@ package leaves repository documents and commits intact.
 
 ### Pi-Bolt runtime
 
-`./install.sh` also installs [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt), Pi
+`./install.sh` installs [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt), Pi
 compiled to one native executable, as `pi-bolt` in the Kit binary directory. It runs
 the same commands and reads the same `~/.pi/agent` configuration and installed Pi
-packages, so the Kit package above serves it without a second install. See
+packages. The `pi-bolt` item runs before the `pi` package item, which uses only
+that destination Pi-Bolt for install/update. A stock Pi also sees this package
+without a second install. See
 [Pi-Bolt installation](installation.md#pi-bolt-native-executable).
 
 ### Nous Portal through the local proxy

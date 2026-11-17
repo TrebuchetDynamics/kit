@@ -29,7 +29,7 @@ host package/plugin cache. No project/developer checkout is discovered or adopte
 Keep source after installation because native installs can link to it.
 
 Before execution, the workflow explains the [full-suite effects](#full-suite-from-a-checkout):
-all available components by default, possible Pi/Pi-Bolt bootstrap and active supported
+all available components by default, possible Pi-Bolt bootstrap and active supported
 integration restarts. It delegates native prompts, availability/skips, verbose output
 and nonzero partial-failure behavior rather than implementing host update logic.
 For example, `/update-kit --only pi,tx` narrows outer components. A restriction that
@@ -87,8 +87,8 @@ All Kit skills apply its shared method within their existing authority; no
 separate Ponytail plugin, hooks or persistent modes are installed. Existing external
 Ponytail installs are not changed or removed. `--full` (`--all`) is the default; `--skip` excludes components. Host CLIs
 for Hermes, Claude Code and Codex must already be installed: full mode reports missing hosts as skipped, while
-`--only` reports a requested missing host as failed. Pi is the exception: selecting it
-bootstraps a missing harness from pi.dev before installing Kit. Hermes is optional. A simple
+`--only` reports a requested missing host as failed. Pi-Bolt is installed first;
+the `pi` item requires that destination executable to install Kit. Hermes is optional. A simple
 shell launcher whose target is missing or not executable also counts as unavailable;
 full mode skips it without running Hermes setup. Fresh portable installs use Claude marketplace `kit` and Codex marketplace
 `kit-marketplace`; the plugin name remains `kit`. During an actual install, the
@@ -121,8 +121,8 @@ The owner's accepted tx rules (2026-11-16) for this suite installer are:
   and so on without overwriting earlier completion backups. Identical files,
   symlinks (including dangling symlinks) and other non-regular targets are kept.
   The tx detail line reports each shell completion as `written`, `replaced` or `kept`.
-- Existing tmux configuration and helpers are kept, including dangling symlinks;
-  only missing files are installed.
+- Existing tmux configuration and helpers (`git-status.sh`, `short-path.sh`,
+  `copy.sh`) are kept, including dangling symlinks; only missing files are installed.
 
 Existing `tx.bak*` files in the bin directory are not removed automatically.
 After checking that you no longer need them for recovery, use this manual cleanup
@@ -168,7 +168,7 @@ Hermes item instead of being ignored. Host security and dependency prompts still
 apply; full mode does not supply consent flags.
 
 Every install and every `update` refresh an already registered Pi package with
-`pi update`; a registration whose directory is missing is installed instead. A
+`pi-bolt update`; a registration whose directory is missing is installed instead. A
 complete-looking skill folder set is not proof of current content, so a kept package
 is never an option: an edited or removed skill in the installed checkout reaches Pi
 on the next run, and a skill folder a release added (for example `orbi`) appears with
@@ -180,50 +180,45 @@ incomplete by the post-refresh check. Empty package filters are still reconciled
 skills and commands remain enabled. `./install.sh --only pi` does the same for one
 component.
 
-After Pi reports success, Kit reads the package registration again and checks for
+After Pi-Bolt reports success, Kit reads the package registration again and checks for
 every shipped skill folder. Missing registration or skills makes installation fail
-before package filters are changed. For example, `PI_OFFLINE=1` can make Pi skip
+before package filters are changed. For example, `PI_OFFLINE=1` can make Pi-Bolt skip
 updates with exit code zero; Kit reports the incomplete result and the retry action.
 
-### Pi harness bootstrap
+<a id="pi-harness-bootstrap"></a>
 
-`./install.sh --no-pull --only pi` reuses a working Pi or installs a missing harness
-through the [official pi.dev installer](https://pi.dev/install.sh), then installs
-and enables Kit in the same invocation. Full mode and the menu also select Pi when
-its harness is missing; `--skip pi` leaves it untouched. This does not install or
-replace Pi-Bolt.
+### Kit Pi package through Pi-Bolt
 
-Pi on `PATH` takes precedence. Otherwise the installer checks the managed
-`${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/bin/pi` launcher, the agent directory beside
-`PI_MANAGED_INSTALL_ROOT` when set, and user-local `~/.local/bin`, `~/bin`, `~/.bin`
-and `~/local/bin`. It verifies `--version` and reuses that absolute executable for
-package list/install/update, without requiring a shell restart or parent PATH change.
-A broken existing executable fails with a repair instruction, not a forced replacement.
+Pi-Bolt is the only Pi harness Kit installs. `./install.sh --only pi-bolt,pi`
+bootstraps or refreshes Pi-Bolt first, then installs and enables Kit through it.
+The `pi` key remains the package component for menu, `--only` and `--skip`
+compatibility. `./install.sh --only pi` requires an already usable destination
+`pi-bolt`; it does not install a harness itself. `--full --skip hermes,pi` continues
+to refresh other components without installing or updating the Pi package.
 
-Bootstrap needs `curl`, `sh`, network access and upstream-supported Linux/macOS.
-Kit downloads the script privately with HTTP failure checking before executing it
-unmodified with `sh`. It explicitly keeps upstream managed installation enabled;
-there is no global npm fallback or invented unattended flag. Upstream requires
-Node.js **22.19.0 or newer** and npm. Its native prerequisite prompts/refusal remain
-in force: Kit never supplies consent, invokes sudo itself or provisions Node itself.
-Without a usable terminal, install the prerequisites yourself and retry.
+Only the absolute `pi-bolt` in the Kit binary directory (`~/.local/bin`, or
+`AUTOWORK_BIN_DIR`) is verified with `--version` and used for `list`,
+`install git:github.com/TrebuchetDynamics/kit` or
+`update git:github.com/TrebuchetDynamics/kit`. No `pi` or alternate `pi-bolt` on PATH
+is used. A missing, non-executable, broken or unverifiable destination fails with
+`./install.sh --only pi-bolt,pi` as the repair command, without any package download.
+The package and native executable items share Pi-Bolt's supported platforms.
 
-Output is captured and streamed using the normal verbosity rules. Download, bootstrap
-and package commands each have a ten-minute outer limit (the download also has curl's
-five-minute limit). A timeout stops the command and its descendants, reports failure
-and leaves completed upstream changes in place; prerequisite prompts remain interactive
-within that limit. Captured stdout suppresses upstream's terminal-only offer to start an agent. Upstream may offer a
-shell-profile PATH edit via the terminal; it is optional, not forced by Kit.
-Kit starts no agent/model/service and changes no credentials. The suite's existing
-active-integration restart phase still applies. Preview/list/menu cancellation run
-no Pi host command or download and write nothing, including no preview receipt.
+An existing stock Pi is never executed, removed or updated by Kit. It shares
+`~/.pi/agent`, so it sees the refreshed Kit package too. The existing package settings
+step clears only empty Kit filters after successful package verification, preserving
+nonempty filters and unrelated settings. No sessions or credentials are changed.
 
-Download, bootstrap, executable verification or package failures report the cause
-and return nonzero; independent selected components continue. Upstream partial
-changes are not rolled back. Repair the reported cause and retry
-`./install.sh --no-pull --only pi`. Offline tests use isolated homes and fake official
-installer responses; they are not evidence of a real download/install, model run or
-live rollout.
+Package commands have a ten-minute limit; destination version checks have a
+30-second limit. A command timeout stops its descendants and reports failure.
+Package failures report the cause and return nonzero; independent selected components
+continue. Repair the cause and retry `./install.sh --only pi`. Completed upstream
+changes are not rolled back. Preview/list/menu cancellation execute no Pi command
+or download and write no receipt. The suite's active-integration restart phase is
+unchanged; no agent/model is started by the package step.
+
+Offline tests exercise isolated homes and fake upstream/package responses, not a
+real upstream installation, package refresh, model run or live skill discovery.
 
 ### Pi-Bolt native executable
 

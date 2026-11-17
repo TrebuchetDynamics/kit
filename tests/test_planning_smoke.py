@@ -54,6 +54,13 @@ sys.exit(1 if case == 'exit' else 0)
 
 
 class PlanningSmokeTests(unittest.TestCase):
+    def test_help_shows_pi_bolt_as_default(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as error:
+            main(['--help'])
+        self.assertEqual(error.exception.code, 0)
+        self.assertIn('default: pi-bolt', output.getvalue())
+
     def test_fake_runs_preserve_profiles_and_refuse_false_success(self):
         for case, failure in (('pass', None), ('empty', 'no completed assistant response'),
                               ('mutation', 'fixture files changed'), ('attempt', 'attempted a write/edit'),

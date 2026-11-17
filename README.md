@@ -54,16 +54,17 @@ Pi-Bolt is a native build of Pi. It runs the same commands and reads the same
 
 ### Pi
 
-With Pi already installed:
+For an existing stock Pi installed by you (Kit does not install stock Pi):
 
 ```sh
 pi install git:github.com/TrebuchetDynamics/kit
 ```
 
-From a Kit checkout, `./install.sh --only pi` also installs a missing Pi harness
-through the official pi.dev installer, then installs and enables Kit. Upstream
-requires Node.js 22.19.0 or newer and npm; its prerequisite prompts/refusal remain
-in force. See [Pi bootstrap and recovery](docs/installation.md#pi-harness-bootstrap).
+Pi-Bolt is the only Pi harness Kit installs. From a Kit checkout, run
+`./install.sh --only pi-bolt,pi`: it installs or refreshes Pi-Bolt first, then installs
+and enables the Kit package through that destination executable. `--only pi`
+requires a usable Pi-Bolt in the Kit binary directory; it never runs stock Pi or
+falls back to a CLI on PATH. See [package installation and recovery](docs/installation.md#pi-harness-bootstrap).
 
 ### Claude Code
 
@@ -120,7 +121,7 @@ Restart your host session to discover the installed skills. See the
 
 ## First use in your project
 
-Start the host you installed (`pi`, `claude`, `codex` or `hermes`). Ask for the
+Start the host you installed (`pi-bolt`, `claude`, `codex` or `hermes`). Ask for the
 read-only Orbi action reference first. No repository or deployment is needed:
 
 | Host | Read-only help |
@@ -254,8 +255,8 @@ delivery. Keep credentials out of Git and preserve workers and recovery state.
 From a checkout, `install.sh` installs every available component with verbose output:
 the Pi package, the Pi-Bolt native Pi executable, the Orbi CLI, the `tx` tmux
 launcher, and the Hermes, Claude Code and Codex plugins with their complete skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
-item runs that host's own install command. Pi is the exception: a missing harness
-is bootstrapped from pi.dev before installing the package. `tx` keeps an existing `~/.tmux.conf`.
+item runs that host's own install command. Pi-Bolt is installed first and its
+verified destination executable installs the Kit Pi package. `tx` keeps an existing `~/.tmux.conf`.
 
 ```sh
 git clone https://github.com/TrebuchetDynamics/kit && cd kit
@@ -289,7 +290,7 @@ Kit binary directory. Every install and `./install.sh update` refresh it with th
 upstream installer rather than keeping an existing build. The upstream run is
 non-interactive and installs no optional extensions. See [Pi-Bolt installation](docs/installation.md#pi-bolt-native-executable).
 
-Every install refreshes the installed Pi package with `pi update`, and so does
+Every install refreshes the installed Pi package with `pi-bolt update`, and so does
 `./install.sh update`: a complete-looking skill folder set is not proof of current
 content, so a kept package is never an option. Settings reconciliation still runs,
 as does the service-restart phase.
@@ -407,13 +408,14 @@ acceptable.
 Codex: `$kit:update-kit`; Hermes also accepts `/update_kit`). It keeps the complete
 upstream `main` checkout at `${XDG_DATA_HOME:-$HOME/.local/share}/kit/source` and
 reruns its installer, even at the same revision. Default scope may bootstrap
-Pi/Pi-Bolt and restart active supported integrations. Restricted Hermes cascades
+Pi-Bolt (never stock Pi) and restart active supported integrations. Restricted Hermes cascades
 and no-restarts requests are refused before mutation; `--no-reload` does not prevent
 final restarts. See [Update Kit safety, preview and recovery](docs/installation.md#update-kit).
 Reload the current agent session afterward; installation is not live qualification.
 
-**Pi:** update the package with
-`pi update git:github.com/TrebuchetDynamics/kit`.
+**Pi-Bolt:** update the package with
+`pi-bolt update git:github.com/TrebuchetDynamics/kit`. An independently installed
+stock Pi can use `pi update git:github.com/TrebuchetDynamics/kit` on the shared store.
 
 **Claude Code and Codex:** update the marketplace and plugin through their CLI. See
 [cross-host updates](docs/cross-host.md) for the exact commands.

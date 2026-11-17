@@ -5,7 +5,7 @@
     install.sh --menu         a checkbox menu on a terminal (arrows, Space, Enter)
     install.sh --full          the full suite for available hosts, no menu (--all also works)
     install.sh update          the same refresh as the default (same items as --full)
-    install.sh --only tx,pi    just these; --skip hermes leaves those out
+    install.sh --only pi-bolt,pi,tx  just these; --skip hermes leaves those out
     install.sh --list          the items and whether each host is available
     install.sh --dry-run ...   print each command instead of running it
     install.sh --no-pull       install this checkout as it is
@@ -17,8 +17,8 @@ checkout with local changes, no upstream or a detached HEAD is installed as it i
 and says so.
 
 Each host item runs its own supported install command; a host whose CLI is not
-installed is skipped and says so, and fails when named with --only, except Pi,
-which bootstraps its missing harness through pi.dev. Every selected component is
+installed is skipped and says so, and fails when named with --only. Pi-Bolt is
+the only Pi harness Kit installs; its destination executable manages the Kit package. Every selected component is
 refreshed on both `install` and `update`: the Pi package and Pi-Bolt are updated
 even when a previous copy looks current, because a kept copy silently goes stale.
 Orbi installs the CLI only via uv; existing CLIs and deployments are kept so a
@@ -48,7 +48,6 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = 'TrebuchetDynamics/kit'
 PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
-PI_INSTALLER = 'https://pi.dev/install.sh'
 ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
                '1a8b2f9603f6258cb105293f238a8d3f775f3393')
 HOME = Path(os.environ.get('HOME', str(Path.home())))
@@ -326,9 +325,7 @@ def enable_pi_package(source=PI_SOURCE, settings=None):
 
 def pi_package(source=PI_SOURCE, binary=None):
     """The directory Pi installed this package source in, or None."""
-    binary = binary or pi_executable()
-    if not binary:
-        return None
+    binary = binary or BIN.absolute() / 'pi-bolt'
     try:
         lines = subprocess.run([str(binary), 'list'], stdin=subprocess.DEVNULL,
                                capture_output=True, text=True, timeout=60).stdout.splitlines()
@@ -361,7 +358,12 @@ def set_aside(path, *, backup_dir=None):
         backup, n = path.with_name(path.name + '.bak'), 1
         while backup.exists() or backup.is_symlink():
             backup, n = path.with_name(f'{path.name}.bak.{n}'), n + 1
-    os.replace(path, backup)
+    if backup_dir is not None:
+        # AUTOWORK_BIN_DIR may be on another filesystem. shutil.move copies
+        # files or recreates symlinks before unlinking the original on EXDEV.
+        shutil.move(path, backup)
+    else:
+        os.replace(path, backup)
     for _, old in previous[:-4]:
         old.unlink()
     return backup
@@ -419,13 +421,18 @@ def install_tx():
     for src, dest in ((ROOT / 'tmux/tmux.conf', HOME / '.tmux.conf'),
                       (ROOT / 'tmux/style.tmux', HOME / '.tmux/style.tmux'),
                       (ROOT / 'tmux/git-status.sh', HOME / '.tmux/git-status.sh'),
-                      (ROOT / 'tmux/short-path.sh', HOME / '.tmux/short-path.sh')):
+                      (ROOT / 'tmux/short-path.sh', HOME / '.tmux/short-path.sh'),
+                      (ROOT / 'tmux/copy.sh', HOME / '.tmux/copy.sh')):
         if dest.exists() or dest.is_symlink():
             kept.append(dest.name)
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         text = src.read_text()
-        if dest.name == '.tmux.conf':  # point the status bar at the installed helpers
+        if dest.name == '.tmux.conf':  # point at the installed helpers
+            # copy-command is a shell command inside a tmux double-quoted string.
+            copy_command = shlex.quote(str(HOME / '.tmux/copy.sh'))
+            copy_command = re.sub(r'([\\"$])', r'\\\1', copy_command)
+            text = text.replace('~/.tmux/copy.sh', copy_command)
             text = text.replace('~/.tmux/', f'{HOME}/.tmux/')
         dest.write_text(text)
         if dest.suffix == '.sh':
@@ -864,7 +871,7 @@ def skill_folders(folder):
 def missing_package_skills(package):
     """Skill folders this checkout ships that the installed package checkout lacks.
 
-    Every install runs `pi update`, so this is the post-refresh proof: a package that
+    Every install runs `pi-bolt update`, so this is the post-refresh proof: a package that
     still lacks a shipped folder has not reached Pi, and the skill has no
     `/skill:<name>` and no command. It stays the only local freshness signal, so an
     unreadable package directory is never treated as stale.
@@ -875,97 +882,23 @@ def missing_package_skills(package):
     return sorted(shipped - present)
 
 
-def pi_executable():
-    """Locate without executing: PATH wins, then official managed/user-local paths.
-
-    Keep a broken known installation visible so bootstrap cannot replace it.
-    Do not resolve symlinks: the managed launcher owns its release/Node selection.
-    """
-    agent = pi_settings_path().parent
-    managed = os.environ.get('PI_MANAGED_INSTALL_ROOT')
-    candidates = [shutil.which('pi')]
-    if managed:
-        candidates.append(Path(managed).parent / 'bin/pi')
-    candidates += [agent / 'bin/pi', HOME / '.local/bin/pi', HOME / 'bin/pi',
-                   HOME / '.bin/pi', HOME / 'local/bin/pi']
-    for candidate in candidates:
-        if candidate and os.path.lexists(candidate):
-            return Path(candidate).absolute()
-    return None
-
-
-def pi_version(binary):
-    """Bounded non-agent probe of the exact executable we will reuse."""
-    try:
-        result = subprocess.run([str(binary), '--version'], stdin=subprocess.DEVNULL,
-                                capture_output=True, text=True, errors='replace', timeout=30)
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise OSError(f'{binary}: Pi executable probe failed: {exc}; repair this installation '
-                      'and retry ./install.sh --only pi') from exc
-    text = (result.stdout + result.stderr).strip()
-    if result.returncode or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+[^\n]*', result.stdout.strip()):
-        raise OSError(f'{binary}: Pi executable probe failed (exit {result.returncode}): '
-                      f'{failure_summary(text)}; repair Pi/Node/npm and retry ./install.sh --only pi')
-    return result.stdout.strip()
-
-
-def install_pi_harness(output):
-    """Bootstrap only an absent Pi. Upstream owns prerequisite prompts and placement."""
-    binary = pi_executable()
-    if binary:
-        version = pi_version(binary)
-        if output.verbosity:
-            output.line(f'  {binary}: {version} (existing Pi kept)')
-        return binary
-    for command in ('curl', 'sh'):
-        if not shutil.which(command):
-            raise OSError(f'Pi bootstrap requires {command}; install it and retry ./install.sh --only pi')
-    with tempfile.TemporaryDirectory(prefix='kit-pi-') as directory:
-        installer = Path(directory) / 'install.sh'
-        installer.touch(mode=0o600)
-        commands = [
-            ('Pi installer download failed',
-             ['curl', '--disable', '--proto', '=https', '--proto-redir', '=https',
-              '--tlsv1.2', '--location', '--max-redirs', '5', '--connect-timeout', '15',
-              '--max-time', '300', '--max-filesize', '1048576', '--fail', '--silent',
-              '--show-error', '--output', str(installer), PI_INSTALLER]),
-            ('Pi upstream bootstrap failed', ['sh', str(installer)]),
-        ]
-        for stage, argv in commands:
-            if output.verbosity > 1:
-                output.line('  $ ' + shlex.join(argv), 'command')
-            # Captured stdout makes upstream's [ -t 1 ] startup guard false.
-            # Inherit stdin and /dev/tty prompts; never supply prerequisite consent.
-            code, text = run_command(argv, output, extra_env={'PI_LEGACY_INSTALL': '0'}, timeout=600)
-            if code:
-                raise OSError(f'{stage} (exit {code}): {failure_summary(text)}; '
-                              'resolve the reported cause (Node >=22.19.0/npm if requested), '
-                              'then retry ./install.sh --only pi; completed upstream changes remain')
-            if not 0 < installer.stat().st_size <= 1048576:
-                raise OSError('Pi installer download is empty or exceeds its size limit; '
-                              'check https://pi.dev and retry ./install.sh --only pi')
-    binary = pi_executable()
-    if not binary:
-        raise OSError('Pi bootstrap completed without a discoverable executable; inspect upstream output '
-                      'and the Pi agent bin directory, repair the installation or PATH, '
-                      'then retry ./install.sh --only pi')
-    version = pi_version(binary)
-    if output.verbosity:
-        output.line(f'  {binary}: {version}')
-    return binary
-
-
 def install_pi_package(output=None, mode='install'):
     """Refresh the package on every install and update; a kept copy goes stale.
 
     Keeping a package whose skill folders merely exist leaves edited and removed
     skills live forever, so `install` no longer short-circuits to `kept`: it runs the
-    same `pi update` as `update` and proves the result afterwards. The reason line
+    same `pi-bolt update` as `update` and proves the result afterwards. The reason line
     still names what made a copy out of date. A refresh that cannot reach the source
     fails this item with its cause instead of claiming a complete install.
     """
     output = output or Output()
-    binary = install_pi_harness(output)
+    destination = BIN.absolute()
+    binary = destination / 'pi-bolt'
+    try:
+        pi_bolt_version(destination)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise OSError(f'{binary}: usable destination Pi-Bolt required: {exc}; '
+                      'run ./install.sh --only pi-bolt,pi') from exc
     package = pi_package(binary=binary)
     action = 'update' if package else 'install'
     reason = ''
@@ -991,23 +924,26 @@ def install_pi_package(output=None, mode='install'):
     if not package or missing:
         detail = f'skills still missing: {", ".join(missing)}' if package else 'package is not registered at an existing directory'
         raise OSError(f'Pi package {action} did not complete: {detail}; '
-                      'check Pi output and PI_OFFLINE (offline mode skips package updates), '
+                      'check Pi-Bolt output and PI_OFFLINE (offline mode skips package updates), '
                       'then retry ./install.sh --only pi')
     return f'{binary}: {action} {PI_SOURCE}'
 
 
 def items(hermes_args, output=None, mode='install'):
-    pi = Item('pi', 'Pi package + bundled Ponytail',
-              note='reuses existing Pi or bootstraps from pi.dev; Node >=22.19.0 and npm required',
-              steps=[Step(f'reuse and verify an absolute Pi executable, or download {PI_INSTALLER} '
-                          'with HTTP failure checking and run the captured sh installer (native prerequisite prompts); '
-                          f'pi install {PI_SOURCE} when absent, otherwise always pi update {PI_SOURCE} '
+    bolt = pi_bolt_item(output)
+    binary = BIN.absolute() / 'pi-bolt'
+    pi = Item('pi', 'Kit package for Pi (through Pi-Bolt) + bundled Ponytail',
+              note='requires usable Pi-Bolt in the Kit binary directory; never runs stock Pi',
+              missing=bolt.missing,
+              steps=[Step(f'verify {binary} --version; if unusable run ./install.sh --only pi-bolt,pi; '
+                          f'{binary} install {PI_SOURCE} when absent, otherwise always '
+                          f'{binary} update {PI_SOURCE} '
                           'so a shipped, edited or removed skill reaches Pi; no kept copy',
                           run=lambda: install_pi_package(output, mode)),
                      Step('enable the package skills and commands in Pi settings', run=enable_pi_package)])
     return [
+        bolt,
         pi,
-        pi_bolt_item(output),
         Item('tx', 'tx tmux session launcher', note='keeps your existing ~/.tmux.conf',
              steps=[Step(f'install {BIN}/tx and completions', run=install_tx)]),
         hermes_item(hermes_args),
@@ -1263,7 +1199,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--all', '--full', action='store_true', help='install the full suite for every available host (default)')
-    selection.add_argument('--only', help='comma-separated items to install (pi,pi-bolt,tx,hermes,claude,codex,orbi)')
+    selection.add_argument('--only', help='comma-separated items to install (pi-bolt,pi,tx,hermes,claude,codex,orbi)')
     parser.add_argument('--skip', help='comma-separated items to leave out')
     parser.add_argument('--list', action='store_true', help='show the items and whether each is available')
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')
