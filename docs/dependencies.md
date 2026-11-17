@@ -13,6 +13,12 @@ Sources: [plugin manifest](../plugin.yaml), [installation inventory](../plugins/
 
 ## Current source policy
 
+Pi-Bolt is the only Pi harness Kit installs; stock Pi is never installed or executed.
+The `pi` item installs/refreshes Kit through the verified destination `pi-bolt`
+(`./install.sh --only pi-bolt,pi` installs both in order). No Node/npm bootstrap
+is needed by this native installer path. Existing stock Pi remains untouched and
+shares the package store.
+
 The suite's `pi-bolt` item bootstraps the upstream native Pi build, not a Kit
 package. Default/`--all` and `update` include it; `--only pi-bolt` selects it and
 `--skip pi-bolt` leaves it untouched. It runs non-interactively, installs no
