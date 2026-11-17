@@ -3,6 +3,7 @@
 See docs/skill-standard.md. These are the mechanical rules; judgement rules (one
 home, disclosure, positive wording) stay with review.
 """
+import importlib.util
 import re
 from pathlib import Path
 import unittest
@@ -13,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BANNED_OPENERS = ('use when', 'use to', 'use for', 'use if', 'use after', 'use before')
 # Hermes installs Graphify's own skill into profiles, so Autowork ships the adapter only.
 ADAPTER_ONLY = {'graphify'}
-PILOT = ('orbi', 'update-kit', 'plan-for-me', 'ponytail-review',
+PILOT = ('orbi', 'update-kit', 'unslop', 'plan-for-me', 'ponytail-review',
          'git-commit-push', 'push', 'unblock', 'docs-sync', 'plan-with-me')
 
 
@@ -83,24 +84,18 @@ class SkillStandardTests(unittest.TestCase):
                 self.assertEqual(description.count('.'), 1, description)
 
     def test_relative_links_resolve_from_each_skill_file(self):
-        """A moved file must fail here, not as a dead end in the middle of a workflow."""
-        link = re.compile(r'\]\(([^)\s]+)\)')
-        files = (self.skills('adapters/skills') + self.skills('skills')
-                 + [ROOT / 'adapters/skills/COMMON.md']
-                 + sorted((ROOT / 'skills/docs-sync/references').glob('*.md')))
-        for path in files:
-            fenced = False
-            for number, line in enumerate(path.read_text().splitlines(), 1):
-                if line.lstrip().startswith(('```', '~~~')):
-                    fenced = not fenced
-                if fenced:
-                    continue
-                for target in link.findall(re.sub(r'`[^`]*`', '', line)):
-                    target = target.split('#', 1)[0]
-                    if not target or re.match(r'[a-z][a-z0-9+.-]*:', target) or target.startswith('<'):
-                        continue
-                    with self.subTest(file=str(path.relative_to(ROOT)), line=number, link=target):
-                        self.assertTrue((path.parent / target).exists(), f'{target} does not resolve')
+        """Check section targets too: a migration guide is not the retired CLI policy."""
+        spec = importlib.util.spec_from_file_location('docs_check', ROOT / 'skills/docs-sync/scripts/docs.py')
+        docs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(docs)
+        repo = docs.Repo(ROOT)
+        files = self.skills('skills') + self.skills('adapters/skills') + [ROOT / 'adapters/skills/COMMON.md']
+        for pattern in ('shared/*.md', '*/references/*.md', 'engineering/local/*/PROTOCOL.md'):
+            files.extend((ROOT / 'skills').glob(pattern))
+        for source in files:
+            path = source.relative_to(ROOT)
+            with self.subTest(file=str(path)):
+                self.assertEqual(docs.check_document(repo, 'skill', path), [])
 
     def test_lgtm_inherits_planning_authority_without_a_second_approval_round(self):
         skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())

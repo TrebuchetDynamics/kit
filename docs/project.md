@@ -17,6 +17,7 @@ Status: Accepted
 - Plan For Me investigates, chooses supported approaches and records executable
   GitHub Issues. An explicit objective keeps planning focused; a bare or vague request
   starts evidence-based discovery without inventing product direction.
+- Unslop audits a user-facing flow and publishes accepted UI changes as GitHub Issues for Orbi; it does not implement the redesign.
 - Docs Sync maintains source-backed documents and GitHub issue handoffs.
 - Planning stops after publication. Retained authorized fix/apply and recovery modes
   preserve their own scope, ownership, checks, independent review and PR gates.

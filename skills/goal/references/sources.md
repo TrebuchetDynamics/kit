@@ -39,8 +39,7 @@ deliberately leaves to the host.
   goal loop keeps its own judge where it exists.
 - No project-level `GOAL.md` or instruction file. Codex and Hermes keep goal state
   in the thread or session, not in project instructions.
-- No automatic Kanban or task creation. Durable repository work stays in `tasks/`
-  through the planning and execution skills.
+- No automatic Kanban or issue creation. GitHub Issues own executable work; they are not a store for thread-local goal state.
 - No exact token metering. A token budget is a user-declared soft limit because a
   skill cannot observe reliable per-turn usage on every host.
 

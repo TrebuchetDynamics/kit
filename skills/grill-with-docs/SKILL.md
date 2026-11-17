@@ -6,8 +6,6 @@ license: MIT
 
 # Grill With Docs
 
-For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
-
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
@@ -22,7 +20,8 @@ own documentation owners.
 
 1. Run [Grilling](../grilling/SKILL.md) on the plan or design. Do not write documents
    during the rounds; the decisions are not settled yet.
-2. After the owner confirms the shared understanding, record each durable decision:
+2. After the owner confirms the shared understanding, record each durable decision. For an explicitly read-only interview, show the proposed records inline and stop without writing:
+
    - a decision with alternatives, a chosen option and a reason becomes an ADR in the
      repository's ADR folder, following its existing numbering and template;
    - a named domain concept or a resolved ambiguity becomes one glossary entry with the
@@ -45,5 +44,5 @@ validation run; anything intentionally unrecorded and why.
 - Not implementation; publish accepted work through the planners for Orbi.
 - Not a record for every passing thought: ephemeral and self-evident reasons are named and skipped.
 
-**Done when:** settled decisions are recorded in the repository's ADR or glossary owners, Docs Sync validation passed, and skipped records are named.
+**Done when:** settled decisions are recorded and validated, or shown inline for a read-only request. Name skipped records and any validation still pending.
 [Source and hashes](UPSTREAM.json) · [MIT license](upstream/LICENSE).

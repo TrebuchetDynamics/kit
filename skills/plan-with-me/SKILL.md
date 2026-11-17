@@ -169,4 +169,4 @@ plan is not execution.
 - Not implementation; Orbi delivers published issues through PR and review gates.
 - Challenge mode loads `/grill-me`; the interview engine is `/grilling`.
 
-**Done when:** open questions are answered, and the plan and its tasks are saved and validated.
+**Done when:** the requested interview round ends at the next owner question, or settled work has a verified issue handoff. For a read-only request, return the question or plan inline. Identify any failed handoff as UNSAVED.

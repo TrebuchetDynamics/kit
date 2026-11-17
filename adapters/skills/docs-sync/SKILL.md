@@ -20,7 +20,6 @@ next action rather than claiming remote publication or execution.
 
 ## Boundaries
 
-Use `/plan-for-me` or `/plan-with-me` for planning and GitHub issue/PR evidence or existing read-only Orbi status for status.
 This adapter adds no execution or publication authority beyond its loaded workflow.
 
 **Done when:** the loaded workflow's completion condition is met and only observed

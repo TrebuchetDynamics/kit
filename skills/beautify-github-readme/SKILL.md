@@ -7,8 +7,6 @@ license: MIT
 
 # Beautify GitHub README
 
-For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
-
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
@@ -149,4 +147,4 @@ run and any claim you could not verify.
 - Not product UI design; use `/impeccable`.
 - Not application UI review; use `/ui-taste`.
 
-**Done when:** README assets and layout are updated, checked in light and dark rendering, and reported with anything unverified.
+**Done when:** an audit reports findings without edits, or the requested README changes are complete and the report distinguishes verified light and dark rendering from checks not run.

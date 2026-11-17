@@ -69,7 +69,7 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
         public = "plan-with-me"
         mode = "Selected mode: challenge\n\n"
     planning = namespace == "kit" and (
-        public in {"plan-for-me", "plan-with-me"}
+        public in {"plan-for-me", "plan-with-me", "unslop"}
         or (name == "autoresearch" and (
             raw_args.startswith("Selected subcommand: plan\n")
             or (raw_args.split()[:1] == ["plan"])))
@@ -95,7 +95,7 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
         "Resolve supporting files relative to that skill's directory.\n\n"
         f"{boundary}{mode}{route}User arguments:\n{raw_args}"
     )
-    if namespace == "kit" and name in {"autoresearch", "plan-for-me"}:
+    if namespace == "kit" and name in {"autoresearch", "plan-for-me", "unslop"}:
         prompt = (
             "GitHub Issues are the executable backlog. By default, publish actionable "
             "research/planning findings through the shared Plan Handoff contract; "

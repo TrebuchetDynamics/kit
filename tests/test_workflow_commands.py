@@ -125,14 +125,17 @@ class WorkflowCommands(unittest.TestCase):
         self.plugin.SKILLS_DIR = fixture.ROOT / 'skills'
         self.plugin.register(self.ctx)
         protocol = (fixture.ROOT / 'skills/shared/RESEARCH-PLAN.md').read_text()
-        for command, skill in (('plan_for_me', 'plan-for-me'), ('plan_with_me', 'plan-with-me')):
+        for command, skill in (('plan_for_me', 'plan-for-me'), ('plan_with_me', 'plan-with-me'), ('unslop', 'unslop')):
             text = self.ctx.skills[skill].read_text() + protocol
             for required in ('GitHub Issues', 'ai-ready', 'ai-planning', 'blockedBy',
                              'do not create an automatic legacy'):
                 self.assertIn(required, text)
             for request in ('port this project to Flutter', 'fix a README typo'):
                 self.ctx.commands[command](request)
-                self.assertTrue(self.ctx.messages[-1][0].endswith(request))
+                prompt = self.ctx.messages[-1][0]
+                self.assertIn('../shared/RESEARCH-PLAN.md', prompt)
+                self.assertIn(f'skill_view(name="kit:{skill}")', prompt)
+                self.assertTrue(prompt.endswith(request))
             self.assertNotIn('autowork tasks add', text)
 
     def test_plan_for_me_reserves_both_spellings_for_existing_owners(self):

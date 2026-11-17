@@ -24,7 +24,7 @@ class PlanningCliContractTests(unittest.TestCase):
                 self.assertIn('do not create replacement work', text)
 
     def test_active_planning_routes_share_github_authority(self):
-        for path in (PLANNER, INTERACTIVE[0], 'skills/docs-sync/SKILL.md',
+        for path in (PLANNER, INTERACTIVE[0], 'skills/unslop/SKILL.md', 'skills/docs-sync/SKILL.md',
                      'skills/shared/RESEARCH-PLAN.md', HANDOFF):
             text = prose(path)
             with self.subTest(path=path):
@@ -33,7 +33,7 @@ class PlanningCliContractTests(unittest.TestCase):
                 self.assertIn('UNSAVED', text)
                 for command in ('autowork tasks add', 'autowork tasks validate', 'autowork tasks prepare'):
                     self.assertNotIn(command, text)
-        for name in ('plan-for-me', 'plan-with-me', 'docs-sync', 'unblock'):
+        for name in ('plan-for-me', 'plan-with-me', 'unslop', 'docs-sync', 'unblock'):
             text = prose(f'adapters/skills/{name}/SKILL.md')
             self.assertIn(f'../../../skills/{name}/SKILL.md', text)
             self.assertIn('../COMMON.md', text)

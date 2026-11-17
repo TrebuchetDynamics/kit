@@ -7,7 +7,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 47);
+  assert.equal(commands.size, 48);
   assert.equal(commands.has('orbi'), true);
   assert.equal(commands.has('push'), true);
   assert.equal(commands.has('unblock'), true);
@@ -47,7 +47,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   assert.deepEqual(messages[0][1], {deliverAs: 'followUp'});
   // The actual shared boundary is loaded, not just command registration/skill metadata.
   const boundary = await readFile(new URL('../skills/shared/RESEARCH-PLAN.md', import.meta.url), 'utf8');
-  for (const name of ['plan-with-me', 'plan-for-me', 'grill-me', 'autoresearch-plan']) {
+  for (const name of ['plan-with-me', 'plan-for-me', 'unslop', 'grill-me', 'autoresearch-plan']) {
     await commands.get(name).handler(raw, {isIdle: () => true});
     assert.equal(messages.at(-1)[0].includes(boundary), true, name);
     assert.equal(messages.at(-1)[0].endsWith(raw), true, name);
@@ -72,7 +72,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   for (const [name, skill] of Object.entries({
     'plan-with-me': 'plan-with-me', 'plan-for-me': 'plan-for-me', 'docs-sync': 'docs-sync',
     orbi: 'orbi', 'update-kit': 'update-kit', autoresearch: 'autoresearch',
-    impeccable: 'impeccable', 'ui-taste': 'ui-taste',
+    impeccable: 'impeccable', 'ui-taste': 'ui-taste', unslop: 'unslop',
     'beautify-github-readme': 'beautify-github-readme', 'grill-me': 'plan-with-me',
     lgtm: 'lgtm', goal: 'goal', unblock: 'unblock',
     'git-commit-push': 'git-commit-push', push: 'push',
@@ -206,7 +206,8 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     'skills/state-machine/SKILL.md', 'skills/state-machine/PROTOCOL.md',
     'skills/state-machine/references/sources-and-example.md',
     'adapters/skills/state-machine/SKILL.md', 'adapters/skills/state-machine/agents/openai.yaml',
-    'skills/shared/COMMUNICATION.md',
+    'skills/shared/COMMUNICATION.md', 'skills/unslop/SKILL.md',
+    'adapters/skills/unslop/SKILL.md', 'adapters/skills/unslop/agents/openai.yaml',
     'skills/orbi/SKILL.md', 'skills/orbi/references/lifecycle.md',
     'skills/orbi/scripts/orbi_control.py',
     'skills/update-kit/SKILL.md', 'skills/update-kit/scripts/update_kit.py',
@@ -277,7 +278,7 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
-    assert.equal(skillCount, 34);
+    assert.equal(skillCount, 35);
     // Execute the packaged CommonJS helper under Kit's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
@@ -307,7 +308,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 47);
+    assert.equal(commands.size, 48);
     assert.equal(commands.has('orbi'), true);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {

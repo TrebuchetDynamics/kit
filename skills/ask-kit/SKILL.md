@@ -6,8 +6,6 @@ license: MIT
 
 # Ask Kit
 
-For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
-
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
@@ -19,7 +17,7 @@ a step, read that skill's `SKILL.md`: a summary here is orientation only.
 ## Before you answer or act
 
 Check this map before a non-trivial response or action. A short request or a question
-can still match a skill. If one fits, name it, read its `SKILL.md` and follow it. If
+can still match a skill. If one fits, read its `SKILL.md`, name it, and explain its next step. If
 none fits, say so. This map grants no authority and does not start work the user did
 not ask for.
 
@@ -67,6 +65,7 @@ not ask for.
 | Situation | Skill |
 | --- | --- |
 | Interface design, polish or frontend audit | `/impeccable` |
+| Turn generic UI patterns into specific GitHub issues for Orbi | `/unslop` |
 | Uizze's UI playbooks | `/ui-taste` |
 | README visuals and SVG assets | `/beautify-github-readme` |
 | Responsive captures at chosen breakpoints | `/responsive-screenshots` |
