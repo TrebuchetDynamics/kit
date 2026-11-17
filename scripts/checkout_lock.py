@@ -2,7 +2,8 @@
 """One interactive writer per checkout (TOOLSET-290-12); also a standalone Claude Code hook.
 
 The first session to edit a file in a repository's canonical checkout holds it until
-every file it edited is clean (committed or reverted) or the session ends. Another
+every file it edited is clean (committed or reverted) or the session ends. A dead
+owner also lets go after the grace period, without discarding its edits. Another
 session's edit there is denied, naming the holder and its files; it works in
 `.worktrees/` through EnterWorktree meanwhile. Reads and `.worktrees/` are never locked.
 
@@ -59,10 +60,11 @@ def locked_checkout(path):
 
 
 def dirty(root, files):
-    """The ``files`` (relative to ``root``) with uncommitted changes, untracked ones included."""
+    """The ``files`` (relative to ``root``) with uncommitted changes, including ignored paths."""
     if not files:
         return []
-    out = git(root, 'status', '--porcelain', '-z', '--untracked-files=all', '--', *files)
+    out = git(root, 'status', '--porcelain', '-z', '--untracked-files=all',
+              '--ignored=traditional', '--', *files)
     entries = [e[3:] for e in out.split('\0') if len(e) > 3]
     return sorted(f for f in files if f in entries or any(e.startswith(f.rstrip('/') + '/') for e in entries))
 
@@ -92,9 +94,50 @@ def write(common, record):
     os.replace(tmp, path)
 
 
+def process(pid):
+    """Parent PID, start time and command; None only when ps confirms no such PID."""
+    result = subprocess.run(['ps', '-p', str(pid), '-o', 'ppid=', '-o', 'lstart=', '-o', 'comm='],
+                            capture_output=True, text=True, timeout=5,
+                            env={**os.environ, 'LC_ALL': 'C', 'TZ': 'UTC'})
+    if result.returncode == 1 and not result.stdout.strip() and not result.stderr.strip():
+        return None
+    fields = result.stdout.split(None, 6)
+    if result.returncode or len(fields) != 7:
+        raise ValueError('could not determine checkout owner process')
+    return int(fields[0]), ' '.join(fields[1:6]), fields[6].strip()
+
+
+def owner():
+    """Identify the session parent, skipping short-lived hook command shells."""
+    pid = os.getppid()
+    try:
+        while pid > 1:
+            info = process(pid)
+            if info is None:
+                break
+            parent, started, command = info
+            if Path(command).name.lstrip('-') not in ('sh', 'bash', 'dash', 'zsh', 'ksh', 'fish'):
+                return {'pid': pid, 'started': started}
+            pid = parent
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        pass  # Unknown liveness retains the original dirty-file protection.
+    return {}
+
+
+def dead_owner(record):
+    if not record.get('pid') or not record.get('started'):
+        return False  # Legacy records have no liveness evidence.
+    try:
+        info = process(record['pid'])
+        return info is None or info[1] != record['started']
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return False
+
+
 def passed_on(record, root, now):
-    """Whether the holder lets go: every file it edited is clean, after the grace period."""
-    return now - record.get('touched', 0) >= GRACE and not dirty(root, record.get('files') or [])
+    """After the grace period, a clean holder or a confirmed dead owner lets go."""
+    return now - record.get('touched', 0) >= GRACE and (
+        dead_owner(record) or not dirty(root, record.get('files') or []))
 
 
 def deny(reason):
@@ -137,7 +180,7 @@ def hook(payload, now=None):
         files = record['files'] if record and record['session'] == session else []
         write(common, {'session': session, 'transcript': payload.get('transcript_path') or '',
                        'files': sorted({*files, relative}), 'since': record['since'] if files else now,
-                       'touched': now})
+                       'touched': now, **owner()})
 
 
 def main(argv):
