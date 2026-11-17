@@ -1,7 +1,7 @@
 # Autoresearch plan adaptations
 
 Read this contract **before** the pinned `skills/autoresearch/upstream/plan.md`
-and supporting methods. It governs Plan For Me, Plan With Me, challenge/Grill Me
+and supporting methods. It governs Plan For Me, Plan With Me, Unslop, challenge/Grill Me
 compatibility and every Autoresearch plan route on every host. Its planning
 boundaries take precedence over generic method prompts, task-sizing shortcuts and
 execution defaults; host tool mappings still apply. These are instructions, not a

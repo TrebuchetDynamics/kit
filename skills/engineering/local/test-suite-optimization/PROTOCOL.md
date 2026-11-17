@@ -179,7 +179,7 @@ An audit changes no tests or product sources. Unless read-only, record a compact
 keep/consolidate/remove/repair/quarantine/investigate map in the existing task or plan owner,
 with exact test/fixture IDs, risk-to-oracle mapping, evidence, unknowns, budgets and
 bounded next tasks. Follow
-[ordinary authoring](../../../shared/TODO-WORKCENTER.md#ordinary-authoring)
+[Plan Handoff](../../../shared/PLAN-HANDOFF.md)
 when creating or refining records. Reuse existing audit/suite-thinning IDs and ownership. Unsupported
 candidates remain investigate findings, not executable removal tasks. Order supported
 work by payoff and risk, preferring supported case removal and then smaller fixtures

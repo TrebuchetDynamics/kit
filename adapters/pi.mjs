@@ -6,6 +6,7 @@ const protocols = JSON.parse(await readFile(new URL('../skills/autoresearch/UPST
 const workflows = {
   'plan-with-me': ['plan-with-me', 'Ask questions and plan together'],
   'plan-for-me': ['plan-for-me', 'Investigate, decide and save the plan'],
+  unslop: ['unslop', 'Turn a UI design audit into GitHub issues for Orbi'],
   'docs-sync': ['docs-sync', 'Maintain documentation and GitHub issue handoffs'],
   orbi: ['orbi', 'Prepare, start, inspect or stop one Orbi deployment'],
   'update-kit': ['update-kit', 'Refresh upstream Kit and reinstall the suite'],
@@ -55,7 +56,7 @@ export default function register(pi) {
         const target = skill;
         const file = new URL(`${target}/SKILL.md`, skillsRoot);
         const body = await readFile(file, 'utf8');
-        const planning = ['plan-for-me', 'plan-with-me'].includes(target)
+        const planning = ['plan-for-me', 'plan-with-me', 'unslop'].includes(target)
           || (target === 'autoresearch' && (protocol === 'plan' || (!protocol && first === 'plan')));
         const contract = new URL('../skills/shared/RESEARCH-PLAN.md', import.meta.url);
         const boundary = planning

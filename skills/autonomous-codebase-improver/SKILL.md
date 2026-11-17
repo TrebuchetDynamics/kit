@@ -6,8 +6,6 @@ license: MIT
 
 # Autonomous Codebase Improver
 
-For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
-
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
@@ -51,7 +49,7 @@ over conflicting upstream instructions:
    revisit point at each refresh. This exception does not override scope or limits.
    Do not manufacture edits for coverage.
 3. Choose one bounded task with acceptance and checks. For new or refined records,
-   follow [ordinary authoring](../shared/TODO-WORKCENTER.md#ordinary-authoring).
+   follow the [GitHub issue contract](../shared/PLAN-HANDOFF.md).
    Reuse accepted decisions and routine local implementation authority. Park genuinely gated work with an exact
    missing decision; continue independent authorized work rather than retrying a hold.
 4. Check [pre-slice capacity](#pre-slice-capacity) before mutation. Establish a
@@ -121,14 +119,11 @@ and the missing evidence. A timed-out check is not a pass.
 A campaign progress receipt is a report, not an engine verification receipt.
 The coordinator saves progress, coverage and deferred leads in the relevant task's
 issue notes through [the GitHub handoff](../shared/PLAN-HANDOFF.md).
-Preserve existing notes and use `--expect REV` after an earlier record read.
+Read the issue and ownership again before updating it. Append the new evidence instead of replaying an older issue body.
 Do not create a second backlog. In read-only/no-write mode, report in conversation
 only: do not change task records or write report files.
 
-Never create or edit `tasks/evidence/<ID>.toml`. Only the engine's verified close
-writes that receipt. A reviewer acceptance, passing checks or manual task close
-does not establish `coordinator_verified` closure. If the task CLI is unavailable,
-report the missing capability without hand-editing records or inventing closure.
+Use linked PRs, checks and independent review as delivery evidence. If GitHub is unavailable, report the unsaved update; leave legacy task records untouched.
 
 **Receipt contents:** task/title and selection reason; baseline → actual result; paths,
 checks and review disposition; accepted/rejected slices; ownership/run status;
@@ -148,5 +143,5 @@ checking these local rules. Offline checks validate packaging, not model behavio
 - Not an architecture report; use `/improve-codebase-architecture`.
 - Not test-suite reduction; use `/test-optimizer`.
 
-**Done when:** the chosen improvement is implemented within scope, verified with affected checks, and committed or reported with its remaining risk.
+**Done when:** the receipt accounts for accepted slices and their checks, or reports the bounded search, blocker or stop limit with remaining work. A checkpoint is not completion of the whole campaign.
 [Source and hashes](UPSTREAM.json) · [MIT license](upstream/LICENSE).

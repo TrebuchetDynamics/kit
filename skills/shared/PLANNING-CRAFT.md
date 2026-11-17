@@ -166,9 +166,7 @@ agreed to.
 
 ## Name things precisely
 
-For task text, use [ordinary authoring](TODO-WORKCENTER.md#ordinary-authoring),
-then apply [task names](TODO-WORKCENTER.md#task-names) and
-[task descriptions](TODO-WORKCENTER.md#task-descriptions) before saving.
+Use the [issue fields in Plan Handoff](PLAN-HANDOFF.md#one-planning-pass-one-handoff). Name the observable outcome in the title so a worker can distinguish it from related issues.
 
 Use the repository's existing glossary or terminology owner when there is one. When
 a term is vague or overloaded ("account": customer or user?), propose one canonical

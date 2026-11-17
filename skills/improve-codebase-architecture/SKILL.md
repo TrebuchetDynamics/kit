@@ -6,7 +6,7 @@ license: MIT
 
 # Improve Codebase Architecture
 
-For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
+For issue-backed fixes, follow [Plan Handoff](../shared/PLAN-HANDOFF.md) and preserve current ownership.
 
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 

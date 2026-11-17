@@ -306,6 +306,7 @@ states its own boundaries and what "done" means.
 
 - `/plan-with-me` — clarify intent together, then publish complete GitHub Issues.
 - `/plan-for-me` — investigate and publish complete GitHub Issues without an interview.
+- `/unslop` — audit generic UI patterns and publish scoped GitHub issues for Orbi. Try `/unslop review the checkout flow on mobile`.
 - `/grilling` — stress-test an idea in rounds, one recommendation per question.
 - `/grill-with-docs` — the same interview, recording what it settles as ADRs and
   glossary terms.

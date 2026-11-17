@@ -173,6 +173,12 @@ scope, GitHub issue authority, review gates and delivery limits. The current ups
 is `writing-for-agents`; upstream retired `writing-great-skills` without an alias.
 See [workflow and evidence requirements](workflows.md#writing-for-agents).
 
+## Unslop
+
+Use `/unslop audit the checkout flow` in Pi or Hermes, `/kit:unslop` in Claude Code,
+or `$kit:unslop` in Codex. The [same workflow](../skills/unslop/SKILL.md) publishes
+UI improvements as GitHub issues for Orbi. Add `read-only` for an inline preview.
+
 ## Responsive screenshots
 
 [Responsive Screenshots](../skills/responsive-screenshots/SKILL.md) captures pages at
@@ -548,7 +554,7 @@ Local installs refer to this checkout; keep it in place. The extension registers
 ```
 
 All 13 `/autoresearch-<protocol>` commands are available. The other commands are
-`/autoresearch`, `/impeccable`, `/ui-taste`, `/beautify-github-readme`,
+`/autoresearch`, `/impeccable`, `/ui-taste`, `/unslop`, `/beautify-github-readme`,
 `/lgtm` and `/git-commit-push` (`/git-commit-push pull` or `merge <branch>` integrates
 upstream changes). The engineering pack is a reference, not a command; no
 `/engineering` or `/skill:engineering` entry is registered. Native `/skill:<name>`
