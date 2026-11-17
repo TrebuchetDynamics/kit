@@ -531,31 +531,36 @@ and existing private `maintenance/toolset-update/` / `.toolset-imports.json` sta
 identities. A source rename does not reinstall profiles, reset private state or
 restart hosts; live adoption remains a separately authorized operation.
 
-## Pi agent harness bootstrap
+<a id="pi-agent-harness-bootstrap"></a>
 
-Status: Accepted; implemented in the suite installer with offline bootstrap coverage.
+## Pi-Bolt-only harness installation (2026-11-16)
+
+Status: Accepted. Replaces the previous Pi agent harness bootstrap requirement.
 Real installation and live rollout remain separately unqualified.
 
-A selected Pi install component must install a missing harness from pi.dev and then
-the package in the same invocation, not silently skip Pi or require a preinstalled
-CLI. Preserve existing working harnesses/packages, full/verbose defaults, menu/skips,
-other missing-host rules and all credentials/settings.
+Pi-Bolt is the only Pi harness Kit installs. The suite never downloads a stock Pi
+installer or executes a stock `pi`, and never removes or updates an existing stock
+Pi installation. Pi-Bolt's upstream installer, version policy and optional-extension
+policy (off) remain unchanged.
 
-Prefer the official managed installer: download first with HTTP failure checking,
-run through captured output, verify and reuse its absolute executable. Resolve
-managed/user-local paths without assuming child PATH changes reach the parent.
-Respect native Node/npm prerequisite prompts/refusal; no automatic sudo, invented
-unattended flag, forced shell-profile edits or global npm fallback. Captured startup
-must not open an agent or call a model. Reimplementing Node provisioning or migrating
-a working harness is outside scope.
+Keep both component keys: `pi-bolt` bootstraps or refreshes the native executable
+first; `pi` installs or refreshes `git:github.com/TrebuchetDynamics/kit` through that
+verified destination `pi-bolt` only, never a CLI found on PATH. Both items have
+Pi-Bolt's supported-platform availability. An absent or unusable destination fails
+the package item with `./install.sh --only pi-bolt,pi` as repair; the package item
+does not bootstrap a harness itself. `--skip hermes,pi` remains valid for nested
+Hermes refreshes and leaves package installation/refresh untouched.
 
-Offline proof uses fake downloads/bootstrap/harnesses in isolated HOME/PATH: missing/
-existing/off-PATH harness, extension idempotence, download/bootstrap/probe failure,
-prerequisite refusal, skip/menu behavior and zero-write/no-download preview. Require
-no agent/service startup and normal source gates. The suite's existing active-integration
-restart phase remains unchanged. See [the supported path and recovery](installation.md#pi-harness-bootstrap).
-Offline fixtures verify the installer boundary, not a real upstream installation,
-model workflow or live install/plugin rollout.
+Every package install/update verifies registration and shipped skills before the
+existing package-filter reconciliation. Stock Pi shares `~/.pi/agent` and sees
+the same refreshed package; manual stock Pi package installation remains supported,
+not installation of stock Pi by Kit. Preserve credentials, sessions, unrelated
+settings, menu/skips, preview purity and other missing-host/restart rules.
+
+Offline fixtures exercise the setup entry point, install/update ordering,
+destination-only execution, missing/broken prerequisite failures, post-refresh
+proof and settings repair. They do not qualify real upstream installation,
+model workflows or live skill discovery. See [installation and recovery](installation.md#kit-pi-package-through-pi-bolt).
 
 ## Per-repository Pi models and accounts
 
