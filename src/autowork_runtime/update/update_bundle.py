@@ -677,9 +677,9 @@ def pending_restart(folder):
 
 def _write_marker(folder, record):
     marker = folder / 'restart.json'
-    if marker.is_symlink():
-        raise ValueError('Symlinked restart marker')
+    safe_path(marker)
     temporary = folder / 'restart.tmp'
+    safe_path(temporary)
     temporary.write_text(json.dumps(record) + '\n')
     temporary.replace(marker)
 
@@ -698,21 +698,25 @@ def _record_restart_outcome(folder, covers, outcome, **fields):
     The caller holds the update lock, so no update is rewriting the receipt meanwhile.
     """
     receipt = folder / 'latest.json'
+    safe_path(receipt)
     try:
         result = json.loads(receipt.read_text())
     except (OSError, ValueError):
         return
-    if result.get('started_ns') not in covers or receipt.is_symlink():
+    if result.get('started_ns') not in covers:
         return
     result.update(gateway_restart=outcome, gateway_restart_covers=len(covers), **fields)
     temporary = folder / 'latest.tmp'
+    safe_path(temporary)
     temporary.write_text(json.dumps(result, indent=2) + '\n')
     temporary.replace(receipt)
 
 
 def _try_update_lock(folder):
     """The update lock if no update is running, else None; release by closing the file."""
-    lock = (folder / 'lock').open('a')
+    path = folder / 'lock'
+    safe_path(path)
+    lock = path.open('a')
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
