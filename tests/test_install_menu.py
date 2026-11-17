@@ -3,6 +3,7 @@
 The Hermes item runs only as a dry run here: the real setup changes live profiles.
 """
 import errno
+import fcntl
 import json
 import os
 import pty
@@ -116,6 +117,10 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
         self.environment = patch.dict(os.environ, self.env)
         self.environment.start()
         self.addCleanup(self.environment.stop)
+        # Module constants were loaded before this throwaway HOME was selected.
+        destination = patch.object(install_menu, 'BIN', self.home / '.local/bin')
+        destination.start()
+        self.addCleanup(destination.stop)
 
     def fake(self, name, body):
         path = self.bin / name
@@ -1291,6 +1296,118 @@ exit 0
         self.assertRegex(result.stdout, r'pi\s+planned')
         self.assertEqual(self.calls('pi-bolt install'), [])  # a dry run runs nothing
         self.assertIn('no terminal for the menu', self.install('--menu').stderr)
+
+    def test_previews_do_not_create_or_change_a_lock_or_receipt(self):
+        binary_dir = self.home / '.local/bin'
+        lock_path = binary_dir.with_name('bin.kit-install.lock')
+        report = self.home / 'preview.jsonl'
+        env = {'AUTOWORK_INSTALL_REPORT': str(report), 'AUTOWORK_INSTALL_UI': 'text'}
+
+        def previews():
+            before = {p.relative_to(self.home): p.read_bytes() if p.is_file() else None
+                      for p in self.home.rglob('*')}
+            for args, stdin in ((('--only', 'tx', '--dry-run'), None),
+                                (('--list',), None),
+                                (('--menu', '--dry-run', '--only', 'tx'), '\n'),
+                                (('--menu',), 'q\n')):
+                with self.subTest(args=args, held=lock_path.exists()):
+                    result = self.install(*args, stdin=stdin, env=env)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            after = {p.relative_to(self.home): p.read_bytes() if p.is_file() else None
+                     for p in self.home.rglob('*')}
+            self.assertEqual(after, before)
+            self.assertFalse(report.exists())
+
+        previews()
+        self.assertFalse(lock_path.exists())
+        # Preview also succeeds while another writer actually owns the lock.
+        with lock_path.open('w') as lock:
+            lock.write(f'{os.getpid()}\n')
+            lock.flush()
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            previews()
+
+    def test_installer_lock_is_released_on_exception_and_old_metadata_is_not_ownership(self):
+        import contextlib
+        import io
+
+        def interrupt():
+            raise KeyboardInterrupt()
+
+        item = install_menu.Item('fixture', 'Fixture', steps=[install_menu.Step('interrupt', run=interrupt)])
+        output = install_menu.Output('never', 0)
+        lock_path = (self.home / '.local/bin.kit-install.lock')
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(KeyboardInterrupt):
+            install_menu.install([item], {'fixture'}, output=output)
+        inode = lock_path.stat().st_ino
+        # Model a dead installer's metadata without deleting its persistent inode.
+        lock_path.write_text('999999999\n')
+        item.steps = [install_menu.Step('finish', run=lambda: 'done')]
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(install_menu.install([item], {'fixture'}, output=output), 0)
+        self.assertEqual(lock_path.stat().st_ino, inode)
+        self.assertEqual(lock_path.read_text(), f'{os.getpid()}\n')
+        with lock_path.open() as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_a_second_install_run_does_not_share_the_receipt(self):
+        self.claude_host(mutation='''
+if [[ "$*" == "plugin marketplace add TrebuchetDynamics/kit" ]]; then
+    printf 'installer holding: '
+    read -r answer
+    test "$answer" = continue || exit 9
+fi
+''')
+        report = self.home / 'install.jsonl'
+        # Exercise a custom destination too; the lock belongs to the deployment,
+        # not the source checkout, selected component, or receipt filename.
+        binary_dir = self.home / 'custom/bin'
+        env = {**self.env, 'AUTOWORK_INSTALL_REPORT': str(report),
+               'AUTOWORK_BIN_DIR': str(binary_dir)}
+        with subprocess.Popen(['bash', str(INSTALL), '--only', 'claude'], env=env,
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT) as first:
+            seen = b''
+            try:
+                with selectors.DefaultSelector() as selector:
+                    selector.register(first.stdout, selectors.EVENT_READ)
+                    deadline = time.monotonic() + 10
+                    while b'installer holding: ' not in seen:
+                        remaining = deadline - time.monotonic()
+                        self.assertGreater(remaining, 0, seen.decode(errors='replace'))
+                        self.assertTrue(selector.select(timeout=remaining), seen.decode(errors='replace'))
+                        chunk = os.read(first.stdout.fileno(), 4096)
+                        self.assertTrue(chunk, seen.decode(errors='replace'))
+                        seen += chunk
+                before = report.read_bytes()
+                calls = self.calls()
+                second = subprocess.run(['bash', str(INSTALL), '--only', 'tx', '--quiet'],
+                                        env=env, capture_output=True, text=True, timeout=5)
+                self.assertEqual(report.read_bytes(), before, 'second run changed the active receipt')
+                self.assertEqual(second.returncode, 1, second.stdout + second.stderr)
+                self.assertIn(f'PID {first.pid}', second.stdout + second.stderr)
+                self.assertIn(str(binary_dir.with_name('bin.kit-install.lock')), second.stdout + second.stderr)
+                self.assertEqual(self.calls(), calls)
+                self.assertFalse((binary_dir / 'tx').exists())
+                first.stdin.write(b'continue\n')
+                first.stdin.flush()
+                tail, _ = first.communicate(timeout=10)
+                self.assertEqual(first.returncode, 0, (seen + tail).decode(errors='replace'))
+                expected = b''.join((json.dumps({'item': key, 'status': status, 'exit': code}) + '\n').encode()
+                                    for key, status, code in [
+                                        ('pi-bolt', 'skipped', None), ('pi', 'skipped', None),
+                                        ('tx', 'skipped', None), ('hermes', 'skipped', None),
+                                        ('claude', 'installed', 0), ('codex', 'skipped', None),
+                                        ('orbi', 'skipped', None), ('services', 'installed', 0)])
+                self.assertEqual(report.read_bytes(), expected)
+                # The same entry point succeeds after the holder finishes.
+                repaired = self.install('--only', 'tx', '--quiet', env=env)
+                self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
+                self.assertTrue((binary_dir / 'tx').is_file())
+            finally:
+                if first.poll() is None:
+                    first.kill()
+                    first.wait(timeout=5)
 
     def test_failed_steps_remain_failures_even_when_output_says_already(self):
         self.fake('claude', LOGGING + 'echo "boom: no network" >&2; exit 1\n')
