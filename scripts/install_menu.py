@@ -396,13 +396,18 @@ def install_tx():
     for src, dest in ((ROOT / 'tmux/tmux.conf', HOME / '.tmux.conf'),
                       (ROOT / 'tmux/style.tmux', HOME / '.tmux/style.tmux'),
                       (ROOT / 'tmux/git-status.sh', HOME / '.tmux/git-status.sh'),
-                      (ROOT / 'tmux/short-path.sh', HOME / '.tmux/short-path.sh')):
+                      (ROOT / 'tmux/short-path.sh', HOME / '.tmux/short-path.sh'),
+                      (ROOT / 'tmux/copy.sh', HOME / '.tmux/copy.sh')):
         if dest.exists() or dest.is_symlink():
             kept.append(dest.name)
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         text = src.read_text()
-        if dest.name == '.tmux.conf':  # point the status bar at the installed helpers
+        if dest.name == '.tmux.conf':  # point at the installed helpers
+            # copy-command is a shell command inside a tmux double-quoted string.
+            copy_command = shlex.quote(str(HOME / '.tmux/copy.sh'))
+            copy_command = re.sub(r'([\\"$])', r'\\\1', copy_command)
+            text = text.replace('~/.tmux/copy.sh', copy_command)
             text = text.replace('~/.tmux/', f'{HOME}/.tmux/')
         dest.write_text(text)
         if dest.suffix == '.sh':

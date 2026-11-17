@@ -19,8 +19,9 @@ at `4a2dbe5`; pi-toolset's `tx` is deprecated in its favor. Installing this one 
 - `style.tmux` — local style overrides. Installed as `~/.tmux/style.tmux` only when missing.
 - `git-status.sh` — optional status-bar git segment. Prints the branch name in green when clean and red when changed/untracked.
 - `short-path.sh` — optional status-bar path segment. Prints only the last two path folders, e.g. `/tmp/git/pi-package-development-goal` -> `git/pi-package-development-goal`.
+- `copy.sh` — stdin-to-system-clipboard helper for mouse and keyboard copies.
 - `tx` — installable helper for starting, attaching, listing, and killing configured tmux sessions.
-- `install.sh` — installer for the config, status helpers, and `tx`.
+- `install.sh` — installer for the config, clipboard/status helpers, and `tx`.
 
 ## Install
 
@@ -40,7 +41,7 @@ Defaults:
 
 - tmux config -> `~/.tmux.conf`
 - local style -> `~/.tmux/style.tmux` (kept if it already exists)
-- status helpers -> `~/.tmux/git-status.sh` and `~/.tmux/short-path.sh`
+- helpers -> `~/.tmux/git-status.sh`, `~/.tmux/short-path.sh`, and `~/.tmux/copy.sh`
 - `tx` -> `~/.local/bin/tx`
 
 Existing targets are backed up as `*.bak.<timestamp>` by default. Disable backups with:
@@ -76,9 +77,11 @@ tmux source-file ~/.tmux.conf
 
 ## Helper-script contract
 
-The shared config calls `short-path.sh` and `git-status.sh` in the status bar. The installer places both helpers under `~/.tmux` (or `TMUX_HELPER_DIR`) and rewrites `tmux.conf` to that helper path.
+The shared config calls `short-path.sh` and `git-status.sh` in the status bar and uses `copy.sh` as its `copy-command`. The installer places all three helpers under `~/.tmux` (or `TMUX_HELPER_DIR`) and rewrites `tmux.conf` to that helper path.
 
-Each helper takes one argument: the current pane path from `#{pane_current_path}`. `git-status.sh` prints the branch in green when clean and red when changed/untracked; outside git repos it prints nothing.
+Each status helper takes one argument: the current pane path from `#{pane_current_path}`. `git-status.sh` prints the branch in green when clean and red when changed/untracked; outside git repos it prints nothing.
+
+`copy.sh` reads the selection from stdin. It prefers `wl-copy` when `WAYLAND_DISPLAY` is set, then `xsel -ib` or `xclip -selection clipboard` when `DISPLAY` is set, then macOS `pbcopy`. Missing display variables are read from the tmux session environment, without a hard-coded display. With no usable tool it silently discards stdin; tmux still keeps its buffer and uses OSC 52 for SSH clients that support clipboard access.
 
 For very slow SSH/mobile links, periodic helper calls are disabled by default. To simplify the status further in `~/.tmux/local.tmux`:
 
@@ -135,12 +138,39 @@ The prefix remains tmux's standard `Ctrl-b`, which works with Termius's extra-ke
 
 - `Ctrl-b r` — force a full redraw after a reconnect or orientation change.
 - `Ctrl-b v` — enter copy mode. Press `v` to select, then `y` or Enter to copy and exit.
-- Drag to select — release to keep the selection without copying. Press `y` or Enter to copy, or `q` to exit.
+- Drag to select — release to copy and exit copy mode. No Shift key or extra key press is needed.
 - `Ctrl-b Page Up` — enter scrollback; then use `Page Up`/`Page Down` and `q` to exit.
 - `Ctrl-b m` — toggle mouse/touch scrolling for the current tmux server.
 - `Ctrl-b t` — toggle the status bar when session details are useful.
 
-Mouse mode is on by default for scrolling and pane selection. Drag release does not copy to the tmux buffer or clipboard. Use `Ctrl-b m` to turn mouse mode off for native terminal selection. The SSH app can have its own copy-on-select setting, which tmux cannot control. Explicit copies use OSC 52 when the SSH client permits clipboard access. `Ctrl-b ]` pastes the tmux buffer even without client clipboard support. Window tabs show each window's number and name, with teal for the current window. Path and git details are limited to leave space for tabs at narrow widths. Synchronized output (`terminal-features` sync) is **disabled by default** because mishandled end-of-frame markers can drop whole frames on some mobile SSH clients; re-enable it by uncommenting the two `terminal-features` lines in `tmux.conf`. Detach and reconnect once after installing so tmux recalculates client terminal features.
+Mouse mode is on by default for scrolling, pane selection and drag-to-copy. Drag release, `y` and Enter copy to the tmux buffer and system clipboard through the helper; OSC 52 remains available when the SSH client permits clipboard access. A program that captures the mouse itself still receives the drag. Use `Ctrl-b m` to turn mouse mode off for native terminal selection. The SSH app can have its own copy-on-select setting, which tmux cannot control. `Ctrl-b ]` pastes the tmux buffer even without client clipboard support. Window tabs show each window's number and name, with teal for the current window. Path and git details are limited to leave space for tabs at narrow widths. Synchronized output (`terminal-features` sync) is **disabled by default** because mishandled end-of-frame markers can drop whole frames on some mobile SSH clients; re-enable it by uncommenting the two `terminal-features` lines in `tmux.conf`. Detach and reconnect once after installing so tmux recalculates client terminal features.
+
+## Adopt drag-to-copy in an existing installation
+
+The suite installer (`../install.sh --only tx` from this directory) keeps existing
+`~/.tmux.conf` and helpers, so an existing config does not change automatically.
+Run it to install the missing `~/.tmux/copy.sh`, then add these settings to
+`~/.tmux/local.tmux` (use your helper path if different):
+
+```tmux
+set -g mouse on
+set -s set-clipboard external
+set -s copy-command "~/.tmux/copy.sh"
+bind -T copy-mode MouseDragEnd1Pane send -X copy-pipe-and-cancel
+bind -T copy-mode-vi MouseDragEnd1Pane send -X copy-pipe-and-cancel
+bind -T copy-mode-vi y send -X copy-pipe-and-cancel
+bind -T copy-mode-vi Enter send -X copy-pipe-and-cancel
+```
+
+Reload with `tmux source-file ~/.tmux.conf`. Alternatively, `./install.sh` in this
+directory reinstalls the shared config and helpers with the backups described above.
+
+If the system clipboard does not change, install `wl-clipboard` on Wayland or
+`xsel`/`xclip` on X11 and make the desktop display variables available to the tmux
+session (reconnect from a desktop terminal). Tool errors, such as an inaccessible
+display, remain tool errors; repair that desktop connection. With no usable tool
+there is no error; use an OSC 52-capable SSH client or paste the retained tmux buffer
+with `Ctrl-b ]`.
 
 ## Local/mobile overrides
 

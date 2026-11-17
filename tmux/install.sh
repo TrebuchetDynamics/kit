@@ -98,12 +98,14 @@ install_tmux_conf() {
   dest=$2
   short_path_cmd=$(sed_replacement_escape "$(shell_quote "$TMUX_HELPER_DIR/short-path.sh")")
   git_status_cmd=$(sed_replacement_escape "$(shell_quote "$TMUX_HELPER_DIR/git-status.sh")")
+  copy_cmd=$(sed_replacement_escape "$(shell_quote "$TMUX_HELPER_DIR/copy.sh")")
   tmp=$(mktemp "${TMPDIR:-/tmp}/tx-tmux.conf.XXXXXX")
   trap 'rm -f "$tmp"' EXIT
   trap 'rm -f "$tmp"; exit 1' HUP INT TERM
   sed \
     -e "s|~/.tmux/short-path.sh|$short_path_cmd|g" \
     -e "s|~/.tmux/git-status.sh|$git_status_cmd|g" \
+    -e "s|~/.tmux/copy.sh|$copy_cmd|g" \
     "$src" > "$tmp"
   install_file 0644 "$tmp" "$dest"
   rm -f "$tmp"
@@ -148,6 +150,7 @@ install_tmux_conf "$script_dir/tmux.conf" "$TMUX_CONF_TARGET"
 install_file_if_missing 0644 "$script_dir/style.tmux" "$HOME/.tmux/style.tmux"
 install_file 0755 "$script_dir/git-status.sh" "$TMUX_HELPER_DIR/git-status.sh"
 install_file 0755 "$script_dir/short-path.sh" "$TMUX_HELPER_DIR/short-path.sh"
+install_file 0755 "$script_dir/copy.sh" "$TMUX_HELPER_DIR/copy.sh"
 install_file 0755 "$script_dir/tx" "$TX_BIN_DIR/$TX_BIN_NAME"
 install_completions
 

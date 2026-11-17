@@ -111,8 +111,8 @@ exist yet counts as missing. The tmux launcher needs `tmux`.
 A replaced `~/.local/bin/tx` is
 kept as `<name>.bak`, then `.bak.1` and so on, so no earlier backup is lost; a
 symlinked `tx` is moved aside, never written through. Existing tmux configuration,
-helpers and shell completions are kept, including dangling symlinks; only missing
-files are installed.
+helpers (`git-status.sh`, `short-path.sh`, `copy.sh`) and shell completions are kept,
+including dangling symlinks; only missing files are installed.
 
 Output streams during each install step, including native prompts. Verbose output
 is on by default (`--verbose`) and shows shell-quoted commands; `--quiet` shows summaries and failure diagnostics,

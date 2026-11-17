@@ -1108,9 +1108,45 @@ exit 0
         self.assertEqual(list((self.home / '.local/bin').iterdir()), [self.bolt])
         self.assertIn('enable the package skills and commands in Pi settings', result.stdout)
 
+    def test_tx_installs_executable_clipboard_helper(self):
+        result = self.install('--only', 'tx')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        helper = self.home / '.tmux/copy.sh'
+        self.assertEqual(helper.read_bytes(), (ROOT / 'tmux/copy.sh').read_bytes())
+        self.assertEqual(stat.S_IMODE(helper.stat().st_mode), 0o755)
+        self.assertIn(str(helper), (self.home / '.tmux.conf').read_text())
+
+    @unittest.skipUnless(shutil.which('tmux'), 'tmux is not installed')
+    def test_tx_clipboard_command_works_with_spaces_in_home(self):
+        home = self.home / 'desktop home'
+        home.mkdir()
+        env = {**self.env, 'HOME': str(home), 'DISPLAY': 'test-display',
+               'TEST_CLIPBOARD': str(home / 'clipboard')}
+        result = self.install('--only', 'tx', env=env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.fake('xsel', '#!/bin/sh\n/bin/cat > "$TEST_CLIPBOARD"\n')
+        socket = str(self.home / 'clipboard-socket')
+        self.addCleanup(lambda: subprocess.run(
+            ['tmux', '-S', socket, 'kill-server'], env=env,
+            capture_output=True, timeout=10))
+        result = subprocess.run(
+            ['tmux', '-S', socket, '-f', str(home / '.tmux.conf'),
+             'new-session', '-d', '-s', 'test'],
+            env=env, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = subprocess.run(
+            ['tmux', '-S', socket, 'show-options', '-sv', 'copy-command'],
+            env=env, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        copied = subprocess.run(['/bin/sh', '-c', result.stdout.strip()],
+                                input=b'clipboard probe\n', env=env,
+                                capture_output=True, timeout=10)
+        self.assertEqual(copied.returncode, 0, copied.stderr)
+        self.assertEqual((home / 'clipboard').read_bytes(), b'clipboard probe\n')
+
     def test_tx_keeps_an_existing_tmux_config(self):
         mine = b'set -g mouse on\n# mine\n'
-        paths = ('.tmux.conf', '.tmux/style.tmux', '.tmux/git-status.sh', '.tmux/short-path.sh',
+        paths = ('.tmux.conf', '.tmux/style.tmux', '.tmux/git-status.sh', '.tmux/short-path.sh', '.tmux/copy.sh',
                  '.local/share/bash-completion/completions/tx', '.zsh/completions/_tx',
                  '.config/fish/completions/tx.fish')
         for relative in paths:
