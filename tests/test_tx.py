@@ -295,6 +295,68 @@ class TxRemoveTests(unittest.TestCase):
                     self.assertEqual(self.path.read_bytes(), self.original)
                     self.assert_no_side_effects()
 
+    def test_unknown_literal_existing_filename_gets_quoting_hint_atomically(self):
+        for kind in ('file', 'directory', 'dangling_symlink'):
+            filename = self.cwd / 'go.mod'
+            if kind == 'file':
+                filename.touch()
+            elif kind == 'directory':
+                filename.mkdir()
+            else:
+                filename.symlink_to(self.cwd / 'missing')
+            with self.subTest(kind=kind):
+                result = self.run_tx('remove', 'hw1', 'go.mod', 'hw2')
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertEqual(result.stderr.splitlines()[0], 'tx: unknown alias: go.mod')
+                hint = '\n'.join(result.stderr.splitlines()[1:])
+                self.assertIn('hint:', hint)
+                self.assertIn('go.mod', hint)
+                self.assertIn('shell', hint)
+                self.assertIn('expanded', hint)
+                self.assertRegex(hint, r"tx remove '[^']+\*'")
+                self.assertEqual(result.stdout, '')
+                self.assertEqual(self.path.read_bytes(), self.original)
+                self.assert_no_side_effects()
+            if kind == 'directory':
+                filename.rmdir()
+            else:
+                filename.unlink()
+
+    def test_unknown_literal_without_filename_has_no_hint(self):
+        result = self.run_tx('remove', 'go.mod')
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, 'tx: unknown alias: go.mod\n')
+        self.assertEqual(result.stdout, '')
+        self.assertEqual(self.path.read_bytes(), self.original)
+        self.assert_no_side_effects()
+
+    def test_existing_filename_does_not_override_literal_or_prefix_alias(self):
+        for selector in ('hw1', 'hw'):
+            with self.subTest(selector=selector):
+                self.path.write_bytes(self.original)
+                (self.cwd / selector).touch()
+                result = self.run_tx('remove', selector)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stderr, '')
+                self.assertEqual(result.stdout, f'removed: hw1={self.target}\n')
+                self.assertNotIn('hw1', self.run_tx('__complete_aliases').stdout.splitlines())
+                self.assertTrue((self.cwd / selector).is_file())
+                self.assert_no_side_effects()
+
+    def test_existing_filename_hint_is_remove_only_and_literal_only(self):
+        for selector in ('go.mod', 'g*', 'g?', 'g['):
+            (self.cwd / selector).touch()
+            for args in ((selector,), ('which', selector), ('remove', selector)):
+                if args == ('remove', 'go.mod'):
+                    continue
+                with self.subTest(args=args):
+                    result = self.run_tx(*args)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('hint:', result.stderr)
+                    self.assertEqual(result.stdout, '')
+                    self.assertEqual(self.path.read_bytes(), self.original)
+        self.assert_no_side_effects()
+
     def test_no_operands_is_usage_error_even_without_config(self):
         self.path.unlink()
         result = self.run_tx('remove')
