@@ -57,6 +57,19 @@ class SkillStandardTests(unittest.TestCase):
             self.assertIn(category, push)
         self.assertIn('pagination', push)
 
+    def test_sync_recipes_preserve_restrictions_and_live_checkout_isolation(self):
+        delivery = (ROOT / 'skills/git-commit-push/SKILL.md').read_text()
+        sync = delivery.split('6. **Sync with upstream (default).**', 1)[1].split(
+            '7. **Push (explicit ship target only).**', 1)[0]
+        self.assertIn('no-pull/no-sync: use permitted remote metadata without fetch', sync)
+        self.assertNotRegex(sync, r'Before every push[\s\S]*?fetch and confirm')
+        pull = (ROOT / 'skills/git-commit-push/references/pull-merge.md').read_text()
+        self.assertNotIn('No overlap → git can update', pull)
+        safety = (ROOT / 'skills/git-commit-push/references/shared-worktree-safety.md').read_text()
+        self.assertNotIn('Empty means merge', safety)
+        self.assertIn('isolate even when incoming paths are disjoint', pull)
+        self.assertIn('isolate even when incoming paths are disjoint', safety)
+
     def test_descriptions_are_summaries_within_the_index(self):
         for path in self.skills('skills') + self.skills('adapters/skills'):
             with self.subTest(skill=path.relative_to(ROOT)):

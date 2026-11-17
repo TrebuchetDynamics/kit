@@ -79,9 +79,14 @@ leaves its partial private destination retained, never deletes owner files.
      unverified work and hold unavailable required gates. No retry loop or alternate
      credentials. Independent verified work can continue as a partial result.
 2. **Check the worktree before touching it (fleet worktrees are shared).**
+   - Establish exclusive, released checkout ownership first. For shared/live/unknown
+     ownership, isolate even when incoming paths are disjoint; never change another
+     writer's HEAD or index. Use the existing isolated candidate path below or report
+     local sync pending. Only an exclusively owned checkout may continue in place.
    - List the files the source changes: `git diff --name-only HEAD...<source>`.
-   - Intersect them with the dirty set from `git status --porcelain`. No overlap → git can update
-     safely around the dirty files; go to step 3.
+     Intersect them with the dirty set from `git status --porcelain`, including
+     untracked/ignored collisions. Disjoint paths permit step 3 only after the
+     ownership check; they are not evidence of writer release.
    - **Overlap with your own uncommitted work:** commit it first (the [commit rules](../SKILL.md), or the
      card's `agent_commit.sh` branch), then integrate. When authorized reconciliations are
      already verified on upstream, prefer the rehearsed

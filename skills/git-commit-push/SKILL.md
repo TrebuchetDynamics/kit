@@ -32,8 +32,9 @@ identity and existing receipts first; unchanged evidence can satisfy that handof
 - `/git-commit-push` (CLI) or `/git_commit_push` (Telegram) was invoked: that invocation **is** the ship request. Any text after the command narrows scope (paths, topic, "audit", "dry run", "no push", "no pull").
 - **Every ship also syncs.** By default the branch is pulled and merged with its upstream
   before pushing (step 6), so a ship leaves local and remote equal. "no pull", "no sync" or
-  "ff-only" narrows it; an audit, the autonomous agent-branch route and a repository
-  main-only policy that forbids merge commits do not sync.
+  "ff-only" narrows it. Fast-forward-only/no-merge routes permit fast-forward sync,
+  not merge commits; audit permits no Git writes. The autonomous local-only
+  agent-branch route still grants no sync or publication authority.
 - LGTM accepts a checkpoint that recommended or explicitly offered commit/push (see the
   `lgtm` skill). A generic LGTM after an implementation report that did not offer shipping
   never implies shipping.
@@ -322,14 +323,19 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      claiming verification; do not replay a successful gate merely for reassurance.
 
 6. **Sync with upstream (default).**
-   - Unless the request said "no pull", "no sync" or "ff-only" (fast-forward only), after
-     the owned commits exist and before pushing: `git fetch <verified-upstream-remote>`, then
+   - With sync authorized, after the owned commits exist and before pushing:
+     `git fetch <verified-upstream-remote>`, then
      `git rev-list --left-right --count HEAD...@{u}`. Nothing incoming: go to step 7.
-   - Integrate with the [pull and merge](references/pull-merge.md) procedure: check incoming
-     paths against dirty files first, fast-forward when there are no local commits, otherwise
-     `git merge --no-ff @{u}` with a message naming what came in. Never rebase, stash, reset
-     or `git pull --rebase`. Overlap with someone else's live work moves the integration into
-     an isolated worktree or holds it, as that procedure says.
+     For no-pull/no-sync: use permitted remote metadata without fetch or integration;
+     verify destination inclusion using already available objects, or hold publication
+     with the missing SHA/evidence. A restriction never authorizes a fallback sync.
+   - Integrate with the [pull and merge](references/pull-merge.md) procedure: verify
+     checkout ownership before checking dirty-path collisions. Shared/live checkouts
+     require isolation even when paths are disjoint. Fast-forward when there are no
+     local commits; otherwise `git merge --no-ff @{u}` only when merge commits are
+     authorized. Under ff-only/no-merge/no-commit, try only fast-forward and report
+     divergence rather than creating a commit. Never rebase, stash, reset or
+     `git pull --rebase`.
    - Resolve conflicts as that procedure says; never by dropping either side's tests.
    - Re-gate the merged tree: rerun the checks for the areas the incoming commits touched,
      and confirm your own paths' blobs are unchanged. A failure the merge caused is part of
@@ -337,9 +343,11 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      `git revert -m 1 <merge>` (after) and report HELD.
    - Having nothing to commit is not a reason to skip the sync: a pull with nothing to push
      is reported as SYNCED.
-   - Never push a branch that is behind its push target. Before every push, including a
-     refspec push such as `HEAD:main` from a worktree, fetch and confirm that the target
-     ref (the verified destination tracking ref, not only `@{u}`) is an ancestor of what you push.
+   - Never push a branch that is behind its push target. Before every push, including
+     an explicit refspec, read the exact destination SHA (not only `@{u}`) and prove it
+     is an ancestor of what you push. Fetch only within authorized sync; under caller
+     restrictions use remote metadata and existing objects as above. If the verified
+     destination cannot be proved included, report HELD instead of fetching anyway.
 
 7. **Push (explicit ship target only).**
    - Push only the verified configured destination/ref; no upstream means resolve
@@ -355,9 +363,10 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      still match; rerun affected checks/review. Read back remote ref, PR head and file list.
    - Never `--autostash`. Step 6 has already merged upstream; if the push is still rejected
      because upstream moved again, repeat step 6 once and push. Rebase needs explicit approval.
-     On a "no pull" or "ff-only" request, or a fast-forward-only or no-merge route, do not
-     fall back to a reference's merge recipe after rejection: rebuild and requalify from fresh
-     upstream, or report the conflict. Never force-push. Measure the overlap against the merge base, not against
+     On a no-pull/no-sync request, report the moving destination without fetching or
+     rebuilding on new upstream. Under ff-only/no-merge/no-commit, reconcile only by
+     allowed fast-forward or report divergence; never fall back to a reference's merge
+     recipe or recreate existing commits to evade that limit. Never force-push. Measure the overlap against the merge base, not against
      HEAD: `git diff --name-only $(git merge-base HEAD origin/main)..origin/main` lists what they
      changed, while `HEAD..origin/main` also lists your own unpushed files and reads as an overlap
      that is not there.
