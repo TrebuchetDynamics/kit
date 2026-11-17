@@ -29,6 +29,7 @@ Standard library only.
 """
 import argparse
 import codecs
+import fcntl
 import json
 from dataclasses import dataclass, field
 import os
@@ -1057,6 +1058,38 @@ def restart_services(output):
 
 def install(all_items, chosen, dry_run=False, output=None, mode='install'):
     output = output or Output()
+    if dry_run or (not chosen and not os.environ.get('AUTOWORK_INSTALL_REPORT')):
+        return _install(all_items, chosen, dry_run=dry_run, output=output, mode=mode)
+    # Resolve aliases so checkouts targeting the same binary directory share one
+    # persistent inode. Never unlink it: that would allow two independent locks.
+    binary_dir = BIN.resolve()
+    lock_path = binary_dir.with_name(binary_dir.name + '.kit-install.lock')
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock = lock_path.open('a+', encoding='utf-8')
+    except OSError as exc:
+        output.line(f'  FAILED: cannot open installer lock {lock_path}: {exc}', 'failed')
+        return 1
+    with lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lock.seek(0)
+            holder = lock.read(128).strip() or 'unknown (holder metadata unavailable)'
+            output.line(f'  FAILED: installer lock {lock_path} held by PID {holder}; '
+                        'let the holder finish, then retry; do not remove the lock file.', 'failed')
+            return 1
+        except OSError as exc:
+            output.line(f'  FAILED: cannot acquire installer lock {lock_path}: {exc}', 'failed')
+            return 1
+        lock.seek(0)
+        lock.truncate()
+        lock.write(f'{os.getpid()}\n')
+        lock.flush()
+        return _install(all_items, chosen, output=output, mode=mode)
+
+
+def _install(all_items, chosen, dry_run=False, output=None, mode='install'):
     results = []
     # Private machine-readable progress for update_bundle.py, separate from native output.
     report = None if dry_run else os.environ.get('AUTOWORK_INSTALL_REPORT')
