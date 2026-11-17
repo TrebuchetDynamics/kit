@@ -175,7 +175,7 @@ class WorkflowCommands(unittest.TestCase):
         router = (fixture.ROOT / 'skills/ask-kit/SKILL.md').read_text()
         descriptions = {}
         for name in ('plan-for-me', 'ponytail-review',
-                     'git-commit-push', 'docs-sync', 'plan-with-me'):
+                     'git-commit-push', 'push', 'docs-sync', 'plan-with-me'):
             with self.subTest(name=name):
                 text = (fixture.ROOT / f'skills/{name}/SKILL.md').read_text()
                 metadata = yaml.safe_load(text.split('---', 2)[1])
@@ -183,6 +183,18 @@ class WorkflowCommands(unittest.TestCase):
                 self.assertIn(f'`/{name}`', router)
                 self.assertNotIn('use when', metadata['description'].lower())
         self.assertEqual(len(set(descriptions.values())), len(descriptions))
+
+    def test_push_invocation_keeps_read_only_and_remote_discovery_scope(self):
+        self.skill('push')
+        self.plugin.register(self.ctx)
+        raw = 'audit; no fetch; no sync; no commit; no push; only docs/'
+        self.ctx.commands['push'](raw)
+        prompt, _ = self.ctx.messages[-1]
+        self.assertIn('kit:push', prompt)
+        self.assertTrue(prompt.endswith(raw))
+        canonical = (fixture.ROOT / 'skills/push/SKILL.md').read_text()
+        self.assertIn('already-merged upstream Orbi changes', canonical)
+        self.assertIn('without taking it over', canonical)
 
     def test_missing_skills_do_not_advertise_workflows(self):
         self.skill('other')

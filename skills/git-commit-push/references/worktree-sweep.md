@@ -5,12 +5,21 @@ A worktree is cheap to create and easy to forget, and a forgotten one holds plan
 implementation that no later decision can see. The sweep finds them, merges the finished
 ones, and leaves everything ambiguous exactly where it is.
 
+Apply the [shared freshness/ownership contract](../../shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership)
+before inventory. Read-only/audit never fetches or runs `--apply`. Resolve the
+verified repository/base/upstream/destination under repository policy, not remote
+or branch naming. A clean tree is a mechanical condition, not delivery eligibility.
+Orbi-owned PRs/checkouts, live or unknown owners, failed/blocked/paused and
+closed-unmerged work stay with their coordinator. Report their URL, reason and next
+action; a passing check does not release ownership. Use [/push](../../push/SKILL.md)
+for remote issue/PR discovery and already-landed upstream changes.
+
 ## States
 
 | State | Meaning | Sweep action |
 | --- | --- | --- |
 | `merged` | HEAD is already contained in the base branch | close it out if clean |
-| `unmerged-clean` | commits are not on the base branch, tree is clean | merge it |
+| `unmerged-clean` | commits are not on the base branch, tree is clean | verify scope/completion/ownership/gates before merge |
 | `unmerged-dirty` | commits are not on the base branch, and the tree has changes | report it to its owner; never commit it |
 | `detached` | release or review checkout with no branch | leave it |
 | `locked` | Git holds a worktree lock | leave it |
@@ -27,7 +36,14 @@ ones, and leaves everything ambiguous exactly where it is.
    verify actual ownership before applying; age alone proves no release. A dirty
    worktree is the owner's call: report its paths and preserve it.
    **Pass when:** each non-candidate names its reason and its next step.
-3. **Merge the candidates.** `--apply` merges the clean, unmerged ones one at a time,
+3. **Merge the eligible candidates.** Refresh relevant PR/ownership evidence and
+   verify pinned source/base/destination immediately before integration. Include
+   landed changes via verified upstream using [normal sync](pull-merge.md), then
+   reconcile affected checks/review if inputs moved. Never use an open PR head.
+   `--apply` is only usable when its entire selected inventory is eligible: the
+   helper's clean/age checks do not establish coordinator release. Otherwise use
+   the existing manual clean-candidate merge path on eligible pins only, leaving
+   worker checkouts untouched. It merges clean, unmerged ones one at a time,
    oldest commit first, with `git merge --no-ff <sha>` of the exact commit it classified.
    A conflict aborts that merge (`git merge --abort`) and the sweep continues, so one
    overlapping branch cannot block twenty independent ones.

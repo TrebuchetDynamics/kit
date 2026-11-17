@@ -16,10 +16,11 @@ An explicitly different repository integration policy still applies.
 Before ending a worktree-backed task, complete required checks/review, integrate
 through the repository's supported path and verify the delivered commit on the
 canonical default branch. Serialize canonical writes and preserve unrelated edits.
-First `git fetch` the default branch's upstream, if one exists, and bring the canonical
-`main` up to date (`git merge --ff-only origin/main`, or the pull and merge procedure
-when local commits exist); integrating onto a stale local `main` diverges from the
-remote. A local task-branch commit is not integration. No push or remote merge authority
+In authorized delivery/sync mode only, fetch the verified default-branch upstream
+and follow [pull and merge](pull-merge.md). Read-only cleanup inventory uses existing
+refs/remote metadata without fetch; report freshness gaps. Never update a live
+writer's canonical checkout. With verified `main`, integrating onto a stale local `main` diverges from the
+remote; the same applies to the actual configured base. A local task-branch commit is not integration. No push or remote merge authority
 is granted by cleanup. If integration is blocked, report **integration pending**,
 retain the candidate and continue only independently authorized work.
 

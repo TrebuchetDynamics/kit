@@ -23,6 +23,13 @@ Supporting protocols are bundled and loaded only when needed. Hermes profile
 creation, Telegram routing,
 Kanban workers, fleet setup, memory and speech integrations remain Hermes-only.
 
+All hosts inherit the [shared mode-aware freshness and ownership contract](../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership)
+through canonical Ponytail and the portable common entry point. No automatic
+fetch/sync is added to skill loading: read-only/audit and writable planning do not
+mutate Git. `/push` includes already-merged Orbi changes through verified upstream
+and reports open Orbi issues/PRs without taking over their coordinator/review route.
+Caller restrictions and host permissions propagate across every handoff.
+
 ## Planning and delivery
 
 Both planners publish GitHub Issues and stop. Orbi owns automatic delivery.

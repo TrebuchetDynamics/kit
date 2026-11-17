@@ -1,0 +1,76 @@
+{
+  "name": "push-unavailable-api",
+  "skill": "push",
+  "model": "fixture",
+  "note": "Synthetic recorded data only; no GitHub/Git operations or model run. The grader checks event/regex/receipt presence, not truth or ordering.",
+  "context": {
+    "repository": "example/project",
+    "base": "trunk",
+    "upstream": "team/trunk",
+    "destination": "publish/refs/heads/trunk",
+    "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "destination_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "orbi_association": "linked issue and PR body run marker plus coordinator continuation, not branch prefix or author",
+    "owned_pr": {
+      "url": "https://github.com/example/project/pull/52",
+      "issue": "https://github.com/example/project/issues/12",
+      "head_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "merge_sha": null,
+      "checks": "pass",
+      "owner": "existing Orbi coordinator",
+      "classification": "open/owned"
+    }
+  },
+  "events": [
+    {
+      "type": "read",
+      "path": "skills/push/SKILL.md"
+    },
+    {
+      "type": "command",
+      "command": "git status --short --branch",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git diff --stat",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-1.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-2.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-links-and-ownership.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-52-observed-before-rate-limit.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/page-3-error.json",
+      "error": "HTTP 403 rate limit exceeded"
+    },
+    {
+      "type": "command",
+      "command": "git fetch team",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git merge --ff-only bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "exit": 0
+    },
+    {
+      "type": "final",
+      "text": "Local commits: none. Incoming landed: verified team/trunk bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb synchronized with its tests. Pending: unavailable/unknown coverage: HTTP 403 rate limit exceeded on page 3; preserve https://github.com/example/project/pull/52 and undiscovered work. Restore API access then refresh once; no retry loop or alternate credentials. Selected/final: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb. Checks: affected local tests passed; required protection/review unavailable, publication HELD. Remote inclusion: no publication claimed; last destination aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Local sync: verified upstream only; partial inventory, not all Orbi work delivered."
+    }
+  ]
+}

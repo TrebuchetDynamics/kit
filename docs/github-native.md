@@ -5,6 +5,22 @@ executable backlog, priority, native dependencies and dispatch. One Orbi deploym
 per repository owns Pi implementation, tests, PR creation, independent review and
 merge gates. Merged PRs and GitHub history retain delivery evidence.
 
+## Freshness and delivery ownership
+
+The [shared mode contract](../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership)
+applies to every skill. `/push` inventories paginated issue/PR evidence as well as
+local worktrees, synchronizes already-landed Orbi changes through verified upstream,
+and reports unfinished work by URL, owner, reason and next action. Names and bot
+authors are hints, not ownership proof; default-branch ancestry proves inclusion.
+An open Orbi-owned PR stays with its coordinator even if checks pass. No worker-head
+cherry-pick, PR checkout, remote-ref deletion or review/protection bypass is added.
+State/source pins are refreshed before integration and publication; changed inputs
+need normal merge reconciliation and affected checks/review. API failure means
+unknown/partial coverage, never an empty queue. Independent verified delivery can
+continue, but required unavailable gates still hold dependent publication.
+Read-only and planning do not fetch or sync Git. None of this activates Orbi or
+qualifies live delivery; its existing pause and live-qualification limits remain.
+
 ## Support boundary
 
 `pi-autowork` is retired and unsupported, not a fallback or an active redesign.

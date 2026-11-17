@@ -28,6 +28,14 @@ Status: Accepted
 - GitHub Issues are the work board; Kanban and historical local records are never
   prerequisites for execution, recovery, review, installation or integration.
 
+All first-party skills and portable adapters reach the
+[shared freshness and ownership contract](../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership).
+Mode controls effects, not automatic synchronization on every invocation. `/push`
+includes landed Orbi changes through verified upstream and reports outstanding
+issue/PR candidates without taking coordinator-owned heads or bypassing review.
+Read-only/audit and writable planning do not fetch or sync Git; authorized edits
+inspect ownership and isolate stale/shared baselines. Delivery retains caller scope.
+
 These contracts are detailed in [workflows](workflows.md). Planning does not grant
 implementation, publication or deployment authority. Accepted scope does not settle
 unresolved owner-only decisions or qualify runtime behavior. Dispatch, useful

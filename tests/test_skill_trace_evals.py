@@ -218,6 +218,72 @@ class SkillTraceEvalTests(unittest.TestCase):
                     self.assertFalse(result['ok'])
                     self.assertTrue(any(diagnostic in f for f in result['failures']))
 
+    def test_read_only_and_planning_fetch_commands_are_refused(self):
+        commands = ('git fetch upstream', 'git -C . fetch upstream',
+                    'git -c gc.auto=0 fetch upstream',
+                    'git --git-dir=.git --work-tree=. fetch upstream',
+                    'git --no-pager -C . fetch upstream',
+                    'git --namespace worker fetch upstream')
+        for skill in (*PLANNERS, 'ponytail-review'):
+            spec = load(SPECS / f'{skill}.json')
+            for command in commands:
+                trace = load(TRACES / f'{skill}-pass.json')
+                trace['events'].insert(-1, {'type': 'tool', 'tool': 'bash',
+                                            'args': {'command': command}, 'exit': 0})
+                with self.subTest(skill=skill, command=command):
+                    result = evaluate(trace, spec)
+                    self.assertFalse(result['ok'])
+                    self.assertTrue(any('forbidden action' in f for f in result['failures']))
+
+    def test_push_synthetic_boundaries(self):
+        spec = load(SPECS / 'push.json')
+        scenarios = {
+            'merged-remote-only': ['via team/trunk', 'default-branch ancestry', 'regression tests'],
+            'open-owned': ['open/owned', '/pull/52', 'wait for its review/merge route'],
+            'unavailable-api': ['HTTP 403 rate limit exceeded', 'partial inventory',
+                                'publication HELD', 'Restore API access'],
+            'upstream-advance': ['rebuilt ordinary merge', 'never imported former owned head',
+                                 'incoming tests retained'],
+            'closed-failed-unknown': ['closed-unmerged', 'failed/blocked', 'unavailable/unknown',
+                                     'already included/equivalent'],
+        }
+        for scenario, receipt in scenarios.items():
+            with self.subTest(scenario=scenario):
+                trace = load(TRACES / ('push-pass.json' if scenario == 'merged-remote-only'
+                                      else f'push-{scenario}.json'))
+                selected = json.loads(json.dumps(spec))
+                selected['require'].append({'event': 'final', 'contains': receipt})
+                result = evaluate(trace, selected)
+                self.assertTrue(result['ok'], result['failures'])
+                missing_reason = json.loads(json.dumps(trace))
+                missing_reason['events'][-1]['text'] = 'Receipt unavailable.'
+                self.assertFalse(evaluate(missing_reason, selected)['ok'])
+                # A worker's passing PR remains owned. This fixture pin is not a
+                # semantic ownership detector; the grader only matches recorded text.
+                held = json.loads(json.dumps(spec))
+                held['forbid'].append({'event': 'command',
+                    'command': r'(?:cherry-pick|merge)\s+' + 'e' * 40 + r'|gh pr (?:checkout|merge) 52'})
+                for command in ('git cherry-pick ' + 'e' * 40, 'git merge ' + 'e' * 40,
+                                'gh pr checkout 52', 'gh pr merge 52'):
+                    bad = json.loads(json.dumps(trace))
+                    bad['events'].insert(-1, {'type': 'command', 'command': command, 'exit': 0})
+                    self.assertFalse(evaluate(bad, held)['ok'])
+                missing = json.loads(json.dumps(trace))
+                missing['events'] = [e for e in missing['events'] if e['type'] != 'final']
+                self.assertFalse(evaluate(missing, spec)['ok'])
+
+    def test_push_read_only_fixture_rejects_fetch_without_running_it(self):
+        # The existing grader has no conditional modes or semantic candidate engine.
+        # Apply the existing read-only clauses to a push audit scenario explicitly.
+        spec = load(SPECS / 'ponytail-review.json')
+        spec['skill'] = 'push'
+        trace = load(TRACES / 'push-read-only.json')
+        self.assertTrue(evaluate(trace, spec)['ok'])
+        for command in ('git fetch upstream', 'git -C . -c gc.auto=0 fetch upstream'):
+            bad = json.loads(json.dumps(trace))
+            bad['events'].insert(-1, {'type': 'command', 'command': command, 'exit': 0})
+            self.assertFalse(evaluate(bad, spec)['ok'])
+
     def test_every_spec_has_a_passing_fixture(self):
         specs = sorted(SPECS.glob('*.json'))
         self.assertTrue(specs)

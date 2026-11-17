@@ -6,6 +6,7 @@ for user-facing text. Read the target project's glossary map and glossary when a
 These adapters run repository workflows in the current Claude Code, Codex or Pi session.
 Use this host's actual file, terminal, search, question and delegation tools.
 Read repository instructions and user scope first; preserve unrelated work.
+Apply the [shared source freshness and ownership contract](../../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership) before probes or handoffs; select the current mode rather than automatically syncing Git.
 Every bundled workflow applies the [shared Ponytail method](../../skills/shared/PONYTAIL.md)
 within its own authority. The pinned suite is included on all hosts; no external
 Ponytail plugin or persistent activation is required.

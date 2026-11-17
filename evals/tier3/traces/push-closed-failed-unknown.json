@@ -1,0 +1,75 @@
+{
+  "name": "push-closed-failed-unknown",
+  "skill": "push",
+  "model": "fixture",
+  "note": "Synthetic recorded data only; no GitHub/Git operations or model run. The grader checks event/regex/receipt presence, not truth or ordering.",
+  "context": {
+    "repository": "example/project",
+    "base": "trunk",
+    "upstream": "team/trunk",
+    "destination": "publish/refs/heads/trunk",
+    "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "destination_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "orbi_association": "linked issue and PR body run marker plus coordinator continuation, not branch prefix or author",
+    "candidates": [
+      {
+        "url": "https://github.com/example/project/pull/53",
+        "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "3333333333333333333333333333333333333333",
+        "merge_sha": null,
+        "classification": "closed-unmerged"
+      },
+      {
+        "url": "https://github.com/example/project/issues/14",
+        "head_sha": null,
+        "merge_sha": null,
+        "classification": "failed/blocked",
+        "reason": "paused; CI failed in existing attempt"
+      },
+      {
+        "url": "https://github.com/example/project/pull/55",
+        "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "head_sha": "5555555555555555555555555555555555555555",
+        "merge_sha": null,
+        "classification": "unavailable/unknown",
+        "reason": "current coordinator evidence unavailable"
+      }
+    ]
+  },
+  "events": [
+    {
+      "type": "read",
+      "path": "skills/push/SKILL.md"
+    },
+    {
+      "type": "command",
+      "command": "git status --short --branch",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git diff --stat",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-1.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-2.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-links-and-ownership.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/closed-failed-unknown.json"
+    },
+    {
+      "type": "final",
+      "text": "Local commits: none. Incoming landed: none; equivalent local ref already included/equivalent by patch and blob comparison at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, no duplicate commit. Pending: https://github.com/example/project/pull/53 closed-unmerged, owner must decide whether to reopen; https://github.com/example/project/issues/14 failed/blocked (paused, failed CI), coordinator repairs CI and honors pause; https://github.com/example/project/pull/55 unavailable/unknown ownership, obtain current coordinator evidence. Selected/final: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Checks: no dependent publication, no gate bypass. Remote inclusion: existing destination aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa only. Local sync: all held worktrees and untracked/recovery inputs untouched. Partial result, no claim all Orbi changes landed."
+    }
+  ]
+}

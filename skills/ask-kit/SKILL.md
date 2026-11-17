@@ -49,7 +49,7 @@ not ask for.
 | The suite is bloated, slow or full of low-value tests | `/test-optimizer` |
 | Code looks unused and you want it gone | `/unused-code` |
 | Merge every finished worktree into main | `/git-commit-push all` |
-| Commit all eligible changes, merge worktrees, sync and push main | `/push` |
+| Ship eligible local and landed Orbi changes; report open Orbi work | `/push` |
 | One folder needs splitting without behavior change | `/split-folder` |
 | Modules are shallow or seams leak | `/improve-codebase-architecture` |
 | One objective needs many turns and an evidence audit | `/goal` |

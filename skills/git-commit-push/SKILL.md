@@ -32,8 +32,9 @@ identity and existing receipts first; unchanged evidence can satisfy that handof
 - `/git-commit-push` (CLI) or `/git_commit_push` (Telegram) was invoked: that invocation **is** the ship request. Any text after the command narrows scope (paths, topic, "audit", "dry run", "no push", "no pull").
 - **Every ship also syncs.** By default the branch is pulled and merged with its upstream
   before pushing (step 6), so a ship leaves local and remote equal. "no pull", "no sync" or
-  "ff-only" narrows it; an audit, the autonomous agent-branch route and a repository
-  main-only policy that forbids merge commits do not sync.
+  "ff-only" narrows it. Fast-forward-only/no-merge routes permit fast-forward sync,
+  not merge commits; audit permits no Git writes. The autonomous local-only
+  agent-branch route still grants no sync or publication authority.
 - LGTM accepts a checkpoint that recommended or explicitly offered commit/push (see the
   `lgtm` skill). A generic LGTM after an implementation report that did not offer shipping
   never implies shipping.
@@ -73,13 +74,20 @@ original commit/push/main-delivery obligation and continue candidate verificatio
 | Authorized local slice, no explicit or standing publication authority | owned task branch under repository policy | **never** |
 | Audit request | nothing | no |
 
-Interpret delivery verbs separately: a request to implement and commit authorizes a local commit, not publication. Do not infer push permission from the skill name, an upstream being configured, or a broad request to finish all plans. After a local-only commit, verify `git show --stat HEAD` and repository status; omit remote-write readback because no remote write occurred (a read-only fetch to detect stale copies is still fine).
+Interpret delivery verbs separately: a request to implement and commit authorizes a local commit, not publication. Do not infer push permission from the skill name, an upstream being configured, or a broad request to finish all plans. After a local-only commit, verify `git show --stat HEAD` and repository status; omit remote-write readback because no remote write occurred (freshness inspection uses existing refs and permitted remote metadata; fetch is a write and needs authorized sync).
 
 A repeated commit-only request after you disclosed failing checks authorizes a local
 checkpoint, not a repair project: record known failures and unrun checks in the message
 and report, claim no readiness, and still apply scope, live-writer, secret, preservation
 and hook rules (repository-mandated commit gates stay binding). A later ship request must
 reconcile fresh upstream and pass the candidate-bound gates.
+
+Before probes, apply the [shared freshness and ownership contract](../shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership).
+It owns mode effects, verified remote selection and coordinator retention, including
+open Orbi PRs whose checks pass. Use [/push](../push/SKILL.md) for repository-wide
+remote discovery and landed Orbi synchronization. Refresh relevant PR/ownership
+state and verify source/base/destination pins immediately before integration and
+publication; rebuild changed upstream through normal merge and affected checks/review.
 
 **Scope is authorization, not authorship.** An explicit repo-wide ship request covers
 all eligible changes in requested scope, including completed work from other agents or
@@ -146,8 +154,8 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
    - **A shared checkout that is behind its upstream is not automatically the delivery queue.**
      Several agents push from sibling checkouts, so a dirty path can hold an *older revision* of a
      file upstream has since changed — its worktree blob equal to an unmerged `agent/*` branch
-     tip's blob and older than `origin/<branch>`'s. Committing or overlaying it reverts reviewed
-     work. Resolve every path's bytes against `origin/<branch>` and the unmerged branch tips in
+     tip's blob and older than `<verified-upstream-ref>`'s. Committing or overlaying it reverts reviewed
+     work. Resolve every path's bytes against `<verified-upstream-ref>` and the unmerged branch tips in
      one pass before shipping a behind tree; a superseded path is an owner decision, not a flush.
      Rehearse the landing in a scratch worktree (merge, `--abort` on conflict) so the question you
      ask is specific. Depth: [shared-worktree-safety.md](references/shared-worktree-safety.md).
@@ -191,7 +199,7 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      do not duplicate a close.
      - A ledger's working copy can also be **behind** the remote, and committing that deletes other
        people's work. Another pass may have pushed its entries from a different checkout, so the copy
-       you hold is missing lines that exist on `origin/<branch>` and your commit removes them on push.
+       you hold is missing lines that exist on `<verified-upstream-ref>` and your commit removes them on push.
        Diff the ledger against the remote before staging (`git diff origin/<branch> -- <ledger>`) and
        inspect additions, removals and task identities against fresh upstream. Reconstruct only
        genuine authorized unshipped edits **on fresh upstream in an isolated candidate**;
@@ -315,14 +323,19 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      claiming verification; do not replay a successful gate merely for reassurance.
 
 6. **Sync with upstream (default).**
-   - Unless the request said "no pull", "no sync" or "ff-only" (fast-forward only), after
-     the owned commits exist and before pushing: `git fetch --prune origin`, then
+   - With sync authorized, after the owned commits exist and before pushing:
+     `git fetch <verified-upstream-remote>`, then
      `git rev-list --left-right --count HEAD...@{u}`. Nothing incoming: go to step 7.
-   - Integrate with the [pull and merge](references/pull-merge.md) procedure: check incoming
-     paths against dirty files first, fast-forward when there are no local commits, otherwise
-     `git merge --no-ff @{u}` with a message naming what came in. Never rebase, stash, reset
-     or `git pull --rebase`. Overlap with someone else's live work moves the integration into
-     an isolated worktree or holds it, as that procedure says.
+     For no-pull/no-sync: use permitted remote metadata without fetch or integration;
+     verify destination inclusion using already available objects, or hold publication
+     with the missing SHA/evidence. A restriction never authorizes a fallback sync.
+   - Integrate with the [pull and merge](references/pull-merge.md) procedure: verify
+     checkout ownership before checking dirty-path collisions. Shared/live checkouts
+     require isolation even when paths are disjoint. Fast-forward when there are no
+     local commits; otherwise `git merge --no-ff @{u}` only when merge commits are
+     authorized. Under ff-only/no-merge/no-commit, try only fast-forward and report
+     divergence rather than creating a commit. Never rebase, stash, reset or
+     `git pull --rebase`.
    - Resolve conflicts as that procedure says; never by dropping either side's tests.
    - Re-gate the merged tree: rerun the checks for the areas the incoming commits touched,
      and confirm your own paths' blobs are unchanged. A failure the merge caused is part of
@@ -330,25 +343,30 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      `git revert -m 1 <merge>` (after) and report HELD.
    - Having nothing to commit is not a reason to skip the sync: a pull with nothing to push
      is reported as SYNCED.
-   - Never push a branch that is behind its push target. Before every push, including a
-     refspec push such as `HEAD:main` from a worktree, fetch and confirm that the target
-     ref (`origin/main`, not only `@{u}`) is an ancestor of what you push.
+   - Never push a branch that is behind its push target. Before every push, including
+     an explicit refspec, read the exact destination SHA (not only `@{u}`) and prove it
+     is an ancestor of what you push. Fetch only within authorized sync; under caller
+     restrictions use remote metadata and existing objects as above. If the verified
+     destination cannot be proved included, report HELD instead of fetching anyway.
 
 7. **Push (explicit ship target only).**
-   - Push the configured upstream; with one `origin` and no upstream, `git push -u origin HEAD`.
+   - Push only the verified configured destination/ref; no upstream means resolve
+     repository policy and push configuration first, not an automatic `origin` fallback.
      A new delivery branch cut from remote main can inherit main as upstream: push an explicit
      refspec (`git push --set-upstream <remote> HEAD:refs/heads/<branch>`) and verify that exact
      ref. A delivery-branch push is not a main merge.
-   - Publish an already-qualified immutable commit by explicit refspec rather than cherry-picking
-     or rebuilding it only to advance its base, when the receipt's commit, owned-file allowlist and
-     hashes verify and affected base subtrees (`git rev-parse <candidate>^:<component>` vs
-     `origin/<target>:<component>`) match fresh upstream; changed inputs need reconciliation and
-     affected checks. Read back the remote ref, PR head and file list.
+   - Preserve already-qualified immutable source commits rather than cherry-picking
+     duplicate bytes. If upstream advanced, incorporate them through the normal merge
+     path on the verified base before publication; do not publish an older candidate
+     merely because one component is unchanged. Reuse component-bound receipts only
+     when source subtrees, owned-file allowlist/hashes and dependency/tool inputs
+     still match; rerun affected checks/review. Read back remote ref, PR head and file list.
    - Never `--autostash`. Step 6 has already merged upstream; if the push is still rejected
      because upstream moved again, repeat step 6 once and push. Rebase needs explicit approval.
-     On a "no pull" or "ff-only" request, or a fast-forward-only or no-merge route, do not
-     fall back to a reference's merge recipe after rejection: rebuild and requalify from fresh
-     upstream, or report the conflict. Never force-push. Measure the overlap against the merge base, not against
+     On a no-pull/no-sync request, report the moving destination without fetching or
+     rebuilding on new upstream. Under ff-only/no-merge/no-commit, reconcile only by
+     allowed fast-forward or report divergence; never fall back to a reference's merge
+     recipe or recreate existing commits to evade that limit. Never force-push. Measure the overlap against the merge base, not against
      HEAD: `git diff --name-only $(git merge-base HEAD origin/main)..origin/main` lists what they
      changed, while `HEAD..origin/main` also lists your own unpushed files and reads as an overlap
      that is not there.
@@ -363,15 +381,16 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      main pushes or protection bypass where a PR is required. Preserve the original local
      branch/index/worktree and report any divergence; do not realign pointers or force-remove
      worktrees as incidental delivery cleanup.
-   - Verify the remote: `git fetch -q && [ "$(git rev-parse HEAD)" = "$(git rev-parse @{u})" ] && echo MATCH`.
-     The push output alone is not proof.
-   - **Leave the canonical checkout current after pushing the default branch from elsewhere.**
-     A push to `origin/main` (or `master`) from a worktree or task branch leaves the canonical
-     checkout's local `main` behind, and the next local integration there diverges from the
-     remote. When that checkout is on the default branch and no incoming path is dirty there,
-     run `git -C <canonical> merge --ff-only origin/main` and read back that both match. Never
-     stash, reset or switch it to make that possible; otherwise report **local main stale**
-     with the reason.
+   - Verify the exact pushed destination ref by permitted remote readback, matching
+     its SHA/inclusion to the candidate; do not silently fetch a different default
+     remote. The push output alone is not proof.
+   - **Leave the canonical checkout current after pushing the default branch from elsewhere**
+     only when local sync is authorized and ownership is released. Use its verified
+     default branch/upstream, not a hard-coded remote. When it is on that branch,
+     idle with known ownership, and no incoming path is dirty, fast-forward and read
+     back both SHAs (for a verified `origin/main`, `git -C <canonical> merge --ff-only origin/main`).
+     Never refresh a live writer's checkout, stash, reset or switch it to make this
+     possible; otherwise report **local main stale** (or the actual base) with its reason.
 
 8. **Close the loop.**
    - `git status --short --branch`; report hashes, the push result, and every remaining path with its reason.
@@ -393,7 +412,11 @@ python3 "<skill-dir>/scripts/worktree_sweep.py" . --apply             # merge fi
 python3 "<skill-dir>/scripts/worktree_sweep.py" . --apply --remove    # then close them out
 ```
 
-A merge candidate has commits that are not on the base branch **and** a clean tree. The
+A merge candidate needs released ownership, completed eligible scope, required gates,
+commits not on the verified base branch **and** a clean tree. An open Orbi PR is
+not eligible, even in a clean idle worktree; its coordinator retains delivery.
+Read-only inventory is allowed; do not run `--apply` on an unfiltered inventory
+that includes owned/unknown worktrees. The
 sweep never commits, stashes, resets, rebases or discards another writer's work: a dirty
 worktree is reported for its owner, or archived with `worktree_closeout.py --archive`.
 Detached release checkouts and locked worktrees stay untouched. After the batch, re-run
