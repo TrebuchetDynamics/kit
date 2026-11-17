@@ -21,13 +21,14 @@ def words(path):
 
 
 class PlanForMeDiscoveryContractTests(unittest.TestCase):
-    def test_bare_and_vague_requests_start_discovery_without_a_goal_interview(self):
+    def test_requests_without_conversation_findings_start_discovery_without_an_interview(self):
         text = words(SKILL)
         for requirement in (
                 '## Route the request',
                 'references/discovery.md',
                 'Do not ask for a goal before investigating',
-                'A bare `/plan_for_me` is a discovery request, not an interview',
+                'A bare `/plan_for_me` after concrete findings plans those findings',
+                'Without that context it is a discovery request, not an interview',
                 'Focused planning for that outcome and its authorized prerequisites',
                 'Read-only, chat-only, no-write or dry-run',
                 'An Orbi-owned planning substep',
@@ -35,6 +36,17 @@ class PlanForMeDiscoveryContractTests(unittest.TestCase):
                 'New product directions stay proposals'):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
+
+    def test_conversation_scope_precedes_discovery_across_entrypoints(self):
+        for path in (SKILL, DISCOVERY, RESEARCH_PLAN):
+            with self.subTest(path=path):
+                self.assertIn('PLAN-HANDOFF.md#conversation-findings-to-issues', words(path))
+                self.assertIn('relevant conversation', words(path))
+        mode_row = next(line for line in RESEARCH_PLAN.read_text().splitlines()
+                        if line.startswith('| Plan For Me |'))
+        self.assertIn('only when neither request nor relevant conversation', mode_row)
+        self.assertIn('An explicit target wins', words(SKILL))
+        self.assertIn('not the full explicitly requested batch', words(DISCOVERY))
 
     def test_shared_contract_distinguishes_discovery_from_missing_interactive_intent(self):
         contract = words(RESEARCH_PLAN)

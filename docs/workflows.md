@@ -77,8 +77,23 @@ locally or on GitHub. Explicit no-dispatch requests retain `ai-planning`; ordina
 writable planning can publish work an existing Orbi deployment consumes immediately.
 Neither planner implements or starts a service.
 
-`/plan_for_me` with no argument, or a vague direction such as *make it better*,
-starts project discovery instead of asking you for a goal. It reads the
+After a state-machine analysis, grill discussion, bug harvest or UI review, invoke
+`/plan_for_me` to turn the conversation's concrete findings into scoped GitHub
+Issues. You do not need to paste the report again. Both planners reuse accepted
+answers and current evidence, skip completed fixes, and keep unsupported proposals
+separate. Distinct buildable outcomes become separate issues, not one ticket per
+message or one giant ticket for the whole conversation.
+
+Before publication, chat shows a **Plan preview**: each proposed issue's title,
+observable change, acceptance signal and dependencies, plus reused issues and held
+questions. After publication, the receipt replaces proposed keys with verified
+links and ready/waiting/held states. The preview is not another approval round.
+Use `/plan_for_me preview only, no writes: plan these findings` to inspect without
+publishing. Planning never claims that a ready label proves Orbi pickup or delivery.
+See [conversation intake and preview](../skills/shared/PLAN-HANDOFF.md#conversation-findings-to-issues).
+
+`/plan_for_me` with no concrete objective in either the request or relevant
+conversation starts project discovery instead of asking you for a goal. It reads the
 repository's accepted intent, code, tests and task history, separates accepted and
 derived engineering goals from new product proposals, and saves only the highest
 value executable frontier. It does not promote a speculative feature into runnable
