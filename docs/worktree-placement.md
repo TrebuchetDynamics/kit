@@ -60,8 +60,11 @@ Another session's edit in the canonical checkout is denied with a reason that na
 the holder and its uncommitted files; that session continues in a worktree through
 `EnterWorktree`, or waits. The lock passes on once every file the holder edited is
 committed or reverted (after a one-minute grace, since the hook runs before an edit
-lands), or when the holder's session ends. A holder with uncommitted files is never
-released automatically: `python3 ~/.claude/hooks/checkout-lock.py status|release
+lands), or when the holder's session ends. Ignored files edited by the holder also
+count as uncommitted. A confirmed dead owner passes the lock after the same grace
+period, leaving its files untouched; a live owner with uncommitted files keeps it.
+Older records without a process identity, or unavailable process information, keep
+the dirty-file protection. `python3 ~/.claude/hooks/checkout-lock.py status|release
 [REPO]` shows the holder and frees it by hand. Edits under `.worktrees/`, linked
 worktrees and paths outside Git are never locked; reads are never blocked. Like the
 Bash worktree guard, this guards the edit tools, not shell commands that write files.
