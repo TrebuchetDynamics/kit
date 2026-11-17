@@ -3,11 +3,14 @@ import contextlib
 import io
 import json
 from pathlib import Path
+import select
+import shlex
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import checkout_lock
@@ -87,6 +90,66 @@ class CheckoutLockTests(unittest.TestCase):
         self.write('a.py')
         self.assertIn('a.py', self.edit('S2', 'b.py', after=31 * 60))
         self.assertIn('a.py', self.edit('S2', 'b.py', after=24 * 3600))
+
+    def test_ignored_file_edits_keep_the_lock(self):
+        self.write('.gitignore', 'ignored.txt\nignored-dir/\n')
+        self.git('add', '.gitignore')
+        self.commit('ignore generated files')
+        (self.repo / 'ignored-dir').mkdir()
+        for name in ('ignored.txt', 'ignored-dir/object.txt'):
+            with self.subTest(name=name):
+                self.assertEqual(self.edit('S1', name), '')
+                self.write(name, 'uncommitted ignored content\n')
+                self.assertEqual(checkout_lock.dirty(self.repo, [name]), [name])
+                record = checkout_lock.read(self.repo / '.git')
+                self.assertFalse(checkout_lock.passed_on(record, self.repo, self.now + 120))
+                reason = self.edit('S2', 'b.py', after=120)
+                self.assertIn('S1', reason)
+                self.assertIn(name, reason)
+                self.assertIn('EnterWorktree', reason)
+                self.assertEqual((self.repo / name).read_text(), 'uncommitted ignored content\n')
+
+    def test_a_dead_owner_passes_the_lock(self):
+        payload = {'hook_event_name': 'PreToolUse', 'session_id': 'S1', 'tool_name': 'Write',
+                   'cwd': str(self.repo), 'tool_input': {'file_path': 'a.py'}}
+        # The documented command runs through a shell. Its Python hook and shell
+        # both exit while the interactive owner stays alive waiting for input.
+        command = shlex.join([sys.executable, str(HOOK)]) + '; :'
+        code = ('import subprocess, sys\n'
+                'subprocess.run(sys.argv[1], shell=True, input=sys.argv[2], text=True, '
+                'check=True, timeout=10)\n'
+                'print("ready", flush=True)\n'
+                'sys.stdin.readline()\n')
+        with subprocess.Popen([sys.executable, '-c', code, command, json.dumps(payload)],
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=True) as owner:
+            try:
+                self.assertTrue(select.select([owner.stdout], [], [], 15)[0], 'owner hook timed out')
+                self.assertEqual(owner.stdout.readline(), 'ready\n')
+                self.write('a.py')
+                record = checkout_lock.read(self.repo / '.git')
+                self.assertEqual(record.get('pid'), owner.pid)
+                self.assertTrue(record.get('started'))
+                record['touched'] = self.now
+                checkout_lock.write(self.repo / '.git', record)
+                self.assertIn('S1', self.edit('S2', 'b.py', after=120))
+                # Older records remain protected; a reused PID is not the owner.
+                legacy = {k: v for k, v in record.items() if k not in ('pid', 'started')}
+                self.assertFalse(checkout_lock.passed_on(legacy, self.repo, self.now + 120))
+                with mock.patch.object(checkout_lock, 'process', side_effect=OSError('ps unavailable')):
+                    self.assertFalse(checkout_lock.passed_on(record, self.repo, self.now + 120))
+                reused = dict(record, started='a different process start time')
+                self.assertTrue(checkout_lock.passed_on(reused, self.repo, self.now + 120))
+                owner.terminate()
+                owner.wait(timeout=10)
+                self.assertIn('S1', self.edit('S2', 'b.py', after=checkout_lock.GRACE - 1))
+                self.assertEqual(self.edit('S2', 'b.py', after=checkout_lock.GRACE), '')
+                self.assertEqual(checkout_lock.read(self.repo / '.git')['session'], 'S2')
+                self.assertEqual((self.repo / 'a.py').read_text(), 'x = 2\n')
+            finally:
+                if owner.poll() is None:
+                    owner.kill()
+                    owner.wait(timeout=10)
 
     def test_release_names_the_dirty_files(self):
         self.edit('S1', 'new.py')
