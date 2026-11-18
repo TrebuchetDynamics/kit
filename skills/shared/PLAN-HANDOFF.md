@@ -128,11 +128,13 @@ closed records and Orbi-owned issues rather than overwriting them. For refinemen
 read the issue fresh, reconcile only the intended delta, and preserve current
 ownership and dependencies; do not replay an old full snapshot.
 
-Failure may leave a partial batch: earlier issues stay ready, while the refused
-issue stays `ai-planning` unless another client changed its labels. Preserve that
-readiness and foreign edits; there is no automatic rollback. Inspect ownership and
-reconcile the cause before retrying the same stable-key input, never blindly retry
-to overwrite drift. The whole-batch barrier and final per-issue refresh are not a
+Failure may leave a partial batch: earlier issues stay ready, later issues may
+already be saved without dispatch, and a timed-out write may have been accepted.
+The interrupted issue can have both `ai-planning` and `ai-ready`; a timeout is not
+proof that readiness failed. Preserve observed readiness and foreign edits; there
+is no automatic rollback, write retry or failed-write label cleanup. Inspect
+ownership and reconcile the cause before retrying the same stable-key input,
+never blindly retry to overwrite drift. See the partial receipt below. The whole-batch barrier and final per-issue refresh are not a
 transaction: concurrent edits remain possible between the final reads and separate
 label write. One publisher per batch is required, not a cross-client lock or a
 guarantee against all concurrent clients.
@@ -154,10 +156,12 @@ through the repository's normal PR process. A link to an unpublished local file 
 not a reachable governing source: publish it or put the necessary accepted content
 in the issue before readiness. Preserve unrelated files and active writers.
 
-If GitHub/authentication/network access is unavailable, continue permitted research
-and document work and show complete proposed issues inline as **UNSAVED**, with the
-exact failure and retry command. Do not create a substitute executable queue or
-claim a saved handoff. Read-only/questions-only/no-write/dry-run means no GitHub,
+If GitHub/authentication/network access is unavailable before publication, continue
+permitted research and document work and show complete proposed issues inline as
+**UNSAVED**, with the exact failure and retry command. If publication already began,
+use the per-issue partial receipt instead: unavailable access cannot prove a write
+was rejected. Do not create a substitute executable queue or claim unverified work
+was saved. Read-only/questions-only/no-write/dry-run means no GitHub,
 label, document or scratch writes. A preview proves no remote persistence.
 
 ## Progress and final receipt
@@ -215,11 +219,61 @@ paused work, or name the exact missing input if none is eligible.
 
 Finish with material decisions and planner calls, scoped unresolved choices,
 actual checks and unmet gates. A publication failure reports the actual partial
-result per issue: published, saved but held, or **UNSAVED**, plus the exact failure
-and resume action. A no-write preview says **nothing saved or dispatched** and
+result per issue (by stable key): published, saved but held/not yet dispatched, **UNSAVED**
+(creation never attempted), or **UNKNOWN** (write attempted without conclusive
+readback), plus the exact failure and resume action. Never call a saved issue
+unsaved because dispatch failed, or an ambiguous create unsaved because it timed
+out. A no-write preview says **nothing saved or dispatched** and
 shows proposed contracts inline; it must not end with a saved-plan claim. Distinguish
 recovery acceptance from application/device qualification using
 [the shared recovery policy](PLANNING-CRAFT.md#recovery-provenance-and-qualification).
+
+#### Incomplete `--apply` receipt
+
+The helper exits 1 with empty stdout on failure. After the existing
+`Publication incomplete: ...` diagnostic, failures with issue publication progress
+append one JSON object on its own stderr line:
+
+```json
+{"partial":true,"issues":[{"key":"P1","number":42,"url":"https://github.com/OWNER/REPO/issues/42","creation":"saved","attempted_phase":"ready_post","last_verified":{"state":"open","labels":["ai-planning","ai-ready"]},"readiness":"ready","unverified_write":false}]}
+```
+
+Every input key appears, including later saved issues and never-attempted creates:
+
+- `creation`: `saved` means an issue identity was returned/read back; `unknown`
+  means creation was attempted but not conclusively reconciled; `not_attempted`
+  means this run neither created nor identified that issue. `number`/`url` remain
+  null without a proven identity. These describe persistence, not dispatch.
+- `attempted_phase`: the last phase entered, not a claim it succeeded. Phases are
+  `not_started`, `reuse`, `create`, `dependencies`, `dependencies_post`, `epic`,
+  `epic_post`, `verify_batch`, `verify_dispatch`, `ready_post`, `remove_planning`,
+  `readback`, and `complete`. For example, a saved issue at `verify_batch` has not
+  reached dispatch; `ready_post` may or may not have been accepted.
+- `last_verified`: the latest issue state/labels snapshot, or null. It does not
+  certify current contract/graph validity or eligibility. Earlier completed rows
+  retain their verified result; they are not refreshed after another row fails.
+- `readiness`: `ready`/`not_ready` describes the observed presence/absence of
+  `ai-ready`, **not eligibility or pickup**. `unknown` means the interrupted row
+  could not be freshly observed; its retained `last_verified` can be stale.
+  Owned, paused or changed work must still be reconciled, regardless of this field.
+- `unverified_write`: a write has not been resolved by the relevant readback.
+  An issue GET can resolve issue/label state, not an interrupted native graph write.
+  `reconciliation_error`, when present, explains why recovery observation failed.
+
+After failure, the helper only reads the interrupted issue: one issue GET when its
+number is known, otherwise an all-state stable-marker scan for an ambiguous create
+(capped at ten 100-issue pages; each API call has a 60-second timeout). No unique
+match, a scan cap, or a failed read leaves creation unknown, not absent. Recovery
+reads do not validate/repair foreign changes, dispatch the next issue, or repeat a
+mutation. Success JSON/exit 0 and the local preview format are unchanged.
+
+For safe recovery, preserve the diagnostic/receipt and transient input. Read back
+unknown writes by issue number or the same stable marker (open **and closed**
+issues, not lagging search); resolve ambiguous matches deliberately. Inspect fresh
+contracts, ownership, pauses and native graph state before reusing the same keys
+and `--apply` command. Do not create replacement keys, overwrite drift, remove
+labels or reopen owned/closed work to force a retry. The helper still applies the
+whole-batch and per-issue freshness gates; a receipt is not retry authorization.
 
 Readiness is not pickup, PR delivery or merge. Distinguish a generic possible
 consumer from an observed deployment: pickup or timers require current evidence,
