@@ -1,11 +1,19 @@
 {
   "skill": "plan-with-me",
   "tier": 3,
-  "description": "Writable fresh helper-publication pilot: investigate, successfully apply a GitHub issue batch, report; no implementation or activation. Not all valid planning outcomes.",
+  "description": "Writable fresh helper-publication pilot: investigate, visibly preview before the first apply attempt, successfully apply a GitHub issue batch, report; no implementation or activation. Not all valid planning outcomes.",
   "require": [
     {
       "event": "read",
       "path": "*"
+    },
+    {
+      "event": "assistant",
+      "contains": "Plan preview",
+      "before_first": {
+        "event": "command",
+        "command": "^(?![\\s\\S]*(?<!\\S)(?:-h|--h|--he|--hel|--help)(?=\\s|$))\\s*(?:python3?\\s+(?:-B\\s+)?)?scripts/github_issues\\.py\\s+(?:[^\\s;&|\\x22\\x27#]+\\s+)*--apply(?=\\s|$)"
+      }
     },
     {
       "event": "command",

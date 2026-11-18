@@ -17,11 +17,15 @@ def load(path):
 
 
 PLANNERS = ('plan-for-me', 'plan-with-me')
+PREVIEW = {'type': 'assistant', 'text': 'Plan preview — OWNER/REPO: 1 proposed new issue, '
+           '0 reused, 0 held. P1 — Reject invalid parser input; regression test proves '
+           'the error; no prerequisites. Proposed, not published.'}
 
 
 def publication_trace(skill):
     return {'skill': skill, 'events': [
         {'type': 'tool', 'tool': 'read', 'path': 'src/parser.py'},
+        dict(PREVIEW),
         {'type': 'command', 'command': 'python3 scripts/github_issues.py '
          '--repo OWNER/REPO --batch /tmp/batch.json --apply', 'exit': 0},
         {'type': 'final', 'text': 'Published https://github.com/OWNER/REPO/issues/1; '
@@ -33,8 +37,55 @@ class SkillTraceEvalTests(unittest.TestCase):
     def test_planning_helper_publication_passes_without_local_task_write(self):
         for skill in PLANNERS:
             with self.subTest(skill=skill):
-                result = evaluate(publication_trace(skill), load(SPECS / f'{skill}.json'))
+                trace = publication_trace(skill)
+                result = evaluate(trace, load(SPECS / f'{skill}.json'))
                 self.assertTrue(result['ok'], result['failures'])
+                # Validation-only helper calls are not the first apply attempt.
+                dry_run = trace['events'][2]['command'].removesuffix(' --apply')
+                trace['events'][1:1] = [
+                    {'type': 'command', 'command': dry_run, 'exit': 0},
+                    {'type': 'command', 'command': dry_run + ' --apply --help', 'exit': 0},
+                ]
+                result = evaluate(trace, load(SPECS / f'{skill}.json'))
+                self.assertTrue(result['ok'], result['failures'])
+
+    def test_planning_preview_must_be_visible_before_first_apply_attempt(self):
+        for skill in PLANNERS:
+            for scenario in ('missing', 'late', 'final-only', 'dry-run-output',
+                             'thinking', 'empty', 'unrelated-text',
+                             'failed-first-apply', 'unknown-first-apply'):
+                trace = publication_trace(skill)
+                preview = trace['events'].pop(1)
+                if scenario == 'late':
+                    trace['events'].insert(-1, preview)
+                elif scenario == 'final-only':
+                    trace['events'][-1]['text'] = preview['text']
+                elif scenario == 'dry-run-output':
+                    trace['events'].insert(1, {
+                        'type': 'command', 'command': trace['events'][1]['command']
+                        .removesuffix(' --apply'), 'exit': 0, 'text': preview['text']})
+                elif scenario in ('thinking', 'empty', 'unrelated-text'):
+                    if scenario == 'thinking':
+                        preview['type'] = 'thinking'
+                    else:
+                        preview['text'] = '' if scenario == 'empty' else 'Investigating now.'
+                    trace['events'].insert(1, preview)
+                elif scenario in ('failed-first-apply', 'unknown-first-apply'):
+                    attempt = dict(trace['events'][1])
+                    if scenario == 'failed-first-apply':
+                        attempt['exit'] = 1
+                    else:
+                        del attempt['exit']
+                    # Tool wrappers must be ordered exactly like bare commands.
+                    attempt = {'type': 'tool', 'tool': 'bash',
+                               'args': {'command': attempt['command']},
+                               **({'exit': attempt['exit']} if 'exit' in attempt else {})}
+                    trace['events'][1:1] = [attempt, preview]
+                with self.subTest(skill=skill, scenario=scenario):
+                    result = evaluate(trace, load(SPECS / f'{skill}.json'))
+                    self.assertFalse(result['ok'], result)
+                    self.assertTrue(any('before first' in f for f in result['failures']),
+                                    result['failures'])
 
     def test_planning_legacy_handoff_with_implementation_edit_is_refused(self):
         for skill in PLANNERS:
@@ -51,7 +102,7 @@ class SkillTraceEvalTests(unittest.TestCase):
 
     def test_planning_requires_investigation_and_final_receipt(self):
         for skill in PLANNERS:
-            for missing in (0, 2):
+            for missing in (0, 3):
                 trace = publication_trace(skill)
                 del trace['events'][missing]
                 with self.subTest(skill=skill, missing=missing):
@@ -73,9 +124,9 @@ class SkillTraceEvalTests(unittest.TestCase):
                     ('echo ' + preview + ' --apply', 0),
                     ('python3 scripts/not_github_issues.py --apply', 0)):
                 trace = publication_trace(skill)
-                trace['events'][1] = {'type': 'command', 'command': command}
+                trace['events'][2] = {'type': 'command', 'command': command}
                 if status is not None:
-                    trace['events'][1]['exit'] = status
+                    trace['events'][2]['exit'] = status
                 with self.subTest(skill=skill, command=command, status=status):
                     result = evaluate(trace, load(SPECS / f'{skill}.json'))
                     self.assertFalse(result['ok'])
@@ -87,9 +138,9 @@ class SkillTraceEvalTests(unittest.TestCase):
             for help_arg in ('-h', '--help', '--h', '--he', '--hel'):
                 for command in (
                         f'python3 scripts/github_issues.py {help_arg} --apply',
-                        publication_trace(skill)['events'][1]['command'] + ' ' + help_arg):
+                        publication_trace(skill)['events'][2]['command'] + ' ' + help_arg):
                     trace = publication_trace(skill)
-                    trace['events'][1]['command'] = command
+                    trace['events'][2]['command'] = command
                     with self.subTest(skill=skill, command=command):
                         result = evaluate(trace, load(SPECS / f'{skill}.json'))
                         self.assertFalse(result['ok'])
@@ -158,9 +209,9 @@ class SkillTraceEvalTests(unittest.TestCase):
     def test_planning_document_owners_scratch_and_historical_reads_remain_allowed(self):
         for skill in PLANNERS:
             trace = publication_trace(skill)
-            trace['events'][1] = {
+            trace['events'][2] = {
                 'type': 'tool', 'tool': 'bash',
-                'args': {'command': trace['events'][1]['command']},
+                'args': {'command': trace['events'][2]['command']},
                 'result': {'structuredContent': {'exit_code': 0}},
             }
             for path in ('docs/parser-plan.md', '/tmp/batch.json'):
@@ -181,7 +232,7 @@ class SkillTraceEvalTests(unittest.TestCase):
     def test_planning_previous_legacy_store_handoff_is_not_a_passing_fixture(self):
         for skill in PLANNERS:
             trace = publication_trace(skill)
-            trace['events'][1] = {'type': 'write', 'path': 'tasks/items/PLAN-1.md'}
+            trace['events'][2] = {'type': 'write', 'path': 'tasks/items/PLAN-1.md'}
             with self.subTest(skill=skill):
                 result = evaluate(trace, load(SPECS / f'{skill}.json'))
                 self.assertFalse(result['ok'])
@@ -200,13 +251,16 @@ class SkillTraceEvalTests(unittest.TestCase):
                 self.assertEqual(success.returncode, 0, success.stderr)
                 self.assertTrue(json.loads(success.stdout)['ok'])
                 for event, diagnostic in (
+                        (None, 'before first'),
                         ({'type': 'command', 'command': 'python3 scripts/github_issues.py '
                           '--repo OWNER/REPO --batch /tmp/batch.json', 'exit': 0},
                          'missing required'),
                         ({'type': 'edit', 'path': 'src/parser.py'}, 'forbidden action')):
                     trace = publication_trace(skill)
-                    if event['type'] == 'command':
-                        trace['events'][1] = event
+                    if event is None:
+                        del trace['events'][1]
+                    elif event['type'] == 'command':
+                        trace['events'][2] = event
                     else:
                         trace['events'].insert(-1, event)
                     path = Path(directory) / 'negative.json'
@@ -353,7 +407,16 @@ class SkillTraceEvalTests(unittest.TestCase):
         for spec in (
                 {'skill': 'ponytail-review', 'require': [{'event': 'read', 'pth': '*'}]},
                 {'skill': 'ponytail-review', 'require': [{'event': 'read', 'exit': 0}]},
-                {'skill': 'ponytail-review', 'require': [{'event': 'command', 'path': '*'}]}):
+                {'skill': 'ponytail-review', 'require': [{'event': 'command', 'path': '*'}]},
+                {'skill': 'ponytail-review', 'require': [
+                    {'event': 'assistant', 'before_first': []}]},
+                {'skill': 'ponytail-review', 'require': [
+                    {'event': 'assistant', 'before_first': {'event': 'command', 'path': '*'}}]},
+                {'skill': 'ponytail-review', 'require': [
+                    {'event': 'assistant', 'before_first': {
+                        'event': 'command', 'before_first': {'event': 'final'}}}]},
+                {'skill': 'ponytail-review', 'forbid': [
+                    {'event': 'assistant', 'before_first': {'event': 'command'}}]}):
             with self.subTest(spec=spec), self.assertRaises(TraceError):
                 evaluate(trace, spec)
 

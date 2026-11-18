@@ -124,6 +124,47 @@ class PiTraceToEvalTests(unittest.TestCase):
                         else:
                             self.assertNotIn('aggregate_exit_code', event)
 
+    def test_planner_chat_preview_survives_conversion_in_attempt_order(self):
+        preview = 'Plan preview — OWNER/REPO: P1 proposed, not published; parser fix and regression.'
+        def assistant(text, part_type='text', role='assistant'):
+            return {'type': 'message_end', 'message': {
+                'role': role, 'content': [{'type': part_type, part_type: text}]}}
+
+        apply = 'python3 scripts/github_issues.py --repo OWNER/REPO --batch /tmp/batch.json --apply'
+        read = [
+            {'type': 'tool_execution_start', 'toolCallId': 'read', 'toolName': 'read',
+             'args': {'path': 'src/parser.py'}},
+            {'type': 'tool_execution_end', 'toolCallId': 'read', 'result': {}},
+        ]
+        start = {'type': 'tool_execution_start', 'toolCallId': 'apply', 'toolName': 'bash',
+                 'args': {'command': apply}}
+        end = {'type': 'tool_execution_end', 'toolCallId': 'apply',
+               'result': {'structuredContent': {'exit_code': 0}, 'text': preview}}
+        for skill in ('plan-with-me', 'plan-for-me'):
+            spec = json.loads((ROOT / f'evals/tier3/{skill}.json').read_text())
+            for scenario, middle, expected in (
+                    ('visible', [assistant(preview), start, end], True),
+                    ('after-attempt-start', [start, assistant(preview), end], False),
+                    ('unfinished-first-attempt', [{**start, 'toolCallId': 'early'},
+                                                  assistant(preview), start, end], False),
+                    ('thinking-only', [assistant(preview, 'thinking'), start, end], False),
+                    ('user-only', [assistant(preview, role='user'), start, end], False),
+                    ('tool-output-only', [start, end], False),
+                    ('final-only', [start, end, assistant(preview)], False)):
+                with self.subTest(skill=skill, scenario=scenario), tempfile.TemporaryDirectory() as temporary:
+                    path = Path(temporary) / 'trace.jsonl'
+                    records = read + middle
+                    if scenario != 'final-only':
+                        records.append(assistant('Published issue 1; live delivery unverified.'))
+                    path.write_text('\n'.join(json.dumps(record) for record in records))
+                    trace = convert(path, skill)
+                    result = evaluate(trace, spec)
+                    self.assertEqual(result['ok'], expected, result)
+                    if expected:
+                        self.assertEqual([e['type'] for e in trace['events']],
+                                         ['read', 'assistant', 'command', 'final'])
+                        self.assertEqual(trace['events'][1]['text'], preview)
+
     def test_tool_wrapper_and_heredoc_are_converted_without_false_commands(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'trace.jsonl'

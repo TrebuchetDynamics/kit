@@ -10,6 +10,10 @@
       "path": "src/parser.py"
     },
     {
+      "type": "assistant",
+      "text": "Plan preview — OWNER/REPO: 1 proposed new issue, 0 reused issues, 0 held topics. P1 — Reject invalid parser input: return a clear error; a focused regression test will verify the error. No prerequisites. Proposed, not published; nothing new saved or dispatched."
+    },
+    {
       "type": "command",
       "command": "python3 scripts/github_issues.py --repo OWNER/REPO --batch /tmp/batch.json --apply",
       "exit": 0
