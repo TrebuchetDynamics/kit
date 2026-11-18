@@ -64,6 +64,10 @@ def refresh_hosts(source):
 MANIFEST_NAMES = ('kit', PLUGIN)
 
 
+class MissingManifestPyYAML(ValueError):
+    """The interpreter has no PyYAML module for reading the plugin manifest."""
+
+
 def _manifest_name(directory):
     """Read only an unambiguous top-level manifest identity; never guess from a slot."""
     try:
@@ -75,9 +79,9 @@ def _manifest_name(directory):
     except ImportError as error:
         if not isinstance(error, ModuleNotFoundError) or error.name != 'yaml':
             raise ValueError(f'Cannot load plugin identity reader: {directory}/plugin.yaml') from error
-        raise ValueError(f'PyYAML is required to verify plugin identity: {directory}/plugin.yaml; '
-                         f'install it for python3 (python3 -m pip install --user PyYAML, or the '
-                         'distribution python3-yaml package) and retry') from error
+        raise MissingManifestPyYAML(f'PyYAML is required to verify plugin identity: {directory}/plugin.yaml; '
+                                   f'install it for python3 (python3 -m pip install --user PyYAML, or the '
+                                   'distribution python3-yaml package) and retry') from error
     try:
         # Inspect YAML nodes, not a line regex: quoted/explicit keys and broken
         # content elsewhere must not conceal an ambiguous or malformed manifest.

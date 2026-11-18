@@ -1790,6 +1790,57 @@ fi
         self.assertEqual(json.loads(settings.read_text())['packages'], [NEW])
         self.assertFalse((self.home / '.pi/agent/settings.json').exists())
 
+    def test_missing_manifest_pyyaml_warns_and_keeps_failure_receipt(self):
+        self.fake('hermes', LOGGING)
+        profile = self.home / 'alternate Hermes'
+        plugin = profile / 'plugins/kit'
+        (plugin / '.git').mkdir(parents=True)
+        manifest = plugin / 'plugin.yaml'
+        manifest.write_text('name: kit\n')
+        imports = self.home / 'imports'
+        imports.mkdir()
+        (imports / 'sitecustomize.py').write_text(
+            'import sys\n'
+            'class NoYAML:\n'
+            '    def find_spec(self, fullname, path=None, target=None):\n'
+            '        if fullname == "yaml":\n'
+            '            raise ModuleNotFoundError("fixture", name="yaml")\n'
+            'sys.meta_path.insert(0, NoYAML())\n')
+        report = self.home / 'report.jsonl'
+        env = {'PYTHONPATH': str(imports), 'AUTOWORK_INSTALL_REPORT': str(report)}
+        for selection, tx_status in ((('--only', 'hermes'), 'skipped'),
+                                     (('--full', '--skip', 'pi,pi-bolt,orbi,claude,codex'), 'installed')):
+            with self.subTest(selection=selection):
+                result = self.install(*selection, '--quiet', '--hermes-home', str(profile), env=env)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("WARNING: Hermes was not updated. The installer's python3 could not load PyYAML",
+                              result.stdout)
+                self.assertIn("python3 -c 'import yaml'", result.stdout)
+                self.assertIn(f"./install.sh --only hermes '--hermes-home={profile}'\n", result.stdout)
+                self.assertNotIn('pip install --user', result.stdout)
+                self.assertRegex(result.stdout, r'hermes\s+failed')
+                rows = {row['item']: row for row in map(json.loads, report.read_text().splitlines())}
+                self.assertEqual(rows['hermes'], {'item': 'hermes', 'status': 'failed', 'exit': 1})
+                self.assertEqual(rows['tx']['status'], tx_status)
+                self.assertEqual(manifest.read_text(), 'name: kit\n')
+                self.assertEqual(set(plugin.iterdir()), {manifest, plugin / '.git'})
+                self.assertEqual(self.calls('hermes'), [])
+
+        # An installed reader with a broken import must not get the missing-module warning.
+        (imports / 'sitecustomize.py').unlink()
+        (imports / 'yaml.py').write_text('raise ImportError("fixture broken reader")\n')
+        broken = self.install('--only', 'hermes', '--quiet', '--hermes-home', str(profile), env=env)
+        self.assertEqual(broken.returncode, 1, broken.stdout + broken.stderr)
+        self.assertIn('Cannot load plugin identity reader', broken.stdout)
+        self.assertNotIn('could not load PyYAML', broken.stdout)
+        self.assertNotIn('fixture broken reader', broken.stdout + broken.stderr)
+
+        manifest.write_text('name: [invalid\n')
+        invalid = self.install('--only', 'hermes', '--quiet', '--hermes-home', str(profile))
+        self.assertEqual(invalid.returncode, 1, invalid.stdout + invalid.stderr)
+        self.assertIn('Invalid plugin manifest', invalid.stdout)
+        self.assertNotIn('could not load PyYAML', invalid.stdout)
+
     def test_setup_only_hermes_options_are_refused_for_profile_clones(self):
         self.fake('hermes', LOGGING)
         clone = self.home / '.hermes/profiles/work/plugins/autowork'
