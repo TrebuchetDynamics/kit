@@ -175,8 +175,11 @@ def preflight(repo, root, profiles, *, bundle_only=False):
             errors.append(f'{name}: {exc}')
         try:
             selected = runtime.setup_profile_policy(home / 'config.yaml')
-        except (OSError, ValueError):
-            errors.append(f'{name}: cannot verify runtime policy/opt-out; valid YAML and PyYAML required')
+        except runtime.MissingPyYAML:
+            errors.append(f'{name}: cannot verify runtime policy/opt-out; {runtime.MissingPyYAML.hint}')
+        except Exception:
+            # Reader errors can contain private profile values. Block without echoing them.
+            errors.append(f'{name}: cannot verify runtime policy/opt-out')
         else:
             if selected['policy'] == 'disabled':
                 plan.append('  Enable kit; runtime-defaults opt-out: bundle policy settings skipped')
@@ -197,7 +200,8 @@ def preflight(repo, root, profiles, *, bundle_only=False):
         result = subprocess.run(command, capture_output=True, text=True, timeout=60,
                                 env=dict(os.environ, HERMES_HOME=str(root), PYTHONDONTWRITEBYTECODE='1'))
         if result.returncode:
-            errors.append('Installer prerequisite preview failed: ' + (result.stderr.strip() or result.stdout.strip()))
+            # The child also reads profile data. Neither stream is a safe diagnostic.
+            errors.append(f'Installer prerequisite preview failed (exit {result.returncode})')
         else:
             plan.extend(result.stdout.strip().splitlines())
     except (OSError, subprocess.TimeoutExpired):

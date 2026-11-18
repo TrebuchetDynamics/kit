@@ -108,6 +108,11 @@ def policy_values(raw):
     return wanted
 
 
+class MissingPyYAML(ValueError):
+    hint = ('PyYAML is required to read profile policy safely; install it for python3 '
+            '(python3 -m pip install --user PyYAML, or the distribution python3-yaml package) and retry')
+
+
 def setup_profile_policy(config_path):
     """Read-only policy/values shared by setup and preflight; never boot Hermes."""
     try:
@@ -117,7 +122,9 @@ def setup_profile_policy(config_path):
     try:
         import yaml
     except ImportError as exc:
-        raise ValueError('PyYAML is required to read profile policy safely') from exc
+        if isinstance(exc, ModuleNotFoundError) and exc.name == 'yaml':
+            raise MissingPyYAML(MissingPyYAML.hint) from exc
+        raise ValueError('Cannot load profile policy reader') from exc
     try:
         raw = yaml.safe_load(text)
         raw = {} if raw is None else raw

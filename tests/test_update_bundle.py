@@ -96,6 +96,19 @@ class PluginDirectoryTests(unittest.TestCase):
                     self.module().plugin_dir(home)
                 self.assertEqual(before, sorted(str(p) for p in home.rglob('*')))
 
+    def test_an_unimportable_yaml_names_the_remedy_and_changes_nothing(self):
+        # A Hermes host whose python3 lacks PyYAML refused every profile with a cause it
+        # could not act on; the identity check still refuses, now with the install step.
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, {'yaml': None}):
+            home = Path(tmp)
+            folder = self.make(home, 'autowork')
+            before = sorted(str(p) for p in home.rglob('*'))
+            with self.assertRaisesRegex(ValueError, 'PyYAML is required to verify plugin identity') as caught:
+                self.module().plugin_dir(home)
+            self.assertIn(f'{folder}/plugin.yaml', str(caught.exception))
+            self.assertIn('python3 -m pip install --user PyYAML', str(caught.exception))
+            self.assertEqual(before, sorted(str(p) for p in home.rglob('*')))
+
 
 class UpdateTests(unittest.TestCase):
     def setUp(self):
