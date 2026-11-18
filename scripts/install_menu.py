@@ -72,7 +72,7 @@ CODEX_MARKETPLACE = manifest_name('.agents/plugins/marketplace.json') or 'kit-ma
 class Output:
     """Flush progress immediately; color only where requested or supported."""
     COLORS = {'heading': '1;36', 'installed': '32', 'failed': '31',
-              'skipped': '33', 'planned': '36', 'command': '2'}
+              'skipped': '33', 'warning': '33', 'planned': '36', 'command': '2'}
 
     def __init__(self, color='auto', verbosity=2):
         self.verbosity = verbosity
@@ -257,6 +257,7 @@ class Item:
     note: str = ''                  # why it is unavailable or what is special
     steps: list = field(default_factory=list)
     missing: str = ''               # what else it needs that is absent, '' for nothing
+    refusal_warning: bool = False
     refuse: str = ''                # why the selected options cannot be honored
 
     @property
@@ -451,12 +452,16 @@ def hermes_home(hermes_args):
     return Path(named or HOME / '.hermes'), bool(named)
 
 
-def hermes_installed(hermes_args):
-    """Discover managed clones under either identity without duplicating installation."""
+def hermes_identity_reader():
     import importlib.util
     spec = importlib.util.spec_from_file_location('install_identity', ROOT / 'scripts/update_bundle.py')
     updater = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(updater)
+    return updater
+
+
+def hermes_installed(hermes_args, updater):
+    """Discover managed clones under either identity without duplicating installation."""
     home, _ = hermes_home(hermes_args)
     installed = False
     for profile in (home, *home.glob('profiles/*')):
@@ -472,7 +477,21 @@ SETUP_ONLY = ('--bundle-only', '--no-reload', '--yes-deps')
 def hermes_item(hermes_args):
     label = 'Hermes plugin + bundled Ponytail (every live profile)'
     try:
-        home = hermes_installed(hermes_args)
+        updater = hermes_identity_reader()
+    except (ValueError, OSError) as error:
+        return Item('hermes', label, needs='hermes', refuse=str(error))
+    try:
+        home = hermes_installed(hermes_args, updater)
+    except updater.MissingManifestPyYAML:
+        retry = ['./install.sh', '--only', 'hermes']
+        if '--hermes-home' in hermes_args:
+            index = hermes_args.index('--hermes-home')
+            retry.append('--hermes-home=' + hermes_args[index + 1])
+        return Item('hermes', label, needs='hermes', refusal_warning=True,
+                    refuse="Hermes was not updated. The installer's python3 could not load PyYAML, "
+                           "so Kit stopped before changing the plugin. Make PyYAML available to that "
+                           "interpreter, verify with python3 -c 'import yaml', then retry "
+                           + shlex.join(retry))
     except (ValueError, OSError) as error:
         return Item('hermes', label, needs='hermes', refuse=str(error))
     if home:
@@ -1119,7 +1138,9 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install'):
         if not item.available or item.refuse:
             record(item.key, 'failed', item.refuse or describe(item), 1)
             if item.refuse:
-                output.line(f'  FAILED: {item.refuse}', 'failed')
+                level = 'WARNING' if item.refusal_warning else 'FAILED'
+                style = 'warning' if item.refusal_warning else 'failed'
+                output.line(f'  {level}: {item.refuse}', style)
             continue
         if not item.steps:
             record(item.key, 'skipped', item.note)

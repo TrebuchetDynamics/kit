@@ -304,6 +304,11 @@ installation; the aggregate exit remains nonzero. Its summary extracts the updat
 structured cause and next action, including per-profile recovery errors. Truncated
 or non-JSON output gets a bounded text fallback.
 
+If the installer's Python is missing PyYAML, the terminal warns that Kit left the
+Hermes plugin unchanged. Hermes still counts as failed in the summary and JSONL
+receipt, and the command exits nonzero. The installer evaluates service restarts
+in its separate restart phase.
+
 Fix the reported cause, then retry only that component:
 
 ```sh
