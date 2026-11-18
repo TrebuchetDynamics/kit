@@ -200,7 +200,8 @@ def preflight(repo, root, profiles, *, bundle_only=False):
         result = subprocess.run(command, capture_output=True, text=True, timeout=60,
                                 env=dict(os.environ, HERMES_HOME=str(root), PYTHONDONTWRITEBYTECODE='1'))
         if result.returncode:
-            errors.append('Installer prerequisite preview failed: ' + (result.stderr.strip() or result.stdout.strip()))
+            # The child also reads profile data. Neither stream is a safe diagnostic.
+            errors.append(f'Installer prerequisite preview failed (exit {result.returncode})')
         else:
             plan.extend(result.stdout.strip().splitlines())
     except (OSError, subprocess.TimeoutExpired):

@@ -3,6 +3,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import subprocess
 import sys
 from pathlib import Path
 import tempfile
@@ -77,6 +78,20 @@ class PreflightTests(unittest.TestCase):
                 self.assertIn('no installation stages started', output)
                 self.assertNotIn(sentinel, output)
                 self.assertNotIn('pip install', output)
+
+    def test_failed_preview_keeps_child_diagnostics_private(self):
+        for err in ('private-stderr-marker', ''):
+            with self.subTest(stderr=bool(err)), tempfile.TemporaryDirectory() as tmp:
+                child = subprocess.CompletedProcess([], 1, 'private-stdout-marker', err)
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with patch.object(subprocess, 'run', return_value=child), \
+                     contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    report = self.check(Path(tmp))
+                    module('setup_preflight').print_plan(report)
+                output = stdout.getvalue() + stderr.getvalue()
+                self.assertIn('BLOCKED: Installer prerequisite preview failed', output)
+                self.assertNotIn('private-stdout-marker', output)
+                self.assertNotIn('private-stderr-marker', output)
 
     def test_incomplete_skill_and_plugin_conflicts_abort_without_writes(self):
         with tempfile.TemporaryDirectory() as tmp:
