@@ -42,6 +42,19 @@ class PreflightTests(unittest.TestCase):
              patch.object(pre.shutil, 'which', return_value='/bin/available'):
             return pre.preflight(ROOT, home, [('default', home)], bundle_only=True)
 
+    def test_a_host_without_pyyaml_names_the_install_step_without_writes(self):
+        # Both PyYAML reads used to stop with a cause the user could not act on.
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, {'yaml': None}):
+            home = Path(tmp)
+            (home / 'config.yaml').write_text('memory:\n  provider: existing\n')
+            before = sorted(str(p) for p in home.rglob('*'))
+            report = self.check(home)
+            errors = ' '.join(report['errors'])
+            self.assertIn('PyYAML is required to verify plugin identity', errors)
+            self.assertIn('cannot verify runtime policy/opt-out; PyYAML is required to read profile policy safely', errors)
+            self.assertIn('python3 -m pip install --user PyYAML', errors)
+            self.assertEqual(before, sorted(str(p) for p in home.rglob('*')))
+
     def test_incomplete_skill_and_plugin_conflicts_abort_without_writes(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)

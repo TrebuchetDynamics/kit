@@ -117,7 +117,9 @@ def setup_profile_policy(config_path):
     try:
         import yaml
     except ImportError as exc:
-        raise ValueError('PyYAML is required to read profile policy safely') from exc
+        raise ValueError('PyYAML is required to read profile policy safely; install it for python3 '
+                         '(python3 -m pip install --user PyYAML, or the distribution python3-yaml '
+                         'package) and retry') from exc
     try:
         raw = yaml.safe_load(text)
         raw = {} if raw is None else raw

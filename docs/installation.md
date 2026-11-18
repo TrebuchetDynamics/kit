@@ -305,10 +305,12 @@ removed as package cleanup. They are not shared with Orbi automatically. See
 
 ## Install
 
-Prerequisites: configured Hermes, Bash and Python 3.12+. Full setup also needs Git
-and `uv` when `graphify` is not already installed. Setup now checks these
-prerequisites before starting installation stages; later runtime failures can
-still leave partial setup.
+Prerequisites: configured Hermes, Bash and Python 3.12+ with PyYAML, which setup and
+update need to read `plugin.yaml` and profile policy. Install it with
+`python3 -m pip install --user PyYAML` or the distribution `python3-yaml` package.
+Full setup also needs Git and `uv` when `graphify` is not already installed. Setup
+now checks these prerequisites before starting installation stages; later runtime
+failures can still leave partial setup.
 See [compatibility](testing.md#compatibility) for the verified environment.
 
 Setup is broader than installing this plugin: the current source inventory targets

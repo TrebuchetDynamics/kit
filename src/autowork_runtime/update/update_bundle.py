@@ -73,7 +73,9 @@ def _manifest_name(directory):
     try:
         import yaml
     except ImportError as error:
-        raise ValueError(f'PyYAML is required to verify plugin identity: {directory}/plugin.yaml') from error
+        raise ValueError(f'PyYAML is required to verify plugin identity: {directory}/plugin.yaml; '
+                         f'install it for python3 (python3 -m pip install --user PyYAML, or the '
+                         'distribution python3-yaml package) and retry') from error
     try:
         # Inspect YAML nodes, not a line regex: quoted/explicit keys and broken
         # content elsewhere must not conceal an ambiguous or malformed manifest.
