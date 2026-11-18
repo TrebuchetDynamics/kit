@@ -206,10 +206,10 @@ class PlanningDecisionClosureTests(unittest.TestCase):
         cases = (
             ('One clear planning recommendation', '`yes`',
              'accept that choice and continue planning, without implementation'),
-            ('Six independent consequential planning questions', '`yes`',
-             'leave only ambiguous choices unresolved'),
-            ('Named retention and access choices', '`accept all named recommendations`',
-             'settle both choices and continue planning, not implementation'),
+            ('Latest round: six planning questions', '`yes`',
+             'accept the recommended batch and continue planning, not implementation'),
+            ('Named retention and access choices', '`lgtm`',
+             'settle both choices and continue planning'),
             ('Standalone plan ready', '`lgtm`',
              'accept the plan, save the authorized planning artifacts, then stop'),
             ('Accepted plan', '`implement this plan`',
@@ -226,8 +226,10 @@ class PlanningDecisionClosureTests(unittest.TestCase):
              'verify and implement all supported items'),
             ('Equivalent internal test helpers within authorized implementation', '`lgtm`',
              'choose the safe reversible default and continue'),
-            ('Planning menu with independent owner choices', '`lgtm`',
-             'clarify affected choices, not select the first recommendation'),
+            ('Retention has a clear recommendation', '`lgtm`',
+             'accept retention and ask only about access'),
+            ('Round 1 is settled. Round 2 recommends', '`lgtm`',
+             'accept both exactly as stated and continue evaluation planning'),
         )
         for checkpoint, reply, outcome in cases:
             with self.subTest(checkpoint=checkpoint, reply=reply):
@@ -235,10 +237,12 @@ class PlanningDecisionClosureTests(unittest.TestCase):
                 self.assertEqual(len(matching), 1, checkpoint)
                 self.assertIn(reply, matching[0])
                 self.assertIn(outcome, matching[0])
-        self.assertIn('Which retention and access choices do you accept?', ' '.join(examples))
-        # The expected refusals come from the existing shared owners, not LGTM defaults.
+        self.assertIn('Keep Round 1 settled', ' '.join(examples))
+        self.assertIn('or start the bot', ' '.join(examples))
+        # Acceptance and execution boundaries come from the existing shared owners.
         uncertainty = section('skills/shared/PLANNING-CRAFT.md', 'Consequential uncertainty')
-        self.assertIn('A bare "yes" accepts a single unambiguous proposal, not several recommendations', uncertainty)
+        self.assertIn('LGTM accepts all clear recommendations shown in that round', uncertainty)
+        self.assertIn('Explicit partial approval or corrections narrow acceptance', uncertainty)
         authority = section('skills/shared/RESEARCH-PLAN.md', 'Planning artifact and authority contract')
         for rule in ('Acceptance of a plan is not execution authority',
                      'Earlier unrelated implementation permission does not widen this request',

@@ -75,9 +75,10 @@ choices, recovery scope and live-operation gates; do not interview every task
 or reopen settled deferrals and cancellations. Group tasks only when one shared
 choice governs them, retaining each task's acceptance and separate operation gates.
 Ask that shared choice once, record which tasks its answer governs and reuse it
-throughout the batch. Do not turn a bare "yes" into approval of separate task
-recommendations; clarify only affected unanswered choices. One pending task does
-not hold independent accepted work.
+throughout the batch. Apply the shared uncertainty loop's round-scoped acceptance
+rule to recommended task batches; clarify only affected unanswered choices.
+Planning acceptance leaves separate live-operation gates intact. One pending task
+does not hold independent accepted work.
 
 ## Method gaps and supporting skills
 

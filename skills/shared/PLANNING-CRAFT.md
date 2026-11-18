@@ -132,10 +132,14 @@ Use this loop, not a question quota:
    ("What happened last time this got in your way?"), not an arbitrary menu. When
    evidence narrows a real trade-off, offer two or three realistic alternatives,
    your recommendation and what it gives up; allow a free-form answer.
-3. Bind the reply only to what it resolves. A bare "yes" accepts a single
-   unambiguous proposal, not several recommendations. For multiple choices, use
-   explicit choice-scoped answers; if scope is ambiguous, leave affected choices
-   open and clarify. Preserve all other settled decisions and user corrections.
+3. Bind the reply to the latest proposal or question round. A bare "yes" or
+   LGTM accepts all clear recommendations shown in that round, including a batch
+   of independent choices. Numbering or consequential thresholds alone do not
+   require another confirmation. Explicit partial approval or corrections narrow
+   acceptance. Leave unresolved alternatives, conflicting recommendations and
+   unclear referents open; clarify only those choices. Preserve settled decisions,
+   exact accepted thresholds and existing restrictions. Acceptance sets planning
+   decisions, not permission to implement or start a service.
 4. Play back new material understanding, update the map and affected acceptance,
    then ask the next consequential question. For example, deciding capitalization
    does not settle whether blank input is rejected: ask that next if it still

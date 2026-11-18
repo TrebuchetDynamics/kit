@@ -193,9 +193,9 @@ its discovery pass. Read the pinned plan protocol, then adapt its phases here.
   Map only open points that change intent, acceptance or tasks; group shared
   decisions once across the batch. Get the user describing before offering options.
   Ask the highest-impact ready question, with context and consequences; use concrete
-  alternatives with trade-offs only when evidence narrows the choice. A bare “yes”
-  accepts one unambiguous proposal, never several separate recommendations. Clarify
-  ambiguous answers without accepting affected choices. After each reply, update
+  alternatives with trade-offs only when evidence narrows the choice. Apply the
+  linked loop's round-scoped acceptance rule to a bare “yes” or LGTM, including
+  clear recommended batches. Clarify only genuinely ambiguous choices. After each reply, update
   what it actually resolves, investigate changed evidence and ask the next material
   question. Do not finish after one answer or complete a speculative plan before
   learning intent. For vague words such as “easy”, ask for a concrete user situation

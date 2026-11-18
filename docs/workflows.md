@@ -69,8 +69,9 @@ builder check before publishing the full batch under
 optional `ai-epic` coordination, readback and `ai-ready` last.
 
 `/plan_with_me` asks the highest-impact unresolved intent question, researches
-repository facts itself and marks guesses. A bare "yes" accepts one unambiguous
-proposal, not a batch of recommendations. `/plan_for_me` investigates and chooses
+repository facts itself and marks guesses. A bare "yes" or LGTM accepts the clear
+recommendations in the latest round, including a batch; only genuinely ambiguous
+choices need clarification. `/plan_for_me` investigates and chooses
 within delegated scope without an interview. Both reuse accepted answers and
 existing issues. Questions-only/read-only/no-write/dry-run requests save nothing,
 locally or on GitHub. Explicit no-dispatch requests retain `ai-planning`; ordinary
