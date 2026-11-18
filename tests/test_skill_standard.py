@@ -3,6 +3,7 @@
 See docs/skill-standard.md. These are the mechanical rules; judgement rules (one
 home, disclosure, positive wording) stay with review.
 """
+import importlib.util
 import re
 from pathlib import Path
 import unittest
@@ -13,13 +14,62 @@ ROOT = Path(__file__).resolve().parents[1]
 BANNED_OPENERS = ('use when', 'use to', 'use for', 'use if', 'use after', 'use before')
 # Hermes installs Graphify's own skill into profiles, so Autowork ships the adapter only.
 ADAPTER_ONLY = {'graphify'}
-PILOT = ('orbi', 'update-kit', 'plan-for-me', 'ponytail-review',
+PILOT = ('orbi', 'update-kit', 'unslop', 'plan-for-me', 'ponytail-review',
          'git-commit-push', 'push', 'unblock', 'docs-sync', 'plan-with-me')
 
 
 class SkillStandardTests(unittest.TestCase):
     def skills(self, folder):
         return sorted((ROOT / folder).glob('*/SKILL.md'))
+
+    def test_all_public_skills_reach_the_shared_freshness_owner(self):
+        owner = ROOT / 'skills/shared/COMMON-CONTRACT.md'
+        entrypoints = self.skills('skills') + self.skills('adapters/skills')
+        common = {owner, ROOT / 'skills/shared/PONYTAIL.md',
+                  ROOT / 'adapters/skills/COMMON.md'}
+        for entry in entrypoints:
+            seen, pending = set(), [entry]
+            while pending:
+                path = pending.pop()
+                if path in seen:
+                    continue
+                seen.add(path)
+                for link in re.findall(r'\]\(([^)\s]+)\)', path.read_text()):
+                    target = (path.parent / link.split('#')[0]).resolve()
+                    if target in common and target.is_file():
+                        pending.append(target)
+            with self.subTest(entry=str(entry.relative_to(ROOT))):
+                self.assertIn(owner, seen, 'no common-entrypoint path to freshness policy')
+        text = owner.read_text()
+        self.assertIn('## Source freshness and delivery ownership', text)
+        for mode in ('Read-only', 'Writable planning', 'Authorized implementation',
+                     'Delivery/sync', 'Non-repository'):
+            self.assertIn(mode, text)
+
+    def test_delivery_references_do_not_call_fetch_read_only(self):
+        for name in ('skills/git-commit-push/SKILL.md',
+                     'skills/git-commit-push/references/pull-merge.md'):
+            text = (ROOT / name).read_text()
+            with self.subTest(path=name):
+                self.assertNotRegex(text, r'(?i)read-only fetch|Fetch and report; change nothing')
+        push = (ROOT / 'skills/push/SKILL.md').read_text()
+        for category in ('merged upstream', 'open/owned', 'failed/blocked',
+                         'closed-unmerged', 'already included/equivalent', 'unavailable/unknown'):
+            self.assertIn(category, push)
+        self.assertIn('pagination', push)
+
+    def test_sync_recipes_preserve_restrictions_and_live_checkout_isolation(self):
+        delivery = (ROOT / 'skills/git-commit-push/SKILL.md').read_text()
+        sync = delivery.split('6. **Sync with upstream (default).**', 1)[1].split(
+            '7. **Push (explicit ship target only).**', 1)[0]
+        self.assertIn('no-pull/no-sync: use permitted remote metadata without fetch', sync)
+        self.assertNotRegex(sync, r'Before every push[\s\S]*?fetch and confirm')
+        pull = (ROOT / 'skills/git-commit-push/references/pull-merge.md').read_text()
+        self.assertNotIn('No overlap → git can update', pull)
+        safety = (ROOT / 'skills/git-commit-push/references/shared-worktree-safety.md').read_text()
+        self.assertNotIn('Empty means merge', safety)
+        self.assertIn('isolate even when incoming paths are disjoint', pull)
+        self.assertIn('isolate even when incoming paths are disjoint', safety)
 
     def test_descriptions_are_summaries_within_the_index(self):
         for path in self.skills('skills') + self.skills('adapters/skills'):
@@ -34,24 +84,18 @@ class SkillStandardTests(unittest.TestCase):
                 self.assertEqual(description.count('.'), 1, description)
 
     def test_relative_links_resolve_from_each_skill_file(self):
-        """A moved file must fail here, not as a dead end in the middle of a workflow."""
-        link = re.compile(r'\]\(([^)\s]+)\)')
-        files = (self.skills('adapters/skills') + self.skills('skills')
-                 + [ROOT / 'adapters/skills/COMMON.md']
-                 + sorted((ROOT / 'skills/docs-sync/references').glob('*.md')))
-        for path in files:
-            fenced = False
-            for number, line in enumerate(path.read_text().splitlines(), 1):
-                if line.lstrip().startswith(('```', '~~~')):
-                    fenced = not fenced
-                if fenced:
-                    continue
-                for target in link.findall(re.sub(r'`[^`]*`', '', line)):
-                    target = target.split('#', 1)[0]
-                    if not target or re.match(r'[a-z][a-z0-9+.-]*:', target) or target.startswith('<'):
-                        continue
-                    with self.subTest(file=str(path.relative_to(ROOT)), line=number, link=target):
-                        self.assertTrue((path.parent / target).exists(), f'{target} does not resolve')
+        """Check section targets too: a migration guide is not the retired CLI policy."""
+        spec = importlib.util.spec_from_file_location('docs_check', ROOT / 'skills/docs-sync/scripts/docs.py')
+        docs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(docs)
+        repo = docs.Repo(ROOT)
+        files = self.skills('skills') + self.skills('adapters/skills') + [ROOT / 'adapters/skills/COMMON.md']
+        for pattern in ('shared/*.md', '*/references/*.md', 'engineering/local/*/PROTOCOL.md'):
+            files.extend((ROOT / 'skills').glob(pattern))
+        for source in files:
+            path = source.relative_to(ROOT)
+            with self.subTest(file=str(path)):
+                self.assertEqual(docs.check_document(repo, 'skill', path), [])
 
     def test_lgtm_inherits_planning_authority_without_a_second_approval_round(self):
         skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())

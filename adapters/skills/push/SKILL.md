@@ -1,6 +1,6 @@
 ---
 name: push
-description: "Commit all, merge worktrees, sync and push main."
+description: "Ship eligible local and landed Orbi changes."
 disable-model-invocation: true
 ---
 

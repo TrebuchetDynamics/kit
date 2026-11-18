@@ -1,9 +1,9 @@
 ---
 name: plan-for-me
-description: "Research and save a plan without an interview."
+description: "Turn goals and findings into GitHub issues."
 license: MIT
 metadata:
-  version: 0.5.0
+  version: 0.6.0
   hermes:
     tags: [research, requirements, documentation, planning]
 ---
@@ -16,8 +16,9 @@ Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for 
 
 The autonomous adapter over the [shared planning protocol](../shared/RESEARCH-PLAN.md#shared-planning-interface).
 It investigates the repository, decides an approach within the user's scope, and
-saves the plan and tasks. With a concrete objective it determines how to achieve
-it; with little or none it discovers which evidence-backed objectives matter most.
+turns goals and conversation findings into complete GitHub Issues for Orbi.
+It previews the issue plan in chat before publication. With a concrete objective it
+determines how to achieve it; otherwise it discovers evidence-backed objectives.
 Read the protocol first, then the [planning craft](../shared/PLANNING-CRAFT.md), the
 pinned [Autoresearch plan protocol](../autoresearch/upstream/plan.md) and the
 [planning adaptations](../shared/RESEARCH-PLAN.md). Follow the
@@ -33,16 +34,20 @@ For recovery, changed baselines or stale audits, apply the shared
 
 ## Route the request
 
-Decide from the request's meaning, not from a short phrase list:
+First apply [conversation intake](../shared/PLAN-HANDOFF.md#conversation-findings-to-issues)
+to prior analyses, interviews and design reviews. An explicit target wins; concrete
+findings in the current conversation supply the scope when no target is repeated.
+Then route by meaning, not a short phrase list:
 
 | Request | Route |
 | --- | --- |
-| No concrete objective; "plan this project"; "make it better"; a broad direction such as "improve reliability" or "improve performance" | Autonomous discovery: read [autonomous project discovery](references/discovery.md), investigate the repository, derive accepted and engineering goals, then save one executable frontier. Do not ask for a goal before investigating. |
+| No concrete objective in the request or relevant conversation; "plan this project"; "make it better"; a broad direction such as "improve reliability" or "improve performance" | Autonomous discovery: read [autonomous project discovery](references/discovery.md), investigate the repository, derive accepted and engineering goals, then save one executable frontier. Do not ask for a goal before investigating. |
 | A named outcome, feature, defect, spec slice or accepted plan | Focused planning for that outcome and its authorized prerequisites; do not expand into unrelated project work. |
 | Read-only, chat-only, no-write or dry-run | Use the matching route above but save nothing, including queue metadata. |
 | An Orbi-owned planning substep | Stay inside the named task and its authorized prerequisites; return findings and records to that same coordinator. |
 
-A bare `/plan_for_me` is a discovery request, not an interview. A vague adjective
+A bare `/plan_for_me` after concrete findings plans those findings. Without that
+context it is a discovery request, not an interview. A vague adjective
 ("better", "premium", "faster") is a direction for discovery, not an accepted
 outcome. A supplied objective wins even when short. If the repository has no
 accepted objective or meaningful source, report the missing product intent and the
@@ -54,10 +59,10 @@ well written.
 
 Size the work first and say the size in plain words: a clear task gets one complete
 saved task record without an interview; a project gets a written plan section and
-tasks with real dependencies. A bare or vague request is project discovery: say so,
-then establish the project model and the evidence-backed goal classes before choosing
-the frontier. Plan all requested projects in one coherent batch, retaining
-independent ready lanes.
+tasks with real dependencies. When neither request nor conversation supplies an
+objective, say that this is project discovery, then establish the project model and
+evidence-backed goal classes before choosing the frontier. Plan all requested
+projects in one coherent batch, retaining independent ready lanes.
 
 Inspect project instructions, relevant implementation and tests, existing docs,
 accepted decisions, GitHub Issues and their linked PRs, and active task
@@ -120,7 +125,9 @@ Explicit no-dispatch requests withhold readiness. Read-only/questions-only/no-wr
 or dry-run requests make no local or GitHub writes. Failed persistence is **UNSAVED**,
 not a complete handoff or a reason to create a second queue.
 
-Use the shared [progress and final receipt](../shared/PLAN-HANDOFF.md#progress-and-final-receipt).
+Use the shared [progress and final receipt](../shared/PLAN-HANDOFF.md#progress-and-final-receipt):
+preview outcomes, acceptance and issue dependencies in chat before publication;
+then replace proposed keys with read-back links and actual publication states.
 Stop planning without implementing or starting a service. A delivery-owned substep returns to
 its same coordinator. Runtime failure without new product uncertainty goes back
 to that coordinator with the existing issue, failed operation and candidate evidence;
@@ -139,7 +146,7 @@ saved plan is not execution.
 
 | Rationalization | Reality |
 | --- | --- |
-| "The request is vague, so ask for a goal first." | Bare or vague Plan For Me runs discovery. Investigate the repository first. |
+| "The request is vague, so ask for a goal first." | Reuse concrete conversation findings; otherwise investigate the repository through discovery. |
 | "A well-written proposal is accepted scope." | New product directions stay proposals until the owner accepts them. |
 | "A plan without tasks is enough." | The handoff needs complete GitHub Issues with acceptance, verification and bounded scope. |
 | "The queue is short, so invent useful work." | Save only the evidence-backed frontier. A short queue is not permission to invent work. |
@@ -149,6 +156,7 @@ saved plan is not execution.
 
 - A goal question before repository investigation.
 - A roadmap or prose plan with no task records.
+- A fresh audit instead of using the preceding findings, or issue links without outcomes.
 - A proposal marked accepted without an owner answer.
 - Code, tests or fixtures written during planning.
 - Acceptance or evidence invented to make the queue look ready.
@@ -159,4 +167,6 @@ saved plan is not execution.
 - Not implementation; Orbi delivers published issues through PR and review gates.
 - Not an Orbi-owned execution; return to that coordinator.
 
-**Done when:** open questions are answered or kept on affected tasks, and the plan and its tasks are saved and validated.
+**Done when:** every in-scope topic is mapped to a validated issue or explicit disposition,
+and the chat receipt shows outcomes, dependencies and actual publication state
+(or clearly unsaved proposals in no-write or failed-publication mode).

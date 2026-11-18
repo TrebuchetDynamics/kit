@@ -7,7 +7,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 47);
+  assert.equal(commands.size, 48);
   assert.equal(commands.has('orbi'), true);
   assert.equal(commands.has('push'), true);
   assert.equal(commands.has('unblock'), true);
@@ -35,19 +35,29 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   assert.equal(messages[0][0].endsWith(raw), true);
   assert.equal(messages[0][1], undefined);
   messages.length = 0;
-  await commands.get('plan-for-me').handler('', {isIdle: () => true});
-  assert.match(messages[0][0], /Selected route: autonomous project discovery/);
-  assert.match(messages[0][0], /Do not ask for a goal/);
-  await commands.get('plan-for-me').handler('implement offline support', {isIdle: () => true});
-  assert.equal(messages[1][0].includes('Selected route: autonomous project discovery'), false);
-  assert.equal(messages[1][0].endsWith('implement offline support'), true);
+  const planningContract = await readFile(new URL('../skills/shared/RESEARCH-PLAN.md', import.meta.url), 'utf8');
+  // Dispatch cannot know whether prior conversation supplies a concrete finding.
+  // The loaded canonical workflow owns that decision; this is not a model test.
+  for (const args of ['', ' \t\n ', 'implement offline support', `read-only: plan offline support\n${raw}`]) {
+    for (const idle of [true, false]) {
+      await commands.get('plan-for-me').handler(args, {isIdle: () => idle});
+      await assertWorkflow('plan-for-me');
+      const [message, delivery] = messages.at(-1);
+      assert.equal(message.includes('../../../skills/plan-for-me/SKILL.md'), true);
+      assert.equal(message.includes('Use the current host conversation as input'), true);
+      assert.equal(message.includes(planningContract), true);
+      assert.doesNotMatch(message, /Selected route:|No user objective was supplied/);
+      assert.equal(message.endsWith(`User request (preserve scope and restrictions):\n${args}`), true);
+      assert.deepEqual(delivery, idle ? undefined : {deliverAs: 'followUp'});
+    }
+  }
   messages.length = 0;
   await commands.get('autoresearch-debug').handler(raw, {isIdle: () => false});
   assert.match(messages[0][0], /Selected subcommand: debug/);
   assert.deepEqual(messages[0][1], {deliverAs: 'followUp'});
   // The actual shared boundary is loaded, not just command registration/skill metadata.
   const boundary = await readFile(new URL('../skills/shared/RESEARCH-PLAN.md', import.meta.url), 'utf8');
-  for (const name of ['plan-with-me', 'plan-for-me', 'grill-me', 'autoresearch-plan']) {
+  for (const name of ['plan-with-me', 'plan-for-me', 'unslop', 'grill-me', 'autoresearch-plan']) {
     await commands.get(name).handler(raw, {isIdle: () => true});
     assert.equal(messages.at(-1)[0].includes(boundary), true, name);
     assert.equal(messages.at(-1)[0].endsWith(raw), true, name);
@@ -72,7 +82,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   for (const [name, skill] of Object.entries({
     'plan-with-me': 'plan-with-me', 'plan-for-me': 'plan-for-me', 'docs-sync': 'docs-sync',
     orbi: 'orbi', 'update-kit': 'update-kit', autoresearch: 'autoresearch',
-    impeccable: 'impeccable', 'ui-taste': 'ui-taste',
+    impeccable: 'impeccable', 'ui-taste': 'ui-taste', unslop: 'unslop',
     'beautify-github-readme': 'beautify-github-readme', 'grill-me': 'plan-with-me',
     lgtm: 'lgtm', goal: 'goal', unblock: 'unblock',
     'git-commit-push': 'git-commit-push', push: 'push',
@@ -146,9 +156,10 @@ test('Push loads its repo-wide default and preserves narrower requests', async (
     sendUserMessage: (...args) => messages.push(args)});
   await commands.get('push').handler('', {isIdle: () => true});
   assert.match(messages[0][0], /host-neutral Push workflow/);
+  assert.match(commands.get('push').description, /landed Orbi changes/);
   assert.equal(messages[0][0].endsWith('User request (preserve scope and restrictions):\n'), true);
   assert.equal(messages[0][1], undefined);
-  const restricted = 'dry run; no push; only docs/';
+  const restricted = 'dry run; no fetch; no sync; no commit; no push; only docs/';
   await commands.get('push').handler(restricted, {isIdle: () => false});
   assert.equal(messages[1][0].endsWith(restricted), true);
   assert.deepEqual(messages[1][1], {deliverAs: 'followUp'});
@@ -205,7 +216,8 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     'skills/state-machine/SKILL.md', 'skills/state-machine/PROTOCOL.md',
     'skills/state-machine/references/sources-and-example.md',
     'adapters/skills/state-machine/SKILL.md', 'adapters/skills/state-machine/agents/openai.yaml',
-    'skills/shared/COMMUNICATION.md',
+    'skills/shared/COMMUNICATION.md', 'skills/unslop/SKILL.md',
+    'adapters/skills/unslop/SKILL.md', 'adapters/skills/unslop/agents/openai.yaml',
     'skills/orbi/SKILL.md', 'skills/orbi/references/lifecycle.md',
     'skills/orbi/scripts/orbi_control.py',
     'skills/update-kit/SKILL.md', 'skills/update-kit/scripts/update_kit.py',
@@ -276,7 +288,7 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
-    assert.equal(skillCount, 34);
+    assert.equal(skillCount, 35);
     // Execute the packaged CommonJS helper under Kit's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
@@ -306,7 +318,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 47);
+    assert.equal(commands.size, 48);
     assert.equal(commands.has('orbi'), true);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {

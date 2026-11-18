@@ -25,7 +25,9 @@ A trace is one JSON object:
 }
 ```
 
-Event types: `read`, `write`, `edit`, `command`, `final`. A `tool` event with
+Event types: `read`, `write`, `edit`, `command`, `assistant`, `final`. An `assistant`
+event records nonfinal, user-visible assistant chat in `text`, in observation order;
+it is not thinking, a user message or tool output. `final` stays distinct. A `tool` event with
 `tool: "read"`, `"write"` or `"edit"` is the same as that event type. A `tool`
 event with `tool: "bash"` or `"shell"` and a command is a `command` event. Paths
 may be top-level or under `args.path`; commands may be top-level or under
@@ -54,9 +56,14 @@ A spec names required and forbidden events:
 ```
 
 `path` is an fnmatch pattern. `command` is a regular expression. `exit` is the
-required exit code when present and only valid with `command`. `contains` is only
-valid with `final`; use it sparingly because exact wording is a weak oracle. Unknown
-keys and fields on the wrong event type are refused.
+required exit code when present and only valid with `command`. `contains` is valid
+with `assistant` or `final` and matches case-insensitive substrings; use it sparingly
+because exact wording is a weak oracle. A `require` clause may include `before_first`,
+one non-nested event matcher using the same fields. The required event must occur
+strictly before the first matching boundary event; a missing boundary also fails.
+Only fields in that boundary matcher constrain it (omit `exit` to include failed
+and unknown-status attempts). Other requirements remain unordered. Unknown keys
+and fields on the wrong event type are refused.
 
 A review spec forbids `write` and `edit`. A git command check must account for global
 options such as `git -C . commit`, not only `git commit`; see
@@ -65,9 +72,11 @@ options such as `git -C . commit`, not only `git commit`; see
 ## Planning pilot: writable fresh helper publication
 
 `plan-for-me.json` and `plan-with-me.json` select one **writable-fresh-publication
-pilot**: investigate, successfully invoke `scripts/github_issues.py` with an actual
-`--apply` argument, then give a final receipt. The synthetic `*-pass.json` fixtures
-record the supported command:
+pilot**: investigate, show the user a plan preview **before the first publication
+attempt**, successfully invoke `scripts/github_issues.py` with an actual `--apply`
+argument, then give a final receipt. The synthetic `*-pass.json` fixtures record a
+nonfinal `assistant` event with `text` containing `Plan preview`, followed by the
+supported command:
 
 ```sh
 python3 scripts/github_issues.py --repo OWNER/REPO --batch /tmp/batch.json --apply
@@ -80,10 +89,22 @@ interface. The pilot matches the bare helper path or a `python`/`python3` invoca
 exit 0. Preview-only, failed or missing-status publication cannot satisfy persistence.
 Help invocations (`-h`, `--help` or its argparse abbreviations) do not count, even
 when combined with `--apply`: they exit 0 without publishing.
-No local plan/spec write is required when the issue owns all decisions. A final event
-is required, but the grader does not semantically validate its receipt text.
+The preview requirement uses `before_first` with the same helper command matcher,
+without an exit constraint. Thus a failed or unknown-status early apply followed by
+a preview and successful retry still fails. Missing or post-apply previews, a preview
+only in the final answer, and helper dry-run output without an assistant preview all
+fail. A helper dry-run before the chat preview is allowed; it is not publication.
+This is evidence for the existing [Plan preview](../skills/shared/PLAN-HANDOFF.md#plan-preview)
+visibility contract, not a new workflow stage or mandatory approval turn. No local
+plan/spec write is required when the issue owns all decisions. A final event is
+required, but the grader does not semantically validate its receipt text.
 
-This is **not every valid planning outcome**. No-write, explicit no-dispatch,
+`Plan preview` is a bounded lexical signal, not a semantic quality check: the grader
+does not establish completeness, accuracy, useful decomposition or actual display
+on a user's device. Record real visible assistant text; do not annotate thinking or
+tool output as `assistant` to manufacture a pass.
+
+This is **not every valid planning outcome**. Questions-only, unsaved, no-write, explicit no-dispatch,
 reuse-without-republication, coordinator-return, publication failure and direct-API
 publication are different scenarios, not failed skill adherence merely because they
 do not satisfy this selected pilot. Select matching evidence rather than applying
@@ -120,6 +141,25 @@ readiness order or actual model choices. The publisher's own focused tests and
 actual readback own publication guarantees. This pilot does not execute commands,
 call GitHub or establish live model adherence, Orbi pickup or delivery.
 
+## Push delivery pilot
+
+`push.json` checks recorded inspection and a receipt that separates local commits,
+incoming landed changes, pending URLs/reasons, selected/final SHAs, checks, remote
+inclusion and remaining local sync. `push-pass.json` represents merged remote-only
+work through a non-`origin`, non-`main` verified upstream. Other `push-*.json`
+fixtures cover a passing-but-owned open PR, API rate-limit/unknown inventory,
+upstream advance with an open PR becoming merged, closed-unmerged/failed/unknown
+work, equivalence and a read-only audit. All commands and API responses are inert
+recorded examples; no fixture contacts GitHub or mutates Git.
+
+The focused tests use existing `require`/`forbid` clauses for scenario receipts and
+the fixture's held PR head. They apply the read-only review clauses to the push
+audit; delivery's general spec cannot condition on a mode. Planning/review clauses
+also reject fetch, including Git global-option forms. These are bounded lexical
+checks, not semantic candidate selection, ancestry validation, a shell sandbox,
+state ordering or model adherence. Neither a receipt's words nor exit 0 establishes
+live delivery. Source-backed inventory and independent PR review remain necessary.
+
 ## Run
 
 ```sh
@@ -137,9 +177,13 @@ python3 scripts/skill_trace_eval.py evals/tier3/ponytail-review.json \
 ```
 
 The converter removes heredoc bodies, maps read-only `cat`/`head`/`tail`/`sed`/
-`git show`/`git diff`/`git log` commands to read events, and keeps the last assistant
-text as `final`. Conversion does not execute recorded commands or modify the source
-trace. Keep live traces and credentials outside Git.
+`git show`/`git diff`/`git log` commands to read events, preserves earlier assistant
+text as ordered `assistant` events, and keeps the last assistant text as `final`.
+Only assistant `message_end` text parts become chat evidence; thinking, user messages
+and tool output do not. Tool attempts are positioned at `tool_execution_start`, not
+completion, so a preview during an in-flight apply is already late. Missing results
+remain unknown-status attempts. Conversion does not execute recorded commands or
+modify the source trace. Keep live traces and credentials outside Git.
 
 The converter attributes `exit` only to an unambiguously single simple shell
 invocation with an integer tool exit code (not a boolean). Missing or malformed
@@ -158,8 +202,12 @@ tool invocation with its own result. Do not rewrite a historic trace or guess an
 inner command's exit from a successful wrapper. An aggregate-success trace without
 separate per-invocation evidence yields a missing required-success event.
 
-Exit 0 means the trace satisfies the spec. Exit 1 means a required event is missing
-or a forbidden action occurred. Exit 2 means the JSON is malformed.
+Exit 0 means the trace satisfies the spec. Exit 1 means a required event is missing,
+its `before_first` constraint failed, or a forbidden action occurred. For example,
+`missing required before first` identifies missing/late preview evidence. Recover by
+capturing a real pre-publication chat preview in a new authorized run and reconverting;
+never reorder or fabricate evidence in a historic trace. Exit 2 means the JSON or
+spec is malformed.
 
 ## Opt-in local planning smoke (Pi)
 

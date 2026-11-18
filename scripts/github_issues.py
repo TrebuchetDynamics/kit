@@ -27,7 +27,7 @@ LABELS = {'ai-planning': 'Planning incomplete or explicitly undispatched',
 
 
 class PublicationError(Exception):
-    pass
+    receipt = None
 
 
 class GitHub:
@@ -162,17 +162,93 @@ def safe_existing(issue: dict) -> None:
         raise PublicationError(f"#{issue['number']}: readiness withdrawn; reconcile manually")
 
 
+class PublicationProgress:
+    """In-memory observations, never a retry queue or a claim of eligibility."""
+    def __init__(self, specs):
+        self.rows = {spec['key']: {
+            'key': spec['key'], 'number': None, 'url': None,
+            'creation': 'not_attempted', 'attempted_phase': 'not_started',
+            'last_verified': None, 'readiness': 'unknown', 'unverified_write': False,
+        } for spec in specs}
+        self.active = None
+
+    def attempt(self, spec, phase, *, write=False):
+        self.active = spec['key']
+        row = self.rows[self.active]
+        row['attempted_phase'] = phase
+        if write:
+            row['unverified_write'] = True
+        if phase == 'create':
+            row['creation'] = 'unknown'
+
+    def observe(self, spec, issue):
+        row = self.rows[spec['key']]
+        row.update(number=issue['number'], url=issue['html_url'], creation='saved',
+                   last_verified={'state': issue['state'], 'labels': sorted(labels(issue))},
+                   readiness='ready' if 'ai-ready' in labels(issue) else 'not_ready')
+        # An issue GET cannot verify an interrupted native-graph write.
+        if row['attempted_phase'] not in ('dependencies_post', 'epic_post'):
+            row['unverified_write'] = False
+
+    def reconcile(self, api):
+        if self.active is None:
+            return
+        row = self.rows[self.active]
+        row['readiness'] = 'unknown'
+        try:
+            if row['number'] is not None:
+                issue = api.api(f"issues/{row['number']}")
+            elif row['creation'] == 'unknown':
+                # Do not use search: index lag can hide an accepted create. Cap
+                # recovery at ten pages (each API call already has a timeout).
+                matches = []
+                for page in range(1, 11):
+                    issues = api.api(f'issues?state=all&per_page=100&page={page}')
+                    matches.extend(issue for issue in issues
+                                   if marker(self.active) in (issue.get('body') or ''))
+                    if len(issues) < 100:
+                        break
+                else:
+                    raise PublicationError('stable-marker readback exceeded 10 pages')
+                if len(matches) != 1:
+                    raise PublicationError(f'stable-marker readback found {len(matches)} matches')
+                issue = matches[0]
+            else:
+                return
+            self.observe({'key': self.active}, issue)
+        except (PublicationError, OSError, ValueError, subprocess.SubprocessError) as exc:
+            row['reconciliation_error'] = str(exc)
+
+    def receipt(self):
+        if any(row['creation'] != 'not_attempted' for row in self.rows.values()):
+            return {'partial': True, 'issues': list(self.rows.values())}
+        return None
+
+
 def publish(api: GitHub, batch: Any) -> list[dict]:
     specs = validate(batch)
+    progress = PublicationProgress(specs)
+    try:
+        return publish_batch(api, specs, progress)
+    except (PublicationError, OSError, ValueError, subprocess.SubprocessError) as exc:
+        progress.reconcile(api)
+        error = PublicationError(str(exc))
+        error.receipt = progress.receipt()
+        raise error from exc
+
+
+def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress) -> list[dict]:
     # Read all states rather than GitHub search (index lag can duplicate a retry).
     existing = api.pages('issues?state=all')
     saved = {}
     for spec in specs:
+        progress.attempt(spec, 'reuse')
         matches = [row for row in existing if marker(spec['key']) in (row.get('body') or '')]
         if len(matches) > 1:
             raise PublicationError(f"{spec['key']}: ambiguous existing issues")
         if matches:
             row = matches[0]
+            progress.observe(spec, row)
             safe_existing(row)
             if row['title'] != spec['title'] or row['body'] != body(spec):
                 raise PublicationError(f"#{row['number']}: saved contract changed; reconcile manually")
@@ -197,11 +273,13 @@ def publish(api: GitHub, batch: Any) -> list[dict]:
             api.api('labels', 'POST', {'name': name, 'color': 'bfdadc', 'description': description})
     for spec in specs:
         if spec['key'] not in saved:
+            progress.attempt(spec, 'create', write=True)
             initial = ['ai-planning']
             if spec.get('kind') == 'epic':
                 initial.append('ai-epic')
             saved[spec['key']] = api.api('issues', 'POST', {
                 'title': spec['title'], 'body': body(spec), 'labels': initial})
+            progress.observe(spec, saved[spec['key']])
 
     def expected_dependencies(spec):
         return {(external[d] if type(d) is int else saved[d])['id']
@@ -209,7 +287,9 @@ def publish(api: GitHub, batch: Any) -> list[dict]:
 
     # Never modify the graph of an already-dispatched retry; only exact reuse.
     for spec in specs:
+        progress.attempt(spec, 'dependencies')
         row = api.api(f"issues/{saved[spec['key']]['number']}")
+        progress.observe(spec, row)
         safe_existing(row)
         wanted = expected_dependencies(spec)
         path = f"issues/{row['number']}/dependencies/blocked_by"
@@ -219,13 +299,16 @@ def publish(api: GitHub, batch: Any) -> list[dict]:
         if row['id'] in wanted:
             raise PublicationError(f"#{row['number']}: self dependency")
         for dep_id in sorted(wanted - actual):
+            progress.attempt(spec, 'dependencies_post', write=True)
             api.api(path, 'POST', {'issue_id': dep_id})
     def parent_of(number):
         return api.api(f'issues/{number}/parent', missing_ok=True)
 
     # Native sub-issue links for epics; never reparent existing or owned work.
     for spec in specs:
+        progress.attempt(spec, 'epic')
         child = api.api(f"issues/{saved[spec['key']]['number']}")
+        progress.observe(spec, child)
         safe_existing(child)
         current_parent = parent_of(child['number'])
         parent = saved.get(spec.get('epic'))
@@ -235,6 +318,7 @@ def publish(api: GitHub, batch: Any) -> list[dict]:
             safe_existing(api.api(f"issues/{parent['number']}"))
             if 'ai-ready' in labels(child):
                 raise PublicationError(f"#{child['number']}: dispatched issue missing epic link")
+            progress.attempt(spec, 'epic_post', write=True)
             api.api(f"issues/{parent['number']}/sub_issues", 'POST', {'sub_issue_id': child['id']})
 
     def verify(spec):
@@ -243,6 +327,7 @@ def publish(api: GitHub, batch: Any) -> list[dict]:
             row = api.api(f'issues/{number}')
         except (PublicationError, OSError, ValueError, subprocess.SubprocessError) as exc:
             raise PublicationError(f'#{number}: issue readback failed: {exc}') from exc
+        progress.observe(spec, row)
         safe_existing(row)
         if row['body'] != body(spec) or row['title'] != spec['title']:
             raise PublicationError(f'#{number}: contract changed during publication')
@@ -267,19 +352,26 @@ def publish(api: GitHub, batch: Any) -> list[dict]:
 
     # Verify the entire batch before *any* readiness publication.
     for spec in specs:
+        progress.attempt(spec, 'verify_batch')
         verify(spec)
     results = []
     for spec in specs:
         number = saved[spec['key']]['number']
         # Earlier readiness writes may have interleaved with foreign edits.
         # Refresh without repairing drift; reads and the label POST are not atomic.
+        progress.attempt(spec, 'verify_dispatch')
         row = verify(spec)
         if spec.get('kind') != 'epic' and spec.get('ready', True):
             if 'ai-ready' not in labels(row):
+                progress.attempt(spec, 'ready_post', write=True)
                 api.api(f'issues/{number}/labels', 'POST', {'labels': ['ai-ready']})
             if 'ai-planning' in labels(row):
+                progress.attempt(spec, 'remove_planning', write=True)
                 api.api(f'issues/{number}/labels/ai-planning', 'DELETE')
+        progress.attempt(spec, 'readback')
         current = api.api(f'issues/{number}')
+        progress.observe(spec, current)
+        progress.attempt(spec, 'complete')
         results.append({'key': spec['key'], 'url': current['html_url'],
                         'state': current['state'], 'labels': sorted(labels(current))})
     return results
@@ -305,6 +397,8 @@ def main(argv=None) -> int:
         return 0
     except (PublicationError, OSError, ValueError, subprocess.SubprocessError) as exc:
         print(f'Publication incomplete: {exc}', file=sys.stderr)
+        if isinstance(exc, PublicationError) and exc.receipt is not None:
+            print(json.dumps(exc.receipt), file=sys.stderr)
         return 1
 
 

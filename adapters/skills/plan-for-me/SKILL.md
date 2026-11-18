@@ -1,6 +1,6 @@
 ---
 name: plan-for-me
-description: "Research and save a plan without an interview."
+description: "Turn goals and findings into GitHub issues."
 disable-model-invocation: true
 ---
 
@@ -11,6 +11,8 @@ Use the [communication rules](../../../skills/shared/COMMUNICATION.md) for user-
 
 Read the [host contract](../COMMON.md), then follow the
 [host-neutral workflow](../../../skills/plan-for-me/SKILL.md).
+Use the current host conversation as input to its conversation intake and render
+its shared preview and receipt in chat; no transcript export is required.
 Use the same GitHub issue and Orbi contract on every host; host availability does
 not permit a fallback to the retired local task queue or runner.
 
@@ -20,7 +22,6 @@ next action rather than claiming remote publication or execution.
 
 ## Boundaries
 
-Use `/plan-for-me` or `/plan-with-me` for planning and GitHub issue/PR evidence or existing read-only Orbi status for status.
 This adapter adds no execution or publication authority beyond its loaded workflow.
 
 **Done when:** the loaded workflow's completion condition is met and only observed

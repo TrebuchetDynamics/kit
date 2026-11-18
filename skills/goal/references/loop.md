@@ -107,7 +107,4 @@ cleared.
 
 ## Durable work
 
-A goal is not a second task queue. When the work must survive this conversation,
-drive a runner or share ownership, use the repository's `tasks/` store through
-`/plan-for-me` and GitHub Issues/PRs. Do not create a private goal database or copy the
-contract into a project instruction file.
+Goal state stays in this conversation. If the user needs an executable handoff, use `/plan-for-me` to publish or reuse GitHub Issues. A pause or resume alone does not create an issue.

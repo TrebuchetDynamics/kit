@@ -69,7 +69,7 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
         public = "plan-with-me"
         mode = "Selected mode: challenge\n\n"
     planning = namespace == "kit" and (
-        public in {"plan-for-me", "plan-with-me"}
+        public in {"plan-for-me", "plan-with-me", "unslop"}
         or (name == "autoresearch" and (
             raw_args.startswith("Selected subcommand: plan\n")
             or (raw_args.split()[:1] == ["plan"])))
@@ -79,23 +79,14 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
         "skill directory. Its artifact/authority contract governs this request; "
         "supporting methods add no execution authority.\n\n"
     ) if planning else ""
-    route = ""
-    if namespace == "kit" and public == "plan-for-me" and not (raw_args or '').strip():
-        # A bare standing planner invocation is discovery, not a missing-goal interview.
-        # The skill owns the semantics; this marker makes the default route explicit.
-        route = (
-            "Selected route: autonomous project discovery. No user objective was supplied. "
-            "Investigate the repository first; do not ask for a goal. Follow the skill's "
-            "discovery reference and save only evidence-backed work.\n\n"
-        )
     prompt = (
         f"The user invoked the /{name} skill command. "
         f'Load skill_view(name="{namespace}:{public}") and follow its instructions '
         "to perform the requested work in this conversation. "
         "Resolve supporting files relative to that skill's directory.\n\n"
-        f"{boundary}{mode}{route}User arguments:\n{raw_args}"
+        f"{boundary}{mode}User arguments:\n{raw_args}"
     )
-    if namespace == "kit" and name in {"autoresearch", "plan-for-me"}:
+    if namespace == "kit" and name in {"autoresearch", "plan-for-me", "unslop"}:
         prompt = (
             "GitHub Issues are the executable backlog. By default, publish actionable "
             "research/planning findings through the shared Plan Handoff contract; "

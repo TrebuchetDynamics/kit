@@ -3,7 +3,7 @@ name: plan-with-me
 description: "Plan together through questions and research."
 license: MIT
 metadata:
-  version: 0.4.0
+  version: 0.5.0
   hermes:
     tags: [interview, requirements, documentation, planning]
 ---
@@ -53,6 +53,8 @@ No exhaustive interrogation or repeat approval of settled answers.
 
 ## Learn enough to ask a useful question
 
+First apply [conversation intake](../shared/PLAN-HANDOFF.md#conversation-findings-to-issues)
+to earlier analyses, grill answers and UI findings; settled answers stay settled.
 Read repository instructions, the user's current request, relevant existing docs,
 glossary, accepted decisions and scoped source/tests. Reuse the actual
 README/PRD/spec/ADR and backlog owners; do not perform a full docs-sync bootstrap
@@ -127,7 +129,9 @@ Explicit no-dispatch requests withhold readiness. Read-only/questions-only/no-wr
 or dry-run requests make no local or GitHub writes. Failed persistence is **UNSAVED**,
 not a complete handoff or a reason to create a second queue.
 
-Use the shared [progress and final receipt](../shared/PLAN-HANDOFF.md#progress-and-final-receipt).
+Use the shared [progress and final receipt](../shared/PLAN-HANDOFF.md#progress-and-final-receipt):
+preview outcomes, acceptance and issue dependencies in chat before publication;
+then replace proposed keys with read-back links and actual publication states.
 Stop planning without implementing or starting a service. A delivery-owned substep returns to
 its same coordinator. Runtime failure without new product uncertainty goes back
 to that coordinator with the existing issue, failed operation and candidate evidence;
@@ -166,4 +170,4 @@ plan is not execution.
 - Not implementation; Orbi delivers published issues through PR and review gates.
 - Challenge mode loads `/grill-me`; the interview engine is `/grilling`.
 
-**Done when:** open questions are answered, and the plan and its tasks are saved and validated.
+**Done when:** the requested interview round ends at the next owner question, or settled work has a verified issue handoff. For a read-only request, return the question or plan inline. Identify any failed handoff as UNSAVED.

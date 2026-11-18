@@ -7,8 +7,6 @@ license: MIT
 
 # Autoresearch
 
-For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
-
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
@@ -31,7 +29,6 @@ research protocol.
 
 ## Default output: update the work queue
 
-Apply the [work center](../shared/TODO-WORKCENTER.md) before planning and closeout.
 Every command saves in-scope actionable findings as GitHub Issues by
 default, through the [GitHub handoff](../shared/PLAN-HANDOFF.md). No extra “save” instruction is needed.
 Planning-only permits documentation/backlog writes, not product implementation;
@@ -251,4 +248,4 @@ deliberately, review command/runtime changes, then rerun distribution/dispatch t
   the execution limits above; they do not bypass ownership, PR or independent review gates.
 - Not an interactive plan; use `/plan-with-me`.
 
-**Done when:** the selected protocol's findings or bounded loop result are saved with evidence and the stop reason.
+**Done when:** the findings or bounded loop result have evidence and a stop reason, with saved links for published work or an inline result for read-only work.

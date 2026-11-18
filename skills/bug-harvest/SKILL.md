@@ -6,7 +6,7 @@ license: MIT
 
 # Bug Harvest
 
-For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
+For an issue-backed hunt, check ownership under [Plan Handoff](../shared/PLAN-HANDOFF.md).
 
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 
@@ -72,5 +72,5 @@ checkpoint, not a second repair or a claim that the parser has no remaining bugs
 - Not dead-code removal; use `/unused-code`.
 - Not test reduction; use `/test-optimizer`.
 
-**Done when:** one bug is reproduced with evidence and either fixed with checks or reported with its reproduction.
+**Done when:** each investigated lead has a disposition and evidence, or the bounded search found none. Report the search limits, stop reason and any remaining leads.
 [Source and hashes](UPSTREAM.json) · [MIT license](upstream/LICENSE).

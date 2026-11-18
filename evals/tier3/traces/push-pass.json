@@ -1,0 +1,97 @@
+{
+  "name": "push-pass",
+  "skill": "push",
+  "model": "fixture",
+  "note": "Synthetic recorded data only; no GitHub/Git operations or model run. The grader checks event/regex/receipt presence, not truth or ordering.",
+  "context": {
+    "repository": "example/project",
+    "base": "trunk",
+    "upstream": "team/trunk",
+    "destination": "publish/refs/heads/trunk",
+    "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "destination_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "orbi_association": "linked issue and PR body run marker plus coordinator continuation, not branch prefix or author",
+    "local_worktrees": "clean; no PR-51 ref or checkout",
+    "merged_pr": {
+      "url": "https://github.com/example/project/pull/51",
+      "issue": "https://github.com/example/project/issues/11",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "head_sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "merge_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "classification": "merged upstream"
+    }
+  },
+  "events": [
+    {
+      "type": "read",
+      "path": "skills/push/SKILL.md"
+    },
+    {
+      "type": "command",
+      "command": "git status --short --branch",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git diff --stat",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-1.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-2.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-links-and-ownership.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-51-merged.json"
+    },
+    {
+      "type": "command",
+      "command": "git fetch team",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git merge-base --is-ancestor bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb team/trunk",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-51-refresh.json"
+    },
+    {
+      "type": "command",
+      "command": "git merge --ff-only bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "python3 -m unittest tests.test_parser",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pre-publication-refresh.json"
+    },
+    {
+      "type": "command",
+      "command": "git push publish bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:refs/heads/trunk",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/git/publish-trunk-readback.json"
+    },
+    {
+      "type": "final",
+      "text": "Local commits: none. Incoming landed: PR 51 via team/trunk bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, including regression tests; default-branch ancestry verified, former head dddddddddddddddddddddddddddddddddddddddd not imported. Pending: none. Selected/final: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb. Checks: affected tests and required review passed at final tree. Remote inclusion: publish/trunk readback bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; merge bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ancestor. Local sync: idle canonical trunk fast-forwarded; no worker checkout modified."
+    }
+  ]
+}

@@ -10,8 +10,6 @@ metadata:
 
 # Goal
 
-For task operations, load the [task CLI policy](../shared/TODO-WORKCENTER.md#task-cli-policy).
-
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's scope.
 
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
@@ -153,8 +151,7 @@ does not replace a missing criterion unless the contract explicitly allows it.
 - Not delivery or publication; use `/git-commit-push` with its existing authority.
 - Not the Hermes native goal loop; use the native `/goal` there and `kit:goal` only
   when the native loop is unavailable.
-- No hidden goal state. Durable repository work belongs in `tasks/` through
-  `/plan-for-me`, not in a private goal file.
+- No hidden goal state. Use `/plan-for-me` for a requested durable issue handoff, not for thread-local goal tracking.
 
 **Done when:** every contract criterion maps to fresh evidence and the audit passes,
 or the goal is paused, blocked or cleared with its exact next action and missing

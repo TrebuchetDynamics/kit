@@ -1,14 +1,17 @@
 # Autonomous project discovery
 
-Load this reference when a standalone Plan For Me invocation has no concrete
-objective: bare `/plan_for_me`, "plan this project", "make it better", or a broad
-direction such as "improve reliability". [SKILL.md](../SKILL.md) and the
+Load this reference when neither the standalone Plan For Me request nor its
+relevant conversation supplies a concrete objective: bare `/plan_for_me`, "plan this
+project", "make it better", or a broad direction such as "improve reliability".
+Resolve [conversation findings](../../shared/PLAN-HANDOFF.md#conversation-findings-to-issues)
+first; an invocation after concrete findings stays focused on those findings.
+[SKILL.md](../SKILL.md) and the
 [planning authority contract](../../shared/RESEARCH-PLAN.md) still apply. This
 reference changes what is investigated first. Publication follows Plan Handoff;
 it grants no implementation, unrelated spending or live-operation authority.
 
-A bare invocation is a discovery request, not a request for an interview. Read the
-repository before asking anything. If accepted intent is genuinely absent, report
+A bare invocation without concrete conversation findings is a discovery request,
+not a request for an interview. Read the repository before asking anything. If accepted intent is genuinely absent, report
 that finding instead of inventing a roadmap.
 
 ## Route from meaning
@@ -145,8 +148,9 @@ dependencies) from the **execution frontier** (the smallest high-value group tha
 can be specified accurately and acted on now).
 
 Save at most eight new tasks per discovery frontier; do not fill the allowance
-artificially. Future evidence-dependent expansion stays in the `ai-epic`, not a
-closing legacy planning task or self-replenishing scheduler chain. Revisit the
+artificially. This bounds open-ended discovery, not the full explicitly requested
+batch of conversation outcomes. Future evidence-dependent expansion stays in the
+`ai-epic`, not a closing legacy planning task or self-replenishing scheduler chain. Revisit the
 frontier when implementation evidence arrives; an ordinary task needs no epic.
 
 Save executable issues through [Plan Handoff](../../shared/PLAN-HANDOFF.md): stable

@@ -96,6 +96,19 @@ class PluginDirectoryTests(unittest.TestCase):
                     self.module().plugin_dir(home)
                 self.assertEqual(before, sorted(str(p) for p in home.rglob('*')))
 
+    def test_an_unimportable_yaml_names_the_remedy_and_changes_nothing(self):
+        # A Hermes host whose python3 lacks PyYAML refused every profile with a cause it
+        # could not act on; the identity check still refuses, now with the install step.
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, {'yaml': None}):
+            home = Path(tmp)
+            folder = self.make(home, 'autowork')
+            before = sorted(str(p) for p in home.rglob('*'))
+            with self.assertRaisesRegex(ValueError, 'PyYAML is required to verify plugin identity') as caught:
+                self.module().plugin_dir(home)
+            self.assertIn(f'{folder}/plugin.yaml', str(caught.exception))
+            self.assertIn('python3 -m pip install --user PyYAML', str(caught.exception))
+            self.assertEqual(before, sorted(str(p) for p in home.rglob('*')))
+
 
 class UpdateTests(unittest.TestCase):
     def setUp(self):
@@ -565,6 +578,54 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual([r['status'] for r in receipts], ['updated', 'up_to_date'])
         self.assertEqual([r['gateway_restart'] for r in receipts], ['requested', 'not_needed'])
         self.assertEqual(restart.call_count, 1)
+
+    def test_symlinked_restart_marker_is_refused(self):
+        target = self.root / 'important-data'
+        target.write_bytes(b'IMPORTANT USER DATA')
+        (self.home / 'restart.json').symlink_to(target)
+        with self.assertRaisesRegex(ValueError, 'Refusing symlink'):
+            self.mod._write_marker(self.home, {'pid': 1, 'covers': [1]})
+        self.assertEqual(target.read_bytes(), b'IMPORTANT USER DATA')
+
+    def test_symlinked_restart_marker_temp_is_refused(self):
+        target = self.root / 'important-data'
+        target.write_bytes(b'IMPORTANT USER DATA')
+        (self.home / 'restart.tmp').symlink_to(target)
+        with self.assertRaisesRegex(ValueError, 'Refusing symlink'):
+            self.mod._write_marker(self.home, {'pid': 1, 'covers': [1]})
+        self.assertEqual(target.read_bytes(), b'IMPORTANT USER DATA')
+        self.assertFalse((self.home / 'restart.json').exists())
+
+    def test_symlinked_latest_receipt_is_refused(self):
+        target = self.root / 'important-data'
+        before = b'{"started_ns": 5, "note": "IMPORTANT USER DATA"}'
+        target.write_bytes(before)
+        (self.home / 'latest.json').symlink_to(target)
+        with self.assertRaisesRegex(ValueError, 'Refusing symlink'):
+            self.mod._record_restart_outcome(self.home, [5], 'requested')
+        self.assertEqual(target.read_bytes(), before)
+
+    def test_symlinked_latest_receipt_temp_is_refused(self):
+        target = self.root / 'important-data'
+        target.write_bytes(b'IMPORTANT USER DATA')
+        receipt = self.home / 'latest.json'
+        before = b'{"started_ns": 5}'
+        receipt.write_bytes(before)
+        (self.home / 'latest.tmp').symlink_to(target)
+        with self.assertRaisesRegex(ValueError, 'Refusing symlink'):
+            self.mod._record_restart_outcome(self.home, [5], 'requested')
+        self.assertEqual(target.read_bytes(), b'IMPORTANT USER DATA')
+        self.assertEqual(receipt.read_bytes(), before)
+        self.assertFalse(receipt.is_symlink())
+
+    def test_symlinked_update_lock_is_refused(self):
+        target = self.root / 'important-data'
+        target.write_bytes(b'IMPORTANT USER DATA')
+        (self.home / 'lock').symlink_to(target)
+        with self.assertRaisesRegex(ValueError, 'Refusing symlink'):
+            with self.mod._try_update_lock(self.home):
+                pass
+        self.assertEqual(target.read_bytes(), b'IMPORTANT USER DATA')
 
     def test_draining_restart_is_reported_and_not_requested_again(self):
         self.advance()

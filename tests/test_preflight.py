@@ -3,6 +3,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import subprocess
 import sys
 from pathlib import Path
 import tempfile
@@ -41,6 +42,56 @@ class PreflightTests(unittest.TestCase):
         with patch.object(pre, 'runtime_check', return_value=[]), \
              patch.object(pre.shutil, 'which', return_value='/bin/available'):
             return pre.preflight(ROOT, home, [('default', home)], bundle_only=True)
+
+    def test_a_host_without_pyyaml_names_the_install_step_without_writes(self):
+        # Both PyYAML reads used to stop with a cause the user could not act on.
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, {'yaml': None}):
+            home = Path(tmp)
+            (home / 'config.yaml').write_text('memory:\n  provider: existing\n')
+            before = sorted(str(p) for p in home.rglob('*'))
+            report = self.check(home)
+            errors = ' '.join(report['errors'])
+            self.assertIn('PyYAML is required to verify plugin identity', errors)
+            self.assertIn('cannot verify runtime policy/opt-out; PyYAML is required to read profile policy safely', errors)
+            policy_error, = [e for e in report['errors'] if 'cannot verify runtime policy' in e]
+            self.assertIn('python3 -m pip install --user PyYAML', policy_error)
+            self.assertEqual(before, sorted(str(p) for p in home.rglob('*')))
+
+    def test_policy_read_errors_do_not_reveal_private_text(self):
+        sentinel = 'private-test-marker'
+        original_import = __import__
+        def broken_yaml(name, *args, **kwargs):
+            if name == 'yaml':
+                raise ModuleNotFoundError(sentinel, name='other_module')
+            return original_import(name, *args, **kwargs)
+
+        for failure in (patch.object(yaml, 'safe_load', side_effect=ValueError(sentinel)),
+                        patch.object(yaml, 'safe_load', side_effect=OSError(sentinel)),
+                        patch('builtins.__import__', side_effect=broken_yaml)):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp, failure:
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    report = self.check(Path(tmp))
+                    module('setup_preflight').print_plan(report)
+                output = stdout.getvalue() + stderr.getvalue()
+                self.assertIn('BLOCKED: default: cannot verify runtime policy/opt-out', output)
+                self.assertIn('no installation stages started', output)
+                self.assertNotIn(sentinel, output)
+                self.assertNotIn('pip install', output)
+
+    def test_failed_preview_keeps_child_diagnostics_private(self):
+        for err in ('private-stderr-marker', ''):
+            with self.subTest(stderr=bool(err)), tempfile.TemporaryDirectory() as tmp:
+                child = subprocess.CompletedProcess([], 1, 'private-stdout-marker', err)
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with patch.object(subprocess, 'run', return_value=child), \
+                     contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    report = self.check(Path(tmp))
+                    module('setup_preflight').print_plan(report)
+                output = stdout.getvalue() + stderr.getvalue()
+                self.assertIn('BLOCKED: Installer prerequisite preview failed', output)
+                self.assertNotIn('private-stdout-marker', output)
+                self.assertNotIn('private-stderr-marker', output)
 
     def test_incomplete_skill_and_plugin_conflicts_abort_without_writes(self):
         with tempfile.TemporaryDirectory() as tmp:

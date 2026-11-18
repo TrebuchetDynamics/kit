@@ -1,0 +1,117 @@
+{
+  "name": "push-upstream-advance",
+  "skill": "push",
+  "model": "fixture",
+  "note": "Synthetic recorded data only; no GitHub/Git operations or model run. The grader checks event/regex/receipt presence, not truth or ordering.",
+  "context": {
+    "repository": "example/project",
+    "base": "trunk",
+    "upstream": "team/trunk",
+    "destination": "publish/refs/heads/trunk",
+    "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "destination_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "orbi_association": "linked issue and PR body run marker plus coordinator continuation, not branch prefix or author",
+    "owned_pr": {
+      "url": "https://github.com/example/project/pull/52",
+      "issue": "https://github.com/example/project/issues/12",
+      "head_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "merge_sha": null,
+      "checks": "pass",
+      "owner": "existing Orbi coordinator",
+      "classification": "open/owned"
+    },
+    "refresh": "open PR becomes merged; upstream moves before push; no stale head import",
+    "new_merge_sha": "cccccccccccccccccccccccccccccccccccccccc",
+    "final_sha": "ffffffffffffffffffffffffffffffffffffffff",
+    "local_commit_sha": "1111111111111111111111111111111111111111",
+    "selected_candidate_sha": "2222222222222222222222222222222222222222"
+  },
+  "events": [
+    {
+      "type": "read",
+      "path": "skills/push/SKILL.md"
+    },
+    {
+      "type": "command",
+      "command": "git status --short --branch",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git diff --stat",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-1.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-2.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-links-and-ownership.json"
+    },
+    {
+      "type": "command",
+      "command": "git fetch team",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-52-open-observation.json"
+    },
+    {
+      "type": "command",
+      "command": "git merge --no-ff bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "python3 -m unittest tests.test_parser",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-52-now-merged-pre-publication.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/git/upstream-advance.json"
+    },
+    {
+      "type": "command",
+      "command": "git fetch team",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git merge --no-ff cccccccccccccccccccccccccccccccccccccccc",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "python3 -m unittest tests.test_parser tests.test_auth",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/final-review-and-ownership-refresh.json"
+    },
+    {
+      "type": "command",
+      "command": "git push publish ffffffffffffffffffffffffffffffffffffffff:refs/heads/trunk",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/git/publish-trunk-readback.json"
+    },
+    {
+      "type": "final",
+      "text": "Local commits: accepted local fix 1111111111111111111111111111111111111111 retained. Incoming landed: PR 51 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb then PR 52 merge cccccccccccccccccccccccccccccccccccccccc through team/trunk; incoming tests retained. Pending: PR 52 reclassified merged upstream, never imported former owned head eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee. Selected/final: 2222222222222222222222222222222222222222/ffffffffffffffffffffffffffffffffffffffff; base advanced bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb to cccccccccccccccccccccccccccccccccccccccc before publication; rebuilt ordinary merge. Checks: affected parser/auth union and required independent review passed for ffffffffffffffffffffffffffffffffffffffff; unchanged receipts reused. Remote inclusion: publish/trunk ffffffffffffffffffffffffffffffffffffffff, both merges ancestors. Local sync: canonical checkout busy, local trunk stale; owner can fast-forward after release."
+    }
+  ]
+}

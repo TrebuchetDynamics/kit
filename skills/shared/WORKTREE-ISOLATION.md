@@ -1,8 +1,13 @@
 # Worktree isolation
 
-Before creating a writing checkout, inspect repository instructions, Git status,
+Apply the [mode-aware freshness contract](COMMON-CONTRACT.md#source-freshness-and-delivery-ownership) first. Read-only and planning modes do not create worktrees or fetch.
+
+Before creating an authorized writing checkout, inspect repository instructions, Git status,
 existing worktrees and active ownership. Pin the intended base to an immutable
-commit and identify required prerequisites. A clean base does not include dirty
+commit from a verified intended upstream baseline and identify required prerequisites.
+When stale or shared, isolate authorized edits there rather than updating another
+writer's checkout. Preserve outstanding Orbi coordinator ownership even when its
+checkout is clean; an open PR is not an integration candidate. A clean base does not include dirty
 backlog edits or uncommitted dependencies; resolve attribution before assembling
 an isolated candidate. Never copy foreign edits to manufacture a clean gate.
 

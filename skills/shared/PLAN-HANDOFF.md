@@ -37,6 +37,52 @@ A larger plan uses an `ai-epic` coordination issue linked to its executable chil
 epics never execute. Future evidence-dependent expansion remains in that plan,
 not a second local task graph or an automatic legacy rolling-planning job.
 
+## Conversation findings to issues
+
+Start with the current request and relevant conversation, not only the last message.
+An explicit target wins. Otherwise, a bare planning invocation after a concrete
+analysis or discussion uses those findings as its focused scope. Use project
+discovery only when neither the request nor the conversation supplies an objective.
+If several unrelated topics make the target ambiguous, name the ambiguity instead
+of silently choosing one or publishing all of them. Preserve continuing user limits;
+a prior skill's read-only default does not by itself make this new planning request
+read-only. Follow the current invocation's authority contract.
+
+1. **Collect.** Reuse findings, user answers, corrections, accepted decisions and
+   referenced artifacts already in chat. Read linked evidence when available; do
+   not require a report file, pasted transcript or rerun of the originating skill.
+   Missing or compacted evidence stays unknown. Ask only for missing consequential
+   input, not a repetition of the discussion.
+2. **Reconcile.** Check current source, open and closed issues, linked PRs and
+   ownership. Classify each in-scope topic as new work, covered by an existing issue,
+   completed, unsupported, or held for a named decision/input. Distinguish user
+   choices from planner calls and unaccepted suggestions. Recheck stale claims;
+   a polished earlier report is not proof or permission.
+3. **Decompose.** Turn distinct buildable outcomes into separate issues with the
+   contracts above. Group findings that share one fix and acceptance check; split
+   independently verifiable outcomes. Do not create one issue per chat message,
+   file, skill or implementation step, or one giant issue for unrelated outcomes.
+   Cover the full requested batch without an arbitrary issue-count target. The
+   discovery frontier cap applies to open-ended discovery, not an explicit batch.
+   Use an epic only for coordination and real native prerequisites for ordering.
+4. **Carry context.** Put the relevant decision, evidence and acceptance in each
+   issue so an Orbi worker can act without this chat. Summarize private discussion
+   without copying credentials or unrelated personal data. Use reachable sources;
+   temporary screenshot paths and “see chat above” are not durable evidence.
+   Account for every in-scope topic in the preview or its held/covered disposition.
+
+Reuse the originating skill's output, not its execution permissions:
+
+| Input | Carry into the issue | Keep separate |
+| --- | --- | --- |
+| State-machine analysis | Trigger, unsafe transition, invariant, source and a transition regression check | Hypotheses versus confirmed failures; unresolved product rules |
+| Grilling, Grill Me or Grill With Docs | Accepted answers, constraints, trade-offs and settled decisions | Skipped questions, ambiguous replies and unaccepted recommendations |
+| Bug Harvest | Reproducer, impact, current failure evidence and regression expectation | Already-fixed bugs and passing checks versus remaining defects or unrun checks |
+| UI Taste, Impeccable or screenshot review | Affected screen/state, observed defect, accepted design direction and visual/interaction acceptance | Aesthetic suggestions versus accepted changes; proposed captures versus inspected renders |
+
+These are examples, not a required skill chain. Load another method only for a
+specific evidence gap. Planning does not rerun a repair or UI-edit workflow.
+
 ## Publication and dependencies
 
 All issues default to `ai-ready`, **regardless of author**, including external
@@ -82,11 +128,13 @@ closed records and Orbi-owned issues rather than overwriting them. For refinemen
 read the issue fresh, reconcile only the intended delta, and preserve current
 ownership and dependencies; do not replay an old full snapshot.
 
-Failure may leave a partial batch: earlier issues stay ready, while the refused
-issue stays `ai-planning` unless another client changed its labels. Preserve that
-readiness and foreign edits; there is no automatic rollback. Inspect ownership and
-reconcile the cause before retrying the same stable-key input, never blindly retry
-to overwrite drift. The whole-batch barrier and final per-issue refresh are not a
+Failure may leave a partial batch: earlier issues stay ready, later issues may
+already be saved without dispatch, and a timed-out write may have been accepted.
+The interrupted issue can have both `ai-planning` and `ai-ready`; a timeout is not
+proof that readiness failed. Preserve observed readiness and foreign edits; there
+is no automatic rollback, write retry or failed-write label cleanup. Inspect
+ownership and reconcile the cause before retrying the same stable-key input,
+never blindly retry to overwrite drift. See the partial receipt below. The whole-batch barrier and final per-issue refresh are not a
 transaction: concurrent edits remain possible between the final reads and separate
 label write. One publisher per batch is required, not a cross-client lock or a
 guarantee against all concurrent clients.
@@ -108,20 +156,124 @@ through the repository's normal PR process. A link to an unpublished local file 
 not a reachable governing source: publish it or put the necessary accepted content
 in the issue before readiness. Preserve unrelated files and active writers.
 
-If GitHub/authentication/network access is unavailable, continue permitted research
-and document work and show complete proposed issues inline as **UNSAVED**, with the
-exact failure and retry command. Do not create a substitute executable queue or
-claim a saved handoff. Read-only/questions-only/no-write/dry-run means no GitHub,
+If GitHub/authentication/network access is unavailable before publication, continue
+permitted research and document work and show complete proposed issues inline as
+**UNSAVED**, with the exact failure and retry command. If publication already began,
+use the per-issue partial receipt instead: unavailable access cannot prove a write
+was rejected. Do not create a substitute executable queue or claim unverified work
+was saved. Read-only/questions-only/no-write/dry-run means no GitHub,
 label, document or scratch writes. A preview proves no remote persistence.
 
 ## Progress and final receipt
 
 Normally send one useful progress update and a final receipt. Additional updates
 are justified by material blockers or long-running work, not a rigid message quota.
-Keep the receipt compact: issue links, decisions and planner calls, scoped unresolved
-choices, ready/waiting/proposed state, native dependencies, actual checks and unmet
-gates. Distinguish recovery acceptance from application/device qualification using
+Use the progress update for the **Plan preview**, after enough investigation to
+show a meaningful batch and before GitHub publication. This is visibility, not a
+new approval gate: continue authorized publication without asking “shall I create
+these?”. Honor explicit preview-only/no-write requests instead. Plan With Me still
+asks only consequential unresolved questions; settled answers need no reconfirmation.
+
+### Plan preview
+
+Lead with the intended result in plain language, not a list of tools used. Show the
+repository and counts of proposed new issues, reused issues and held topics. For
+each issue, give a short title, the observable change, its acceptance signal and
+real prerequisites. Use temporary keys such as P1 before publication, never invented
+issue numbers or URLs. Mark all new rows **proposed, not published**. Reused issue
+links must come from readback. Planned checks are not passed checks.
+
+Example shape (illustrative only):
+
+> **Plan preview — OWNER/REPO:** Make reconnect safe and explain recovery in the UI.
+> Two proposed new issues, one reused issue, one held topic. Nothing new published.
+>
+> | Issue | What changes / proof | Depends on |
+> | --- | --- | --- |
+> | P1 — Guard reconnect | Reject stale sessions; regression covers reconnect and cancellation | None |
+> | P2 — Show recovery state | Render retry/error states; interaction test and narrow-screen capture | P1 |
+> | Existing issue (verified link) | Reuse its keyboard-navigation scope and acceptance | Read-back prerequisites |
+>
+> **Held:** Automatic retry policy needs an owner decision. Independent work continues.
+> **Planner call:** Keep the current session API. **Excluded:** Authentication redesign.
+
+Use a short numbered list if a table is hard to read on the host. For large batches,
+group by outcome and keep one compact line per issue; do not silently omit topics
+or replace the plan with a count. Put full technical contracts in the issues, not
+an unreadable chat dump. Show dependency order and independent lanes without
+promising simultaneous execution or a running deployment.
+
+### Publication receipt
+
+Replace proposed keys with verified issue links after readback. Lead with the actual
+result: created, reused, held and unsaved counts, then the issue list. Each row keeps
+its outcome, native dependencies and observed disposition: ready/waiting/proposed
+for planned work; completed, owned/in progress or paused for existing work.
+“Ready” means published readiness with no unmet native prerequisite or observed
+ownership/pause hold, not pickup; “waiting” names the unmet prerequisite even when
+the issue has `ai-ready`. Unknown ownership or pause state means eligibility is
+unverified, not ready. Explicit no-dispatch work remains `ai-planning` and is
+described as held. Epics are coordination, never a next executable issue. Identify
+the first eligible issues and what they unlock, excluding completed, owned or
+paused work, or name the exact missing input if none is eligible.
+
+Finish with material decisions and planner calls, scoped unresolved choices,
+actual checks and unmet gates. A publication failure reports the actual partial
+result per issue (by stable key): published, saved but held/not yet dispatched, **UNSAVED**
+(creation never attempted), or **UNKNOWN** (write attempted without conclusive
+readback), plus the exact failure and resume action. Never call a saved issue
+unsaved because dispatch failed, or an ambiguous create unsaved because it timed
+out. A no-write preview says **nothing saved or dispatched** and
+shows proposed contracts inline; it must not end with a saved-plan claim. Distinguish
+recovery acceptance from application/device qualification using
 [the shared recovery policy](PLANNING-CRAFT.md#recovery-provenance-and-qualification).
+
+#### Incomplete `--apply` receipt
+
+The helper exits 1 with empty stdout on failure. After the existing
+`Publication incomplete: ...` diagnostic, failures with issue publication progress
+append one JSON object on its own stderr line:
+
+```json
+{"partial":true,"issues":[{"key":"P1","number":42,"url":"https://github.com/OWNER/REPO/issues/42","creation":"saved","attempted_phase":"ready_post","last_verified":{"state":"open","labels":["ai-planning","ai-ready"]},"readiness":"ready","unverified_write":false}]}
+```
+
+Every input key appears, including later saved issues and never-attempted creates:
+
+- `creation`: `saved` means an issue identity was returned/read back; `unknown`
+  means creation was attempted but not conclusively reconciled; `not_attempted`
+  means this run neither created nor identified that issue. `number`/`url` remain
+  null without a proven identity. These describe persistence, not dispatch.
+- `attempted_phase`: the last phase entered, not a claim it succeeded. Phases are
+  `not_started`, `reuse`, `create`, `dependencies`, `dependencies_post`, `epic`,
+  `epic_post`, `verify_batch`, `verify_dispatch`, `ready_post`, `remove_planning`,
+  `readback`, and `complete`. For example, a saved issue at `verify_batch` has not
+  reached dispatch; `ready_post` may or may not have been accepted.
+- `last_verified`: the latest issue state/labels snapshot, or null. It does not
+  certify current contract/graph validity or eligibility. Earlier completed rows
+  retain their verified result; they are not refreshed after another row fails.
+- `readiness`: `ready`/`not_ready` describes the observed presence/absence of
+  `ai-ready`, **not eligibility or pickup**. `unknown` means the interrupted row
+  could not be freshly observed; its retained `last_verified` can be stale.
+  Owned, paused or changed work must still be reconciled, regardless of this field.
+- `unverified_write`: a write has not been resolved by the relevant readback.
+  An issue GET can resolve issue/label state, not an interrupted native graph write.
+  `reconciliation_error`, when present, explains why recovery observation failed.
+
+After failure, the helper only reads the interrupted issue: one issue GET when its
+number is known, otherwise an all-state stable-marker scan for an ambiguous create
+(capped at ten 100-issue pages; each API call has a 60-second timeout). No unique
+match, a scan cap, or a failed read leaves creation unknown, not absent. Recovery
+reads do not validate/repair foreign changes, dispatch the next issue, or repeat a
+mutation. Success JSON/exit 0 and the local preview format are unchanged.
+
+For safe recovery, preserve the diagnostic/receipt and transient input. Read back
+unknown writes by issue number or the same stable marker (open **and closed**
+issues, not lagging search); resolve ambiguous matches deliberately. Inspect fresh
+contracts, ownership, pauses and native graph state before reusing the same keys
+and `--apply` command. Do not create replacement keys, overwrite drift, remove
+labels or reopen owned/closed work to force a retry. The helper still applies the
+whole-batch and per-issue freshness gates; a receipt is not retry authorization.
 
 Readiness is not pickup, PR delivery or merge. Distinguish a generic possible
 consumer from an observed deployment: pickup or timers require current evidence,

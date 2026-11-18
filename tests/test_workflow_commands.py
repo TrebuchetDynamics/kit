@@ -106,33 +106,55 @@ class WorkflowCommands(unittest.TestCase):
         installed = self.root.parent / 'home/skills/plan-for-me/SKILL.md'
         self.assertEqual(installed.read_bytes(), source.read_bytes())
 
-    def test_bare_plan_for_me_selects_discovery_and_explicit_goals_stay_focused(self):
+    def test_plan_for_me_defers_scope_to_conversation_intake_and_preserves_arguments(self):
         self.plugin.SKILLS_DIR = fixture.ROOT / 'skills'
         self.plugin.register(self.ctx)
-        for raw in ('', '   '):
-            with self.subTest(raw=repr(raw)):
-                self.ctx.commands['plan_for_me'](raw)
-                prompt = self.ctx.messages[-1][0]
-                self.assertIn('Selected route: autonomous project discovery', prompt)
-                self.assertIn('do not ask for a goal', prompt)
-                self.assertTrue(prompt.endswith('User arguments:\n' + raw))
-        self.ctx.commands['plan_for_me']('implement offline support')
-        prompt = self.ctx.messages[-1][0]
-        self.assertNotIn('Selected route: autonomous project discovery', prompt)
-        self.assertTrue(prompt.endswith('implement offline support'))
+        self.session.update(HERMES_SESSION_PLATFORM='telegram', HERMES_SESSION_CHAT_ID='fixture',
+                            HERMES_SESSION_THREAD_ID='42')
+        # Actual registered dispatch, not model adherence: the canonical skill
+        # handles prior findings versus no objective anywhere (discovery fallback).
+        for command in ('plan_for_me', 'plan-for-me'):
+            for raw in ('', ' \t\n ', 'implement offline support',
+                        'read-only: plan offline support\n$(literal); --no-push'):
+                with self.subTest(command=command, raw=repr(raw)):
+                    self.assertIsNone(self.ctx.commands[command](raw))
+                    prompt, routing = self.ctx.messages[-1]
+                    self.assertIn('skill_view(name="kit:plan-for-me")', prompt)
+                    self.assertIn('in this conversation', prompt)
+                    self.assertIn('../shared/RESEARCH-PLAN.md', prompt)
+                    self.assertNotIn('Selected route:', prompt)
+                    self.assertNotIn('No user objective was supplied', prompt)
+                    self.assertTrue(prompt.endswith('User arguments:\n' + raw))
+                    self.assertEqual(routing['origin'], {
+                        'platform': 'telegram', 'chat_id': 'fixture', 'thread_id': '42'})
+        self.session.clear()
+        self.session['HERMES_SESSION_KEY'] = 'fixture-session'
+        self.ctx.commands['plan_for_me']('')
+        self.assertEqual(self.ctx.messages[-1][1], {'session_key': 'fixture-session'})
+
+        # Failed dispatch must retain the actionable host repair, not claim success.
+        self.ctx.accept = False
+        with patch.object(self.plugin, '_gateway_injection_state', return_value=(False, False)):
+            error = self.ctx.commands['plan_for_me']('')
+        self.assertIn("Skill 'plan-for-me' was not started", error)
+        self.assertIn('plugins.entries.kit.allow_gateway_injection is false', error)
+        self.assertIn('set it true and restart its gateway', error)
 
     def test_planners_publish_evidence_backed_issues_without_legacy_rolling_jobs(self):
         self.plugin.SKILLS_DIR = fixture.ROOT / 'skills'
         self.plugin.register(self.ctx)
         protocol = (fixture.ROOT / 'skills/shared/RESEARCH-PLAN.md').read_text()
-        for command, skill in (('plan_for_me', 'plan-for-me'), ('plan_with_me', 'plan-with-me')):
+        for command, skill in (('plan_for_me', 'plan-for-me'), ('plan_with_me', 'plan-with-me'), ('unslop', 'unslop')):
             text = self.ctx.skills[skill].read_text() + protocol
             for required in ('GitHub Issues', 'ai-ready', 'ai-planning', 'blockedBy',
                              'do not create an automatic legacy'):
                 self.assertIn(required, text)
             for request in ('port this project to Flutter', 'fix a README typo'):
                 self.ctx.commands[command](request)
-                self.assertTrue(self.ctx.messages[-1][0].endswith(request))
+                prompt = self.ctx.messages[-1][0]
+                self.assertIn('../shared/RESEARCH-PLAN.md', prompt)
+                self.assertIn(f'skill_view(name="kit:{skill}")', prompt)
+                self.assertTrue(prompt.endswith(request))
             self.assertNotIn('autowork tasks add', text)
 
     def test_plan_for_me_reserves_both_spellings_for_existing_owners(self):
@@ -175,7 +197,7 @@ class WorkflowCommands(unittest.TestCase):
         router = (fixture.ROOT / 'skills/ask-kit/SKILL.md').read_text()
         descriptions = {}
         for name in ('plan-for-me', 'ponytail-review',
-                     'git-commit-push', 'docs-sync', 'plan-with-me'):
+                     'git-commit-push', 'push', 'docs-sync', 'plan-with-me'):
             with self.subTest(name=name):
                 text = (fixture.ROOT / f'skills/{name}/SKILL.md').read_text()
                 metadata = yaml.safe_load(text.split('---', 2)[1])
@@ -183,6 +205,18 @@ class WorkflowCommands(unittest.TestCase):
                 self.assertIn(f'`/{name}`', router)
                 self.assertNotIn('use when', metadata['description'].lower())
         self.assertEqual(len(set(descriptions.values())), len(descriptions))
+
+    def test_push_invocation_keeps_read_only_and_remote_discovery_scope(self):
+        self.skill('push')
+        self.plugin.register(self.ctx)
+        raw = 'audit; no fetch; no sync; no commit; no push; only docs/'
+        self.ctx.commands['push'](raw)
+        prompt, _ = self.ctx.messages[-1]
+        self.assertIn('kit:push', prompt)
+        self.assertTrue(prompt.endswith(raw))
+        canonical = (fixture.ROOT / 'skills/push/SKILL.md').read_text()
+        self.assertIn('already-merged upstream Orbi changes', canonical)
+        self.assertIn('without taking it over', canonical)
 
     def test_missing_skills_do_not_advertise_workflows(self):
         self.skill('other')

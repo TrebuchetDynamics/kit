@@ -36,7 +36,7 @@ Preserve technical nouns and verbs when a simpler word would change their meanin
 
 Start with the result and a short explanation of its purpose. Then state what is
 done, what is not done, and the next action. Include only facts needed for the
-current answer. Name the project, file or command when it helps the user act.
+current answer. For a read-only request, give the answer or findings inline; do not describe proposed edits as made. If you found nothing, name what you checked. If you could not check, name the missing input instead.
 
 Explain an unfamiliar term on first use. For example, a worktree is a separate
 working copy. Keep these states separate: files changed, checks passed, review

@@ -17,6 +17,7 @@ Status: Accepted
 - Plan For Me investigates, chooses supported approaches and records executable
   GitHub Issues. An explicit objective keeps planning focused; a bare or vague request
   starts evidence-based discovery without inventing product direction.
+- Unslop audits a user-facing flow and publishes accepted UI changes as GitHub Issues for Orbi; it does not implement the redesign.
 - Docs Sync maintains source-backed documents and GitHub issue handoffs.
 - Planning stops after publication. Retained authorized fix/apply and recovery modes
   preserve their own scope, ownership, checks, independent review and PR gates.
@@ -27,6 +28,14 @@ Status: Accepted
   host-specific. Paseo can host these agents without a Kit executor plugin.
 - GitHub Issues are the work board; Kanban and historical local records are never
   prerequisites for execution, recovery, review, installation or integration.
+
+All first-party skills and portable adapters reach the
+[shared freshness and ownership contract](../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership).
+Mode controls effects, not automatic synchronization on every invocation. `/push`
+includes landed Orbi changes through verified upstream and reports outstanding
+issue/PR candidates without taking coordinator-owned heads or bypassing review.
+Read-only/audit and writable planning do not fetch or sync Git; authorized edits
+inspect ownership and isolate stale/shared baselines. Delivery retains caller scope.
 
 These contracts are detailed in [workflows](workflows.md). Planning does not grant
 implementation, publication or deployment authority. Accepted scope does not settle

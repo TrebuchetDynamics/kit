@@ -1,7 +1,7 @@
 # Autoresearch plan adaptations
 
 Read this contract **before** the pinned `skills/autoresearch/upstream/plan.md`
-and supporting methods. It governs Plan For Me, Plan With Me, challenge/Grill Me
+and supporting methods. It governs Plan For Me, Plan With Me, Unslop, challenge/Grill Me
 compatibility and every Autoresearch plan route on every host. Its planning
 boundaries take precedence over generic method prompts, task-sizing shortcuts and
 execution defaults; host tool mappings still apply. These are instructions, not a
@@ -15,7 +15,7 @@ Bind the current request before acting:
 | Invocation | Allowed finish |
 | --- | --- |
 | Explicit standalone planning | Save the requested plan/batch, then stop. Earlier unrelated implementation permission does not widen this request. |
-| Explicit standalone Plan For Me with no concrete objective, or only a vague direction | Run the [project-discovery protocol](../plan-for-me/references/discovery.md), then save the authorized planning batch and stop. |
+| Explicit standalone Plan For Me with no concrete objective in the request or relevant conversation, or only a vague direction | Run the [project-discovery protocol](../plan-for-me/references/discovery.md), then save the authorized planning batch and stop. |
 | Orbi-owned planning substep | Return findings and saved tasks to that **same coordinator**; its existing execution authority continues outside this substep. No competing worker, dispatch or workflow restart. |
 | Questions-only, read-only, chat-only, no-write, no changes or dry-run | Read and discuss only; save nothing, including queue metadata or research scratch. |
 | Later explicit instruction to implement the accepted plan | End planning and enter the authorized execution workflow under repository checks, ownership and delivery limits. |
@@ -29,9 +29,11 @@ start them. Explicit no-dispatch requests and unresolved intent retain `ai-plann
 All issue authors receive the same readiness default. See the
 [publication policy](PLAN-HANDOFF.md#publication-and-dependencies).
 
-A standalone Plan For Me invocation without a concrete objective authorizes
-project-wide planning, not product direction. It may refine accepted goals and
-establish evidence-backed engineering goals inside the accepted direction; new
+First resolve [conversation findings](PLAN-HANDOFF.md#conversation-findings-to-issues)
+when the request follows an analysis or discussion. A standalone Plan For Me
+invocation without a concrete objective in either request or relevant conversation
+authorizes project-wide planning, not product direction. It may refine accepted
+goals and establish evidence-backed engineering goals inside the accepted direction; new
 product strategies remain proposals until the owner accepts them. Plan With Me
 keeps its interactive missing-intent behavior, and an Orbi-owned substep stays
 inside its named task and authorized prerequisites.
@@ -75,8 +77,10 @@ who answers consequential intent. It does not change the sequence.
    method gap, select one technique through [engineering](../engineering/REFERENCE.md);
    routine planning needs no experiment loop. Apply
    [decision closure](PLANNING-CRAFT.md#decision-closure) before calling a task ready.
-3. **Save.** Write accepted decisions in their existing owners and complete GitHub
-   Issues with outcome, scope/exclusions, acceptance, exact verification and sources.
+3. **Preview and save.** Show the [issue preview](PLAN-HANDOFF.md#progress-and-final-receipt)
+   in chat before publication. Write accepted decisions in their existing owners
+   and complete GitHub Issues with outcome, scope/exclusions, acceptance, exact
+   verification and sources.
    Use native `blockedBy` dependencies and `ai-epic` coordination for larger plans.
    Follow the [single-pass handoff](PLAN-HANDOFF.md#one-planning-pass-one-handoff).
 4. **Validate and report.** Read back the whole batch and dependencies, then publish
@@ -86,7 +90,7 @@ who answers consequential intent. It does not change the sequence.
 | Mode | Unique behavior |
 | --- | --- |
 | Plan With Me | Interviews the owner for consequential missing intent, then saves the answered plan. |
-| Plan For Me | Investigates and chooses within delegated scope; bare or vague requests run project discovery. |
+| Plan For Me | Investigates and chooses within delegated scope; project discovery applies only when neither request nor relevant conversation supplies a concrete objective. |
 
 ### Rolling plans and issue records
 
@@ -126,7 +130,8 @@ See [the issue contract](PLAN-HANDOFF.md#one-planning-pass-one-handoff).
 1. Resume the requested goal, relevant repository source/tests and existing plans.
    If no goal was supplied, use the current authorized task or repository-development
    objective when unambiguous. A standalone Plan For Me request without a concrete
-   objective runs the [project-discovery protocol](../plan-for-me/references/discovery.md):
+   objective in the request or relevant conversation runs the
+   [project-discovery protocol](../plan-for-me/references/discovery.md):
    investigate the repository first, then derive accepted and engineering goals from
    evidence. Do not ask for a goal before that investigation and do not invent
    product intent. Plan With Me asks for the missing goal; an Orbi-owned substep

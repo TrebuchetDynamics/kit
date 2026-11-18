@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Tier 3 skill-trace grading. Pure data; never executes trace content.
 
-A trace records what an agent did: reads, writes, commands, task events and its
-final answer. A spec names the required and forbidden events for one skill. This
-grader checks the trace shape and sequence. It does not call a model and does not
-prove that a live agent will behave the same way.
+A trace records what an agent did: reads, writes, commands, user-visible assistant
+messages and its final answer. A spec names the required and forbidden events for
+one skill. This grader checks the trace shape and sequence. It does not call a
+model and does not prove that a live agent will behave the same way.
 
     python3 scripts/skill_trace_eval.py evals/tier3/ponytail-review.json \\
       evals/tier3/traces/ponytail-review-pass.json
@@ -40,7 +40,7 @@ def _kind(event):
         if tool in ('bash', 'shell') and _command(event) is not None:
             return 'command'
         return None
-    return kind if kind in ('read', 'write', 'edit', 'command', 'final') else None
+    return kind if kind in ('read', 'write', 'edit', 'command', 'assistant', 'final') else None
 
 
 def _path(event):
@@ -77,21 +77,26 @@ def _clause_text(clause):
     return json.dumps(clause, sort_keys=True, ensure_ascii=False)
 
 
-def _check_clause(clause):
+def _check_clause(clause, *, allow_before_first=False):
     if not isinstance(clause, dict):
         raise TraceError('every clause must be an object')
-    unknown = set(clause) - {'event', 'path', 'command', 'exit', 'contains'}
+    allowed = {'event', 'path', 'command', 'exit', 'contains'}
+    if allow_before_first:
+        allowed.add('before_first')
+    unknown = set(clause) - allowed
     if unknown:
         raise TraceError('unknown clause keys: ' + ', '.join(sorted(unknown)))
     kind = clause.get('event')
-    if kind not in ('read', 'write', 'edit', 'command', 'final'):
-        raise TraceError('clause.event must be read, write, edit, command or final')
+    if kind not in ('read', 'write', 'edit', 'command', 'assistant', 'final'):
+        raise TraceError('clause.event must be read, write, edit, command, assistant or final')
     if 'path' in clause and kind not in ('read', 'write', 'edit'):
         raise TraceError('path is only valid for read, write or edit')
     if ('command' in clause or 'exit' in clause) and kind != 'command':
         raise TraceError('command and exit are only valid for command')
-    if 'contains' in clause and kind != 'final':
-        raise TraceError('contains is only valid for final')
+    if 'contains' in clause and kind not in ('assistant', 'final'):
+        raise TraceError('contains is only valid for assistant or final')
+    if 'before_first' in clause:
+        _check_clause(clause['before_first'])
 
 
 def _matches(event, clause):
@@ -108,7 +113,7 @@ def _matches(event, clause):
             return False
         if 'exit' in clause and _exit(event) != clause['exit']:
             return False
-    if kind == 'final' and 'contains' in clause:
+    if kind in ('assistant', 'final') and 'contains' in clause:
         text = event.get('text')
         if not isinstance(text, str):
             return False
@@ -139,11 +144,19 @@ def evaluate(trace, spec):
         if key in spec and not isinstance(spec[key], list):
             raise TraceError(f'spec.{key} must be a list')
     for index, clause in enumerate(spec.get('require', [])):
-        _check_clause(clause)
-        found = sum(1 for event in events if _matches(event, clause))
+        _check_clause(clause, allow_before_first=True)
+        candidates = events
+        if 'before_first' in clause:
+            # The boundary is the first attempt, not the first successful result.
+            first = next((i for i, event in enumerate(events)
+                          if _matches(event, clause['before_first'])), 0)
+            candidates = events[:first]
+        found = sum(1 for event in candidates if _matches(event, clause))
         matched[f'require[{index}]'] = found
         if not found:
-            failures.append('missing required: ' + _clause_text(clause))
+            diagnostic = ('missing required before first: ' if 'before_first' in clause
+                          else 'missing required: ')
+            failures.append(diagnostic + _clause_text(clause))
     for index, clause in enumerate(spec.get('forbid', [])):
         _check_clause(clause)
         found = sum(1 for event in events if _matches(event, clause))

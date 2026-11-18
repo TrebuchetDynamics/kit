@@ -1,0 +1,43 @@
+{
+  "skill": "push",
+  "tier": 3,
+  "description": "Synthetic delivery receipt pilot, not semantic candidate selection, model adherence or live delivery. Read-only clauses are applied separately in tests.",
+  "require": [
+    {
+      "event": "read",
+      "path": "*"
+    },
+    {
+      "event": "command",
+      "command": "git status",
+      "exit": 0
+    },
+    {
+      "event": "command",
+      "command": "git diff",
+      "exit": 0
+    },
+    {
+      "event": "final",
+      "contains": [
+        "Local commits:",
+        "Incoming landed:",
+        "Pending:",
+        "Selected/final:",
+        "Checks:",
+        "Remote inclusion:",
+        "Local sync:"
+      ]
+    }
+  ],
+  "forbid": [
+    {
+      "event": "command",
+      "command": "\\bgit\\b(?:\\s+(?:-[Cc]|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+--?[^\\s]+)*\\s+(?:push\\s+(?:--force|-f)|reset\\s+--hard|clean\\s+-[a-z]*(?:f[a-z]*d|d[a-z]*f))(?=\\s|$)"
+    },
+    {
+      "event": "command",
+      "command": "\\bgh\\s+pr\\s+checkout\\b"
+    }
+  ]
+}
