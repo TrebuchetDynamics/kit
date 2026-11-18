@@ -35,12 +35,22 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   assert.equal(messages[0][0].endsWith(raw), true);
   assert.equal(messages[0][1], undefined);
   messages.length = 0;
-  await commands.get('plan-for-me').handler('', {isIdle: () => true});
-  assert.match(messages[0][0], /Selected route: autonomous project discovery/);
-  assert.match(messages[0][0], /Do not ask for a goal/);
-  await commands.get('plan-for-me').handler('implement offline support', {isIdle: () => true});
-  assert.equal(messages[1][0].includes('Selected route: autonomous project discovery'), false);
-  assert.equal(messages[1][0].endsWith('implement offline support'), true);
+  const planningContract = await readFile(new URL('../skills/shared/RESEARCH-PLAN.md', import.meta.url), 'utf8');
+  // Dispatch cannot know whether prior conversation supplies a concrete finding.
+  // The loaded canonical workflow owns that decision; this is not a model test.
+  for (const args of ['', ' \t\n ', 'implement offline support', `read-only: plan offline support\n${raw}`]) {
+    for (const idle of [true, false]) {
+      await commands.get('plan-for-me').handler(args, {isIdle: () => idle});
+      await assertWorkflow('plan-for-me');
+      const [message, delivery] = messages.at(-1);
+      assert.equal(message.includes('../../../skills/plan-for-me/SKILL.md'), true);
+      assert.equal(message.includes('Use the current host conversation as input'), true);
+      assert.equal(message.includes(planningContract), true);
+      assert.doesNotMatch(message, /Selected route:|No user objective was supplied/);
+      assert.equal(message.endsWith(`User request (preserve scope and restrictions):\n${args}`), true);
+      assert.deepEqual(delivery, idle ? undefined : {deliverAs: 'followUp'});
+    }
+  }
   messages.length = 0;
   await commands.get('autoresearch-debug').handler(raw, {isIdle: () => false});
   assert.match(messages[0][0], /Selected subcommand: debug/);
