@@ -73,6 +73,8 @@ def _manifest_name(directory):
     try:
         import yaml
     except ImportError as error:
+        if not isinstance(error, ModuleNotFoundError) or error.name != 'yaml':
+            raise ValueError(f'Cannot load plugin identity reader: {directory}/plugin.yaml') from error
         raise ValueError(f'PyYAML is required to verify plugin identity: {directory}/plugin.yaml; '
                          f'install it for python3 (python3 -m pip install --user PyYAML, or the '
                          'distribution python3-yaml package) and retry') from error

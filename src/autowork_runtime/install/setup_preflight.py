@@ -175,8 +175,11 @@ def preflight(repo, root, profiles, *, bundle_only=False):
             errors.append(f'{name}: {exc}')
         try:
             selected = runtime.setup_profile_policy(home / 'config.yaml')
-        except (OSError, ValueError) as exc:
-            errors.append(f'{name}: cannot verify runtime policy/opt-out; {exc}')
+        except runtime.MissingPyYAML:
+            errors.append(f'{name}: cannot verify runtime policy/opt-out; {runtime.MissingPyYAML.hint}')
+        except Exception:
+            # Reader errors can contain private profile values. Block without echoing them.
+            errors.append(f'{name}: cannot verify runtime policy/opt-out')
         else:
             if selected['policy'] == 'disabled':
                 plan.append('  Enable kit; runtime-defaults opt-out: bundle policy settings skipped')
