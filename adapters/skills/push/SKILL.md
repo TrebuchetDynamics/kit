@@ -1,6 +1,6 @@
 ---
 name: push
-description: "Ship eligible local and landed Orbi changes."
+description: "Save all changes, pull main, then push main."
 disable-model-invocation: true
 ---
 
