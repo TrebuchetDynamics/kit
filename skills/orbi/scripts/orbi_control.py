@@ -2416,6 +2416,9 @@ def command_update(ctx, args):
                               'refreshed unit templates; update disabled them again to restore the '
                               'verified inactive state'] if refreshed else [])}
     except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
+        if not mutated and not steps:
+            # A preflight refusal changed nothing; keep its own precise fix text.
+            raise
         exc = lifecycle_failure(ctx, target, error, target_path=args.config, steps=steps,
                                 current=current, mutated=mutated,
                                 evidence={'previous': previous, 'disabled_timers': disabled})
@@ -2799,7 +2802,7 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             render(ctx, document, args.json)
         return 0
     except ControlError as exc:
-        if args.action in ('setup', 'start', 'update') and 'steps' not in exc.evidence:
+        if args.action in ('setup', 'start') and 'steps' not in exc.evidence:
             exc.evidence = {**exc.evidence, 'target': args.config, 'original_error': exc.code,
                             'activated': False, 'scheduler': {'state': 'unavailable'},
                             'steps': [{'step': 'validate_request', 'status': 'failed',
