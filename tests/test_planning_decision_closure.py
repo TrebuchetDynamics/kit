@@ -268,6 +268,11 @@ class PlanningDecisionClosureTests(unittest.TestCase):
              'discuss only, with no file/GitHub writes, commit or push'),
             ('Completed work with nothing authorized left', '`lgtm`',
              'acknowledge once and stop'),
+            ('Session todo list: 2 of 5 done', '`lgtm`',
+             'finish the authorized patch, run its tests, and mark each done only after '
+             'its check passes; leave push open and report “Push blocked: continuing '
+             'no-push limit; explicit scope change required” once, while continuing '
+             'independent authorized items'),
             ('Unambiguous four-item cleanup batch in an implementation workflow', '`lgtm`',
              'verify and implement all supported items'),
             ('Equivalent internal test helpers within authorized implementation', '`lgtm`',

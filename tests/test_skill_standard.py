@@ -116,6 +116,32 @@ class SkillStandardTests(unittest.TestCase):
                          'LGTM accepts the first stated recommendation'):
             self.assertNotIn(obsolete, skill)
 
+    def test_lgtm_continues_open_session_todos_without_adding_authority(self):
+        skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())
+        for rule in ('host\'s native todo or task-list tool for the current session',
+                     'Pi and Pi-Bolt todos, Claude Code tasks',
+                     'Without such a list, this rule does not apply',
+                     'session state, not a backlog or a replacement for GitHub Issues',
+                     'A todo item adds no authority',
+                     'outside inherited authority or needing a new owner decision',
+                     'report it and do not do it',
+                     'A blocked item stays open',
+                     'report the exact blocker once',
+                     'continue items that do not depend on it',
+                     'unanswered external request', 'host approval gate',
+                     'continuing no-write/no-push limit',
+                     'only when no actionable todo item is open'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, skill)
+        table = skill.split('## Low-effort input', 1)[1].split('## Fast path', 1)[0]
+        self.assertIn('| Open session todo items after the checkpoint action |', table)
+        fast_path = skill.split('## Fast path', 1)[1].split('## Checkpoint scope', 1)[0]
+        for rule in ('After resolving the checkpoint action, read open session todo items',
+                     'inside inherited authority in dependency order with its checks',
+                     'mark it done only after its check passes',
+                     'continue until each is done or blocked'):
+            self.assertIn(rule, fast_path)
+
     def test_lgtm_accepts_recommended_batch_without_reopening_settled_rounds(self):
         skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())
         for rule in ('A numbered list is not ambiguity by itself',

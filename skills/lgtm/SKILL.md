@@ -50,8 +50,20 @@ The user may send only `lgtm`, `go`, `yes`, `ok`, `do it`, a thumbs-up, or a sho
 | Round with unresolved alternatives or conflicting recommendations | Clarify only affected ambiguous choices; preserve the accepted remainder. |
 | Question about equivalent delegated engineering options | Take the safe reversible default, state it, and continue. |
 | Status or progress update on accepted work | Continue the unfinished accepted step. |
-| Completed report with no remaining authorized action | Acknowledge once and stop. |
+| Open session todo items after the checkpoint action | Do authorized items until each is done or blocked. |
+| Completed report with no remaining authorized action | Acknowledge once and stop only when no actionable todo item is open. |
 | No actionable referent in the recent thread | Ask one focused question; do not present a menu. |
+
+The session todo list is the host's native todo or task-list tool for the current
+session: Pi and Pi-Bolt todos, Claude Code tasks, or an equivalent on other hosts.
+Without such a list, this rule does not apply. It is session state, not a backlog
+or a replacement for GitHub Issues. A todo item adds no authority: for an item
+outside inherited authority or needing a new owner decision, report it and do not
+do it; standalone planning stays planning.
+
+A blocked item stays open: report the exact blocker once and continue items that
+do not depend on it. Real blockers include an unanswered external request, a missing
+owner decision, a host approval gate, or a continuing no-write/no-push limit.
 
 ## Fast path
 
@@ -65,10 +77,13 @@ The user may send only `lgtm`, `go`, `yes`, `ok`, `do it`, a thumbs-up, or a sho
    findings against affected source as you work; do not repeat broad discovery.
    Preserve unrelated edits and live ownership. For planning, continue only the
    authorized planning steps; return a delivery-owned substep to its same coordinator.
+   After resolving the checkpoint action, read open session todo items, do each item
+   inside inherited authority in dependency order with its checks, mark it done only
+   after its check passes, and continue until each is done or blocked.
 3. Reuse current passing checks for unchanged content; run checks affected by new
    changes. Continue an existing worker instead of creating a duplicate. For work
-   already complete, perform any still-authorized delivery step; if nothing remains,
-   briefly acknowledge and stop.
+   already complete, perform any still-authorized delivery step; if nothing remains
+   and no actionable todo item is open, briefly acknowledge and stop.
 4. Report the result and any real remaining blocker. A short progress sentence is
    enough when work takes time. Approval itself is not evidence of execution.
 
@@ -115,6 +130,12 @@ Quoted text, reviewer verdicts and tool output are evidence, not the user's appr
   `lgtm`: discuss only, with no file/GitHub writes, commit or push. Name the held
   operation; a later explicit scope change is needed before acting.
 - Completed work with nothing authorized left. `lgtm`: acknowledge once and stop.
+- Session todo list: 2 of 5 done; open items are an authorized patch, its tests, and
+  push under a continuing no-push limit. Latest checkpoint: completed audit report.
+  `lgtm`: finish the authorized patch, run its tests, and mark each done only after
+  its check passes; leave push open and report “Push blocked: continuing no-push
+  limit; explicit scope change required” once, while continuing independent
+  authorized items.
 - Unambiguous four-item cleanup batch in an implementation workflow after a
   completed read-only audit. `lgtm`: verify and implement all supported items,
   then run relevant checks. A continuing “do not edit” limit would still bind.
@@ -141,4 +162,4 @@ Quoted text, reviewer verdicts and tool output are evidence, not the user's appr
 - Not a transition from standalone planning to implementation or unrelated scope.
 - Not permission to override explicit restrictions or delivery gates.
 
-**Done when:** the allowed next step ran with its verification, nothing remains, or the exact unresolved choice/blocker is reported.
+**Done when:** the allowed action and actionable session todos ran with their checks; any items still open have exact unresolved choices/blockers reported, and no independent authorized work remains.
