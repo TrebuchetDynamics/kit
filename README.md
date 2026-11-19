@@ -179,7 +179,7 @@ See [publication, migration and deployment](docs/github-native.md).
 One Orbi deployment owns one repository. The suite installer adds only the CLI
 (`./install.sh --only orbi`, needs `uv`); a working Orbi installation is kept.
 
-Use `/orbi [status|setup|start|stop|help]` in Pi or Hermes, `/kit:orbi` in Claude
+Use `/orbi [status|setup|start|update|stop|help]` in Pi or Hermes, `/kit:orbi` in Claude
 Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 
 | Action | Effect and boundary |
@@ -188,6 +188,7 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | `help` | Read-only action reference, without a repository or deployment. |
 | `setup` | Prepare source/configuration without scheduling or timer activation. |
 | `start` | Prepare if absent, then activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
+| `update` | Advance one stopped and drained deployment to the newest official release, lock that commit, refresh its owned units and leave scheduling inactive. It is not `/update-kit`. |
 | `stop` | Disable owned timers without killing active workers; report draining while they finish. |
 
 Linux supports lifecycle changes. macOS supports status and help only.

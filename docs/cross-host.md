@@ -38,7 +38,7 @@ independent review and PR gates. Orbi remains paused and live-unqualified.
 
 ## Orbi lifecycle controls
 
-Use `/kit:orbi [status|setup|start|stop|help]` in Claude Code, `$kit:orbi` in Codex,
+Use `/kit:orbi [status|setup|start|update|stop|help]` in Claude Code, `$kit:orbi` in Codex,
 or `/orbi` in Pi or Hermes. All hosts load the same
 [Orbi workflow](../skills/orbi/SKILL.md); default status is read-only. `help` prints the action reference read-only and needs no repository.
 Linux lifecycle changes require the workflow's ownership and authorization gates;
