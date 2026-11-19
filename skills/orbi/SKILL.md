@@ -12,7 +12,7 @@ scope, guided by the [GitHub-native contract](../../docs/github-native.md). This
 client for one repository's Orbi deployment: it is not an executor,
 queue, daemon or second scheduler.
 
-`/orbi [status|setup|start|stop|help]` runs
+`/orbi [status|setup|start|update|stop|help]` runs
 `python3 -B <this-skill>/scripts/orbi_control.py` with the same action and
 `--repo-dir PATH --config PATH --dry-run --json`. For a new deployment, `setup`
 and an authorized absent-target `start` also accept `--harness {pi-bolt,pi}` (default: installed Pi-Bolt) and
@@ -101,12 +101,26 @@ lifecycle actions.
    and inherited auth-home mismatches. It runs the supported
    upstream `setup`/`install-units` with the scoped environment, enables only
    this deployment's timers and requests one first tick when no worker runs.
-5. **Stop.** Run `stop` to disable only this deployment's owned timer instances,
+5. **Update.** Run `update` for one prepared deployment after an authorized
+   `stop`/drain. It requires verified inactivity and refuses a live worker or an
+   enabled timer (`update_busy`), and it refuses tracked checkout changes before
+   any write (`source_dirty`). It writes the upstream `release` channel, runs
+   upstream `sync-engine-source` to resolve and check out the newest official
+   release, then locks that commit as `sha:<commit>`. It validates with the
+   non-activating `orbi check`, refreshes this deployment's installed units
+   through `orbi install-units`, and disables the timers that install enabled, so it
+   restores the verified inactive state and names every timer in
+   `disabled_timers`. Origin, provider, harness, slots and unrelated config bytes
+   are preserved. Report `updated`, or `up_to_date` when the release commit did
+   not move; both refresh units. An `update --dry-run` previews the plan
+   write-free. Rollback is a deliberate owner edit of `engine_source_track`;
+   scheduling again stays the separate authority of `start`.
+6. **Stop.** Run `stop` to disable only this deployment's owned timer instances,
    including observed out-of-config instances. Active services finish: report
    `draining` with the pending units until they stop. Missing service evidence
    is `unavailable`, never `stopped`. Never kill, stop or restart a service to
    make the state look clean.
-6. **Report evidence.** Name the repository, deployment, unit, pin, source and
+7. **Report evidence.** Name the repository, deployment, unit, pin, source and
    scheduler states you actually read, and the commands you ran. Include
    `deployment.harness`: configured selection and resolved-now executable identity
    are not proof of what a running worker uses. Status performs no harness/auth
@@ -152,6 +166,7 @@ effect. Linux is the only mutation platform in this version.
 | "`orbi doctor` warns about enforced admins, so relax protection." | The warning describes the merge identity, not a protection defect. Keep enforced admins, strict CI, independent review and human acceptance. |
 | "The queue is empty because the status read failed." | A failed read is `unavailable`. Use the read-only doctor plus explicit `gh` and scheduler reads; never invent an empty queue. |
 | "A missing launcher is ours to force-reinstall." | The units use the shared user bootstrap. Verify it and fail closed; repairing another deployment's launcher is not this command's scope. |
+| "Update is setup again, so it can skip the drain." | Update moves the engine commit and re-renders units. A live worker would run mixed code, so it refuses `update_busy` until a stop leaves verified inactivity. |
 
 ## Red Flags
 
@@ -171,8 +186,11 @@ effect. Linux is the only mutation platform in this version.
 - A unit is disabled or stopped without proving it belongs to this deployment,
   or a service is stopped, killed or restarted by `stop`.
 - Status or dry-run writes a file, locks, fetches or changes a label.
-- An existing pin is upgraded, a credential is copied, or a literal
+- An existing pin is upgraded by `setup`, a credential is copied, or a literal
   credential is written into provider metadata.
+- `update` ran with a live worker, an enabled timer or tracked checkout changes,
+  or it left timers enabled without naming them in `disabled_timers`.
+- `update` rewrote origin, provider or harness selection instead of reporting it.
 - The platform is macOS or unsupported and a mutation still ran.
 - A secret, token, `auth.json`, private identity or raw child stderr appears
   in a command, receipt, Issue or PR.
@@ -187,13 +205,15 @@ effect. Linux is the only mutation platform in this version.
   repository it manages.
 - Not `/plan-with-me` or `/plan-for-me`: planning authorizes no live service
   change.
+- Not `/update-kit`: `update` moves one deployment's engine release; it never
+  refreshes Kit, reinstalls this helper or relaxes a live gate.
 - Not an implementation coordinator or a fallback to the retired runner.
 - Not a cross-machine lock or capacity guarantee: visibility covers local
   deployments; report remote ownership as unavailable.
 
 Load [lifecycle reference](references/lifecycle.md) for the interface,
-discovery rules, isolation variables, pinned source, ownership bounds and
-partial-failure recovery. The standing [Definition of Done](../shared/DEFINITION-OF-DONE.md)
+discovery rules, isolation variables, the pinned and release source channels,
+ownership bounds and partial-failure recovery. The standing [Definition of Done](../shared/DEFINITION-OF-DONE.md)
 applies beyond this task's acceptance.
 
 **Done when:** the named deployment's state and the evidence behind it are

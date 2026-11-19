@@ -192,7 +192,7 @@ Do not serve one repository from multiple deployments or machines.
 
 ### Kit lifecycle skill
 
-Use [`/orbi [status|setup|start|stop|help]`](../skills/orbi/SKILL.md) for one
+Use [`/orbi [status|setup|start|update|stop|help]`](../skills/orbi/SKILL.md) for one
 repository's deployment. Bare invocation reads status; `--repo-dir` selects the
 canonical repository and `--config` selects its existing native configuration.
 Setup prepares without activating scheduling. Start requires separate scheduling
@@ -235,6 +235,16 @@ for serialization, legacy/unknown reporting and repair boundaries. Native Pi-Bol
 extensions, streaming/recovery and installed worker/reviewer compatibility remain
 live-unverified; static routing does not qualify delivery or release pauses.
 
+`update` is the deliberate release channel: for one stopped and drained
+deployment it writes upstream's `release` track, lets `sync-engine-source`
+resolve and check out the newest official semver release, then locks that commit
+as `sha:<commit>`, validates non-activating, refreshes the deployment's owned
+units and disables the timers that install enabled. A live worker or enabled
+timer refuses as `update_busy`; tracked checkout changes refuse as
+`source_dirty`. Update preserves origin, provider, harness and slots, and never
+enables scheduling as an outcome; rollback is a deliberate owner edit of
+`engine_source_track`. It never refreshes Kit itself: that stays `/update-kit`.
+
 For a first authorized deployment, preview with `/orbi start --dry-run
 --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID
 --pi-model PUBLISHED_MODEL_ID`, then remove `--dry-run` only within that authority.
@@ -248,8 +258,9 @@ Context-free `/orbi help` reports the loaded helper path/default policy, parseab
 examples and recovery guidance, not the installed selected harness.
 
 Each mutation reports its own outcome: `setup` says `prepared` (staging, not
-scheduler activation), `start` says `started` or `already-running`, and `stop`
-says `draining` or `stopped`; `--dry-run` says `planned` for all three. Thus `stop`
+scheduler activation), `start` says `started` or `already-running`, `update` says
+`updated` or `up_to_date`, and `stop` says `draining` or `stopped`; `--dry-run`
+says `planned` for all four. Thus `stop`
 can report `draining` while a subsequent status still reports `running`: an active
 worker is preserved, not killed, and status does not remember a global pause.
 Start also retains `preparation.state` (`skipped`, `planned`, `prepared`, `failed`).

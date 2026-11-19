@@ -140,7 +140,7 @@ class PortablePackageTests(unittest.TestCase):
                                    cwd=foreign, capture_output=True, text=True,
                                    timeout=60, env=sandbox)
             self.assertEqual(usage.returncode, 0, usage.stderr)
-            self.assertIn('[status|setup|start|stop|help]', usage.stdout)
+            self.assertIn('[status|setup|start|update|stop|help]', usage.stdout)
             before = sorted(path.relative_to(checkout) for path in checkout.rglob('*'))
             status = subprocess.run(
                 [sys.executable, '-B', str(helper), 'status',
