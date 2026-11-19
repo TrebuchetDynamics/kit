@@ -8,10 +8,11 @@ merge gates. Merged PRs and GitHub history retain delivery evidence.
 ## Freshness and delivery ownership
 
 The [shared mode contract](../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership)
-applies to every skill. `/push` inventories paginated issue/PR evidence as well as
-local worktrees, synchronizes already-landed Orbi changes through verified upstream,
-and reports unfinished work by URL, owner, reason and next action. Names and bot
-authors are hints, not ownership proof; default-branch ancestry proves inclusion.
+applies to every skill. `/push` saves every change, pulls `main` and pushes `main`.
+It inventories paginated issue/PR evidence as well as local worktrees, synchronizes
+already-merged upstream Orbi changes, and reports unfinished work by URL, owner,
+reason and next action. Names and bot authors are hints, not ownership proof;
+default-branch ancestry proves inclusion.
 An open Orbi-owned PR stays with its coordinator even if checks pass. No worker-head
 cherry-pick, PR checkout, remote-ref deletion or review/protection bypass is added.
 State/source pins are refreshed before integration and publication; changed inputs
