@@ -19,7 +19,10 @@ own documentation owners.
 ## Compose the two jobs
 
 1. Run [Grilling](../grilling/SKILL.md) on the plan or design. Do not write documents
-   during the rounds; the decisions are not settled yet.
+   during the rounds; the decisions are not settled yet. For a user-visible change,
+   identify the current behavior and test the proposed difference with a WHEN/THEN
+   example. If two interpretations still fit, ask about the case where their outcomes
+   differ. Use the existing spec when one exists; do not create one for the interview.
 2. After the owner confirms the shared understanding, record each durable decision. For an explicitly read-only interview, show the proposed records inline and stop without writing:
 
    - a decision with alternatives, a chosen option and a reason becomes an ADR in the
