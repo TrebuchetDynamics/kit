@@ -65,14 +65,14 @@ See [paused GitHub/Orbi cutover](github-native.md).
 | Explicit suite refresh | [Update Kit](../skills/update-kit/SKILL.md), [helper](../skills/update-kit/scripts/update_kit.py) | Maintain dedicated persistent trusted upstream source and delegate installation; no automatic schedule, host-update fork or live qualification |
 | Orbi lifecycle client | [helper](../skills/orbi/scripts/orbi_control.py), [workflow](../skills/orbi/SKILL.md) | Inspect or explicitly prepare/start/stop one deployment; the separate Orbi project owns implementation and delivery |
 
-Native Hermes Python owners live under `src/autowork_runtime/`, loaded through
-`src/autowork_bootstrap.py` by the existing thin entrypoints. The executor source
+Native Hermes Python owners live under `src/kit_runtime/`, loaded through
+`src/kit_bootstrap.py` by the existing thin entrypoints. The executor source
 and integrations are absent; native maintenance is not a replacement executor.
-The [bootstrap](../src/autowork_bootstrap.py) resolves peers and resources within
+The [bootstrap](../src/kit_bootstrap.py) resolves peers and resources within
 the selected release. Native owners are split into
-[installation](../src/autowork_runtime/install/),
-[updates](../src/autowork_runtime/update/) and
-[commands](../src/autowork_runtime/commands/); `scripts/` also contains standalone
+[installation](../src/kit_runtime/install/),
+[updates](../src/kit_runtime/update/) and
+[commands](../src/kit_runtime/commands/); `scripts/` also contains standalone
 portable installers, publication and verification helpers. Keep those helpers and
 the selected release together; an entrypoint alone is not the native payload.
 

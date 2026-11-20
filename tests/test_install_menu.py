@@ -110,9 +110,9 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
         self.codex_registry()
         self.env = {'PATH': f'{self.bin}:/usr/bin:/bin', 'HOME': str(self.home), 'FAKE_LOG': str(self.log),
                     'FAKE_HOME': str(self.home), 'XDG_CONFIG_HOME': str(self.home / '.config'),
-                    'PI_AUTOWORK_SYSTEMCTL': str(self.bin / 'systemctl'), 'LANG': 'C.UTF-8',
+                    'KIT_SYSTEMCTL': str(self.bin / 'systemctl'), 'LANG': 'C.UTF-8',
                     'FAKE_KIT_CHECKOUT': str(ROOT),
-                    'TMPDIR': str(self.home), 'AUTOWORK_INSTALL_NO_PULL': '1'}  # never pull the checkout under test
+                    'TMPDIR': str(self.home), 'KIT_INSTALL_NO_PULL': '1'}  # never pull the checkout under test
         # In-process installer tests must also never discover the real host fleet.
         self.environment = patch.dict(os.environ, self.env)
         self.environment.start()
@@ -491,7 +491,7 @@ else
         self.fake('pi-bolt', LOGGING + 'echo "PATH Pi-Bolt must not run" >&2; exit 98\n')
         destination = self.home / 'custom bin'
         for args in ((), ('update',), ('--dry-run',)):
-            result = self.install(*args, env={'AUTOWORK_BIN_DIR': str(destination)})
+            result = self.install(*args, env={'KIT_BIN_DIR': str(destination)})
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn(str(destination / 'pi-bolt'), result.stdout)
             self.assertEqual(self.calls('pi '), [])
@@ -554,11 +554,11 @@ else
         self.bolt.unlink()
         report = self.home / 'preview.jsonl'
         for args, stdin, env in (
-            (('--no-pull', '--dry-run'), None, {'AUTOWORK_INSTALL_REPORT': str(report)}),
+            (('--no-pull', '--dry-run'), None, {'KIT_INSTALL_REPORT': str(report)}),
             (('--list',), None, {}),
             (('--only', 'pi', '--skip', 'pi'), None, {}),
-            (('--menu', '--dry-run'), '\n', {'AUTOWORK_INSTALL_UI': 'text'}),
-            (('--menu',), 'q\n', {'AUTOWORK_INSTALL_UI': 'text'}),
+            (('--menu', '--dry-run'), '\n', {'KIT_INSTALL_UI': 'text'}),
+            (('--menu',), 'q\n', {'KIT_INSTALL_UI': 'text'}),
         ):
             with self.subTest(args=args):
                 before = sorted(str(p) for p in self.home.rglob('*'))
@@ -656,7 +656,7 @@ else
         self.assertTrue((self.home / '.local/bin/tx').is_file())
 
     def test_dynamic_shell_targets_are_left_to_native_host_admission(self):
-        self.fake('hermes', '#!/bin/sh\nexec "/bin/${AUTOWORK_HOST:-sh}" "$@"\n')
+        self.fake('hermes', '#!/bin/sh\nexec "/bin/${KIT_HOST:-sh}" "$@"\n')
         (self.home / '.hermes').mkdir()
         result = self.install('--full', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -823,7 +823,7 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
 
     def test_pi_bolt_uses_the_selected_bin_directory(self):
         destination = self.home / 'custom bin'
-        result = self.install('--only', 'pi-bolt', env={'AUTOWORK_BIN_DIR': str(destination)})
+        result = self.install('--only', 'pi-bolt', env={'KIT_BIN_DIR': str(destination)})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(f'{destination / "pi-bolt"}: 1.4.0', result.stdout)
         self.assertEqual(self.calls('pi-bolt-installer'),
@@ -1289,7 +1289,7 @@ exit 0
         self.assertRegex(result.stdout, r'pi\s+installed')
 
     def test_menu_toggles_items_and_needs_a_terminal(self):
-        result = self.install('--dry-run', '--menu', stdin='3 5 6\n\n', env={'AUTOWORK_INSTALL_UI': 'text'})
+        result = self.install('--dry-run', '--menu', stdin='3 5 6\n\n', env={'KIT_INSTALL_UI': 'text'})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('[x] 2 Kit package for Pi', result.stdout)
         self.assertRegex(result.stdout, r'tx\s+skipped\s+not chosen')
@@ -1301,7 +1301,7 @@ exit 0
         binary_dir = self.home / '.local/bin'
         lock_path = binary_dir.with_name('bin.kit-install.lock')
         report = self.home / 'preview.jsonl'
-        env = {'AUTOWORK_INSTALL_REPORT': str(report), 'AUTOWORK_INSTALL_UI': 'text'}
+        env = {'KIT_INSTALL_REPORT': str(report), 'KIT_INSTALL_UI': 'text'}
 
         def previews():
             before = {p.relative_to(self.home): p.read_bytes() if p.is_file() else None
@@ -1362,8 +1362,8 @@ fi
         # Exercise a custom destination too; the lock belongs to the deployment,
         # not the source checkout, selected component, or receipt filename.
         binary_dir = self.home / 'custom/bin'
-        env = {**self.env, 'AUTOWORK_INSTALL_REPORT': str(report),
-               'AUTOWORK_BIN_DIR': str(binary_dir)}
+        env = {**self.env, 'KIT_INSTALL_REPORT': str(report),
+               'KIT_BIN_DIR': str(binary_dir)}
         with subprocess.Popen(['bash', str(INSTALL), '--only', 'claude'], env=env,
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT) as first:
@@ -1414,7 +1414,7 @@ fi
         self.fake('codex', LOGGING + 'echo "marketplace already added" >&2; exit 4\n')
         report = self.home / 'install.jsonl'
         result = self.install('--full', '--skip', 'hermes,pi', '-q',
-                              env={'AUTOWORK_INSTALL_REPORT': str(report)})
+                              env={'KIT_INSTALL_REPORT': str(report)})
         self.assertEqual(result.returncode, 1)
         import json
         rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
@@ -1427,7 +1427,7 @@ fi
         self.assertIn('unknown item(s): nope', self.install('--only', 'nope').stderr)
         (self.bin / 'codex').unlink()
         self.install('--full', '--skip', 'hermes,pi', '-q',
-                     env={'AUTOWORK_INSTALL_REPORT': str(report)})
+                     env={'KIT_INSTALL_REPORT': str(report)})
         rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
         self.assertEqual(rows['codex'], {'item': 'codex', 'status': 'skipped', 'exit': None})
 
@@ -1440,7 +1440,7 @@ fi
 ''')
         report = self.home / 'install.jsonl'
         result = self.install('--only', 'claude,codex', '-q',
-                              env={'AUTOWORK_INSTALL_REPORT': str(report)})
+                              env={'KIT_INSTALL_REPORT': str(report)})
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(self.calls('claude'), [
             'claude plugin list --json',
@@ -1489,7 +1489,7 @@ fi
             install_menu.Step('retryable command', [sys.executable, '-c', script],
                               retry_on='changed since preflight'),
             install_menu.Step('dependent step', run=lambda: continued.append('ran') or 'ok')])
-        with patch.dict(os.environ, AUTOWORK_INSTALL_REPORT=str(report)), contextlib.redirect_stdout(io.StringIO()):
+        with patch.dict(os.environ, KIT_INSTALL_REPORT=str(report)), contextlib.redirect_stdout(io.StringIO()):
             code = install_menu.install([item], {'retry'}, output=install_menu.Output('never', 0))
         self.assertEqual(code, 1)
         self.assertEqual(attempts.read_text(), 'xx')
@@ -1807,7 +1807,7 @@ fi
             '            raise ModuleNotFoundError("fixture", name="yaml")\n'
             'sys.meta_path.insert(0, NoYAML())\n')
         report = self.home / 'report.jsonl'
-        env = {'PYTHONPATH': str(imports), 'AUTOWORK_INSTALL_REPORT': str(report)}
+        env = {'PYTHONPATH': str(imports), 'KIT_INSTALL_REPORT': str(report)}
         for selection, tx_status in ((('--only', 'hermes'), 'skipped'),
                                      (('--full', '--skip', 'pi,pi-bolt,orbi,claude,codex'), 'installed')):
             with self.subTest(selection=selection):

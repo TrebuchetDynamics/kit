@@ -14,7 +14,7 @@ def copy_sources(destination, *, source=ROOT, entries=()):
     source, destination = Path(source).resolve(), Path(destination)
     paths = set(source.glob('*.py'))
     paths.update(source / 'scripts' / (name + '.py') for name in (
-        'autowork_bootstrap', 'autoresearch_commands', 'workflow_commands', 'bundle',
+        'kit_bootstrap', 'autoresearch_commands', 'workflow_commands', 'bundle',
         'runtime_defaults', 'telegram_menu_policy', 'install-graphify', 'install_skills',
         'preflight_config', 'setup_bundle', 'setup_preflight', 'setup_runtime', 'update_bundle', 'update_bundle_native'))
     for folder in ('src',):

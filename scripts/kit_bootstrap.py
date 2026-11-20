@@ -5,10 +5,10 @@ import sys as _sys
 import types as _types
 
 _root = _Path(__file__).resolve().parents[1]
-_source = _root / 'src/autowork_bootstrap.py'
+_source = _root / 'src/kit_bootstrap.py'
 if not _source.resolve().is_relative_to(_root):
     raise ImportError('bootstrap source escapes selected release')
-_key = '_autowork_bootstrap_' + _hashlib.sha256(str(_source).encode()).hexdigest()
+_key = '_kit_bootstrap_' + _hashlib.sha256(str(_source).encode()).hexdigest()
 _bootstrap = _sys.modules.get(_key)
 if _bootstrap is None:
     _bootstrap = _types.ModuleType(_key)
@@ -20,7 +20,7 @@ if _bootstrap is None:
         _sys.modules.pop(_key, None)
         raise
 elif _Path(_bootstrap.__file__).resolve() != _source:
-    raise ImportError('foreign Autowork bootstrap')
+    raise ImportError('foreign Kit bootstrap')
 
 Layout = _bootstrap.Layout
 execute = _bootstrap.execute

@@ -250,7 +250,7 @@ class PluginSettingsDualReadTests(unittest.TestCase):
         self.assertNotIn('custom', patch['plugins']['entries'])
         self.assertEqual(patch.get('skills'), {'disabled': ['custom-skill']})
         self.assertEqual(json.dumps(raw, sort_keys=True), before)
-        defaults = self.policy._AUTOWORK_COMPAT.peer(self.policy.__dict__, 'bundle').defaults()
+        defaults = self.policy._KIT_COMPAT.peer(self.policy.__dict__, 'bundle').defaults()
         self.assertEqual(set(defaults), {'hermes', 'imported_plugins', 'required_skills'})
         self.assertEqual(defaults['required_skills'], ['graphify'])
         self.assertEqual(defaults['imported_plugins'], ['hermes-speech'])
@@ -303,7 +303,7 @@ class RuntimeFactsTests(unittest.TestCase):
                     errors = pre.runtime_check(ROOT, home, [('default', home)], True)
                 self.assertEqual(errors, ['invalid config'] if code == 1 else [])
                 self.assertEqual(run.call_args_list[0].args[0], [
-                    str(executable), '-B', str(ROOT / 'src/autowork_runtime/install/preflight_config.py'),
+                    str(executable), '-B', str(ROOT / 'src/kit_runtime/install/preflight_config.py'),
                     '--core', str(config)])
                 self.assertEqual(run.call_count, 2 if code == 3 else 1)
                 if code == 3:
@@ -343,7 +343,7 @@ class ConfigProbeTests(unittest.TestCase):
             import ruamel.yaml
         except ImportError:
             self.skipTest('Run with Hermes managed Python to exercise strict YAML parser')
-        spec = importlib.util.spec_from_file_location('config_probe', ROOT / 'src/autowork_runtime/install/preflight_config.py')
+        spec = importlib.util.spec_from_file_location('config_probe', ROOT / 'src/kit_runtime/install/preflight_config.py')
         self.probe = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.probe)
 
