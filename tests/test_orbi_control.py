@@ -3546,6 +3546,24 @@ class InterfaceAndSkillTests(unittest.TestCase):
             self.assertEqual(snapshot(h.home), before)
             self.assertFalse((HELPER.parent / '__pycache__').exists())
 
+    def test_first_start_guidance_keeps_fast_path_and_conditional_recovery(self):
+        skill = (ROOT / 'skills/orbi/SKILL.md').read_text()
+        self.assertLess(skill.index('## Intent and state: fast path'),
+                        skill.index('## Steps'))
+        for anchor in ('activation-evidence', 'offline-guidance-examples'):
+            self.assertIn(f'references/lifecycle.md#{anchor}', skill)
+        reference = (ROOT / 'skills/orbi/references/lifecycle.md').read_text()
+        examples = reference.split('### Offline guidance examples', 1)[1].split('## Start', 1)[0]
+        for observation in ('Arenaton', 'SalmaListApi', 'scheduler unavailable',
+                            'main unprotected', 'HTTP 403', 'no worker was',
+                            'not current host observations or live qualification'):
+            self.assertIn(observation, examples)
+        recovery = reference.split('## Partial failure and recovery', 1)[1]
+        busy = recovery.split('- `setup_busy`:', 1)[1].split('\n- ', 1)[0]
+        self.assertIn('observed timer/worker state', busy)
+        self.assertIn('status', busy)
+        self.assertIn('only when deliberately re-preparing or pausing', busy)
+
     def test_skill_contract_names_the_router_and_high_risk_sections(self):
         skill = (ROOT / 'skills/orbi/SKILL.md').read_text()
         metadata = yaml.safe_load(skill.split('---', 2)[1])

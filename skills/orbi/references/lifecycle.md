@@ -641,8 +641,10 @@ retry an unchanged timeout. Typical repairs:
   encoding is reported as `config_invalid`.
 - `filesystem_error`: inspect local permissions/files privately and repair the
   cause; the failure step may have partially mutated even though publication is atomic.
-- `setup_busy`: obtain separate stop/drain authorization and verify inactivity;
-  do not kill workers or use setup to stop them.
+- `setup_busy`: cite observed timer/worker state and inspect with `status`.
+  Offer authorized stop/drain only when deliberately re-preparing or pausing.
+  Verify inactivity before setup; do not kill workers or stop scheduling just
+  to make a preview pass. An existing valid start skips setup.
 - `update_busy`: stop and drain this deployment first, verify no service is
   active and no owned timer is enabled, then rerun `update`; never kill workers
   or disable an unrelated deployment to pass the check.
