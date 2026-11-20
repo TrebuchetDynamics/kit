@@ -1,6 +1,6 @@
 ---
 name: orbi
-description: "Prepare, start, inspect or stop one Orbi deployment."
+description: "Prepare, update, start, inspect or stop one Orbi deployment."
 disable-model-invocation: true
 ---
 
@@ -17,7 +17,8 @@ Resolve its helper and references from that workflow's directory, not this adapt
 
 Explicit invocation only. This adapter grants no deployment authority and does not
 release pauses or live gates. Use the existing planners for GitHub issue publication and
-`/unblock` for recovery rather than lifecycle control.
+`/unblock` for recovery rather than lifecycle control. `update` advances one stopped
+deployment's engine release; it never refreshes Kit, which stays `/update-kit`.
 
 **Done when:** the loaded workflow's completion condition is met and only observed
 results are reported.
