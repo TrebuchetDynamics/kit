@@ -178,7 +178,7 @@ def source_guard(root):
     Old copies of the checker without a source foundation keep their inventory.
     A present bootstrap is authoritative: missing payloads are not a fallback.
     """
-    bootstrap = root / 'scripts/autowork_bootstrap.py'
+    bootstrap = root / 'scripts/kit_bootstrap.py'
     if not bootstrap.is_file():
         return True
     try:
@@ -304,10 +304,10 @@ def main(argv=None):
         return 1
     # Native tests must not inherit live opt-ins or profile-specific runtime settings.
     env = {k: v for k, v in os.environ.items()
-           if k not in LIVE_FLAGS and not k.startswith(('PI_AUTOWORK_', 'AUTOWORK_'))}
-    env['AUTOWORK_TOOLSET'] = str(root)
+           if k not in LIVE_FLAGS and not k.startswith('KIT_')}
+    env['KIT_TOOLSET'] = str(root)
     # Three suites read os.environ['TMPDIR'] and their fixtures shell out to it. CI exports it and
-    # every Autowork host sets one, but a bare interactive shell does not, and the resulting errors
+    # every Kit host sets one, but a bare interactive shell does not, and the resulting errors
     # read like a red tree rather than a missing setting.
     env.setdefault('TMPDIR', tempfile.gettempdir())
     support_paths = [str(root / 'tests'), str(root / 'src')]

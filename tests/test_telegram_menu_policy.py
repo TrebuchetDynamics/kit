@@ -17,7 +17,7 @@ class MenuPolicyTests(unittest.TestCase):
         self.assertNotIn('max_commands',menu)
     def test_every_advertised_skill_command_is_a_bundled_skill(self):
         # Telegram spells a skill's hyphens as underscores; workflow aliases are registered separately.
-        skills={p.name.replace('-','_') for p in (policy._AUTOWORK_LAYOUT.root/'skills').iterdir() if (p/'SKILL.md').is_file()}
+        skills={p.name.replace('-','_') for p in (policy._KIT_LAYOUT.root/'skills').iterdir() if (p/'SKILL.md').is_file()}
         self.assertTrue({'ui_taste','beautify_github_readme','impeccable','lgtm',
                          'git_commit_push'} <= skills)
         self.assertNotIn('engineering', skills)

@@ -253,8 +253,8 @@ test('installed archive resolves portable references and commands without checko
     // Even accidental executor/native files in a source checkout must stay out of npm.
     await mkdir(join(source, 'pi-autowork/pi_autowork'), {recursive: true});
     await writeFile(join(source, 'pi-autowork/pi_autowork/fixture.py'), 'raise RuntimeError("retired executor")\n');
-    await mkdir(join(source, 'src/autowork_runtime'), {recursive: true});
-    await writeFile(join(source, 'src/autowork_runtime/private.py'), 'raise RuntimeError("native payload")\n');
+    await mkdir(join(source, 'src/kit_runtime'), {recursive: true});
+    await writeFile(join(source, 'src/kit_runtime/private.py'), 'raise RuntimeError("native payload")\n');
     const archive = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--offline', '--json', '--pack-destination', scratch],
       {cwd: source, encoding: 'utf8'}))[0];
     assert.equal(archive.files.some(f => f.path.startsWith('pi-autowork/') || f.path.startsWith('src/')), false);

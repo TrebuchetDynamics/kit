@@ -52,7 +52,7 @@ PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
 ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
                '1a8b2f9603f6258cb105293f238a8d3f775f3393')
 HOME = Path(os.environ.get('HOME', str(Path.home())))
-BIN = Path(os.environ.get('AUTOWORK_BIN_DIR') or HOME / '.local' / 'bin')
+BIN = Path(os.environ.get('KIT_BIN_DIR') or HOME / '.local' / 'bin')
 
 def manifest_name(relative, key='name'):
     """A plugin or marketplace name declared by a manifest in this checkout."""
@@ -361,7 +361,7 @@ def set_aside(path, *, backup_dir=None):
         while backup.exists() or backup.is_symlink():
             backup, n = path.with_name(f'{path.name}.bak.{n}'), n + 1
     if backup_dir is not None:
-        # AUTOWORK_BIN_DIR may be on another filesystem. shutil.move copies
+        # KIT_BIN_DIR may be on another filesystem. shutil.move copies
         # files or recreates symlinks before unlinking the original on EXDEV.
         shutil.move(path, backup)
     else:
@@ -1046,8 +1046,8 @@ def choose_text(all_items, chosen, read=input, write=print):
 
 # -- installing -------------------------------------------------------------------
 def restart_services(output):
-    """Restart active host integrations, never the retired Autowork executor."""
-    ctl = os.environ.get('PI_AUTOWORK_SYSTEMCTL', 'systemctl')
+    """Restart active host integrations, never the retired executor."""
+    ctl = os.environ.get('KIT_SYSTEMCTL', 'systemctl')
     if platform.system() != 'Linux' or not shutil.which(ctl):
         return 'service restarts unavailable (requires Linux user systemd)'
     listed = subprocess.run(
@@ -1077,7 +1077,7 @@ def restart_services(output):
 
 def install(all_items, chosen, dry_run=False, output=None, mode='install'):
     output = output or Output()
-    if dry_run or (not chosen and not os.environ.get('AUTOWORK_INSTALL_REPORT')):
+    if dry_run or (not chosen and not os.environ.get('KIT_INSTALL_REPORT')):
         return _install(all_items, chosen, dry_run=dry_run, output=output, mode=mode)
     # Resolve aliases so checkouts targeting the same binary directory share one
     # persistent inode. Never unlink it: that would allow two independent locks.
@@ -1111,7 +1111,7 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
 def _install(all_items, chosen, dry_run=False, output=None, mode='install'):
     results = []
     # Private machine-readable progress for update_bundle.py, separate from native output.
-    report = None if dry_run else os.environ.get('AUTOWORK_INSTALL_REPORT')
+    report = None if dry_run else os.environ.get('KIT_INSTALL_REPORT')
     if report:
         Path(report).write_text('')
 
@@ -1202,7 +1202,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install'):
     if chosen:
         output.line('\nRestart active Kit services (always, including unchanged installs)', 'heading')
         if dry_run:
-            record('services', 'planned', 'restart active Hermes gateway and kit-* host services; never legacy Autowork runners')
+            record('services', 'planned', 'restart active Hermes gateway and kit-* host services; never legacy runners')
         else:
             try:
                 record('services', 'installed', restart_services(output), 0)
@@ -1272,12 +1272,12 @@ def main(argv=None):
                         help='install (default) or update the installed suite in place; both run the same items')
     args = parser.parse_args(argv)
     output = Output(args.color, 0 if args.quiet else 2)
-    if not (args.no_pull or args.list or args.dry_run or os.environ.get('AUTOWORK_INSTALL_PULLED')
-            or os.environ.get('AUTOWORK_INSTALL_NO_PULL')):
+    if not (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
+            or os.environ.get('KIT_INSTALL_NO_PULL')):
         if pull_checkout(ROOT, write=output.line):
             # The pulled installer may differ from this one: run it, once.
             os.execvpe('bash', ['bash', str(ROOT / 'install.sh'), *(sys.argv[1:] if argv is None else argv)],
-                       dict(os.environ, AUTOWORK_INSTALL_PULLED='1'))
+                       dict(os.environ, KIT_INSTALL_PULLED='1'))
     hermes = [f for f, on in (('--bundle-only', args.bundle_only), ('--no-reload', args.no_reload),
                               ('--yes-deps', args.yes_deps), ('--dry-run', args.dry_run)) if on]
     if args.hermes_home:
@@ -1300,11 +1300,11 @@ def main(argv=None):
     if args.skip:
         chosen -= set(args.skip.split(','))
     menu = args.menu
-    if menu and not (sys.stdin.isatty() and sys.stdout.isatty()) and os.environ.get('AUTOWORK_INSTALL_UI') != 'text':
+    if menu and not (sys.stdin.isatty() and sys.stdout.isatty()) and os.environ.get('KIT_INSTALL_UI') != 'text':
         parser.error('no terminal for the menu; choose with --all, --only or --skip (see --list)')
     if menu:
         try:
-            go = choose_curses(all_items, chosen) if os.environ.get('AUTOWORK_INSTALL_UI') != 'text' \
+            go = choose_curses(all_items, chosen) if os.environ.get('KIT_INSTALL_UI') != 'text' \
                 else choose_text(all_items, chosen, write=output.line)
         except Exception:  # no usable terminal for curses: the numbered menu
             go = choose_text(all_items, chosen, write=output.line)

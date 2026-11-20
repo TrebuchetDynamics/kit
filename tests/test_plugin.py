@@ -294,7 +294,7 @@ class PluginTests(unittest.TestCase):
         import io
 
         self.skill('alpha')
-        bundle = self.plugin._AUTOWORK_COMPAT.peer(vars(self.plugin), 'bundle')
+        bundle = self.plugin._KIT_COMPAT.peer(vars(self.plugin), 'bundle')
         # The documented Hermes hook calls setup_fn on its subparser and sets
         # handler_fn as func. Exercise that boundary, not a second parser.
         with patch.object(self.ctx, 'register_cli_command') as register, \
