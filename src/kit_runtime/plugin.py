@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 
 
-SKILLS_DIR = _AUTOWORK_LAYOUT.root / "skills"
+SKILLS_DIR = _KIT_LAYOUT.root / "skills"
 logger = logging.getLogger(__name__)
 
 
@@ -47,7 +47,7 @@ def _gateway_injection_state():
     """
     try:
         from hermes_cli.config import read_raw_config
-        policy = _AUTOWORK_COMPAT.peer(globals(), 'runtime_defaults')
+        policy = _KIT_COMPAT.peer(globals(), 'runtime_defaults')
         raw = read_raw_config() or {}
         value = policy.plugin_entry(raw).get('allow_gateway_injection')
         entries = ((raw.get('plugins') or {}).get('entries') or {}) if isinstance(raw, dict) else {}
@@ -112,7 +112,7 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
     if ctx.inject_message(prompt, **target):
         return None
     effective, canonical = _gateway_injection_state()
-    policy = _AUTOWORK_COMPAT.peer(globals(), 'runtime_defaults')
+    policy = _KIT_COMPAT.peer(globals(), 'runtime_defaults')
     setting = f"plugins.entries.{policy.PLUGIN}.allow_gateway_injection"
     previous = f"plugins.entries.{policy.LEGACY_PLUGIN}.allow_gateway_injection"
     inherited = f" ({previous} is also read for profiles from before the rename)"
@@ -145,7 +145,7 @@ def register(ctx):
 
     skills = _discover_skills()
     from hermes_constants import get_hermes_home
-    install = _AUTOWORK_COMPAT.peer(globals(), 'install_skills').install
+    install = _KIT_COMPAT.peer(globals(), 'install_skills').install
     native_skills = [path.parent for _, _, path in skills]
     shared = SKILLS_DIR / 'shared'
     if shared.is_dir():
@@ -160,7 +160,7 @@ def register(ctx):
     if install(SKILLS_DIR, [('current', get_hermes_home())], skills=native_skills, report=messages.append):
         # Commands load skills by qualified name, so a preserved native folder must not block them.
         logger.warning('Bundled native skill provisioning incomplete:\n%s', '\n'.join(messages))
-    policy = _AUTOWORK_COMPAT.peer(globals(), 'runtime_defaults')
+    policy = _KIT_COMPAT.peer(globals(), 'runtime_defaults')
     policy.apply_runtime_defaults(ctx)
     existing = get_plugin_commands()
     for name, command, path in skills:
@@ -179,6 +179,6 @@ def register(ctx):
             description=f"Run the {name} skill",
             args_hint="<instructions>" if name in {"autoresearch", "grill-me"} else "[instructions]",
         )
-    _AUTOWORK_COMPAT.peer(globals(), 'autoresearch_commands').register(ctx, skills, _invoke)
-    _AUTOWORK_COMPAT.peer(globals(), 'workflow_commands').register(ctx, skills, _invoke)
-    _AUTOWORK_COMPAT.peer(globals(), 'bundle').register_bundle(ctx, _invoke)
+    _KIT_COMPAT.peer(globals(), 'autoresearch_commands').register(ctx, skills, _invoke)
+    _KIT_COMPAT.peer(globals(), 'workflow_commands').register(ctx, skills, _invoke)
+    _KIT_COMPAT.peer(globals(), 'bundle').register_bundle(ctx, _invoke)

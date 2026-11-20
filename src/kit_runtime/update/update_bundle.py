@@ -33,9 +33,9 @@ def refresh_hosts(source):
     try:
         if not (source / 'install.sh').is_file():
             return [{'item': item, 'status': status, 'exit': code} for item in HOST_ITEMS]
-        with tempfile.TemporaryDirectory(prefix='autowork-host-update-') as directory:
+        with tempfile.TemporaryDirectory(prefix='kit-host-update-') as directory:
             report = Path(directory) / 'items.jsonl'
-            env = dict(os.environ, AUTOWORK_INSTALL_REPORT=str(report), NO_COLOR='1')
+            env = dict(os.environ, KIT_INSTALL_REPORT=str(report), NO_COLOR='1')
             with subprocess.Popen(['bash', str(source / 'install.sh'), '--full', '--skip', 'hermes,pi', '-q'],
                                   cwd=source, stdin=subprocess.DEVNULL, env=env,
                                   start_new_session=True) as child:
@@ -133,7 +133,7 @@ def setup_plugin_dir(home, source):
         if target.resolve() != source.resolve():
             raise ValueError(f'Bundle path {target} points to another checkout {target.resolve()}; expected {source.resolve()}; update the existing installation explicitly')
         if _manifest_name(target) != 'kit':
-            raise ValueError(f'Legacy manifest at {target}; preserve it and update to Kit before setup (Autowork is unsupported)')
+            raise ValueError(f'Legacy manifest at {target}; preserve it and update to Kit before setup (the legacy plugin is unsupported)')
     elif _manifest_name(source) != 'kit':
         raise ValueError(f'Setup source {source} must declare Kit; update the source before installing')
     return target
@@ -376,7 +376,7 @@ def prepare(source, profiles, *, upstream=UPSTREAM):
             deleted = git(repo, 'log', '--format=', '--name-only', '--diff-filter=D',
                           '--no-renames', state['after'], '--', 'skills').decode().splitlines()
             # Required external skills (such as graphify) may reuse a once-bundled name.
-            external = set(json.loads((_AUTOWORK_LAYOUT.root / 'plugins/defaults.json')
+            external = set(json.loads((_KIT_LAYOUT.root / 'plugins/defaults.json')
                                       .read_text()).get('required_skills', []))
             state['retired'] = sorted({r for r in deleted if r and r not in state['new']
                                        and Path(r).parts[1] not in external})
@@ -569,7 +569,7 @@ def heal_chat_menus(profiles, call=telegram_call):
         if not token or token in seen:
             continue
         seen.add(token)
-        policy = _AUTOWORK_COMPAT.peer(globals(), 'telegram_menu_policy')
+        policy = _KIT_COMPAT.peer(globals(), 'telegram_menu_policy')
         chat_ids, stale_chat_menus = policy.chat_ids, policy.stale_chat_menus
         failed = []
         try:
@@ -976,7 +976,7 @@ def root_home(home):
 
 def native_call(action, home, stage, revision, python):
     """Run native admission in a fresh process bound only to the selected home."""
-    source = _AUTOWORK_COMPAT.peer(globals(), 'setup_preflight').selected_source()
+    source = _KIT_COMPAT.peer(globals(), 'setup_preflight').selected_source()
     if source is None:
         raise ValueError('Cannot resolve source for Hermes selected on PATH; native admission unverified')
     if python is None:
@@ -1156,7 +1156,7 @@ def active_consumers(home, profile):
 
 
 def selected_profiles(root, names):
-    live_profiles = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle').live_profiles
+    live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
     available = dict(live_profiles(root))
     if not names or len(set(names)) != len(names) or any(n not in available for n in names):
         raise ValueError('Explicit distinct existing profile selection is required')
@@ -1212,7 +1212,7 @@ def linked_profiles(profiles, *, upstream=UPSTREAM):
 
 def fleet_linked_profiles(root):
     """Linked profiles of a Hermes home, loadable from the plugin process (no setup_bundle on sys.path)."""
-    module = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle')
+    module = _KIT_COMPAT.peer(globals(), 'setup_bundle')
     return linked_profiles(module.live_profiles(root_home(root)))
 
 
@@ -1223,7 +1223,7 @@ def _pin_records(state, name):
 
 def pin_profile(root, name, *, dry_run=False, upstream=UPSTREAM):
     """Replace one profile's plugin link with a clone of the same revision; the link is kept for unpin."""
-    live_profiles = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle').live_profiles
+    live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
     root = root_home(root)
     home = dict(live_profiles(root)).get(name)
     if home is None:
@@ -1277,7 +1277,7 @@ def pin_profile(root, name, *, dry_run=False, upstream=UPSTREAM):
 
 def unpin_profile(root, name, *, dry_run=False):
     """Restore the link saved by the latest pin; the clone is moved beside the record, not deleted."""
-    live_profiles = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle').live_profiles
+    live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
     root = root_home(root)
     home = dict(live_profiles(root)).get(name)
     if home is None:
@@ -1326,7 +1326,7 @@ def merge_profile_bytes(local, base, new):
         return new
     if base is None or new is None:
         raise ValueError('Native skill addition/deletion conflicts with profile customization')
-    with tempfile.TemporaryDirectory(prefix='autowork-skill-merge-') as directory:
+    with tempfile.TemporaryDirectory(prefix='kit-skill-merge-') as directory:
         paths = [Path(directory) / name for name in ('local', 'base', 'new')]
         for path, content in zip(paths, (local, base, new)):
             path.write_bytes(content)
@@ -2127,7 +2127,7 @@ def main(argv=None):
         print(json.dumps(result, indent=2))
         return int(result['status'] == 'refused')
     if args.restart_when_quiet is not None:
-        live_profiles = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle').live_profiles
+        live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
         root = root_home(args.hermes_home)
         homes = [home for _, home in live_profiles(root)]
         print(restart_when_quiet(root, homes, root / 'maintenance/toolset-update',
@@ -2148,7 +2148,7 @@ def main(argv=None):
                                args.native_python, check=args.check or args.dry_run)
         print(json.dumps(result, indent=2))
         return int(result['status'] == 'incomplete')
-    live_profiles = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle').live_profiles
+    live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
     root = root_home(args.hermes_home)
     state_dir = root / 'maintenance/toolset-update'
     try:
@@ -2235,7 +2235,7 @@ def main(argv=None):
             temporary.replace(receipt)
         save()
         try:
-            source = _AUTOWORK_LAYOUT.root
+            source = _KIT_LAYOUT.root
             recovery_receipt = state_dir / 'recovery.json'
             safe_path(recovery_receipt)
             prior = json.loads(recovery_receipt.read_text()) if recovery_receipt.exists() else None

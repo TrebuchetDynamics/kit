@@ -8,11 +8,11 @@
 Source: [setup orchestrator](../scripts/setup_bundle.py), [source installer](../install-plugins.sh),
 [profile defaults](../scripts/runtime_defaults.py), [native skill provisioning](../scripts/install_skills.py).
 
-The native setup bodies live in [`src/autowork_runtime/install/`](../src/autowork_runtime/install/).
+The native setup bodies live in [`src/kit_runtime/install/`](../src/kit_runtime/install/).
 Their Python entrypoints live in `scripts/`, including `scripts/setup_bundle.py`
 and `scripts/install-graphify.py`. Only `__init__.py` stays at the repository root:
 Hermes requires that adapter beside `plugin.yaml` to load the plugin.
-Keep the entrypoints, same-release `src/autowork_bootstrap.py` and `src/autowork_runtime/`
+Keep the entrypoints, same-release `src/kit_bootstrap.py` and `src/kit_runtime/`
 payload together; a single copied
 installer is not standalone. Preflight rejects missing declared source payloads
 before installation stages. This layout does not change setup targets or policy.
@@ -110,7 +110,7 @@ home (`~/.hermes`, or `--hermes-home`/`HERMES_HOME`); a default home that does n
 exist yet counts as missing. The tmux launcher needs `tmux`.
 The owner's accepted tx rules (2026-11-16) for this suite installer are:
 
-- A replaced `~/.local/bin/tx` (or `AUTOWORK_BIN_DIR/tx`) moves to
+- A replaced `~/.local/bin/tx` (or `KIT_BIN_DIR/tx`) moves to
   `~/.local/state/kit/backups/tx.bak`, then `.bak.1` and increasing numbers. Only
   the newest five command backups are kept, in replacement order. Keep this state
   directory off `PATH`; no new `tx.bak*` executables are created in the bin directory.
@@ -129,7 +129,7 @@ After checking that you no longer need them for recovery, use this manual cleanu
 command in Bash (it prompts before each removal):
 
 ```sh
-rm -i -- "${AUTOWORK_BIN_DIR:-$HOME/.local/bin}"/tx.bak*
+rm -i -- "${KIT_BIN_DIR:-$HOME/.local/bin}"/tx.bak*
 ```
 
 These rules do not change the separate [tmux installer](../tmux/README.md#install):
@@ -139,7 +139,7 @@ including backups beside the command in the bin directory.
 Non-preview suite runs take a nonblocking advisory lock before writing the private
 installer receipt or running any component, and hold it through service restarts
 and the summary. The lock is beside the resolved binary directory:
-`~/.local/bin.kit-install.lock` by default, or `<AUTOWORK_BIN_DIR>.kit-install.lock`.
+`~/.local/bin.kit-install.lock` by default, or `<KIT_BIN_DIR>.kit-install.lock`.
 Overlapping runs targeting that directory fail immediately with the lock path and
 holder PID, without touching the receipt or installing anything. Let the holder
 finish, then retry the same command. Do not delete or replace the lock file to
@@ -212,7 +212,7 @@ compatibility. `./install.sh --only pi` requires an already usable destination
 to refresh other components without installing or updating the Pi package.
 
 Only the absolute `pi-bolt` in the Kit binary directory (`~/.local/bin`, or
-`AUTOWORK_BIN_DIR`) is verified with `--version` and used for `list`,
+`KIT_BIN_DIR`) is verified with `--version` and used for `list`,
 `install git:github.com/TrebuchetDynamics/kit` or
 `update git:github.com/TrebuchetDynamics/kit`. No `pi` or alternate `pi-bolt` on PATH
 is used. A missing, non-executable, broken or unverifiable destination fails with
@@ -247,7 +247,7 @@ private temporary file with HTTPS-only redirects, five redirects at most, a 15-s
 connection timeout, a 300-second transfer limit and a 1 MiB size limit, then runs
 the published file unmodified with `sh`. The run cannot prompt and installs no
 optional extensions (`PIBOLT_YES=1`, `PIBOLT_EXTENSIONS=no`). `PIBOLT_BIN_DIR` is
-the Kit binary directory (`~/.local/bin`, or `AUTOWORK_BIN_DIR`); the payload keeps
+the Kit binary directory (`~/.local/bin`, or `KIT_BIN_DIR`); the payload keeps
 upstream's `~/.pi-bolt` default. Kit verifies the linked `pi-bolt --version` and
 never writes through a broken link. Upstream owns release selection, channel,
 signature and checksum verification, and `pi-bolt update`; Kit pins no version and
@@ -277,7 +277,7 @@ uv provisions the compatible Python. A missing prerequisite or failed install
 fails this component with a diagnostic; other components continue. Kit does not
 bootstrap uv or Git, or force-reinstall a conflicting tool.
 
-The executable defaults to `~/.local/bin/orbi` (or `AUTOWORK_BIN_DIR`);
+The executable defaults to `~/.local/bin/orbi` (or `KIT_BIN_DIR`);
 `UV_TOOL_BIN_DIR` takes precedence and `UV_TOOL_DIR` retains uv's normal meaning.
 Add the selected binary directory to PATH yourself; Kit does not edit shell profiles.
 The installer verifies `orbi --version`, including a user-local CLI not yet on PATH.
@@ -581,7 +581,7 @@ Completed items retain their outcomes if a later item times out; remaining items
 report `timeout`. An unavailable installer reports `unavailable`; missing or invalid
 item reports use the installer's failure exit, or `unreported` if it exited zero.
 Skipped/unavailable/timed-out items have no item exit code (`null`). The installer
-writes incremental JSONL progress to `AUTOWORK_INSTALL_REPORT` when that internal
+writes incremental JSONL progress to `KIT_INSTALL_REPORT` when that internal
 environment variable is set; native output is not parsed as a receipt.
 
 `--check`, scoped local deployments, and pin/unpin operations never run the host

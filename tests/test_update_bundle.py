@@ -146,7 +146,7 @@ class UpdateTests(unittest.TestCase):
         with patch.object(self.mod, 'fetch', side_effect=AssertionError('no fetch on ambiguity')):
             with self.assertRaisesRegex(ValueError, 'Duplicate Kit registrations'):
                 self.plan()
-            peer = self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle')
+            peer = self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle')
             with patch.object(peer, 'live_profiles', self.setup_stub.live_profiles), \
                  contextlib.redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(self.mod.main(['--hermes-home', str(self.home)]), 1)
@@ -161,7 +161,7 @@ class UpdateTests(unittest.TestCase):
         state.mkdir(parents=True)
         receipt = state / 'latest.json'
         receipt.write_bytes(b'{"status": "up_to_date"}\n')
-        peer = self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle')
+        peer = self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle')
         for args in (['--dry-run'], []):
             with self.subTest(args=args), patch.object(peer, 'live_profiles', self.setup_stub.live_profiles), \
                  patch.object(self.mod, 'finish_restart', side_effect=AssertionError('identity admission first')), \
@@ -185,14 +185,14 @@ class UpdateTests(unittest.TestCase):
         with patch.dict(sys.modules, setup_bundle=poison):
             for module in modules:
                 self.assertEqual(module.selected_profiles(self.home, ['default']), [('default', self.home)])
-        peers = [m._AUTOWORK_COMPAT.peer(vars(m), 'setup_bundle') for m in modules]
+        peers = [m._KIT_COMPAT.peer(vars(m), 'setup_bundle') for m in modules]
         self.assertIsNot(peers[0], peers[1])
         for release, module, peer in zip(releases, modules, peers):
             self.assertEqual(peer.ROOT, release)
             self.assertEqual(module.__file__, str(release / 'scripts/update_bundle.py'))
             self.assertIs(module.prepare.__globals__, vars(module))
             self.assertEqual(module.prepare.__code__.co_filename,
-                             str(release / 'src/autowork_runtime/update/update_bundle.py'))
+                             str(release / 'src/kit_runtime/update/update_bundle.py'))
         with patch.object(peers[0], 'live_profiles', return_value=[('patched', self.home)]):
             self.assertEqual(modules[0].selected_profiles(self.home, ['patched']), [('patched', self.home)])
             self.assertEqual(modules[1].selected_profiles(self.home, ['default']), [('default', self.home)])
@@ -200,7 +200,7 @@ class UpdateTests(unittest.TestCase):
     def test_missing_updater_payload_never_borrows_another_release(self):
         release = copy_sources(self.root / 'incomplete')
         for entry in ('update_bundle', 'update_bundle_native'):
-            (release / f'src/autowork_runtime/update/{entry}.py').unlink(missing_ok=True)
+            (release / f'src/kit_runtime/update/{entry}.py').unlink(missing_ok=True)
             result = subprocess.run([sys.executable, str(release / f'scripts/{entry}.py'), '--help'],
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
@@ -407,7 +407,7 @@ class UpdateTests(unittest.TestCase):
             with self.subTest(check=check):
                 args = ['--hermes-home', str(self.home)] + (['--check'] if check else [])
                 with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-                     patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                     patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
                      patch.object(self.mod, 'finalize_profiles', side_effect=lambda s, r, profiles, **_: [{'profile': n, 'status': 'ready'} for n, _ in profiles]), \
                      patch.object(self.mod, 'gateway_running', return_value=False), \
@@ -427,7 +427,7 @@ class UpdateTests(unittest.TestCase):
         receipts = []
         for _ in range(2):
             with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-                 patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                 patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
                  patch.object(self.mod, 'finalize_profiles', side_effect=lambda s, r, profiles, **_: [{'profile': n, 'status': 'ready'} for n, _ in profiles]), \
                  patch.object(self.mod, 'heal_chat_menus', return_value=[]), \
@@ -456,13 +456,13 @@ class UpdateTests(unittest.TestCase):
             '\'{"item":"tx","status":"installed","exit":0}\' '
             '\'{"item":"claude","status":"failed","exit":7}\' '
             '\'{"item":"codex","status":"skipped","exit":null}\' '
-            '\'{"item":"orbi","status":"installed","exit":0}\' > "$AUTOWORK_INSTALL_REPORT"\n'
+            '\'{"item":"orbi","status":"installed","exit":0}\' > "$KIT_INSTALL_REPORT"\n'
             'exit 1\n')
         self.git(self.remote, 'add', '.'); self.git(self.remote, 'commit', '-m', 'installer')
         prepare = self.mod.prepare
         receipts = []
         with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-             patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
              patch.object(self.mod, 'finalize_profiles', return_value=[{'status': 'ready'}]), \
              patch.object(self.mod, 'heal_chat_menus', return_value=[]), \
@@ -487,7 +487,7 @@ class UpdateTests(unittest.TestCase):
         installer = self.repo / 'install.sh'
         for body, status, code in (
             (None, 'unavailable', None),
-            ('printf "\\377" > "$AUTOWORK_INSTALL_REPORT"\n', 'unreported', 0),
+            ('printf "\\377" > "$KIT_INSTALL_REPORT"\n', 'unreported', 0),
             ('exit 6\n', 'failed', 6),
         ):
             with self.subTest(status=status):
@@ -502,7 +502,7 @@ class UpdateTests(unittest.TestCase):
         child = self.root / 'late-write'
         (self.repo / 'install.sh').write_text(
             '#!/bin/bash\n'
-            'echo \'{"item":"tx","status":"installed","exit":0}\' > "$AUTOWORK_INSTALL_REPORT"\n'
+            'echo \'{"item":"tx","status":"installed","exit":0}\' > "$KIT_INSTALL_REPORT"\n'
             f'(sleep 0.5; touch "{child}") &\nwait\n')
         with patch.object(self.mod, 'HOST_REFRESH_TIMEOUT_S', 0.1):
             rows = self.mod.refresh_hosts(self.repo)
@@ -527,7 +527,7 @@ class UpdateTests(unittest.TestCase):
         for running, expected in ((True, 'requested'), (False, 'not_running')):
             with self.subTest(running=running), \
                  patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-                 patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                 patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
                  patch.object(self.mod, 'finalize_profiles', side_effect=activate), \
                  patch.object(self.mod, 'gateway_running', return_value=running), \
@@ -565,7 +565,7 @@ class UpdateTests(unittest.TestCase):
         prepare = self.mod.prepare
         receipts = []
         with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-             patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
              patch.object(self.mod, 'finalize_profiles', side_effect=lambda s, r, profiles, **_: [{'profile': n, 'status': 'ready'} for n, _ in profiles]), \
              patch.object(self.mod, 'gateway_running', return_value=True), \
@@ -644,7 +644,7 @@ class UpdateTests(unittest.TestCase):
                            '     finish or kill the work above to release the drain now\n')
             return drain.pid
         with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-             patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
              patch.object(self.mod, 'finalize_profiles', side_effect=lambda s, r, profiles, **_: [{'profile': n, 'status': 'ready'} for n, _ in profiles]), \
              patch.object(self.mod, 'gateway_running', return_value=True), \
@@ -670,7 +670,7 @@ class UpdateTests(unittest.TestCase):
         self.git(self.repo, 'pull', '--ff-only')
         prepare = self.mod.prepare
         with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-             patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
              patch.object(self.mod, 'finalize_profiles') as finalize, \
              contextlib.redirect_stdout(io.StringIO()):
@@ -1380,7 +1380,7 @@ class ScopedUpdateTests(unittest.TestCase):
 
     def test_git_export_attributes_do_not_change_deployed_blob_hashes(self):
         copy_sources(self.remote, entries=('plugins/defaults.json',))
-        payload = 'src/autowork_runtime/update/update_bundle.py'
+        payload = 'src/kit_runtime/update/update_bundle.py'
         (self.remote / payload).chmod(0o755)
         (self.remote/'.gitattributes').write_text(f'skills/demo/SKILL.md export-ignore\n{payload} export-ignore\n')
         self.git(self.remote, 'add', '.'); self.git(self.remote, 'commit', '-m', 'archive attributes')
@@ -1472,7 +1472,7 @@ class ManagedRecoveryTests(unittest.TestCase):
         prepare = self.mod.prepare
         self.enterContext(patch.object(self.mod, 'prepare',
             side_effect=lambda *args, **kwargs: prepare(*args, upstream=str(self.remote), **kwargs)))
-        self.enterContext(patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+        self.enterContext(patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles))
         self.enterContext(patch.object(self.mod, 'finalize_profiles',
                                       side_effect=AssertionError('recovery must not activate profiles')))
@@ -2020,11 +2020,11 @@ class PinProfileTests(unittest.TestCase):
     """TOOLSET-079: report linked profiles; opt-in, reversible pinning to a clone."""
     setUp, git, advance, plan = UpdateTests.setUp, UpdateTests.git, UpdateTests.advance, UpdateTests.plan
     def pin(self, name='work', **options):
-        with patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+        with patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles):
             return self.mod.pin_profile(self.home, name, upstream=str(self.remote), **options)
     def unpin(self, name='work', **options):
-        with patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+        with patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles):
             return self.mod.unpin_profile(self.home, name, **options)
     def plugin(self, name='work'):
@@ -2102,7 +2102,7 @@ class PinProfileTests(unittest.TestCase):
         self.pin()
         self.assertEqual(self.pin()['status'], 'not_linked')
         output = io.StringIO()
-        with patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+        with patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), contextlib.redirect_stdout(output):
             code = self.mod.main(['--hermes-home', str(self.home), '--pin-profile', 'missing', '--dry-run'])
         self.assertEqual((code, json.loads(output.getvalue())['status']), (1, 'refused'))

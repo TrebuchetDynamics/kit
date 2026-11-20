@@ -12,7 +12,7 @@ live acceptance. Orbi remains paused and live-unqualified.
 
 Use `python3 scripts/check.py --list` for the maintained offline inventory and
 `python3 scripts/check.py PATH ...` for focused modules. Native Hermes source
-lives in `src/autowork_runtime/`; portable packages retain their host adapters.
+lives in `src/kit_runtime/`; portable packages retain their host adapters.
 Source/layout checks do not qualify installed models or delivery.
 
 ## Skill task-persistence contracts
@@ -264,7 +264,7 @@ cases skip when ruamel.yaml is unavailable). `test_complete_setup.py` separately
 checks orchestration after admission, including no installation calls on dry-run,
 and rejects missing declared native source/bootstrap payloads before stages run.
 The setup/provisioning and Graphify fixtures copy the same-release Python
-closure and exercise real `src/autowork_runtime` bodies through the `scripts/`
+closure and exercise real `src/kit_runtime` bodies through the `scripts/`
 entrypoints; external commands and gateway responses remain private fixtures.
 No passing preview is evidence of a live model or Telegram workflow.
 

@@ -93,7 +93,7 @@ def runtime_check(repo, root, profiles, bundle_only):
         for executable in dict.fromkeys(candidates):
             if not executable.is_file():
                 continue
-            command = [str(executable), '-B', str(repo / 'src/autowork_runtime/install/preflight_config.py'),
+            command = [str(executable), '-B', str(repo / 'src/kit_runtime/install/preflight_config.py'),
                        *(['--core'] if bundle_only else []), *[str(home / 'config.yaml') for _, home in profiles]]
             result = subprocess.run(command, capture_output=True, text=True, timeout=30,
                                     env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'))
@@ -119,10 +119,10 @@ def preflight(repo, root, profiles, *, bundle_only=False):
     required = ('install-skills.sh', 'install-plugins.sh', 'scripts/install_skills.py', 'scripts/runtime_defaults.py',
                 'scripts/setup_bundle.py', 'scripts/setup_preflight.py', 'scripts/setup_runtime.py', 'scripts/update_bundle.py',
                 'scripts/install-graphify.py',
-                'scripts/autowork_bootstrap.py', 'src/autowork_bootstrap.py',
+                'scripts/kit_bootstrap.py', 'src/kit_bootstrap.py',
                 'plugin.yaml', 'plugins/defaults.json', 'plugins/PLUGINS.md',
-                'src/autowork_runtime/install/preflight_config.py')
-    layout = _AUTOWORK_COMPAT.Layout(repo)
+                'src/kit_runtime/install/preflight_config.py')
+    layout = _KIT_COMPAT.Layout(repo)
     for name in required:
         if not (repo / name).is_file():
             errors.append(f'Missing setup file: {name}')
@@ -165,7 +165,7 @@ def preflight(repo, root, profiles, *, bundle_only=False):
         if plugins.exists() and not plugins.is_dir():
             errors.append(f'{name}: plugins must be a directory')
         try:
-            updater = _AUTOWORK_COMPAT.peer(globals(), 'update_bundle')
+            updater = _KIT_COMPAT.peer(globals(), 'update_bundle')
             target = updater.setup_plugin_dir(home, repo)
             if target.exists():
                 plan.append(f'  Preserve existing bundle path: {target}')

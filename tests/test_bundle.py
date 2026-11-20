@@ -191,7 +191,7 @@ class BundleTests(unittest.TestCase):
         self.bundle.setup_parser(parser)
         args = parser.parse_args(['finalize', '--hermes-home', '/fixture home',
                                   '--bundle-only', '--no-reload'])
-        runtime = self.bundle._AUTOWORK_COMPAT.peer(vars(self.bundle), 'setup_runtime')
+        runtime = self.bundle._KIT_COMPAT.peer(vars(self.bundle), 'setup_runtime')
         report = {'fixture': 'selected profile inventory'}
         receipt = {'status': 'incomplete', 'action': 'Repair fixture registration.'}
         output = io.StringIO()

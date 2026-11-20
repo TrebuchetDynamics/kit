@@ -91,7 +91,7 @@ def finalize(bundle, report, args):
     if home != root and home.parent != root / 'profiles':
         return {'status': 'incomplete', 'errors': ['Profile does not belong to requested Hermes root']}, 1
     try:
-        verify_runtime_defaults = _AUTOWORK_COMPAT.peer(globals(), 'runtime_defaults').verify_runtime_defaults
+        verify_runtime_defaults = _KIT_COMPAT.peer(globals(), 'runtime_defaults').verify_runtime_defaults
         return finish_profile(bundle, home, root, report, bundle_only=args.bundle_only,
                               no_reload=args.no_reload, verify_settings=verify_runtime_defaults)
     except (OSError, ValueError, TypeError, ImportError) as exc:

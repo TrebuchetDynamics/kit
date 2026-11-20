@@ -79,17 +79,17 @@ class AffectedTestsTests(unittest.TestCase):
 
     def test_src_relative_qualified_and_helper_edges_do_not_confuse_duplicate_stems(self):
         files = {
-            'src/autowork_runtime/__init__.py': '',
-            'src/autowork_runtime/engine/__init__.py': '',
-            'src/autowork_runtime/engine/owner.py': 'VALUE = 1\n',
-            'src/autowork_runtime/engine/consumer.py': 'from .owner import VALUE\n',
-            'src/autowork_runtime/command.py': 'from .engine import consumer\n',
+            'src/kit_runtime/__init__.py': '',
+            'src/kit_runtime/engine/__init__.py': '',
+            'src/kit_runtime/engine/owner.py': 'VALUE = 1\n',
+            'src/kit_runtime/engine/consumer.py': 'from .owner import VALUE\n',
+            'src/kit_runtime/command.py': 'from .engine import consumer\n',
             'unrelated/owner.py': 'VALUE = 2\n',
-            'tests/test_public.py': 'import autowork_runtime.command\n',
-            'tests/test_path.py': 'ENTRY = "src/autowork_runtime/command.py"\n',
+            'tests/test_public.py': 'import kit_runtime.command\n',
+            'tests/test_path.py': 'ENTRY = "src/kit_runtime/command.py"\n',
             'tests/test_other.py': 'import unrelated.owner\n',
-            'tests/native/test_public.py': 'import autowork_runtime.command\n',
-            'tests/support/store_fixture.py': 'import autowork_runtime.command\n',
+            'tests/native/test_public.py': 'import kit_runtime.command\n',
+            'tests/support/store_fixture.py': 'import kit_runtime.command\n',
             'tests/test_support.py': 'import store_fixture\n',
         }
         with tempfile.TemporaryDirectory() as temporary:
@@ -100,23 +100,23 @@ class AffectedTestsTests(unittest.TestCase):
                 path.write_text(body)
             with patch.object(affected_tests, 'ROOT', root):
                 graph = affected_tests.dependency_graph(list(files), conservative=True)
-                self.assertIn('src/autowork_runtime/engine/owner.py', graph['src/autowork_runtime/engine/consumer.py'])
-                self.assertIn('src/autowork_runtime/__init__.py', graph['tests/test_public.py'])
-                self.assertNotIn('unrelated/owner.py', graph['src/autowork_runtime/engine/consumer.py'])
-                self.assertNotIn('src/autowork_runtime/engine/owner.py', graph['tests/test_other.py'])
+                self.assertIn('src/kit_runtime/engine/owner.py', graph['src/kit_runtime/engine/consumer.py'])
+                self.assertIn('src/kit_runtime/__init__.py', graph['tests/test_public.py'])
+                self.assertNotIn('unrelated/owner.py', graph['src/kit_runtime/engine/consumer.py'])
+                self.assertNotIn('src/kit_runtime/engine/owner.py', graph['tests/test_other.py'])
             # Real direct-child inventory; no discovery plugin or flattened test stem.
             checker = affected_tests.check_module()
             with patch.object(affected_tests, 'ROOT', root), \
                     patch.object(affected_tests, 'check_module', return_value=checker), \
                     patch.object(affected_tests, 'repository_files', return_value=list(files)):
-                owner = 'src/autowork_runtime/engine/owner.py'
+                owner = 'src/kit_runtime/engine/owner.py'
                 expected = {'tests/test_public.py', 'tests/test_path.py', 'tests/test_support.py',
                             'tests/native/test_public.py'}
                 selected, _, full = affected_tests.select([owner], conservative=True)
                 self.assertFalse(full)
                 self.assertEqual(set(selected), expected)
                 all_tests = {p.relative_to(root).as_posix() for p in checker.discover_tests(root)}
-                for changed in ('src/autowork_runtime/__init__.py', 'missing.py'):
+                for changed in ('src/kit_runtime/__init__.py', 'missing.py'):
                     selected, _, full = affected_tests.select([changed], conservative=True)
                     self.assertTrue(full)
                     self.assertEqual(set(selected), all_tests)

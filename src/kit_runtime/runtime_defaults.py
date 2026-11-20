@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 PLUGIN = 'kit'
 LEGACY_PLUGIN = 'autowork'
-BUNDLE_SKILLS = _AUTOWORK_LAYOUT.root / 'skills'
+BUNDLE_SKILLS = _KIT_LAYOUT.root / 'skills'
 logger = logging.getLogger(__name__)
 _reported_legacy_entry = set()
 
@@ -80,7 +80,7 @@ def runtime_policy(raw):
 
 def policy_values(raw):
     """Without an explicit policy, fill missing leaves but preserve existing decisions."""
-    defaults = _AUTOWORK_COMPAT.peer(globals(), 'bundle').defaults()['hermes']
+    defaults = _KIT_COMPAT.peer(globals(), 'bundle').defaults()['hermes']
     for key in ('approvals', 'agent'):
         if isinstance(raw, dict) and raw.get(key) is not None and not isinstance(raw[key], dict):
             raise ValueError('Invalid profile policy section: ' + key)
@@ -150,7 +150,7 @@ def setup_profile_policy(config_path):
 
 def expected_settings(raw):
     """Bundle policy for one profile's raw config: approvals, turn budget, injection and menu."""
-    menu_patch = _AUTOWORK_COMPAT.peer(globals(), 'telegram_menu_policy').menu_patch
+    menu_patch = _KIT_COMPAT.peer(globals(), 'telegram_menu_policy').menu_patch
 
     wanted = policy_values(raw)
     patch = {
@@ -217,7 +217,7 @@ def opted_out_settings(raw):
     The opt-out keeps a profile's approval, turn, injection and skill settings. Every
     profile had opted out, which also froze the menu; retirement must still remove
     stale entries without changing their runtime policy."""
-    return _AUTOWORK_COMPAT.peer(globals(), 'telegram_menu_policy').menu_patch(raw)
+    return _KIT_COMPAT.peer(globals(), 'telegram_menu_policy').menu_patch(raw)
 
 
 def apply_runtime_defaults(ctx):

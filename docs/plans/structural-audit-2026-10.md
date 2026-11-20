@@ -3,7 +3,7 @@
 ## SDD maintainability refactor
 
 The executor is removed. Native Hermes implementation remains under
-`src/autowork_runtime/`, with `src/autowork_bootstrap.py` and thin public
+`src/kit_runtime/`, with `src/kit_bootstrap.py` and thin public
 `scripts/` entrypoints. Preserve selected-source identity, packaged resources,
 native plugin registration and unrelated host functionality.
 
