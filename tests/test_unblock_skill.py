@@ -36,6 +36,84 @@ class UnblockSkillTests(unittest.TestCase):
         self.assertNotIn('autowork restart', text)
         self.assertIn('No Hermes runtime', (ROOT / 'adapters/skills/unblock/SKILL.md').read_text())
 
+    def pr_phase(self):
+        text = (ROOT / 'skills/unblock/SKILL.md').read_text()
+        self.assertIn('## Blocked PRs: owner-first repair records', text)
+        return ' '.join(text.split('## Blocked PRs: owner-first repair records', 1)[1]
+                        .split('## Common Rationalizations', 1)[0].split())
+
+    def test_pr_inventory_includes_unlinked_prs_and_head_bound_evidence(self):
+        phase = self.pr_phase()
+        for contract in ('every scoped open PR, including PRs with no linked issue',
+                         'head SHA, base ref/SHA', 'review decision',
+                         'required checks', 'mergeability', 'live owner',
+                         'check/run URLs', 'observation time', 'Unknown',
+                         'exact read error', 'no speculative writes'):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, phase)
+
+    def test_pending_superseded_and_missing_checks_are_not_guessed_failures(self):
+        phase = self.pr_phase()
+        for contract in ('failed checks', 'missing required checks',
+                         'changes requested', 'conflicts/stale heads',
+                         'native dependencies', 'external service/transport',
+                         'Pending is a wait, not failure', 'superseded heads',
+                         'expected trigger', 'do not assume a code repair'):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, phase)
+
+    def test_exact_active_owner_gets_evidence_once_not_a_second_writer(self):
+        phase = self.pr_phase()
+        for contract in ('existing issue owns the exact PR repair',
+                         'new evidence as a comment', 'live worker',
+                         'keep its owner and PR branch',
+                         'never edit the live worker\'s instructions',
+                         'no second tracking issue or worker',
+                         'PR/blocker/head and evidence URLs/conclusions',
+                         'unchanged evidence is a no-op, including comments'):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, phase)
+
+    def test_unowned_failure_and_independent_prerequisite_use_existing_publication(self):
+        phase = self.pr_phase()
+        for contract in ('uncovered actionable repair', 'one linked repair issue',
+                         'Outcome, Scope, Exclusions, Acceptance, Verification and Sources',
+                         'first executable action', 'owner/branch handoff',
+                         'existing PR delivery line', 'independent prerequisite',
+                         'reuse a shared prerequisite', 'native blockedBy',
+                         'ai-planning', 'ai-ready last', 'PLAN-HANDOFF.md'):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, phase)
+
+    def test_repeated_scans_recheck_and_reconcile_before_writes(self):
+        phase = self.pr_phase()
+        for contract in ('open and closed issues', 'stable PR/blocker key',
+                         'head SHA belongs in evidence, not the issue identity',
+                         'Immediately before each write', 'comments',
+                         'refresh PR head/base', 'ownership', 'Serialize publishers of the same PR/blocker',
+                         'ambiguous', 'timed-out write', 'read back before retrying'):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, phase)
+
+    def test_human_paused_and_unknown_gates_are_held_with_next_input(self):
+        phase = self.pr_phase()
+        for contract in ('human gate', 'explicit pause', 'Held',
+                         'named next input', 'resume condition',
+                         'do not fabricate approval', 'meaningless executable work'):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, phase)
+
+    def test_publication_is_not_recovery_and_receipt_accounts_for_each_pr(self):
+        phase = self.pr_phase()
+        for contract in ('read back issue content, PR links, native edges and readiness',
+                         'subsequent PR/check/run movement separately',
+                         'issue creation is not recovery', 'one disposition per PR',
+                         'repair issue or owner', 'head-bound evidence', 'next input'):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, phase)
+        workflow = (ROOT / 'docs/workflows.md').read_text()
+        self.assertIn('../skills/unblock/SKILL.md#blocked-prs-owner-first-repair-records', workflow)
+
     def test_workflow_reference_links_exist(self):
         for name in ('skills/unblock/SKILL.md', 'skills/unblock/references/services.md',
                      'adapters/skills/unblock/SKILL.md'):

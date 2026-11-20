@@ -8,7 +8,14 @@ restart it. See [support, setup and migration](github-native.md).
 
 `/unblock` diagnoses GitHub issues, PR/check failures and actual ownership. It
 repairs authorized local causes within its own recovery scope; it never revives the removed
-executor or enables paused Orbi. See [Unblock](../skills/unblock/SKILL.md).
+executor or enables paused Orbi. Its
+[PR phase](../skills/unblock/SKILL.md#blocked-prs-owner-first-repair-records)
+accounts for every scoped open PR, including those without linked issues. It reuses
+the exact repair's existing issue, owner and branch, with deduplicated evidence
+comments for live workers. Only uncovered actionable repairs or independent
+prerequisites need linked issues under the existing publication contract. Held,
+pending and unknown gates stay explicit. Publishing a repair issue is not recovery.
+See [Unblock](../skills/unblock/SKILL.md) for the full workflow.
 
 ## Bundled Ponytail
 
