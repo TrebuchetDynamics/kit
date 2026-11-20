@@ -118,7 +118,7 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
         # Native strict-YAML validation is a host boundary, not a test dependency.
         validator = self.root / '.venv/bin/python'
         validator.parent.mkdir(parents=True)
-        validator.write_text('#!/bin/sh\ncase "$2" in */src/autowork_runtime/install/preflight_config.py) ;; *) exit 99 ;; esac\n[ "$3" = --core ] || exit 99\n')
+        validator.write_text('#!/bin/sh\ncase "$2" in */src/kit_runtime/install/preflight_config.py) ;; *) exit 99 ;; esac\n[ "$3" = --core ] || exit 99\n')
         validator.chmod(0o755)
         self.env['HOME'] = str(self.root)
         command = ['bash', str(self.script), '--bundle-only', '--no-reload']

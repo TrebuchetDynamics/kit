@@ -212,7 +212,7 @@ def main(argv=None):
         root = args.profile_home.expanduser()
         if not root.is_dir():
             parser.error(f'Hermes home does not exist: {root}')
-        return install(_AUTOWORK_LAYOUT.root / 'skills', [('current', root)], dry_run=args.dry_run)
+        return install(_KIT_LAYOUT.root / 'skills', [('current', root)], dry_run=args.dry_run)
     root = args.hermes_home
     if root is None:
         root = Path(os.environ.get('HERMES_HOME') or Path.home() / '.hermes').expanduser()
@@ -233,7 +233,7 @@ def main(argv=None):
                     and any((home / marker).is_file() or (home / marker).is_symlink() for marker in markers)):
                 profiles.append((home.name, home))
 
-    return install(_AUTOWORK_LAYOUT.root / 'skills', profiles, dry_run=args.dry_run)
+    return install(_KIT_LAYOUT.root / 'skills', profiles, dry_run=args.dry_run)
 
 
 if __name__ == '__main__':

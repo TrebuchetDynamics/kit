@@ -83,13 +83,13 @@ class OfflineCheckTests(unittest.TestCase):
         return self.git('rev-parse', 'HEAD')
 
     def test_affected_fleet_change_runs_importers_and_core_not_unrelated_tests(self):
-        self.write('src/autowork_runtime/fleet_view.py', 'VALUE = 1\n')
-        self.write('src/autowork_runtime/__init__.py', 'from .fleet_view import VALUE\n')
-        self.write('src/autowork_runtime/command.py', 'def view():\n    from . import fleet_view\n')
-        self.write('src/autowork_runtime/sub.py', 'VALUE = 0\n')
-        for name, dependency in (('fleet', 'from autowork_runtime import fleet_view'),
-                                 ('command', 'import command'), ('package', 'import autowork_runtime'),
-                                 ('dotted', 'import autowork_runtime.sub')):
+        self.write('src/kit_runtime/fleet_view.py', 'VALUE = 1\n')
+        self.write('src/kit_runtime/__init__.py', 'from .fleet_view import VALUE\n')
+        self.write('src/kit_runtime/command.py', 'def view():\n    from . import fleet_view\n')
+        self.write('src/kit_runtime/sub.py', 'VALUE = 0\n')
+        for name, dependency in (('fleet', 'from kit_runtime import fleet_view'),
+                                 ('command', 'import command'), ('package', 'import kit_runtime'),
+                                 ('dotted', 'import kit_runtime.sub')):
             self.write(f'tests/test_{name}.py',
                        f'import unittest\nif False:\n    {dependency}\n'
                        f'class Check(unittest.TestCase):\n    def test_view(self): print("RAN {name}")\n')
@@ -99,13 +99,13 @@ class OfflineCheckTests(unittest.TestCase):
         self.write('tasks/items/T.md', '# fixture\n')
         self.write('pi-autowork/bin/autowork', '#!/usr/bin/env python3\nprint("CORE tasks")\n').chmod(0o755)
         base = self.affected_repo()
-        self.write('src/autowork_runtime/fleet_view.py', 'VALUE = 2\n')
+        self.write('src/kit_runtime/fleet_view.py', 'VALUE = 2\n')
         self.git('commit', '-qam', 'fleet change')
         result = self.run_check('--affected', base + '..HEAD', '--jobs', '1')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         for text in ('RAN fleet', 'RAN command', 'RAN package', 'RAN dotted',
                      'CORE guard', 'CORE docs',
-                     'test_command.py <- src/autowork_runtime/command.py <- src/autowork_runtime/fleet_view.py'):
+                     'test_command.py <- src/kit_runtime/command.py <- src/kit_runtime/fleet_view.py'):
             self.assertIn(text, result.stdout)
         self.assertNotIn('unselected module ran', result.stdout + result.stderr)
         self.assertNotIn('CORE tasks', result.stdout)
@@ -143,7 +143,7 @@ class OfflineCheckTests(unittest.TestCase):
         self.write('tests/test_one.py', 'import unittest\n')
         self.write('tests/test_two.py', 'import unittest\n')
         self.affected_repo()
-        for path in ('unknown.dat', 'src/autowork_runtime/__init__.py', 'tests/conftest.py', 'pyproject.toml',
+        for path in ('unknown.dat', 'src/kit_runtime/__init__.py', 'tests/conftest.py', 'pyproject.toml',
                      '.github/workflows/ci.yml', 'scripts/check.py'):
             with self.subTest(path=path):
                 base = self.git('rev-parse', 'HEAD')
@@ -183,16 +183,16 @@ class OfflineCheckTests(unittest.TestCase):
         from src_fixture import copy_sources
         copy_sources(self.root)
         self.write('tests/test_one.py', 'import unittest\nclass One(unittest.TestCase):\n    def test_one(self): pass\n')
-        self.write('scripts/bundle.py', "bootstrap.execute(globals(), 'src/autowork_runtime/bundle.py')\n")
-        owner = self.write('src/autowork_runtime/bundle.py', 'def broken(:\n')
+        self.write('scripts/bundle.py', "bootstrap.execute(globals(), 'src/kit_runtime/bundle.py')\n")
+        owner = self.write('src/kit_runtime/bundle.py', 'def broken(:\n')
         result = self.run_check('tests/test_one.py')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('src/autowork_runtime/bundle.py', result.stdout)
+        self.assertIn('src/kit_runtime/bundle.py', result.stdout)
         owner.unlink()
         result = self.run_check('tests/test_one.py')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('missing selected-release source', result.stdout)
-        self.write('src/autowork_runtime/bundle.py', 'VALUE = 1\n')
+        self.write('src/kit_runtime/bundle.py', 'VALUE = 1\n')
         result = self.run_check('tests/test_one.py')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -306,16 +306,16 @@ class OfflineCheckTests(unittest.TestCase):
 class Check(unittest.TestCase):
     def test_environment(self):
         for name in ('CONTAINMENT_LINUX_TESTS', 'RUN_CONTROLLER_BRIDGE_LINUX', 'HERMES_NATIVE_HANDOFF_TEST', 'HERMES_NATIVE_REGISTRATION_TEST',
-                     'PI_AUTOWORK_MAIN_CHECK', 'AUTOWORK_CACHE'):
+                     'KIT_MAIN_CHECK', 'KIT_CACHE'):
             self.assertFalse(name in os.environ, name + ' leaked into offline tests')
-        self.assertNotIn('AUTOWORK_PORT_BASE', os.environ)
+        self.assertNotIn('KIT_PORT_BASE', os.environ)
         self.assertTrue(os.path.isdir(os.environ['TMPDIR']), 'the offline check must supply TMPDIR')
 ''')
         self.write('tests/integration_bundle.py',
                    "raise RuntimeError('live integration imported')\n")
         env = dict(os.environ, CONTAINMENT_LINUX_TESTS='1', RUN_CONTROLLER_BRIDGE_LINUX='1',
                    HERMES_NATIVE_HANDOFF_TEST='1', HERMES_NATIVE_REGISTRATION_TEST='1',
-                   PI_AUTOWORK_MAIN_CHECK='false', AUTOWORK_CACHE='/elsewhere', AUTOWORK_PORT_BASE='20300')
+                   KIT_MAIN_CHECK='false', KIT_CACHE='/elsewhere', KIT_PORT_BASE='20300')
         result = self.run_check(env=env)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('Ran 1 test', result.stdout + result.stderr)
