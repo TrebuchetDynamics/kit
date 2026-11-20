@@ -329,6 +329,71 @@ reload; do not silently update, invoke activating upstream setup, or rewrite the
 project origin. A stale installed helper is different from a genuinely unsupported
 transport or an owner-required repair.
 
+## Activation evidence
+
+The owner's request to start scheduling and the evidence that permits that operation
+are different inputs. Preserve already-settled intent; do not ask the owner to approve
+the same start again. Read the bound deployment's status, repository instructions,
+applicable [cutover checklist](../../../docs/github-native.md#cutover), and any existing
+issue/PR or qualification record relevant to that repository and requested stage.
+Collect evidence read-only. Do not change labels, protections, units or credentials
+while deciding whether activation is allowed. Help itself performs none of these reads.
+
+Before an actual start, give a short evidence report:
+
+- **Request and target:** name the owner request, repository/deployment and operation
+  (for example first pilot versus rollout); do not infer authority from a successful preview.
+- **Observed:** cite the helper status/preview and relevant checklist or existing record
+  by path/URL and the specific evidence it supplies. Reuse applicable evidence, not stale
+  or unrelated approvals. If no record was found in the inspected sources, say so and
+  name those sources; absence of a record is not itself a new activation gate.
+- **Missing or unknown:** name each applicable check that is unresolved, not just
+  “cutover required.” Depending on the requested stage, this can be unsettled legacy
+  pool ownership, release/worktree-placement compatibility, unreadable scheduler state,
+  protected CI/review evidence, pilot delivery/recovery proof before expansion, or fleet
+  capacity evidence. Apply the existing checklist, not a new gate or mandatory receipt.
+  Do not demand rollout qualification as a prerequisite to an otherwise authorized pilot.
+- **Next safe action:** name the read-only check that can resolve each unknown, or the
+  exact external input/owner-controlled repair needed, and which operation stays held.
+  Do not ask for a generic “cutover record,” manufacture approval, or reconfirm settled
+  owner intent. Keep explicit pauses and human-only gates until their actual requirements
+  are satisfied. [#12](https://github.com/TrebuchetDynamics/kit/issues/12),
+  [#13](https://github.com/TrebuchetDynamics/kit/issues/13) and
+  [#20](https://github.com/TrebuchetDynamics/kit/issues/20) retain live qualification/rollout
+  ownership; this guidance does not release them.
+
+If GitHub reports **unprotected main**, report that observed branch state and the
+missing protection evidence; it is not an access error. If protection or rules reads
+return **HTTP 403**, report access denied and those details as unknown, not absent or
+passing. Both observations can coexist: report each with its source, without claiming
+that the 403 proves no rules exist. Next: obtain a read-only protection/rules view from
+an identity with access, or have the repository owner establish the required protections
+through its governance path if missing. Never weaken protections or invent a review
+approval to clear the blocker. See [protection diagnostics](../../../docs/github-native.md#read-protection-diagnostics-safely).
+
+### Offline guidance examples
+
+These are walkthrough inputs, not current host observations or live qualification.
+Use disposable fake hosts only; do not contact the named repositories' real hosts.
+
+- **Arenaton:** given `deployment.state=absent`, scheduler unavailable, an owner start
+  request, GitHub reporting main unprotected, and protection/rules HTTP 403: explain
+  that authorized implicit-target start will prepare, validate, then activate in one
+  invocation. Offer `start --dry-run` only as a write-free preview, with staged checks
+  deferred. Scheduler activity and rule details are unknown; the branch response is
+  separately unprotected. Cite the applicable cutover checklist and any found record;
+  if none was found, say so. Name the unresolved ownership/pause/qualification checks
+  applicable to this stage, not a blanket missing approval. Next: restore readable
+  scheduler evidence and obtain the read-only protection view/owner repair above.
+  Hold activation on the unresolved applicable checks; no redundant setup or consent loop.
+- **SalmaListApi:** given a setup preview returning `setup_busy`, one active/owned timer
+  and zero observed running services: report “scheduling is active, but no worker was
+  observed within the scan.” Use `status`, not setup, to inspect; this is not stopped or
+  a request to install extra instances. A valid existing start skips setup and retains
+  saved selection, subject to its existing authority/gates. Offer stop/drain only if
+  deliberately re-preparing or pausing, preserve workers, and verify inactivity before
+  setup. Missing reads or out-of-scan activity remain unknown, not zero.
+
 ## Start
 
 After explicit scheduling authority and resolved gates, a first deployment can use:

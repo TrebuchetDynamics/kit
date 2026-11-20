@@ -2504,8 +2504,10 @@ def command_help(ctx, args):
                                           if flag in entry['applies']]}
                     for flag, effect in options.items()},
         'quickstart': [
-            'Bare /orbi or status inspects only. Start prepares if absent, then activates; '
-            'an existing valid target skips preparation and retains its provider/harness.',
+            'Bare /orbi or status inspects only. For a genuinely absent deployment with no explicit --config, '
+            'authorized start prepares, validates non-activating, then activates in one invocation; '
+            'no separate setup or repeated approval. An existing valid target skips preparation and '
+            'retains its provider/harness. Missing explicit configs, partial and foreign targets are not absent.',
             'Start requires explicit scheduling authority and resolved explicit pauses, cutover '
             'and human-only gates. Kit remains paused and live-unqualified; help grants no waiver.',
             'Setup prepares without scheduling. New preparation defaults to Pi-Bolt; --harness pi '
@@ -2517,7 +2519,10 @@ def command_help(ctx, args):
             'scheduling requested, not live-qualified delivery. Absent-start preview defers source, '
             'published-file validation and activation checks until preparation; it does not pass them.',
             'Status separates configured harness from running-process evidence (not observed), and '
-            'configured slots from enabled/active observed units. Template rows are not enabled capacity.',
+            'configured slots from enabled/active observed units. With an enabled/active owned timer, '
+            'scheduling is active but no worker was observed if running-service reads show none; '
+            'not stopped or setup needed. Missing evidence or activity outside the scan is unknown, not zero. '
+            'Template rows are not enabled capacity.',
             'Update advances one inactive deployment to the newest official release through upstream '
             'sync-engine-source, locks that commit as sha:<commit>, refreshes owned units and leaves '
             'scheduling inactive. It never selects a provider, harness or origin.',
@@ -2556,8 +2561,18 @@ def command_help(ctx, args):
                              'repair deliberately and use setup without bootstrap selectors. Only a legacy missing '
                              'local provider permits setup --config PATH --resume-setup with complete matching '
                              'selectors. Start never performs legacy repair or changes a saved harness.',
-            'setup_busy': 'Preparation requires verified inactivity. Inspect status and existing ownership/authority; '
-                          'do not stop workers to pass validation. Existing valid start skips preparation.',
+            'activation': 'Before actual start, separate the owner scheduling request from deployment-specific '
+                          'gate evidence. Name the specific missing evidence, applicable cutover checklist and '
+                          'existing record if found; otherwise say no record was found in the inspected sources. '
+                          'Name the next safe read-only check or exact owner repair and held operation. '
+                          'GitHub unprotected main is an observed branch state; protection/rules HTTP 403 means '
+                          'access denied and unknown details, not absent rules. Both can coexist. A preview is '
+                          'not approval. Do not demand a generic cutover record, invent approval or reconfirm '
+                          'settled owner intent. See skills/orbi/references/lifecycle.md#activation-evidence.',
+            'setup_busy': 'Preparation requires verified inactivity. Cite observed timer/worker state from '
+                          'status or the error scheduler evidence. Offer authorized stop/drain only when '
+                          'deliberately re-preparing or pausing; do not stop workers to pass a preview. '
+                          'Existing valid start skips preparation.',
             'platform': 'unsupported_platform: use Linux for authorized mutations; macOS supports status/help; '
                         'other platforms support help only.',
             'update': 'update_busy/source_dirty/sync_engine_source_failed: stop and drain first, preserve tracked '
@@ -2639,8 +2654,10 @@ ACTIONS = {
         'platforms': ['linux'],
         'applies': ['--repo-dir', '--config', '--dry-run', '--json',
                     '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--harness'],
-        'when': 'Run after an owner scheduling request; prepare only if absent, then activate after '
-                'resolution of explicit pauses, cutover requirements and human-only gates.',
+        'when': 'Run after an owner scheduling request; prepare only if genuinely absent with no explicit '
+                '--config, then activate in one invocation after resolution of explicit pauses, cutover '
+                'requirements and human-only gates. Missing/unknown gate evidence needs a specific '
+                'check and next safe action, not repeated owner consent.',
     },
     'update': {
         'handler': command_update,

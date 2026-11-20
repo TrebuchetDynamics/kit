@@ -30,6 +30,25 @@ it accepts and ignores `--repo-dir`, `--config`, `--dry-run` and setup inputs. D
 repository or read deployment state for this route. Use the steps below for
 lifecycle actions.
 
+## Intent and state: fast path
+
+| Owner intent / observed state | Meaning and next safe action |
+| --- | --- |
+| Help / command inventory | Run context-free `help`; do not inspect a repository or GitHub. |
+| Start; genuinely absent deployment, no explicit config | Once scheduling authority and applicable gates are resolved, `start` prepares, validates non-activating, then activates in **one invocation**. No separate setup or repeated approval is needed. |
+| Preview first start | `start --dry-run` is write-free preparation preview only. Staging-dependent validation and activation checks remain deferred; success is not authorization. |
+| Start; valid existing target | Skip setup; retain saved provider/harness/pin and omit bootstrap selectors. A missing explicit config, partial or foreign target is **not absent**: inspect and repair deliberately. |
+| Enabled/active owned timer; no observed running workers | Scheduling is active, but no worker was observed. Do not call it stopped or say setup is needed. Missing evidence or activity outside the scan is unknown, not zero. |
+| `setup_busy` | Cite observed timer/worker state and use `status` to inspect. Offer authorized stop/drain only when deliberately re-preparing or pausing, not just to make a preview pass. |
+| Start; gate evidence missing/unknown | Preserve the settled owner request. Name the exact missing check, applicable checklist or located record (or say no record was found), and the next safe read-only evidence check or owner action. Do not request a generic cutover record or invent approval. |
+
+Before an actual start, separate **owner scheduling intent** from **deployment-specific
+gate evidence**. Use the [activation evidence guidance](references/lifecycle.md#activation-evidence)
+to report the precise blocker, including unprotected-main versus access-error
+observations. Evidence collection is read-only; a preview does not clear a pause.
+The [offline examples](references/lifecycle.md#offline-guidance-examples) show first-start
+and active-scheduler recovery without touching real hosts.
+
 ## Steps
 
 1. **Bind the repository.** Resolve the canonical checkout (the main worktree,

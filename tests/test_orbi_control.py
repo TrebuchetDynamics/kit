@@ -1181,6 +1181,13 @@ class FirstDeploymentTests(unittest.TestCase):
         self.assertFalse(doc['activated'])
         self.assertIn({'step': 'validate_non_activating', 'status': 'planned'}, doc['steps'])
         self.assertEqual(doc['steps'][-2]['status'], 'deferred')
+        text = subprocess.run(
+            [sys.executable, '-B', str(HELPER), 'start', '--repo-dir', str(self.h.repo),
+             '--dry-run', *self.options], env=self.h.env,
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(text.returncode, 0, text.stderr)
+        for line in ('preparation.state=planned', 'activation=planned', 'activated=False'):
+            self.assertIn(line + '\n', text.stdout)
         self.assertEqual(snapshot(self.h.home), before)
         SetupBoundaryTests.assert_no_activation(self, self.h.calls())
         self.assertFalse(any(c['tool'] == 'git' and set(c['argv']) & {'clone', 'fetch'}
@@ -2792,6 +2799,38 @@ class LifecycleSequenceTests(unittest.TestCase):
                     self.assertIn(line + '\n', result.stdout)
         self.assertEqual(snapshot(h.home), before)
 
+    def test_active_idle_status_and_setup_busy_preview_preserve_scheduling(self):
+        # SalmaListApi offline shape: one active/owned timer, no observed worker.
+        h = self.fresh()
+        h.rules(*h.scheduler_rules(timers={1: 'active'}, enabled={1: True}))
+        before = snapshot(h.home)
+        for action, options, expected_exit in (
+                ('status', [], 0), ('setup', ['--dry-run'], 1),
+                ('start', ['--dry-run'], 0)):
+            with self.subTest(action=action):
+                result = subprocess.run(
+                    [sys.executable, '-B', str(HELPER), action,
+                     '--repo-dir', str(h.repo), '--json', *options], env=h.env,
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, expected_exit, result.stderr)
+                doc = json.loads(result.stdout)
+                scheduler = doc['scheduler']
+                self.assertEqual(scheduler['inventory']['counts'], {
+                    'enabled_timers': {'state': 'ok', 'value': 1},
+                    'active_timers': {'state': 'ok', 'value': 1},
+                    'running_services': {'state': 'ok', 'value': 0}})
+                self.assertEqual(scheduler['inventory']['outside_scan'], 'unobserved')
+                if action == 'status':
+                    self.assertEqual(doc['deployment']['state'], 'prepared')
+                elif action == 'setup':
+                    self.assertEqual(doc['error']['code'], 'setup_busy')
+                    self.assertFalse(doc['error']['mutated'])
+                else:
+                    self.assertEqual(doc['preparation']['state'], 'skipped')
+                    self.assertFalse(doc['activated'])
+                self.assertEqual(snapshot(h.home), before)
+        SetupBoundaryTests.assert_no_activation(self, h.calls())
+
     def test_inventory_counts_independent_activity_runtime_and_surplus(self):
         h = self.fresh()
         prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
@@ -3397,7 +3436,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
         doc = json.loads(out.getvalue())
         self.assertEqual(set(doc['recovery']), {'harness', 'provider', 'config_missing',
                                               'partial_setup', 'setup_busy', 'update',
-                                              'platform', 'stale_helper'})
+                                              'platform', 'stale_helper', 'activation'})
         for example in doc['examples']:
             words = shlex.split(example['command'])
             self.assertEqual(words.pop(0), '/orbi')
@@ -3410,8 +3449,19 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertLess(text.getvalue().index('Quickstart:'), text.getvalue().index('Options:'))
         self.assertLess(text.getvalue().index('Examples:'), text.getvalue().index('Limits and next steps:'))
         for term in ('Pi-Bolt', '--harness pi', 'configured slots', 'running-process',
-                     'live-qualified', 'explicit pauses', 'Loaded helper:'):
+                     'live-qualified', 'explicit pauses', 'Loaded helper:',
+                     'no explicit --config', 'one invocation', 'no worker was observed',
+                     'outside the scan is unknown'):
             self.assertIn(term, text.getvalue())
+        activation = doc['recovery']['activation']
+        for term in ('specific missing evidence', 'checklist', 'existing record',
+                     'no record was found', 'unprotected main', 'HTTP 403',
+                     'read-only', 'not approval', 'settled owner intent'):
+            self.assertIn(term, activation)
+        busy = doc['recovery']['setup_busy']
+        for term in ('observed timer/worker state', 'status', 'only when',
+                     're-preparing or pausing'):
+            self.assertIn(term, busy)
 
     def test_help_reports_platform_limits(self):
         # No repo-dir is injected: help must not bind a deployment or environment.
