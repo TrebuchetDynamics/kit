@@ -375,7 +375,7 @@ if $setup && ! $bundle_only; then
     for profile in "${profiles[@]}"; do
         profile_dir=$hermes_root
         [[ $profile == default ]] || profile_dir=$hermes_root/profiles/$profile
-        if [[ -f $profile_dir/plugins/kit/plugin.yaml || -f $profile_dir/plugins/autowork/plugin.yaml ]] || $dry_run; then
+        if [[ -f $profile_dir/plugins/kit/plugin.yaml ]] || $dry_run; then
             apply_bundle_defaults "$profile" || failed=$((failed + 1))
         fi
     done

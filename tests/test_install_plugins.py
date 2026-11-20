@@ -55,42 +55,36 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
         return self.log.read_text().splitlines() if self.log.exists() else []
 
     def test_identity_matrix_before_any_component_mutation(self):
-        for case in ('canonical', 'legacy-kit', 'legacy-manifest', 'same-source', 'distinct-source', 'foreign', 'missing', 'malformed', 'malformed-body', 'quoted-conflict'):
+        for case in ('canonical', 'foreign', 'missing', 'malformed', 'malformed-body', 'quoted-conflict'):
             with self.subTest(case=case):
                 plugins = self.hermes_root / 'profiles/coder/plugins'
                 if plugins.exists():
                     shutil.rmtree(plugins)
                 plugins.mkdir()
-                if case in ('canonical', 'same-source', 'distinct-source'):
-                    (plugins / 'kit').symlink_to(self.repo)
-                if case in ('legacy-kit', 'same-source'):
-                    (plugins / 'autowork').symlink_to(self.repo)
-                elif case not in ('canonical',):
-                    legacy = plugins / 'autowork'
-                    legacy.mkdir()
+                target = plugins / 'kit'
+                if case == 'canonical':
+                    target.symlink_to(self.repo)
+                else:
+                    target.mkdir()
                     if case != 'missing':
-                        (legacy / 'plugin.yaml').write_text({
-                            'legacy-manifest': 'name: autowork\n',
-                            'distinct-source': 'name: kit\n',
+                        (target / 'plugin.yaml').write_text({
                             'foreign': 'name: other\n',
                             'malformed': 'name: [kit]\n',
                             'malformed-body': 'name: kit\nsettings: [\n',
-                            'quoted-conflict': 'name: kit\n"name": autowork\n',
+                            'quoted-conflict': 'name: kit\n"name": other\n',
                         }[case])
-                    (legacy / 'private-state').write_bytes(b'keep\x00evidence')
+                    (target / 'private-state').write_bytes(b'keep\x00evidence')
                 self.log.unlink(missing_ok=True)
                 result = self.run_installer('--setup')
-                if case in ('canonical', 'legacy-kit'):
+                if case == 'canonical':
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIn('|-p coder plugins enable kit', '\n'.join(self.calls()))
-                    self.assertEqual((plugins / ('kit' if case == 'canonical' else 'autowork')).resolve(), self.repo)
-                    self.assertFalse((plugins / ('autowork' if case == 'canonical' else 'kit')).exists())
+                    self.assertEqual(target.resolve(), self.repo)
                 else:
                     self.assertNotEqual(result.returncode, 0, result.stdout)
                     self.assertIn(str(plugins), result.stderr)
                     self.assertEqual(self.calls(), [], 'identity failure must precede every component mutation')
-                    if (plugins / 'autowork/private-state').exists():
-                        self.assertEqual((plugins / 'autowork/private-state').read_bytes(), b'keep\x00evidence')
+                    self.assertEqual((target / 'private-state').read_bytes(), b'keep\x00evidence')
 
     def test_bundle_enable_timeout_reports_failure(self):
         limiter = self.bin / 'timeout'
@@ -107,7 +101,7 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
         self.assertIn('Kit enablement failed (coder, exit 124; 120-second limit)', result.stderr)
         self.assertIn('Inspect Hermes and rerun setup', result.stderr)
 
-    def test_public_setup_entrypoint_preview_success_and_duplicate_failure(self):
+    def test_public_setup_entrypoint_preview_success_and_identity_failure(self):
         copy_sources(self.repo, entries=('install-skills.sh',))
         skill = self.repo / 'skills/demo'
         skill.mkdir(parents=True)
@@ -141,17 +135,18 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
             self.assertEqual((home / 'skills/demo/SKILL.md').read_text(), 'fixture skill\n')
             self.assertIn(str(self.hermes_root) + f'|-p {name} kit finalize --hermes-home {self.hermes_root} --bundle-only --no-reload', self.calls())
         self.assertFalse(any('enable autowork' in row for row in self.calls()))
-        legacy = self.hermes_root / 'profiles/coder/plugins/autowork'
-        legacy.symlink_to(self.repo)
+        manifest = self.repo / 'plugin.yaml'
+        original = manifest.read_bytes()
+        manifest.write_text('name: foreign\n')
         self.log.unlink()
         result = run()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Duplicate Kit registrations', result.stdout)
-        self.assertIn('reconcile registrations', result.stdout)
+        self.assertIn('Invalid or foreign plugin identity', result.stdout)
+        self.assertIn('reconcile', result.stdout)
         self.assertEqual(self.calls(), [])
-        self.assertTrue(legacy.is_symlink())
-        # Owner resolves the duplicate registration, not its source or private state.
-        legacy.unlink()
+        self.assertEqual(manifest.read_text(), 'name: foreign\n')
+        # Repair only the manifest, retaining the same source and private state.
+        manifest.write_bytes(original)
         self.assertEqual(run('--dry-run').returncode, 0)
 
     def test_profile_scopes_and_running_outside_repository(self):
@@ -299,7 +294,7 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
 
     def test_setup_applies_gateway_default_only_where_bundle_is_installed(self):
         self.manifest.write_text('https://hermes-agent.nousresearch.com/docs/plugins/example-plugin default profile only\n')
-        plugin = self.hermes_root / 'profiles/coder/plugins/autowork'
+        plugin = self.hermes_root / 'profiles/coder/plugins/kit'
         plugin.parent.mkdir(parents=True)
         plugin.symlink_to(self.repo)
         result = self.run_installer('--setup')
@@ -310,7 +305,7 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
 
     def test_setup_uses_each_installed_profiles_explicit_or_default_policy(self):
         self.manifest.write_text('https://hermes-agent.nousresearch.com/docs/plugins/example-plugin default profile only\n')
-        plugin = self.hermes_root / 'profiles/coder/plugins/autowork'
+        plugin = self.hermes_root / 'profiles/coder/plugins/kit'
         plugin.parent.mkdir(parents=True)
         plugin.symlink_to(self.repo)
         (self.hermes_root / 'profiles/coder/config.yaml').write_text(
@@ -349,7 +344,7 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
         self.assertFalse(any('plugins install' in c or 'skills install' in c for c in self.calls()))
 
     def test_bundle_install_preserves_conflicting_existing_path(self):
-        target = self.hermes_root / 'profiles/coder/plugins/autowork'
+        target = self.hermes_root / 'profiles/coder/plugins/kit'
         target.mkdir(parents=True)
         marker = target / 'user-file'
         marker.write_text('preserve')
@@ -374,9 +369,9 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
     def test_setup_honors_runtime_defaults_opt_out(self):
         # settings wins over the legacy config subtree, exactly like _opted_out.
         (self.hermes_root / 'profiles/coder/config.yaml').write_text(
-            'plugins:\n  entries:\n    autowork:\n      settings:\n        apply_runtime_defaults: false\n')
+            'plugins:\n  entries:\n    kit:\n      settings:\n        apply_runtime_defaults: false\n')
         (self.hermes_root / 'profiles/research/config.yaml').write_text(
-            'plugins:\n  entries:\n    autowork:\n      config:\n        apply_runtime_defaults: false\n'
+            'plugins:\n  entries:\n    kit:\n      config:\n        apply_runtime_defaults: false\n'
             '      settings:\n        apply_runtime_defaults: true\n')
         self.manifest.write_text('https://hermes-agent.nousresearch.com/docs/plugins/example-plugin default profile only\n')
         preview = self.run_installer('--bundle-only', '--dry-run')
