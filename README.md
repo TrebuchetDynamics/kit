@@ -188,11 +188,16 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | `help` | Read-only action reference, without a repository or deployment. |
 | `setup` | Prepare source/configuration without scheduling or timer activation. |
 | `start` | Prepare if absent, then activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
-| `update` | Advance one stopped and drained deployment to the newest official release, lock that commit, refresh its owned units and leave scheduling inactive. It is not `/update-kit`. |
+| `update` | Stop owned timers and interrupt owned workers (bounded systemd stop), sync/pin/check the newest official release, then restart eligible scheduling in the same invocation. No extra flag or confirmation; independent operator pauses and startup gates remain. It is not `/update-kit`. |
 | `stop` | Disable owned timers without killing active workers; report draining while they finish. |
 
 Linux supports lifecycle changes. macOS supports status and help only.
 Never run bare `orbi` to inspect: it runs a Runner tick, not status.
+Use `/orbi update --dry-run` to preview interruption/update/restart without writes.
+Failures name the failed stage, actual scheduler and exact recovery command; preserve
+worktrees/run records and repair the cause before deliberately retrying. No engine
+restarts before validation. Already paused deployments stay stopped; their unit
+refresh waits for the next authorized `start`.
 
 The upstream CLI remains available for diagnostics:
 

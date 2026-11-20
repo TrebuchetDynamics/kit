@@ -1,6 +1,6 @@
 ---
 name: orbi
-description: "Prepare, start, inspect or stop one Orbi deployment."
+description: "Prepare, update, start, inspect or stop one Orbi deployment."
 license: MIT
 ---
 
@@ -101,25 +101,36 @@ lifecycle actions.
    and inherited auth-home mismatches. It runs the supported
    upstream `setup`/`install-units` with the scoped environment, enables only
    this deployment's timers and requests one first tick when no worker runs.
-5. **Update.** Run `update` for one prepared deployment after an authorized
-   `stop`/drain. It requires verified inactivity and refuses a live worker or an
-   enabled timer (`update_busy`), and it refuses tracked checkout changes before
-   any write (`source_dirty`). It writes the upstream `release` channel, runs
-   upstream `sync-engine-source` to resolve and check out the newest official
-   release, then locks that commit as `sha:<commit>`. It validates with the
-   non-activating `orbi check`, refreshes this deployment's installed units
-   through `orbi install-units`, and disables the timers that install enabled, so it
-   restores the verified inactive state and names every timer in
-   `disabled_timers`. Origin, provider, harness, slots and unrelated config bytes
-   are preserved. Report `updated`, or `up_to_date` when the release commit did
-   not move; both refresh units. An `update --dry-run` previews the plan
-   write-free. Rollback is a deliberate owner edit of `engine_source_track`;
-   scheduling again stays the separate authority of `start`.
+5. **Update.** Plain `update` authorizes one prepared deployment's stop →
+   update → restart cycle, without an extra flag or confirmation. Before mutation
+   it validates ownership, clean source, saved harness/provider, transport and
+   prerequisites; it rechecks under the deployment lock. It disables owned timers
+   (including inactive-but-enabled ones), then interrupts verified owned running
+   services and queued starts with `systemctl --user stop` (120-second timeout).
+   It does not wait for jobs to finish naturally. Fresh scheduler inventories,
+   including out-of-config instances and pending jobs, must prove idle before
+   source changes. It syncs the upstream `release` channel, locks the resolved
+   commit as `sha:<commit>` and validates with non-activating `orbi check` before
+   reusing the established start checks/actions. Independent operator pauses and
+   all startup gates remain in force: an already paused deployment stays stopped;
+   its activating unit refresh waits for the next authorized `start`.
+   Report engine `updated`/`up_to_date`, `unit_refresh` and
+   `scheduler_confirmation` separately. Restart needs enabled/active timer readback;
+   missing evidence is not success. Failures retain the failed stage, actual
+   scheduler, confirmed `disabled_timers`/`stopped_services` and exact
+   `resume_command`; no automatic continuation, rollback or unvalidated restart.
+   A deployment-local maintenance receipt distinguishes this update's own pause
+   across deliberate retries; an explicit `stop` cancels its restart intent.
+   Preserve worktrees, run records, recovery inputs, origin, provider, harness,
+   slots and unrelated config bytes. `source_dirty` refuses before writes;
+   `update --dry-run` previews interruption and conditional update/restart without
+   locks, writes, fetch or unit actions. This command behavior is not permission
+   to change a live host during implementation.
 6. **Stop.** Run `stop` to disable only this deployment's owned timer instances,
    including observed out-of-config instances. Active services finish: report
    `draining` with the pending units until they stop. Missing service evidence
    is `unavailable`, never `stopped`. Never kill, stop or restart a service to
-   make the state look clean.
+   make the state look clean with `stop`; only an explicit `update` owns interruption.
 7. **Report evidence.** Name the repository, deployment, unit, pin, source and
    scheduler states you actually read, and the commands you ran. Include
    `deployment.harness`: configured selection and resolved-now executable identity
@@ -141,7 +152,7 @@ lifecycle actions.
    attempt is `mutation: possible`, not verified completion. A killed process cannot
    render a receipt; retry safety comes from actual complete/absent files. Preserve
    recovery evidence and never automatically retry an unchanged timeout.
-   Start/stop failures can be partially applied: read completed/failed units,
+   Start/update/stop failures can be partially applied: read completed/failed units,
    confirmed `activated_timers`/`disabled_timers` and the read-only scheduler
    snapshot (or `unavailable`). Start `activation: possible` is not success;
    `activation: none` may still include lock writes. Failed attempts are not
@@ -166,7 +177,7 @@ effect. Linux is the only mutation platform in this version.
 | "`orbi doctor` warns about enforced admins, so relax protection." | The warning describes the merge identity, not a protection defect. Keep enforced admins, strict CI, independent review and human acceptance. |
 | "The queue is empty because the status read failed." | A failed read is `unavailable`. Use the read-only doctor plus explicit `gh` and scheduler reads; never invent an empty queue. |
 | "A missing launcher is ours to force-reinstall." | The units use the shared user bootstrap. Verify it and fail closed; repairing another deployment's launcher is not this command's scope. |
-| "Update is setup again, so it can skip the drain." | Update moves the engine commit and re-renders units. A live worker would run mixed code, so it refuses `update_busy` until a stop leaves verified inactivity. |
+| "Update can restart after syncing, even if check failed." | Only a validated engine passes the established start checks. Stop/validation/restart failures retain actual scheduler evidence; no automatic compensation. |
 
 ## Red Flags
 
@@ -188,8 +199,8 @@ effect. Linux is the only mutation platform in this version.
 - Status or dry-run writes a file, locks, fetches or changes a label.
 - An existing pin is upgraded by `setup`, a credential is copied, or a literal
   credential is written into provider metadata.
-- `update` ran with a live worker, an enabled timer or tracked checkout changes,
-  or it left timers enabled without naming them in `disabled_timers`.
+- `update` changed source without fresh stopped-worker/no-pending-start evidence,
+  restarted an unvalidated engine, bypassed a pause/start gate, or discarded recovery inputs.
 - `update` rewrote origin, provider or harness selection instead of reporting it.
 - The platform is macOS or unsupported and a mutation still ran.
 - A secret, token, `auth.json`, private identity or raw child stderr appears

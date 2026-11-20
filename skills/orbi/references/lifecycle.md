@@ -77,50 +77,71 @@ unavailable.
 
 ## Release update
 
-`update` advances one prepared deployment to the newest official release and
-repairs its owned units. It needs the same evidence as setup plus a stopped and
-drained deployment: readable scheduler evidence, no active or activating service
-and no enabled timer. A live worker or enabled timer refuses as `update_busy`
-before any write. Tracked changes in the deployment checkout refuse as
-`source_dirty`; update never discards or force-checks-out work.
+Plain `/orbi update` authorizes stop → update → restart for one prepared
+deployment, without an extra flag or confirmation. It validates ownership,
+clean official source, saved harness/provider, transport and prerequisites before
+disabling anything, then revalidates those inputs under the existing deployment
+lock. Tracked source changes refuse as `source_dirty`; no reset or discard occurs.
 
-Under the deployment lock it rechecks ownership, source, checkout cleanliness and
-inactivity, then:
+Under that lock it:
 
-1. writes the upstream `release` channel into `engine_source_track`;
-2. runs upstream `sync-engine-source`, which fetches the official tags, resolves
-the newest semver release (pre-releases excluded), dereferences the annotated tag
-and checks that commit out detached; it fails closed and is never retried
-unchanged;
-3. reads the resulting HEAD and locks it as `sha:<commit>`, so later ticks verify
-one exact commit instead of tracking a moving tag;
-4. validates with non-activating `orbi check`;
-5. refreshes this deployment's owned units with upstream `orbi install-units`
-when they are installed, which re-renders the deployment templates and enables
-configured timers; a deployment with no installed unit reports
-`refresh_units: deferred` and leaves first installation to `start`;
-6. disables every owned timer that install enabled, restoring the verified
-inactive state, and reports the names in `disabled_timers`;
-7. observes the scheduler again and reports `pending_services`.
+1. saves deployment-bound restart intent in `.orbi/update-maintenance.json`, so a
+   deliberately retried failed update does not mistake its own maintenance pause
+   for an independent operator pause;
+2. disables only owned timer instances with `systemctl --user disable --now`,
+   including inactive-but-enabled and out-of-config timers, and confirms readback;
+3. interrupts verified owned active/activating/deactivating services and queued
+   service starts with synchronous `systemctl --user stop UNIT...`, bounded to
+   120 seconds. It does not wait for jobs to finish naturally, signal unrelated
+   processes, or delete worktrees, run records or recovery inputs;
+4. reads loaded units, installed instances, service/timer states and pending jobs
+   again. Unknown/foreign ownership or unreadable/incomplete evidence refuses.
+   Services must be inactive/failed, timers disabled/inactive and pending jobs
+   absent before any engine config/source change; there is no polling or
+   background continuation;
+5. writes `release` into `engine_source_track` and runs upstream
+   `sync-engine-source`: fetch official tags, resolve the newest semver release
+   (excluding prereleases), dereference the tag and check out that commit detached;
+6. reads HEAD, pins it as `sha:<commit>` and validates with non-activating
+   `orbi check`. No restart is allowed for an unvalidated engine;
+7. for eligible scheduling, reuses the established start checks and scoped
+   `setup`/`install-units`, owned timer activation and first-tick path, then requires
+   fresh enabled/active configured-timer readback. Independent pauses and existing
+   startup gates remain in force. An already paused deployment stays stopped;
+   because the supported installer enables timers, its unit refresh is deferred
+   to the next separately authorized `start`, with stopped scheduler readback;
+8. removes the maintenance intent only after successful readback. An explicit
+   `/orbi stop` cancels saved restart intent under the same lock; successful
+   authorized `start` clears it too. No other deployment is changed.
 
 The config must declare exactly one `engine_source_track` line; update rewrites
-that literal and preserves every other byte. An engine that predates the upstream
-release channel fails the sync closed and is reported as
-`sync_engine_source_failed`; that deployment needs a deliberate source repair, not
-a second retry.
+that literal and preserves every other byte. An engine predating the release
+channel fails closed as `sync_engine_source_failed`; inspect and deliberately
+repair that source rather than repeating the same failure.
 
-It reports `updated`, or `up_to_date` when the release commit did not move; both
-still refresh units and validate. `previous.track`/`previous.head` name the
-observed starting point, and `deployment.deployed_commit` the locked release.
-Origin, slots, provider metadata, harness selection, `.orbi/env` and unrelated
-config bytes are preserved. Update never enables scheduling as an outcome: run
-`start` under its own authority afterwards. Rollback is a deliberate owner edit
-of `engine_source_track` to the previous tag or sha; there is no second state.
-`update --dry-run` performs no write, fetch or lock and reports `planned`.
-- Deployment/config paths and provider/env paths must not traverse symlinks,
-  including parent directories. Validate the raw paths before resolving or writing.
-- Native configs and installed unit identities own deployment state. There is
-  no new registry, queue or mandatory state file.
+A successful receipt distinguishes engine `updated`/`up_to_date`,
+`unit_refresh: completed|deferred` and `scheduler_confirmation: running|stopped`.
+`previous.track`/`previous.head` identify the starting point;
+`deployment.deployed_commit` identifies the pinned release. Both engine outcomes
+validate and, when eligible, restart. `disabled_timers` and `stopped_services`
+list successful systemctl operations, not failed attempts. Scheduler readback is
+separate evidence; missing readback is never confirmation.
+
+Stop, sync, check and restart failures report the exact failed stage, partial
+mutation, actual scheduler (or `unavailable`), possible activation and an exact
+same-target `resume_command`. They do not restart an unvalidated engine or
+compensate with timer changes. Inspect `/orbi status` and the failed stage,
+repair the cause privately, preserve recovery inputs, then deliberately retry;
+never retry an unchanged timeout. A timed-out stop can still be pending in systemd.
+`worker_stop_failed` means systemd rejected/failed stopping;
+`worker_stop_unverified` means services or pending jobs remain after stop.
+
+`update --dry-run` previews the pause/interruption and conditional release/pin/check/
+restart without writes, locks, fetch or unit actions. Provider/harness selectors
+remain refused; origin, slots, saved selections and unrelated config are preserved.
+Deployment/config and provider/env paths must not traverse symlinks, including
+parents. Native config and unit identities still own deployment state; the local
+maintenance receipt is restart intent, not a registry, queue or live qualification.
 
 ## Isolation
 
@@ -506,7 +527,7 @@ preparation remains `prepared` and activation is `none`. Inspect and repair the 
 there is no automatic retry or rollback. Preparation, activation and live qualification
 are separate outcomes.
 
-Start/stop errors also retain `target`, deployment config/unit identity,
+Start/update/stop errors also retain `target`, deployment config/unit identity,
 `original_error`, and completed/failed `steps` at the JSON top level (not under
 `error.evidence`). A failed step names its `unit` when applicable and records
 `mutation: possible` for an attempted write, `none` for an observation failure.
@@ -578,14 +599,16 @@ retry an unchanged timeout. Typical repairs:
   cause; the failure step may have partially mutated even though publication is atomic.
 - `setup_busy`: obtain separate stop/drain authorization and verify inactivity;
   do not kill workers or use setup to stop them.
-- `update_busy`: stop and drain this deployment first, verify no service is
-  active and no owned timer is enabled, then rerun `update`; never kill workers
-  or disable an unrelated deployment to pass the check.
+- `worker_stop_failed`, `worker_stop_unverified` or `command_timeout` at
+  `stop_services`/`verify_stopped`: inspect actual units/pending jobs and the stop
+  failure, repair the cause, then deliberately use `resume_command`. Never bypass
+  ownership or stop unrelated units. `update_busy` later means work appeared
+  concurrently before restart or during a paused update; inspect before recovery.
 - `source_dirty`: preserve the tracked checkout changes in a separate operation
   and decide deliberately; update never discards them or rewrites origin.
 - `sync_engine_source_failed` or `command_timeout` during `update`: the pin or
   checkout may already have moved and units may already be refreshed. Read
-  `previous`, `steps`, `disabled_timers`, `error.mutated` and the read-only
+  `previous`, `steps`, `disabled_timers`, `stopped_services`, `error.mutated` and the read-only
   scheduler snapshot before deliberate recovery; inspect the fetch/channel
   privately and do not retry an unchanged timeout.
 - `bootstrap_incompatible` or `bootstrap_conflict`: repair or replace the
