@@ -6,9 +6,7 @@ restart it. See [support, setup and migration](github-native.md).
 
 ## Unblock repairs blocked GitHub work
 
-`/unblock` diagnoses GitHub issues, PR/check failures and actual ownership. It
-repairs authorized local causes within its own recovery scope; it never revives the removed
-executor or enables paused Orbi. See [Unblock](../skills/unblock/SKILL.md).
+`/unblock` checks open issues and PRs, fixes actionable causes, and reconciles recovery labels without asking again for routine decisions. It verifies whether work resumed. Read-only requests, explicit pauses, existing PR ownership and human gates remain binding; the skill does not grant GitHub access or enable paused Orbi. See [Unblock](../skills/unblock/SKILL.md).
 
 ## Bundled Ponytail
 
