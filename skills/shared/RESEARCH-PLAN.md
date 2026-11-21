@@ -80,7 +80,13 @@ who answers consequential intent. It does not change the sequence.
 3. **Preview and save.** Show the [issue preview](PLAN-HANDOFF.md#progress-and-final-receipt)
    in chat before publication. Write accepted decisions in their existing owners
    and complete GitHub Issues with outcome, scope/exclusions, acceptance, exact
-   verification and sources.
+   verification and sources. For a user-visible change, name the capability and
+   what is added, modified, removed or renamed relative to today. In the issue’s
+   acceptance criteria, give a concrete WHEN (situation) / THEN (observable result).
+   If the project uses or explicitly adopts OpenSpec, link the exact native spec
+   and scenario instead of copying its text. A behavior-preserving refactor
+   needs verification, not a fictional behavior change or new spec. No OpenSpec
+   CLI, parallel task list or separate model pass is required.
    Use native `blockedBy` dependencies and `ai-epic` coordination for larger plans.
    Follow the [single-pass handoff](PLAN-HANDOFF.md#one-planning-pass-one-handoff).
 4. **Validate and report.** Read back the whole batch and dependencies, then publish

@@ -19,6 +19,32 @@ them as a recovery fallback. Preserve existing tasks, worktrees, attempts and
 recovery evidence. Orbi remains paused and live-unqualified. This invocation
 does not authorize enabling it, clearing a pause or starting another implementer.
 
+## Act by default
+
+Invoking `/unblock` authorizes routine recovery decisions, same-issue recovery comments
+and scoped label changes using the caller’s existing GitHub access. Do the repair in
+this run; do not ask “may I fix or requeue it?” Read-only restrictions still win.
+Inventory all pages of open issues and PRs, not just `ai-blocked`: missing labels,
+failed checks and unresolved prerequisites can hide stalled work. Fix an actionable
+prerequisite first and keep moving on independent issues.
+
+**Reconcile labels after fixing the cause.** Immediately re-read the issue, latest
+attempt, linked PR/head, dependencies and current labels. If another worker claimed
+it or the evidence changed, leave its state alone. For a complete, unowned issue
+with a verified repair and a retry-safe handoff, use the deployment’s supported
+same-issue requeue. Where requeue is label-driven, change only `ai-blocked` →
+`ai-ready`; preserve unrelated labels, read back the result and check for pickup.
+Do not blindly replace the full label set. Keep real blockers blocked; keep epics,
+planning, explicit pauses and human acceptance out of automatic dispatch. A ready
+issue waiting on a native prerequisite need not be relabeled. If a PR already owns
+the fix, route the repair there rather than requeueing a second implementation.
+
+For example, when a push times out, compare the retained commit to the remote ref.
+If it already landed, resume at the next missing step. If absent, an authorized
+normal push of that exact candidate may repair publication; keep hooks enabled and
+allow time for them. If the remote diverged, preserve both heads and reconcile with
+the owner. A timeout alone neither proves the push failed nor authorizes force-push.
+
 ## Recover, verify, continue
 
 1. **Bind and inventory.** Read GitHub Issues, native dependencies, linked PRs,
