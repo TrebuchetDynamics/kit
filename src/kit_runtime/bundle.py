@@ -10,10 +10,8 @@ import subprocess
 import sys
 
 ROOT = _KIT_LAYOUT.root
-# The plugin's name, plus the legacy name a profile still reports mid-upgrade.
 PLUGIN_NAME = 'kit'
-LEGACY_PLUGIN_NAME = 'autowork'
-OWNER_NAMES = (PLUGIN_NAME, LEGACY_PLUGIN_NAME)
+OWNER_NAMES = (PLUGIN_NAME,)
 
 
 def defaults():
@@ -92,7 +90,7 @@ def inventory():
     plugins = manager.list_plugins()
     required = set(defaults()['imported_plugins']) | {PLUGIN_NAME}
     # Older installs can still own Ponytail commands; report them, never require them.
-    wanted = required | {LEGACY_PLUGIN_NAME, 'ponytail'}
+    wanted = required | {'ponytail'}
     rows = []
     for name, item in sorted(get_plugin_commands().items()):
         if item.get('plugin') in wanted:

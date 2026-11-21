@@ -283,9 +283,8 @@ def enable_pi_package(source=PI_SOURCE, settings=None):
 
     Pi records a package resource filter as an object such as
     ``{"source": ..., "skills": [], "extensions": []}``; an empty list hides every
-    resource of that type. A filter written for the package's previous name
-    (autowork -> kit) survives both ``pi install`` and ``pi update``, so the
-    package stays installed but filtered: no commands and no ``/skill:<name>``.
+    resource of that type. An empty filter survives ``pi install`` and
+    ``pi update``, so the package stays installed but filtered: no commands and no ``/skill:<name>``.
     Remove only empty filters; keep deliberate partial filters untouched.
     """
     path = Path(settings) if settings else pi_settings_path()
@@ -516,8 +515,6 @@ def hermes_item(hermes_args):
     return item
 
 
-LEGACY_CLAUDE_MARKETPLACE = 'autowork'
-LEGACY_CODEX_MARKETPLACE = 'autowork-marketplace'
 MIGRATION_GUIDE = 'docs/cross-host.md#legacy-marketplace-migration'
 
 
@@ -562,7 +559,7 @@ def owned_directory(path, manifest, name):
 
 
 def claude_registration(output):
-    """Inspect both names, settings scopes and installed IDs; never rewrite registries ourselves.
+    """Inspect Kit settings scopes and installed IDs; never rewrite registries ourselves.
 
     Reject conflicting records rather than guessing which source the host will use.
     Installed project records outside this invocation's context are not update targets.
@@ -591,8 +588,6 @@ def claude_registration(output):
         enabled = data.get('enabledPlugins', {})
         if not isinstance(entries, dict) or not isinstance(enabled, dict):
             marketplace_hold('Claude', f'unsupported marketplace/plugin settings in {path}')
-        if LEGACY_CLAUDE_MARKETPLACE in entries or f'kit@{LEGACY_CLAUDE_MARKETPLACE}' in enabled:
-            marketplace_hold('Claude', 'legacy kit@autowork registration (including stale entries)')
         if CLAUDE_MARKETPLACE in entries:
             entry = entries[CLAUDE_MARKETPLACE]
             sources.append(entry.get('source') if isinstance(entry, dict) else None)
@@ -601,8 +596,6 @@ def claude_registration(output):
         if f'kit@{CLAUDE_MARKETPLACE}' in enabled:
             scopes.append(scope)
     known = registry_json(config / 'plugins/known_marketplaces.json')
-    if LEGACY_CLAUDE_MARKETPLACE in known:
-        marketplace_hold('Claude', 'legacy autowork marketplace registration (including stale entries)')
     if CLAUDE_MARKETPLACE in known:
         entry = known[CLAUDE_MARKETPLACE]
         sources.append(entry.get('source') if isinstance(entry, dict) else None)
@@ -614,8 +607,6 @@ def claude_registration(output):
         if not isinstance(row, dict) or not isinstance(row.get('id'), str):
             marketplace_hold('Claude', 'unknown installed plugin identity')
         identity = row['id']
-        if identity == f'kit@{LEGACY_CLAUDE_MARKETPLACE}':
-            marketplace_hold('Claude', 'legacy installed kit@autowork identity')
         if identity == 'kit':
             marketplace_hold('Claude', 'unresolved installed Kit identity')
         if identity != f'kit@{CLAUDE_MARKETPLACE}':
@@ -702,7 +693,7 @@ def codex_list(argv, key, output):
 
 
 def install_codex(output):
-    names = (LEGACY_CODEX_MARKETPLACE, CODEX_MARKETPLACE)
+    names = (CODEX_MARKETPLACE,)
     rows = codex_list(['codex', 'plugin', 'marketplace', 'list', '--json'],
                      'marketplaces', output)['marketplaces']
     registrations = {}
@@ -743,8 +734,6 @@ def install_codex(output):
                     or plugin['source'].get('source') != 'local'
                     or plugin['source'].get('path') != registration['root']):
                 marketplace_hold('Codex', f'missing or mismatched installed Kit source in {name}')
-    if LEGACY_CODEX_MARKETPLACE in registrations or plugins[LEGACY_CODEX_MARKETPLACE]:
-        marketplace_hold('Codex', 'legacy autowork-marketplace effective registration or installed identity')
     canonical = registrations.get(CODEX_MARKETPLACE)
     kind = None
     if canonical:

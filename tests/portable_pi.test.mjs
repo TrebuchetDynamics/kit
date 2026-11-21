@@ -200,7 +200,7 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     await rm(source, {recursive: true, force: true});
   }
   const paths = new Set(packed.files.map(f => f.path));
-  for (const name of ['autowork', 'work', 'pending', 'blockers'])
+  for (const name of ['work', 'pending', 'blockers'])
     for (const root of ['skills', 'adapters/skills'])
       assert.equal([...paths].some(p => p.startsWith(`${root}/${name}/`)), false);
   assert.equal(paths.has('adapters/skills/grill-me/SKILL.md'), false);
@@ -353,7 +353,7 @@ test('removed skills are neither commands nor discoverable resources; blockers i
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
   const {existsSync} = await import('node:fs');
-  for (const name of ['autowork', 'work', 'pending', 'blockers']) {
+  for (const name of ['work', 'pending', 'blockers']) {
     assert.equal(commands.has(name), false, name);
     for (const root of ['skills', 'adapters/skills'])
       assert.equal(existsSync(new URL(`../${root}/${name}/`, import.meta.url)), false, `${root}/${name}`);

@@ -206,23 +206,6 @@ else
                 self.assertEqual('codex plugin marketplace add TrebuchetDynamics/kit --ref main' in calls,
                                  not canonical)
 
-    def test_legacy_and_coexisting_registrations_refuse_without_mutation(self):
-        for both in (False, True):
-            with self.subTest(both=both):
-                self.log.write_text('')
-                self.claude_registry(['autowork', 'kit'] if both else ['autowork'])
-                names = ['autowork-marketplace', 'kit-marketplace'] if both else ['autowork-marketplace']
-                self.codex_registry([self.marketplace(n) for n in names])
-                before = (self.home / '.claude/plugins/known_marketplaces.json').read_bytes()
-                result = self.install('--only', 'claude,codex,tx', '--quiet')
-                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertIn('manual migration required', result.stdout)
-                self.assertRegex(result.stdout, r'tx\s+installed')
-                self.assertFalse(any(any(' '+verb+' ' in c for verb in
-                                     ('add', 'install', 'remove', 'uninstall', 'update', 'upgrade'))
-                                     for c in self.calls() if c.startswith(('claude ', 'codex '))))
-                self.assertEqual((self.home / '.claude/plugins/known_marketplaces.json').read_bytes(), before)
-
     def test_canonical_installed_updates_preserve_scope_source_and_disabled_state(self):
         for scope in ('user', 'project', 'local'):
             with self.subTest(scope=scope):
@@ -250,12 +233,11 @@ else
                 self.assertEqual(self.calls('claude'), ['claude plugin list --json',
                     'claude plugin marketplace update kit', f'claude plugin update kit@kit --scope {scope}'])
                 self.assertEqual(self.calls('codex'), ['codex plugin marketplace list --json',
-                    'codex plugin list --marketplace autowork-marketplace --json',
                     'codex plugin list --marketplace kit-marketplace --json',
                     'codex plugin marketplace upgrade kit-marketplace'])
                 self.assertEqual({p: p.read_bytes() for p in snapshot}, snapshot)
 
-    def test_claude_settings_scope_selection_and_legacy_installed_identity(self):
+    def test_claude_settings_scope_selection(self):
         self.claude_registry(['kit'])
         settings = self.project / '.claude/settings.json'
         settings.parent.mkdir()
@@ -265,13 +247,6 @@ else
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('claude plugin install kit@kit --scope project', self.calls('claude'))
         self.assertEqual(settings.read_bytes(), before)
-        self.claude_host([{'id': 'kit@autowork', 'scope': 'user', 'enabled': False}])
-        self.log.write_text('')
-        result = self.install('--only', 'claude')
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn('legacy installed kit@autowork', result.stdout)
-        self.assertEqual(self.calls('claude'), ['claude plugin list --json'])
-
     def test_claude_foreign_unknown_conflicting_and_failed_reads_hold(self):
         cases = (
             ({'source': 'github', 'repo': 'foreign/kit'}, 'foreign'),
@@ -315,18 +290,7 @@ else
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(self.calls('claude'), ['claude plugin list --json'])
 
-    def test_claude_project_legacy_settings_and_malformed_installed_list_hold(self):
-        path = self.project / '.claude/settings.local.json'
-        path.parent.mkdir()
-        path.write_text(json.dumps({'extraKnownMarketplaces': {'autowork': {
-            'source': {'source': 'directory', 'path': '/gone'}}},
-            'enabledPlugins': {'other@elsewhere': True}}))
-        before = path.read_bytes()
-        result = self.install('--only', 'claude')
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertEqual(self.calls('claude'), [])
-        self.assertEqual(path.read_bytes(), before)
-        path.unlink()
+    def test_claude_malformed_installed_list_holds(self):
         (self.home / 'claude-installed.json').write_text('{')
         result = self.install('--only', 'claude')
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -387,7 +351,7 @@ else
         self.assertIn('filtered list unavailable', result.stdout)
         self.assertTrue(all(' list ' in call for call in self.calls('codex')))
 
-    def test_codex_local_source_reused_and_legacy_installed_without_registry_holds(self):
+    def test_codex_local_source_reused(self):
         canonical = self.marketplace('kit-marketplace')
         canonical.update(root=str(ROOT), marketplaceSource={'sourceType': 'local', 'source': str(ROOT)})
         self.codex_registry([canonical])
@@ -396,29 +360,9 @@ else
         self.assertEqual(self.calls('codex')[-1], 'codex plugin add kit@kit-marketplace')
         self.assertFalse(self.calls('codex plugin marketplace upgrade'))
         self.assertFalse(self.calls('codex plugin marketplace add'))
-        legacy = self.marketplace('autowork-marketplace')
-        self.codex_registry([], {'autowork-marketplace': {'installed': [{
-            'pluginId': 'kit@autowork-marketplace', 'name': 'kit',
-            'marketplaceName': 'autowork-marketplace', 'installed': True, 'enabled': False,
-            'source': {'source': 'local', 'path': legacy['root']},
-            'marketplaceSource': legacy['marketplaceSource']}], 'available': []}})
-        self.log.write_text('')
-        result = self.install('--only', 'codex')
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertTrue(all(' list ' in call for call in self.calls('codex')))
-
-    def test_legacy_claude_refusal_does_not_stop_later_codex_install(self):
-        self.claude_registry(['autowork'])
-        result = self.install('--only', 'claude,codex', '--quiet')
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertRegex(result.stdout, r'claude\s+failed.*manual migration required')
-        self.assertRegex(result.stdout, r'codex\s+installed')
-        self.assertEqual(self.calls('claude'), [])
-        self.assertIn('codex plugin add kit@kit-marketplace', self.calls('codex'))
-
     def test_marketplace_dry_run_is_not_checked_and_invokes_no_hosts(self):
-        self.claude_registry(['autowork', 'kit'])
-        self.codex_registry([self.marketplace('autowork-marketplace')])
+        self.claude_registry(['kit'])
+        self.codex_registry([self.marketplace('kit-marketplace')])
         before = {p: p.read_bytes() for p in self.home.rglob('*.json')}
         self.log.write_text('')
         result = self.install('--only', 'claude,codex', '--dry-run')
@@ -894,7 +838,6 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
                                                 'claude plugin marketplace update kit',
                                                 'claude plugin install kit@kit'])
         self.assertEqual(self.calls('codex'), ['codex plugin marketplace list --json',
-                                               'codex plugin list --marketplace autowork-marketplace --json',
                                                'codex plugin list --marketplace kit-marketplace --json',
                                                'codex plugin marketplace add TrebuchetDynamics/kit --ref main',
                                                'codex plugin marketplace upgrade kit-marketplace',
@@ -983,14 +926,14 @@ exit 0
         self.assertNotIn('claude plugin install kit@kit', self.calls('claude'))
 
     def test_a_marketplace_recording_a_folder_this_host_lacks_is_not_deleted(self):
-        for name in ('autowork', 'kit'):
+        for name in ('kit',):
             with self.subTest(name=name):
                 self.log.write_text('')
                 self.claude_registry([name], {'source': 'directory', 'path': str(self.home / 'gone')})
                 result = self.install('--only', 'claude')
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn('manual migration required', result.stdout)
-                self.assertEqual(self.calls('claude'), [] if name == 'autowork' else ['claude plugin list --json'])
+                self.assertEqual(self.calls('claude'), ['claude plugin list --json'])
 
     def test_a_recorded_marketplace_folder_that_exists_is_left_alone(self):
         self.claude_registry(['kit'], {'source': 'directory', 'path': str(ROOT)})
@@ -1621,7 +1564,7 @@ fi
         self.assertIn('setup_bundle.py --yes-deps --dry-run --hermes-home /h', result.stdout)
         # Profiles with their own plugin clone (`hermes plugins install`) are updated: setup
         # would refuse them as "another checkout".
-        clone = self.home / '.hermes/profiles/work/plugins/autowork'
+        clone = self.home / '.hermes/profiles/work/plugins/kit'
         (clone / '.git').mkdir(parents=True)
         (clone / 'plugin.yaml').write_text('name: kit\n')
         result = self.install('--only', 'hermes', '--dry-run')
@@ -1639,12 +1582,12 @@ fi
         result = self.install('--only', 'hermes', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn('update_bundle.py --hermes-home', result.stdout)
-        (plugins / 'autowork').symlink_to(canonical)
+        (canonical / 'plugin.yaml').write_text('name: foreign\n')
         result = self.install('--only', 'hermes', '--dry-run')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Duplicate Kit registrations', result.stdout)
+        self.assertIn('Invalid or foreign plugin identity', result.stdout)
         self.assertIn(str(canonical), result.stdout)
-        self.assertTrue((plugins / 'autowork').is_symlink())
+        self.assertEqual((canonical / 'plugin.yaml').read_text(), 'name: foreign\n')
         self.assertEqual(self.calls('hermes'), [])
 
     def test_tx_moves_a_symlink_aside_instead_of_writing_through_it(self):
@@ -1843,7 +1786,7 @@ fi
 
     def test_setup_only_hermes_options_are_refused_for_profile_clones(self):
         self.fake('hermes', LOGGING)
-        clone = self.home / '.hermes/profiles/work/plugins/autowork'
+        clone = self.home / '.hermes/profiles/work/plugins/kit'
         (clone / '.git').mkdir(parents=True)
         (clone / 'plugin.yaml').write_text('name: kit\n')
         for flag in ('--no-reload', '--bundle-only', '--yes-deps'):

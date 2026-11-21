@@ -1,32 +1,12 @@
 """Apply bundle policy and command visibility in Hermes' bound profile."""
-import logging
 from pathlib import Path
 PLUGIN = 'kit'
-LEGACY_PLUGIN = 'autowork'
 BUNDLE_SKILLS = _KIT_LAYOUT.root / 'skills'
-logger = logging.getLogger(__name__)
-_reported_legacy_entry = set()
 
 
 def _plugin_entries(raw):
     entries = ((raw.get('plugins') or {}).get('entries') or {}) if isinstance(raw, dict) else {}
     return entries if isinstance(entries, dict) else {}
-
-
-def _report_legacy_entry(raw):
-    """Report legacy settings lookup once, including profiles without a canonical entry."""
-    entries = _plugin_entries(raw)
-    if LEGACY_PLUGIN not in entries:
-        return
-    marker = (PLUGIN, LEGACY_PLUGIN)
-    if marker in _reported_legacy_entry:
-        return
-    _reported_legacy_entry.add(marker)
-    logger.warning(
-        'Migrated settings lookup from plugins.entries.%s to plugins.entries.%s; '
-        'using %s values where present and %s for missing keys; '
-        'writes use plugins.entries.%s. The legacy entry is retained.',
-        LEGACY_PLUGIN, PLUGIN, PLUGIN, LEGACY_PLUGIN, PLUGIN)
 
 
 def skills_patch(raw):
@@ -39,26 +19,9 @@ def skills_patch(raw):
 
 
 def plugin_entry(raw):
-    """This plugin's `plugins.entries` block: canonical keys, then legacy keys it lacks.
-
-    A profile may carry both entries while the rename is in progress. Reading only the
-    canonical entry would drop an opt-out or custom setting that still lives
-    under the legacy key, so fall back per key (and per `settings`/`config` key) and
-    let the canonical value win wherever both define one.
-    """
-    entries = _plugin_entries(raw)
-    _report_legacy_entry(raw)
-    legacy = entries.get(LEGACY_PLUGIN)
-    canonical = entries.get(PLUGIN)
-    legacy = legacy if isinstance(legacy, dict) else {}
-    if not isinstance(canonical, dict):
-        return legacy
-    entry = {**legacy, **canonical}
-    for subtree in ('settings', 'config'):
-        old, new = legacy.get(subtree), canonical.get(subtree)
-        if isinstance(old, dict) and isinstance(new, dict):
-            entry[subtree] = {**old, **new}
-    return entry
+    """This plugin's Kit settings only; other plugin entries are ignored."""
+    entry = _plugin_entries(raw).get(PLUGIN)
+    return entry if isinstance(entry, dict) else {}
 
 
 def plugin_setting(raw, key, default=None):
@@ -160,7 +123,7 @@ def expected_settings(raw):
             'mcp_reload_confirm': wanted['mcp_reload_confirm'],
         },
         'agent': {'max_turns': wanted['max_turns']},
-        # Writes go to the canonical entry only; reads accept the legacy entry.
+        # Read and write only the Kit entry.
         'plugins': {'entries': {
             PLUGIN: {'allow_gateway_injection': wanted['allow_gateway_injection']},
         }},
@@ -232,7 +195,7 @@ def apply_runtime_defaults(ctx):
         if ctx.get_config('apply_runtime_defaults', True) is False:
             return
         raise
-    # This opt-out must be read from either settings key; otherwise the next load
+    # Read the opt-out from Kit settings/config; otherwise the next load
     # deliberately reapplies the bundle policy.
     opted_out = _opted_out(raw)
     patch = opted_out_settings(raw) if opted_out else expected_settings(raw)

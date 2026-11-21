@@ -39,12 +39,7 @@ def _discover_skills():
 
 
 def _gateway_injection_state():
-    """The effective gateway-injection value and the canonical `kit` value.
-
-    Hermes reads only the canonical entry in this release; the legacy `autowork`
-    entry remains a fallback so a profile configured before the rename keeps its
-    decision.
-    """
+    """The effective gateway-injection value from the Kit entry."""
     try:
         from hermes_cli.config import read_raw_config
         policy = _KIT_COMPAT.peer(globals(), 'runtime_defaults')
@@ -111,20 +106,13 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
         target["session_key"] = session_key
     if ctx.inject_message(prompt, **target):
         return None
-    effective, canonical = _gateway_injection_state()
+    effective, _ = _gateway_injection_state()
     policy = _KIT_COMPAT.peer(globals(), 'runtime_defaults')
     setting = f"plugins.entries.{policy.PLUGIN}.allow_gateway_injection"
-    previous = f"plugins.entries.{policy.LEGACY_PLUGIN}.allow_gateway_injection"
-    inherited = f" ({previous} is also read for profiles from before the rename)"
     if effective is False:
         return (
             f"Skill {name!r} was not started. {setting} is false in this profile's "
-            f"config.yaml{inherited}; set it true and restart its gateway."
-        )
-    if effective is True and canonical is not True:
-        return (
-            f"Skill {name!r} was not started. {previous} is true, but Hermes reads "
-            f"{setting}; set that entry true and restart its gateway."
+            f"config.yaml; set it true and restart its gateway."
         )
     if effective is True:
         return (
@@ -133,7 +121,7 @@ def _invoke(ctx, name, path, raw_args, namespace="kit"):
         )
     return (
         f"Skill {name!r} was not started. For Telegram/gateway use, set "
-        f"{setting}: true in this profile's config.yaml{inherited} and restart "
+        f"{setting}: true in this profile's config.yaml and restart "
         "its gateway. If already enabled, check Hermes gateway logs."
     )
 
