@@ -206,7 +206,7 @@ test('npm package excludes local bytecode and keeps portable support files', asy
   assert.equal(paths.has('adapters/skills/grill-me/SKILL.md'), false);
   assert.equal(paths.has('adapters/skills/grill-me/PROTOCOL.md'), true);
   assert.equal([...paths].some(p => p.includes('__pycache__') || p.endsWith('.pyc')), false);
-  assert.equal([...paths].some(p => p.startsWith('pi-autowork/') || p.startsWith('src/')), false);
+  assert.equal([...paths].some(p => p.startsWith('src/')), false);
   assert.equal(paths.has('paseo-plugin.json'), false);
   assert.equal([...paths].some(p => p.startsWith('Src/')), false);
   for (const path of ['adapters/pi.mjs', 'adapters/skills/COMMON.md',
@@ -251,13 +251,11 @@ test('installed archive resolves portable references and commands without checko
       catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
     // Even accidental executor/native files in a source checkout must stay out of npm.
-    await mkdir(join(source, 'pi-autowork/pi_autowork'), {recursive: true});
-    await writeFile(join(source, 'pi-autowork/pi_autowork/fixture.py'), 'raise RuntimeError("retired executor")\n');
     await mkdir(join(source, 'src/kit_runtime'), {recursive: true});
     await writeFile(join(source, 'src/kit_runtime/private.py'), 'raise RuntimeError("native payload")\n');
     const archive = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--offline', '--json', '--pack-destination', scratch],
       {cwd: source, encoding: 'utf8'}))[0];
-    assert.equal(archive.files.some(f => f.path.startsWith('pi-autowork/') || f.path.startsWith('src/')), false);
+    assert.equal(archive.files.some(f => f.path.startsWith('src/')), false);
     execFileSync('tar', ['-xzf', join(scratch, archive.filename), '-C', scratch]);
     const installed = join(scratch, 'package');
     const foreign = join(scratch, 'unrelated cwd');

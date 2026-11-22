@@ -1,8 +1,7 @@
 # Commands and repository workflows
 
 GitHub Issues own executable work; Orbi owns delivery. Kit plans and supplies
-explicit skills. **pi-autowork is retired and unsupported**: do not develop or
-restart it. See [support, setup and migration](github-native.md).
+explicit skills. See [support, setup and migration](github-native.md).
 
 ## Unblock repairs blocked GitHub work
 
@@ -602,7 +601,7 @@ or permission to resume a schedule.
 
 ## Scheduling behavior
 
-Kit does not schedule or revive pi-autowork. Existing job IDs, settings, schedules,
+Existing job IDs, settings, schedules,
 pause state and recovery evidence remain intact. Orbi remains paused and live-unqualified.
 Setup confirmation, actual execution and message delivery require separate evidence;
 a changed prompt or installed skill proves none of them.

@@ -88,7 +88,7 @@ research receipts. GitHub Issues own the executable backlog through
 [Plan Handoff](../shared/PLAN-HANDOFF.md). Reuse existing issues, PRs, requirement IDs
 and coordinators. Treat historical `tasks/` records as read-only provenance, never a
 writable queue. Preserve them without moving or deleting them; never reinstall the
-removed task CLI. Use the [migration owner](../shared/TODO-WORKCENTER.md) to reconcile
+removed task CLI. Use the [migration owner](../shared/PLAN-HANDOFF.md) to reconcile
 still-required outcomes.
 Research logs, TSV and upstream `handoff.json` remain evidence, not a second backlog
 or proof of completion. Use a unique per-run output directory under the existing

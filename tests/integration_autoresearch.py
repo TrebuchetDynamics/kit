@@ -14,8 +14,8 @@ def main():
         os.environ['HERMES_HOME'] = str(home)
         os.environ.pop('HERMES_SAFE_MODE', None)
         (home / 'plugins').mkdir()
-        (home / 'plugins/autowork').symlink_to(root, target_is_directory=True)
-        (home / 'config.yaml').write_text('plugins:\n  enabled: [autowork]\n')
+        (home / 'plugins/kit').symlink_to(root, target_is_directory=True)
+        (home / 'config.yaml').write_text('plugins:\n  enabled: [kit]\n')
         from hermes_cli.plugins import get_plugin_manager, get_plugin_commands
         from hermes_cli.commands_platforms import telegram_menu_commands, telegram_menu_max_commands
         from gateway.session_context import set_session_vars, clear_session_vars
@@ -28,7 +28,7 @@ def main():
         assert 'kit:engineering' not in [i['name'] for i in manager.list_plugin_skill_metadata()]
         assert (home / 'skills/engineering/REFERENCE.md').is_file()
         assert (home / 'skills/engineering/upstream/references/security-checklist.md').is_file()
-        for name in ('autowork', 'work', 'pending', 'blockers'):
+        for name in ('work', 'pending', 'blockers'):
             assert name not in commands
             assert 'kit:' + name not in [i['name'] for i in manager.list_plugin_skill_metadata()]
         names = json.loads((root / 'skills/autoresearch/UPSTREAM.json').read_text())['commands']
@@ -45,7 +45,7 @@ def main():
         # Compatibility aliases stay typeable but are no longer advertised (b021c54).
         assert not any(key.startswith('autoresearch') for key in menu), menu
         assert 'plan_for_me' in menu and 'autoresearch' not in menu, menu
-        assert not set(('autowork', 'work', 'pending', 'blockers')) & menu.keys(), menu
+        assert not set(('work', 'pending', 'blockers')) & menu.keys(), menu
         assert 'autogoal' not in commands and 'autogoal' not in menu
         cli = SimpleNamespace(_pending_input=Queue(), _agent_running=False)
         manager._cli_ref = cli
@@ -78,7 +78,7 @@ def main():
                 assert accepted[-1]['plugin_home'] == home
         finally:
             clear_session_vars(tokens)
-        manager.unload('autowork')
+        manager.unload('kit')
         assert not any(n.startswith('autoresearch') for n in manager._plugin_commands)
         print('PASS: all 13 colon/Telegram aliases, menu, skill loading, CLI injection, gateway origin and unload')
 

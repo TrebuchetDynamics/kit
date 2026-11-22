@@ -14,8 +14,8 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md),
 name an explicit set of repositories; it is not permission to discover or operate
 an entire host fleet. Editing this skill does not invoke recovery.
 
-The pi-autowork executor and task CLI are removed. Do not install, restart or use
-them as a recovery fallback. Preserve existing tasks, worktrees, attempts and
+GitHub Issues and Orbi are the only executable backlog and delivery executor.
+Preserve existing tasks, worktrees, attempts and
 recovery evidence. Orbi remains paused and live-unqualified. This invocation
 does not authorize enabling it, clearing a pause or starting another implementer.
 

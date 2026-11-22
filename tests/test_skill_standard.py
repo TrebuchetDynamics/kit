@@ -5,6 +5,7 @@ home, disclosure, positive wording) stay with review.
 """
 import importlib.util
 import re
+import subprocess
 from pathlib import Path
 import unittest
 
@@ -12,13 +13,30 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 BANNED_OPENERS = ('use when', 'use to', 'use for', 'use if', 'use after', 'use before')
-# Hermes installs Graphify's own skill into profiles, so Autowork ships the adapter only.
+# Hermes installs Graphify's own skill into profiles, so Kit ships the adapter only.
 ADAPTER_ONLY = {'graphify'}
 PILOT = ('orbi', 'update-kit', 'unslop', 'plan-for-me', 'ponytail-review',
          'git-commit-push', 'push', 'unblock', 'docs-sync', 'plan-with-me')
 
 
 class SkillStandardTests(unittest.TestCase):
+    def test_tracked_content_has_no_retired_executor_name(self):
+        name = 'auto' + 'work'
+        result = subprocess.run(
+            ['git', 'grep', '-i', '-I', '-l', '-e', name, '--'],
+            cwd=ROOT, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1,
+                         'Remove the retired executor name from tracked content:\n'
+                         + result.stdout + result.stderr)
+
+    def test_tracked_paths_have_no_retired_executor_name(self):
+        name = b'auto' + b'work'
+        result = subprocess.run(['git', 'ls-files', '-z'], cwd=ROOT,
+                                capture_output=True, check=True, timeout=30)
+        matches = [path.decode(errors='replace') for path in result.stdout.split(b'\0')
+                   if name in path.lower()]
+        self.assertEqual(matches, [], 'Rename tracked paths containing the retired executor name')
+
     def skills(self, folder):
         return sorted((ROOT / folder).glob('*/SKILL.md'))
 

@@ -1,6 +1,6 @@
 # Orchestrator reliability and plan quality
 
-> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> **Historical sources only.** Executor
 > observations, recommendations and pilot procedures below refer to historical
 > sources, not current operating or development instructions. Do not revive it.
 > Preserve unresolved acceptance and recovery evidence; reconcile still-required
@@ -9,7 +9,7 @@
 
 Status: research, 2026-10-19. Companion to
 [multi-agent orchestration](multi-agent-orchestration.md). It asks why the Pi
-Autowork runner keeps needing fixes, what comparable systems and the literature do
+runner keeps needing fixes, what comparable systems and the literature do
 instead, and what the planning skills can do so that fewer bugs and conflicts are
 created to begin with. Implemented results are listed at the end; the remaining
 changes are tasks in [TODO.md](../../TODO.md).
@@ -42,8 +42,7 @@ Two regressions reached main as conflict markers committed into Python modules
 every engine call failed). Nothing refused a tree that did not parse.
 
 Hot files: `coordinator.py` (89 commits, 59 fixes; one 2,644-line class with about
-50 mutable attributes), `parallel_integrate.py` (74/55), `tests/test_pi_autowork.py`
-(2,980 lines, 47 fixes), `parallel_dispatch.py` (50/34). Run
+50 mutable attributes), `parallel_integrate.py` (74/55), `parallel_dispatch.py` (50/34). Run
 `python3 scripts/fix_hotspots.py` for the current table.
 
 Root causes, most damaging first:
@@ -60,7 +59,7 @@ Root causes, most damaging first:
 5. **The model does mechanical Git work** (session merges, planning-file
    normalization; GitHub #7).
 6. **Shared hot files plus parallel dispatch.** 476 of 595 pairs of open Now tasks
-   share a file; `coordinator.py` and `tests/test_pi_autowork.py` are each named by
+   share a file; `coordinator.py` is named by
    about 38 tasks. Since `Touches:` became a ranking hint (TOOLSET-161-17), the plan is
    the only place that keeps write sets apart, and the planning skills still described
    the old holding rule.

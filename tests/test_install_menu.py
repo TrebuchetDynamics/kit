@@ -529,7 +529,7 @@ else
 
     def test_restart_services_excludes_legacy_runner_and_tries_host_services(self):
         listed = subprocess.CompletedProcess([], 0,
-            'pi-autowork@repo.service loaded active running Runner\n'
+            'unrelated-runner@repo.service loaded active running Runner\n'
             'orbi-kit@1.service loaded active running Orbi\n'
             'hermes-gateway.service loaded active running Hermes\n'
             'kit-helper.service loaded active running Helper\n'
@@ -545,7 +545,7 @@ else
         self.assertEqual(len(commands), 2)
         self.assertEqual(commands[0][-2:], ['try-restart', 'hermes-gateway.service'])
         self.assertEqual(commands[-1][-2:], ['try-restart', 'kit-helper.service'])
-        self.assertNotIn('pi-autowork@*.service', discover.call_args.args[0])
+        self.assertNotIn('unrelated-runner@*.service', discover.call_args.args[0])
 
     def test_restart_phase_runs_on_unchanged_and_failed_installs_but_not_preview(self):
         item = install_menu.Item('fixture', 'Fixture', steps=[
@@ -802,19 +802,18 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
                 if not supported:
                     self.assertIn('unsupported Pi-Bolt platform', item.missing)
 
-    def test_removed_runner_cannot_be_installed_or_updated(self):
-        state = self.home / '.local/state/pi-autowork'
+    def test_unknown_component_refuses_and_preserves_private_state(self):
+        state = self.home / '.local/state/unknown-runner'
         state.mkdir(parents=True)
         evidence = state / 'preserved-attempt.json'
         evidence.write_text('{"unfinished": true}\n')
-        for args in (('--only', 'autowork'), ('update', '--only', 'autowork')):
+        for args in (('--only', 'unknown-runner'), ('update', '--only', 'unknown-runner')):
             with self.subTest(args=args):
                 result = self.install(*args)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn('autowork', result.stdout + result.stderr)
-                self.assertFalse((self.home / '.local/bin/autowork').exists())
+                self.assertIn('unknown-runner', result.stdout + result.stderr)
                 self.assertEqual(evidence.read_text(), '{"unfinished": true}\n')
-        self.assertNotRegex(self.install('--list').stdout, r'(?m)^autowork\s')
+        self.assertNotRegex(self.install('--list').stdout, r'(?m)^unknown-runner\s')
 
     def test_octet_install_is_removed(self):
         for args in (('--only', 'octet'), ('update', '--only', 'octet')):
@@ -842,8 +841,6 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
                                                'codex plugin marketplace add TrebuchetDynamics/kit --ref main',
                                                'codex plugin marketplace upgrade kit-marketplace',
                                                'codex plugin add kit@kit-marketplace'])
-        link = self.home / '.local/bin/autowork'
-        self.assertFalse(link.exists())  # removed executor has no installation path
         self.assertEqual((self.home / '.local/bin/tx').read_bytes(), (ROOT / 'tmux/tx').read_bytes())
         self.assertTrue((self.home / '.local/share/bash-completion/completions/tx').is_file())
         for shell in ('bash', 'zsh', 'fish'):
@@ -1005,7 +1002,7 @@ exit 0
         for text, cause in failures:
             with self.subTest(cause=cause):
                 items = [install_menu.Item(key, key, steps=[install_menu.Step('install', [key])])
-                         for key in ('pi', 'autowork', 'tx', 'hermes', 'claude', 'codex')]
+                         for key in ('pi', 'orbi', 'tx', 'hermes', 'claude', 'codex')]
                 output = io.StringIO()
                 with patch.object(install_menu, 'run_command',
                         side_effect=lambda argv, _: (1, text) if argv == ['hermes'] else (0, 'ok')), \
@@ -1026,7 +1023,6 @@ exit 0
         self.assertEqual(self.calls('pi-bolt install'), [f'pi-bolt install {NEW}'])
         self.assertIn('claude plugin install kit@kit', self.calls('claude'))
         self.assertIn('codex plugin add kit@kit-marketplace', self.calls('codex'))
-        self.assertFalse((self.home / '.local/bin/autowork').exists())
         self.assertTrue((self.home / '.local/bin/tx').is_file())
         self.assertIn('$ codex plugin add kit@kit-marketplace', result.stdout)
         self.assertRegex(result.stdout, r'pi-bolt\s+installed.*1\.4\.0')
@@ -1048,7 +1044,6 @@ exit 0
         (self.home / '.hermes').mkdir()
         result = self.install('--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotRegex(result.stdout, r'autowork\s+planned')
         for key in ('pi', 'pi-bolt', 'tx', 'hermes', 'claude', 'codex'):
             self.assertRegex(result.stdout, rf'{key}\s+planned')
         self.assertEqual(self.calls('pi-bolt install'), [])
@@ -1446,7 +1441,6 @@ fi
         (self.home / '.hermes').mkdir()
         result = self.install('--full', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotRegex(result.stdout, r'autowork\s+planned')
         for key in ('pi', 'tx', 'hermes', 'claude', 'codex'):
             self.assertRegex(result.stdout, rf'{key}\s+planned')
         self.assertIn('codex plugin add kit@kit-marketplace', result.stdout)
@@ -1697,7 +1691,6 @@ fi
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('pi-bolt install'), [])
         self.assertEqual(self.calls('pi-bolt update'), [f'pi-bolt update {NEW}'])
-        self.assertFalse((self.home / '.local/bin/autowork').exists())
 
     def test_install_clears_empty_pi_filters_that_hide_skills_and_commands(self):
         settings = self.home / '.pi/agent/settings.json'

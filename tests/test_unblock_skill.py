@@ -15,8 +15,6 @@ class UnblockSkillTests(unittest.TestCase):
                          'do not loop unchanged retries', 'Do not create backlog work',
                          'Orbi remains paused and live-unqualified'):
             self.assertIn(contract, text)
-        self.assertNotIn('autowork tasks', text)
-        self.assertNotIn('autowork restart', text)
 
     def test_waits_are_not_successful_recovery(self):
         text = (ROOT / 'skills/unblock/SKILL.md').read_text()
@@ -31,9 +29,8 @@ class UnblockSkillTests(unittest.TestCase):
         for contract in ('deliberate-stop', 'pending service jobs',
                          'Observe an existing restart', 'explicit user authorization',
                          'actual executable release', 'attempts/recovery state',
-                         'Do not reinstall or', 'Orbi remains paused'):
+                         'Orbi remains paused'):
             self.assertIn(contract, text)
-        self.assertNotIn('autowork restart', text)
         self.assertIn('No Hermes runtime', (ROOT / 'adapters/skills/unblock/SKILL.md').read_text())
 
     def test_workflow_reference_links_exist(self):

@@ -21,7 +21,7 @@ class PortablePackageTests(unittest.TestCase):
 
     def test_removed_skill_resources_are_absent(self):
         for root in ('skills', 'adapters/skills'):
-            for name in ('autowork', 'work', 'pending', 'blockers'):
+            for name in ('work', 'pending', 'blockers'):
                 self.assertFalse((ROOT / root / name).exists(), f'{root}/{name}')
 
     def test_only_the_required_hermes_adapter_is_python_at_root(self):
@@ -37,9 +37,7 @@ class PortablePackageTests(unittest.TestCase):
         for helper in ('github_issues.py', 'worktree_paths.py', 'checkout_lock.py'):
             self.assertIn('scripts/' + helper, pi['files'])
         self.assertIn('docs/', pi['files'])
-        self.assertNotIn('autowork', pi['bin'])
-        self.assertFalse(any('pi-autowork' in entry or entry.startswith('src/')
-                             for entry in pi['files']))
+        self.assertFalse(any(entry.startswith('src/') for entry in pi['files']))
         marketplace = json.loads((ROOT / '.agents/plugins/marketplace.json').read_text())
         self.assertEqual(marketplace['name'], 'kit-marketplace')
         self.assertEqual(codex['name'], 'kit')
@@ -74,10 +72,9 @@ class PortablePackageTests(unittest.TestCase):
             archive = source / json.loads(packed.stdout)[0]['filename']
             subprocess.run(['tar', '-xzf', str(archive), '-C', str(base)], check=True)
             installed = base / 'package'
-            self.assertFalse((installed / 'pi-autowork').exists())
             self.assertFalse((installed / 'src').exists())
             for root in ('skills', 'adapters/skills'):
-                for name in ('autowork', 'work', 'pending', 'blockers'):
+                for name in ('work', 'pending', 'blockers'):
                     self.assertFalse((installed / root / name).exists())
             self.assertFalse((installed / 'paseo-plugin.json').exists())
             self.assertTrue((installed / 'docs/github-native.md').is_file())
