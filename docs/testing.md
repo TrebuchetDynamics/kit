@@ -207,8 +207,8 @@ its own suites: the hook now prints the load average and cpu count when it refus
 so the failure can be attributed instead of bypassed. Run one failing module alone
 before you treat the tree as broken; a second failure there is the tree's.
 
-CI retains the `fast` and `runner` check contexts; runner-named shards now run
-maintained native tests, not the removed executor. Inspect
+CI runs the offline Python suite across three parallel `runner` shards. The
+`fast` check runs the plugin syntax and Pi adapter tests alongside them. Inspect
 [the workflow](../.github/workflows/test.yml) for its current inventory. Live
 Telegram delivery and model execution require separate qualification.
 

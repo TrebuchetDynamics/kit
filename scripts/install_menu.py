@@ -12,9 +12,12 @@
 
 There is no keep-on-install mode: `install` and `update` run the same items and
 refresh them, and differ only in the report wording. Both first bring this checkout
-up to date (`git pull --ff-only` of its upstream) and then run the pulled installer; a
-checkout with local changes, no upstream or a detached HEAD is installed as it is,
-and says so.
+up to date (`git pull --ff-only` of its upstream) and then run the on-disk installer.
+Local staged, unstaged and non-ignored untracked changes are stashed first and kept
+for manual recovery; the stash ID and restore command are always printed, even in
+quiet mode. A missing upstream or status/stash/pull failure aborts before installing
+or restarting services. Unpacked non-Git releases remain supported. --no-pull or
+KIT_INSTALL_NO_PULL bypasses stashing and pulling; --help, --list and --dry-run do neither.
 
 Each host item runs its own supported install command; a host whose CLI is not
 installed is skipped and says so, and fails when named with --only. Pi-Bolt is
@@ -566,6 +569,9 @@ def claude_registration(output):
     """
     config = Path(os.environ.get('CLAUDE_CONFIG_DIR') or HOME / '.claude')
     sources, scopes, installed = [], [], []
+    records, declarations = {}, {}
+    enabled_records = []
+    settings_paths = {}
     cwd = Path.cwd().resolve()
     contexts = [cwd]
     if not (cwd / '.git').exists():
@@ -588,6 +594,11 @@ def claude_registration(output):
         enabled = data.get('enabledPlugins', {})
         if not isinstance(entries, dict) or not isinstance(enabled, dict):
             marketplace_hold('Claude', f'unsupported marketplace/plugin settings in {path}')
+        for name, entry in entries.items():
+            records.setdefault(name, []).append(entry.get('source') if isinstance(entry, dict) else None)
+            declarations.setdefault(name, []).append(scope)
+            settings_paths.setdefault(name, []).append(path)
+        enabled_records.extend((identity, scope) for identity in enabled)
         if CLAUDE_MARKETPLACE in entries:
             entry = entries[CLAUDE_MARKETPLACE]
             sources.append(entry.get('source') if isinstance(entry, dict) else None)
@@ -596,6 +607,13 @@ def claude_registration(output):
         if f'kit@{CLAUDE_MARKETPLACE}' in enabled:
             scopes.append(scope)
     known = registry_json(config / 'plugins/known_marketplaces.json')
+    for name, entry in known.items():
+        records.setdefault(name, []).append(entry.get('source') if isinstance(entry, dict) else None)
+    candidates = [name for name, entries in records.items() if name != CLAUDE_MARKETPLACE
+                  and any(claude_git(source) for source in entries)]
+    if len(candidates) > 1:
+        marketplace_hold('Claude', 'ambiguous official Git registrations')
+    mismatch = candidates[0] if candidates else None
     if CLAUDE_MARKETPLACE in known:
         entry = known[CLAUDE_MARKETPLACE]
         sources.append(entry.get('source') if isinstance(entry, dict) else None)
@@ -639,7 +657,41 @@ def claude_registration(output):
     scope = max(installed or scopes, key=priority.get, default='user')
     if scope == 'managed' and not installed:
         marketplace_hold('Claude', 'managed Kit declaration requires an administrator-installed plugin')
-    return bool(sources), scope, scope in installed
+    replacement = []
+    if mismatch:
+        if not all(claude_git(source) and source == records[mismatch][0] for source in records[mismatch]):
+            marketplace_hold('Claude', 'conflicting mismatched marketplace source records')
+        paths = [config / 'plugins/known_marketplaces.json', *settings_paths.get(mismatch, [])]
+        if (len(declarations.get(mismatch, [])) > 1
+                or any(path.exists() and (not os.access(path, os.W_OK)
+                                          or not os.access(path.parent, os.W_OK)) for path in paths)):
+            marketplace_hold('Claude', 'ambiguous or unwritable replacement registration')
+        affected_scopes = declarations.get(mismatch, [])[:]
+        for identity, declared_scope in enabled_records:
+            if identity.endswith('@' + mismatch):
+                if identity != f'{CLAUDE_PLUGIN}@{mismatch}':
+                    marketplace_hold('Claude', 'replacement could remove another plugin declaration')
+                affected_scopes.append(declared_scope)
+        for row in rows:
+            if not row['id'].endswith('@' + mismatch):
+                continue
+            if row['id'] != f'{CLAUDE_PLUGIN}@{mismatch}':
+                marketplace_hold('Claude', 'replacement could uninstall another plugin')
+            installed_scope = row.get('scope')
+            if installed_scope not in ('user', 'project', 'local') or not isinstance(row.get('enabled'), bool):
+                marketplace_hold('Claude', 'unknown or managed replacement plugin scope')
+            if installed_scope in ('project', 'local') and row.get('projectPath') != str(cwd):
+                marketplace_hold('Claude', 'replacement affects a plugin outside the current project')
+            affected_scopes.append(installed_scope)
+        affected_scopes = set(affected_scopes or ['user'])
+        if len(affected_scopes) != 1 or not affected_scopes <= {'user', 'project', 'local'}:
+            marketplace_hold('Claude', 'ambiguous or managed replacement scope')
+        replacement_scope = affected_scopes.pop()
+        replacement = [['claude', 'plugin', 'marketplace', 'remove', mismatch, '--scope', replacement_scope]]
+        if not installed and not scopes:
+            scope = replacement_scope
+    return MarketplaceState(bool(sources), scope in installed, scope=scope,
+                            mismatch=mismatch, replacement=replacement)
 
 
 def host_commands(commands, output):
@@ -651,19 +703,114 @@ def host_commands(commands, output):
             raise subprocess.CalledProcessError(code, argv, output=text)
 
 
+@dataclass
+class MarketplaceState:
+    registered: bool
+    installed: bool
+    scope: str = 'user'
+    kind: str = 'git'
+    mismatch: str | None = None
+    replacement: list = field(default_factory=list)
+
+
+def claude_git(source):
+    return isinstance(source, dict) and (
+        (source.get('source') == 'github' and source.get('repo') == SOURCE)
+        or (source.get('source') == 'git' and owned_git(source.get('url'))))
+
+
+def host_changes(commands, read, output):
+    host = commands[0][0]
+    try:
+        host_commands(commands, output)
+    except (OSError, subprocess.SubprocessError) as exc:
+        try:
+            observed = read(output)
+            detail = (f'canonical={observed.registered}, mismatched={observed.mismatch}, '
+                      f'installed={observed.installed}')
+        except (OSError, subprocess.SubprocessError) as probe:
+            detail = f'readback held: {probe}'
+        message = (f'{host}: partial state after {shlex.join(commands[-1])}: {detail}; '
+                   f'{getattr(exc, "output", None) or exc}; repair the cause and rerun '
+                   f'./install.sh --only {host}')
+        if isinstance(exc, subprocess.CalledProcessError):
+            raise subprocess.CalledProcessError(exc.returncode, exc.cmd, output=message) from exc
+        raise OSError(message) from exc
+
+
+def marketplace_readback(host, read, output):
+    try:
+        return read(output)
+    except (OSError, subprocess.SubprocessError) as exc:
+        message = (f'{host}: partial state: post-change readback failed; '
+                   f'{getattr(exc, "output", None) or exc}; observed state is unknown; '
+                   f'repair the cause and rerun ./install.sh --only {host}')
+        if isinstance(exc, subprocess.CalledProcessError):
+            raise subprocess.CalledProcessError(exc.returncode, exc.cmd, output=message) from exc
+        raise OSError(message) from exc
+
+
+def reconcile_marketplace(host, read, add, output):
+    """One replacement at most; qualify readback before update/upgrade."""
+    state = read(output)
+    scope = state.scope
+
+    if not state.registered and not state.mismatch:
+        # A nonzero add is not identity evidence either. Read before deciding
+        # whether this is an already-present source or an actual add failure.
+        try:
+            host_commands([add], output)
+        except subprocess.CalledProcessError as exc:
+            state = marketplace_readback(host, read, output)
+            if not state.registered and not state.mismatch:
+                raise subprocess.CalledProcessError(exc.returncode, exc.cmd,
+                    output=f'{host}: partial state: canonical absent; {exc.output}; repair and rerun') from exc
+        else:
+            state = marketplace_readback(host, read, output)
+        scope = state.scope
+    if state.mismatch:
+        scope = state.scope
+        previous_name = state.mismatch
+        host_changes(state.replacement, read, output)
+        state = marketplace_readback(host, read, output)
+        if state.mismatch:
+            marketplace_hold(host, f'partial state: mismatched registration {state.mismatch} remains; '
+                             'replacement attempted once; reconcile ownership and rerun')
+        if host == 'claude':
+            remaining = host_registry_json(['claude', 'plugin', 'list', '--json'], output)
+            removed = isinstance(remaining, list) and all(isinstance(row, dict)
+                and isinstance(row.get('id'), str) and not row['id'].endswith('@' + previous_name)
+                for row in remaining)
+        else:
+            remaining = codex_list(['codex', 'plugin', 'list', '--marketplace', previous_name, '--json'],
+                                   'installed', output)
+            removed = remaining['installed'] == []
+        if not removed:
+            marketplace_hold(host, f'partial state: plugins remain for {previous_name}; repair and rerun')
+        if not state.registered:
+            host_changes([add + (['--scope', scope] if host == 'claude' and scope != 'user' else [])], read, output)
+            state = marketplace_readback(host, read, output)
+    if not state.registered or state.mismatch:
+        marketplace_hold(host, 'partial state: canonical source/name absent after add/readback; '
+                         'repair host source registration and rerun')
+    state.scope = scope
+    return state
+
+
 def install_claude(output):
-    registered, scope, installed = claude_registration(output)
-    commands = []
-    if not registered:
-        commands.append(['claude', 'plugin', 'marketplace', 'add', SOURCE])
-    commands.append(['claude', 'plugin', 'marketplace', 'update', CLAUDE_MARKETPLACE])
-    command = ['claude', 'plugin', 'update' if installed else 'install',
+    state = reconcile_marketplace('claude', claude_registration,
+        ['claude', 'plugin', 'marketplace', 'add', SOURCE], output)
+    host_changes([['claude', 'plugin', 'marketplace', 'update', CLAUDE_MARKETPLACE]],
+                 claude_registration, output)
+    command = ['claude', 'plugin', 'update' if state.installed else 'install',
                f'{CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE}']
-    if scope != 'user' or installed:
-        command += ['--scope', scope]
-    commands.append(command)
-    host_commands(commands, output)
-    return f'Kit marketplace qualified; source and {scope} scope preserved'
+    if state.scope != 'user' or state.installed:
+        command += ['--scope', state.scope]
+    host_changes([command], claude_registration, output)
+    final = marketplace_readback('claude', claude_registration, output)
+    if not final.registered or not final.installed or final.mismatch or final.scope != state.scope:
+        marketplace_hold('Claude', 'partial state: expected installed ID/scope not verified; repair and rerun')
+    return f'{CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE} verified; source and {state.scope} scope preserved'
 
 
 def host_registry_json(argv, output):
@@ -692,10 +839,18 @@ def codex_list(argv, key, output):
     return data
 
 
-def install_codex(output):
-    names = (CODEX_MARKETPLACE,)
+def codex_registration(output):
     rows = codex_list(['codex', 'plugin', 'marketplace', 'list', '--json'],
                      'marketplaces', output)['marketplaces']
+    candidates = [row['name'] for row in rows if isinstance(row, dict)
+                  and isinstance(row.get('name'), str) and row['name'] != CODEX_MARKETPLACE
+                  and isinstance(row.get('marketplaceSource'), dict)
+                  and row['marketplaceSource'].get('sourceType') == 'git'
+                  and owned_git(row['marketplaceSource'].get('source'))]
+    if len(candidates) > 1:
+        marketplace_hold('Codex', 'ambiguous official Git registrations')
+    mismatch = candidates[0] if candidates else None
+    names = (CODEX_MARKETPLACE, *candidates)
     registrations = {}
     for row in rows:
         if not isinstance(row, dict) or not isinstance(row.get('name'), str) or not row['name']:
@@ -747,16 +902,128 @@ def install_codex(output):
                                          CODEX_MARKETPLACE)))
         if not owned:
             marketplace_hold('Codex', 'canonical marketplace has foreign, unknown or stale source')
+    replacement = []
+    if mismatch:
+        if any(p['name'] != CODEX_PLUGIN for p in plugins[mismatch]):
+            marketplace_hold('Codex', 'replacement could remove another plugin')
+        codex_writable_registration(mismatch, registrations[mismatch], output)
+        if plugins[mismatch]:
+            replacement.append(['codex', 'plugin', 'remove', f'{CODEX_PLUGIN}@{mismatch}'])
+        replacement.append(['codex', 'plugin', 'marketplace', 'remove', mismatch])
+    return MarketplaceState(bool(canonical),
+        any(p['name'] == CODEX_PLUGIN for p in plugins[CODEX_MARKETPLACE]),
+        kind=kind or 'git', mismatch=mismatch, replacement=replacement)
+
+
+def codex_config_layers(output):
+    """Native config/read supplies provenance missing from marketplace list JSON.
+
+    No model/session is started. Bound all reads and always reap the stdio server.
+    """
+    if output.verbosity > 1:
+        output.line('  $ codex app-server (config/read includeLayers, current cwd)', 'command')
+    with tempfile.TemporaryFile() as errors:
+        with subprocess.Popen(['codex', 'app-server'], stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE, stderr=errors) as process:
+            try:
+                with selectors.DefaultSelector() as selector:
+                    selector.register(process.stdout, selectors.EVENT_READ)
+                    pending = b''
+                    def request(identity, method, params):
+                        nonlocal pending
+                        process.stdin.write((json.dumps({'id': identity, 'method': method,
+                                                        'params': params}) + '\n').encode())
+                        process.stdin.flush()
+                        deadline = time.monotonic() + 30
+                        while time.monotonic() < deadline:
+                            if b'\n' not in pending:
+                                if not selector.select(max(0, deadline - time.monotonic())):
+                                    break
+                                chunk = os.read(process.stdout.fileno(), 65536)
+                                if not chunk:
+                                    break
+                                pending += chunk
+                                continue
+                            line, pending = pending.split(b'\n', 1)
+                            row = json.loads(line)
+                            if not isinstance(row, dict):
+                                raise ValueError('unknown app-server response')
+                            if row.get('id') == identity:
+                                if not isinstance(row.get('result'), dict):
+                                    raise ValueError(f'{method} failed: {row.get("error")}')
+                                return row['result']
+                        raise ValueError(f'{method} timed out or closed')
+                    init = request(1, 'initialize', {'clientInfo': {'name': 'kit-installer', 'version': '1'},
+                                                   'capabilities': {'experimentalApi': True}})
+                    result = request(2, 'config/read', {'includeLayers': True, 'cwd': str(Path.cwd())})
+                    return init, result
+            except (OSError, ValueError) as exc:
+                marketplace_hold('Codex', f'cannot qualify writable config layers: {exc}')
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+
+
+def codex_writable_registration(name, registration, output):
+    init, result = codex_config_layers(output)
+    home = init.get('codexHome')
+    layers = result.get('layers')
+    if not isinstance(home, str) or not Path(home).is_absolute() or not isinstance(layers, list):
+        marketplace_hold('Codex', 'missing config layer provenance')
+    expected = {'type': 'user', 'file': str(Path(home) / 'config.toml'), 'profile': None}
+    config = result.get('config')
+    effective = config.get('marketplaces', {}) if isinstance(config, dict) else {}
+    effective = effective.get(name) if isinstance(effective, dict) else None
+    if (not isinstance(effective, dict) or effective.get('source_type') != 'git'
+            or effective.get('source') != registration['marketplaceSource']['source']):
+        marketplace_hold('Codex', 'effective configuration and marketplace source disagree')
+    matches = []
+    for layer in layers:
+        if not isinstance(layer, dict) or not isinstance(layer.get('config'), dict):
+            marketplace_hold('Codex', 'unknown config layer')
+        if layer.get('disabledReason'):
+            continue
+        plugins = layer['config'].get('plugins', {})
+        if not isinstance(plugins, dict):
+            marketplace_hold('Codex', 'unknown plugin config layer')
+        for identity in plugins:
+            if identity.endswith('@' + name) and (identity != f'{CODEX_PLUGIN}@{name}'
+                                                  or layer.get('name') != expected):
+                marketplace_hold('Codex', 'replacement affects another plugin or non-user plugin scope')
+        entries = layer['config'].get('marketplaces', {})
+        if not isinstance(entries, dict):
+            marketplace_hold('Codex', 'unknown marketplace config layer')
+        for key, entry in entries.items():
+            if key.casefold() == name.casefold():
+                matches.append((key, entry, layer.get('name')))
+    source = registration['marketplaceSource']
+    if (len(matches) != 1 or matches[0][0] != name or matches[0][2] != expected
+            or not isinstance(matches[0][1], dict)
+            or matches[0][1].get('source_type') != 'git'
+            or matches[0][1].get('source') != source['source']
+            or not os.access(Path(home), os.W_OK)
+            or (Path(home, 'config.toml').exists() and not os.access(Path(home, 'config.toml'), os.W_OK))):
+        marketplace_hold('Codex', 'replacement is not an unambiguous writable base-user Git registration')
+
+
+def install_codex(output):
+    state = reconcile_marketplace('codex', codex_registration,
+        ['codex', 'plugin', 'marketplace', 'add', SOURCE, '--ref', 'main'], output)
     commands = []
-    if not canonical:
-        commands.append(['codex', 'plugin', 'marketplace', 'add', SOURCE, '--ref', 'main'])
-    if kind != 'local':
+    if state.kind != 'local':
         commands.append(['codex', 'plugin', 'marketplace', 'upgrade', CODEX_MARKETPLACE])
-    # An installed plugin's effective enablement/scope is not ours to rewrite.
-    if not any(p['name'] == CODEX_PLUGIN for p in plugins[CODEX_MARKETPLACE]):
+    if not state.installed:
         commands.append(['codex', 'plugin', 'add', f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE}'])
-    host_commands(commands, output)
-    return 'Kit effective marketplace qualified; existing source/context preserved (not all persisted scopes)'
+    if commands:
+        host_changes(commands, codex_registration, output)
+    final = marketplace_readback('codex', codex_registration, output)
+    if not final.registered or not final.installed or final.mismatch:
+        marketplace_hold('Codex', 'partial state: expected installed ID not verified; repair and rerun')
+    return f'{CODEX_PLUGIN}@{CODEX_MARKETPLACE} verified; existing source/context preserved'
 
 
 def orbi_version(binary):
@@ -957,18 +1224,22 @@ def items(hermes_args, output=None, mode='install'):
              steps=[Step(f'install {BIN}/tx and completions', run=install_tx)]),
         hermes_item(hermes_args),
         Item('claude', 'Claude Code plugin and full suite + bundled Ponytail', needs='claude',
-             steps=[Step('registry/migration status: NOT_CHECKED until actual install; validate both names, '
-                         'installed IDs via claude plugin list --json, source and scope; then claude plugin marketplace add '
-                         f'{SOURCE} only if fresh; claude plugin marketplace update {CLAUDE_MARKETPLACE}; '
-                         f'claude plugin install {CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE} or scoped plugin update',
+             steps=[Step('registry status: NOT_CHECKED until actual install; validate official Git source, '
+                         'settings scopes and installed IDs via claude plugin list --json; automatically remove '
+                         'one writable wrong-name Kit-only registration (including its plugin); '
+                         f'claude plugin marketplace add {SOURCE} if canonical is absent; read back source/name before '
+                         f'claude plugin marketplace update {CLAUDE_MARKETPLACE}; '
+                         f'claude plugin install {CLAUDE_PLUGIN}@{CLAUDE_MARKETPLACE} or scoped plugin update; verify installed ID',
                          run=lambda: install_claude(output or Output()))]),
         Item('codex', 'Codex plugin and full suite + bundled Ponytail', needs='codex',
-             steps=[Step('registry/migration status: NOT_CHECKED until actual install; validate '
-                         'codex plugin marketplace list --json and codex plugin list --marketplace NAME --json '
-                         'for both names (CLI initialization may write cache/auth state); then '
-                         f'codex plugin marketplace add {SOURCE} --ref main only if fresh; '
-                         f'codex plugin marketplace upgrade {CODEX_MARKETPLACE} for Git; '
-                         f'codex plugin add {CODEX_PLUGIN}@{CODEX_MARKETPLACE} only if not installed',
+             steps=[Step('registry status: NOT_CHECKED until actual install; validate '
+                         'codex plugin marketplace list --json and codex plugin list --marketplace NAME --json; '
+                         'qualify wrong-name official Git ownership with codex app-server config/read layers; '
+                         'automatically remove one writable wrong-name Kit-only plugin/registration '
+                         '(CLI initialization may write cache/auth state); '
+                         f'codex plugin marketplace add {SOURCE} --ref main if canonical is absent; '
+                         f'read back source/name before codex plugin marketplace upgrade {CODEX_MARKETPLACE} for Git; '
+                         f'codex plugin add {CODEX_PLUGIN}@{CODEX_MARKETPLACE} only if not installed; verify installed ID',
                          run=lambda: install_codex(output or Output()))]),
         orbi_item(output),
     ]
@@ -1210,36 +1481,78 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install'):
 
 
 def pull_checkout(root, write=print, run=subprocess.run):
-    """Bring this installer's own Git checkout up to date before installing from it (owner
-    request 2026-10-21: `./install.sh` should not install a stale checkout). Fast-forward only;
-    a checkout with local changes to tracked files, no upstream, or a detached HEAD is left as
-    it is, with a line saying why. Returns True when new commits arrived."""
+    """Keep local edits in a stash, then require an upstream fast-forward.
+
+    Return whether disk code must be re-executed (stash or HEAD change).
+    Fail closed before component actions; never restore or remove a stash.
+    """
+    root = Path(root).resolve()
+    if not (root / '.git').exists() and not (root / '.git').is_symlink():
+        return False  # unpacked release; do not discover a parent repository
+    # -C alone does not override these (for example when called from a Git hook).
+    # Refuse before even reading status rather than stash into a foreign repository
+    # or reset this checkout using somebody else's index/object database.
+    overrides = [name for name in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR',
+                                  'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
+                                  'GIT_NAMESPACE', 'GIT_SHALLOW_FILE') if name in os.environ]
+    if overrides:
+        raise RuntimeError('Git environment redirects checkout state; unset ' +
+                           ', '.join(overrides) + ' before retrying')
+
+    def checked(result, args):
+        if result.returncode:
+            detail = result.stderr.strip() or result.stdout.strip() or f'exit {result.returncode}'
+            raise RuntimeError(f'git {shlex.join(args)} failed: {detail}')
+        return result.stdout.strip()
+
     def git(*args):
-        return run(['git', '-C', str(root), *args], capture_output=True, text=True)
-    if git('rev-parse', '--is-inside-work-tree').returncode != 0:
-        return False  # not a Git checkout (an unpacked release): nothing to pull
+        return run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=120)
+
+    def read(*args):
+        return checked(git(*args), args)
+
+    if Path(read('rev-parse', '--show-toplevel')).resolve() != root:
+        raise RuntimeError('installer path is not the Git checkout root; refusing to change another checkout')
     upstream = git('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}')
-    if upstream.returncode != 0 or not upstream.stdout.strip():
-        write('Not pulling: this checkout has no upstream branch (detached or local-only); installing it as it is.')
-        return False
-    if git('status', '--porcelain', '--untracked-files=no').stdout.strip():
-        write('Not pulling: this checkout has local changes to tracked files; installing it as it is.')
-        return False
-    before = git('rev-parse', 'HEAD').stdout.strip()
-    pulled = git('pull', '--ff-only', '--quiet')
-    if pulled.returncode != 0:
-        write('Not pulled: ' + (pulled.stderr.strip().splitlines() or ['git pull --ff-only failed'])[-1]
-              + '; installing the checkout as it is.')
-        return False
-    after = git('rev-parse', 'HEAD').stdout.strip()
-    if after == before:
-        return False
-    write(f'Updated this checkout {before[:8]}..{after[:8]} ({upstream.stdout.strip()}); installing the new version.')
-    return True
+    if upstream.returncode or not upstream.stdout.strip():
+        raise RuntimeError('this checkout has no usable upstream branch (detached or local-only); '
+                           'switch to a tracking branch or configure its upstream before retrying')
+    read('rev-parse', '--verify', '@{u}^{commit}')
+    before = read('rev-parse', '--verify', 'HEAD')
+    stashed = False
+    if read('status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'):
+        previous = read('stash', 'list', '--format=%H').splitlines()
+        # Git can reuse the object (and not add a reflog entry) for identical
+        # edits in the same second. A sub-second message makes this a new stash.
+        message = f'Kit installer: local changes before pull ({time.time_ns()})'
+        args = ('stash', 'push', '--include-untracked', '--message', message)
+        saved = git(*args)
+        current = read('stash', 'list', '--format=%H').splitlines()
+        if current and current[1:] == previous:
+            stash_id = current[0]
+            # Print before any further operation can fail, including stash cleanup.
+            write(f'Kept local changes in Kit installer stash {stash_id}. Manual recovery (also kept after success):')
+            write(shlex.join(['git', '-C', str(root), 'stash', 'apply', '--index', stash_id]))
+            stashed = True
+        checked(saved, args)
+        if not stashed:
+            raise RuntimeError('git stash did not create a new stash; inspect git status and git stash list before retrying')
+        if read('status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'):
+            raise RuntimeError('checkout is still dirty after git stash; inspect git status before retrying; '
+                               'the printed stash is kept for manual recovery')
+    # Disable configured autostash: it would restore/drop edits behind our back.
+    read('pull', '--ff-only', '--no-autostash', '--quiet')
+    after = read('rev-parse', '--verify', 'HEAD')
+    if after != before:
+        write(f'Updated this checkout {before[:8]}..{after[:8]} ({upstream.stdout.strip()}); installing the new version.')
+    return stashed or after != before
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='Claude/Codex: automatically replace one source-qualified writable wrong-name Kit-only '
+               'Git marketplace and its affected plugin; refuse ambiguous/managed/foreign ownership. '
+               'Dry-run performs no registry probes or mutations. See docs/cross-host.md.')
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--all', '--full', action='store_true', help='install the full suite for every available host (default)')
     selection.add_argument('--only', help='comma-separated items to install (pi-bolt,pi,tx,hermes,claude,codex,orbi)')
@@ -1256,15 +1569,22 @@ def main(argv=None):
         parser.add_argument(flag, action='store_true', help='passed to the Hermes item')
     parser.add_argument('--hermes-home', help='passed to the Hermes item')
     parser.add_argument('--no-pull', action='store_true',
-                        help="install this checkout as it is, without first pulling its upstream (git pull --ff-only)")
+                        help="install this checkout as it is, without stashing or pulling (also KIT_INSTALL_NO_PULL=1)")
     parser.add_argument('command', nargs='?', choices=('install', 'update'), default='install',
                         help='install (default) or update the installed suite in place; both run the same items')
     args = parser.parse_args(argv)
     output = Output(args.color, 0 if args.quiet else 2)
     if not (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
             or os.environ.get('KIT_INSTALL_NO_PULL')):
-        if pull_checkout(ROOT, write=output.line):
-            # The pulled installer may differ from this one: run it, once.
+        try:
+            changed = pull_checkout(ROOT, write=output.line)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            output.line(f'FAILED: checkout preparation: {exc}', 'failed')
+            output.line('Nothing installed or restarted. Resolve the Git error and retry; '
+                        'any created stash is kept (inspect git stash list; use the printed recovery command).')
+            return 1
+        if changed:
+            # Pull or stash may have replaced the running installer: run disk code once.
             os.execvpe('bash', ['bash', str(ROOT / 'install.sh'), *(sys.argv[1:] if argv is None else argv)],
                        dict(os.environ, KIT_INSTALL_PULLED='1'))
     hermes = [f for f, on in (('--bundle-only', args.bundle_only), ('--no-reload', args.no_reload),

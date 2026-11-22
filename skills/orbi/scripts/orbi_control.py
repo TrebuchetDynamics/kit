@@ -16,7 +16,9 @@
 - `update` advances one inactive deployment to the newest official release
   through the upstream `sync-engine-source` channel, locks the resolved commit as
   `sha:<commit>`, validates non-activating, re-renders owned units and restores
-  the verified inactive timers. It never selects a provider or harness.
+  the verified inactive timers. Explicit `--stop` pauses owned timers under lock,
+  defers while workers drain and leaves unit refresh to the next authorized start.
+  It never selects a provider or harness.
 - `stop` disables only target-owned timer instances (including installed
   surplus instances); it never stops, kills or restarts a service and reports
   `draining` until active services finish.
@@ -340,7 +342,7 @@ def select_target(ctx, repo, explicit_config=None, *, require=False):
     if require:
         raise ControlError('not_prepared',
                            f'no Orbi deployment owns {repo.full}',
-                           fix='run `/orbi setup` for this repository first')
+                           fix='run `/orbi setup --prepare-only` to prepare this repository without activation first')
     return None
 
 
@@ -803,7 +805,7 @@ def require_provider(deployment):
             f'deployment {deployment.config_path} has no verified model provider: '
             + evidence.get('reason', 'unknown reason'),
             fix='configure pi_providers/pi_provider/pi_model with published model metadata, '
-                'then run `/orbi setup`')
+                'then run `/orbi setup --prepare-only` for non-activating validation')
     return evidence
 
 
@@ -818,7 +820,7 @@ def find_provider_source(ctx, deployments):
         raise ControlError(
             'provider_unavailable',
             'no visible deployment has a verified pi_provider/pi_model selection to reuse',
-            fix='run `/orbi setup --pi-providers PATH --pi-provider ID --pi-model ID '
+            fix='run `/orbi setup --prepare-only --pi-providers PATH --pi-provider ID --pi-model ID '
                 '[--pi-thinking LEVEL]` with published Pi model metadata; '
                 'credentials are never copied')
     distinct = {(evidence['provider'], evidence['model'])
@@ -1072,7 +1074,7 @@ def prerequisites(ctx, deployment, *, action, provider=None, metadata=None, allo
         raise ControlError(
             'bootstrap_missing',
             f'the shared user-local bootstrap {path} is missing',
-            fix='run `/orbi setup` to install it, or uv tool install --editable '
+            fix='run `/orbi setup --prepare-only` to install it without activation, or uv tool install --editable '
                 f'{deployment.deploy_home}')
     harness = require_harness(ctx, deployment)
     auth = pi_auth(ctx, deployment, provider, metadata=metadata) if provider else []
@@ -1385,7 +1387,7 @@ def run_orbi_check(ctx, deployment):
         raise ControlError(
             'validation_failed', message,
             fix='inspect and repair the partially prepared native config/provider metadata; '
-                'rerun `/orbi setup` without bootstrap inputs for non-activating validation '
+                'rerun `/orbi setup --prepare-only` without bootstrap inputs for non-activating validation '
                 '(or run orbi check --config ' + str(deployment.config_path) + '); '
                 'use `/orbi status` to inspect scheduler state; upstream setup/install-units '
                 'are activating and are not preparation repairs', mutated=True)
@@ -1458,11 +1460,11 @@ def fragment_kind(fragment, unit):
     return 'unknown'
 
 
-def scheduler_snapshot(ctx, deployment):
+def scheduler_snapshot(ctx, deployment, *, indices=None):
     timers, services = {}, {}
     inventory = scheduler_inventory(deployment)
     ownership_complete = True
-    for index in range(1, MAX_INSTANCES + 1):
+    for index in (indices if indices is not None else range(1, MAX_INSTANCES + 1)):
         timer = f'{deployment.prefix}@{index}.timer'
         service = f'{deployment.prefix}@{index}.service'
         fragment = systemctl_show(ctx, timer, 'FragmentPath')
@@ -1533,8 +1535,10 @@ def deployment_state(snapshot):
     states = [item['state'] for item in snapshot['services'].values()]
     if any(state not in DRAIN_STATES | INACTIVE_STATES for state in states):
         return 'unavailable'
-    if any(state in ACTIVE_STATES for state in states):
+    if 'active' in states:
         return 'running'
+    if any(state in {'activating', 'reloading'} for state in states):
+        return 'transitional'
     if any(state in DRAIN_STATES for state in states):
         return 'draining'
     if any(item['owned'] and (item['enabled'] or item['active'] == 'active')
@@ -1543,25 +1547,217 @@ def deployment_state(snapshot):
     return 'stopped'
 
 
-def queue_evidence(ctx, repo):
-    try:
-        proc = ctx.run(['gh', 'issue', 'list', '--repo', repo.full, '--state', 'open',
-                        '--label', 'ai-ready', '--limit', '100',
-                        '--json', 'number,title'], allow_failure=True, timeout=60)
-    except ControlError:
-        return {'state': 'unavailable', 'reason': 'gh issue list is not available'}
-    if proc.returncode != 0:
-        return {'state': 'unavailable', 'reason': 'gh issue list failed'}
-    try:
-        issues = json.loads(proc.stdout or '[]')
-    except ValueError:
-        return {'state': 'unavailable', 'reason': 'gh issue list returned unreadable JSON'}
-    if not isinstance(issues, list):
-        return {'state': 'unavailable', 'reason': 'gh issue list returned an unexpected shape'}
-    return {'state': 'ok',
-            'ready': [f"#{item.get('number')} {item.get('title')}" for item in issues
-                      if isinstance(item, dict)]}
+# Batch native dependency evidence rather than one detail/LLM call per issue.
+QUEUE_PAGE_LIMIT = 3
+QUEUE_DETAIL_LIMIT = 10
+QUEUE_QUERY = '''query($owner:String!, $name:String!, $cursor:String) {
+  repository(owner:$owner, name:$name) {
+    issues(first:100, after:$cursor, states:OPEN,
+           orderBy:{field:CREATED_AT,direction:ASC}) {
+      nodes {
+        __typename number title url state
+        labels(first:100) { nodes { name } pageInfo { hasNextPage } }
+        assignees(first:10) { nodes { login } pageInfo { hasNextPage } }
+        blockedBy(first:20) {
+          nodes { number title url state } pageInfo { hasNextPage }
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}'''
 
+
+def github_read(ctx, argv):
+    """Read JSON without leaking child output (including GraphQL error text)."""
+    try:
+        proc = ctx.run(['gh', *argv], allow_failure=True)
+        value = json.loads(proc.stdout)
+        # gh exits nonzero for GraphQL errors even when data is partially usable.
+        # Let the queue validator retain valid rows and disclose the errors.
+        if proc.returncode and not (argv[:2] == ['api', 'graphql']
+                                    and isinstance(value, dict) and value.get('errors')):
+            return None
+        return value
+    except (ControlError, ValueError):
+        return None
+
+
+def pending_classification(issue):
+    labels = {node['name'] for node in issue['labels']['nodes']}
+    owners = [node['login'] for node in issue['assignees']['nodes']]
+    deps = [node for node in issue['blockedBy']['nodes'] if node['state'] == 'OPEN']
+    incomplete = any(issue[field]['pageInfo']['hasNextPage']
+                     for field in ('labels', 'assignees', 'blockedBy'))
+    item = {key: issue[key] for key in ('number', 'title', 'url')}
+    item.update(labels=sorted(labels), owners=owners, prerequisites=deps)
+    if 'ai-blocked' in labels:
+        group, reason, action = ('actionable_blocker', 'ai-blocked; recovery diagnosis required',
+                                'Use /unblock deliberately with the existing owner; preserve retained work, '
+                                'inspect the blocker before any retry; do not blindly requeue.')
+    elif labels & {'ai-in-progress', 'ai-pr-opened', 'ai-fix-needed',
+                   'ai-awaiting-merge'} or owners:
+        group, reason, action = ('active_owned', 'ownership/active label or assignee; worker activity unverified',
+                                'Consult the existing owner and linked PR/checks; do not start a competing attempt.')
+    elif 'ai-epic' in labels:
+        group, reason, action = ('epic', 'ai-epic coordination; not executable',
+                                'Inspect child issue outcomes with the planning owner; do not dispatch the epic.')
+    elif labels & {'ai-planning', 'ai-paused', 'ai-needs-detail'}:
+        group, reason, action = ('planning_paused', 'planning/paused label; not dispatchable',
+                                'Next required input is unknown from status evidence; consult the issue and '
+                                'planning owner for the recorded decision or pause gate.')
+    elif deps:
+        group, reason, action = ('native_dependency', 'open native blockedBy prerequisite',
+                                'Follow the linked prerequisites to verified completion; issue ordering is not a dependency.')
+    elif 'ai-ready' in labels and not incomplete:
+        group, reason, action = ('ready', 'ai-ready with no observed ownership, hold or open native prerequisite',
+                                'Ready is not pickup: inspect scheduler/owner evidence and existing pauses; '
+                                'only separately authorized /orbi start may activate scheduling.')
+    else:
+        group, reason, action = ('unknown', 'readiness not evidenced or nested evidence incomplete',
+                                'Inspect the issue with its owner; resolve missing readiness/dependency evidence without guessing.')
+    item.update(reason=reason, next_action=action)
+    return group, item, incomplete
+
+
+def queue_evidence(ctx, repo):
+    issues, gaps, cursor, seen_cursors = {}, [], None, set()
+    pages = 0
+    listing_complete = False
+    for _ in range(QUEUE_PAGE_LIMIT):
+        argv = ['api', 'graphql', '-f', 'query=' + QUEUE_QUERY,
+                '-F', 'owner=' + repo.owner, '-F', 'name=' + repo.name]
+        if cursor:
+            argv += ['-F', 'cursor=' + cursor]
+        value = github_read(ctx, argv)
+        try:
+            if isinstance(value, dict) and value.get('errors'):
+                gaps.append('GitHub reported GraphQL errors; coverage incomplete')
+            connection = value['data']['repository']['issues']
+            nodes, info = connection['nodes'], connection['pageInfo']
+            if not isinstance(nodes, list) or not isinstance(info['hasNextPage'], bool):
+                raise ValueError
+            for issue in nodes:
+                if issue.get('__typename') != 'Issue' or issue.get('state') != 'OPEN':
+                    continue  # Never count PR records or closed issues as pending.
+                # Validate the contract before retaining a row as evidence.
+                if not isinstance(issue['number'], int):
+                    raise ValueError
+                pending_classification(issue)
+                issues[issue['number']] = issue
+            pages += 1
+            if not info['hasNextPage']:
+                listing_complete = True
+                break
+            cursor = info['endCursor']
+            if not cursor or cursor in seen_cursors:
+                gaps.append('issue pagination cursor missing or repeated')
+                break
+            seen_cursors.add(cursor)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            gaps.append('GitHub issue read failed or returned incomplete/unreadable data')
+            break
+    if not listing_complete and not gaps:
+        gaps.append('issue page limit reached; more open issues may exist')
+
+    groups = {name: [] for name in ('actionable_blocker', 'active_owned', 'native_dependency',
+                                   'planning_paused', 'epic', 'ready', 'unknown')}
+    details_left, pr_cache = QUEUE_DETAIL_LIMIT, {}
+    # Prioritize blockers for the bounded detail budget, retaining list order within groups.
+    classified = [pending_classification(issue) for issue in issues.values()]
+    classified.sort(key=lambda row: list(groups).index(row[0]))
+    for group, item, incomplete in classified:
+        groups[group].append(item)
+        if incomplete:
+            gaps.append(f"#{item['number']} nested label/owner/dependency coverage incomplete")
+        if group not in {'actionable_blocker', 'active_owned'}:
+            continue
+        comments, comments_complete = [], False
+        for page in range(1, QUEUE_PAGE_LIMIT + 1):
+            if not details_left:
+                break
+            details_left -= 1
+            value = github_read(ctx, ['api', '--method', 'GET',
+                f'repos/{repo.full}/issues/{item["number"]}/comments?per_page=100&page={page}'])
+            if not isinstance(value, list) or any(not isinstance(row, dict) or
+                                                     not isinstance(row.get('body'), str)
+                                                     for row in value):
+                break
+            comments.extend(value)
+            if len(value) < 100:
+                comments_complete = True
+                break
+        item['detail_coverage'] = 'complete' if comments_complete else 'partial'
+        if not comments_complete:
+            gaps.append(f"#{item['number']} comment detail unavailable or capped")
+        pr_numbers = set()
+        retry_unsafe, branch_changed = False, False
+        for comment in comments:
+            body = comment['body']
+            # Only structured failure receipts establish retry safety; never infer safe retry.
+            if group == 'actionable_blocker':
+                for match in re.finditer(r'<!-- orbi:failure:v1 (\{.*?\}) -->', body):
+                    try:
+                        failure = json.loads(match.group(1))
+                    except ValueError:
+                        continue
+                    if failure.get('retry_safe') is False:
+                        retry_unsafe = True
+                        if re.search(r'(?:branch|remote).{0,120}(?:chang|conflict)', body, re.I):
+                            branch_changed = True
+            pr_numbers.update(int(number) for number in re.findall(
+                rf'https://github\.com/{re.escape(repo.full)}/pull/(\d+)\b', body))
+        # A later terse duplicate receipt must not erase the concrete diagnosis.
+        if retry_unsafe:
+            item['retry_safe'] = False
+            item['reason'] = 'ai-blocked; failure receipt forbids blind retry (retry_safe=false)'
+            item['next_action'] = ('Use /unblock deliberately with the existing owner; '
+                'inspect the failure and retained work before any retry; '
+                'retry_safe=false forbids blind retry or requeue.')
+            if branch_changed:
+                item['reason'] += '; reported branch change/conflict'
+                item['next_action'] = ('Use /unblock deliberately: compare the current remote head '
+                    'and retained work with the existing owner before any retry; '
+                    'retry_safe=false forbids blind retry or requeue. Preserve both candidates.')
+        item['pull_request_scope'] = 'observed comment links only; unlinked PRs unknown'
+        item['pull_requests'] = []
+        for number in sorted(pr_numbers):
+            if number not in pr_cache:
+                if not details_left:
+                    gaps.append(f'PR #{number} detail budget exhausted')
+                    continue
+                details_left -= 1
+                pr_cache[number] = github_read(ctx, ['pr', 'view', str(number), '--repo', repo.full,
+                    '--json', 'number,url,state,headRefName,headRefOid'])
+            value = pr_cache[number]
+            if not isinstance(value, dict) or value.get('state') not in {'OPEN', 'CLOSED', 'MERGED'}:
+                gaps.append(f'PR #{number} state unavailable')
+                item['pull_requests'].append({'number': number,
+                    'url': f'https://github.com/{repo.full}/pull/{number}', 'state': 'unavailable'})
+                continue
+            item['pull_requests'].append({key: value.get(key) for key in
+                                         ('number', 'url', 'state', 'headRefName', 'headRefOid')})
+            item['pull_requests'][-1]['meaning'] = (
+                'open PR, not successful delivery' if value['state'] == 'OPEN' else
+                'merged PR; issue acceptance/live qualification not established by status' if value['state'] == 'MERGED' else
+                'closed PR, not evidence of successful delivery')
+
+    coverage = {'complete': listing_complete and not gaps, 'listing_complete': listing_complete,
+                'pages_read': pages, 'page_limit': QUEUE_PAGE_LIMIT, 'page_size': 100,
+                'detail_limit': QUEUE_DETAIL_LIMIT, 'details_read': QUEUE_DETAIL_LIMIT - details_left,
+                'gaps': gaps}
+    result = {'state': 'ok' if coverage['complete'] else 'partial' if issues else 'unavailable',
+              'coverage': coverage,
+              'next_action': ('Inspect the evidenced next actions; zero ready does not mean zero pending. '
+                              'Status authorizes no recovery or scheduler writes.' if coverage['complete'] else
+                              'Restore GitHub auth/read access or inspect the disclosed coverage limits; '
+                              'rerun read-only status. Counts are observed lower bounds, not an empty repository.')}
+    if issues or listing_complete:
+        result.update(ready=[f"#{item['number']} {item['title']}" for item in groups['ready']],
+                      pending_count=len(issues), pending=groups)
+    if gaps:
+        result['reason'] = '; '.join(gaps)
+    return result
 
 def doctor_evidence(ctx, deployment):
     state, _ = bootstrap_evidence(ctx, deployment)
@@ -1965,7 +2161,8 @@ def start_plan(ctx, target):
     return source, provider
 
 
-def lifecycle_failure(ctx, target, error, *, target_path, steps, current, mutated, evidence):
+def lifecycle_failure(ctx, target, error, *, target_path, steps, current, mutated, evidence,
+                      snapshot_reader=safe_scheduler_snapshot):
     """Retain completed work; recovery is observation only, never compensation."""
     if isinstance(error, ControlError):
         exc = error
@@ -1982,8 +2179,15 @@ def lifecycle_failure(ctx, target, error, *, target_path, steps, current, mutate
         exc = ControlError('command_failed', 'lifecycle subprocess failed (details withheld)',
                            fix='inspect the failed command privately and repair the cause')
     exc.mutated = exc.mutated or mutated
-    snapshot = (safe_scheduler_snapshot(ctx, target) if mutated and target else
-                exc.evidence.get('scheduler', {'state': 'unavailable'}))
+    snapshot = exc.evidence.get('scheduler', {'state': 'unavailable'})
+    if mutated and target:
+        try:
+            snapshot = snapshot_reader(ctx, target)
+        except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as observation_error:
+            snapshot = (observation_error.evidence.get('scheduler', unavailable_scheduler(
+                target, 'scheduler evidence could not be read'))
+                if isinstance(observation_error, ControlError) else
+                unavailable_scheduler(target, 'scheduler evidence could not be read'))
     exc.evidence = {**exc.evidence, **evidence,
                     'target': str(target.config_path) if target else target_path,
                     'deployment': ({'config': str(target.config_path),
@@ -2007,6 +2211,57 @@ def run_upstream_step(ctx, target, command, *args, timeout=CHECK_TIMEOUT):
         raise ControlError(command.replace('-', '_') + '_failed',
                            f'upstream `orbi {command}` failed',
                            fix=f'inspect the failed {command} privately')
+
+
+def first_tick_after_timer_failure(ctx, args, repo, target, identities):
+    """Called under the config lock only after a definite timer-enable exit.
+
+    This is one normal systemd request, not a retry or a scheduling repair.
+    Its receipt must never replace the original timer error.
+    """
+    service = f'{target.prefix}@1.service'
+    evidence = {'unit': service, 'mutation': 'none',
+                'scheduler': unavailable_scheduler(target, 'recovery not yet verified')}
+    outcome = 'blocked'
+    try:
+        if (repo_identity(ctx, repo.path) != repo
+                or select_target(ctx, repo, args.config, require=True) != target
+                or setup_file_identities(target) != identities):
+            raise ControlError('target_changed', 'activation target changed after timer failure')
+        validate_target(target, repo)
+        require_unit_ownership(ctx, target)
+        require_harness(ctx, target)
+        snapshot = update_observation(ctx, target)
+        evidence['scheduler'] = snapshot
+        # A missing configured unit or transitioning timer leaves the failed
+        # enable unbounded. Active timers are allowed: a failed enable may have
+        # partially applied, but workers and pending jobs must still be idle.
+        if (any(f'{target.prefix}@{i}.timer' not in snapshot['timers']
+                for i in range(1, target.max_concurrency + 1))
+                or not snapshot['services'].get(service, {}).get('owned')
+                or any(item['active'] not in INACTIVE_STATES | {'active'}
+                       for item in snapshot['timers'].values())):
+            raise ControlError('scheduler_unavailable', 'timer failure lacks stable owned unit evidence')
+        if update_pending(snapshot):
+            raise ControlError('scheduler_busy', 'workers or pending scheduler jobs are not idle')
+        outcome = 'unverified'
+        evidence['mutation'] = 'possible'
+        proc = ctx.run(['systemctl', '--user', 'start', service], timeout=MUTATION_TIMEOUT,
+                       allow_failure=True)
+        if proc.returncode != 0:
+            evidence['error'] = 'command_failed'
+            evidence['reason'] = f'first-tick request exited with {proc.returncode}'
+            outcome = 'failed' if proc.returncode > 0 else 'unverified'
+        else:
+            outcome = 'requested'
+            evidence['mutation'] = 'completed'
+    except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
+        evidence['error'] = error.code if isinstance(error, ControlError) else 'observation_failed'
+        evidence['reason'] = (error.message if isinstance(error, ControlError)
+                              else 'first-tick evidence or request could not be verified')
+        if isinstance(error, ControlError) and 'scheduler' in error.evidence:
+            evidence['scheduler'] = error.evidence['scheduler']
+    return {'first_tick': outcome, 'first_tick_evidence': evidence}
 
 
 def command_start(ctx, args):
@@ -2123,8 +2378,17 @@ def command_start(ctx, args):
                                   'status': 'already-active'})
                     continue
                 current = {'step': 'activate_timer', 'unit': timer, 'mutation': 'possible'}
-                ctx.run(['systemctl', '--user', 'enable', '--now', timer],
-                        timeout=MUTATION_TIMEOUT)
+                proc = ctx.run(['systemctl', '--user', 'enable', '--now', timer],
+                               timeout=MUTATION_TIMEOUT, allow_failure=True)
+                if proc.returncode != 0:
+                    error = ControlError(
+                        'command_failed', f"'systemctl --user' failed with exit {proc.returncode}",
+                        fix='inspect the command output manually',
+                        evidence={'first_tick': 'not-requested', 'recurring_scheduling': 'incomplete'})
+                    if proc.returncode > 0:
+                        error.evidence.update(first_tick_after_timer_failure(
+                            ctx, args, repo, target, identities))
+                    raise error
                 activated.append(timer)
                 steps.append({'step': 'activate_timer', 'unit': timer, 'status': 'enabled'})
             live = [name for name, item in snapshot['services'].items()
@@ -2150,6 +2414,9 @@ def command_start(ctx, args):
             # Keep setup's exact original failed operation, target and mutation evidence.
             error.evidence = {**error.evidence, 'preparation': preparation, 'activation': 'none'}
             raise
+        if isinstance(error, ControlError) and current['step'] == 'activate_timer':
+            error.evidence.setdefault('first_tick', 'not-requested')
+            error.evidence.setdefault('recurring_scheduling', 'incomplete')
         exc = lifecycle_failure(ctx, target, error, target_path=preparation.get('target', args.config),
                                 steps=steps, current=current, mutated=mutated,
                                 evidence={'activation': activation, 'activated_timers': activated,
@@ -2163,6 +2430,15 @@ def owned_timers(ctx, target, snapshot):
         if item['installed'] and item['owned']:
             owned.append((timer, item))
     return owned
+
+
+def disable_owned_timers(ctx, target, snapshot, disabled, steps, current):
+    for timer, _item in owned_timers(ctx, target, snapshot):
+        current.clear()
+        current.update(step='disable_timer', unit=timer, mutation='possible')
+        ctx.run(['systemctl', '--user', 'disable', '--now', timer], timeout=MUTATION_TIMEOUT)
+        disabled.append(timer)
+        steps.append({'step': 'disable_timer', 'unit': timer, 'status': 'disabled'})
 
 
 def pending_services(ctx, target):
@@ -2210,12 +2486,7 @@ def command_stop(ctx, args):
                 raise ControlError('scheduler_unavailable',
                                    f"cannot read the target scheduler: {snapshot.get('reason')}",
                                    fix='verify the systemd user session, then rerun')
-            for timer, item in owned_timers(ctx, target, snapshot):
-                current = {'step': 'disable_timer', 'unit': timer, 'mutation': 'possible'}
-                ctx.run(['systemctl', '--user', 'disable', '--now', timer],
-                        timeout=MUTATION_TIMEOUT)
-                disabled.append(timer)
-                steps.append({'step': 'disable_timer', 'unit': timer, 'status': 'disabled'})
+            disable_owned_timers(ctx, target, snapshot, disabled, steps, current)
             current = {'step': 'observe_drain', 'mutation': 'none'}
             pending = pending_services(ctx, target)
             if any(item['state'] not in DRAIN_STATES for item in pending):
@@ -2242,7 +2513,18 @@ def command_stop(ctx, args):
 UPDATE_TRACK = 'release'
 
 
-def update_plan_steps():
+def update_plan_steps(*, stop=False):
+    if stop:
+        return [
+            {'step': 'pause_owned_timers', 'status': 'planned'},
+            {'step': 'observe_drain', 'status': 'planned',
+             'reason': 'defer if workers or pending jobs remain; never stop services or poll'},
+            {'step': 'sync_engine_source', 'status': 'conditional',
+             'reason': 'only after confirmed idle: sync release, pin exact commit and validate'},
+            {'step': 'refresh_units', 'status': 'deferred',
+             'reason': 'next authorized start installs units; public install-units activates timers'},
+            {'step': 'observe_scheduler', 'status': 'conditional'},
+        ]
     return [
         {'step': 'set_release_track', 'status': 'planned', 'track': UPDATE_TRACK},
         {'step': 'sync_engine_source', 'status': 'planned',
@@ -2315,11 +2597,102 @@ def restore_scheduling(ctx, deployment):
     return disabled
 
 
+def update_observation(ctx, target):
+    """Discover all relevant loaded/installed instances and queued starts, not just slots."""
+    indices = set(range(1, max(MAX_INSTANCES, target.max_concurrency) + 1))
+    pattern = re.compile(re.escape(target.prefix) + r'@([1-9][0-9]*)\.(?:timer|service)')
+    jobs, discovered = [], set()
+    for command in ('list-units', 'list-unit-files', 'list-jobs'):
+        argv = ['systemctl', '--user', command, '--no-legend', '--no-pager', '--full']
+        if command != 'list-jobs':
+            argv += ['--all', target.prefix + '@*']
+        if command == 'list-units':
+            argv.append('--plain')
+        proc = ctx.run(argv, allow_failure=True)
+        if proc.returncode != 0:
+            raise ControlError('scheduler_unavailable', f'cannot read scheduler {command}',
+                               fix='restore complete systemd user-session inventory before retrying')
+        for line in proc.stdout.splitlines():
+            fields = line.split()
+            if not fields:
+                continue
+            if command == 'list-jobs':
+                if len(fields) < 4 or not fields[0].isdigit():
+                    raise ControlError('scheduler_unavailable', 'pending scheduler jobs are unreadable',
+                                       fix='restore systemctl --user list-jobs evidence')
+                name = fields[1]
+            else:
+                if (len(fields) < (4 if command == 'list-units' else 2)
+                        or not fields[0].startswith(target.prefix + '@')):
+                    raise ControlError('scheduler_unavailable', 'target scheduler inventory is unreadable',
+                                       fix='restore complete systemctl unit inventory before retrying')
+                name = fields[0]
+            if not name.startswith(target.prefix + '@'):
+                continue
+            if name in {target.prefix + '@.timer', target.prefix + '@.service'}:
+                continue
+            match = pattern.fullmatch(name)
+            if not match:
+                raise ControlError('scheduler_unavailable', 'unrecognized target scheduler instance',
+                                   fix='inspect target instance inventory; do not adopt unknown units')
+            indices.add(int(match.group(1)))
+            discovered.add(name)
+            if command == 'list-jobs':
+                jobs.append({'unit': name, 'state': 'queued', 'job': fields[2]})
+    snapshot = scheduler_snapshot(ctx, target, indices=sorted(indices))
+    snapshot['inventory']['additional_instances'] = sorted(i for i in indices if i > MAX_INSTANCES)
+    snapshot['pending_jobs'] = jobs
+    if snapshot['state'] != 'ok':
+        raise ControlError('scheduler_unavailable', 'update cannot verify scheduler state',
+                           fix='restore readable scheduler evidence before deliberately retrying update',
+                           evidence={'scheduler': snapshot})
+    if (any((item['installed'] or item['state'] not in INACTIVE_STATES) and not item['owned']
+            for item in snapshot['services'].values())
+            or any(not item['owned'] for item in snapshot['timers'].values())):
+        raise ControlError('unit_conflict', 'loaded units have unknown or foreign ownership',
+                           fix='inspect loaded fragments; never adopt foreign units', exit_code=2,
+                           evidence={'scheduler': snapshot})
+    if (any(item['fragment_kind'] == 'unknown' for item in snapshot['services'].values())
+            or any(item['fragment_kind'] == 'unknown' or item['active'] not in DRAIN_STATES | INACTIVE_STATES
+                   for item in snapshot['timers'].values())):
+        raise ControlError('scheduler_unavailable', 'target unit evidence is incomplete',
+                           fix='restore complete target fragment/state evidence', evidence={'scheduler': snapshot})
+    if any(item['state'] != 'ok' for item in snapshot['inventory']['counts'].values()):
+        raise ControlError('scheduler_unavailable', 'target ownership/state counts are incomplete',
+                           fix='inspect ambiguous fragments and scheduler evidence',
+                           evidence={'scheduler': snapshot})
+    # Enumerated instances need ownership evidence, including those outside the fixed scan.
+    for name in discovered:
+        item = (snapshot['timers'] if name.endswith('.timer') else
+                snapshot['services']).get(name)
+        if not item or not item['owned']:
+            raise ControlError('unit_conflict', 'enumerated unit ownership is unverified',
+                               fix='inspect pending jobs and loaded fragments before retrying',
+                               evidence={'scheduler': snapshot})
+    return snapshot
+
+
+def paused_observation(ctx, target):
+    snapshot = update_observation(ctx, target)
+    if any(item['enabled'] or item['active'] not in INACTIVE_STATES
+           for item in snapshot['timers'].values()):
+        raise ControlError('scheduler_unavailable', 'timer disable readback did not prove scheduling stopped',
+                           fix='inspect disabled timers and user-session evidence; do not sync yet',
+                           evidence={'scheduler': snapshot})
+    return snapshot
+
+
+def update_pending(snapshot):
+    return ([{'unit': name, 'state': item['state']} for name, item in snapshot['services'].items()
+             if item['state'] not in INACTIVE_STATES] + snapshot['pending_jobs'])
+
+
 def command_update(ctx, args):
-    """Advance one inactive deployment to the newest official release."""
+    """Update one deployment; --stop authorizes pausing timers, never workers."""
     target = None
     steps, disabled = [], []
     mutated = False
+    resume = None
     previous = {'track': None, 'head': None}
     current = {'step': 'preflight', 'mutation': 'none'}
     try:
@@ -2336,14 +2709,17 @@ def command_update(ctx, args):
         identities = setup_file_identities(target)
         evidence = prerequisites(ctx, target, action='update', provider=provider,
                                  allow_bootstrap_install=False)
-        snapshot = require_setup_idle(ctx, target, action='update')
+        snapshot = (update_observation(ctx, target) if args.stop else
+                    require_setup_idle(ctx, target, action='update'))
+        resume = ('/orbi update --stop --repo-dir ' + shlex.quote(str(repo.path))
+                  + ' --config ' + shlex.quote(str(target.config_path)))
         report = new_deployment_report(ctx, target, provider)
         report['source'] = source_evidence(ctx, target)['state']
         if args.dry_run:
             return {'action': 'update', 'platform': ctx.platform, 'status': 'planned',
                     'dry_run': True, 'repo': repo.full, 'deployment': report,
                     'previous': previous, 'prerequisites': evidence,
-                    'scheduler': snapshot, 'steps': update_plan_steps(),
+                    'scheduler': snapshot, 'steps': update_plan_steps(stop=args.stop),
                     'activated': False, 'warnings': []}
         steps.append({'step': 'preflight_target', 'status': 'ok'})
         current, mutated = {'step': 'lock', 'mutation': 'possible'}, True
@@ -2360,7 +2736,31 @@ def command_update(ctx, args):
             require_unit_ownership(ctx, target)
             require_source(ctx, target)
             require_clean_checkout(ctx, target)
-            idle = require_setup_idle(ctx, target, action='update')
+            if args.stop:
+                require_setup_transport(repo, target)
+                require_harness(ctx, target)
+                provider = require_provider(target)
+                evidence = prerequisites(ctx, target, action='update', provider=provider,
+                                         allow_bootstrap_install=False)
+                snapshot = update_observation(ctx, target)
+                disable_owned_timers(ctx, target, snapshot, disabled, steps, current)
+                current = {'step': 'observe_drain', 'mutation': 'none'}
+                idle = paused_observation(ctx, target)
+                pending = update_pending(idle)
+                if pending:
+                    steps.append({'step': 'observe_drain', 'status': 'draining'})
+                    current = {'step': 'release_lock', 'mutation': 'possible'}
+                    return {'action': 'update', 'platform': ctx.platform, 'status': 'draining',
+                            'dry_run': False, 'repo': repo.full, 'deployment': report,
+                            'previous': previous, 'prerequisites': evidence,
+                            'scheduler': idle, 'scheduler_confirmation': 'timers_disabled',
+                            'disabled_timers': disabled, 'pending_services': pending,
+                            'engine_update': 'deferred', 'unit_refresh': 'deferred',
+                            'unit_refresh_reason': 'next authorized start installs units',
+                            'resume_command': resume, 'steps': steps, 'activated': False,
+                            'warnings': ['Workers may finish; no polling or background continuation.']}
+            else:
+                idle = require_setup_idle(ctx, target, action='update')
             steps.append({'step': 'recheck_target', 'status': 'ok'})
             current = {'step': 'set_release_track', 'mutation': 'possible'}
             track_state = rewrite_engine_track(target, UPDATE_TRACK)
@@ -2377,11 +2777,20 @@ def command_update(ctx, args):
             steps.append({'step': 'pin_release', 'status': pin_state,
                           'track': 'sha:' + head, 'mutation': 'completed'})
             current = {'step': 'validate_non_activating', 'mutation': 'possible'}
+            validated_identities = setup_file_identities(target)
             run_orbi_check(ctx, target)
+            if (select_target(ctx, repo, args.config, require=True) != target
+                    or setup_file_identities(target) != validated_identities):
+                raise ControlError('target_changed', 'deployment files changed during update validation',
+                                   fix='inspect concurrent changes; preserve recovery inputs', exit_code=2)
             steps.append({'step': 'validate_non_activating', 'status': 'ok',
                           'mutation': 'completed'})
-            current = {'step': 'refresh_units', 'mutation': 'possible'}
-            if any(item['installed'] for item in idle['timers'].values()):
+            current = {'step': 'refresh_units', 'mutation': 'none' if args.stop else 'possible'}
+            if args.stop:
+                # The public installer enables timers, even briefly. Only start may use it.
+                steps.append({'step': 'refresh_units', 'status': 'deferred',
+                              'reason': 'next authorized start installs units; installer activates timers'})
+            elif any(item['installed'] for item in idle['timers'].values()):
                 run_upstream_step(ctx, target, 'install-units', timeout=MUTATION_TIMEOUT)
                 steps.append({'step': 'refresh_units', 'status': 'refreshed',
                               'mutation': 'completed'})
@@ -2389,12 +2798,17 @@ def command_update(ctx, args):
                 # Update repairs installed services; start installs first units.
                 steps.append({'step': 'refresh_units', 'status': 'deferred',
                               'reason': 'no owned unit is installed; start installs and enables it'})
-            current = {'step': 'restore_scheduling', 'mutation': 'possible'}
-            disabled = restore_scheduling(ctx, target)
-            steps.append({'step': 'restore_scheduling', 'status': 'disabled',
-                          'timers': disabled, 'mutation': 'completed'})
+            if not args.stop:
+                current = {'step': 'restore_scheduling', 'mutation': 'possible'}
+                disabled = restore_scheduling(ctx, target)
+                steps.append({'step': 'restore_scheduling', 'status': 'disabled',
+                              'timers': disabled, 'mutation': 'completed'})
             current = {'step': 'observe_scheduler', 'mutation': 'none'}
-            after = scheduler_snapshot(ctx, target)
+            after = paused_observation(ctx, target) if args.stop else scheduler_snapshot(ctx, target)
+            if args.stop and update_pending(after):
+                raise ControlError('update_busy', 'work appeared during update',
+                                   fix='inspect pending work and source state before retrying',
+                                   evidence={'scheduler': after, 'pending_services': update_pending(after)})
             if after['state'] != 'ok':
                 raise ControlError('scheduler_unavailable',
                                    f"cannot read the target scheduler: {after.get('reason')}",
@@ -2410,7 +2824,11 @@ def command_update(ctx, args):
                 'dry_run': False, 'repo': repo.full, 'deployment': report,
                 'previous': previous, 'prerequisites': evidence,
                 'scheduler': after, 'disabled_timers': disabled,
-                'pending_services': pending_services(ctx, target),
+                'pending_services': update_pending(after) if args.stop else pending_services(ctx, target),
+                **({'engine_update': 'up_to_date' if head == previous['head'] else 'updated',
+                    'unit_refresh': 'deferred',
+                    'unit_refresh_reason': 'next authorized start installs units',
+                    'scheduler_confirmation': 'stopped'} if args.stop else {}),
                 'steps': steps, 'activated': False,
                 'warnings': (['install-units enables configured timers while it re-reads the '
                               'refreshed unit templates; update disabled them again to restore the '
@@ -2421,7 +2839,9 @@ def command_update(ctx, args):
             raise
         exc = lifecycle_failure(ctx, target, error, target_path=args.config, steps=steps,
                                 current=current, mutated=mutated,
-                                evidence={'previous': previous, 'disabled_timers': disabled})
+                                evidence={'previous': previous, 'disabled_timers': disabled,
+                                          **({'resume_command': resume} if args.stop else {})},
+                                snapshot_reader=update_observation if args.stop else safe_scheduler_snapshot)
         raise exc from (error if exc is not error else None)
 
 
@@ -2475,7 +2895,7 @@ def action_usage():
     return ('python3 -B orbi_control.py [' + '|'.join(ACTIONS) + '] '
             '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] '
             '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] '
-            '[--resume-setup] [--harness {pi-bolt,pi}]')
+            '[--resume-setup] [--harness {pi-bolt,pi}] [--stop]')
 
 
 def command_help(ctx, args):
@@ -2485,6 +2905,7 @@ def command_help(ctx, args):
         '--config': 'explicit native Orbi config for this deployment',
         '--dry-run': 'preview without locking, writing, installing or activating',
         '--json': 'print one JSON document',
+        '--stop': 'update only: authorize pausing owned timers, defer while workers drain; leave stopped',
         '--resume-setup': 'setup only: fill a legacy missing local provider; requires explicit '
                           '--config and complete matching --pi-* inputs; never overwrite',
         '--pi-providers': 'regular Pi metadata JSON for new setup/absent start or explicit bounded setup resume (no credentials)',
@@ -2504,11 +2925,19 @@ def command_help(ctx, args):
                                           if flag in entry['applies']]}
                     for flag, effect in options.items()},
         'quickstart': [
-            'Bare /orbi or status inspects only. Start prepares if absent, then activates; '
-            'an existing valid target skips preparation and retains its provider/harness.',
+            'Bare /orbi or status inspects only. For a genuinely absent deployment with no explicit --config, '
+            'authorized start prepares, validates non-activating, then activates in one invocation; '
+            'no separate setup or repeated approval. An existing valid target skips preparation and '
+            'retains its provider/harness. Missing explicit configs, partial and foreign targets are not absent.',
             'Start requires explicit scheduling authority and resolved explicit pauses, cutover '
             'and human-only gates. Kit remains paused and live-unqualified; help grants no waiver.',
-            'Setup prepares without scheduling. New preparation defaults to Pi-Bolt; --harness pi '
+            'Public skill syntax: /orbi setup starts by default (maps to helper start); its explicit '
+            'invocation expresses scheduling intent, not a gate waiver. /orbi setup --prepare-only '
+            'maps to non-activating helper setup. The skill consumes --prepare-only; it is not a Python flag. '
+            'Public setup --resume-setup requires --prepare-only; otherwise reject before invocation and '
+            'show setup --prepare-only --resume-setup with the original arguments. '
+            'Default setup --dry-run previews start; prepare-only --dry-run previews preparation only.',
+            'Direct Python helper syntax: setup prepares without scheduling. New preparation defaults to Pi-Bolt; --harness pi '
             'selects stock Pi. Existing selections stay unchanged. A missing binary is a prerequisite, '
             'not an automatic installation or fallback.',
             'Use published provider/model IDs and a credential-free metadata path; omitted selectors '
@@ -2517,19 +2946,35 @@ def command_help(ctx, args):
             'scheduling requested, not live-qualified delivery. Absent-start preview defers source, '
             'published-file validation and activation checks until preparation; it does not pass them.',
             'Status separates configured harness from running-process evidence (not observed), and '
-            'configured slots from enabled/active observed units. Template rows are not enabled capacity.',
+            'configured slots from enabled/active observed units. With an enabled/active owned timer, '
+            'scheduling is active but no worker was observed if running-service reads show none; '
+            'not stopped or setup needed. Missing evidence or activity outside the scan is unknown, not zero. '
+            'Template rows are not enabled capacity.',
             'Update advances one inactive deployment to the newest official release through upstream '
             'sync-engine-source, locks that commit as sha:<commit>, refreshes owned units and leaves '
-            'scheduling inactive. It never selects a provider, harness or origin.',
+            'scheduling inactive. It never selects a provider, harness or origin. '
+            'Update --stop authorizes a pause without another prompt: disable owned timers, including '
+            'inactive enabled instances, defer while workers/pending starts remain, then sync/pin/check '
+            'only when idle. It never stops services or restarts scheduling; unit refresh is deferred '
+            'to the next authorized start because public install-units activates timers.',
         ],
         'examples': [
             {'command': '/orbi status --json', 'outcome': 'Inspect only; bare /orbi is equivalent.'},
             {'command': '/orbi setup --dry-run --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
-             'outcome': 'Preview first preparation; replace paths/IDs with verified published metadata.'},
+             'outcome': 'Preview default start without writes; staged validation/activation checks remain deferred. '
+                        'Replace paths/IDs with verified published metadata.'},
             {'command': '/orbi setup --harness pi --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
-             'outcome': 'Prepare a new stock Pi target without scheduling.'},
+             'outcome': 'With scheduling authority and resolved gates: prepare a new stock Pi target, then activate.'},
+            {'command': '/orbi setup --prepare-only --dry-run --pi-providers /path/to/models.json '
+                        '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
+             'outcome': 'Preview preparation only; remove --dry-run to prepare without scheduling.'},
+            {'command': '/orbi setup --prepare-only --resume-setup --config /path/to/orbi.toml '
+                        '--pi-providers /path/to/models.json --pi-provider SAVED_PROVIDER_ID '
+                        '--pi-model SAVED_MODEL_ID --dry-run',
+             'outcome': 'Preview bounded missing-local-provider recovery with exact saved selectors; '
+                        'never activate.'},
             {'command': '/orbi start --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
              'outcome': 'Only with scheduling authority: prepare absent target with Pi-Bolt, then activate. '
@@ -2540,6 +2985,9 @@ def command_help(ctx, args):
             {'command': '/orbi stop', 'outcome': 'Disable owned timers; active services drain, never killed.'},
             {'command': '/orbi update --dry-run',
              'outcome': 'Preview the release channel change and unit refresh; no writes.'},
+            {'command': '/orbi update --stop',
+             'outcome': 'Pause owned timers, allow workers to finish; return draining with resume_command '
+                        'or update when idle and leave stopped. Unit refresh waits for authorized start.'},
             {'command': '/orbi update',
              'outcome': 'Only after an authorized stop/drain: sync the newest official release, lock '
                         'its commit, refresh owned units and leave scheduling inactive.'},
@@ -2553,16 +3001,30 @@ def command_help(ctx, args):
             'config_missing': '--config must name an existing native config. Correct the path; omit --config '
                               'only for genuinely absent preparation, not to bypass partial/foreign state.',
             'partial_setup': 'Preserve config, pin, provider, env, launcher and attempts. Inspect the failed step; '
-                             'repair deliberately and use setup without bootstrap selectors. Only a legacy missing '
-                             'local provider permits setup --config PATH --resume-setup with complete matching '
+                             'repair deliberately and use public setup --prepare-only (direct helper setup) without bootstrap selectors. Only a legacy missing '
+                             'local provider permits public setup --prepare-only --resume-setup --config PATH '
+                             '(direct helper setup --resume-setup) with complete matching '
                              'selectors. Start never performs legacy repair or changes a saved harness.',
-            'setup_busy': 'Preparation requires verified inactivity. Inspect status and existing ownership/authority; '
-                          'do not stop workers to pass validation. Existing valid start skips preparation.',
+            'activation': 'Before actual start, separate the owner scheduling request from deployment-specific '
+                          'gate evidence. Name the specific missing evidence, applicable cutover checklist and '
+                          'existing record if found; otherwise say no record was found in the inspected sources. '
+                          'Name the next safe read-only check or exact owner repair and held operation. '
+                          'GitHub unprotected main is an observed branch state; protection/rules HTTP 403 means '
+                          'access denied and unknown details, not absent rules. Both can coexist. A preview is '
+                          'not approval. Do not demand a generic cutover record, invent approval or reconfirm '
+                          'settled owner intent. See skills/orbi/references/lifecycle.md#activation-evidence.',
+            'setup_busy': 'Preparation requires verified inactivity. Cite observed timer/worker state from '
+                          'status or the error scheduler evidence. Offer authorized stop/drain only when '
+                          'deliberately re-preparing or pausing; do not stop workers to pass a preview. '
+                          'Existing valid start skips preparation.',
             'platform': 'unsupported_platform: use Linux for authorized mutations; macOS supports status/help; '
                         'other platforms support help only.',
             'update': 'update_busy/source_dirty/sync_engine_source_failed: stop and drain first, preserve tracked '
                       'checkout changes, and inspect the failed fetch or channel privately. Update never '
-                      'discards work, rewrites origin or leaves scheduling active.',
+                      'discards work or rewrites origin. Explicit update --stop pauses owned timers without stopping '
+                      'workers; draining receipts name pending units and exact resume_command. Failed disable '
+                      'or scheduler readback blocks sync. Inspect partial steps/scheduler, repair the cause '
+                      'and deliberately retry; no timer re-enable rollback.',
             'stale_helper': 'Report the Loaded helper path and available Kit revision; request a separately '
                             'authorized Kit update/reload. Do not change origin, upgrade an engine pin, run bare '
                             'upstream Orbi or stop workers as a workaround.',
@@ -2578,7 +3040,7 @@ def command_help(ctx, args):
             'fix': 'error.fix gives the repair action; unknown actions point to /orbi help.',
         },
         'boundaries': [
-            'Usage: ' + action_usage(),
+            'Direct Python helper syntax (not public skill syntax): ' + action_usage(),
             'Minimum Python 3.11; the Python floor guard also applies to help.',
             'Linux supports mutations; macOS supports status and help; other platforms '
             'support help only.',
@@ -2588,7 +3050,7 @@ def command_help(ctx, args):
             'Loaded helper: ' + str(Path(__file__).resolve()) + '. If flags are missing in an '
             'older installed helper, report its path and available Kit revision, then request '
             'a separately authorized Kit update/reload; never rewrite project origin.',
-            'Setup supports new preparation, existing valid reuse without selectors, or explicit '
+            'Direct helper setup supports new preparation, existing valid reuse without selectors, or explicit '
             'bounded --resume-setup for a legacy missing local provider with matching selectors. '
             'Other incomplete/changed states require deliberate repair preserving evidence.',
             'Setup activated=false means no activation invoked here, not proof an existing '
@@ -2598,15 +3060,26 @@ def command_help(ctx, args):
             'not completed; confirmed timer lists exclude failed attempts. Start activation=possible '
             'means timers or workers may already run; activation=none can still include lock writes. '
             'Never retry unchanged, compensate with enable/disable, or stop workers after failure.',
+            'Start (also public default setup) may request one first tick after a definite timer-enable '
+            'nonzero exit, only after successful upstream setup/install and scheduler readback. Under '
+            'the config lock it revalidates target identity and fresh owned units, stable timer states, '
+            'all workers idle and no pending target jobs. No later timer configuration or enable retry. '
+            'Timeout, unavailable/unknown evidence, ownership drift or active/draining workers block '
+            'this recovery. The original timer error and nonzero exit remain: recurring_scheduling=incomplete; '
+            'first_tick is requested, blocked, failed, unverified or not-requested. first_tick_evidence '
+            'separates the decision snapshot/request mutation from the later scheduler observation. '
+            'Requested means only systemd accepted the request, not worker completion or live delivery.',
             'Status is read-only. Setup (including absent-start preparation) stages source/config; start, '
             'update and stop touch the scheduler. Update leaves the verified inactive state and names any '
             'timer it disabled. Dry-run performs no writes.',
             'Not an executor or scheduler: no tick, issue claim, review or merge.',
             'Not /unblock, /git-commit-push, /plan-with-me, /plan-for-me.',
             'Local visibility only: no cross-machine lock or capacity guarantee.',
-            'Next steps: use status to inspect; setup to prepare; start only after an '
+            'Next steps: use status to inspect; public setup --prepare-only (helper setup) to prepare; '
+            'public setup or start only after an '
             'owner scheduling request and resolved pauses, cutover and human-only gates; update only after '
-            'an authorized stop/drain; stop to disable owned timers while preserving active workers.',
+            'an authorized stop/drain, or use update --stop to authorize the pause and leave stopped; '
+            'stop disables owned timers while preserving active workers.',
         ],
     }
 
@@ -2639,18 +3112,22 @@ ACTIONS = {
         'platforms': ['linux'],
         'applies': ['--repo-dir', '--config', '--dry-run', '--json',
                     '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--harness'],
-        'when': 'Run after an owner scheduling request; prepare only if absent, then activate after '
-                'resolution of explicit pauses, cutover requirements and human-only gates.',
+        'when': 'Run after an owner scheduling request; prepare only if genuinely absent with no explicit '
+                '--config, then activate in one invocation after resolution of explicit pauses, cutover '
+                'requirements and human-only gates. Missing/unknown gate evidence needs a specific '
+                'check and next safe action, not repeated owner consent.',
     },
     'update': {
         'handler': command_update,
-        'effect': 'Advance one inactive deployment to the newest official release and refresh owned units.',
+        'effect': 'Update an idle deployment; --stop authorizes pausing owned timers and defers while draining.',
         'mutates': 'scheduler',
         'platforms': ['linux'],
-        'applies': ['--repo-dir', '--config', '--dry-run', '--json'],
+        'applies': ['--repo-dir', '--config', '--dry-run', '--json', '--stop'],
         'when': 'Run for a prepared deployment after an authorized stop/drain: it refuses live workers '
                 'and enabled timers, locks the newest official release as sha:<commit>, re-renders owned '
-                'units and restores the verified inactive scheduler state.',
+                'units and restores the verified inactive scheduler state. With --stop, pause owned timers '
+                'under lock, defer while workers drain, update only after fresh idle evidence and leave '
+                'stopped. No service interruption, restart, timer enable or activating unit install.',
     },
     'stop': {
         'handler': command_stop,
@@ -2681,7 +3158,7 @@ def render_help(ctx, document, json_mode):
                   f"mutations_supported={document['mutations_supported']}\nQuickstart:\n")
     for text in document['quickstart']:
         ctx.out.write('  ' + text + '\n')
-    ctx.out.write('Actions:\n')
+    ctx.out.write('Actions (direct Python helper syntax):\n')
     for name, entry in document['actions'].items():
         ctx.out.write(f"  {name} [{entry['mutates']}] {entry['effect']} "
                       f"Platforms: {', '.join(entry['platforms'])}. {entry['when']}\n")
@@ -2708,7 +3185,8 @@ def parse_args(argv):
         prog='orbi_control.py',
         usage=action_usage() + ' [-h]',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description='Repository-scoped Orbi lifecycle controls:\n'
+        description='Direct Python helper syntax (setup is non-activating). Public /orbi setup maps to start; '
+                    '/orbi setup --prepare-only maps to helper setup.\nRepository-scoped Orbi lifecycle controls:\n'
                     + '\n'.join(f"{name} [{entry['mutates']}]: {entry['effect']}"
                                 for name, entry in ACTIONS.items())
                     + ' Default: status. Linux mutates; macOS also supports status; '
@@ -2722,6 +3200,8 @@ def parse_args(argv):
     parser.add_argument('--dry-run', action='store_true',
                         help='show the plan without locking, writing, installing or activating')
     parser.add_argument('--json', action='store_true', help='print one JSON document')
+    parser.add_argument('--stop', action='store_true',
+                        help='update only: pause owned timers, defer while workers drain and leave stopped')
     parser.add_argument('--resume-setup', action='store_true',
                         help='setup only: resume legacy missing provider with explicit --config '
                              'and complete matching --pi-* inputs')
@@ -2761,6 +3241,9 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             raise ControlError(
                 'unknown_action', f"unknown action '{args.action}'", exit_code=2,
                 fix='run /orbi help for the supported actions and their effects')
+        if args.stop and args.action not in ('update', 'help'):
+            raise ControlError('invalid_stop_selection', '--stop requires update',
+                               fix='omit --stop or explicitly invoke update --stop', exit_code=2)
         if args.harness and '--harness' not in ACTIONS[args.action]['applies'] and args.action != 'help':
             raise ControlError('invalid_harness_selection', '--harness requires setup or absent start',
                                fix='omit the selector to inspect the persisted selection', exit_code=2)
@@ -2769,8 +3252,9 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
                 args.action != 'setup' or not args.config or not all(selectors[:3])):
             raise ControlError('invalid_resume_selection',
                                '--resume-setup requires setup, explicit --config and complete --pi-* inputs',
-                               fix='use setup --config PATH --resume-setup --pi-providers PATH '
-                                   '--pi-provider ID --pi-model ID, matching the saved selection', exit_code=2)
+                               fix='use public `/orbi setup --prepare-only --resume-setup --config PATH '
+                                   '--pi-providers PATH --pi-provider ID --pi-model ID`, matching the saved selection '
+                                   '(direct Python helper: setup --resume-setup with the same inputs)', exit_code=2)
 
         if args.action != 'help' and any(value is not None for value in selectors):
             if ('--pi-providers' not in ACTIONS[args.action]['applies'] or not all(selectors[:3])

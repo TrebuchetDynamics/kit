@@ -8,6 +8,7 @@ import json
 import os
 import pty
 import shutil
+import shlex
 import time
 import stat
 from types import SimpleNamespace
@@ -59,11 +60,83 @@ esac
 LOGGING = '#!/usr/bin/env bash\necho "$(basename "$0") $*" >> "$FAKE_LOG"\n'
 
 
+# Native mutations, persisted across installer invocations. List schemas match the
+# documented CLI contracts; Codex config/read shape is from an isolated real call.
+HOST_MUTATIONS = 'python3 -c ' + shlex.quote(r'''
+import json, os, pathlib, sys
+home = pathlib.Path(os.environ['FAKE_HOME'])
+host = pathlib.Path(sys.argv[1]).name
+args = sys.argv[2:]
+def read(path, default):
+    return json.loads(path.read_text()) if path.exists() else default
+def write(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value))
+if host == 'claude':
+    path = pathlib.Path(os.environ.get('CLAUDE_CONFIG_DIR', home / '.claude')) / 'plugins/known_marketplaces.json'
+    registry = read(path, {})
+    plugins_path = home / 'claude-installed.json'
+    plugins = read(plugins_path, [])
+    scope = args[args.index('--scope') + 1] if '--scope' in args else 'user'
+    if args[:3] == ['plugin', 'marketplace', 'add']:
+        if any(r.get('source', {}).get('repo') == 'TrebuchetDynamics/kit' for r in registry.values()):
+            print('marketplace already present')
+        else:
+            registry['kit'] = {'source': {'source': 'github', 'repo': 'TrebuchetDynamics/kit'}}
+    elif args[:3] == ['plugin', 'marketplace', 'remove']:
+        name = args[3]
+        registry.pop(name, None)
+        plugins = [p for p in plugins if not p['id'].endswith('@' + name)]
+        for settings in (home / '.claude/settings.json', pathlib.Path.cwd() / '.claude/settings.json', pathlib.Path.cwd() / '.claude/settings.local.json'):
+            if settings.exists():
+                data = read(settings, {})
+                data.get('extraKnownMarketplaces', {}).pop(name, None)
+                data['enabledPlugins'] = {k:v for k,v in data.get('enabledPlugins', {}).items() if not k.endswith('@' + name)}
+                write(settings, data)
+    elif args[:2] == ['plugin', 'install']:
+        plugins.append({'id': args[2], 'scope': scope, 'enabled': True, 'projectPath': str(pathlib.Path.cwd())})
+    write(path, registry)
+    write(plugins_path, plugins)
+else:
+    path = home / 'codex-marketplaces.json'
+    registry = read(path, {'marketplaces': []})
+    plugins_path = home / 'codex-plugins.json'
+    plugins = read(plugins_path, {})
+    if args == ['app-server']:
+        effective_home = pathlib.Path(os.environ.get('CODEX_HOME', home / '.codex'))
+        layers_path = home / 'codex-layers.json'
+        entries = {r['name']: {'source_type': r['marketplaceSource']['sourceType'], 'source': r['marketplaceSource']['source']} for r in registry['marketplaces']}
+        layers = read(layers_path, [{'name': {'type': 'user', 'file': str(effective_home / 'config.toml'), 'profile': None}, 'config': {'marketplaces': entries}}])
+        for line in sys.stdin:
+            req = json.loads(line)
+            result = {'codexHome': str(effective_home)} if req['method'] == 'initialize' else {'config': {'marketplaces': entries}, 'origins': {}, 'layers': layers}
+            print(json.dumps({'id': req['id'], 'result': result}), flush=True)
+        sys.exit()
+    if args[:3] == ['plugin', 'marketplace', 'add']:
+        if any(r['marketplaceSource']['source'].endswith('/kit.git') for r in registry['marketplaces']):
+            print('marketplace already present')
+        else:
+            registry['marketplaces'].append({'name': 'kit-marketplace', 'root': str(home / 'kit-marketplace'), 'marketplaceSource': {'sourceType': 'git', 'source': 'https://github.com/TrebuchetDynamics/kit.git'}})
+    elif args[:3] == ['plugin', 'marketplace', 'remove']:
+        registry['marketplaces'] = [r for r in registry['marketplaces'] if r['name'] != args[3]]
+    elif args[:2] == ['plugin', 'remove']:
+        name = args[2].split('@')[1]
+        plugins[name]['installed'] = [p for p in plugins[name]['installed'] if p['pluginId'] != args[2]]
+    elif args[:2] == ['plugin', 'add']:
+        plugin, name = args[2].split('@')
+        row = next(r for r in registry['marketplaces'] if r['name'] == name)
+        plugins[name] = {'installed': [{'name': plugin, 'pluginId': args[2], 'marketplaceName': name, 'installed': True, 'enabled': True, 'source': {'source': 'local', 'path': row['root']}, 'marketplaceSource': row['marketplaceSource']}], 'available': []}
+    write(path, registry)
+    write(plugins_path, plugins)
+''') + ' \"$0\" \"$@\"\n'
+
+
 class InstallMenuTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name).resolve()
+        (self.home / '.codex').mkdir()
         self.project = self.home / 'project'
         self.project.mkdir()
         self.bin = self.home / 'fakebin'
@@ -162,7 +235,7 @@ if [[ "$*" == "plugin list --json" ]]; then
   cat "$FAKE_HOME/claude-installed.json"
 else
   :
-''' + mutation + '\nfi\n')
+''' + mutation + '\n' + HOST_MUTATIONS + '\nfi\n')
 
     def codex_registry(self, marketplaces=(), installed=None, mutation=''):
         """Pinned Codex CLI JSON contract, not private config emulation."""
@@ -175,7 +248,7 @@ elif [[ "$1 $2" == "plugin list" ]]; then
   python3 -c 'import json,os,sys; print(json.dumps(json.load(open(os.environ["FAKE_HOME"]+"/codex-plugins.json")).get(sys.argv[1], {"installed":[],"available":[]})))' "$4"
 else
   :
-''' + mutation + '\nfi\n')
+''' + mutation + '\n' + HOST_MUTATIONS + '\nfi\n')
 
     def marketplace(self, name):
         return {'name': name, 'root': str(self.home / name),
@@ -189,12 +262,339 @@ else
             name: {'source': source or {'source': 'github', 'repo': 'TrebuchetDynamics/kit'}}
             for name in names}))
 
+    def test_wrong_name_source_replacement_converges_and_repeat_is_nondestructive(self):
+        for host, canonical in (('claude', 'kit'), ('codex', 'kit-marketplace')):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                self.wrong_source(host)
+                result = self.install('--only', host)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                calls = self.calls(host)
+                remove = next(i for i,c in enumerate(calls) if 'marketplace remove neutral-source' in c)
+                add = next(i for i,c in enumerate(calls) if 'marketplace add TrebuchetDynamics/kit' in c)
+                self.assertLess(remove, add)
+                self.assert_canonical(host)
+                self.log.write_text('')
+                repeated = self.install('update', '--only', host)
+                self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
+                self.assertFalse(any(' remove ' in c or ' uninstall ' in c for c in self.calls(host)))
+
+    def test_add_success_without_canonical_readback_never_updates_missing_name(self):
+        for host in ('claude', 'codex'):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                if host == 'claude':
+                    self.claude_registry([])
+                    self.claude_host(mutation='echo "added successfully"; exit 0')
+                else:
+                    self.codex_registry(mutation='echo "already present"; exit 0')
+                result = self.install('--only', host)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertFalse(any('marketplace update' in c or 'marketplace upgrade' in c for c in self.calls(host)))
+                self.assertIn('partial state', result.stdout)
+
+    def wrong_source(self, host, names=('neutral-source',), plugin='kit', scope='user', mutation=''):
+        if host == 'claude':
+            self.claude_registry(names)
+            self.claude_host([{'id': f'{plugin}@{names[0]}', 'scope': scope, 'enabled': False,
+                               'projectPath': str(self.project)}] if plugin else [], mutation)
+        else:
+            rows = [self.marketplace(name) for name in names]
+            row = rows[0]
+            self.codex_registry(rows, {names[0]: {'installed': [{
+                'name': plugin, 'pluginId': f'{plugin}@{names[0]}', 'marketplaceName': names[0],
+                'installed': True, 'enabled': False, 'source': {'source': 'local', 'path': row['root']},
+                'marketplaceSource': row['marketplaceSource']}] if plugin else [], 'available': []}}, mutation)
+
+    def assert_canonical(self, host):
+        if host == 'claude':
+            registry = json.loads((self.home / '.claude/plugins/known_marketplaces.json').read_text())
+            self.assertEqual(list(registry), ['kit'])
+            self.assertEqual(registry['kit']['source'], {'source': 'github', 'repo': 'TrebuchetDynamics/kit'})
+            plugins = json.loads((self.home / 'claude-installed.json').read_text())
+            self.assertEqual([p['id'] for p in plugins], ['kit@kit'])
+        else:
+            registry = json.loads((self.home / 'codex-marketplaces.json').read_text())
+            self.assertEqual(registry['marketplaces'], [self.marketplace('kit-marketplace')])
+            plugins = json.loads((self.home / 'codex-plugins.json').read_text())
+            self.assertEqual([p['pluginId'] for p in plugins['kit-marketplace']['installed']], ['kit@kit-marketplace'])
+            self.assertEqual(plugins.get('neutral-source', {}).get('installed', []), [])
+
+    def test_add_discovers_wrong_name_success_or_already_present_then_replaces(self):
+        for host in ('claude', 'codex'):
+            for code in (0, 4):
+                with self.subTest(host=host, add_exit=code):
+                    self.log.write_text('')
+                    marker = self.home / 'first-add'
+                    marker.unlink(missing_ok=True)
+                    if host == 'claude':
+                        self.claude_registry([])
+                        destination = self.home / '.claude/plugins/known_marketplaces.json'
+                        observed = {'neutral-source': {'source': {'source': 'github', 'repo': 'TrebuchetDynamics/kit'}}}
+                    else:
+                        destination = self.home / 'codex-marketplaces.json'
+                        observed = {'marketplaces': [self.marketplace('neutral-source')]}
+                    fixture = self.home / 'discovered.json'
+                    fixture.write_text(json.dumps(observed))
+                    mutation = f'''if [[ "$2 $3" == "marketplace add" && ! -e "$FAKE_HOME/first-add" ]]; then
+  touch "$FAKE_HOME/first-add"
+  cp "$FAKE_HOME/discovered.json" {shlex.quote(str(destination))}
+  echo 'source already registered (not identity evidence)'
+  exit {code}
+fi'''
+                    if host == 'claude':
+                        self.claude_host(mutation=mutation)
+                    else:
+                        self.codex_registry(mutation=mutation)
+                    result = self.install('--only', host)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    calls = self.calls(host)
+                    first_add = next(i for i,c in enumerate(calls) if 'marketplace add' in c)
+                    remove = next(i for i,c in enumerate(calls) if 'marketplace remove neutral-source' in c)
+                    last_add = max(i for i,c in enumerate(calls) if 'marketplace add' in c)
+                    update = next(i for i,c in enumerate(calls) if 'marketplace update' in c or 'marketplace upgrade' in c)
+                    self.assertLess(first_add, remove)
+                    self.assertLess(remove, last_add)
+                    self.assertLess(last_add, update)
+                    self.assertTrue(any(' list ' in c for c in calls[last_add+1:update]))
+                    self.assert_canonical(host)
+
+    def test_replacement_interrupted_after_remove_resumes_from_observed_state(self):
+        for host in ('claude', 'codex'):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                mutation = 'if [[ "$2 $3" == "marketplace add" ]]; then echo "fixture network unavailable"; exit 23; fi'
+                self.wrong_source(host, mutation=mutation)
+                result = self.install('--only', host)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn('partial state', result.stdout)
+                self.assertIn('canonical=False', result.stdout)
+                self.assertIn('rerun', result.stdout)
+                self.assertFalse(any('marketplace update' in c or 'marketplace upgrade' in c for c in self.calls(host)))
+                # Keep persisted state; remove only the injected transient failure.
+                path = self.bin / host
+                path.write_text(path.read_text().replace(mutation, ':'))
+                self.log.write_text('')
+                retry = self.install('--only', host)
+                self.assertEqual(retry.returncode, 0, retry.stdout)
+                self.assertFalse(any(' remove ' in c or ' uninstall ' in c for c in self.calls(host)))
+                self.assert_canonical(host)
+
+    def test_replacement_unsafe_source_or_effects_holds_before_any_mutation(self):
+        for host in ('claude', 'codex'):
+            for case in ('other-plugin', 'duplicate-source', 'foreign-canonical', 'unknown-installed'):
+                with self.subTest(host=host, case=case):
+                    self.log.write_text('')
+                    names = ('neutral-source', 'second-source') if case == 'duplicate-source' else ('neutral-source',)
+                    self.wrong_source(host, names, plugin='other' if case == 'other-plugin' else 'kit')
+                    if case == 'foreign-canonical':
+                        if host == 'claude':
+                            path = self.home / '.claude/plugins/known_marketplaces.json'
+                            data = json.loads(path.read_text())
+                            data['kit'] = {'source': {'source': 'github', 'repo': 'foreign/kit'}}
+                        else:
+                            path = self.home / 'codex-marketplaces.json'
+                            data = json.loads(path.read_text())
+                            row = self.marketplace('kit-marketplace')
+                            row['marketplaceSource']['source'] = 'foreign/kit'
+                            data['marketplaces'].append(row)
+                        path.write_text(json.dumps(data))
+                    if case == 'unknown-installed':
+                        path = self.home / ('claude-installed.json' if host == 'claude' else 'codex-plugins.json')
+                        path.write_text('[null]' if host == 'claude' else '{"neutral-source":{"installed":[null],"available":[]}}')
+                    result = self.install('--only', host)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertTrue(all(' list ' in c for c in self.calls(host)), self.calls(host))
+
+    def test_claude_replacement_preserves_single_scope_and_holds_cross_scope(self):
+        for scope in ('project', 'local', 'managed', 'multiple'):
+            with self.subTest(scope=scope):
+                self.log.write_text('')
+                self.wrong_source('claude', scope='user' if scope == 'multiple' else scope)
+                settings = self.project / '.claude/settings.json'
+                settings.parent.mkdir(exist_ok=True)
+                if scope == 'multiple':
+                    settings.write_text(json.dumps({'extraKnownMarketplaces': {'neutral-source': {
+                        'source': {'source': 'github', 'repo': 'TrebuchetDynamics/kit'}}}}))
+                result = self.install('--only', 'claude')
+                if scope in ('managed', 'multiple'):
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertFalse(any(' remove ' in c for c in self.calls('claude')))
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertIn(f'claude plugin marketplace remove neutral-source --scope {scope}', self.calls())
+                    self.assertIn(f'claude plugin marketplace add TrebuchetDynamics/kit --scope {scope}', self.calls())
+                    self.assertIn(f'claude plugin install kit@kit --scope {scope}', self.calls())
+
+    def test_codex_replacement_requires_base_user_layer_and_kit_only_config(self):
+        for kind in ('system', 'project', 'profile', 'shadowed', 'other-plugin', 'managed-plugin', 'missing'):
+            with self.subTest(kind=kind):
+                self.log.write_text('')
+                self.wrong_source('codex')
+                entry = {'source_type': 'git', 'source': self.marketplace('neutral-source')['marketplaceSource']['source']}
+                user = {'name': {'type': 'user', 'file': str(self.home / '.codex/config.toml'), 'profile': None},
+                        'config': {'marketplaces': {'neutral-source': entry}}}
+                layers = [user]
+                if kind in ('system', 'project'):
+                    user['name']['type'] = kind
+                elif kind == 'profile':
+                    user['name']['profile'] = 'work'
+                elif kind == 'shadowed':
+                    layers.append({'name': {'type': 'system', 'file': '/etc/codex/config.toml'},
+                                   'config': {'marketplaces': {'neutral-source': entry}}})
+                elif kind == 'other-plugin':
+                    user['config']['plugins'] = {'other@neutral-source': {'enabled': False}}
+                elif kind == 'managed-plugin':
+                    layers.append({'name': {'type': 'system', 'file': '/etc/codex/config.toml'},
+                                   'config': {'plugins': {'kit@neutral-source': {'enabled': True}}}})
+                else:
+                    layers = []
+                path = self.home / 'codex-layers.json'
+                path.write_text(json.dumps(layers))
+                result = self.install('--only', 'codex')
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertFalse(any(' remove ' in c for c in self.calls('codex')), self.calls())
+                path.unlink()
+
+    def test_final_installed_id_must_be_read_back(self):
+        for host in ('claude', 'codex'):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                mutation = 'if [[ "$1 $2" == "plugin install" || "$1 $2" == "plugin add" ]]; then echo "installed"; exit 0; fi'
+                if host == 'claude':
+                    self.claude_registry(['kit'])
+                    self.claude_host(mutation=mutation)
+                else:
+                    self.codex_registry([self.marketplace('kit-marketplace')], mutation=mutation)
+                result = self.install('--only', host)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn('expected installed ID', result.stdout)
+
+    def test_replacement_attempt_is_bounded_and_checks_removed_plugin(self):
+        for host in ('claude', 'codex'):
+            for case in ('remove-noop', 'plugin-remains', 'add-wrong-again', 'remove-fails'):
+                with self.subTest(host=host, case=case):
+                    self.log.write_text('')
+                    if case == 'remove-noop':
+                        mutation = 'if [[ "$2 $3" == "marketplace remove" ]]; then exit 0; fi'
+                    elif case == 'plugin-remains':
+                        if host == 'claude':
+                            mutation = 'if [[ "$2 $3" == "marketplace remove" ]]; then echo "{}" > "$FAKE_HOME/.claude/plugins/known_marketplaces.json"; exit 0; fi'
+                        else:
+                            mutation = 'if [[ "$1 $2" == "plugin remove" ]]; then exit 0; fi'
+                    elif case == 'remove-fails':
+                        mutation = 'if [[ "$2 $3" == "marketplace remove" ]]; then echo "fixture remove denied"; exit 27; fi'
+                    else:
+                        mutation = 'if [[ "$2 $3" == "marketplace add" ]]; then cp "$FAKE_HOME/again.json" "$FAKE_HOME/' + ('.claude/plugins/known_marketplaces.json' if host == 'claude' else 'codex-marketplaces.json') + '"; exit 0; fi'
+                    self.wrong_source(host, mutation=mutation)
+                    registry_path = self.home / ('.claude/plugins/known_marketplaces.json' if host == 'claude' else 'codex-marketplaces.json')
+                    (self.home / 'again.json').write_bytes(registry_path.read_bytes())
+                    result = self.install('--only', host)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn('partial state', result.stdout)
+                    self.assertEqual(sum('marketplace remove neutral-source' in c for c in self.calls(host)), 1)
+                    self.assertFalse(any('marketplace update' in c or 'marketplace upgrade' in c for c in self.calls(host)))
+
+    def test_replacement_preserves_unrelated_marketplaces_and_canonical_plugin(self):
+        for host in ('claude', 'codex'):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                self.wrong_source(host, plugin='')
+                if host == 'claude':
+                    path = self.home / '.claude/plugins/known_marketplaces.json'
+                    data = json.loads(path.read_text())
+                    other = {'source': {'source': 'github', 'repo': 'other/plugins'}}
+                    data.update(kit={'source': {'source': 'github', 'repo': 'TrebuchetDynamics/kit'}}, unrelated=other)
+                    path.write_text(json.dumps(data))
+                    self.claude_host([{'id': 'kit@kit', 'scope': 'user', 'enabled': False},
+                                      {'id': 'other@unrelated', 'scope': 'user', 'enabled': True}])
+                else:
+                    path = self.home / 'codex-marketplaces.json'
+                    data = json.loads(path.read_text())
+                    other = {**self.marketplace('unrelated'), 'marketplaceSource': {'sourceType': 'git', 'source': 'other/plugins'}}
+                    data['marketplaces'].extend([self.marketplace('kit-marketplace'), other])
+                    path.write_text(json.dumps(data))
+                result = self.install('--only', host)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                calls = self.calls(host)
+                self.assertFalse(any('marketplace add' in c for c in calls))
+                self.assertFalse(any('unrelated' in c for c in calls))
+                after = json.loads(path.read_text())
+                self.assertEqual(after['unrelated'] if host == 'claude' else next(r for r in after['marketplaces'] if r['name'] == 'unrelated'), other)
+
+    def test_replacement_uses_effective_host_config_home(self):
+        for host, key in (('claude', 'CLAUDE_CONFIG_DIR'), ('codex', 'CODEX_HOME')):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                self.wrong_source(host)
+                effective = self.home / (host + '-alternate')
+                effective.mkdir()
+                if host == 'claude':
+                    shutil.move(str(self.home / '.claude/plugins'), str(effective / 'plugins'))
+                    self.claude_registry(['kit'], {'source': 'github', 'repo': 'foreign/kit'})
+                    untouched = (self.home / '.claude/plugins/known_marketplaces.json').read_bytes()
+                result = self.install('--only', host, env={key: str(effective)})
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertTrue(any('marketplace remove neutral-source' in c for c in self.calls(host)))
+                if host == 'claude':
+                    self.assertEqual((self.home / '.claude/plugins/known_marketplaces.json').read_bytes(), untouched)
+                    self.assertEqual(list(json.loads((effective / 'plugins/known_marketplaces.json').read_text())), ['kit'])
+
+    def test_codex_config_probe_failure_holds_and_timeout_is_bounded(self):
+        for output in ('malformed', '{"id":1,"error":{"message":"unsupported"}}'):
+            with self.subTest(output=output):
+                self.wrong_source('codex')
+                path = self.bin / 'codex'
+                body = path.read_text()
+                path.write_text(body.replace('else\n  :', 'elif [[ "$1" == "app-server" ]]; then\n  echo ' + shlex.quote(output) + '\nelse\n  :'))
+                result = self.install('--only', 'codex')
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn('cannot qualify writable config layers', result.stdout)
+                self.assertFalse(any(' remove ' in c for c in self.calls('codex')))
+        # The unresponsive stdio path has a termination guard: never actually wait
+        # for the 30-second deadline in a test, and require one bounded select.
+        self.codex_registry()
+        from unittest.mock import MagicMock
+        selector = MagicMock()
+        selector.__enter__.return_value = selector
+        selector.select.return_value = []
+        with patch.object(install_menu.selectors, 'DefaultSelector', return_value=selector):
+            with self.assertRaisesRegex(OSError, 'timed out or closed'):
+                install_menu.codex_config_layers(install_menu.Output(verbosity=0))
+        selector.select.assert_called_once()
+        self.assertLessEqual(selector.select.call_args.args[0], 30)
+
+    def test_claude_replacement_requires_writable_registry_parent(self):
+        self.wrong_source('claude')
+        folder = self.home / '.claude/plugins'
+        folder.chmod(0o555)
+        try:
+            result = self.install('--only', 'claude')
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn('unwritable', result.stdout)
+            self.assertFalse(any(' remove ' in c for c in self.calls('claude')))
+        finally:
+            folder.chmod(0o755)
+
+    def test_replacement_readback_failure_reports_partial_state(self):
+        for host in ('claude', 'codex'):
+            with self.subTest(host=host):
+                target = '.claude/plugins/known_marketplaces.json' if host == 'claude' else 'codex-marketplaces.json'
+                mutation = 'if [[ "$2 $3" == "marketplace remove" ]]; then echo "{" > "$FAKE_HOME/' + target + '"; exit 0; fi'
+                self.wrong_source(host, mutation=mutation)
+                result = self.install('--only', host)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn('partial state', result.stdout)
+                self.assertIn('readback failed', result.stdout)
+                self.assertIn('rerun', result.stdout)
+
     def test_marketplace_fresh_and_canonical_traces(self):
         for canonical in (False, True):
             with self.subTest(canonical=canonical):
                 self.log.write_text('')
                 self.codex_registry([self.marketplace('kit-marketplace')] if canonical else [])
                 self.claude_registry(['kit'] if canonical else [])
+                self.claude_host()
                 result = self.install('--only', 'claude,codex')
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 calls = self.calls()
@@ -231,10 +631,13 @@ else
                 result = self.install('update', '--only', 'claude,codex')
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(self.calls('claude'), ['claude plugin list --json',
-                    'claude plugin marketplace update kit', f'claude plugin update kit@kit --scope {scope}'])
+                    'claude plugin marketplace update kit', f'claude plugin update kit@kit --scope {scope}',
+                    'claude plugin list --json'])
                 self.assertEqual(self.calls('codex'), ['codex plugin marketplace list --json',
                     'codex plugin list --marketplace kit-marketplace --json',
-                    'codex plugin marketplace upgrade kit-marketplace'])
+                    'codex plugin marketplace upgrade kit-marketplace',
+                    'codex plugin marketplace list --json',
+                    'codex plugin list --marketplace kit-marketplace --json'])
                 self.assertEqual({p: p.read_bytes() for p in snapshot}, snapshot)
 
     def test_claude_settings_scope_selection(self):
@@ -357,7 +760,8 @@ else
         self.codex_registry([canonical])
         result = self.install('--only', 'codex')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.calls('codex')[-1], 'codex plugin add kit@kit-marketplace')
+        self.assertEqual(self.calls('codex')[-3:], ['codex plugin add kit@kit-marketplace',
+            'codex plugin marketplace list --json', 'codex plugin list --marketplace kit-marketplace --json'])
         self.assertFalse(self.calls('codex plugin marketplace upgrade'))
         self.assertFalse(self.calls('codex plugin marketplace add'))
     def test_marketplace_dry_run_is_not_checked_and_invokes_no_hosts(self):
@@ -834,13 +1238,19 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         # Fresh registrations are qualified before any install, without removal.
         self.assertEqual(self.calls('claude'), ['claude plugin list --json',
                                                 'claude plugin marketplace add TrebuchetDynamics/kit',
+                                                'claude plugin list --json',
                                                 'claude plugin marketplace update kit',
-                                                'claude plugin install kit@kit'])
+                                                'claude plugin install kit@kit',
+                                                'claude plugin list --json'])
         self.assertEqual(self.calls('codex'), ['codex plugin marketplace list --json',
                                                'codex plugin list --marketplace kit-marketplace --json',
                                                'codex plugin marketplace add TrebuchetDynamics/kit --ref main',
+                                               'codex plugin marketplace list --json',
+                                               'codex plugin list --marketplace kit-marketplace --json',
                                                'codex plugin marketplace upgrade kit-marketplace',
-                                               'codex plugin add kit@kit-marketplace'])
+                                               'codex plugin add kit@kit-marketplace',
+                                               'codex plugin marketplace list --json',
+                                               'codex plugin list --marketplace kit-marketplace --json'])
         self.assertEqual((self.home / '.local/bin/tx').read_bytes(), (ROOT / 'tmux/tx').read_bytes())
         self.assertTrue((self.home / '.local/share/bash-completion/completions/tx').is_file())
         for shell in ('bash', 'zsh', 'fish'):
@@ -904,7 +1314,7 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         result = self.install('--only', 'claude')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('claude'), ['claude plugin list --json', 'claude plugin marketplace update kit',
-                                               'claude plugin install kit@kit'])
+                                               'claude plugin install kit@kit', 'claude plugin list --json'])
         self.assertEqual(registry.read_bytes(), before)
         self.assertRegex(result.stdout, r'claude\s+installed')
 
@@ -937,7 +1347,7 @@ exit 0
         result = self.install('--only', 'claude')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('claude'), ['claude plugin list --json', 'claude plugin marketplace update kit',
-                                               'claude plugin install kit@kit'])
+                                               'claude plugin install kit@kit', 'claude plugin list --json'])
 
     def test_a_transient_preflight_race_is_retried_once(self):
         import sys
@@ -1383,7 +1793,9 @@ fi
         self.assertEqual(self.calls('claude'), [
             'claude plugin list --json',
             'claude plugin marketplace add TrebuchetDynamics/kit',
-            'claude plugin marketplace update kit'])
+            'claude plugin list --json',
+            'claude plugin marketplace update kit',
+            'claude plugin list --json'])
         self.assertIn('codex plugin add kit@kit-marketplace', self.calls('codex'))
         import json
         rows = {row['item']: row for row in map(json.loads, report.read_text().splitlines())}
@@ -1808,14 +2220,16 @@ class PullCheckoutTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         base = Path(self.tmp.name)
-        self.origin, self.clone, self.other = base / 'origin.git', base / 'clone', base / 'other'
-        run = lambda *a, cwd=None: subprocess.run(a, cwd=cwd, check=True, capture_output=True, text=True)
+        self.origin, self.clone, self.other = base / 'origin.git', base / "clone with 'quote", base / 'other'
+        run = lambda *a, cwd=None: subprocess.run(a, cwd=cwd, check=True, capture_output=True, text=True, timeout=10)
         run('git', 'init', '-q', '--bare', '-b', 'main', str(self.origin))
         for repo in (self.clone, self.other):
             run('git', 'clone', '-q', str(self.origin), str(repo))
             run('git', '-C', str(repo), 'config', 'user.email', 'o@example.invalid')
             run('git', '-C', str(repo), 'config', 'user.name', 'O')
         (self.other / 'f').write_text('1')
+        (self.other / 'g').write_text('base\n')
+        (self.other / '.gitignore').write_text('ignored\n')
         run('git', '-C', str(self.other), 'add', '-A')
         run('git', '-C', str(self.other), 'commit', '-qm', 'one')
         run('git', '-C', str(self.other), 'push', '-q', 'origin', 'main')
@@ -1826,30 +2240,321 @@ class PullCheckoutTests(unittest.TestCase):
         self.run_git = run
 
     def head(self, repo):
-        return subprocess.run(['git', '-C', str(repo), 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout
+        return self.run_git('git', '-C', str(repo), 'rev-parse', 'HEAD').stdout
 
     def test_a_clean_checkout_behind_its_upstream_is_fast_forwarded(self):
-        said = []
-        self.assertTrue(install_menu.pull_checkout(self.clone, write=said.append))
+        said, commands = [], []
+        def run(args, **kwargs):
+            commands.append(args[3:])
+            return subprocess.run(args, **kwargs)
+        self.assertTrue(install_menu.pull_checkout(self.clone, write=said.append, run=run))
         self.assertEqual(self.head(self.clone), self.head(self.other))
         self.assertIn('Updated this checkout', said[0])
-        self.assertFalse(install_menu.pull_checkout(self.clone, write=said.append))  # up to date: quiet
+        (self.clone / 'ignored').write_text('do not stash')
+        self.assertFalse(install_menu.pull_checkout(self.clone, write=said.append, run=run))
         self.assertEqual(len(said), 1)
+        self.assertEqual(sum(cmd[0] == 'pull' for cmd in commands), 2)
+        self.assertFalse(any(cmd[:2] == ['stash', 'push'] for cmd in commands))
+        self.assertEqual(self.stashes(), [])
+        self.assertEqual((self.clone / 'ignored').read_text(), 'do not stash')
 
-    def test_local_changes_are_installed_as_they_are(self):
-        (self.clone / 'f').write_text('mine')
-        said = []
-        self.assertFalse(install_menu.pull_checkout(self.clone, write=said.append))
-        self.assertEqual((self.clone / 'f').read_text(), 'mine')
-        self.assertIn('local changes', said[0])
+    def git(self, *args):
+        return self.run_git('git', '-C', str(self.clone), *args).stdout.strip()
 
-    def test_a_detached_or_local_only_checkout_is_not_pulled(self):
-        self.run_git('git', '-C', str(self.clone), 'checkout', '-q', '--detach')
+    def dirty(self):
+        (self.clone / 'g').write_text('staged\n')
+        self.git('add', 'g')
+        (self.clone / 'g').write_text('staged\nunstaged\n')
+        (self.clone / 'untracked').write_text('saved\n')
+        (self.clone / 'ignored').write_text('kept\n')
+
+    def stashes(self):
+        return self.git('stash', 'list', '--format=%H').splitlines()
+
+    def test_local_changes_are_kept_in_an_object_addressed_stash(self):
+        (self.clone / 'older').write_text('old')
+        self.git('stash', 'push', '--include-untracked', '-m', 'older')
+        older = self.stashes()
+        self.git('config', 'rebase.autoStash', 'true')
+        self.git('config', 'merge.autoStash', 'true')
+        self.dirty()
         said = []
+        self.assertTrue(install_menu.pull_checkout(self.clone, write=said.append))
+        saved, *rest = self.stashes()
+        self.assertEqual(rest, older)
+        self.assertIn('Kit installer', self.git('log', '-1', '--format=%s', saved))
+        self.assertEqual(self.head(self.clone), self.head(self.other))
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertEqual((self.clone / 'g').read_text(), 'base\n')
+        self.assertFalse((self.clone / 'untracked').exists())
+        self.assertEqual((self.clone / 'ignored').read_text(), 'kept\n')
+        self.assertIn(saved, '\n'.join(said))
+        restore = next(line for line in said if ' stash apply --index ' in line)
+        self.assertEqual(shlex.split(restore), ['git', '-C', str(self.clone),
+                                             'stash', 'apply', '--index', saved])
         self.assertFalse(install_menu.pull_checkout(self.clone, write=said.append))
-        self.assertIn('no upstream', said[0])
-        self.assertFalse(install_menu.pull_checkout(Path(self.tmp.name), write=said.append))  # not a checkout
-        self.assertEqual(len(said), 1)
+        self.assertEqual(self.stashes(), [saved, *older])  # no empty stash on repeat
+        (self.clone / 'newer').write_text('new')
+        self.git('stash', 'push', '--include-untracked', '-m', 'newer')
+        entries = self.stashes()
+        self.run_git(*shlex.split(restore))
+        self.assertEqual(self.git('show', ':g'), 'staged')
+        self.assertEqual((self.clone / 'g').read_text(), 'staged\nunstaged\n')
+        self.assertEqual((self.clone / 'untracked').read_text(), 'saved\n')
+        self.assertEqual(self.stashes(), entries)  # apply did not remove any stash
+
+    def test_stashing_requires_reexec_even_when_head_is_current(self):
+        self.git('pull', '--ff-only')
+        before = self.head(self.clone)
+        for count, kind in enumerate(('untracked', 'staged', 'unstaged'), 1):
+            with self.subTest(kind=kind):
+                (self.clone / ('untracked' if kind == 'untracked' else 'g')).write_text(kind)
+                if kind == 'staged':
+                    self.git('add', 'g')
+                self.assertTrue(install_menu.pull_checkout(self.clone, write=lambda _: None))
+                self.assertEqual(self.head(self.clone), before)
+                self.assertEqual(len(self.stashes()), count)
+
+    def test_missing_upstream_aborts_before_stashing(self):
+        self.dirty()
+        self.git('branch', '--unset-upstream')
+        for state in ('local-only', 'missing-ref', 'detached'):
+            with self.subTest(state=state):
+                if state == 'missing-ref':
+                    self.git('branch', '--set-upstream-to=origin/main')
+                    self.git('update-ref', '-d', 'refs/remotes/origin/main')
+                if state == 'detached':
+                    self.git('checkout', '--detach')
+                with self.assertRaisesRegex(RuntimeError, 'upstream'):
+                    install_menu.pull_checkout(self.clone)
+                self.assertEqual(self.stashes(), [])
+                self.assertEqual((self.clone / 'g').read_text(), 'staged\nunstaged\n')
+
+    def test_unpacked_release_does_not_discover_a_parent_repository(self):
+        unpacked = self.clone / 'release'
+        unpacked.mkdir()
+        before = self.head(self.clone)
+        self.assertFalse(install_menu.pull_checkout(unpacked))
+        self.assertEqual(self.head(self.clone), before)
+        self.assertEqual(self.stashes(), [])
+        (unpacked / '.git').write_text('gitdir: missing\n')
+        with self.assertRaisesRegex(RuntimeError, 'git'):
+            install_menu.pull_checkout(unpacked)
+
+    def test_failures_abort_before_components_and_services(self):
+        real_run = subprocess.run
+        original_pull_checkout = install_menu.pull_checkout
+        for failure in ('status', 'stash', 'empty-stash', 'stash-cleanup', 'still-dirty', 'pull'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                repo = Path(tmp) / 'repo'
+                self.run_git('git', 'clone', '-q', str(self.origin), str(repo))
+                self.run_git('git', '-C', str(repo), 'config', 'user.email', 'o@example.invalid')
+                self.run_git('git', '-C', str(repo), 'config', 'user.name', 'O')
+                (repo / 'untracked').write_text('save me')
+                stashed = False
+                def run(args, **kwargs):
+                    nonlocal stashed
+                    operation = args[3]
+                    if ((operation == failure and operation != 'stash') or
+                            (operation == 'stash' and args[4] == 'push' and failure in ('stash', 'empty-stash')) or
+                            (operation == 'status' and stashed and failure == 'still-dirty')):
+                        code = 0 if failure in ('empty-stash', 'still-dirty') else 1
+                        return subprocess.CompletedProcess(args, code, '?? remains' if code == 0 else '',
+                                                           'fixture ' + failure)
+                    result = real_run(args, **kwargs)
+                    if operation == 'stash' and args[4] == 'push':
+                        stashed = True
+                        if failure == 'stash-cleanup':
+                            return subprocess.CompletedProcess(args, 1, '', 'fixture cleanup failure')
+                    return result
+                env = {k: v for k, v in os.environ.items()
+                       if k not in ('KIT_INSTALL_NO_PULL', 'KIT_INSTALL_PULLED')}
+                with patch.dict(os.environ, env, clear=True), patch.object(install_menu, 'ROOT', repo), \
+                        patch.object(install_menu, 'pull_checkout',
+                                     side_effect=lambda *a, **kw: original_pull_checkout(*a, run=run, **kw)), \
+                        patch.object(install_menu, 'items') as components, \
+                        patch.object(install_menu, 'restart_services') as restart:
+                    self.assertEqual(install_menu.main(['--quiet']), 1)
+                    components.assert_not_called()
+                    restart.assert_not_called()
+                saved = self.run_git('git', '-C', str(repo), 'stash', 'list', '--format=%H').stdout.splitlines()
+                self.assertEqual(len(saved), int(failure in ('pull', 'stash-cleanup', 'still-dirty')))
+
+    def test_diverged_history_keeps_stash_and_refuses_install(self):
+        self.git('config', 'pull.rebase', 'true')  # --ff-only must still refuse rewriting commits
+        (self.clone / 'local-commit').write_text('local')
+        self.git('add', 'local-commit')
+        self.git('commit', '-qm', 'local commit')
+        before = self.head(self.clone)
+        self.dirty()
+        said = []
+        with self.assertRaisesRegex(RuntimeError, 'pull'):
+            install_menu.pull_checkout(self.clone, write=said.append)
+        self.assertEqual(self.head(self.clone), before)
+        saved, = self.stashes()
+        self.assertIn(saved, '\n'.join(said))
+        self.assertTrue(any('stash apply --index' in line for line in said))
+
+    def test_pull_failure_after_stash_reports_recovery(self):
+        self.dirty()
+        self.git('remote', 'set-url', 'origin', str(self.clone / 'missing-origin'))
+        said = []
+        with self.assertRaisesRegex(RuntimeError, 'pull'):
+            install_menu.pull_checkout(self.clone, write=said.append)
+        saved, = self.stashes()
+        self.assertIn(saved, '\n'.join(said))
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def installer_fixture(self):
+        """Real shell/Python entry point and dispatcher; only components/services are fake."""
+        scripts = self.other / 'scripts'
+        scripts.mkdir()
+        source = (ROOT / 'scripts/install_menu.py').read_text()
+        fixture = r'''FIXTURE_VERSION = 'clean-v1'
+def fixture_trace(event):
+    with open(os.environ['FIXTURE_TRACE'], 'a') as stream:
+        stream.write(json.dumps([event, FIXTURE_VERSION, sys.argv[1:],
+                                 os.environ.get('KIT_INSTALL_PULLED', '')]) + '\n')
+fixture_trace('load')
+def fixture_component():
+    fixture_trace('component')
+    return 'fixture installed'
+def items(*args, **kwargs):
+    return [Item('tx', 'fixture', steps=[Step('fixture component', run=fixture_component)])]
+def restart_services(output):
+    fixture_trace('restart')
+    return 'fixture restarted'
+
+'''
+        (scripts / 'install_menu.py').write_text(source.replace("if __name__ == '__main__':",
+                                                              fixture + "if __name__ == '__main__':"))
+        shutil.copy2(INSTALL, self.other / 'install.sh')
+        self.run_git('git', '-C', str(self.other), 'add', '.')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qm', 'installer fixture')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        self.git('pull', '--ff-only')
+        base = Path(self.tmp.name)
+        self.trace = base / 'trace.jsonl'
+        self.entry_env = {'PATH': os.environ['PATH'], 'HOME': str(base / 'home'),
+                          'KIT_BIN_DIR': str(base / 'bin'), 'FIXTURE_TRACE': str(self.trace),
+                          'LANG': 'C.UTF-8',
+                          # Identical edits can produce the same stash object within one second.
+                          'GIT_AUTHOR_DATE': '2000-01-01T00:00:00+00:00',
+                          'GIT_COMMITTER_DATE': '2000-01-01T00:00:00+00:00'}
+
+    def entry(self, *args, env=None):
+        return subprocess.run(['./install.sh', *args], cwd=self.clone, capture_output=True,
+                              text=True, timeout=20, env={**self.entry_env, **(env or {})})
+
+    def events(self):
+        return [json.loads(line) for line in self.trace.read_text().splitlines()]
+
+    def test_entrypoint_runs_clean_disk_code_once_after_stashing(self):
+        self.installer_fixture()
+        for advanced in (False, True):
+            with self.subTest(advanced=advanced):
+                script = self.clone / 'scripts/install_menu.py'
+                script.write_text(script.read_text().replace("FIXTURE_VERSION = 'clean-v1'",
+                                                            "FIXTURE_VERSION = 'dirty'"))
+                if advanced:
+                    upstream_script = self.other / 'scripts/install_menu.py'
+                    upstream_script.write_text(upstream_script.read_text().replace('clean-v1', 'clean-v2'))
+                    self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'new installer')
+                    self.run_git('git', '-C', str(self.other), 'push', '-q')
+                args = ['update', '--only', 'tx', '--quiet']
+                result = self.entry(*args)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                clean = 'clean-v2' if advanced else 'clean-v1'
+                self.assertEqual(self.events(), [['load', 'dirty', args, ''],
+                                                ['load', clean, args, '1'],
+                                                ['component', clean, args, '1'],
+                                                ['restart', clean, args, '1']])
+                saved = self.stashes()
+                self.assertEqual(len(saved), 2 if advanced else 1)
+                self.assertIn(saved[0], result.stdout)
+                self.assertIn('stash apply --index', result.stdout)
+                self.assertEqual(self.git('status', '--porcelain'), '')
+                self.trace.write_text('')
+                result = self.entry(*args)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.events(), [[event, clean, args, '']
+                                                for event in ('load', 'component', 'restart')])
+                self.assertEqual(self.stashes(), saved)
+                self.trace.write_text('')
+
+    def test_entrypoint_bypasses_and_previews_leave_checkout_and_stashes_unchanged(self):
+        self.installer_fixture()
+        (self.clone / 'older').write_text('older')
+        self.git('stash', 'push', '-u', '-m', 'older')
+        self.dirty()
+        (self.other / 'f').write_text('upstream advanced')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'advance')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        def state():
+            return (self.head(self.clone), self.git('status', '--porcelain'),
+                    self.git('diff'), self.git('diff', '--cached'), self.stashes(),
+                    (self.clone / 'untracked').read_text())
+        before = state()
+        for args, env in ((['--help'], {}), (['--list'], {}), (['--dry-run', '--only', 'tx'], {}),
+                          (['--no-pull', '--only', 'tx'], {}),
+                          (['--only', 'tx'], {'KIT_INSTALL_NO_PULL': '1'})):
+            with self.subTest(args=args, env=env):
+                result = self.entry(*args, env=env)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(state(), before)
+                if args[0] in ('--help', '--list', '--dry-run'):
+                    self.assertEqual([event[0] for event in self.events()], ['load'])
+                self.trace.write_text('')
+
+    def test_entrypoint_refuses_foreign_git_environment_before_mutation(self):
+        self.installer_fixture()
+        self.dirty()
+        def state():
+            return [(self.head(repo),
+                     *[self.run_git('git', '-C', str(repo), *args).stdout for args in
+                       (('status', '--porcelain'), ('diff',), ('diff', '--cached'),
+                        ('stash', 'list', '--format=%H'))])
+                    for repo in (self.clone, self.other)]
+        before = state()
+        for name, value in (('GIT_DIR', self.other / '.git'),
+                            ('GIT_INDEX_FILE', self.other / '.git/index')):
+            with self.subTest(name=name):
+                # With GIT_DIR alone, even --show-toplevel reports the requested
+                # -C directory, despite reading another repository's HEAD/index.
+                if name == 'GIT_DIR':
+                    result = subprocess.run(['git', '-C', str(self.clone), 'rev-parse', '--show-toplevel'],
+                                            env={**self.entry_env, name: str(value)},
+                                            capture_output=True, text=True, check=True, timeout=10)
+                    self.assertEqual(Path(result.stdout.strip()), self.clone)
+                result = self.entry('--quiet', env={name: str(value)})
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn('unset ' + name, result.stdout)
+                self.assertIn('Nothing installed or restarted', result.stdout)
+                self.assertEqual([event[0] for event in self.events()], ['load'])
+                self.assertEqual(state(), before)
+                self.assertEqual((self.clone / 'g').read_text(), 'staged\nunstaged\n')
+                self.assertEqual((self.clone / 'untracked').read_text(), 'saved\n')
+                self.trace.write_text('')
+
+    def test_entrypoint_divergence_stops_before_component_and_restart(self):
+        self.installer_fixture()
+        (self.clone / 'local').write_text('local')
+        self.git('add', 'local')
+        self.git('commit', '-qm', 'local')
+        (self.other / 'f').write_text('upstream')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'diverge')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        self.dirty()
+        args = ['--only', 'tx', '--quiet']
+        result = self.entry(*args)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.events(), [['load', 'clean-v1', args, '']])
+        saved, = self.stashes()
+        self.assertIn(saved, result.stdout)
+        self.assertIn('FAILED: checkout preparation: git pull', result.stdout)
+        self.assertIn('Nothing installed or restarted', result.stdout)
+        self.assertIn('Resolve the Git error and retry', result.stdout)
+        self.assertIn('stash apply --index', result.stdout)
 
 
 if __name__ == '__main__':

@@ -131,7 +131,11 @@ test('Orbi dispatch forwards lifecycle arguments and queues in a busy session', 
   const hostFile = new URL('../adapters/skills/COMMON.md', import.meta.url);
   const host = await readFile(hostFile, 'utf8');
   for (const raw of [
-    '', 'status', 'help', 'setup --dry-run', 'start --dry-run',
+    '', 'status', 'help', 'setup', 'setup --dry-run', 'start --dry-run',
+    'setup --prepare-only', 'setup --prepare-only --dry-run',
+    'setup --resume-setup --config "/tmp/literal $(config).toml"',
+    'setup --prepare-only --resume-setup --config "/tmp/literal $(config).toml"',
+    'setup --harness pi --pi-providers "/tmp/models $(literal).json" --pi-provider openai-codex --pi-model gpt-6.2-sol',
     'stop --dry-run', 'update --dry-run',
     'update --config "/missing literal $(file).toml"', 'start or stop?',
     'setup --dry-run --json\n--repo-dir "/tmp/checkout $(literal)"; no push',
