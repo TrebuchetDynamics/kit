@@ -5,7 +5,21 @@ explicit skills. See [support, setup and migration](github-native.md).
 
 ## Unblock repairs blocked GitHub work
 
-`/unblock` checks open issues and PRs, fixes actionable causes, and reconciles recovery labels without asking again for routine decisions. It verifies whether work resumed. Read-only requests, explicit pauses, existing PR ownership and human gates remain binding; the skill does not grant GitHub access or enable paused Orbi. See [Unblock](../skills/unblock/SKILL.md).
+`/unblock` checks open issues and PRs, fixes actionable causes, and reconciles
+recovery labels without asking again for routine decisions. It considers every
+`ai-planning` or `ai-blocked` issue for `ai-ready`. It publishes readiness after
+confirming the plan is complete or the blocker is repaired (both when both labels
+apply). It verifies whether work resumed. Read-only requests, explicit pauses,
+existing PR ownership and human gates remain binding; the skill does not grant
+GitHub access or enable paused Orbi.
+
+Its [PR phase](../skills/unblock/SKILL.md#blocked-prs-owner-first-repair-records)
+accounts for every scoped open PR, including those without linked issues. It reuses
+the exact repair's existing issue, owner and branch, with deduplicated evidence
+comments for live workers. Only uncovered actionable repairs or independent
+prerequisites need linked issues under the existing publication contract. Held,
+pending and unknown gates stay explicit. Publishing a repair issue is not recovery.
+See [Unblock](../skills/unblock/SKILL.md) for the full workflow.
 
 ## Bundled Ponytail
 
@@ -24,8 +38,20 @@ read fresh GitHub metadata/remote source, but does not sync or commit the checko
 Implementation verifies baseline/ownership and isolates stale/shared source;
 delivery/sync follows the invoked command's scope and caller restrictions.
 
-`/push` saves every change, pulls `main` and pushes `main` without a second approval
-round. It inventories local worktrees and paginated GitHub issue/PR evidence, including
+`/push` saves every eligible change, pulls `main` and pushes `main` without a second
+approval round. An unrestricted invocation includes staged, unstaged, deleted and
+ordinary non-ignored untracked files in the invoking checkout and verified idle
+worktrees. No separate completion note or marker is required. The
+[Push save step](../skills/push/SKILL.md#fast-path) verifies scope, provenance, actual
+inactivity and each worktree's project rules, then rechecks HEAD/index/file baselines
+before staging explicit paths. Secrets, private runtime state, ignored output,
+active or uncertain ownership, pauses and recovery holds stay untouched and are
+reported by path and reason, without contents. Baseline drift reports `Save pending`;
+re-inventory the affected paths and resolve ownership before staging. Narrower
+requests still win; `/git-commit-push` and its standalone clean-worktree sweep keep
+their existing scope.
+
+It inventories local worktrees and paginated GitHub issue/PR evidence, including
 remote-only Orbi work. Already-merged changes enter through verified upstream; passing
 open PRs remain with their Orbi coordinator. Closed-unmerged, failed, paused and
 unknown work stays untouched with its URL, reason and next action. Uncommitted changes
@@ -35,7 +61,10 @@ repository's landing route (direct push or pull request) is used as policy allow
 failures mean partial inventory, not an empty backlog; independently verified work may
 proceed, but missing required protection/review holds publication. Receipts separate
 local commits, incoming landed changes, pending URLs, source and selected/final SHAs,
-checks, remote inclusion and remaining local synchronization.
+checks, remote inclusion and remaining local synchronization. A candidate-branch
+push alone is not main delivery. Missing checks/review or an unmerged protected PR
+remain pending: report the exact gate and next action, then verify remote `main`
+inclusion after the permitted landing route completes.
 These are instruction contracts; offline traces do not prove live model delivery.
 
 ## Commands

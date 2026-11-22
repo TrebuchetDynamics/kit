@@ -89,6 +89,16 @@ class PortablePackageTests(unittest.TestCase):
                 self.assertIn('](' + target, entry.read_text())
                 self.assertEqual((entry.parent / target).resolve(), policy.resolve())
 
+            # Writing guidance is reached through the real installed adapter,
+            # including its mode-specific completion, not a checkout-only copy.
+            adapter = installed / 'adapters/skills/writing-for-agents/SKILL.md'
+            target = '../../../skills/writing-for-agents/SKILL.md'
+            self.assertIn('](' + target + ')', adapter.read_text())
+            canonical = (adapter.parent / target).resolve()
+            self.assertTrue(canonical.is_relative_to(installed))
+            self.assertEqual(canonical.read_bytes(),
+                             (ROOT / 'skills/writing-for-agents/SKILL.md').read_bytes())
+
             batch = foreign / 'batch.json'
             batch.write_text(json.dumps({'issues': [{
                 'key': 'example', 'title': 'Example bounded task',

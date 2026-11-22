@@ -14,6 +14,22 @@ closed-unmerged work stay with their coordinator. Report their URL, reason and n
 action; a passing check does not release ownership. Use [/push](../../push/SKILL.md)
 for remote issue/PR discovery and already-landed upstream changes.
 
+## When called by `/push`
+
+An explicit unrestricted `/push` first saves eligible ordinary changes in verified
+idle worktrees under its [save step](../../push/SKILL.md#fast-path), with no separate
+completion note or marker. That step owns path inventory, project rules, ownership,
+exclusions, baseline rechecks and explicit staging. It does not authorize touching
+coordinator-owned PRs, active/uncertain work, pauses or recovery holds.
+
+The helper still never commits dirty worktrees. After `/push` creates verified local
+commits, use the manual pinned-candidate merge mechanics below for eligible scope;
+excluded paths may remain dirty in the source worktree and stay untouched. Do not
+run `--apply` on that dirty or otherwise ineligible inventory. Reconcile upstream,
+check the assembled candidate and prove inclusion in remote `main` through `/push`;
+a local merge or candidate-branch push alone is not delivery. Cleanup is not included.
+This exception does not widen `/git-commit-push` or its standalone `all` sweep.
+
 ## States
 
 | State | Meaning | Sweep action |
@@ -68,12 +84,13 @@ for remote issue/PR discovery and already-landed upstream changes.
 - Merge into the base branch only. The sweep refuses when the canonical checkout is on
   another branch, has uncommitted changes, or already has a merge in progress; it never
   moves your HEAD to make a merge possible.
-- Never commit, stash, reset or discard another writer's uncommitted work. A dirty
-  worktree is a message to its owner, not an obstacle to remove.
+- The standalone sweep never commits, stashes, resets or discards another writer's
+  uncommitted work. Dirty work stays with its owner; only `/push`'s scoped save step
+  above can prepare eligible ordinary changes before manual integration.
 - No rebase, no force, no history rewrite, no automatic branch deletion. A supplied
   closeout helper must verify ownership and recovery evidence independently.
-- Merge only worktrees classified as clean. A worktree you cannot classify is reported,
-  not guessed.
+- The standalone sweep merges only worktrees classified as clean. A worktree you
+  cannot classify is reported, not guessed.
 - One conflict does not stop the sweep, and one sweep does not end the obligation: a
   branch left `Merge pending` stays in the report until it lands or its owner retires it.
 
