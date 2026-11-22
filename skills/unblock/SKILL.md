@@ -56,6 +56,31 @@ normal push of that exact candidate may repair publication; keep hooks enabled a
 allow time for them. If the remote diverged, preserve both heads and reconcile with
 the owner. A timeout alone neither proves the push failed nor authorizes force-push.
 
+## Changed requirements: hand back on the same issue
+
+When accepted requirements change after a delivery attempt, compare the retained
+commit with the current acceptance criteria before treating the original failure
+as a retry. Old passing tests prove only the cases they covered. Record on the
+original issue the retained commit SHA, the missing behavior, and the test or
+observation that would prove it. Cite the accepted change. For example, if the
+new rule distinguishes a documented answer from conflicting authority, name
+both expected results: follow the documented answer; ask one scoped question
+only when binding decisions conflict.
+
+Give that evidence to the existing delivery owner on the same issue or linked PR.
+If the only blocker was missing intent and the accepted change resolves it,
+use the same-issue requeue rules above for eligible unowned work. A passing
+new test is required for delivery, not for handoff. Do not implement
+the missing change in a competing session or publish the old candidate as complete.
+Before writing, refresh ownership, pauses, dependencies and prior comments. Reuse
+an unchanged handoff without reposting. If ownership is unknown or a pause applies,
+leave dispatch alone. If binding decisions conflict, hold only the affected work;
+do not requeue an entire issue past that hold.
+
+After readback confirms the owner has the handoff, report **Handed back**. That
+is not **Recovered**: report resumed only after observed pickup or continued work
+on the revised requirement. A comment or label alone is not evidence of resumption.
+
 ## Recover, verify, continue
 
 1. **Bind and inventory.** Read GitHub Issues, native dependencies, linked PRs,

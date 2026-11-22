@@ -24,6 +24,20 @@ class UnblockSkillTests(unittest.TestCase):
             self.assertIn(contract, text)
         self.assertIn('A planning closure or an evidenced wait is not recovery', text)
 
+    def test_changed_requirements_handback_contract(self):
+        text = (ROOT / 'skills/unblock/SKILL.md').read_text()
+        phase = ' '.join(text.split('## Changed requirements:', 1)[1]
+                         .split('## Recover, verify, continue', 1)[0].split())
+        for contract in ('retained commit SHA, the missing behavior, and the test',
+                         'existing delivery owner on the same issue or linked PR',
+                         'required for delivery, not for handoff',
+                         'follow the documented answer', 'when binding decisions conflict',
+                         'Reuse an unchanged handoff without reposting',
+                         'hold only the affected work', 'leave dispatch alone',
+                         'report **Handed back**', 'only after observed pickup or continued work'):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, phase)
+
     def test_promotes_both_eligible_issue_states(self):
         text = (ROOT / 'skills/unblock/SKILL.md').read_text()
         for contract in ('`ai-planning` → `ai-ready`', '`ai-blocked` → `ai-ready`',
