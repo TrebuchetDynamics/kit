@@ -3319,6 +3319,65 @@ class UpdateTests(unittest.TestCase):
 
 
 class InterfaceAndSkillTests(unittest.TestCase):
+    def test_routine_cli_receipts_need_no_followup_command_or_retry(self):
+        # Public caller evidence, not an LLM simulation: each request launches the
+        # real CLI once, with fake external tools and literal shell metacharacters.
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(Path(tmp))
+            h.repo = h.repo.rename(h.root / 'space $(literal); target')
+            h.add_deployment_a()
+            h.rules()
+            code, _, err = h.run('setup')
+            self.assertEqual(code, 0, err)
+            h.rules(*h.scheduler_rules())
+            before = snapshot(h.home)
+            cases = [([], 'status'), (['status'], 'status'), (['help'], 'help'),
+                     *[([action, '--dry-run'], action)
+                       for action in ('setup', 'start', 'stop', 'update')]]
+            for request, action in cases:
+                with self.subTest(request=request):
+                    h.clear_calls()
+                    result = subprocess.run(
+                        [sys.executable, '-B', str(HELPER), *request,
+                         '--repo-dir', str(h.repo), '--json'],
+                        cwd=h.root, env=h.env, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(result.stderr, '')
+                    receipt = json.loads(result.stdout)
+                    self.assertEqual(receipt['action'], action)
+                    if '--dry-run' in request:
+                        self.assertEqual(receipt['status'], 'planned')
+                    if action == 'start':
+                        self.assertEqual(receipt['preparation']['state'], 'skipped')
+                    if action == 'help':
+                        self.assertEqual(h.calls(), [])
+                    else:
+                        self.assertTrue(any(str(h.repo) in call['argv'] for call in h.calls()))
+                    self.assertNotIn(SECRET, result.stdout + result.stderr)
+                    SetupBoundaryTests.assert_no_activation(self, h.calls())
+                    self.assertEqual(snapshot(h.home), before)
+
+            # A refused update is already a complete, safe user-facing answer.
+            # It must not perform an implicit stop, setup, retry or checkout write.
+            h.rules(*h.scheduler_rules(services={1: 'active'}, enabled={1: True}))
+            before = snapshot(h.home)
+            h.clear_calls()
+            result = subprocess.run(
+                [sys.executable, '-B', str(HELPER), 'update', '--repo-dir', str(h.repo), '--json'],
+                cwd=h.root, env=h.env, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(result.returncode, 0)
+            receipt = json.loads(result.stdout)
+            self.assertEqual(receipt['action'], 'update')
+            self.assertEqual(receipt['error']['code'], 'update_busy')
+            self.assertFalse(receipt['error']['mutated'])
+            self.assertTrue(receipt['error']['fix'])
+            self.assertNotIn(SECRET, result.stdout + result.stderr)
+            SetupBoundaryTests.assert_no_activation(self, h.calls())
+            self.assertFalse(any(call['tool'] == 'orbi' and
+                                 set(call['argv']) & {'setup', 'install-units', 'sync-engine-source'}
+                                 for call in h.calls()))
+            self.assertEqual(snapshot(h.home), before)
+
     def test_help_is_read_only_and_names_every_action(self):
         with tempfile.TemporaryDirectory() as tmp:
             h = Harness(Path(tmp))
