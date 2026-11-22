@@ -521,6 +521,20 @@ compatibility, GitHub and Pi authentication and the shared bootstrap. It runs up
 instance only when no instance is active or activating. A repeated start never
 restarts or duplicates a live worker.
 
+A definite nonzero exit from a configured timer's `systemctl --user enable --now`
+can still allow one normal `systemctl --user start` of the exact owned slot-1
+service. This exception requires successful upstream setup/install and scheduler
+readback. Still under the config lock, the helper revalidates repository/config/file
+identity, reads fresh unit ownership and states, and enumerates loaded/installed
+instances and pending jobs. Every relevant worker must be known idle, all configured
+timers must have stable owned evidence (active, inactive or failed), and no target
+job may remain. Partially enabled/active timers are observed, not rolled back.
+An active/draining worker, unknown state/ownership, target drift, timer transition,
+missing unit, timeout or unavailable scheduler blocks this request. Upstream
+setup/install failures never enter this exception. No later timer is configured,
+no failed timer is retried, and no Runner CLI is invoked directly. Public default
+setup uses this same path; prepare-only and dry-run do not.
+
 For an absent target, start dry-run runs only setup's nonmutating preflight/preview.
 It reports preparation and activation as planned, with staged source, published-file
 validation and activation preflight explicitly deferred/unrun. It does not run
@@ -669,7 +683,18 @@ Before recovery, inspect helper `status` read-only and the failed step/unit
 privately, then deliberately repair the cause. Never automatically repeat a
 start/stop, retry an unchanged timeout, roll back with enable/disable compensation,
 or stop/kill/restart workers to undo partial application. The helper attempts no
-later timer mutations or first tick after failure.
+later timer mutations after failure. Only the guarded definite timer-enable failure
+exception above permits a first-tick request. Its receipt keeps the original timer
+error, nonzero exit, failed step and confirmed timer list, with
+`recurring_scheduling: incomplete`. Separate `first_tick` reports `requested`,
+`blocked`, `failed`, `unverified` or `not-requested`. `first_tick_evidence` names the
+service, decision scheduler snapshot, mutation (`none`, `possible` or `completed`)
+and reason/error when applicable. A failed or timed-out first-tick request never
+replaces the timer error and is not retried. The top-level scheduler is a later
+read-only observation; it does not erase the decision evidence. `requested` means
+systemd accepted one request, not that a worker completed or live delivery succeeded.
+Inspect status and repair recurring scheduling deliberately even if the request
+succeeded; do not repeat start blindly.
 
 A process killed before rendering cannot emit a receipt. Infer safe retry from
 actual files: complete matching provider/env with no config can be reused by new

@@ -2019,6 +2019,57 @@ def run_upstream_step(ctx, target, command, *args, timeout=CHECK_TIMEOUT):
                            fix=f'inspect the failed {command} privately')
 
 
+def first_tick_after_timer_failure(ctx, args, repo, target, identities):
+    """Called under the config lock only after a definite timer-enable exit.
+
+    This is one normal systemd request, not a retry or a scheduling repair.
+    Its receipt must never replace the original timer error.
+    """
+    service = f'{target.prefix}@1.service'
+    evidence = {'unit': service, 'mutation': 'none',
+                'scheduler': unavailable_scheduler(target, 'recovery not yet verified')}
+    outcome = 'blocked'
+    try:
+        if (repo_identity(ctx, repo.path) != repo
+                or select_target(ctx, repo, args.config, require=True) != target
+                or setup_file_identities(target) != identities):
+            raise ControlError('target_changed', 'activation target changed after timer failure')
+        validate_target(target, repo)
+        require_unit_ownership(ctx, target)
+        require_harness(ctx, target)
+        snapshot = update_observation(ctx, target)
+        evidence['scheduler'] = snapshot
+        # A missing configured unit or transitioning timer leaves the failed
+        # enable unbounded. Active timers are allowed: a failed enable may have
+        # partially applied, but workers and pending jobs must still be idle.
+        if (any(f'{target.prefix}@{i}.timer' not in snapshot['timers']
+                for i in range(1, target.max_concurrency + 1))
+                or not snapshot['services'].get(service, {}).get('owned')
+                or any(item['active'] not in INACTIVE_STATES | {'active'}
+                       for item in snapshot['timers'].values())):
+            raise ControlError('scheduler_unavailable', 'timer failure lacks stable owned unit evidence')
+        if update_pending(snapshot):
+            raise ControlError('scheduler_busy', 'workers or pending scheduler jobs are not idle')
+        outcome = 'unverified'
+        evidence['mutation'] = 'possible'
+        proc = ctx.run(['systemctl', '--user', 'start', service], timeout=MUTATION_TIMEOUT,
+                       allow_failure=True)
+        if proc.returncode != 0:
+            evidence['error'] = 'command_failed'
+            evidence['reason'] = f'first-tick request exited with {proc.returncode}'
+            outcome = 'failed' if proc.returncode > 0 else 'unverified'
+        else:
+            outcome = 'requested'
+            evidence['mutation'] = 'completed'
+    except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
+        evidence['error'] = error.code if isinstance(error, ControlError) else 'observation_failed'
+        evidence['reason'] = (error.message if isinstance(error, ControlError)
+                              else 'first-tick evidence or request could not be verified')
+        if isinstance(error, ControlError) and 'scheduler' in error.evidence:
+            evidence['scheduler'] = error.evidence['scheduler']
+    return {'first_tick': outcome, 'first_tick_evidence': evidence}
+
+
 def command_start(ctx, args):
     target = None
     steps, activated = [], []
@@ -2133,8 +2184,17 @@ def command_start(ctx, args):
                                   'status': 'already-active'})
                     continue
                 current = {'step': 'activate_timer', 'unit': timer, 'mutation': 'possible'}
-                ctx.run(['systemctl', '--user', 'enable', '--now', timer],
-                        timeout=MUTATION_TIMEOUT)
+                proc = ctx.run(['systemctl', '--user', 'enable', '--now', timer],
+                               timeout=MUTATION_TIMEOUT, allow_failure=True)
+                if proc.returncode != 0:
+                    error = ControlError(
+                        'command_failed', f"'systemctl --user' failed with exit {proc.returncode}",
+                        fix='inspect the command output manually',
+                        evidence={'first_tick': 'not-requested', 'recurring_scheduling': 'incomplete'})
+                    if proc.returncode > 0:
+                        error.evidence.update(first_tick_after_timer_failure(
+                            ctx, args, repo, target, identities))
+                    raise error
                 activated.append(timer)
                 steps.append({'step': 'activate_timer', 'unit': timer, 'status': 'enabled'})
             live = [name for name, item in snapshot['services'].items()
@@ -2160,6 +2220,9 @@ def command_start(ctx, args):
             # Keep setup's exact original failed operation, target and mutation evidence.
             error.evidence = {**error.evidence, 'preparation': preparation, 'activation': 'none'}
             raise
+        if isinstance(error, ControlError) and current['step'] == 'activate_timer':
+            error.evidence.setdefault('first_tick', 'not-requested')
+            error.evidence.setdefault('recurring_scheduling', 'incomplete')
         exc = lifecycle_failure(ctx, target, error, target_path=preparation.get('target', args.config),
                                 steps=steps, current=current, mutated=mutated,
                                 evidence={'activation': activation, 'activated_timers': activated,
@@ -2803,6 +2866,15 @@ def command_help(ctx, args):
             'not completed; confirmed timer lists exclude failed attempts. Start activation=possible '
             'means timers or workers may already run; activation=none can still include lock writes. '
             'Never retry unchanged, compensate with enable/disable, or stop workers after failure.',
+            'Start (also public default setup) may request one first tick after a definite timer-enable '
+            'nonzero exit, only after successful upstream setup/install and scheduler readback. Under '
+            'the config lock it revalidates target identity and fresh owned units, stable timer states, '
+            'all workers idle and no pending target jobs. No later timer configuration or enable retry. '
+            'Timeout, unavailable/unknown evidence, ownership drift or active/draining workers block '
+            'this recovery. The original timer error and nonzero exit remain: recurring_scheduling=incomplete; '
+            'first_tick is requested, blocked, failed, unverified or not-requested. first_tick_evidence '
+            'separates the decision snapshot/request mutation from the later scheduler observation. '
+            'Requested means only systemd accepted the request, not worker completion or live delivery.',
             'Status is read-only. Setup (including absent-start preparation) stages source/config; start, '
             'update and stop touch the scheduler. Update leaves the verified inactive state and names any '
             'timer it disabled. Dry-run performs no writes.',

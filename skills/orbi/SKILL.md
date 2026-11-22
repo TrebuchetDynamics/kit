@@ -110,7 +110,13 @@ concrete unmet need, not a fixed sequence of model turns.
    supports it. If a tool-result model turn is mandatory, relay only observed
    outcome, target and relevant evidence; no new plan or paraphrase pass. Preserve
    errors, `error.fix`, `error.mutated`, completed/failed `steps`, confirmed timer
-   lists, `preparation`, `activation` and scheduler uncertainty. Exit success is
+   lists, `preparation`, `activation` and scheduler uncertainty. A definite timer-enable
+   failure can still permit one first-tick request through this same start path, only
+   after fresh locked target/ownership, stable timer, idle-worker and no-pending-job
+   checks. Preserve the nonzero timer error, `recurring_scheduling: incomplete`,
+   `first_tick` and `first_tick_evidence`; requested is not worker completion or live
+   delivery. Timeout, unavailable/unknown evidence, ownership drift and active/draining
+   workers never permit this recovery. No timer retry or later slot configuration. Exit success is
    not live qualification; harness resolution is not running-worker evidence;
    configured slots, enabled/active timers and running services are different.
    Never expose credentials, auth files, environment values or raw child stderr.
