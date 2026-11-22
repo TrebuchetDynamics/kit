@@ -7,10 +7,10 @@ import os
 from pathlib import Path
 import re
 import subprocess
-_preflight = _AUTOWORK_COMPAT.peer(globals(), 'setup_preflight')
+_preflight = _KIT_COMPAT.peer(globals(), 'setup_preflight')
 preflight, print_plan = _preflight.preflight, _preflight.print_plan
 
-ROOT = _AUTOWORK_LAYOUT.root
+ROOT = _KIT_LAYOUT.root
 
 
 def live_profiles(root):

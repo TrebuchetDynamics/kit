@@ -44,7 +44,7 @@ class DoctorModes(unittest.TestCase):
         return code, output.getvalue()
 
     def test_doctor_lists_linked_profiles_without_failing(self):
-        rows = [{'profile': 'work', 'target': '/src/autowork', 'link': '/src/autowork',
+        rows = [{'profile': 'work', 'target': '/src/example-plugin', 'link': '/src/example-plugin',
                  'revision': 'a' * 40, 'dirty': False, 'released': True}]
         with patch.object(self.bundle, 'linked_profiles', return_value=rows):
             code, output = self.run_doctor('--core', '--json')

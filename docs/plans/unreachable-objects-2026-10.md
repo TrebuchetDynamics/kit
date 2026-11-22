@@ -29,7 +29,6 @@ silently run GC or mutate refs/settings. Object existence is not ref reachabilit
 Metadata/proof operations can leave objects after interrupted publication; no source
 inspection alone proves their contents have no recovery value.
 
-The [TaskStore reference](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork/task-store.md) owns validation isolation.
 Use supported coordinator/closeout paths for any separately authorized retention
 repair. Documentation cleanup authorizes no object deletion, history rewrite,
 `gc.log` removal or automatic GC setting change. Required candidate-retention

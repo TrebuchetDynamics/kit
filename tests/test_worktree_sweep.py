@@ -40,7 +40,7 @@ class WorktreeSweepTests(unittest.TestCase):
 
     def worktree(self, name, *, commit=None, dirty=False, lock=False):
         path = self.repo / '.worktrees' / name
-        git(self.repo, 'worktree', 'add', '-q', '-b', f'autowork/{name}', str(path))
+        git(self.repo, 'worktree', 'add', '-q', '-b', f'delivery/{name}', str(path))
         if commit:
             (path / f'{name}.txt').write_text(f'{name}\n')
             git(path, 'add', '.')

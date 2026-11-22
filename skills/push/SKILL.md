@@ -11,8 +11,8 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
 
 `/push` is the repository-wide delivery default: save every change in the checkout,
-pull `main` from its verified upstream, then push `main`. Include completed work from
-other authors and the already-merged upstream Orbi changes that the pull brings in.
+pull `main` from its verified upstream, then push `main`. Include eligible ordinary
+changes from other authors and the already-merged upstream Orbi changes that the pull brings in.
 Remote candidates are inspected and reported, without taking it over when another
 coordinator owns the work. Do not wait for a second approval round: when the
 destination and the landing route are explicit, commit, pull and push. Arguments
@@ -60,21 +60,34 @@ owns mode effects, unknown coverage and coordinator ownership; apply it first.
 
    For overlapping states, delivered ancestry/equivalence settles code inclusion;
    otherwise closed-unmerged, explicit failure/block/pause, open/owned, then unknown
-   decides the classification. Classification governs remote take-over only: it never
-   decides whether local changes are saved. API errors/rate limits leave a partial
+   decides the classification. These holds do not block saving independent eligible
+   local changes. API errors/rate limits leave a partial
    inventory, never an empty backlog; name which pages/states remain unverified.
    Continue when coverage and exclusions are explicit.
 
-2. **Save all changes.** Commit every staged, unstaged and untracked change in the
-   checkout, and the completed changes in idle dirty worktrees. Establish ownership
-   from provenance, completion and current activity, not file age alone. An open Orbi
-   PR remains owned by its coordinator. Check each worktree's instructions and recheck
-   HEAD, index and file baselines before staging explicit paths. Keep tests and docs
-   with the implementation. Use the sibling's commit and candidate-check rules in
-   local-only mode here; do not push each worktree branch. Leave credentials, secrets
-   and files that a live writer is still editing uncommitted, and list their paths.
-   Continue when every remaining change has a verified commit SHA, or an exact
-   exclusion reason.
+2. **Save all eligible changes.** Include staged, unstaged, deleted and ordinary
+   non-ignored untracked files in the invoking checkout and verified idle worktrees.
+   No separate completion note or marker is required. Verify provenance, intended
+   scope and actual worker/session inactivity under each worktree's instructions;
+   file age or a quiet status alone does not prove released ownership. For this
+   `/push` scope, ordinary changes need verification, not the sibling's completed-work
+   requirement. Project ownership rules and narrower requests still win.
+
+   Recheck HEAD, index bytes and file contents against the inventory immediately
+   before staging explicit paths. A changed baseline means `Save pending`: preserve
+   the affected paths, report the drift, and re-inventory ownership and bytes before
+   staging. Keep tests and docs with the implementation. Use the sibling's explicit
+   staging, secret-scan, commit and candidate-check rules in local-only mode here;
+   do not push each worktree branch. Verify the staged set matches the eligible
+   paths, including deletions, and held paths remain unchanged by this operation.
+
+   Exclude credentials, secrets, private runtime state, ignored untracked output,
+   active or uncertain ownership, and any path under a pause or recovery hold.
+   Preserve these paths without staging them, and report each path and reason
+   without exposing contents. Do not alter pre-existing excluded index entries;
+   isolate the eligible commit or hold it if they cannot be safely separated.
+   An open Orbi PR remains owned by its coordinator, even in an idle worktree.
+   Continue when every change has a verified commit SHA or an exact exclusion reason.
 
 3. **Pull main.** Follow the
    [pull and merge procedure](../git-commit-push/references/pull-merge.md) for `main`:
@@ -125,9 +138,10 @@ part of this skill.
 | Rationalization | Reality |
 | --- | --- |
 | “Classification is the deliverable.” | Inventory classifies; the command saves, pulls and pushes in the same run. |
-| “All means stage everything blindly.” | Every change is saved, but credentials and live-edited files stay out and are listed. |
+| “All means stage everything blindly.” | Stage only verified eligible paths; preserve and report exclusions. |
+| “An idle worktree needs a completion marker.” | Ordinary in-scope changes need ownership and candidate verification, not a separate note. |
 | “Pull first, commit later.” | Uncommitted changes that also changed upstream block the pull; commit first. |
-| “An open Orbi PR blocks my local commit.” | Its head stays with its coordinator; completed local work still ships. |
+| “An open Orbi PR blocks my local commit.” | Its head stays with its coordinator; independent eligible local work still ships. |
 | “The PR is open, so delivery is done.” | Delivery is proven inclusion in remote `main`. |
 | “One conflict blocks every branch.” | Deliver verified independent work as a partial result. |
 

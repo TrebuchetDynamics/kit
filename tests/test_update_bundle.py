@@ -17,7 +17,7 @@ from src_fixture import copy_sources
 ROOT=Path(__file__).resolve().parents[1]
 
 class PluginDirectoryTests(unittest.TestCase):
-    """The installed directory follows whatever the profile already has."""
+    """Only the Kit slot is admitted; unrelated directories are left alone."""
 
     def module(self):
         spec = importlib.util.spec_from_file_location('updater_dir', ROOT / 'scripts/update_bundle.py')
@@ -31,13 +31,23 @@ class PluginDirectoryTests(unittest.TestCase):
         (folder / 'plugin.yaml').write_text(f'name: {name}\nversion: 0.3.0\n')
         return folder
 
-    def test_a_legacy_install_keeps_its_directory(self):
+    def test_non_kit_manifest_is_refused(self):
+        for name in ('foreign', 'other'):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                folder = self.make(home, 'kit')
+                (folder / 'plugin.yaml').write_text(f'name: {name}\n')
+                with self.assertRaisesRegex(ValueError, 'Invalid or foreign plugin identity'):
+                    self.module().plugin_dir(home)
+
+    def test_other_plugin_directory_is_ignored_and_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            folder = self.make(home, 'autowork')
-            module = self.module()
-            self.assertEqual(module.plugin_dir(home), folder)
-            self.assertEqual(module.plugin_name(home), 'autowork')
+            folder = self.make(home, 'other')
+            before = (folder / 'plugin.yaml').read_bytes()
+            self.assertEqual(self.module().plugin_dir(home), home / 'plugins/kit')
+            self.assertEqual((folder / 'plugin.yaml').read_bytes(), before)
+
 
     def test_a_native_install_of_the_renamed_plugin_is_not_duplicated(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -46,7 +56,6 @@ class PluginDirectoryTests(unittest.TestCase):
             module = self.module()
             self.assertEqual(module.plugin_dir(home), folder)
             self.assertEqual(module.plugin_name(home), 'kit')
-            self.assertFalse((home / 'plugins' / 'autowork').exists())
 
     def test_without_an_install_the_canonical_path_is_the_target(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -55,40 +64,24 @@ class PluginDirectoryTests(unittest.TestCase):
             self.assertEqual(module.plugin_dir(home), home / 'plugins' / 'kit')
             self.assertEqual(module.plugin_name(home), 'kit')
 
-    def test_legacy_physical_slot_uses_manifest_identity_and_preserves_private_state(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            folder = self.make(home, 'autowork')
-            (folder / 'plugin.yaml').write_text('name: kit\n')
-            marker = home / '.toolset-imports.json'
-            marker.write_bytes(b'private recovery evidence\n')
-            module = self.module()
-            self.assertEqual(module.plugin_dir(home), folder)
-            self.assertEqual(module.plugin_name(home), 'kit')
-            self.assertEqual(marker.read_bytes(), b'private recovery evidence\n')
-            self.assertFalse((home / 'plugins/kit').exists())
 
     def test_ambiguous_or_unreadable_identity_refuses_without_changes(self):
-        for case in ('same-source', 'distinct-source', 'missing', 'malformed', 'malformed-body', 'conflicting', 'quoted-conflict', 'foreign', 'dangling'):
+        for case in ('missing', 'malformed', 'malformed-body', 'conflicting', 'quoted-conflict', 'foreign', 'dangling'):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
                 home = Path(tmp)
-                legacy = self.make(home, 'autowork')
-                if case == 'same-source':
-                    (home / 'plugins/kit').symlink_to(legacy)
-                elif case == 'distinct-source':
-                    self.make(home, 'kit')
-                elif case == 'missing':
-                    (legacy / 'plugin.yaml').unlink()
+                folder = self.make(home, 'kit')
+                if case == 'missing':
+                    (folder / 'plugin.yaml').unlink()
                 elif case == 'dangling':
-                    (legacy / 'plugin.yaml').unlink()
-                    legacy.rmdir()
-                    legacy.symlink_to(home / 'gone')
+                    (folder / 'plugin.yaml').unlink()
+                    folder.rmdir()
+                    folder.symlink_to(home / 'gone')
                 else:
-                    (legacy / 'plugin.yaml').write_text({
+                    (folder / 'plugin.yaml').write_text({
                         'malformed': 'name: [kit]\n',
                         'malformed-body': 'name: kit\nsettings: [\n',
-                        'conflicting': 'name: kit\nname: autowork\n',
-                        'quoted-conflict': 'name: kit\n"name": autowork\n',
+                        'conflicting': 'name: kit\nname: kit\n',
+                        'quoted-conflict': 'name: kit\n"name": kit\n',
                         'foreign': 'name: foreign\n',
                     }[case])
                 before = sorted(str(p) for p in home.rglob('*'))
@@ -101,7 +94,7 @@ class PluginDirectoryTests(unittest.TestCase):
         # could not act on; the identity check still refuses, now with the install step.
         with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, {'yaml': None}):
             home = Path(tmp)
-            folder = self.make(home, 'autowork')
+            folder = self.make(home, 'kit')
             before = sorted(str(p) for p in home.rglob('*'))
             with self.assertRaisesRegex(ValueError, 'PyYAML is required to verify plugin identity') as caught:
                 self.module().plugin_dir(home)
@@ -126,7 +119,7 @@ class UpdateTests(unittest.TestCase):
         self.profiles=[('default',self.home),('work',self.home/'profiles/work')]
         for name,home in self.profiles:
             (home/'plugins').mkdir(parents=True)
-            (home/'plugins/autowork').symlink_to(self.repo)
+            (home/'plugins/kit').symlink_to(self.repo)
             (home/'skills/demo').mkdir(parents=True)
             (home/'skills/demo/SKILL.md').write_text('old\n')
         spec=importlib.util.spec_from_file_location('update_under_test',ROOT/'scripts/update_bundle.py')
@@ -140,35 +133,21 @@ class UpdateTests(unittest.TestCase):
         self.git(self.remote,'commit','-am','update')
     def plan(self):
         return self.mod.prepare(self.repo,self.profiles,upstream=str(self.remote))
-    def test_duplicate_slots_refuse_update_before_fetch_or_receipt_writes(self):
-        self.advance()
-        (self.home / 'plugins/kit').symlink_to(self.repo)
-        with patch.object(self.mod, 'fetch', side_effect=AssertionError('no fetch on ambiguity')):
-            with self.assertRaisesRegex(ValueError, 'Duplicate Kit registrations'):
-                self.plan()
-            peer = self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle')
-            with patch.object(peer, 'live_profiles', self.setup_stub.live_profiles), \
-                 contextlib.redirect_stdout(io.StringIO()) as output:
-                self.assertEqual(self.mod.main(['--hermes-home', str(self.home)]), 1)
-        self.assertIn('reconcile registrations', output.getvalue())
-        self.assertFalse((self.home / 'maintenance').exists())
-        self.assertTrue((self.home / 'plugins/autowork').is_symlink())
-        self.assertTrue((self.home / 'plugins/kit').is_symlink())
 
     def test_existing_update_state_does_not_bypass_identity_admission(self):
-        (self.home / 'plugins/kit').symlink_to(self.repo)
+        (self.repo / 'plugin.yaml').write_text('name: foreign\n')
         state = self.home / 'maintenance/toolset-update'
         state.mkdir(parents=True)
         receipt = state / 'latest.json'
         receipt.write_bytes(b'{"status": "up_to_date"}\n')
-        peer = self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle')
+        peer = self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle')
         for args in (['--dry-run'], []):
             with self.subTest(args=args), patch.object(peer, 'live_profiles', self.setup_stub.live_profiles), \
                  patch.object(self.mod, 'finish_restart', side_effect=AssertionError('identity admission first')), \
                  contextlib.redirect_stdout(io.StringIO()) as output:
                 code = self.mod.main(['--hermes-home', str(self.home), *args])
                 self.assertEqual(code, 1, output.getvalue())
-            self.assertIn('Duplicate Kit registrations', output.getvalue())
+            self.assertIn('Invalid or foreign plugin identity', output.getvalue())
             self.assertEqual(receipt.read_bytes(), b'{"status": "up_to_date"}\n')
             self.assertEqual(sorted(p.name for p in state.iterdir()), ['latest.json'])
 
@@ -185,14 +164,14 @@ class UpdateTests(unittest.TestCase):
         with patch.dict(sys.modules, setup_bundle=poison):
             for module in modules:
                 self.assertEqual(module.selected_profiles(self.home, ['default']), [('default', self.home)])
-        peers = [m._AUTOWORK_COMPAT.peer(vars(m), 'setup_bundle') for m in modules]
+        peers = [m._KIT_COMPAT.peer(vars(m), 'setup_bundle') for m in modules]
         self.assertIsNot(peers[0], peers[1])
         for release, module, peer in zip(releases, modules, peers):
             self.assertEqual(peer.ROOT, release)
             self.assertEqual(module.__file__, str(release / 'scripts/update_bundle.py'))
             self.assertIs(module.prepare.__globals__, vars(module))
             self.assertEqual(module.prepare.__code__.co_filename,
-                             str(release / 'src/autowork_runtime/update/update_bundle.py'))
+                             str(release / 'src/kit_runtime/update/update_bundle.py'))
         with patch.object(peers[0], 'live_profiles', return_value=[('patched', self.home)]):
             self.assertEqual(modules[0].selected_profiles(self.home, ['patched']), [('patched', self.home)])
             self.assertEqual(modules[1].selected_profiles(self.home, ['default']), [('default', self.home)])
@@ -200,7 +179,7 @@ class UpdateTests(unittest.TestCase):
     def test_missing_updater_payload_never_borrows_another_release(self):
         release = copy_sources(self.root / 'incomplete')
         for entry in ('update_bundle', 'update_bundle_native'):
-            (release / f'src/autowork_runtime/update/{entry}.py').unlink(missing_ok=True)
+            (release / f'src/kit_runtime/update/{entry}.py').unlink(missing_ok=True)
             result = subprocess.run([sys.executable, str(release / f'scripts/{entry}.py'), '--help'],
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
@@ -259,7 +238,7 @@ class UpdateTests(unittest.TestCase):
         self.git(self.repo, 'pull', '--ff-only')
 
     def test_retired_skill_is_removed_even_when_the_shared_checkout_already_advanced(self):
-        names = ('autowork', 'work', 'pending', 'blockers')
+        names = ('work', 'pending', 'blockers')
         for name in names:
             gone = self.remote / 'skills' / name
             (gone / 'scripts').mkdir(parents=True)
@@ -407,7 +386,7 @@ class UpdateTests(unittest.TestCase):
             with self.subTest(check=check):
                 args = ['--hermes-home', str(self.home)] + (['--check'] if check else [])
                 with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-                     patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                     patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
                      patch.object(self.mod, 'finalize_profiles', side_effect=lambda s, r, profiles, **_: [{'profile': n, 'status': 'ready'} for n, _ in profiles]), \
                      patch.object(self.mod, 'gateway_running', return_value=False), \
@@ -427,7 +406,7 @@ class UpdateTests(unittest.TestCase):
         receipts = []
         for _ in range(2):
             with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-                 patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                 patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
                  patch.object(self.mod, 'finalize_profiles', side_effect=lambda s, r, profiles, **_: [{'profile': n, 'status': 'ready'} for n, _ in profiles]), \
                  patch.object(self.mod, 'heal_chat_menus', return_value=[]), \
@@ -451,18 +430,18 @@ class UpdateTests(unittest.TestCase):
             f'printf "%s\\n" "$*" >> "{log}"\n'
             'test "$*" = "--full --skip hermes,pi -q" || exit 9\n'
             'read -r answer && exit 8\n'  # background updates cannot prompt
-            'printf \'%s\\n\' \'{"item":"autowork","status":"installed","exit":0}\' '
+            'printf \'%s\\n\' \'{"item":"kit","status":"installed","exit":0}\' '
             '\'{"item":"pi-bolt","status":"installed","exit":0}\' '
             '\'{"item":"tx","status":"installed","exit":0}\' '
             '\'{"item":"claude","status":"failed","exit":7}\' '
             '\'{"item":"codex","status":"skipped","exit":null}\' '
-            '\'{"item":"orbi","status":"installed","exit":0}\' > "$AUTOWORK_INSTALL_REPORT"\n'
+            '\'{"item":"orbi","status":"installed","exit":0}\' > "$KIT_INSTALL_REPORT"\n'
             'exit 1\n')
         self.git(self.remote, 'add', '.'); self.git(self.remote, 'commit', '-m', 'installer')
         prepare = self.mod.prepare
         receipts = []
         with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-             patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
              patch.object(self.mod, 'finalize_profiles', return_value=[{'status': 'ready'}]), \
              patch.object(self.mod, 'heal_chat_menus', return_value=[]), \
@@ -487,7 +466,7 @@ class UpdateTests(unittest.TestCase):
         installer = self.repo / 'install.sh'
         for body, status, code in (
             (None, 'unavailable', None),
-            ('printf "\\377" > "$AUTOWORK_INSTALL_REPORT"\n', 'unreported', 0),
+            ('printf "\\377" > "$KIT_INSTALL_REPORT"\n', 'unreported', 0),
             ('exit 6\n', 'failed', 6),
         ):
             with self.subTest(status=status):
@@ -502,7 +481,7 @@ class UpdateTests(unittest.TestCase):
         child = self.root / 'late-write'
         (self.repo / 'install.sh').write_text(
             '#!/bin/bash\n'
-            'echo \'{"item":"tx","status":"installed","exit":0}\' > "$AUTOWORK_INSTALL_REPORT"\n'
+            'echo \'{"item":"tx","status":"installed","exit":0}\' > "$KIT_INSTALL_REPORT"\n'
             f'(sleep 0.5; touch "{child}") &\nwait\n')
         with patch.object(self.mod, 'HOST_REFRESH_TIMEOUT_S', 0.1):
             rows = self.mod.refresh_hosts(self.repo)
@@ -522,12 +501,12 @@ class UpdateTests(unittest.TestCase):
         stale = self.profiles[0][1] / 'config.yaml'
         stale.write_text('platforms: {telegram: {extra: {command_menu: {priority: [autoresearch]}}}}\n')
         def activate(source, root, profiles, **_):
-            stale.write_text('platforms: {telegram: {extra: {command_menu: {priority: [autowork]}}}}\n')
+            stale.write_text('platforms: {telegram: {extra: {command_menu: {priority: [work]}}}}\n')
             return [{'profile': name, 'status': 'ready'} for name, _ in profiles]
         for running, expected in ((True, 'requested'), (False, 'not_running')):
             with self.subTest(running=running), \
                  patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-                 patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                 patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
                  patch.object(self.mod, 'finalize_profiles', side_effect=activate), \
                  patch.object(self.mod, 'gateway_running', return_value=running), \
@@ -565,7 +544,7 @@ class UpdateTests(unittest.TestCase):
         prepare = self.mod.prepare
         receipts = []
         with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-             patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
              patch.object(self.mod, 'finalize_profiles', side_effect=lambda s, r, profiles, **_: [{'profile': n, 'status': 'ready'} for n, _ in profiles]), \
              patch.object(self.mod, 'gateway_running', return_value=True), \
@@ -644,7 +623,7 @@ class UpdateTests(unittest.TestCase):
                            '     finish or kill the work above to release the drain now\n')
             return drain.pid
         with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-             patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
              patch.object(self.mod, 'finalize_profiles', side_effect=lambda s, r, profiles, **_: [{'profile': n, 'status': 'ready'} for n, _ in profiles]), \
              patch.object(self.mod, 'gateway_running', return_value=True), \
@@ -670,7 +649,7 @@ class UpdateTests(unittest.TestCase):
         self.git(self.repo, 'pull', '--ff-only')
         prepare = self.mod.prepare
         with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
-             patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), \
              patch.object(self.mod, 'finalize_profiles') as finalize, \
              contextlib.redirect_stdout(io.StringIO()):
@@ -708,7 +687,7 @@ class UpdateTests(unittest.TestCase):
         shallow = self.root / 'shallow'
         subprocess.check_output(['git', 'clone', '-q', '--depth', '1', self.remote.as_uri(), str(shallow)],
                                 stderr=subprocess.DEVNULL)
-        link = self.profiles[1][1] / 'plugins/autowork'
+        link = self.profiles[1][1] / 'plugins/kit'
         link.unlink(); link.symlink_to(shallow)
         self.advance()
         plan = self.plan()
@@ -862,11 +841,10 @@ class ScopedUpdateTests(unittest.TestCase):
         return self.mod.scoped_update(self.home, self.remote, self.revision, names, 'python3', **kwargs)
 
     def test_fresh_scoped_install_and_retry_use_only_kit(self):
-        (self.home / 'plugins/autowork').unlink()
+        (self.home / 'plugins/kit').unlink()
         result = self.deploy()
         self.assertEqual(result['status'], 'updated', result)
         self.assertEqual(self.git(self.home / 'plugins/kit', 'rev-parse', 'HEAD'), self.revision)
-        self.assertFalse((self.home / 'plugins/autowork').exists())
         calls = list(self.calls)
         again = self.deploy()
         self.assertEqual(again['status'], 'up_to_date', again)
@@ -880,10 +858,10 @@ class ScopedUpdateTests(unittest.TestCase):
         result = self.deploy()
         self.assertEqual(result['status'], 'updated')
         self.assertEqual((self.home/'skills/demo/SKILL.md').read_text(), 'new\n')
-        self.assertFalse((self.home/'plugins/autowork').is_symlink())
+        self.assertFalse((self.home/'plugins/kit').is_symlink())
         self.assertEqual((self.repo/'skills/demo/SKILL.md').read_text(), 'old\n')
         self.assertEqual((self.profiles[1][1]/'skills/demo/SKILL.md').read_text(), 'old\n')
-        self.assertTrue((self.profiles[1][1]/'plugins/autowork').is_symlink())
+        self.assertTrue((self.profiles[1][1]/'plugins/kit').is_symlink())
         self.assertEqual(self.git(self.remote, 'rev-parse', 'HEAD'), self.revision)
         self.assertTrue(result['profiles']['default']['installed_hashes'])
         self.assertEqual((Path(result['backup'])/'default/original-source/skills/demo/SKILL.md').read_text(), 'old\n')
@@ -906,7 +884,7 @@ class ScopedUpdateTests(unittest.TestCase):
             result = self.deploy()
         self.assertEqual(result['status'], 'incomplete')
         self.assertIn('scanner', result['profiles']['default']['error'])
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
         self.assertEqual((self.home/'skills/demo/SKILL.md').read_text(), 'old\n')
         self.assertEqual(config.read_text(), 'model: unchanged\n')
 
@@ -940,7 +918,7 @@ class ScopedUpdateTests(unittest.TestCase):
         self.assertFalse(receipt.exists())
         self.assertEqual(Path(result['archive']).read_bytes(), before)
         self.assertEqual((backup/'manifest.json').read_bytes(), before)
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
         self.assertEqual((self.home/'skills/demo/SKILL.md').read_text(), 'old\n')
         self.calls.clear()
         result = self.mod.scoped_update(self.home, replacement, self.revision, ['default'], 'python3')
@@ -1066,14 +1044,14 @@ class ScopedUpdateTests(unittest.TestCase):
             result = self.deploy(('default', 'work'))
         self.assertEqual(result['status'], 'updated', result['profiles'])
         for _, home in self.profiles:
-            self.assertFalse((home/'plugins/autowork').is_symlink())
+            self.assertFalse((home/'plugins/kit').is_symlink())
             self.assertEqual((home/'skills/demo/SKILL.md').read_text(), 'new\n')
         if path:
             self.assertEqual(path.read_bytes(), before)
 
     def test_absent_board_and_historical_handoff_do_not_veto_deployment(self):
         (self.profiles[1][1]/'config.yaml').write_text('{}\n')
-        journal = self.home/'autowork'; journal.mkdir()
+        journal = self.home/'kit'; journal.mkdir()
         handoff = journal/'goal-handoff.json'; handoff.write_text('malformed old receipt')
         self.assert_historical_state_ignored(handoff)
         self.assertFalse((self.root/'canonical-boards').exists())
@@ -1128,7 +1106,7 @@ class ScopedUpdateTests(unittest.TestCase):
             return self.fake_native(action, *args)
         with patch.object(self.mod, 'native_call', race): result = self.deploy()
         self.assertEqual(result['status'], 'incomplete')
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
 
     def test_destination_race_during_scan_is_not_overwritten(self):
         path = self.home/'skills/demo/SKILL.md'
@@ -1138,7 +1116,7 @@ class ScopedUpdateTests(unittest.TestCase):
         with patch.object(self.mod, 'native_call', race): result = self.deploy()
         self.assertEqual(result['status'], 'incomplete')
         self.assertEqual(path.read_text(), 'concurrent change')
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
 
     def test_killed_after_slot_move_resumes_original_backup(self):
         class Killed(BaseException): pass
@@ -1147,7 +1125,7 @@ class ScopedUpdateTests(unittest.TestCase):
             return self.fake_native(action, *args)
         with patch.object(self.mod, 'native_call', kill), self.assertRaises(Killed): self.deploy()
         saved = json.loads((self.home/'maintenance/toolset-update/scoped.json').read_text())
-        self.assertFalse((self.home/'plugins/autowork').exists())
+        self.assertFalse((self.home/'plugins/kit').exists())
         result = self.deploy()
         self.assertEqual(result['status'], 'updated')
         self.assertEqual(result['backup'], saved['backup'])
@@ -1155,7 +1133,7 @@ class ScopedUpdateTests(unittest.TestCase):
 
     def test_slot_move_intent_before_rename_resumes_directory_install(self):
         import shutil
-        slot = self.home/'plugins/autowork'
+        slot = self.home/'plugins/kit'
         slot.unlink(); shutil.copytree(self.repo, slot)
         original = Path.rename
         class Killed(BaseException): pass
@@ -1173,7 +1151,7 @@ class ScopedUpdateTests(unittest.TestCase):
             return self.fake_native(action, home, stage, *args)
         with patch.object(self.mod, 'native_call', race): result = self.deploy()
         self.assertEqual(result['status'], 'incomplete')
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
 
     def test_untracked_native_output_cannot_be_reported_ready(self):
         def extra(action, home, stage, *args):
@@ -1192,18 +1170,18 @@ class ScopedUpdateTests(unittest.TestCase):
         result = self.deploy()
         self.assertEqual(result['profiles']['default']['status'], 'deferred')
         self.assertIn('Active helper process', result['profiles']['default']['error'])
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
 
     def test_helper_launch_lock_defers_install_without_changing_profile(self):
         import fcntl
-        journal = self.home/'autowork'; journal.mkdir()
+        journal = self.home/'kit'; journal.mkdir()
         with (journal/'goal-handoff.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             result = self.deploy()
         self.assertEqual(result['status'], 'incomplete')
         self.assertIn('handoff is active', result['profiles']['default']['error'])
         self.assertEqual(self.calls, [])
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
         self.assertEqual((self.home/'skills/demo/SKILL.md').read_text(), 'old\n')
 
     def test_helper_started_during_scan_is_preserved_and_blocks_publication(self):
@@ -1211,7 +1189,7 @@ class ScopedUpdateTests(unittest.TestCase):
         def race(action, *args):
             if action == 'scan':
                 process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)',
-                                           str(self.home/'plugins/autowork/update_bundle.py')])
+                                           str(self.home/'plugins/kit/update_bundle.py')])
                 processes.append(process)
                 self.addCleanup(lambda: (process.terminate(), process.wait()))
                 self.helper_processes.append(Path(f'/proc/{process.pid}'))
@@ -1221,13 +1199,13 @@ class ScopedUpdateTests(unittest.TestCase):
         self.assertEqual(result['status'], 'incomplete')
         self.assertIn('Active helper process', result['profiles']['default']['error'])
         self.assertIsNone(processes[0].poll())
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
         self.assertEqual((self.home/'skills/demo/SKILL.md').read_text(), 'old\n')
         self.assertNotIn('install', [action for action, _ in self.calls])
 
     def direct_claim(self, **changes):
         import os
-        state = self.repo/'.git/autowork-execution'; state.mkdir()
+        state = self.repo/'.git/kit-execution'; state.mkdir()
         claim_path = state/'active.json'
         claim = {'task_id': 'TASK-1', 'workspace': str(self.repo), 'profile': 'default',
                  'owner': {'pid': os.getpid(),
@@ -1235,7 +1213,7 @@ class ScopedUpdateTests(unittest.TestCase):
                            'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip()}}
         claim.update(changes)
         claim_path.write_text(json.dumps(claim))
-        journal = self.home/'autowork'; journal.mkdir(exist_ok=True)
+        journal = self.home/'kit'; journal.mkdir(exist_ok=True)
         (journal/'task-execution-latest.json').write_text(json.dumps(
             {'claim_path': str(claim_path), 'task_id': 'TASK-1'}))
         return claim_path, claim
@@ -1247,7 +1225,7 @@ class ScopedUpdateTests(unittest.TestCase):
         self.assertEqual(result['profiles']['default']['status'], 'deferred')
         self.assertIn('Active direct coordinator', result['profiles']['default']['error'])
         self.assertEqual(claim_path.read_bytes(), before)
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
         self.assertEqual(self.calls, [])
 
     def test_released_direct_claim_does_not_veto_install(self):
@@ -1276,7 +1254,7 @@ class ScopedUpdateTests(unittest.TestCase):
             result = self.deploy()
         self.assertEqual(result['status'], 'incomplete')
         self.assertIn('Active direct coordinator', result['profiles']['default']['error'])
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
         self.assertEqual((self.home/'skills/demo/SKILL.md').read_text(), 'old\n')
         self.assertNotIn('install', [action for action, _ in self.calls])
 
@@ -1300,7 +1278,7 @@ class ScopedUpdateTests(unittest.TestCase):
 
     def test_malformed_direct_pointer_requires_explicit_repair(self):
         self.direct_claim()
-        receipt = self.home/'autowork/task-execution-latest.json'; receipt.write_text('[]')
+        receipt = self.home/'kit/task-execution-latest.json'; receipt.write_text('[]')
         result = self.deploy()
         self.assertEqual(result['profiles']['default']['status'], 'deferred')
         self.assertIn('Repair direct execution', result['profiles']['default']['error'])
@@ -1309,14 +1287,14 @@ class ScopedUpdateTests(unittest.TestCase):
     def test_releasing_latest_repository_preserves_other_live_coordinator(self):
         import hashlib
         claim_a, original = self.direct_claim()
-        journal = self.home/'autowork'
+        journal = self.home/'kit'
         pointers = journal/'task-execution-claims'; pointers.mkdir()
         latest = journal/'task-execution-latest.json'
         key_a = hashlib.sha256(str(self.repo/'.git').encode()).hexdigest()
         (pointers/f'{key_a}.json').write_bytes(latest.read_bytes())
         repo_b = self.root/'second-repository'; repo_b.mkdir()
         self.git(repo_b, 'init', '-b', 'main')
-        state_b = repo_b/'.git/autowork-execution'; state_b.mkdir()
+        state_b = repo_b/'.git/kit-execution'; state_b.mkdir()
         claim_b = state_b/'active.json'
         claim_b.write_text(json.dumps({**original, 'task_id': 'TASK-2', 'workspace': str(repo_b)}))
         pointer_b = json.dumps({'claim_path': str(claim_b), 'task_id': 'TASK-2'})
@@ -1328,7 +1306,7 @@ class ScopedUpdateTests(unittest.TestCase):
         result = self.deploy()
         self.assertEqual(result['profiles']['default']['status'], 'deferred')
         self.assertIn('Active direct coordinator owns TASK-1', result['profiles']['default']['error'])
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
         self.assertEqual(claim_a.read_bytes(), before)
         self.assertEqual(self.calls, [])
         claim_a.unlink()
@@ -1336,7 +1314,7 @@ class ScopedUpdateTests(unittest.TestCase):
 
     def test_repository_pointer_protects_claim_without_latest_pointer(self):
         self.direct_claim()
-        journal = self.home/'autowork'
+        journal = self.home/'kit'
         pointers = journal/'task-execution-claims'; pointers.mkdir()
         (journal/'task-execution-latest.json').rename(pointers/'repo.json')
         result = self.deploy()
@@ -1347,7 +1325,7 @@ class ScopedUpdateTests(unittest.TestCase):
         claim_path, claim = self.direct_claim()
         claim['owner']['boot_id'] = 'prior-boot'
         claim_path.write_text(json.dumps(claim))
-        journal = self.home/'autowork'
+        journal = self.home/'kit'
         pointers = journal/'task-execution-claims'; pointers.mkdir()
         (pointers/'repo.json').write_bytes((journal/'task-execution-latest.json').read_bytes())
         read_text = Path.read_text
@@ -1363,7 +1341,7 @@ class ScopedUpdateTests(unittest.TestCase):
         self.assertEqual(len(claim_reads), 1)
 
     def test_malformed_repository_pointer_requires_repair(self):
-        pointers = self.home/'autowork/task-execution-claims'; pointers.mkdir(parents=True)
+        pointers = self.home/'kit/task-execution-claims'; pointers.mkdir(parents=True)
         (pointers/'repo.json').write_text('not json')
         result = self.deploy()
         self.assertEqual(result['profiles']['default']['status'], 'deferred')
@@ -1371,7 +1349,7 @@ class ScopedUpdateTests(unittest.TestCase):
         self.assertEqual((pointers/'repo.json').read_text(), 'not json')
 
     def test_symlinked_repository_pointer_directory_is_refused(self):
-        journal = self.home/'autowork'; journal.mkdir()
+        journal = self.home/'kit'; journal.mkdir()
         outside = self.root/'foreign-pointers'; outside.mkdir()
         (journal/'task-execution-claims').symlink_to(outside, target_is_directory=True)
         result = self.deploy()
@@ -1380,7 +1358,7 @@ class ScopedUpdateTests(unittest.TestCase):
 
     def test_git_export_attributes_do_not_change_deployed_blob_hashes(self):
         copy_sources(self.remote, entries=('plugins/defaults.json',))
-        payload = 'src/autowork_runtime/update/update_bundle.py'
+        payload = 'src/kit_runtime/update/update_bundle.py'
         (self.remote / payload).chmod(0o755)
         (self.remote/'.gitattributes').write_text(f'skills/demo/SKILL.md export-ignore\n{payload} export-ignore\n')
         self.git(self.remote, 'add', '.'); self.git(self.remote, 'commit', '-m', 'archive attributes')
@@ -1388,12 +1366,12 @@ class ScopedUpdateTests(unittest.TestCase):
         result = self.deploy()
         self.assertEqual(result['status'], 'updated')
         self.assertEqual((self.home/'skills/demo/SKILL.md').read_text(), 'new\n')
-        installed = self.home / 'plugins/autowork' / payload
+        installed = self.home / 'plugins/kit' / payload
         self.assertEqual(installed.read_bytes(), (self.remote / payload).read_bytes())
         self.assertTrue(installed.stat().st_mode & 0o111)
         installed.unlink()
         with self.assertRaisesRegex(ValueError, 'closure changed'):
-            self.mod.source_tree(self.home / 'plugins/autowork', self.revision)
+            self.mod.source_tree(self.home / 'plugins/kit', self.revision)
 
     def assert_interrupted_clone_resumes(self, target_name):
         class Killed(BaseException): pass
@@ -1421,7 +1399,7 @@ class ScopedUpdateTests(unittest.TestCase):
         result = self.deploy(check=True)
         self.assertEqual(result['status'], 'update_available')
         self.assertEqual(self.calls, [])
-        self.assertTrue((self.home/'plugins/autowork').is_symlink())
+        self.assertTrue((self.home/'plugins/kit').is_symlink())
         self.assertFalse((self.remote/'.git/FETCH_HEAD').exists())
 
     def test_unknown_or_empty_selection_is_rejected(self):
@@ -1455,24 +1433,24 @@ class ManagedRecoveryTests(unittest.TestCase):
         for _, home in self.profiles:
             (home / 'skills/demo/SKILL.md').write_text('old\none\ntwo\nthree\n')
         self.enterContext(patch.object(sys, 'path', [str(ROOT), *sys.path]))
-        slot = self.home / 'plugins/autowork'
+        slot = self.home / 'plugins/kit'
         slot.unlink()
         self.repo.rename(slot)
         self.repo = slot
-        self.profiles[1][1].joinpath('plugins/autowork').unlink()
-        self.profiles[1][1].joinpath('plugins/autowork').symlink_to(slot)
+        self.profiles[1][1].joinpath('plugins/kit').unlink()
+        self.profiles[1][1].joinpath('plugins/kit').symlink_to(slot)
         self.before = self.git(slot, 'rev-parse', 'HEAD')
         self.metadata = self.home / 'plugins/.install-metadata.json'
-        self.metadata.write_text(json.dumps({'autowork': {
+        self.metadata.write_text(json.dumps({'kit': {
             'source': str(self.remote), 'revision': self.before, 'custom': 'keep'},
             'other': {'custom': 'also keep'}}))
-        (self.home / 'config.yaml').write_text('plugins:\n  enabled: [autowork]\n')
+        (self.home / 'config.yaml').write_text('plugins:\n  enabled: [kit]\n')
         self.calls = []
         self.enterContext(patch.object(self.mod, 'native_call', self.fake_native))
         prepare = self.mod.prepare
         self.enterContext(patch.object(self.mod, 'prepare',
             side_effect=lambda *args, **kwargs: prepare(*args, upstream=str(self.remote), **kwargs)))
-        self.enterContext(patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+        self.enterContext(patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles))
         self.enterContext(patch.object(self.mod, 'finalize_profiles',
                                       side_effect=AssertionError('recovery must not activate profiles')))
@@ -1489,46 +1467,22 @@ class ManagedRecoveryTests(unittest.TestCase):
             code = self.mod.main(['--hermes-home', str(self.home), *extra])
         return code, json.loads(output.getvalue())
 
-    def test_canonical_and_legacy_identity_recovery_preserve_state(self):
-        for identity in ('canonical', 'legacy-manifest', 'legacy-kit'):
-            with self.subTest(identity=identity), contextlib.ExitStack() as cleanup:
-                fixture = ManagedRecoveryTests()
-                cleanup.callback(fixture.doCleanups)
-                fixture.setUp()
-                slot = fixture.repo
-                if identity == 'canonical':
-                    slot = fixture.home / 'plugins/kit'
-                    fixture.repo.rename(slot)
-                    fixture.repo = slot
-                    shared = fixture.profiles[1][1] / 'plugins/autowork'
-                    shared.unlink()
-                    (shared.parent / 'kit').symlink_to(slot)
-                    records = json.loads(fixture.metadata.read_text())
-                    records['kit'] = records.pop('autowork')
-                    fixture.metadata.write_text(json.dumps(records))
-                elif identity == 'legacy-manifest':
-                    (slot / 'plugin.yaml').write_text('name: autowork\n')
-                    fixture.git(slot, 'commit', '-am', 'registered old manifest')
-                    fixture.before = fixture.git(slot, 'rev-parse', 'HEAD')
-                    records = json.loads(fixture.metadata.read_text())
-                    records['autowork']['revision'] = fixture.before
-                    fixture.metadata.write_text(json.dumps(records))
-                evidence = fixture.home / 'autowork/attempts/evidence'
-                evidence.parent.mkdir(parents=True)
-                evidence.write_bytes(b'private unfinished attempt\x00')
-                imports = fixture.home / '.toolset-imports.json'
-                imports.write_bytes(b'private imports')
-                code, result = fixture.run_update()
-                self.assertEqual(code, 0, result)
-                self.assertEqual(fixture.git(slot, 'rev-parse', 'HEAD'), fixture.after)
-                self.assertEqual((slot / 'plugin.yaml').read_text(), 'name: kit\n')
-                self.assertEqual(evidence.read_bytes(), b'private unfinished attempt\x00')
-                self.assertEqual(imports.read_bytes(), b'private imports')
-                self.assertFalse((fixture.home / 'plugins' / ('autowork' if identity == 'canonical' else 'kit')).exists())
-                backup = result['recovery']['backup']
-                code, again = fixture.run_update()
-                self.assertEqual((code, again['status']), (0, 'up_to_date'))
-                self.assertEqual(again['recovery']['backup'], backup)
+    def test_canonical_identity_recovery_preserves_state(self):
+        evidence = self.home / 'kit/attempts/evidence'
+        evidence.parent.mkdir(parents=True)
+        evidence.write_bytes(b'private unfinished attempt\x00')
+        imports = self.home / '.toolset-imports.json'
+        imports.write_bytes(b'private imports')
+        code, result = self.run_update()
+        self.assertEqual(code, 0, result)
+        self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), self.after)
+        self.assertEqual((self.repo / 'plugin.yaml').read_text(), 'name: kit\n')
+        self.assertEqual(evidence.read_bytes(), b'private unfinished attempt\x00')
+        self.assertEqual(imports.read_bytes(), b'private imports')
+        backup = result['recovery']['backup']
+        code, again = self.run_update()
+        self.assertEqual((code, again['status']), (0, 'up_to_date'))
+        self.assertEqual(again['recovery']['backup'], backup)
 
     def test_canonical_shared_and_live_consumers_hold_recovery(self):
         alias = self.home / 'profiles/not-live/plugins/kit'
@@ -1540,7 +1494,6 @@ class ManagedRecoveryTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
         alias.unlink()
         selected = self.profiles[1][1]
-        (selected / 'plugins/autowork').rename(selected / 'plugins/kit')
         process = self.root / 'fake-proc/12345'
         process.mkdir(parents=True)
         (process / 'cmdline').write_bytes(str(selected / 'plugins/kit/helper.py').encode() + b'\x00')
@@ -1555,14 +1508,14 @@ class ManagedRecoveryTests(unittest.TestCase):
 
     def test_verified_rewrite_preserves_checkout_customizations_and_shared_links(self):
         metadata = json.loads(self.metadata.read_text())
-        metadata['autowork'].pop('revision')  # older native records use the pre-fetch trusted tip
+        metadata['kit'].pop('revision')  # older native records use the pre-fetch trusted tip
         self.metadata.write_text(json.dumps(metadata))
         path = self.home / 'skills/demo/SKILL.md'
         path.write_text('old\none\ntwo\nthree\nlocal lesson\n')
         path.chmod(0o600)
         independent = self.home / 'profiles/independent'
         (independent / 'plugins').mkdir(parents=True)
-        self.git(independent, 'clone', str(self.remote), str(independent / 'plugins/autowork'))
+        self.git(independent, 'clone', str(self.remote), str(independent / 'plugins/kit'))
         (independent / 'skills/demo').mkdir(parents=True)
         (independent / 'skills/demo/SKILL.md').write_text('new\none\ntwo\nthree\n')
         self.profiles.append(('independent', independent))
@@ -1584,14 +1537,14 @@ class ManagedRecoveryTests(unittest.TestCase):
         self.assertEqual(jobs.read_text(), '{"jobs":[{"enabled":false}]}\n')
         self.assertEqual((self.home / 'config.yaml').read_bytes(), config)
         self.assertEqual((self.profiles[1][1] / 'skills/demo/SKILL.md').read_text(), 'new\none\ntwo\nthree\n')
-        self.assertTrue((self.profiles[1][1] / 'plugins/autowork').is_symlink())
+        self.assertTrue((self.profiles[1][1] / 'plugins/kit').is_symlink())
         backup = Path(result['recovery']['backup'])
         self.assertEqual(self.git(backup / 'default/plugin', 'rev-parse', 'HEAD'), self.before)
         self.assertEqual((backup / 'default/file-0').read_text(), 'old\none\ntwo\nthree\nlocal lesson\n')
         metadata = json.loads(self.metadata.read_text())
-        self.assertEqual(metadata['autowork']['custom'], 'keep')
+        self.assertEqual(metadata['kit']['custom'], 'keep')
         self.assertEqual(metadata['other'], {'custom': 'also keep'})
-        self.assertEqual(metadata['autowork']['source'], str(self.remote))
+        self.assertEqual(metadata['kit']['source'], str(self.remote))
         self.assertEqual(self.calls.count(('install', str(self.home))), 1)
         calls = list(self.calls)
         code, again = self.run_update()
@@ -1603,15 +1556,15 @@ class ManagedRecoveryTests(unittest.TestCase):
         # the completed consumers' no-op, or replace their preservation bases.
         late = self.home / 'profiles/late'
         (late / 'plugins').mkdir(parents=True)
-        self.git(late, 'clone', str(backup / 'default/plugin'), str(late / 'plugins/autowork'))
-        (late / 'plugins/.install-metadata.json').write_text(json.dumps({'autowork': {
+        self.git(late, 'clone', str(backup / 'default/plugin'), str(late / 'plugins/kit'))
+        (late / 'plugins/.install-metadata.json').write_text(json.dumps({'kit': {
             'source': str(self.remote), 'revision': self.before}}))
         (late / 'skills/demo').mkdir(parents=True)
         (late / 'skills/demo/SKILL.md').write_text('old\none\ntwo\nthree\n')
         self.profiles.append(('late', late))
         code, extended = self.run_update()
         self.assertEqual(code, 0, extended)
-        self.assertEqual(self.git(late / 'plugins/autowork', 'rev-parse', 'HEAD'), self.after)
+        self.assertEqual(self.git(late / 'plugins/kit', 'rev-parse', 'HEAD'), self.after)
         self.assertEqual(extended['recovery']['backup'], str(backup))
         self.assertEqual(self.run_update()[1]['status'], 'up_to_date')
         self.assertEqual(path.read_text(), 'new\none\ntwo\nthree\nlocal lesson\n')
@@ -1633,7 +1586,7 @@ class ManagedRecoveryTests(unittest.TestCase):
                         if case == 'ahead':
                             fixture.git(fixture.remote, 'update-ref', 'refs/heads/main', fixture.before)
                     elif case == 'unregistered': fixture.metadata.unlink()
-                    elif case == 'untrusted': fixture.metadata.write_text('{"autowork":{"source":"unknown"}}')
+                    elif case == 'untrusted': fixture.metadata.write_text('{"kit":{"source":"unknown"}}')
                     elif case == 'untracked': (fixture.repo / 'local').write_text('untracked\n')
                     elif case == 'dirty': (fixture.repo / 'plugin.yaml').write_text('name: changed\n')
                     elif case == 'worktree':
@@ -1645,7 +1598,7 @@ class ManagedRecoveryTests(unittest.TestCase):
                     elif case == 'active':
                         fixture.enterContext(patch.object(fixture.mod, 'active_consumers', return_value='Active shared consumer'))
                     elif case == 'unselected':
-                        alias = fixture.home / 'profiles/not-live/plugins/autowork'
+                        alias = fixture.home / 'profiles/not-live/plugins/kit'
                         alias.parent.mkdir(parents=True)
                         alias.symlink_to(fixture.repo)
                     elif case == 'gateway-unknown':
@@ -1672,7 +1625,7 @@ class ManagedRecoveryTests(unittest.TestCase):
             code, first = self.run_update()
         self.assertEqual(code, 1)
         self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), self.before)
-        newcomer = self.home / 'profiles/paused/plugins/autowork'
+        newcomer = self.home / 'profiles/paused/plugins/kit'
         newcomer.parent.mkdir(parents=True)
         newcomer.symlink_to(self.repo)
         code, held = self.run_update()
@@ -1696,7 +1649,7 @@ class ManagedRecoveryTests(unittest.TestCase):
                 fixture.setUp()
                 independent = fixture.home / 'profiles/independent'
                 (independent / 'plugins').mkdir(parents=True)
-                fixture.git(independent, 'clone', str(fixture.remote), str(independent / 'plugins/autowork'))
+                fixture.git(independent, 'clone', str(fixture.remote), str(independent / 'plugins/kit'))
                 (independent / 'skills/demo').mkdir(parents=True)
                 (independent / 'skills/demo/SKILL.md').write_text('new\none\ntwo\nthree\n')
                 fixture.profiles.append(('independent', independent))
@@ -1717,7 +1670,7 @@ class ManagedRecoveryTests(unittest.TestCase):
                             or (point == 'source-stage' and '.recovery-source-' in str(args[-1]))):
                         raise Killed()
                     result = original_git(repo, *args)
-                    if point == 'ordinary-source' and args[0] == 'merge' and repo == independent / 'plugins/autowork':
+                    if point == 'ordinary-source' and args[0] == 'merge' and repo == independent / 'plugins/kit':
                         raise Killed()
                     return result
                 def write_backup(path, content):
@@ -1743,18 +1696,18 @@ class ManagedRecoveryTests(unittest.TestCase):
                     code, preview = fixture.run_update('--check')
                     self.assertEqual((code, preview['status']), (0, 'update_available'))
                     self.assertTrue((fixture.home / 'plugins/kit').is_dir())
-                    self.assertFalse(fixture.repo.exists())
+                    self.assertEqual(fixture.git(fixture.repo, 'rev-parse', 'HEAD'), target)
                     self.assertEqual(json.loads((fixture.home / 'maintenance/toolset-update/recovery.json').read_text()), saved)
-                    # Every selected handoff must be locked before restoring a slot,
-                    # including a shared consumer whose source is temporarily absent.
-                    shared_lock = fixture.profiles[1][1] / 'autowork/goal-handoff.lock'
+                    # Every selected handoff must be locked before resuming publication,
+                    # including shared consumers of the published Kit source.
+                    shared_lock = fixture.profiles[1][1] / 'kit/goal-handoff.lock'
                     with shared_lock.open('a') as worker:
                         fcntl.flock(worker, fcntl.LOCK_EX | fcntl.LOCK_NB)
                         code, held = fixture.run_update()
                         self.assertEqual(code, 1, held)
                         self.assertIn('Worker handoff is active', str(held))
                         self.assertTrue((fixture.home / 'plugins/kit').is_dir())
-                        self.assertFalse(fixture.repo.exists())
+                        self.assertEqual(fixture.git(fixture.repo, 'rev-parse', 'HEAD'), target)
                         self.assertEqual(json.loads((fixture.home / 'maintenance/toolset-update/recovery.json').read_text()), saved)
                 (fixture.remote / 'skills/demo/SKILL.md').write_text('later upstream release\n')
                 fixture.git(fixture.remote, 'commit', '-am', 'upstream moved during interruption')
@@ -1771,7 +1724,7 @@ class ManagedRecoveryTests(unittest.TestCase):
                 self.assertEqual(fixture.git(Path(saved['backup']) / 'default/plugin', 'rev-parse', 'HEAD'), fixture.before)
                 self.assertEqual(fixture.git(fixture.repo, 'rev-parse', 'HEAD'), target)
                 self.assertEqual((Path(saved['backup']) / 'default/file-0').read_text(), 'old\none\ntwo\nthree\n')
-                self.assertEqual(fixture.git(independent / 'plugins/autowork', 'rev-parse', 'HEAD'), target)
+                self.assertEqual(fixture.git(independent / 'plugins/kit', 'rev-parse', 'HEAD'), target)
                 self.assertEqual((independent / 'skills/demo/SKILL.md').read_text(), 'new\none\nTWO\nthree\n')
 
     def test_interrupted_slot_intent_does_not_move_new_source_edits(self):
@@ -1793,7 +1746,7 @@ class ManagedRecoveryTests(unittest.TestCase):
 
     def test_native_readback_cannot_claim_changed_permissions(self):
         _, unused = self.profiles.pop()  # isolate final read-back, without a later shared-consumer check
-        (unused / 'plugins/autowork').unlink()
+        (unused / 'plugins/kit').unlink()
         path = self.home / 'skills/demo/SKILL.md'
         path.chmod(0o600)
         def foreign(action, *args):
@@ -1938,7 +1891,6 @@ class Manager:
     def discover_and_load(self):
         home = Path(os.environ['HERMES_HOME'])
         assert (home / 'plugins/kit').is_symlink()
-        assert not (home / 'plugins/autowork').exists()
         config = (home / 'config.yaml').read_text()
         assert 'enabled: [kit]' in config and 'apply_runtime_defaults: false' in config
 
@@ -2020,15 +1972,15 @@ class PinProfileTests(unittest.TestCase):
     """TOOLSET-079: report linked profiles; opt-in, reversible pinning to a clone."""
     setUp, git, advance, plan = UpdateTests.setUp, UpdateTests.git, UpdateTests.advance, UpdateTests.plan
     def pin(self, name='work', **options):
-        with patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+        with patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles):
             return self.mod.pin_profile(self.home, name, upstream=str(self.remote), **options)
     def unpin(self, name='work', **options):
-        with patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+        with patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles):
             return self.mod.unpin_profile(self.home, name, **options)
     def plugin(self, name='work'):
-        return dict(self.profiles)[name]/'plugins/autowork'
+        return dict(self.profiles)[name]/'plugins/kit'
 
     def test_reports_only_linked_profiles_with_their_checkout_state(self):
         rows = self.mod.linked_profiles(self.profiles, upstream=str(self.remote))
@@ -2102,7 +2054,7 @@ class PinProfileTests(unittest.TestCase):
         self.pin()
         self.assertEqual(self.pin()['status'], 'not_linked')
         output = io.StringIO()
-        with patch.object(self.mod._AUTOWORK_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+        with patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
                           'live_profiles', self.setup_stub.live_profiles), contextlib.redirect_stdout(output):
             code = self.mod.main(['--hermes-home', str(self.home), '--pin-profile', 'missing', '--dry-run'])
         self.assertEqual((code, json.loads(output.getvalue())['status']), (1, 'refused'))

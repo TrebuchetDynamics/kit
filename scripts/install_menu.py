@@ -12,9 +12,12 @@
 
 There is no keep-on-install mode: `install` and `update` run the same items and
 refresh them, and differ only in the report wording. Both first bring this checkout
-up to date (`git pull --ff-only` of its upstream) and then run the pulled installer; a
-checkout with local changes, no upstream or a detached HEAD is installed as it is,
-and says so.
+up to date (`git pull --ff-only` of its upstream) and then run the on-disk installer.
+Local staged, unstaged and non-ignored untracked changes are stashed first and kept
+for manual recovery; the stash ID and restore command are always printed, even in
+quiet mode. A missing upstream or status/stash/pull failure aborts before installing
+or restarting services. Unpacked non-Git releases remain supported. --no-pull or
+KIT_INSTALL_NO_PULL bypasses stashing and pulling; --help, --list and --dry-run do neither.
 
 Each host item runs its own supported install command; a host whose CLI is not
 installed is skipped and says so, and fails when named with --only. Pi-Bolt is
@@ -52,7 +55,7 @@ PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
 ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
                '1a8b2f9603f6258cb105293f238a8d3f775f3393')
 HOME = Path(os.environ.get('HOME', str(Path.home())))
-BIN = Path(os.environ.get('AUTOWORK_BIN_DIR') or HOME / '.local' / 'bin')
+BIN = Path(os.environ.get('KIT_BIN_DIR') or HOME / '.local' / 'bin')
 
 def manifest_name(relative, key='name'):
     """A plugin or marketplace name declared by a manifest in this checkout."""
@@ -283,9 +286,8 @@ def enable_pi_package(source=PI_SOURCE, settings=None):
 
     Pi records a package resource filter as an object such as
     ``{"source": ..., "skills": [], "extensions": []}``; an empty list hides every
-    resource of that type. A filter written for the package's previous name
-    (autowork -> kit) survives both ``pi install`` and ``pi update``, so the
-    package stays installed but filtered: no commands and no ``/skill:<name>``.
+    resource of that type. An empty filter survives ``pi install`` and
+    ``pi update``, so the package stays installed but filtered: no commands and no ``/skill:<name>``.
     Remove only empty filters; keep deliberate partial filters untouched.
     """
     path = Path(settings) if settings else pi_settings_path()
@@ -361,7 +363,7 @@ def set_aside(path, *, backup_dir=None):
         while backup.exists() or backup.is_symlink():
             backup, n = path.with_name(f'{path.name}.bak.{n}'), n + 1
     if backup_dir is not None:
-        # AUTOWORK_BIN_DIR may be on another filesystem. shutil.move copies
+        # KIT_BIN_DIR may be on another filesystem. shutil.move copies
         # files or recreates symlinks before unlinking the original on EXDEV.
         shutil.move(path, backup)
     else:
@@ -516,8 +518,6 @@ def hermes_item(hermes_args):
     return item
 
 
-LEGACY_CLAUDE_MARKETPLACE = 'autowork'
-LEGACY_CODEX_MARKETPLACE = 'autowork-marketplace'
 MIGRATION_GUIDE = 'docs/cross-host.md#legacy-marketplace-migration'
 
 
@@ -562,7 +562,7 @@ def owned_directory(path, manifest, name):
 
 
 def claude_registration(output):
-    """Inspect both names, settings scopes and installed IDs; never rewrite registries ourselves.
+    """Inspect Kit settings scopes and installed IDs; never rewrite registries ourselves.
 
     Reject conflicting records rather than guessing which source the host will use.
     Installed project records outside this invocation's context are not update targets.
@@ -591,8 +591,6 @@ def claude_registration(output):
         enabled = data.get('enabledPlugins', {})
         if not isinstance(entries, dict) or not isinstance(enabled, dict):
             marketplace_hold('Claude', f'unsupported marketplace/plugin settings in {path}')
-        if LEGACY_CLAUDE_MARKETPLACE in entries or f'kit@{LEGACY_CLAUDE_MARKETPLACE}' in enabled:
-            marketplace_hold('Claude', 'legacy kit@autowork registration (including stale entries)')
         if CLAUDE_MARKETPLACE in entries:
             entry = entries[CLAUDE_MARKETPLACE]
             sources.append(entry.get('source') if isinstance(entry, dict) else None)
@@ -601,8 +599,6 @@ def claude_registration(output):
         if f'kit@{CLAUDE_MARKETPLACE}' in enabled:
             scopes.append(scope)
     known = registry_json(config / 'plugins/known_marketplaces.json')
-    if LEGACY_CLAUDE_MARKETPLACE in known:
-        marketplace_hold('Claude', 'legacy autowork marketplace registration (including stale entries)')
     if CLAUDE_MARKETPLACE in known:
         entry = known[CLAUDE_MARKETPLACE]
         sources.append(entry.get('source') if isinstance(entry, dict) else None)
@@ -614,8 +610,6 @@ def claude_registration(output):
         if not isinstance(row, dict) or not isinstance(row.get('id'), str):
             marketplace_hold('Claude', 'unknown installed plugin identity')
         identity = row['id']
-        if identity == f'kit@{LEGACY_CLAUDE_MARKETPLACE}':
-            marketplace_hold('Claude', 'legacy installed kit@autowork identity')
         if identity == 'kit':
             marketplace_hold('Claude', 'unresolved installed Kit identity')
         if identity != f'kit@{CLAUDE_MARKETPLACE}':
@@ -702,7 +696,7 @@ def codex_list(argv, key, output):
 
 
 def install_codex(output):
-    names = (LEGACY_CODEX_MARKETPLACE, CODEX_MARKETPLACE)
+    names = (CODEX_MARKETPLACE,)
     rows = codex_list(['codex', 'plugin', 'marketplace', 'list', '--json'],
                      'marketplaces', output)['marketplaces']
     registrations = {}
@@ -743,8 +737,6 @@ def install_codex(output):
                     or plugin['source'].get('source') != 'local'
                     or plugin['source'].get('path') != registration['root']):
                 marketplace_hold('Codex', f'missing or mismatched installed Kit source in {name}')
-    if LEGACY_CODEX_MARKETPLACE in registrations or plugins[LEGACY_CODEX_MARKETPLACE]:
-        marketplace_hold('Codex', 'legacy autowork-marketplace effective registration or installed identity')
     canonical = registrations.get(CODEX_MARKETPLACE)
     kind = None
     if canonical:
@@ -1046,8 +1038,8 @@ def choose_text(all_items, chosen, read=input, write=print):
 
 # -- installing -------------------------------------------------------------------
 def restart_services(output):
-    """Restart active host integrations, never the retired Autowork executor."""
-    ctl = os.environ.get('PI_AUTOWORK_SYSTEMCTL', 'systemctl')
+    """Restart active host integrations, never the retired executor."""
+    ctl = os.environ.get('KIT_SYSTEMCTL', 'systemctl')
     if platform.system() != 'Linux' or not shutil.which(ctl):
         return 'service restarts unavailable (requires Linux user systemd)'
     listed = subprocess.run(
@@ -1077,7 +1069,7 @@ def restart_services(output):
 
 def install(all_items, chosen, dry_run=False, output=None, mode='install'):
     output = output or Output()
-    if dry_run or (not chosen and not os.environ.get('AUTOWORK_INSTALL_REPORT')):
+    if dry_run or (not chosen and not os.environ.get('KIT_INSTALL_REPORT')):
         return _install(all_items, chosen, dry_run=dry_run, output=output, mode=mode)
     # Resolve aliases so checkouts targeting the same binary directory share one
     # persistent inode. Never unlink it: that would allow two independent locks.
@@ -1111,7 +1103,7 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
 def _install(all_items, chosen, dry_run=False, output=None, mode='install'):
     results = []
     # Private machine-readable progress for update_bundle.py, separate from native output.
-    report = None if dry_run else os.environ.get('AUTOWORK_INSTALL_REPORT')
+    report = None if dry_run else os.environ.get('KIT_INSTALL_REPORT')
     if report:
         Path(report).write_text('')
 
@@ -1202,7 +1194,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install'):
     if chosen:
         output.line('\nRestart active Kit services (always, including unchanged installs)', 'heading')
         if dry_run:
-            record('services', 'planned', 'restart active Hermes gateway and kit-* host services; never legacy Autowork runners')
+            record('services', 'planned', 'restart active Hermes gateway and kit-* host services; never legacy runners')
         else:
             try:
                 record('services', 'installed', restart_services(output), 0)
@@ -1221,32 +1213,71 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install'):
 
 
 def pull_checkout(root, write=print, run=subprocess.run):
-    """Bring this installer's own Git checkout up to date before installing from it (owner
-    request 2026-10-21: `./install.sh` should not install a stale checkout). Fast-forward only;
-    a checkout with local changes to tracked files, no upstream, or a detached HEAD is left as
-    it is, with a line saying why. Returns True when new commits arrived."""
+    """Keep local edits in a stash, then require an upstream fast-forward.
+
+    Return whether disk code must be re-executed (stash or HEAD change).
+    Fail closed before component actions; never restore or remove a stash.
+    """
+    root = Path(root).resolve()
+    if not (root / '.git').exists() and not (root / '.git').is_symlink():
+        return False  # unpacked release; do not discover a parent repository
+    # -C alone does not override these (for example when called from a Git hook).
+    # Refuse before even reading status rather than stash into a foreign repository
+    # or reset this checkout using somebody else's index/object database.
+    overrides = [name for name in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR',
+                                  'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
+                                  'GIT_NAMESPACE', 'GIT_SHALLOW_FILE') if name in os.environ]
+    if overrides:
+        raise RuntimeError('Git environment redirects checkout state; unset ' +
+                           ', '.join(overrides) + ' before retrying')
+
+    def checked(result, args):
+        if result.returncode:
+            detail = result.stderr.strip() or result.stdout.strip() or f'exit {result.returncode}'
+            raise RuntimeError(f'git {shlex.join(args)} failed: {detail}')
+        return result.stdout.strip()
+
     def git(*args):
-        return run(['git', '-C', str(root), *args], capture_output=True, text=True)
-    if git('rev-parse', '--is-inside-work-tree').returncode != 0:
-        return False  # not a Git checkout (an unpacked release): nothing to pull
+        return run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=120)
+
+    def read(*args):
+        return checked(git(*args), args)
+
+    if Path(read('rev-parse', '--show-toplevel')).resolve() != root:
+        raise RuntimeError('installer path is not the Git checkout root; refusing to change another checkout')
     upstream = git('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}')
-    if upstream.returncode != 0 or not upstream.stdout.strip():
-        write('Not pulling: this checkout has no upstream branch (detached or local-only); installing it as it is.')
-        return False
-    if git('status', '--porcelain', '--untracked-files=no').stdout.strip():
-        write('Not pulling: this checkout has local changes to tracked files; installing it as it is.')
-        return False
-    before = git('rev-parse', 'HEAD').stdout.strip()
-    pulled = git('pull', '--ff-only', '--quiet')
-    if pulled.returncode != 0:
-        write('Not pulled: ' + (pulled.stderr.strip().splitlines() or ['git pull --ff-only failed'])[-1]
-              + '; installing the checkout as it is.')
-        return False
-    after = git('rev-parse', 'HEAD').stdout.strip()
-    if after == before:
-        return False
-    write(f'Updated this checkout {before[:8]}..{after[:8]} ({upstream.stdout.strip()}); installing the new version.')
-    return True
+    if upstream.returncode or not upstream.stdout.strip():
+        raise RuntimeError('this checkout has no usable upstream branch (detached or local-only); '
+                           'switch to a tracking branch or configure its upstream before retrying')
+    read('rev-parse', '--verify', '@{u}^{commit}')
+    before = read('rev-parse', '--verify', 'HEAD')
+    stashed = False
+    if read('status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'):
+        previous = read('stash', 'list', '--format=%H').splitlines()
+        # Git can reuse the object (and not add a reflog entry) for identical
+        # edits in the same second. A sub-second message makes this a new stash.
+        message = f'Kit installer: local changes before pull ({time.time_ns()})'
+        args = ('stash', 'push', '--include-untracked', '--message', message)
+        saved = git(*args)
+        current = read('stash', 'list', '--format=%H').splitlines()
+        if current and current[1:] == previous:
+            stash_id = current[0]
+            # Print before any further operation can fail, including stash cleanup.
+            write(f'Kept local changes in Kit installer stash {stash_id}. Manual recovery (also kept after success):')
+            write(shlex.join(['git', '-C', str(root), 'stash', 'apply', '--index', stash_id]))
+            stashed = True
+        checked(saved, args)
+        if not stashed:
+            raise RuntimeError('git stash did not create a new stash; inspect git status and git stash list before retrying')
+        if read('status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'):
+            raise RuntimeError('checkout is still dirty after git stash; inspect git status before retrying; '
+                               'the printed stash is kept for manual recovery')
+    # Disable configured autostash: it would restore/drop edits behind our back.
+    read('pull', '--ff-only', '--no-autostash', '--quiet')
+    after = read('rev-parse', '--verify', 'HEAD')
+    if after != before:
+        write(f'Updated this checkout {before[:8]}..{after[:8]} ({upstream.stdout.strip()}); installing the new version.')
+    return stashed or after != before
 
 
 def main(argv=None):
@@ -1267,17 +1298,24 @@ def main(argv=None):
         parser.add_argument(flag, action='store_true', help='passed to the Hermes item')
     parser.add_argument('--hermes-home', help='passed to the Hermes item')
     parser.add_argument('--no-pull', action='store_true',
-                        help="install this checkout as it is, without first pulling its upstream (git pull --ff-only)")
+                        help="install this checkout as it is, without stashing or pulling (also KIT_INSTALL_NO_PULL=1)")
     parser.add_argument('command', nargs='?', choices=('install', 'update'), default='install',
                         help='install (default) or update the installed suite in place; both run the same items')
     args = parser.parse_args(argv)
     output = Output(args.color, 0 if args.quiet else 2)
-    if not (args.no_pull or args.list or args.dry_run or os.environ.get('AUTOWORK_INSTALL_PULLED')
-            or os.environ.get('AUTOWORK_INSTALL_NO_PULL')):
-        if pull_checkout(ROOT, write=output.line):
-            # The pulled installer may differ from this one: run it, once.
+    if not (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
+            or os.environ.get('KIT_INSTALL_NO_PULL')):
+        try:
+            changed = pull_checkout(ROOT, write=output.line)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            output.line(f'FAILED: checkout preparation: {exc}', 'failed')
+            output.line('Nothing installed or restarted. Resolve the Git error and retry; '
+                        'any created stash is kept (inspect git stash list; use the printed recovery command).')
+            return 1
+        if changed:
+            # Pull or stash may have replaced the running installer: run disk code once.
             os.execvpe('bash', ['bash', str(ROOT / 'install.sh'), *(sys.argv[1:] if argv is None else argv)],
-                       dict(os.environ, AUTOWORK_INSTALL_PULLED='1'))
+                       dict(os.environ, KIT_INSTALL_PULLED='1'))
     hermes = [f for f, on in (('--bundle-only', args.bundle_only), ('--no-reload', args.no_reload),
                               ('--yes-deps', args.yes_deps), ('--dry-run', args.dry_run)) if on]
     if args.hermes_home:
@@ -1300,11 +1338,11 @@ def main(argv=None):
     if args.skip:
         chosen -= set(args.skip.split(','))
     menu = args.menu
-    if menu and not (sys.stdin.isatty() and sys.stdout.isatty()) and os.environ.get('AUTOWORK_INSTALL_UI') != 'text':
+    if menu and not (sys.stdin.isatty() and sys.stdout.isatty()) and os.environ.get('KIT_INSTALL_UI') != 'text':
         parser.error('no terminal for the menu; choose with --all, --only or --skip (see --list)')
     if menu:
         try:
-            go = choose_curses(all_items, chosen) if os.environ.get('AUTOWORK_INSTALL_UI') != 'text' \
+            go = choose_curses(all_items, chosen) if os.environ.get('KIT_INSTALL_UI') != 'text' \
                 else choose_text(all_items, chosen, write=output.line)
         except Exception:  # no usable terminal for curses: the numbered menu
             go = choose_text(all_items, chosen, write=output.line)

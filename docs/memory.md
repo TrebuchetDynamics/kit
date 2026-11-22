@@ -1,8 +1,8 @@
 # Memory and retained data
 
-Sources: [native setup preflight](../src/autowork_runtime/install/setup_preflight.py),
-[configuration validation](../src/autowork_runtime/install/preflight_config.py),
-[runtime policy](../src/autowork_runtime/runtime_defaults.py),
+Sources: [native setup preflight](../src/kit_runtime/install/setup_preflight.py),
+[configuration validation](../src/kit_runtime/install/preflight_config.py),
+[runtime policy](../src/kit_runtime/runtime_defaults.py),
 [source installer](../install-plugins.sh) and [bundle defaults](../plugins/defaults.json).
 The `scripts/` Python entrypoints load these same-release native implementations.
 

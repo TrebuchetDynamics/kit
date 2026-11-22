@@ -9,7 +9,7 @@ contract nor the protection policy: read
 ## Interface
 
 ```sh
-python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|stop|help] \
+python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|stop|help] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
   [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
   [--resume-setup] [--harness {pi-bolt,pi}]
@@ -39,6 +39,9 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|stop|help]
 - Setup-only `--resume-setup` is the explicit legacy missing-provider exception:
   require `--config PATH` and complete matching provider inputs. It never changes
   a saved selection, pin or present provider file. See bounded resume below.
+- `update` accepts only `--repo-dir`, `--config`, `--dry-run` and `--json`.
+  Provider, resume and harness selectors are refused: an update preserves the
+  saved selection.
 - `--dry-run` prints the plan. It creates no config, scratch file, lock or
   receipt and runs no install, fetch, label change or activation.
 - `--json` prints one document. Text mode prints flattened `key=value` lines
@@ -69,7 +72,51 @@ unavailable.
   and attempts are preserved. A reused deployment keeps its pin; a changed pin is a deliberate owner
   operation, never a setup side effect.
 - The initial supported source is the verified retention-capable pin
-  `sha:ce97e015ca433a9312e5bdf69353be58ab394fd9`. Never silently upgrade it.
+  `sha:ce97e015ca433a9312e5bdf69353be58ab394fd9`. Setup never upgrades it; only
+  the deliberate `update` below advances a deployment past that pin.
+
+## Release update
+
+`update` advances one prepared deployment to the newest official release and
+repairs its owned units. It needs the same evidence as setup plus a stopped and
+drained deployment: readable scheduler evidence, no active or activating service
+and no enabled timer. A live worker or enabled timer refuses as `update_busy`
+before any write. Tracked changes in the deployment checkout refuse as
+`source_dirty`; update never discards or force-checks-out work.
+
+Under the deployment lock it rechecks ownership, source, checkout cleanliness and
+inactivity, then:
+
+1. writes the upstream `release` channel into `engine_source_track`;
+2. runs upstream `sync-engine-source`, which fetches the official tags, resolves
+the newest semver release (pre-releases excluded), dereferences the annotated tag
+and checks that commit out detached; it fails closed and is never retried
+unchanged;
+3. reads the resulting HEAD and locks it as `sha:<commit>`, so later ticks verify
+one exact commit instead of tracking a moving tag;
+4. validates with non-activating `orbi check`;
+5. refreshes this deployment's owned units with upstream `orbi install-units`
+when they are installed, which re-renders the deployment templates and enables
+configured timers; a deployment with no installed unit reports
+`refresh_units: deferred` and leaves first installation to `start`;
+6. disables every owned timer that install enabled, restoring the verified
+inactive state, and reports the names in `disabled_timers`;
+7. observes the scheduler again and reports `pending_services`.
+
+The config must declare exactly one `engine_source_track` line; update rewrites
+that literal and preserves every other byte. An engine that predates the upstream
+release channel fails the sync closed and is reported as
+`sync_engine_source_failed`; that deployment needs a deliberate source repair, not
+a second retry.
+
+It reports `updated`, or `up_to_date` when the release commit did not move; both
+still refresh units and validate. `previous.track`/`previous.head` name the
+observed starting point, and `deployment.deployed_commit` the locked release.
+Origin, slots, provider metadata, harness selection, `.orbi/env` and unrelated
+config bytes are preserved. Update never enables scheduling as an outcome: run
+`start` under its own authority afterwards. Rollback is a deliberate owner edit
+of `engine_source_track` to the previous tag or sha; there is no second state.
+`update --dry-run` performs no write, fetch or lock and reports `planned`.
 - Deployment/config paths and provider/env paths must not traverse symlinks,
   including parent directories. Validate the raw paths before resolving or writing.
 - Native configs and installed unit identities own deployment state. There is
@@ -531,6 +578,16 @@ retry an unchanged timeout. Typical repairs:
   cause; the failure step may have partially mutated even though publication is atomic.
 - `setup_busy`: obtain separate stop/drain authorization and verify inactivity;
   do not kill workers or use setup to stop them.
+- `update_busy`: stop and drain this deployment first, verify no service is
+  active and no owned timer is enabled, then rerun `update`; never kill workers
+  or disable an unrelated deployment to pass the check.
+- `source_dirty`: preserve the tracked checkout changes in a separate operation
+  and decide deliberately; update never discards them or rewrites origin.
+- `sync_engine_source_failed` or `command_timeout` during `update`: the pin or
+  checkout may already have moved and units may already be refreshed. Read
+  `previous`, `steps`, `disabled_timers`, `error.mutated` and the read-only
+  scheduler snapshot before deliberate recovery; inspect the fetch/channel
+  privately and do not retry an unchanged timeout.
 - `bootstrap_incompatible` or `bootstrap_conflict`: repair or replace the
   user-local Orbi bootstrap deliberately; never force-reinstall a shared tool
   as part of another deployment's start.
@@ -550,3 +607,79 @@ retry an unchanged timeout. Typical repairs:
 
 Offline tests and `doctor` do not qualify a live loop. Real issue pickup, PR,
 independent review, required CI and protected merge remain live acceptance.
+
+## Host round trips and evidence
+
+The common path in `SKILL.md` is shared by Hermes and portable hosts. The host
+LLM interprets intent/authority once; the ACTIONS-backed helper performs checks
+and returns the receipt. Additional reasoning needs a concrete ambiguity,
+missing prerequisite, unresolved gate or failed operation. A failed receipt is
+an answer, not an instruction to retry or silently stop/repair/start.
+
+### Host-required continuations
+
+- Pi's explicit callback still uses `sendUserMessage`, queued as `followUp` while
+  busy. It supplies the portable host contract and canonical workflow with their
+  absolute source directories; no adapter executes or routes lifecycle commands.
+- Claude Code and Codex load the explicit portable adapter, then any missing host
+  contract/workflow together. They use the same common path, not a second router.
+- Hermes registration still requests `skill_view` for the canonical skill. That
+  discovery/tool boundary is not removed by this change.
+- A host that requires a model request after instruction/tool results still owns
+  those continuations. Relay the safe receipt minimally; do not add another
+  interpretation, validation or prose-polishing pass. Direct tool-result return
+  is conditional on host support, not a new API or a claimed tested capability.
+
+Real observed model-request counts and host-required continuation counts are
+**unknown** for Pi, Claude Code, Codex and Hermes: no live host traces were
+collected. One `sendUserMessage`, a fake response or one helper process is not
+one measured model call. Worker inference and independent review are unchanged,
+not exercised by these fixtures and must be counted separately in live traces.
+
+### Comparable offline boundaries
+
+The Pi fixture matrix in `tests/portable_pi.test.mjs` invokes the real registered
+callback with a fake message sink in both idle and busy contexts. Compared with
+base `ed432d13d9f53348b3a2e9bcc466faf46e7dc93d`, in the same worktree under Node
+22.22.2, each request dispatches once before and after. UTF-8 bytes below count
+only Kit's command message, not system/history/tool wrappers or a full provider
+request. Absolute source-path lengths affect these numbers.
+
+| Literal request | Dispatch bytes before → after | Bytes after required instruction loads before → after |
+| --- | ---: | ---: |
+| bare | 1,316 → 14,110 | 21,004 → 14,110 |
+| `status` | 1,322 → 14,116 | 21,010 → 14,116 |
+| `help` | 1,320 → 14,114 | 21,008 → 14,114 |
+| `setup --dry-run` | 1,331 → 14,125 | 21,019 → 14,125 |
+| `start --dry-run` | 1,331 → 14,125 | 21,019 → 14,125 |
+| `stop --dry-run` | 1,330 → 14,124 | 21,018 → 14,124 |
+| `update --dry-run` | 1,332 → 14,126 | 21,020 → 14,126 |
+| `update --config "/missing literal $(file).toml"` | 1,363 → 14,157 | 21,051 → 14,157 |
+| `start or stop?` | 1,330 → 14,124 | 21,018 → 14,124 |
+
+Dispatch is larger because instructions are supplied up front. The canonical
+workflow is 8,262 rather than 15,912 bytes; branch detail stays in this reference.
+The required extra instruction files drop from two (COMMON and canonical) to
+zero on Pi. That removes the need for model-assisted reads, not two proven model
+requests: a host could batch or cache reads. Shared policy/reference reads needed
+by a concrete case remain possible. Ambiguous input is forwarded literally;
+these tests do not prove that a real model asks the right clarification.
+
+The public CLI receipt fixture in `tests/test_orbi_control.py` uses disposable
+homes, a prepared target, an unrelated deployment and fake external tools. The
+same CLI requests against the base and current helper each use **one helper
+invocation**. External tool subprocess counts before → after are: bare/status
+32 → 32 each; help 0 → 0; setup/start previews 33 → 33 each; stop preview 32 → 32;
+update preview 36 → 36; failed busy update 35 → 35. These are helper-internal
+checks, not model calls or host tool invocations. No checks were removed. Routine
+previews return `planned`; busy update exits nonzero with `update_busy`,
+`mutated: false` and the repair action to request a separately authorized
+stop/drain and verify inactivity. No implicit mutation or retry follows.
+
+The workflow removes routine duplicate host discovery/status probes, help
+lookups, separate setup before absent start, preview-then-apply sequences,
+polling and validation/paraphrase passes. This is an instruction/dispatch
+contract with synthetic boundary evidence, **not a measured live round-trip or
+latency saving**. Live qualification must record actual provider requests,
+host tools, prompt bytes, mandatory continuations and worker inference separately
+for the same authorized success/failure fixtures, without releasing live gates.

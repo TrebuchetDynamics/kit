@@ -1,9 +1,5 @@
 # Service boundaries
 
-The pi-autowork executor and service controls are removed. Do not reinstall or
-restart them. The [prior recovery contract](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/unblock/references/services.md)
-is immutable evidence, not an operational fallback.
-
 Orbi remains paused and live-unqualified. An Unblock invocation does not enable
 a deployment, release deliberate-stop state or authorize interruption.
 

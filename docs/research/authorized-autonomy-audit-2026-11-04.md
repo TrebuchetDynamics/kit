@@ -1,6 +1,6 @@
-# Authorized autonomy audit: dsh-superagent against Autowork — 2026-11-04
+# Authorized autonomy audit: dsh-superagent comparison — 2026-11-04
 
-> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> **Historical sources only.** Executor
 > observations, recommendations and pilot procedures below refer to historical
 > sources, not current operating or development instructions. Do not revive it.
 > Preserve unresolved acceptance and recovery evidence; reconcile still-required
@@ -13,17 +13,15 @@ proposal for review; none is implemented. One earlier commit on this branch
 §8 rather than extended.
 
 Method: read `DeepSeek-ai/dsh-superagent-prototype` at `8c32a9dc` (`docs/000`–`007`,
-`src/core`, `src/executor`, `src/sources`) and the Autowork engine at main `7c16829b`
-(the canonical checkout also held another session's uncommitted `Src/pi_autowork/coordinator.py`
-edits, so coordinator line numbers may shift). Paseo client citations are from the
+`src/core`, `src/executor`, `src/sources`) and the historical engine at main `7c16829b`
+(the canonical checkout also held another session's uncommitted edits, so coordinator line numbers may shift). Paseo client citations are from the
 committed tree at `862eefc8`, because that checkout was being edited at read time. No live
 runner, service restart or model call was observed: this audit proves source behaviour and
 test coverage only, never live qualification.
 
 Success is not more activity. It is fewer unsafe actions, fewer unrecoverable failures,
-less owner intervention and more verified deliveries. `autowork scorecard` already measures
-those: verified closures, `held_share`, `questions`, `owner_minutes_per_verified_task`
-and `cost_per_verified_task_usd` (`Src/pi_autowork/scorecard.py:228-288,466-530`).
+less owner intervention and more verified deliveries. The historical scorecard measured verified closures, `held_share`, `questions`, `owner_minutes_per_verified_task`
+and `cost_per_verified_task_usd`.
 
 ## Verdict
 
@@ -46,8 +44,7 @@ developed layer. Hence effects first, authorization attribution second, provenan
 
 ### What exists
 
-- **Typed, store-validated grant.** `live = "authorized"` is a frontmatter enum, not prose
-  (`Src/pi_autowork/engine/task_store.py:43,80`); unknown fields are refused, so no new
+- **Typed, store-validated grant.** `live = "authorized"` is a frontmatter enum, not prose; unknown fields are refused, so no new
   authority field can be smuggled in (`task_store.py:256-258`). `Owner only` ownership plus
   a `live` resource requires that grant, and the check runs on **every** dispatch pass, not
   only at first admission: `parallel_plan.plan()` calls `authorization_wait` per candidate
@@ -58,8 +55,7 @@ developed layer. Hence effects first, authorization attribution second, provenan
   `Hold('scope', ...)`, with the stated reason that "no branch can grant itself or another
   task resources, live authorization or checks"
   (`parallel_integrate.py:390-426`; test
-  `test_a_worker_edit_to_the_task_store_is_held_never_merged_or_offered_again`,
-  `pi-autowork/engine/test_parallel_integrate.py:1876`).
+  `test_a_worker_edit_to_the_task_store_is_held_never_merged_or_offered_again`).
 - **A merge cannot invent authority.** Every merged field must equal a value from one merge
   parent, and every step of a resolver's first-parent history is checked
   (`task_queue.py:62` `merge_record_error`, `:131` `merge_history_error`, used at
@@ -70,13 +66,12 @@ developed layer. Hence effects first, authorization attribution second, provenan
   `contract_hash`/`record_revision`/`rev`; a later contract edit sets the attempt aside
   instead of silently widening it (`parallel_dispatch.py:1174-1179`,
   `contract_changed` in `parallel_state.HOLD_CAUSES`).
-- **Publication is a separate, explicit grant**, not a task permission: the saved
-  `PI_AUTOWORK_PUSH=1` per repository, workers have pushes blocked by a Git
+- **Publication is a separate, explicit grant**, not a task permission. Workers have pushes blocked by a Git
   `pushInsteadOf` guard (`common.py:122-127`), and only the coordinator's `push()` runs
   without it (`coordinator.py:1561-1615`).
 - **Closure is attributed.** `closure_actor`, `closure_timestamp`, `closure_reason`,
   `closure_evidence` (`task_store.py:87-93`), and manual closure requires `--by`, `--reason`
-  and optional `--evidence` (documented in `pi-autowork/README.md`, `autowork tasks done`).
+  and optional `--evidence`.
 
 ### Sufficient?
 
@@ -90,14 +85,13 @@ asks for, already present.
 permanent bit on the record (`task_store.py:80`), the body note keeps the original wording
 but is never parsed back, and `owner_waiver`/`owner_qualification` are free text whose mere
 presence satisfies `record.qualified` (`task_store.py:101-102`), which is exactly what the
-`verified_depends_on` gate reads (`task_select.blocking`,
-`Src/pi_autowork/engine/task_select.py:56-62`). Closure is attributed; these two are not.
+`verified_depends_on` gate reads (`task_select.blocking`). Closure is attributed; these two are not.
 
 User-visible consequence: a record that was authorized for a one-off live action keeps that
 authority for any later edit that does not change the contract, and a free-text waiver
 permanently satisfies a verification dependency with no record of who waived it or when.
 The intended convention is already visible in tests — `Live authorization: owner approved
-this run on 2026-10-17` (`pi-autowork/engine/test_parallel_plan.py:52`) — but nothing enforces
+this run on 2026-10-17` — but nothing enforces
 it; only placeholder values are refused, and only at migration
 (`task_migrate.py:483-485`).
 
@@ -194,10 +188,8 @@ END) still yields one repaired block.
 ### What exists
 
 - Task-level: only owner-owned causes become questions, with a typed gate
-  (`failure_policy.classify` → `resolution_owner`, applied in `questions.add`,
-  `Src/pi_autowork/questions.py:88-99`); technical holds stay engineering incidents.
-- Fleet-level: `fleet_view.needs` prefers owner questions, else the first blocker
-  (`Src/pi_autowork/fleet_view.py:938-955`), runners sort with questions first
+  (`failure_policy.classify` → `resolution_owner`, applied in `questions.add`); technical holds stay engineering incidents.
+- Fleet-level: `fleet_view.needs` prefers owner questions, else the first blocker; runners sort with questions first
   (`fleet_view.py:1275`), and a working headline appends "; N for you"
   (`fleet_view.py:521-542`).
 - Paseo: one banner for the whole fleet, decisions first, then failure, then running
@@ -205,8 +197,7 @@ END) still yields one repaired block.
   any decision at 0, danger 1, live 2, warning 3, not running 4
   (`integrations/paseo/client/presentation.ts:150-163`); a shared blocker is said once
   (`presentation.ts:164-170`).
-- Health announces a stall once per episode and again only when its roots change
-  (`Src/pi_autowork/health.py:273-283`).
+- Health announces a stall once per episode and again only when its roots change.
 
 ### Sufficient?
 
@@ -231,13 +222,12 @@ owners answer low-impact questions first, revisit ordering. Do not add another p
 ### What exists
 
 - The runner selects only from the committed `tasks/` store; it never infers work
-  (`task_queue.selectable`, `pi-autowork/README.md` runner section).
+  (`task_queue.selectable`).
 - The shadow-mode analogue exists for planning: proposals are staged and require an explicit
-  Apply (`planning_proposals.stage`, and the console's Review → Apply;
-  `Src/pi_autowork/planning_proposals.py:81,152`).
+  Apply (`planning_proposals.stage`, and the console's Review → Apply).
 - Read-only discovery already exists for local sources: `discover_sources.discover` and
   `engineering_signals.scan` produce bounded leads that are explicitly "leads only"
-  (`Src/pi_autowork/engine/engineering_signals.py`, `discover_sources.py`).
+  (`discover_sources.py`).
 
 ### Sufficient?
 
@@ -312,7 +302,7 @@ holder. `plan()` already enforces this before dispatch, but no test proves it fo
   **model** on every event (`execution_journal.py:165-171`), and journal appends are
   `O_APPEND`+`fsync`.
 - Per run: the CLI resolves one immutable toolset release and child processes keep it
-  (`pi-autowork/README.md` module table; `cli.py` release resolution); accounting records
+  (`cli.py` release resolution); accounting records
   role, usage and attribution (`accounting.py`).
 
 ### Gap
@@ -339,10 +329,9 @@ dispatches with different prompt bytes produce different hashes; a fixture relea
 
 Commit `7c746892` on `dsh-lessons` (unmerged, unpushed) implements the reserved slot from §6
 with offline coverage: `test_one_paused_attempt_resumes_beside_a_full_pool_without_a_second_reserve`
-(`pi-autowork/engine/test_parallel_dispatch.py:1418`) fails with `[] != ['A']` when the
+fails with `[] != ['A']` when the
 dispatch change is reverted, and passes with it; the full dispatch, status, e2e, state, plan
-and integrate modules were run green (80/7/14/18/25/167 tests), plus
-`tests/test_pi_autowork.py -k status`.
+and integrate modules were run green (80/7/14/18/25/167 tests).
 
 Disposition under this brief: **hold for review.** It is evidence-backed and inside the
 engine's existing priority order, but it did not follow report-first, it covers only paused

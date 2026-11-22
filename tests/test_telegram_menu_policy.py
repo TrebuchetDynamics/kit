@@ -17,14 +17,14 @@ class MenuPolicyTests(unittest.TestCase):
         self.assertNotIn('max_commands',menu)
     def test_every_advertised_skill_command_is_a_bundled_skill(self):
         # Telegram spells a skill's hyphens as underscores; workflow aliases are registered separately.
-        skills={p.name.replace('-','_') for p in (policy._AUTOWORK_LAYOUT.root/'skills').iterdir() if (p/'SKILL.md').is_file()}
+        skills={p.name.replace('-','_') for p in (policy._KIT_LAYOUT.root/'skills').iterdir() if (p/'SKILL.md').is_file()}
         self.assertTrue({'ui_taste','beautify_github_readme','impeccable','lgtm',
                          'git_commit_push'} <= skills)
         self.assertNotIn('engineering', skills)
         self.assertLessEqual(set(WORKFLOWS) - skills, {'plan_with_me','plan_for_me','docs_sync'})
     def test_stale_compatibility_entries_are_removed_and_user_choices_kept(self):
         old=['autoresearch','autoresearch_plan','autoresearch_debug','autoresearch-fix','status','custom',
-             'engineering','autowork','work','pending','blockers','plan_with_me','grill_me','repo_interview','repo_docs','autogoal','git_pull_merge']
+             'engineering','work','pending','blockers','plan_with_me','grill_me','repo_interview','repo_docs','autogoal','git_pull_merge']
         raw={'platforms':{'telegram':{'extra':{'command_menu':{'priority':old,
              'max_commands':40,'priority_mode':'append'}}}}}
         menu=priority(raw)
@@ -45,7 +45,7 @@ class ChatMenuTests(unittest.TestCase):
             return [{'command': c} for c in menus.get(scope['chat_id'], [])]
         return call, calls
     def test_only_chat_menus_with_retired_commands_are_cleared(self):
-        menus={11:['autowork','autogoal'], 22:['custom'], -33:['autoresearch_fix']}
+        menus={11:['autogoal'], 22:['custom'], -33:['autoresearch_fix']}
         call, calls=self.fake(menus)
         env={'TELEGRAM_ALLOWED_USERS':'11, 22,bad,11','TELEGRAM_HOME_CHANNEL':'-33'}
         self.assertEqual(policy.stale_chat_menus(env, call), [11, -33])
@@ -53,7 +53,7 @@ class ChatMenuTests(unittest.TestCase):
         self.assertEqual(policy.stale_chat_menus(env, call), [])
         self.assertNotIn(('deleteMyCommands', 22), calls)
     def test_each_removed_skill_retires_stale_chat_menus(self):
-        for name in ('autowork', 'work', 'pending', 'blockers'):
+        for name in ('work', 'pending', 'blockers'):
             with self.subTest(name=name):
                 menus = {11: [name], 22: ['custom']}
                 call, calls = self.fake(menus)
@@ -99,9 +99,9 @@ class SelfHealTests(unittest.TestCase):
         rd=importlib.util.module_from_spec(spec); sys.modules[spec.name]=rd; spec.loader.exec_module(rd)
         old={'approvals':{'mode':'off','destructive_slash_confirm':False,'mcp_reload_confirm':False},
              'agent':{'max_turns':90},
-             'plugins':{'entries':{'autowork':{'allow_gateway_injection':True,
+             'plugins':{'entries':{'kit':{'allow_gateway_injection':True,
                                              'settings':{'runtime_policy':'autonomous'}}}},
-             'platforms':{'telegram':{'extra':{'command_menu':{'priority':['autoresearch','autoresearch_plan','autowork']}}}}}
+             'platforms':{'telegram':{'extra':{'command_menu':{'priority':['autoresearch','autoresearch_plan','work']}}}}}
         self.assertEqual(rd.settings_drift(old, rd.expected_settings(old)),
                          ['agent.max_turns', 'platforms.telegram.extra.command_menu.priority'])
         healed=rd.expected_settings(old)
@@ -109,7 +109,7 @@ class SelfHealTests(unittest.TestCase):
         old['platforms']['telegram']['extra']['command_menu'].update(healed['platforms']['telegram']['extra']['command_menu'])
         self.assertEqual(rd.settings_drift(old, rd.expected_settings(old)), [])
         # Hermes never reads an entry-level key, so it is not an opt-out (TOOLSET-033).
-        self.assertFalse(rd._opted_out({'plugins':{'entries':{'autowork':{'apply_runtime_defaults':False}}}}))
+        self.assertFalse(rd._opted_out({'plugins':{'entries':{'kit':{'apply_runtime_defaults':False}}}}))
 
 
 
@@ -138,7 +138,7 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
         self.rd=importlib.util.module_from_spec(spec); sys.modules[spec.name]=self.rd; spec.loader.exec_module(self.rd)
 
     def entry(self, value):
-        return {'plugins':{'entries':{'autowork':value}}}
+        return {'plugins':{'entries':{'kit':value}}}
 
     def test_opt_out_follows_hermes_settings_then_legacy_config(self):
         rd=self.rd
@@ -159,7 +159,7 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'config.yaml'
             self.assertFalse(self.rd.setup_opted_out(path))  # missing
-            path.write_text('plugins:\n  entries:\n    autowork:\n      config:\n        apply_runtime_defaults: false\n')
+            path.write_text('plugins:\n  entries:\n    kit:\n      config:\n        apply_runtime_defaults: false\n')
             self.assertTrue(self.rd.setup_opted_out(path))
             path.write_text('plugins: [\n  apply_runtime_defaults: false\n')
             self.assertIsNone(self.rd.setup_opted_out(path))
@@ -170,15 +170,15 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
 
     def test_documented_opt_out_with_restored_values_reports_no_drift(self):
         self.raw={'approvals':{'mode':'manual','destructive_slash_confirm':True},
-                  'plugins':{'entries':{'autowork':{'settings':{'apply_runtime_defaults':False,
+                  'plugins':{'entries':{'kit':{'settings':{'apply_runtime_defaults':False,
                                                               'runtime_policy':'autonomous'}}}}}
         # Opted out, only the bundle's menu entries are expected.
         self.assertEqual(self.rd.verify_runtime_defaults(), ['platforms.telegram.extra.command_menu.priority'])
         self.raw.update(self.rd.opted_out_settings(self.raw))
         self.assertEqual(self.rd.verify_runtime_defaults(), [])
-        self.raw['plugins']['entries']['autowork']['settings']['apply_runtime_defaults']=True
+        self.raw['plugins']['entries']['kit']['settings']['apply_runtime_defaults']=True
         self.assertIn('approvals.mode', self.rd.verify_runtime_defaults())
-        del self.raw['plugins']['entries']['autowork']['settings']
+        del self.raw['plugins']['entries']['kit']['settings']
         self.assertNotIn('approvals.mode', self.rd.verify_runtime_defaults())
 
 
@@ -187,7 +187,7 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
         import sys
         self.raw={'approvals':{'mode':'manual'},'agent':{'max_turns':90},
                   'platforms':{'telegram':{'extra':{'command_menu':{'priority':['status','plan_with_me']}}}},
-                  'plugins':{'entries':{'autowork':{'settings':{'apply_runtime_defaults':False}}}}}
+                  'plugins':{'entries':{'kit':{'settings':{'apply_runtime_defaults':False}}}}}
         saved=[]
         config=sys.modules['hermes_cli.config']
         config.require_readable_config_before_write=lambda: self.raw
@@ -199,7 +199,7 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
         self.assertEqual(set(saved[0]), {'platforms'})  # approvals and turns stay the profile's
         menu = saved[0]['platforms']['telegram']['extra']['command_menu']['priority']
         self.assertIn('plan_with_me', menu)
-        self.assertFalse(set(('autowork', 'work', 'pending', 'blockers')) & set(menu))
+        self.assertFalse(set(('work', 'pending', 'blockers')) & set(menu))
         self.assertEqual(saved[0]['platforms']['telegram']['extra']['command_menu']['priority'][:2], ['status','plan_with_me'])
         config.require_readable_config_before_write=lambda: (_ for _ in ()).throw(ValueError('malformed'))
         self.rd.apply_runtime_defaults(Ctx())  # an unreadable config never fails an opted-out load

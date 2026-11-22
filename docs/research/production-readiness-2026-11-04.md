@@ -1,6 +1,6 @@
 # Production-readiness requirements
 
-> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> **Historical sources only.** Executor
 > observations, recommendations and pilot procedures below refer to historical
 > sources, not current operating or development instructions. Do not revive it.
 > Preserve unresolved acceptance and recovery evidence; reconcile still-required
@@ -17,7 +17,7 @@ Reject inherited Git routing before repository/service writes and sanitize desce
 Git environments. Candidate and task-store reads must bind the selected repository,
 not inherited `GIT_DIR`, `GIT_WORK_TREE`, index or replacement-ref overrides.
 
-Publication requires effective `PI_AUTOWORK_PUSH=1`. Preserve saved-grant behavior,
+Publication requires explicit authority. Preserve saved-grant behavior,
 explicit-negative conflicts, clear apply guidance and status readback of launch versus
 saved settings. Source checks alone do not qualify an actual saved-grant/no-grant
 systemd restart. A repository becoming unusable or changing identity must stop safely

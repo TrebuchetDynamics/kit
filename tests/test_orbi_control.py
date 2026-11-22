@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / 'skills/orbi/scripts/orbi_control.py'
 PIN = 'ce97e015ca433a9312e5bdf69353be58ab394fd9'
 OLD_PIN = 'a' * 40
+NEW_PIN = 'b' * 40
 OFFICIAL = 'https://github.com/orbi-build/orbi'
 SECRET = 'super-secret-token-value'
 REPO = 'example/kit'
@@ -1216,7 +1217,7 @@ class FirstDeploymentTests(unittest.TestCase):
         saved = (self.h.deploy / '.orbi/env').read_bytes()
         SetupBoundaryTests.assert_no_activation(self, self.h.calls())
         timeout_error = helper.ControlError('command_timeout', 'fixture upstream setup timeout')
-        with mock.patch.object(helper, 'run_start_step', side_effect=timeout_error) as activation:
+        with mock.patch.object(helper, 'run_upstream_step', side_effect=timeout_error) as activation:
             code, doc, err = self.h.run('start', options=self.options)
         self.assertNotEqual(code, 0, (doc, err))
         self.assertEqual(doc['preparation']['state'], 'prepared')
@@ -3122,7 +3123,261 @@ class LifecycleSequenceTests(unittest.TestCase):
         self.assertNotIn('ready', doc['queue'])
 
 
+class UpdateTests(unittest.TestCase):
+    """`/orbi update`: newest official release for one inactive deployment."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.h = self.fresh(self.tmp.name)
+        self.prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        self.config_before = (self.h.deploy / 'orbi.toml').read_text()
+
+    def fresh(self, name):
+        harness = Harness(Path(self.tmp.name) / name)
+        self.a = harness.add_deployment_a()
+        code, doc, err = harness.run('setup')
+        self.assertEqual(code, 0, err)
+        harness.clear_calls()
+        return harness
+
+    def a_units(self):
+        return {name: data for name, data in snapshot(self.h.unit_dir).items()
+                if name in {'.'} or name.startswith('orbi-a')}
+
+    def assert_a_unchanged(self):
+        self.assertEqual(snapshot(self.a['deploy']), self.a['snapshot'])
+        self.assertEqual(self.a_units(), self.a['unit_snapshot'])
+
+    def release_rules(self, *, move=True, units_enabled=True, worker=None, installed=True):
+        """Fake the release sync and the enabling side of upstream install-units."""
+        synced = self.h.root / 'synced'
+        refreshed = self.h.root / 'refreshed'
+        extra = [
+            {'tool': 'orbi', 'argv_contains': ['sync-engine-source'],
+             'write': ({str(synced): '1\n'} if move else {})},
+            {'tool': 'orbi', 'argv_contains': ['install-units'],
+             'write': ({str(refreshed): '1\n'} if units_enabled else {})},
+            {'tool': 'git', 'argv_contains': ['rev-parse', 'HEAD'],
+             'if_exists': str(synced), 'stdout': NEW_PIN + '\n'},
+        ]
+        if units_enabled:
+            for index in range(1, helper.MAX_INSTANCES + 1):
+                extra.append({'tool': 'systemctl',
+                              'argv_contains': ['is-enabled', f'{self.prefix}@{index}.timer'],
+                              'if_exists': str(refreshed), 'stdout': 'enabled\n', 'exit': 0})
+                extra.append({'tool': 'systemctl',
+                              'argv_contains': ['show', 'ActiveState', f'{self.prefix}@{index}.timer'],
+                              'if_exists': str(refreshed), 'stdout': 'active\n'})
+        self.h.rules(*extra, *self.h.scheduler_rules(
+            services={1: worker} if worker else {}, installed=installed,
+            enabled={1: True} if worker else {}))
+
+    def test_update_locks_newest_release_and_restores_inactive_scheduling(self):
+        self.release_rules()
+        code, doc, err = self.h.run('update')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['action'], 'update')
+        self.assertEqual(doc['status'], 'updated')
+        self.assertEqual(doc['previous'], {'track': helper.PIN_TRACK, 'head': PIN})
+        self.assertEqual(doc['deployment']['pin'], 'sha:' + NEW_PIN)
+        self.assertEqual(doc['deployment']['source'], 'verified')
+        self.assertEqual(doc['deployment']['deployed_commit'], NEW_PIN)
+        self.assertFalse(doc['activated'])
+        self.assertEqual(self.h.config()['engine_source_track'], 'sha:' + NEW_PIN)
+        text = (self.h.deploy / 'orbi.toml').read_text()
+        self.assertIn('# Verified retention-capable source; a change is a deliberate operation.', text)
+        self.assertEqual(text.replace('sha:' + NEW_PIN, helper.PIN_TRACK), self.config_before)
+        self.assertEqual([step['step'] for step in doc['steps']], [
+            'preflight_target', 'lock', 'recheck_target', 'set_release_track',
+            'sync_engine_source', 'pin_release', 'validate_non_activating',
+            'refresh_units', 'restore_scheduling'])
+        self.assertEqual([c['argv'][0] for c in self.h.calls()
+                          if c['tool'] == 'orbi' and c['argv']],
+                         ['--version', 'sync-engine-source', 'check', 'install-units'])
+        self.assertEqual(doc['disabled_timers'],
+                         [f'{self.prefix}@{index}.timer'
+                          for index in range(1, helper.MAX_INSTANCES + 1)])
+        for call in self.h.calls():
+            if call['tool'] == 'systemctl' and 'disable' in call['argv']:
+                self.assertIn('--now', call['argv'])
+                self.assertTrue(call['argv'][-1].endswith('.timer'), call)
+            for forbidden in ('stop', 'restart', 'kill'):
+                self.assertNotIn(forbidden, call['argv'], call)
+        self.assert_a_unchanged()
+
+    def test_update_reports_up_to_date_when_the_release_commit_did_not_move(self):
+        self.release_rules(move=False)
+        code, doc, err = self.h.run('update')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['status'], 'up_to_date')
+        self.assertEqual(doc['previous'], {'track': helper.PIN_TRACK, 'head': PIN})
+        self.assertEqual(self.h.config()['engine_source_track'], 'sha:' + PIN)
+        self.assertEqual(doc['deployment']['source'], 'verified')
+        self.assertIn('install-units', [c['argv'][0] for c in self.h.calls()
+                                        if c['tool'] == 'orbi' and c['argv']])
+
+    def test_update_refuses_live_work_and_enabled_timers_before_writes(self):
+        busy = self.fresh('busy-worker')
+        busy.rules(*busy.scheduler_rules(services={1: 'active'}, timers={1: 'active'},
+                                        enabled={1: True}))
+        before = snapshot(busy.deploy)
+        code, doc, err = busy.run('update')
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'update_busy')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(busy.deploy), before)
+        self.assertNotIn('sync-engine-source', [c['argv'][0] for c in busy.calls()
+                                                if c['tool'] == 'orbi' and c['argv']])
+        self.assertFalse([c for c in busy.calls() if c['tool'] == 'systemctl'
+                          and set(c['argv']) & {'enable', 'disable', 'start', 'stop'}])
+
+        armed = self.fresh('busy-timer')
+        armed.rules(*armed.scheduler_rules(timers={1: 'active'}, enabled={1: True}))
+        before = snapshot(armed.deploy)
+        code, doc, err = armed.run('update')
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'update_busy')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(armed.deploy), before)
+
+    def test_update_refuses_tracked_checkout_changes_before_writes(self):
+        dirty = self.fresh('dirty')
+        dirty.rules({'tool': 'git', 'argv_contains': ['status', '--porcelain'],
+                     'stdout': ' M src/orbi/runner.py\n'})
+        before = snapshot(dirty.deploy)
+        code, doc, err = dirty.run('update')
+        self.assertEqual(code, 2, err)
+        self.assertEqual(doc['error']['code'], 'source_dirty')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(dirty.deploy), before)
+        self.assertNotIn('sync-engine-source', [c['argv'][0] for c in dirty.calls()
+                                                if c['tool'] == 'orbi' and c['argv']])
+
+    def test_update_preview_is_write_free_and_names_the_plan(self):
+        self.release_rules()
+        before = snapshot(self.h.deploy)
+        code, doc, err = self.h.run('update', dry_run=True)
+        self.assertEqual(code, 0, err)
+        self.assertTrue(doc['dry_run'])
+        self.assertEqual(doc['status'], 'planned')
+        self.assertEqual(doc['previous'], {'track': helper.PIN_TRACK, 'head': PIN})
+        self.assertEqual([step['step'] for step in doc['steps']], [
+            'set_release_track', 'sync_engine_source', 'pin_release',
+            'validate_non_activating', 'refresh_units', 'restore_scheduling'])
+        self.assertEqual(snapshot(self.h.deploy), before)
+        self.assertFalse([c for c in self.h.calls() if c['tool'] == 'orbi'
+                          and c['argv'][:1] in (['sync-engine-source'], ['install-units'])])
+        self.assertFalse([c for c in self.h.calls() if c['tool'] == 'git'
+                          and 'fetch' in c['argv']])
+        self.assertFalse([c for c in self.h.calls() if c['tool'] == 'systemctl'
+                          and set(c['argv']) & {'enable', 'disable', 'start', 'stop'}])
+
+    def test_update_failure_after_sync_keeps_partial_receipt_and_no_unit_change(self):
+        self.release_rules()
+        failure = helper.ControlError('validation_failed', 'fixture check failure')
+        with mock.patch.object(helper, 'run_orbi_check', side_effect=failure):
+            code, doc, err = self.h.run('update')
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'validation_failed')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(doc['original_error'], 'validation_failed')
+        self.assertEqual(doc['steps'][-1]['step'], 'validate_non_activating')
+        self.assertEqual(doc['steps'][-1]['status'], 'failed')
+        completed = [step['step'] for step in doc['steps'] if step['status'] != 'failed']
+        self.assertEqual(completed[-2:], ['sync_engine_source', 'pin_release'])
+        self.assertEqual(self.h.config()['engine_source_track'], 'sha:' + NEW_PIN)
+        self.assertNotIn('install-units', [c['argv'][0] for c in self.h.calls()
+                                           if c['tool'] == 'orbi' and c['argv']])
+        self.assertFalse([c for c in self.h.calls() if c['tool'] == 'systemctl'
+                          and 'disable' in c['argv']])
+        self.assert_a_unchanged()
+
+    def test_update_defers_unit_install_for_a_deployment_without_units(self):
+        self.release_rules(installed=False)
+        code, doc, err = self.h.run('update')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['status'], 'updated')
+        steps = {step['step']: step for step in doc['steps']}
+        self.assertEqual(steps['refresh_units']['status'], 'deferred')
+        self.assertEqual(doc['disabled_timers'], [])
+        self.assertIn('start installs', steps['refresh_units']['reason'])
+        self.assertNotIn('install-units', [c['argv'][0] for c in self.h.calls()
+                                           if c['tool'] == 'orbi' and c['argv']])
+        self.assertFalse([c for c in self.h.calls() if c['tool'] == 'systemctl'
+                          and 'disable' in c['argv']])
+        self.assertEqual(self.h.config()['engine_source_track'], 'sha:' + NEW_PIN)
+
+    def test_update_refuses_selection_selectors(self):
+        before = snapshot(self.h.deploy)
+        code, doc, err = self.h.run('update', options=['--harness', 'pi'])
+        self.assertEqual(code, 2, err)
+        self.assertEqual(doc['error']['code'], 'invalid_harness_selection')
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.deploy), before)
+        self.assertEqual(self.h.config()['engine_source_track'], helper.PIN_TRACK)
+
+
 class InterfaceAndSkillTests(unittest.TestCase):
+    def test_routine_cli_receipts_need_no_followup_command_or_retry(self):
+        # Public caller evidence, not an LLM simulation: each request launches the
+        # real CLI once, with fake external tools and literal shell metacharacters.
+        with tempfile.TemporaryDirectory() as tmp:
+            h = Harness(Path(tmp))
+            h.repo = h.repo.rename(h.root / 'space $(literal); target')
+            h.add_deployment_a()
+            h.rules()
+            code, _, err = h.run('setup')
+            self.assertEqual(code, 0, err)
+            h.rules(*h.scheduler_rules())
+            before = snapshot(h.home)
+            cases = [([], 'status'), (['status'], 'status'), (['help'], 'help'),
+                     *[([action, '--dry-run'], action)
+                       for action in ('setup', 'start', 'stop', 'update')]]
+            for request, action in cases:
+                with self.subTest(request=request):
+                    h.clear_calls()
+                    result = subprocess.run(
+                        [sys.executable, '-B', str(HELPER), *request,
+                         '--repo-dir', str(h.repo), '--json'],
+                        cwd=h.root, env=h.env, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(result.stderr, '')
+                    receipt = json.loads(result.stdout)
+                    self.assertEqual(receipt['action'], action)
+                    if '--dry-run' in request:
+                        self.assertEqual(receipt['status'], 'planned')
+                    if action == 'start':
+                        self.assertEqual(receipt['preparation']['state'], 'skipped')
+                    if action == 'help':
+                        self.assertEqual(h.calls(), [])
+                    else:
+                        self.assertTrue(any(str(h.repo) in call['argv'] for call in h.calls()))
+                    self.assertNotIn(SECRET, result.stdout + result.stderr)
+                    SetupBoundaryTests.assert_no_activation(self, h.calls())
+                    self.assertEqual(snapshot(h.home), before)
+
+            # A refused update is already a complete, safe user-facing answer.
+            # It must not perform an implicit stop, setup, retry or checkout write.
+            h.rules(*h.scheduler_rules(services={1: 'active'}, enabled={1: True}))
+            before = snapshot(h.home)
+            h.clear_calls()
+            result = subprocess.run(
+                [sys.executable, '-B', str(HELPER), 'update', '--repo-dir', str(h.repo), '--json'],
+                cwd=h.root, env=h.env, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(result.returncode, 0)
+            receipt = json.loads(result.stdout)
+            self.assertEqual(receipt['action'], 'update')
+            self.assertEqual(receipt['error']['code'], 'update_busy')
+            self.assertFalse(receipt['error']['mutated'])
+            self.assertTrue(receipt['error']['fix'])
+            self.assertNotIn(SECRET, result.stdout + result.stderr)
+            SetupBoundaryTests.assert_no_activation(self, h.calls())
+            self.assertFalse(any(call['tool'] == 'orbi' and
+                                 set(call['argv']) & {'setup', 'install-units', 'sync-engine-source'}
+                                 for call in h.calls()))
+            self.assertEqual(snapshot(h.home), before)
+
     def test_help_is_read_only_and_names_every_action(self):
         with tempfile.TemporaryDirectory() as tmp:
             h = Harness(Path(tmp))
@@ -3130,7 +3385,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
             scratch.mkdir()
             before = snapshot(h.home)
             expected = {'status': 'none', 'setup': 'staging', 'start': 'scheduler',
-                        'stop': 'scheduler', 'help': 'none'}
+                        'update': 'scheduler', 'stop': 'scheduler', 'help': 'none'}
             for options in ([], ['--repo-dir', '/missing/repo', '--config',
                                   '/missing/config', '--dry-run']):
                 for json_mode in (True, False):
@@ -3157,9 +3412,9 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                 self.assertTrue(entry['effect'])
                                 self.assertTrue(entry['when'])
                             for flag, actions in {
-                                '--repo-dir': ['status', 'setup', 'start', 'stop'],
-                                '--config': ['status', 'setup', 'start', 'stop'],
-                                '--dry-run': ['setup', 'start', 'stop'],
+                                '--repo-dir': ['status', 'setup', 'start', 'update', 'stop'],
+                                '--config': ['status', 'setup', 'start', 'update', 'stop'],
+                                '--dry-run': ['setup', 'start', 'update', 'stop'],
                                 '--json': list(expected),
                                 '--pi-providers': ['setup', 'start'],
                                 '--pi-provider': ['setup', 'start'],
@@ -3179,14 +3434,14 @@ class InterfaceAndSkillTests(unittest.TestCase):
                             for boundary in ('no repository or deployment',
                                              'Status is read-only',
                                              'Setup (including absent-start preparation) stages source/config',
-                                             'only start/stop touch the scheduler',
+                                             'start, update and stop touch the scheduler',
                                              'Not an executor or scheduler',
                                              '/unblock', '/git-commit-push',
                                              'Local visibility only'):
                                 self.assertIn(boundary, ' '.join(document['boundaries']))
                             self.assertNotIn(SECRET, result.stdout)
                         else:
-                            self.assertIn('[status|setup|start|stop|help]', result.stdout)
+                            self.assertIn('[status|setup|start|update|stop|help]', result.stdout)
                             for action, mutation in expected.items():
                                 lines = [line for line in result.stdout.splitlines()
                                          if line.startswith(f'  {action} [')]
@@ -3200,7 +3455,8 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertEqual(helper.main(['help', '--json'], stdout=out), 0)
         doc = json.loads(out.getvalue())
         self.assertEqual(set(doc['recovery']), {'harness', 'provider', 'config_missing',
-                                              'partial_setup', 'setup_busy', 'platform', 'stale_helper'})
+                                              'partial_setup', 'setup_busy', 'update',
+                                              'platform', 'stale_helper'})
         for example in doc['examples']:
             words = shlex.split(example['command'])
             self.assertEqual(words.pop(0), '/orbi')
@@ -3242,7 +3498,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                 self.assertEqual(doc['mutations_supported'], supported)
                 self.assertEqual(doc['actions']['status']['platforms'], ['linux', 'darwin'])
                 self.assertEqual(doc['actions']['help']['platforms'], ['all'])
-                for action in ('setup', 'start', 'stop'):
+                for action in ('setup', 'start', 'update', 'stop'):
                     self.assertEqual(doc['actions'][action]['platforms'], ['linux'])
 
     def test_unknown_action_points_at_help(self):
@@ -3281,8 +3537,8 @@ class InterfaceAndSkillTests(unittest.TestCase):
             result = subprocess.run([sys.executable, '-B', str(HELPER), flag],
                                     capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn('[status|setup|start|stop|help]', result.stdout)
-            for action in ('status', 'setup', 'start', 'stop', 'help'):
+            self.assertIn('[status|setup|start|update|stop|help]', result.stdout)
+            for action in ('status', 'setup', 'start', 'update', 'stop', 'help'):
                 self.assertRegex(result.stdout, rf'{action} \[(none|staging|scheduler)\]')
 
     def test_default_action_is_status_and_cli_uses_argv(self):
@@ -3312,7 +3568,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertIn('../shared/DEFINITION-OF-DONE.md', skill)
         self.assertIn('references/lifecycle.md', skill)
         self.assertIn('scripts/orbi_control.py', skill)
-        self.assertIn('`/orbi [status|setup|start|stop|help]`', skill)
+        self.assertIn('`/orbi [status|setup|start|update|stop|help]`', skill)
         self.assertIn('**Help first.**', skill)
         self.assertIn("helper's `help`", skill)
         self.assertIn('observed output', skill)
@@ -3321,7 +3577,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
         router = (ROOT / 'skills/ask-kit/SKILL.md').read_text()
         self.assertIn('`/orbi`', router)
         reference = (ROOT / 'skills/orbi/references/lifecycle.md').read_text()
-        self.assertIn('[status|setup|start|stop|help]', reference)
+        self.assertIn('[status|setup|start|update|stop|help]', reference)
         self.assertIn('for lifecycle actions; `help` prints a compact human block', reference)
         for topic in ('PYTHONPATH', 'UV_TOOL_DIR', 'UV_TOOL_BIN_DIR',
                       f'sha:{PIN}', 'five', 'draining', 'is read-only', 'help'):

@@ -240,10 +240,6 @@
     {
       "event": "command",
       "command": "\\borbi\\s+(?:start|setup|install-units)(?=\\s|$)"
-    },
-    {
-      "event": "command",
-      "command": "\\bpi-autowork\\s+(?:start|run|resume|restart)(?=\\s|$)"
     }
   ]
 }

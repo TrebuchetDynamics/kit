@@ -5,6 +5,7 @@ home, disclosure, positive wording) stay with review.
 """
 import importlib.util
 import re
+import subprocess
 from pathlib import Path
 import unittest
 
@@ -12,13 +13,30 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 BANNED_OPENERS = ('use when', 'use to', 'use for', 'use if', 'use after', 'use before')
-# Hermes installs Graphify's own skill into profiles, so Autowork ships the adapter only.
+# Hermes installs Graphify's own skill into profiles, so Kit ships the adapter only.
 ADAPTER_ONLY = {'graphify'}
 PILOT = ('orbi', 'update-kit', 'unslop', 'plan-for-me', 'ponytail-review',
          'git-commit-push', 'push', 'unblock', 'docs-sync', 'plan-with-me')
 
 
 class SkillStandardTests(unittest.TestCase):
+    def test_tracked_content_has_no_retired_executor_name(self):
+        name = 'auto' + 'work'
+        result = subprocess.run(
+            ['git', 'grep', '-i', '-I', '-l', '-e', name, '--'],
+            cwd=ROOT, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1,
+                         'Remove the retired executor name from tracked content:\n'
+                         + result.stdout + result.stderr)
+
+    def test_tracked_paths_have_no_retired_executor_name(self):
+        name = b'auto' + b'work'
+        result = subprocess.run(['git', 'ls-files', '-z'], cwd=ROOT,
+                                capture_output=True, check=True, timeout=30)
+        matches = [path.decode(errors='replace') for path in result.stdout.split(b'\0')
+                   if name in path.lower()]
+        self.assertEqual(matches, [], 'Rename tracked paths containing the retired executor name')
+
     def skills(self, folder):
         return sorted((ROOT / folder).glob('*/SKILL.md'))
 
@@ -96,6 +114,29 @@ class SkillStandardTests(unittest.TestCase):
             path = source.relative_to(ROOT)
             with self.subTest(file=str(path)):
                 self.assertEqual(docs.check_document(repo, 'skill', path), [])
+
+    def test_writing_for_agents_resolves_kit_invocation_and_read_only_completion(self):
+        # Source contract only: these assertions do not measure model adherence.
+        text = ' '.join((ROOT / 'skills/writing-for-agents/SKILL.md').read_text().split())
+        invocation = text.split('## The bar for a document', 1)[0]
+        for rule in ('before choosing metadata', 'Kit public skills',
+                     'explicit host command', '/docs-sync', 'plain reference',
+                     'disable-model-invocation: true', 'allow_implicit_invocation: false',
+                     '../../docs/skill-standard.md', 'skills-only', 'non-Kit projects'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, invocation)
+        planning = text.split('## Planning or read-only advice', 1)[1].split(
+            '## Editing an existing skill', 1)[0]
+        self.assertIn('Plan a Kit skill that another workflow needs; do not edit.', planning)
+        for rule in ('inline', 'write nothing', 'executable instructions', 'proposed design'):
+            self.assertIn(rule, planning)
+        done = text.split('**Done when:**', 1)[1].split('**Receipt:**', 1)[0]
+        self.assertIn('authorized edit', done)
+        self.assertIn('affected checks', done)
+        self.assertIn('planning/read-only', done)
+        self.assertIn('without implementation or a line delta', done)
+        adapter = (ROOT / 'adapters/skills/writing-for-agents/SKILL.md').read_text()
+        self.assertNotIn('Report the documents changed, lines before and after', adapter)
 
     def test_lgtm_inherits_planning_authority_without_a_second_approval_round(self):
         skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())

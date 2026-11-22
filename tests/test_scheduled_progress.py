@@ -21,7 +21,7 @@ class ScheduledProgressTests(unittest.TestCase):
         policy = (ROOT / 'docs/installation.md').read_text()
         self.assertIn('Existing jobs, IDs, schedules, pause state', policy)
         self.assertIn('Do not rewire legacy executor jobs', policy)
-        self.assertIn('never legacy Autowork runners', policy)
+        self.assertIn('integrations only', policy)
 
 
 if __name__ == '__main__':

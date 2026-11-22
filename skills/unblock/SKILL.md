@@ -14,10 +14,47 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md),
 name an explicit set of repositories; it is not permission to discover or operate
 an entire host fleet. Editing this skill does not invoke recovery.
 
-The pi-autowork executor and task CLI are removed. Do not install, restart or use
-them as a recovery fallback. Preserve existing tasks, worktrees, attempts and
+GitHub Issues and Orbi are the only executable backlog and delivery executor.
+Preserve existing tasks, worktrees, attempts and
 recovery evidence. Orbi remains paused and live-unqualified. This invocation
 does not authorize enabling it, clearing a pause or starting another implementer.
+
+## Act by default
+
+Invoking `/unblock` authorizes routine recovery decisions, same-issue recovery comments
+and scoped label changes using the caller’s existing GitHub access. Do the repair in
+this run; do not ask “may I fix or requeue it?” Read-only restrictions still win.
+Inventory all pages of open issues and PRs, not just `ai-blocked`: missing labels,
+failed checks and unresolved prerequisites can hide stalled work. Fix an actionable
+prerequisite first and keep moving on independent issues.
+
+**Reconcile labels after fixing the cause.** Immediately re-read the issue, latest
+attempt, linked PR/head, dependencies and current labels. If another worker claimed
+it or the evidence changed, leave its state alone. Evaluate every open issue tagged
+`ai-planning` or `ai-blocked`, including issues with both labels:
+
+- `ai-planning` → `ai-ready`: resolve routine choices from accepted decisions and
+  repository policy. Verify the issue's scope, acceptance, checks and native
+  dependencies, and the complete batch if publication is in progress. Do not race
+  the publishing planner. Unresolved intent or an explicit no-dispatch request holds publication.
+- `ai-blocked` → `ai-ready`: verify the cause was fixed and the same-issue retry
+  is safe. Use the deployment's supported requeue; preserve its recovery evidence.
+- If both labels apply, require both conditions. For each eligible unowned issue,
+  publish `ai-ready` last, after the eligibility checks. Confirm readiness before
+  removing resolved state labels. Preserve unrelated labels; read back the result
+  and check for pickup. If a gate remains,
+  report its reason and next action, then continue with the other issues.
+
+Do not blindly replace the full label set. Keep real blockers blocked; keep epics,
+explicit pauses and human acceptance out of automatic dispatch. A ready
+issue waiting on a native prerequisite need not be relabeled. If a PR already owns
+the fix, route the repair there rather than requeueing a second implementation.
+
+For example, when a push times out, compare the retained commit to the remote ref.
+If it already landed, resume at the next missing step. If absent, an authorized
+normal push of that exact candidate may repair publication; keep hooks enabled and
+allow time for them. If the remote diverged, preserve both heads and reconcile with
+the owner. A timeout alone neither proves the push failed nor authorizes force-push.
 
 ## Recover, verify, continue
 
@@ -25,7 +62,8 @@ does not authorize enabling it, clearing a pause or starting another implementer
    CI/review results and actual ownership. Use read-only `orbi status` and
    `orbi doctor` with the target's configuration if installed. A failed read is
    unavailable evidence, not an empty queue. Include every unresolved decision,
-   not only the dashboard's displayed questions.
+   not only the dashboard's displayed questions. For open PRs, follow
+   [owner-first repair records](#blocked-prs-owner-first-repair-records) below.
 2. **Diagnose.** Read repository policy, accepted scope, latest attempts and failed
    operation logs. Distinguish dependency, active ownership, failed check,
    missing external input and explicit pause. Inspect saved decisions, issue comments,
@@ -57,6 +95,73 @@ For a genuine owner gate, ask the smallest concrete question, with a recommendat
 and the effect on dependent work. Continue independent authorized repairs.
 A planning closure or an evidenced wait is not recovery. Apply the
 [Definition of Done](../shared/DEFINITION-OF-DONE.md) to actual delivery claims.
+
+## Blocked PRs: owner-first repair records
+
+Apply this phase during inventory and before repair/publication. Existing invocation
+limits still govern: a read-only scan reports proposed dispositions without writes.
+
+1. **Snapshot.** Inspect every scoped open PR, including PRs with no linked issue.
+   Record repository/PR URL, head SHA, base ref/SHA, review decision, required checks
+   and their current statuses, mergeability, linked issues/native dependencies and
+   live owner (issue, worker/run and branch). Bind check/run URLs, review/conflict
+   evidence and observation time to the evaluated head/base. Read ownership from
+   current issue comments and configured read-only Orbi diagnostics, not assignee
+   or labels alone. Failed/incomplete reads or uncertain ownership mean **Unknown**:
+   report the exact read error or missing evidence, next read/action and resume
+   condition, with no speculative writes. Account for every PR even if unblocked.
+2. **Classify.** Distinguish failed checks, missing required checks, changes requested,
+   conflicts/stale heads, native dependencies, external service/transport problems,
+   explicit pause, human gate and unknown causes. Pending is a wait, not failure.
+   Ignore failed checks on superseded heads as current failure evidence; inspect
+   the latest applicable check attempt and any required merge-result checks.
+   For a missing check, confirm repository requirements, expected trigger and
+   elapsed/queued state before diagnosing failure. Unknown mergeability is not a
+   proven conflict. For an external outage, do not assume a code repair: identify
+   the service owner and restoration signal. Mark human/paused gates **Held** with
+   a named next input, responsible owner and resume condition; do not fabricate
+   approval or create meaningless executable work. Keep independent repairs separate.
+3. **Reconcile owner first.** Search open and closed issues, PR links, comments and
+   prior repair records for this PR/blocker and any shared prerequisite. If an
+   existing issue owns the exact PR repair, reuse it. Give relevant new evidence as
+   a comment for a live worker; keep its owner and PR branch, and never edit the
+   live worker's instructions. An unowned existing issue may receive a scoped
+   evidence/contract update after fresh readback. This path creates no second
+   tracking issue or worker. Closed repair records require evidence reconciliation,
+   not automatic reopening or replacement. Ambiguous ownership stays Unknown.
+4. **Cover gaps.** For an uncovered actionable repair, create one linked repair issue
+   under the [existing publication contract](../shared/PLAN-HANDOFF.md#publication-and-dependencies).
+   Include Outcome, Scope, Exclusions, Acceptance, Verification and Sources, the
+   first executable action, head-bound evidence and owner/branch handoff. Name the
+   PR URL and existing PR delivery line: fix there, not on a competing repair PR.
+   State who coordinates/resumes that line before readiness; an issue is not
+   permission to start a second implementer. Only a truly independent prerequisite
+   that must land first warrants a separate delivery line. Prefer to reuse a shared
+   prerequisite; link affected repair/original issues with native blockedBy edges
+   where the prerequisite really blocks them, never for priority or file overlap.
+   Use the existing publisher's stable keys and ai-planning construction, verify
+   contracts/edges, then publish ai-ready last only for eligible unowned work.
+   Keep explicit pauses and human gates held, and preserve a live issue's contract.
+5. **Recheck and deduplicate.** Use a repository-scoped stable PR/blocker key across
+   invocations; head SHA belongs in evidence, not the issue identity. Match semantic
+   repair scope as well as keys so pre-existing unmarked work is reused. Identify
+   evidence by PR/blocker/head and evidence URLs/conclusions; unchanged evidence is
+   a no-op, including comments. Immediately before each write (including comments),
+   refresh PR head/base, blocker state, issue content/comments, dependencies and
+   ownership. Drop resolved or superseded findings; reconcile changed evidence first.
+   If the owner acquired the repair, use step 3 instead of creating work. Serialize
+   publishers of the same PR/blocker; if serialization or deduplication is ambiguous,
+   hold the write. GitHub creation/comment writes are not atomic deduplication.
+   After a timed-out write, read back before retrying; unavailable readback leaves
+   the write Unknown, not failed or permission to create a replacement.
+6. **Verify and receipt.** After publication, read back issue content, PR links, native
+   edges and readiness under the shared handoff contract. Verify subsequent
+   PR/check/run movement separately against the current head: issue creation is not
+   recovery. Observe pending movement within a bounded wait, then report its exact
+   unfinished gate. Report one disposition per PR (unblocked, owned repair, newly
+   covered repair, prerequisite wait, pending, Held or Unknown), with every blocker,
+   repair issue or owner, head-bound evidence, actual writes or no-op, and next input.
+   Publication is discoverability, not pickup; retain the recovery claim limits below.
 
 ## Common Rationalizations
 

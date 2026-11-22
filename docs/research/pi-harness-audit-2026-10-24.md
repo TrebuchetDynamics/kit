@@ -1,6 +1,6 @@
 # Pi harness integration requirements
 
-> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> **Historical sources only.** Executor
 > observations, recommendations and pilot procedures below refer to historical
 > sources, not current operating or development instructions. Do not revive it.
 > Preserve unresolved acceptance and recovery evidence; reconcile still-required
@@ -37,8 +37,7 @@ complete invocation usage or billed spend; absent data stays unknown.
 
 The opt-in installed-Pi fixtures use the real launcher/runtime and deterministic
 offline provider. Explicitly select the installed executable for direct native tests;
-the ordinary checker strips `AUTOWORK_*` and optional skips do not qualify native
-execution. Preserve settlement/partial-output, session separation, tool allowlist and
+optional skips do not qualify native execution. Preserve settlement/partial-output, session separation, tool allowlist and
 cleanup guards without inferring semantic recall, production ID generation or OS
 containment from them.
 

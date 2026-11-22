@@ -25,10 +25,10 @@ class CheckWorkflowTests(unittest.TestCase):
         self.assertEqual(jobs['runner']['strategy']['matrix']['shard'], [1, 2, 3])
         fast = [step.get('run', '') for step in jobs['fast']['steps']]
         shards = [step.get('run', '') for step in jobs['runner']['steps']]
-        self.assertIn('python scripts/check.py --exclude tests/native', fast)
-        self.assertIn('python scripts/check.py tests/native --shard ${{ matrix.shard }}/3', shards)
+        self.assertIn('node --test tests/portable_pi.test.mjs', fast)
+        self.assertIn('python -m py_compile __init__.py', fast)
+        self.assertIn('python scripts/check.py --shard ${{ matrix.shard }}/3', shards)
         for command in fast + shards:
-            self.assertNotIn('pi-autowork', command)
             self.assertNotIn('textual', command)
 
 
@@ -83,13 +83,13 @@ class OfflineCheckTests(unittest.TestCase):
         return self.git('rev-parse', 'HEAD')
 
     def test_affected_fleet_change_runs_importers_and_core_not_unrelated_tests(self):
-        self.write('src/autowork_runtime/fleet_view.py', 'VALUE = 1\n')
-        self.write('src/autowork_runtime/__init__.py', 'from .fleet_view import VALUE\n')
-        self.write('src/autowork_runtime/command.py', 'def view():\n    from . import fleet_view\n')
-        self.write('src/autowork_runtime/sub.py', 'VALUE = 0\n')
-        for name, dependency in (('fleet', 'from autowork_runtime import fleet_view'),
-                                 ('command', 'import command'), ('package', 'import autowork_runtime'),
-                                 ('dotted', 'import autowork_runtime.sub')):
+        self.write('src/kit_runtime/fleet_view.py', 'VALUE = 1\n')
+        self.write('src/kit_runtime/__init__.py', 'from .fleet_view import VALUE\n')
+        self.write('src/kit_runtime/command.py', 'def view():\n    from . import fleet_view\n')
+        self.write('src/kit_runtime/sub.py', 'VALUE = 0\n')
+        for name, dependency in (('fleet', 'from kit_runtime import fleet_view'),
+                                 ('command', 'import command'), ('package', 'import kit_runtime'),
+                                 ('dotted', 'import kit_runtime.sub')):
             self.write(f'tests/test_{name}.py',
                        f'import unittest\nif False:\n    {dependency}\n'
                        f'class Check(unittest.TestCase):\n    def test_view(self): print("RAN {name}")\n')
@@ -97,18 +97,16 @@ class OfflineCheckTests(unittest.TestCase):
         self.write('scripts/tree_guard.py', 'print("CORE guard")\n')
         self.write('skills/docs-sync/scripts/docs.py', 'print("CORE docs")\n')
         self.write('tasks/items/T.md', '# fixture\n')
-        self.write('pi-autowork/bin/autowork', '#!/usr/bin/env python3\nprint("CORE tasks")\n').chmod(0o755)
         base = self.affected_repo()
-        self.write('src/autowork_runtime/fleet_view.py', 'VALUE = 2\n')
+        self.write('src/kit_runtime/fleet_view.py', 'VALUE = 2\n')
         self.git('commit', '-qam', 'fleet change')
         result = self.run_check('--affected', base + '..HEAD', '--jobs', '1')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         for text in ('RAN fleet', 'RAN command', 'RAN package', 'RAN dotted',
                      'CORE guard', 'CORE docs',
-                     'test_command.py <- src/autowork_runtime/command.py <- src/autowork_runtime/fleet_view.py'):
+                     'test_command.py <- src/kit_runtime/command.py <- src/kit_runtime/fleet_view.py'):
             self.assertIn(text, result.stdout)
         self.assertNotIn('unselected module ran', result.stdout + result.stderr)
-        self.assertNotIn('CORE tasks', result.stdout)
         self.assertEqual((self.root / 'tasks/items/T.md').read_text(), '# fixture\n')
         self.assertFalse(list((self.root / 'scripts').glob('__pycache__/*')))
 
@@ -143,7 +141,7 @@ class OfflineCheckTests(unittest.TestCase):
         self.write('tests/test_one.py', 'import unittest\n')
         self.write('tests/test_two.py', 'import unittest\n')
         self.affected_repo()
-        for path in ('unknown.dat', 'src/autowork_runtime/__init__.py', 'tests/conftest.py', 'pyproject.toml',
+        for path in ('unknown.dat', 'src/kit_runtime/__init__.py', 'tests/conftest.py', 'pyproject.toml',
                      '.github/workflows/ci.yml', 'scripts/check.py'):
             with self.subTest(path=path):
                 base = self.git('rev-parse', 'HEAD')
@@ -183,67 +181,29 @@ class OfflineCheckTests(unittest.TestCase):
         from src_fixture import copy_sources
         copy_sources(self.root)
         self.write('tests/test_one.py', 'import unittest\nclass One(unittest.TestCase):\n    def test_one(self): pass\n')
-        self.write('scripts/bundle.py', "bootstrap.execute(globals(), 'src/autowork_runtime/bundle.py')\n")
-        owner = self.write('src/autowork_runtime/bundle.py', 'def broken(:\n')
+        self.write('scripts/bundle.py', "bootstrap.execute(globals(), 'src/kit_runtime/bundle.py')\n")
+        owner = self.write('src/kit_runtime/bundle.py', 'def broken(:\n')
         result = self.run_check('tests/test_one.py')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('src/autowork_runtime/bundle.py', result.stdout)
+        self.assertIn('src/kit_runtime/bundle.py', result.stdout)
         owner.unlink()
         result = self.run_check('tests/test_one.py')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('missing selected-release source', result.stdout)
-        self.write('src/autowork_runtime/bundle.py', 'VALUE = 1\n')
+        self.write('src/kit_runtime/bundle.py', 'VALUE = 1\n')
         result = self.run_check('tests/test_one.py')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_historical_layout_evidence_and_current_inventory_partitions(self):
-        import hashlib
+    def test_current_inventory_partitions(self):
         import runpy
-        fixture = json.loads((ROOT / 'tests/fixtures/python-layout.json').read_text())
         checker = runpy.run_path(str(SCRIPT))
         actual = {p.relative_to(ROOT).as_posix(): p for p in checker['discover_tests'](ROOT)}
-        required = {p: set(row['methods']) for p, row in fixture['modules'].items()
-                    if row['source'] is not None}
-        # Reconcile immutable pre-migration, failed-integration, landed-base and task-base
-        # inputs. Only recorded historical renames may remove an original identity.
-        renames = {(row['source'], row['old']): row for row in fixture['renames']}
-        inputs, removed = {}, set()
-        for snapshot in fixture['snapshots']:
-            for path, delta in snapshot['delta'].items():
-                methods = required.setdefault(path, set())
-                for name in delta['removed']:
-                    source = fixture['modules'][path]['source'] or path
-                    proof = renames[source, name]
-                    self.assertIn(proof['new'], delta['added'])
-                    self.assertRegex(proof['commit'], r'^[0-9a-f]{40}$')
-                    if 'before_input' in proof:
-                        self.assertEqual(inputs[path], proof['before_input'])
-                        self.assertEqual(snapshot['inputs'][path], proof['after_input'])
-                        self.assertEqual(snapshot['revision'], proof['commit'])
-                        self.assertRegex(proof['parent'], r'^[0-9a-f]{40}$')
-                        for input_path, mode, blob in (proof['before_input'], proof['after_input']):
-                            self.assertEqual(input_path, proof['path'])
-                            self.assertEqual(mode, '100644')
-                            self.assertRegex(blob, r'^[0-9a-f]{40}$')
-                    methods.remove(name)
-                    removed.add((source, name))
-                self.assertFalse(methods & set(delta['added']), (path, 'duplicate addition'))
-                methods.update(delta['added'])
-            inputs.update(snapshot['inputs'])
-            fingerprint = hashlib.sha256(json.dumps(
-                {p: sorted(ids) for p, ids in sorted(required.items())}, sort_keys=True).encode()).hexdigest()
-            self.assertEqual(fingerprint, snapshot['method_inventory_sha256'], snapshot['role'])
-            self.assertEqual(set(inputs), set(required))
-        self.assertEqual(removed, set(renames))
-        self.assertEqual(set(required), set(fixture['modules']))
-        # The fixture describes the retired executor, not the current product inventory.
-        # Preserve its immutable provenance above; enforce current ownership and shards
-        # below rather than requiring removed executor identities.
         self.assertEqual(checker['TEST_DIRS'], ('tests', 'tests/native',
                          'skills/docs-sync/scripts', 'skills/git-commit-push/scripts'))
         self.assertTrue(actual)
-        self.assertFalse(any(path.startswith('pi-autowork/') for path in actual))
-        self.assertEqual({p: list(value) for p, value in checker['EXCLUSIONS'].items()}, fixture['exclusions'])
+        self.assertEqual(set(checker['EXCLUSIONS']), {
+            'tests/integration_plugin.py', 'tests/integration_autoresearch.py',
+            'tests/integration_bundle.py'})
         partitions = [[(str(folder.relative_to(ROOT)), name)
                        for folder, names in checker['units'](ROOT, list(actual.values()), shard=(i, 3))
                        for name in names] for i in range(3)]
@@ -306,16 +266,16 @@ class OfflineCheckTests(unittest.TestCase):
 class Check(unittest.TestCase):
     def test_environment(self):
         for name in ('CONTAINMENT_LINUX_TESTS', 'RUN_CONTROLLER_BRIDGE_LINUX', 'HERMES_NATIVE_HANDOFF_TEST', 'HERMES_NATIVE_REGISTRATION_TEST',
-                     'PI_AUTOWORK_MAIN_CHECK', 'AUTOWORK_CACHE'):
+                     'KIT_MAIN_CHECK', 'KIT_CACHE'):
             self.assertFalse(name in os.environ, name + ' leaked into offline tests')
-        self.assertNotIn('AUTOWORK_PORT_BASE', os.environ)
+        self.assertNotIn('KIT_PORT_BASE', os.environ)
         self.assertTrue(os.path.isdir(os.environ['TMPDIR']), 'the offline check must supply TMPDIR')
 ''')
         self.write('tests/integration_bundle.py',
                    "raise RuntimeError('live integration imported')\n")
         env = dict(os.environ, CONTAINMENT_LINUX_TESTS='1', RUN_CONTROLLER_BRIDGE_LINUX='1',
                    HERMES_NATIVE_HANDOFF_TEST='1', HERMES_NATIVE_REGISTRATION_TEST='1',
-                   PI_AUTOWORK_MAIN_CHECK='false', AUTOWORK_CACHE='/elsewhere', AUTOWORK_PORT_BASE='20300')
+                   KIT_MAIN_CHECK='false', KIT_CACHE='/elsewhere', KIT_PORT_BASE='20300')
         result = self.run_check(env=env)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('Ran 1 test', result.stdout + result.stderr)

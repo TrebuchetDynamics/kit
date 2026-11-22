@@ -9,11 +9,9 @@ import re
 import subprocess
 import sys
 
-ROOT = _AUTOWORK_LAYOUT.root
-# The plugin's name, plus the legacy name a profile still reports mid-upgrade.
+ROOT = _KIT_LAYOUT.root
 PLUGIN_NAME = 'kit'
-LEGACY_PLUGIN_NAME = 'autowork'
-OWNER_NAMES = (PLUGIN_NAME, LEGACY_PLUGIN_NAME)
+OWNER_NAMES = (PLUGIN_NAME,)
 
 
 def defaults():
@@ -92,7 +90,7 @@ def inventory():
     plugins = manager.list_plugins()
     required = set(defaults()['imported_plugins']) | {PLUGIN_NAME}
     # Older installs can still own Ponytail commands; report them, never require them.
-    wanted = required | {LEGACY_PLUGIN_NAME, 'ponytail'}
+    wanted = required | {'ponytail'}
     rows = []
     for name, item in sorted(get_plugin_commands().items()):
         if item.get('plugin') in wanted:
@@ -127,7 +125,7 @@ def update_home():
 
 def _updater():
     """The updater peer from this captured release, like its subprocess entry."""
-    return _AUTOWORK_COMPAT.peer(globals(), 'update_bundle')
+    return _KIT_COMPAT.peer(globals(), 'update_bundle')
 
 
 def linked_profiles():
@@ -184,7 +182,7 @@ def diagnose(report, *, core_only=False):
              if p.parent.name not in {'repo-docs', 'repo-interview'}}
     commands = {r['command'] for r in report['commands']
                 if r.get('kind') == 'plugin' and r.get('source') in OWNER_NAMES}
-    fallbacks = _AUTOWORK_COMPAT.peer(globals(), 'setup_runtime').bundled_skill_fallbacks(report) & names
+    fallbacks = _KIT_COMPAT.peer(globals(), 'setup_runtime').bundled_skill_fallbacks(report) & names
     missing_commands = sorted(n.replace('_', '-') for n in names
                               if n.replace('_', '-') not in commands | fallbacks)
     public_names = set()
@@ -256,7 +254,7 @@ def handle_cli(args):
         print(json.dumps(report, indent=2) if args.json else format_diagnosis(report))
         return int(report['status'] != 'ready')
     if args.action == 'finalize':
-        finalize = _AUTOWORK_COMPAT.peer(globals(), 'setup_runtime').finalize
+        finalize = _KIT_COMPAT.peer(globals(), 'setup_runtime').finalize
         report = inventory()
         result, code = finalize(ROOT, report, args)
         print(json.dumps(result, indent=2))

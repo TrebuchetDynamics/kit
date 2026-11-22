@@ -8,7 +8,7 @@ const workflows = {
   'plan-for-me': ['plan-for-me', 'Investigate, decide and save the plan'],
   unslop: ['unslop', 'Turn a UI design audit into GitHub issues for Orbi'],
   'docs-sync': ['docs-sync', 'Maintain documentation and GitHub issue handoffs'],
-  orbi: ['orbi', 'Prepare, start, inspect or stop one Orbi deployment'],
+  orbi: ['orbi', 'Prepare, update, start, inspect or stop one Orbi deployment'],
   'update-kit': ['update-kit', 'Refresh upstream Kit and reinstall the suite'],
   autoresearch: ['autoresearch', 'Run bounded research or experiments'],
   'apk-get': ['apk-get', 'Find the app, build an ARM64 release APK and upload with s3upload'],
@@ -63,8 +63,18 @@ export default function register(pi) {
           ? `Planning contract. Source: ${fileURLToPath(contract)}\n`
             + `Resolve its references from that directory.\n\n${await readFile(contract, 'utf8')}\n\n`
           : '';
+        // Supply Orbi's common path up front; the host still interprets and invokes tools.
+        let supplied = '';
+        if (target === 'orbi') {
+          for (const source of [new URL('./skills/COMMON.md', import.meta.url),
+            new URL('../skills/orbi/SKILL.md', import.meta.url)]) {
+            supplied += `Source: ${fileURLToPath(source)}\n`
+              + `Resolve its references from ${fileURLToPath(new URL('./', source))}.\n\n`
+              + `${await readFile(source, 'utf8')}\n\n`;
+          }
+        }
         const message = `Use this portable Kit workflow. Source: ${fileURLToPath(file)}\n`
-          + boundary
+          + boundary + supplied
           + `Resolve the workflow references from ${fileURLToPath(new URL('./', file))}.\n\n${body}\n\n`
           + (protocol ? `Selected subcommand: ${protocol}\n\n` : '')
           + (mode ? `Selected mode: ${mode}\n\n` : '')
