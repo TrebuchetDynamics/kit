@@ -24,6 +24,14 @@ class UnblockSkillTests(unittest.TestCase):
             self.assertIn(contract, text)
         self.assertIn('A planning closure or an evidenced wait is not recovery', text)
 
+    def test_promotes_both_eligible_issue_states(self):
+        text = (ROOT / 'skills/unblock/SKILL.md').read_text()
+        for contract in ('`ai-planning` → `ai-ready`', '`ai-blocked` → `ai-ready`',
+                         'If both labels apply, require both conditions',
+                         'explicit no-dispatch request holds publication',
+                         'Confirm readiness before\n  removing resolved state labels'):
+            self.assertIn(contract, text)
+
     def test_service_boundary_preserves_pauses_jobs_and_evidence(self):
         text = (ROOT / 'skills/unblock/references/services.md').read_text()
         for contract in ('deliberate-stop', 'pending service jobs',

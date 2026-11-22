@@ -25,8 +25,9 @@ class CheckWorkflowTests(unittest.TestCase):
         self.assertEqual(jobs['runner']['strategy']['matrix']['shard'], [1, 2, 3])
         fast = [step.get('run', '') for step in jobs['fast']['steps']]
         shards = [step.get('run', '') for step in jobs['runner']['steps']]
-        self.assertIn('python scripts/check.py --exclude tests/native', fast)
-        self.assertIn('python scripts/check.py tests/native --shard ${{ matrix.shard }}/3', shards)
+        self.assertIn('node --test tests/portable_pi.test.mjs', fast)
+        self.assertIn('python -m py_compile __init__.py', fast)
+        self.assertIn('python scripts/check.py --shard ${{ matrix.shard }}/3', shards)
         for command in fast + shards:
             self.assertNotIn('textual', command)
 
