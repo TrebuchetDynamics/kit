@@ -52,8 +52,9 @@ concrete unmet need, not a fixed sequence of model turns.
    and live-unqualified: `start` needs an owner scheduling request and resolved
    explicit pauses, cutover requirements and human-only gates for that deployment.
    Missing authority means hold and name the missing gate, not probe by mutation.
-   `update` advances one prepared deployment only after an authorized stop/drain;
-   it does not authorize a preceding stop or a following start. Other mutations
+   Plain `update` requires an already stopped/drained deployment. `update --stop`
+   explicitly authorizes pausing owned timers without another confirmation; workers
+   finish naturally and scheduling stays stopped. It never authorizes a start. Other mutations
    likewise require accepted scope. Installation and offline checks grant none.
 3. **Invoke once.** Preserve literal argument values, quoting, paths, provider/model
    IDs, `--config`, `--repo-dir` and all restrictions. Build argv, never interpolate
@@ -71,7 +72,7 @@ concrete unmet need, not a fixed sequence of model turns.
    | setup | Non-activating preparation at the supported pin; `prepared`, `activated: false` is not proof of scheduler inactivity. Preview only when requested. |
    | start | Existing valid target skips preparation; genuinely absent target with no explicit config prepares internally then activates. No separate setup call. Partial/foreign/missing-explicit targets require deliberate repair. |
    | stop | Disable only owned timers; active services finish. `draining` is not `stopped`; never kill/restart workers. |
-   | update | Preserve origin/provider/harness/slots; sync newest official release, lock `sha:<commit>`, refresh owned units and restore inactivity. `update_busy` or `source_dirty` holds without implicit stop/cleanup. Keep literal `/orbi update`, distinct from `/update-kit`. |
+   | update | Preserve origin/provider/harness/slots; sync newest official release, lock `sha:<commit>`, refresh owned units and restore inactivity. `update_busy` or `source_dirty` holds without implicit stop/cleanup. Explicit `--stop` pauses owned timers under lock and defers while workers/pending starts remain; once idle it updates and leaves stopped, deferring activating unit refresh to the next authorized start. Keep literal `/orbi update`, distinct from `/update-kit`. |
 
    No routine pre-status, help lookup, extra setup, preview-then-apply, polling or
    post-validation call. Helper ownership, safety, authentication and evidence
@@ -112,7 +113,7 @@ For host/fixture measurement limits, use the reference's
 | --- | --- |
 | "One more model should route or rephrase this." | Interpret once; the helper owns checks, and its safe receipt is the answer. Host-mandated continuations only relay it. |
 | "I remember help, so I can compose the table." | Run the helper's `help`; report observed output. |
-| "Start needs setup first; update needs an automatic stop." | Absent start composes preparation internally. Update holds on busy state; another mutation needs its own authority. |
+| "Start needs setup first; update needs an automatic stop." | Absent start composes preparation internally. Plain update holds on busy state; only explicit update --stop authorizes the pause, never service interruption or restart. |
 | "Passing checks releases the pause." | Owner scheduling authority and live gates remain separate. |
 | "The command failed, so nothing changed and retry is safe." | Preserve mutation/activation evidence and repair deliberately; failure can be partially applied. |
 
@@ -120,7 +121,9 @@ For host/fixture measurement limits, use the reference's
 
 - Extra routing/validation/paraphrase models, routine polling or duplicate host probes.
 - A guessed alias, shell interpolation, changed literal selectors or removed dry-run.
-- Setup/dry-run enables timers, status writes, or stop kills/restarts a service.
+- Setup/dry-run enables timers, status writes, or stop/update --stop kills/restarts a service.
+- Update --stop invokes activating install-units, syncs before fresh idle/no-pending-start
+  evidence, re-enables timers or reports stopped from missing scheduler evidence.
 - Missing ownership/authorization, silently changed pin/provider/harness/origin,
   or an automatic install/login/repair/retry after a refusal.
 - An empty queue or stopped state inferred from unavailable evidence, or secrets
