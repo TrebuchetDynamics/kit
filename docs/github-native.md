@@ -192,8 +192,12 @@ Do not serve one repository from multiple deployments or machines.
 Use [`/orbi [status|setup|start|update|stop|help]`](../skills/orbi/SKILL.md) for one
 repository's deployment. Bare invocation reads status; `--repo-dir` selects the
 canonical repository and `--config` selects its existing native configuration.
-Setup prepares without activating scheduling. Start requires separate scheduling
-authorization with existing pauses and cutover gates resolved. If genuinely absent
+Public `setup` starts by default, mapping to helper `start`; explicit invocation
+expresses scheduling intent, not a waiver of existing pauses and cutover gates.
+`setup --prepare-only` prepares without activating scheduling (direct helper `setup`
+remains non-activating). Missing/failed gates hold with the specific blocker and
+next safe check/repair; never silently fall back to preparation or ask for a second
+approval for already-authorized activation whose gates are evidenced. If genuinely absent
 and no explicit config was supplied, start first uses the same setup preparation,
 validates non-activating, then rebinds/revalidates under the activation lock. Existing
 valid/active targets skip preparation and reject bootstrap/harness selectors; partial,
@@ -242,20 +246,25 @@ timer refuses as `update_busy`; tracked checkout changes refuse as
 enables scheduling as an outcome; rollback is a deliberate owner edit of
 `engine_source_track`. It never refreshes Kit itself: that stays `/update-kit`.
 
-For a first authorized deployment, preview with `/orbi start --dry-run
+For a first authorized deployment, preview with `/orbi setup --dry-run
 --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID
 --pi-model PUBLISHED_MODEL_ID`, then remove `--dry-run` only within that authority.
 Use actual published IDs and metadata, not invented limits or credentials. Without
 selectors, verified donor metadata is reused or the exact missing input is reported.
 An absent preview is write-free and explicitly defers staging-dependent source,
-validation and activation checks. Standalone `/orbi setup --dry-run` still previews
-preparation only; `/orbi setup --harness pi` selects stock Pi for new preparation.
+validation and activation checks. `/orbi setup --dry-run` previews the start route;
+`/orbi setup --prepare-only --dry-run` previews preparation only.
+`/orbi setup --harness pi` selects stock Pi for a new target then starts it;
+add `--prepare-only` to opt out of activation. Public `setup --resume-setup` requires
+explicit `--prepare-only`; otherwise reject before mutation with corrected
+`setup --prepare-only --resume-setup` and the original arguments.
 Use `/orbi status` to inspect and `/orbi stop` for authorized no-kill drain.
 Context-free `/orbi help` reports the loaded helper path/default policy, parseable
 examples and recovery guidance, not the installed selected harness.
 
-Each mutation reports its own outcome: `setup` says `prepared` (staging, not
-scheduler activation), `start` says `started` or `already-running`, `update` says
+Each helper mutation reports its own outcome: direct helper `setup` (public
+`setup --prepare-only`) says `prepared` (staging, not scheduler activation),
+helper `start` (public default setup or start) says `started` or `already-running`, `update` says
 `updated` or `up_to_date`, and `stop` says `draining` or `stopped`; `--dry-run`
 says `planned` for all four. Thus `stop`
 can report `draining` while a subsequent status still reports `running`: an active

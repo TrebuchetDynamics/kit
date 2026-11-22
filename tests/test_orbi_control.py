@@ -1123,6 +1123,45 @@ class FirstDeploymentTests(unittest.TestCase):
         self.options = ['--pi-providers', str(self.catalog), '--pi-provider', 'openai',
                         '--pi-model', 'gpt-6.1-sol', '--pi-thinking', 'high']
 
+    def test_documented_public_setup_routes_have_the_delegated_fake_host_effects(self):
+        # Execute the helper argv named by the public instruction table. This proves
+        # the real delegated CLI boundary, not a host model's interpretation of it.
+        skill = (ROOT / 'skills/orbi/SKILL.md').read_text()
+        routes = dict(re.findall(r'\| `(setup[^`]*?)` \| `([^`]+)` \|', skill))
+        for index, public in enumerate(('setup', 'setup --dry-run',
+                                        'setup --prepare-only',
+                                        'setup --prepare-only --dry-run')):
+            with self.subTest(public=public):
+                h = Harness(Path(self.tmp.name) / str(index))
+                argv = shlex.split(routes[public])
+                before = snapshot(h.home)
+                result = subprocess.run(
+                    [sys.executable, '-B', str(HELPER), *argv, '--repo-dir', str(h.repo),
+                     '--json', *self.options, '--harness', 'pi'], env=h.env,
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+                doc = json.loads(result.stdout)
+                preview = '--dry-run' in argv
+                prepare_only = '--prepare-only' in public
+                self.assertEqual(doc['action'], 'setup' if prepare_only else 'start')
+                self.assertEqual(doc['status'], 'planned' if preview else
+                                 ('prepared' if prepare_only else 'started'))
+                if preview:
+                    self.assertEqual(snapshot(h.home), before)
+                else:
+                    self.assertEqual(doc['deployment']['harness']['requested_kind'], 'pi')
+                    config = h.config()
+                    self.assertEqual((config['pi_provider'], config['pi_model']),
+                                     ('openai', 'gpt-6.1-sol'))
+                if prepare_only or preview:
+                    SetupBoundaryTests.assert_no_activation(self, h.calls())
+                else:
+                    self.assertEqual(doc['preparation']['state'], 'prepared')
+                    operations = [c['argv'][0] for c in h.calls() if c['tool'] == 'orbi']
+                    self.assertEqual(operations.count('check'), 1)
+                    self.assertEqual(operations.count('setup'), 1)
+                    self.assertEqual(operations.count('install-units'), 1)
+
     def test_first_start_prepares_validates_and_activates_once(self):
         for kind in (None, 'pi', 'donor'):
             with self.subTest(harness=kind):
@@ -1163,6 +1202,7 @@ class FirstDeploymentTests(unittest.TestCase):
         self.assertEqual(doc['preparation']['state'], 'failed')
         self.assertEqual(doc['preparation']['steps'][-1]['step'], 'validate_non_activating')
         self.assertEqual(doc['activation'], 'none')
+        self.assertIn('`/orbi setup --prepare-only`', doc['error']['fix'])
         self.assertTrue((self.h.deploy / 'orbi.toml').is_file())
         SetupBoundaryTests.assert_no_activation(self, self.h.calls())
 
@@ -1540,7 +1580,7 @@ class FirstDeploymentTests(unittest.TestCase):
         self.assertEqual(doc['error']['code'], 'validation_failed')
         self.assertTrue(doc['error']['mutated'])
         self.assertIn('partially prepared', doc['error']['fix'])
-        self.assertIn('`/orbi setup` without bootstrap inputs', doc['error']['fix'])
+        self.assertIn('`/orbi setup --prepare-only` without bootstrap inputs', doc['error']['fix'])
         self.assertNotIn('orbi setup --config target', doc['error']['fix'])
         self.h.rules()
         code, doc, err = self.h.run('setup')
@@ -1935,6 +1975,7 @@ class SetupRecoveryTests(unittest.TestCase):
             code, doc, err = self.h.run(action, config=config, options=options)
             self.assertEqual(code, 2, (doc, err))
             self.assertEqual(doc['error']['code'], 'invalid_resume_selection')
+            self.assertIn('/orbi setup --prepare-only --resume-setup', doc['error']['fix'])
             self.assertFalse(doc['error']['mutated'])
         code, doc, err = self.h.run('help', config='/missing', options=['--resume-setup'])
         self.assertEqual(code, 0, (doc, err))
@@ -3799,6 +3840,12 @@ class InterfaceAndSkillTests(unittest.TestCase):
         for example in doc['examples']:
             words = shlex.split(example['command'])
             self.assertEqual(words.pop(0), '/orbi')
+            # Follow the canonical skill's public mapping, not helper setup semantics.
+            if words[0] == 'setup':
+                if '--prepare-only' in words:
+                    words.remove('--prepare-only')
+                else:
+                    words[0] = 'start'
             args = helper.parse_args(words)
             self.assertIn(args.action, helper.ACTIONS)
             with mock.patch.dict(helper.ACTIONS[args.action], handler=lambda ctx, args: {}):
@@ -3812,6 +3859,10 @@ class InterfaceAndSkillTests(unittest.TestCase):
                      'no explicit --config', 'one invocation', 'no worker was observed',
                      'outside the scan is unknown'):
             self.assertIn(term, text.getvalue())
+        self.assertIn('Public skill syntax', text.getvalue())
+        self.assertIn('Direct Python helper syntax', text.getvalue())
+        self.assertIn('/orbi setup --prepare-only', text.getvalue())
+        self.assertIn('setup --prepare-only --resume-setup', doc['recovery']['partial_setup'])
         activation = doc['recovery']['activation']
         for term in ('specific missing evidence', 'checklist', 'existing record',
                      'no record was found', 'unprotected main', 'HTTP 403',
@@ -3904,6 +3955,31 @@ class InterfaceAndSkillTests(unittest.TestCase):
             self.assertEqual(document['deployment']['state'], 'absent')
             self.assertEqual(snapshot(h.home), before)
             self.assertFalse((HELPER.parent / '__pycache__').exists())
+
+    def test_public_setup_mapping_is_shared_and_recovery_is_explicit(self):
+        skill = (ROOT / 'skills/orbi/SKILL.md').read_text()
+        # This is an instruction contract, not a second executable router or proof
+        # of model adherence. The fake-host start/setup tests prove delegated effects.
+        for public, action in (
+                ('setup', 'start'),
+                ('setup --dry-run', 'start --dry-run'),
+                ('setup --prepare-only', 'setup'),
+                ('setup --prepare-only --dry-run', 'setup --dry-run'),
+                ('setup --prepare-only --resume-setup', 'setup --resume-setup')):
+            self.assertIn(f'| `{public}` | `{action}` |', skill)
+        for rule in ('Reject `setup --resume-setup` before invoking the helper',
+                     '`setup --prepare-only --resume-setup`',
+                     'Remove only `--prepare-only`',
+                     'Do not silently fall back to preparation',
+                     'explicit invocation expresses scheduling intent'):
+            self.assertIn(rule, skill)
+        for path in ('adapters/skills/orbi/SKILL.md',):
+            adapter = (ROOT / path).read_text()
+            self.assertIn('../../../skills/orbi/SKILL.md', adapter)
+            self.assertNotIn('orbi_control.py', adapter)
+        reference = (ROOT / 'skills/orbi/references/lifecycle.md').read_text()
+        self.assertIn('fecim-lattice-tools', reference)
+        self.assertIn('openai-codex/gpt-6.2-sol', reference)
 
     def test_first_start_guidance_keeps_fast_path_and_conditional_recovery(self):
         skill = (ROOT / 'skills/orbi/SKILL.md').read_text()

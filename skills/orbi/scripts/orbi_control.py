@@ -342,7 +342,7 @@ def select_target(ctx, repo, explicit_config=None, *, require=False):
     if require:
         raise ControlError('not_prepared',
                            f'no Orbi deployment owns {repo.full}',
-                           fix='run `/orbi setup` for this repository first')
+                           fix='run `/orbi setup --prepare-only` to prepare this repository without activation first')
     return None
 
 
@@ -805,7 +805,7 @@ def require_provider(deployment):
             f'deployment {deployment.config_path} has no verified model provider: '
             + evidence.get('reason', 'unknown reason'),
             fix='configure pi_providers/pi_provider/pi_model with published model metadata, '
-                'then run `/orbi setup`')
+                'then run `/orbi setup --prepare-only` for non-activating validation')
     return evidence
 
 
@@ -820,7 +820,7 @@ def find_provider_source(ctx, deployments):
         raise ControlError(
             'provider_unavailable',
             'no visible deployment has a verified pi_provider/pi_model selection to reuse',
-            fix='run `/orbi setup --pi-providers PATH --pi-provider ID --pi-model ID '
+            fix='run `/orbi setup --prepare-only --pi-providers PATH --pi-provider ID --pi-model ID '
                 '[--pi-thinking LEVEL]` with published Pi model metadata; '
                 'credentials are never copied')
     distinct = {(evidence['provider'], evidence['model'])
@@ -1074,7 +1074,7 @@ def prerequisites(ctx, deployment, *, action, provider=None, metadata=None, allo
         raise ControlError(
             'bootstrap_missing',
             f'the shared user-local bootstrap {path} is missing',
-            fix='run `/orbi setup` to install it, or uv tool install --editable '
+            fix='run `/orbi setup --prepare-only` to install it without activation, or uv tool install --editable '
                 f'{deployment.deploy_home}')
     harness = require_harness(ctx, deployment)
     auth = pi_auth(ctx, deployment, provider, metadata=metadata) if provider else []
@@ -1387,7 +1387,7 @@ def run_orbi_check(ctx, deployment):
         raise ControlError(
             'validation_failed', message,
             fix='inspect and repair the partially prepared native config/provider metadata; '
-                'rerun `/orbi setup` without bootstrap inputs for non-activating validation '
+                'rerun `/orbi setup --prepare-only` without bootstrap inputs for non-activating validation '
                 '(or run orbi check --config ' + str(deployment.config_path) + '); '
                 'use `/orbi status` to inspect scheduler state; upstream setup/install-units '
                 'are activating and are not preparation repairs', mutated=True)
@@ -2674,7 +2674,13 @@ def command_help(ctx, args):
             'retains its provider/harness. Missing explicit configs, partial and foreign targets are not absent.',
             'Start requires explicit scheduling authority and resolved explicit pauses, cutover '
             'and human-only gates. Kit remains paused and live-unqualified; help grants no waiver.',
-            'Setup prepares without scheduling. New preparation defaults to Pi-Bolt; --harness pi '
+            'Public skill syntax: /orbi setup starts by default (maps to helper start); its explicit '
+            'invocation expresses scheduling intent, not a gate waiver. /orbi setup --prepare-only '
+            'maps to non-activating helper setup. The skill consumes --prepare-only; it is not a Python flag. '
+            'Public setup --resume-setup requires --prepare-only; otherwise reject before invocation and '
+            'show setup --prepare-only --resume-setup with the original arguments. '
+            'Default setup --dry-run previews start; prepare-only --dry-run previews preparation only.',
+            'Direct Python helper syntax: setup prepares without scheduling. New preparation defaults to Pi-Bolt; --harness pi '
             'selects stock Pi. Existing selections stay unchanged. A missing binary is a prerequisite, '
             'not an automatic installation or fallback.',
             'Use published provider/model IDs and a credential-free metadata path; omitted selectors '
@@ -2699,10 +2705,19 @@ def command_help(ctx, args):
             {'command': '/orbi status --json', 'outcome': 'Inspect only; bare /orbi is equivalent.'},
             {'command': '/orbi setup --dry-run --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
-             'outcome': 'Preview first preparation; replace paths/IDs with verified published metadata.'},
+             'outcome': 'Preview default start without writes; staged validation/activation checks remain deferred. '
+                        'Replace paths/IDs with verified published metadata.'},
             {'command': '/orbi setup --harness pi --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
-             'outcome': 'Prepare a new stock Pi target without scheduling.'},
+             'outcome': 'With scheduling authority and resolved gates: prepare a new stock Pi target, then activate.'},
+            {'command': '/orbi setup --prepare-only --dry-run --pi-providers /path/to/models.json '
+                        '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
+             'outcome': 'Preview preparation only; remove --dry-run to prepare without scheduling.'},
+            {'command': '/orbi setup --prepare-only --resume-setup --config /path/to/orbi.toml '
+                        '--pi-providers /path/to/models.json --pi-provider SAVED_PROVIDER_ID '
+                        '--pi-model SAVED_MODEL_ID --dry-run',
+             'outcome': 'Preview bounded missing-local-provider recovery with exact saved selectors; '
+                        'never activate.'},
             {'command': '/orbi start --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
              'outcome': 'Only with scheduling authority: prepare absent target with Pi-Bolt, then activate. '
@@ -2729,8 +2744,9 @@ def command_help(ctx, args):
             'config_missing': '--config must name an existing native config. Correct the path; omit --config '
                               'only for genuinely absent preparation, not to bypass partial/foreign state.',
             'partial_setup': 'Preserve config, pin, provider, env, launcher and attempts. Inspect the failed step; '
-                             'repair deliberately and use setup without bootstrap selectors. Only a legacy missing '
-                             'local provider permits setup --config PATH --resume-setup with complete matching '
+                             'repair deliberately and use public setup --prepare-only (direct helper setup) without bootstrap selectors. Only a legacy missing '
+                             'local provider permits public setup --prepare-only --resume-setup --config PATH '
+                             '(direct helper setup --resume-setup) with complete matching '
                              'selectors. Start never performs legacy repair or changes a saved harness.',
             'activation': 'Before actual start, separate the owner scheduling request from deployment-specific '
                           'gate evidence. Name the specific missing evidence, applicable cutover checklist and '
@@ -2767,7 +2783,7 @@ def command_help(ctx, args):
             'fix': 'error.fix gives the repair action; unknown actions point to /orbi help.',
         },
         'boundaries': [
-            'Usage: ' + action_usage(),
+            'Direct Python helper syntax (not public skill syntax): ' + action_usage(),
             'Minimum Python 3.11; the Python floor guard also applies to help.',
             'Linux supports mutations; macOS supports status and help; other platforms '
             'support help only.',
@@ -2777,7 +2793,7 @@ def command_help(ctx, args):
             'Loaded helper: ' + str(Path(__file__).resolve()) + '. If flags are missing in an '
             'older installed helper, report its path and available Kit revision, then request '
             'a separately authorized Kit update/reload; never rewrite project origin.',
-            'Setup supports new preparation, existing valid reuse without selectors, or explicit '
+            'Direct helper setup supports new preparation, existing valid reuse without selectors, or explicit '
             'bounded --resume-setup for a legacy missing local provider with matching selectors. '
             'Other incomplete/changed states require deliberate repair preserving evidence.',
             'Setup activated=false means no activation invoked here, not proof an existing '
@@ -2793,7 +2809,8 @@ def command_help(ctx, args):
             'Not an executor or scheduler: no tick, issue claim, review or merge.',
             'Not /unblock, /git-commit-push, /plan-with-me, /plan-for-me.',
             'Local visibility only: no cross-machine lock or capacity guarantee.',
-            'Next steps: use status to inspect; setup to prepare; start only after an '
+            'Next steps: use status to inspect; public setup --prepare-only (helper setup) to prepare; '
+            'public setup or start only after an '
             'owner scheduling request and resolved pauses, cutover and human-only gates; update only after '
             'an authorized stop/drain, or use update --stop to authorize the pause and leave stopped; '
             'stop disables owned timers while preserving active workers.',
@@ -2875,7 +2892,7 @@ def render_help(ctx, document, json_mode):
                   f"mutations_supported={document['mutations_supported']}\nQuickstart:\n")
     for text in document['quickstart']:
         ctx.out.write('  ' + text + '\n')
-    ctx.out.write('Actions:\n')
+    ctx.out.write('Actions (direct Python helper syntax):\n')
     for name, entry in document['actions'].items():
         ctx.out.write(f"  {name} [{entry['mutates']}] {entry['effect']} "
                       f"Platforms: {', '.join(entry['platforms'])}. {entry['when']}\n")
@@ -2902,7 +2919,8 @@ def parse_args(argv):
         prog='orbi_control.py',
         usage=action_usage() + ' [-h]',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description='Repository-scoped Orbi lifecycle controls:\n'
+        description='Direct Python helper syntax (setup is non-activating). Public /orbi setup maps to start; '
+                    '/orbi setup --prepare-only maps to helper setup.\nRepository-scoped Orbi lifecycle controls:\n'
                     + '\n'.join(f"{name} [{entry['mutates']}]: {entry['effect']}"
                                 for name, entry in ACTIONS.items())
                     + ' Default: status. Linux mutates; macOS also supports status; '
@@ -2968,8 +2986,9 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
                 args.action != 'setup' or not args.config or not all(selectors[:3])):
             raise ControlError('invalid_resume_selection',
                                '--resume-setup requires setup, explicit --config and complete --pi-* inputs',
-                               fix='use setup --config PATH --resume-setup --pi-providers PATH '
-                                   '--pi-provider ID --pi-model ID, matching the saved selection', exit_code=2)
+                               fix='use public `/orbi setup --prepare-only --resume-setup --config PATH '
+                                   '--pi-providers PATH --pi-provider ID --pi-model ID`, matching the saved selection '
+                                   '(direct Python helper: setup --resume-setup with the same inputs)', exit_code=2)
 
         if args.action != 'help' and any(value is not None for value in selectors):
             if ('--pi-providers' not in ACTIONS[args.action]['applies'] or not all(selectors[:3])

@@ -8,6 +8,23 @@ contract nor the protection policy: read
 
 ## Interface
 
+Public skill syntax on all hosts: `/orbi setup` maps to helper `start` and
+expresses scheduling intent. It prepares/validates if absent, then activates only
+when existing gates are resolved; valid existing targets skip preparation and
+retain exact saved selectors. `/orbi setup --prepare-only` maps to helper `setup`.
+The canonical skill consumes the public-only flag, forwarding all other supported
+arguments literally. Default `setup --dry-run` previews start without writes;
+`setup --prepare-only --dry-run` previews only preparation. Reject public
+`setup --resume-setup` before any helper invocation/mutation unless `--prepare-only`
+is explicit; show `setup --prepare-only --resume-setup` with the original arguments.
+Help/status never implicitly prepare or start. See the canonical mapping in
+[SKILL.md](../SKILL.md#common-path).
+
+**Direct Python helper syntax** below is unchanged: helper `setup` is always
+non-activating, and `--prepare-only` is not a helper flag. Unqualified helper action
+names in the technical sections below refer to this direct interface, not public
+setup's default mapping.
+
 ```sh
 python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|stop|help] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
@@ -244,7 +261,7 @@ are rewritten to bypass this guard.
 
 ## Setup
 
-`setup` stages the official Orbi checkout at the verified pin, writes the
+Public preparation-only uses `/orbi setup --prepare-only`. Direct helper `setup` stages the official Orbi checkout at the verified pin, writes the
 verified provider metadata, harness launcher and `.orbi/env` atomically, publishes the native config
 last, installs a
 missing user-local bootstrap with `uv tool install --editable --python <compatible>`
@@ -279,7 +296,7 @@ receipt is created. Temporary publication files left by a killed process are
 not a readiness authority and are not automatically deleted on retry.
 
 Upstream `orbi setup` and `install-units` activate timers at this pin, so both
-are deliberately deferred to an explicit `start`. Setup never enables a timer
+are deliberately deferred to helper `start` (public default setup or start). Helper setup never enables a timer
 to disable it again. No sudo, system package, automated login or shell-profile
 change is used.
 
@@ -334,6 +351,11 @@ An unrelated deployment is never changed. A prepared result proves neither
 scheduler activation nor model inference or protected delivery.
 
 ### Explicit bounded legacy resume
+
+At the public surface, use `/orbi setup --prepare-only --resume-setup --config PATH`
+with the complete matching provider inputs below (and preserve `--dry-run` if requested).
+Without `--prepare-only`, refuse before mutation and give that corrected command.
+The direct helper command below stays non-activating for recovery/automation.
 
 Only for an existing valid native config whose saved `pi_providers` names the
 missing deployment-local `.orbi/pi-providers.json`:
@@ -424,6 +446,17 @@ Use disposable fake hosts only; do not contact the named repositories' real host
   applicable to this stage, not a blanket missing approval. Next: restore readable
   scheduler evidence and obtain the read-only protection view/owner repair above.
   Hold activation on the unresolved applicable checks; no redundant setup or consent loop.
+- **fecim-lattice-tools:** given a previously prepared Pi-Bolt slot with saved
+  `openai-codex/gpt-6.2-sol`, validated config and no enabled timers or inference:
+  preparation is not activation or live qualification, and this is not evidence of
+  model failure. New public `/orbi setup` expresses scheduling intent and delegates
+  to existing-target `start`, skips preparation and retains that exact saved selection;
+  omit provider/model/harness selectors. Once applicable pause/cutover/branch/CI/human
+  gates are evidenced, invoke once without another approval prompt. If a gate is
+  missing, name that blocker and the read-only check or owner repair; do not silently
+  prepare or claim started. `/orbi setup --dry-run` previews this start route;
+  `/orbi setup --prepare-only --dry-run` previews non-activating preparation instead.
+  This walkthrough does not inspect or change the reported deployment.
 - **SalmaListApi:** given a setup preview returning `setup_busy`, one active/owned timer
   and zero observed running services: report “scheduling is active, but no worker was
   observed within the scan.” Use `status`, not setup, to inspect; this is not stopped or
@@ -434,20 +467,25 @@ Use disposable fake hosts only; do not contact the named repositories' real host
 
 ## Start
 
+Public `/orbi setup` delegates to this exact helper start path, not another
+activation implementation. `--prepare-only` deliberately opts out. Gate failure
+holds activation with the specific blocker/repair, never a silent preparation-only
+success. Resolved, already-authorized activation needs no second approval.
+
 After explicit scheduling authority and resolved gates, a first deployment can use:
 
 ```text
 /orbi status
 /orbi setup --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
-/orbi setup --harness pi --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi setup --prepare-only --harness pi --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
 /orbi start --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
 /orbi start --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
 /orbi start --dry-run
 /orbi stop
 ```
 
-These are alternatives, not a sequence to run blindly: standalone setup stays
-non-activating. If setup already prepared the target, omit the bootstrap/harness
+These are alternatives, not a sequence to run blindly: only public setup with
+`--prepare-only` stays non-activating. If it already prepared the target, omit the bootstrap/harness
 selectors on start. Replace placeholder IDs/paths with published catalog evidence;
 optional `--pi-thinking LEVEL` must also match supported reasoning. Planned,
 prepared, activated and live-qualified are distinct; stop reports drain, not a kill.
@@ -570,7 +608,8 @@ One deployment/task pool can have several slot timers; that is not several
 repositories or duplicate pools claiming the same queue. Compare native config,
 explicit enablement and observed activity before naming a scheduling defect.
 Never manually enable instances 4/5 just to match `MAX_INSTANCES`. Use read-only
-status for observation: `setup --dry-run` is preparation preflight, not a harmless
+status for observation: helper `setup --dry-run` (public `setup --prepare-only --dry-run`)
+is preparation preflight, not a harmless
 health substitute. `setup_busy` while scheduling/workers are active is an expected
 refusal, not evidence of extra instances. Any repair still requires its own
 scope/authority; this inventory authorizes no scheduler mutation.
@@ -642,9 +681,9 @@ retry an unchanged timeout. Typical repairs:
 - `provider_unavailable` with no deployment: supply the complete explicit
   bootstrap selectors and published local Pi metadata; creating a donor first
   is not required. For an existing partial deployment, repair its native
-  `pi_providers`/`pi_provider`/`pi_model` selection deliberately, then rerun helper
-  setup without bootstrap flags; only the bounded missing-local-provider case can
-  use explicit `--resume-setup` with complete matching selectors. No credentials are copied.
+  `pi_providers`/`pi_provider`/`pi_model` selection deliberately, then rerun public `setup --prepare-only` (helper
+  setup) without bootstrap flags; only the bounded missing-local-provider case can
+  use public `setup --prepare-only --resume-setup` with complete matching selectors. No credentials are copied.
 - `invalid_provider_selection`, `credential_copy_refused` or a symlink refusal:
   correct the selectors or use regular credential-free metadata paths, then
   preview again. These failures occur before preparation writes.
@@ -653,7 +692,7 @@ retry an unchanged timeout. Typical repairs:
   bounded resume fills only a missing local provider file.
 - `validation_failed` with `error.mutated: true`: files may already be prepared,
   but validation did not pass. Inspect the native config, provider metadata and
-  check failure; repair the cause and rerun helper `setup` without bootstrap
+  check failure; repair the cause and rerun public `setup --prepare-only` (helper `setup`) without bootstrap
   inputs (or non-activating `orbi check --config PATH`). Never run upstream
   `orbi setup`/`install-units` as routine preparation recovery. Use helper
   `status` to observe scheduler state separately, not `start` to repair metadata.
