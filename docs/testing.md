@@ -170,10 +170,11 @@ check at your live profile; plugin loading may write runtime records.
 HERMES_HOME="/path/to/isolated-installed-profile" PYTHONPATH="$HERMES_SOURCE" "$HERMES_PYTHON" -c 'import hermes_bootstrap, runpy, sys; runpy.run_path(sys.argv[1], run_name="__main__")' tests/integration_bundle.py
 ```
 
-Before a push, the pre-push hook runs the checker's core contracts (docs check and
-GitHub handoff contracts, a few seconds) and then `scripts/affected_tests.py --run --defer-full`
-from the sha the remote already has. Targeted tests run locally; their failures still refuse
-the push. Whole-suite selections (check, CI, packaging or an unresolved mapping such as
+By default the pre-push hook runs only the revision guards and core contracts.
+It does not select or run test modules. CI still runs the full suite.
+To also run targeted tests locally, use `KIT_PRE_PUSH=affected git push`. This adds
+`scripts/affected_tests.py --run --defer-full` from the sha the remote already has.
+In this mode, targeted test failures refuse the push. Whole-suite selections (check, CI, packaging or an unresolved mapping such as
 `.gitignore`) print the reason and defer test execution to CI instead of blocking a push on
 all modules. This is a deferral, not a passing local test result; the core contracts still run.
 A document no test reads selects no test module, and a document reaches at most the tests

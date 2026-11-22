@@ -1,4 +1,4 @@
-"""The pre-push hook runs the affected selection for what is being pushed, and nothing more."""
+"""Exercise the fast default and opt-in affected checks for the advertised revision."""
 import io
 import os
 from pathlib import Path
@@ -62,7 +62,7 @@ class MainTests(unittest.TestCase):
         patch = mock.patch.object(pre_push_check, 'ROOT', self.root)
         patch.start()
         self.addCleanup(patch.stop)
-        env = mock.patch.dict(os.environ, KIT_PRE_PUSH='1')
+        env = mock.patch.dict(os.environ, KIT_PRE_PUSH='affected')
         env.start()
         self.addCleanup(env.stop)
 
@@ -75,6 +75,23 @@ class MainTests(unittest.TestCase):
                 (self.root / '.git/HEAD').read_bytes(),
                 (self.root / '.git/index').read_bytes(),
                 {p.name: p.read_bytes() for p in self.root.iterdir() if p.is_file()})
+
+    def test_default_runs_core_without_selecting_or_running_tests(self):
+        line = f'refs/heads/main {self.head} refs/heads/main {self.base}\n'
+        for mode in (None, '1'):
+            with self.subTest(mode=mode), mock.patch.dict(os.environ), mock.patch.object(
+                pre_push_check, 'pushed_bases', side_effect=AssertionError('selected tests')
+            ):
+                if mode is None:
+                    os.environ.pop('KIT_PRE_PUSH', None)
+                else:
+                    os.environ['KIT_PRE_PUSH'] = mode
+                for result in (0, 1):
+                    core = mock.Mock(return_value=result)
+                    code = pre_push_check.main([], io.StringIO(line), core=core,
+                                               run=lambda _: self.fail('ran tests'))
+                    self.assertEqual(code, result)
+                    core.assert_called_once_with()
 
     def test_rejects_wrong_revision_before_checks(self):
         blob = self.git('hash-object', '-w', 'file')
