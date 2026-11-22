@@ -332,6 +332,46 @@ Source delivery is not installed adoption, native loader qualification or live a
 
 <a id="legacy-marketplace-migration"></a>
 
+## Automatic marketplace replacement
+
+Normal `./install.sh --only claude,codex` and `./install.sh update --only claude,codex`
+converge on the checked-in manifest names: `kit@kit` in Claude Code and
+`kit@kit-marketplace` in Codex. No migration flag or alternative install name is used.
+
+If the official Git source is registered under another name, the installer
+**automatically removes that registration and its affected Kit plugin**, then adds
+`TrebuchetDynamics/kit` under the canonical name if absent. It permits one replacement
+attempt per host per invocation. This can discard the replaced plugin's cached copy
+and enabled state. Canonical installed plugins retain their existing source and scope.
+
+Removal requires one unambiguous, writable Git registration for the official source,
+structured source and configuration evidence, and Kit-only affected installed plugins
+and declarations. A marketplace name, local folder or successful/already-present add
+message is not deletion authority. Managed, foreign, conflicting, multi-scope or
+unknown ownership, another affected plugin, and a canonical name with a foreign source
+stop the component before removal. Local sources are not replacement candidates.
+The installer never edits private registries, purges caches broadly or removes unrelated
+marketplaces/plugins.
+
+After add/removal, structured readback must show the canonical name and owned source
+before update/upgrade. The installed canonical plugin ID is checked at the end.
+A false-success add cannot lead to an update of a nonexistent marketplace. Failure
+reports partial state and returns nonzero; no rollback is attempted. Repair the
+reported network, capability or ownership error, then rerun the same command. A rerun
+after removal but before add resumes from the observed state without another removal;
+a rerun after success updates the canonical install without replacement.
+
+Dry-run runs no registry probe or mutation and reports `NOT_CHECKED`. Actual host CLI
+initialization can write cache/auth state. Independent installer components continue
+after a refusal. Stateful fake-host tests cover these boundaries through `install.sh`;
+this is not live adoption evidence. Live replacement acceptance remains unrun and
+requires an authorized disposable host with a prepared wrong-name fixture. Run
+`./install.sh --only claude,codex` twice and compare marketplace names/sources and IDs
+with `claude plugin marketplace list --json`, `claude plugin list --json`,
+`codex plugin marketplace list --json` and
+`codex plugin list --marketplace kit-marketplace --json` after each run.
+Do not use a user's live configuration as a fixture.
+
 ## Claude Code
 
 Requires Claude Code with plugin marketplaces. From this checkout:
@@ -351,15 +391,20 @@ claude plugin install kit@kit
 `./install.sh` validates Kit identities in
 settings/known-marketplace records and reads installed IDs with
 `claude plugin list --json` during an actual install. It reuses an owned GitHub,
-Git or verified Kit directory source. It does not remove/re-add that marketplace
-or uninstall its cached plugin: an installed canonical plugin uses
+Git or verified Kit directory source. A valid canonical marketplace is not removed/re-added,
+and its cached plugin is not uninstalled: an installed canonical plugin uses
 `claude plugin update kit@kit --scope SCOPE`, keeping the selected installed scope.
 A settings-only declaration uses its selected scope for install (user by default).
-Foreign, conflicting, missing or unknown source records, stale directories and
-legacy registrations stop this component with diagnostics requiring ownership reconciliation.
-A stale legacy path is not permission to delete its entry. The installer does not
-rewrite registry/settings files itself. Unsupported installed-list output also
-requires host qualification, not fallback reinstallation.
+A mismatched official Git registration follows the replacement contract above.
+Claude removal uses `claude plugin marketplace remove NAME --scope SCOPE`, which can
+uninstall marketplace plugins. The installer checks installed IDs across scopes and
+refuses other plugins, managed declarations, multiple affected scopes or installed
+project records outside the current project. A replacement retains its single writable
+user/project/local scope when installing the canonical plugin and adding the marketplace.
+Foreign, conflicting, missing or unknown source records and stale directories stop
+this component with ownership diagnostics. A stale path is not permission to delete
+its entry. The installer does not rewrite registry/settings files itself. Unsupported
+installed-list output requires host qualification, not fallback reinstallation.
 
 Inside a session, `/plugin marketplace add TrebuchetDynamics/kit` and
 `/plugin install kit@kit` do the same; run `/reload-plugins` or
@@ -443,19 +488,25 @@ codex plugin list --marketplace kit-marketplace --json
 It requires supported JSON containing marketplace names, roots and
 `marketplaceSource` metadata, plus resolved installed IDs, sources and enabled
 state. Missing capabilities, failed/malformed reads, unknown/mismatched sources,
-stale local sources and legacy/coexisting registrations stop the Codex component
-before marketplace/plugin changes. There is no removal fallback. A qualified
-canonical Git source uses `marketplace upgrade` without remove/re-add; a local
+and stale local sources stop the Codex component before marketplace/plugin changes.
+A mismatched official Git registration follows the replacement contract above. Because
+these lists do not include configuration-layer ownership, replacement also requires
+native `codex app-server` `config/read` with `includeLayers: true` for the current
+working directory. This is a bounded configuration probe, not a model/session run.
+Only an exact base-user registration in the effective Codex home's `config.toml`
+qualifies. Shadowed, project, profile, system/managed or unknown registrations and
+non-user affected plugin declarations hold before removal. Unsupported layer probing
+also holds. The native commands are `codex plugin remove kit@NAME` when installed,
+then `codex plugin marketplace remove NAME`; no configuration file is edited by Kit.
+A qualified canonical Git source uses `marketplace upgrade` without remove/re-add; a local
 source stays local. An already installed canonical Kit plugin is not added again,
 so its effective enablement and configuration scope are not rewritten. A fresh
 plugin uses `plugin add kit@kit-marketplace`.
 
 These lists describe **effective configuration**, not every persisted scope. They
-do not prove shadowed registrations absent. CLI initialization may write cache or
-auth state; these are not zero-side-effect probes. Dry-run invokes no registry
-probes or mutations, reports migration/registry status as `NOT_CHECKED` and prints
-planned validation. Independent installer components continue after a refusal.
-This is offline-tested compatibility behavior, not live adoption evidence.
+do not prove shadowed registrations absent; replacement additionally checks native
+configuration layers. Dry-run prints planned validation without starting either CLI.
+See the shared replacement and recovery contract above for failure and live limits.
 
 ## Pi coding agent
 
