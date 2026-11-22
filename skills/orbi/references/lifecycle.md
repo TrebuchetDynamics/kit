@@ -12,7 +12,7 @@ contract nor the protection policy: read
 python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|stop|help] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
   [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
-  [--resume-setup] [--harness {pi-bolt,pi}]
+  [--resume-setup] [--harness {pi-bolt,pi}] [--stop]
 ```
 
 - Omitted action means `status`. A bare `orbi` runs one Runner tick and is never
@@ -39,7 +39,9 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|sto
 - Setup-only `--resume-setup` is the explicit legacy missing-provider exception:
   require `--config PATH` and complete matching provider inputs. It never changes
   a saved selection, pin or present provider file. See bounded resume below.
-- `update` accepts only `--repo-dir`, `--config`, `--dry-run` and `--json`.
+- `update` accepts `--repo-dir`, `--config`, `--dry-run`, `--json` and update-only
+  `--stop`. The last flag explicitly authorizes pausing owned timers without
+  another prompt, never service interruption or restart.
   Provider, resume and harness selectors are refused: an update preserves the
   saved selection.
 - `--dry-run` prints the plan. It creates no config, scratch file, lock or
@@ -77,71 +79,86 @@ unavailable.
 
 ## Release update
 
-Plain `/orbi update` authorizes stop → update → restart for one prepared
-deployment, without an extra flag or confirmation. It validates ownership,
-clean official source, saved harness/provider, transport and prerequisites before
-disabling anything, then revalidates those inputs under the existing deployment
-lock. Tracked source changes refuse as `source_dirty`; no reset or discard occurs.
+```text
+/orbi update --stop --dry-run
+/orbi update --stop
+```
 
-Under that lock it:
+`update --stop` pauses the selected deployment and updates only once idle. It
+validates ownership, source cleanliness, saved harness/provider and prerequisites
+before touching timers, then revalidates under the existing deployment lock.
+It disables only owned timers (including inactive-but-enabled and active instances)
+and requires fresh disabled/inactive readback. Unknown/foreign ownership, incomplete
+inventory or unreadable scheduler evidence refuses safely, without syncing.
+Loaded/installed instances and pending jobs are enumerated in addition to configured
+slots and the normal status scan; surplus workers and queued starts are not ignored.
 
-1. saves deployment-bound restart intent in `.orbi/update-maintenance.json`, so a
-   deliberately retried failed update does not mistake its own maintenance pause
-   for an independent operator pause;
-2. disables only owned timer instances with `systemctl --user disable --now`,
-   including inactive-but-enabled and out-of-config timers, and confirms readback;
-3. interrupts verified owned active/activating/deactivating services and queued
-   service starts with synchronous `systemctl --user stop UNIT...`, bounded to
-   120 seconds. It does not wait for jobs to finish naturally, signal unrelated
-   processes, or delete worktrees, run records or recovery inputs;
-4. reads loaded units, installed instances, service/timer states and pending jobs
-   again. Unknown/foreign ownership or unreadable/incomplete evidence refuses.
-   Services must be inactive/failed, timers disabled/inactive and pending jobs
-   absent before any engine config/source change; there is no polling or
-   background continuation;
-5. writes `release` into `engine_source_track` and runs upstream
-   `sync-engine-source`: fetch official tags, resolve the newest semver release
-   (excluding prereleases), dereference the tag and check out that commit detached;
-6. reads HEAD, pins it as `sha:<commit>` and validates with non-activating
-   `orbi check`. No restart is allowed for an unvalidated engine;
-7. for eligible scheduling, reuses the established start checks and scoped
-   `setup`/`install-units`, owned timer activation and first-tick path, then requires
-   fresh enabled/active configured-timer readback. Independent pauses and existing
-   startup gates remain in force. An already paused deployment stays stopped;
-   because the supported installer enables timers, its unit refresh is deferred
-   to the next separately authorized `start`, with stopped scheduler readback;
-8. removes the maintenance intent only after successful readback. An explicit
-   `/orbi stop` cancels saved restart intent under the same lock; successful
-   authorized `start` clears it too. No other deployment is changed.
+If workers are active/draining or jobs remain, the receipt has `status: draining`,
+`engine_update: deferred`, `scheduler_confirmation: timers_disabled`,
+confirmed disabled timers, `pending_services` and the
+exact `resume_command` to deliberately retry after they finish. Engine source and
+pin are untouched. There is no polling, background continuation, service stop/kill,
+worker cancellation or automatic restart. Retrying does not carry saved restart
+intent: scheduling stays stopped.
+
+Once fresh idle/no-pending-start evidence is available, this path uses the same
+release synchronization, exact pinning and non-activating validation described below.
+It **never calls public `install-units`**, because that installer enables timers,
+even briefly. Unit refresh is `deferred` to the next separately authorized `start`,
+which already installs units. It reports engine `updated`/`up_to_date`, unit refresh
+`deferred` with that reason, and `scheduler_confirmation: stopped` only after final
+scheduler readback proves disabled/inactive timers and no pending work. On failure,
+completed disables, the failed stage, actual scheduler evidence (or `unavailable`)
+and `resume_command` remain visible; no timer re-enable rollback is attempted.
+`--stop --dry-run` previews pause/drain and conditional update without writes,
+locks, fetch or unit actions. Selectors and protected start gates are unchanged.
+
+### Plain update compatibility
+
+`update` advances one prepared deployment to the newest official release and
+repairs its owned units. It needs the same evidence as setup plus a stopped and
+drained deployment: readable scheduler evidence, no active or activating service
+and no enabled timer. A live worker or enabled timer refuses as `update_busy`
+before any write. Tracked changes in the deployment checkout refuse as
+`source_dirty`; update never discards or force-checks-out work.
+
+Under the deployment lock it rechecks ownership, source, checkout cleanliness and
+inactivity, then:
+
+1. writes the upstream `release` channel into `engine_source_track`;
+2. runs upstream `sync-engine-source`, which fetches the official tags, resolves
+the newest semver release (pre-releases excluded), dereferences the annotated tag
+and checks that commit out detached; it fails closed and is never retried
+unchanged;
+3. reads the resulting HEAD and locks it as `sha:<commit>`, so later ticks verify
+one exact commit instead of tracking a moving tag;
+4. validates with non-activating `orbi check`;
+5. refreshes this deployment's owned units with upstream `orbi install-units`
+when they are installed, which re-renders the deployment templates and enables
+configured timers; a deployment with no installed unit reports
+`refresh_units: deferred` and leaves first installation to `start`;
+6. disables every owned timer that install enabled, restoring the verified
+inactive state, and reports the names in `disabled_timers`;
+7. observes the scheduler again and reports `pending_services`.
 
 The config must declare exactly one `engine_source_track` line; update rewrites
-that literal and preserves every other byte. An engine predating the release
-channel fails closed as `sync_engine_source_failed`; inspect and deliberately
-repair that source rather than repeating the same failure.
+that literal and preserves every other byte. An engine that predates the upstream
+release channel fails the sync closed and is reported as
+`sync_engine_source_failed`; that deployment needs a deliberate source repair, not
+a second retry.
 
-A successful receipt distinguishes engine `updated`/`up_to_date`,
-`unit_refresh: completed|deferred` and `scheduler_confirmation: running|stopped`.
-`previous.track`/`previous.head` identify the starting point;
-`deployment.deployed_commit` identifies the pinned release. Both engine outcomes
-validate and, when eligible, restart. `disabled_timers` and `stopped_services`
-list successful systemctl operations, not failed attempts. Scheduler readback is
-separate evidence; missing readback is never confirmation.
-
-Stop, sync, check and restart failures report the exact failed stage, partial
-mutation, actual scheduler (or `unavailable`), possible activation and an exact
-same-target `resume_command`. They do not restart an unvalidated engine or
-compensate with timer changes. Inspect `/orbi status` and the failed stage,
-repair the cause privately, preserve recovery inputs, then deliberately retry;
-never retry an unchanged timeout. A timed-out stop can still be pending in systemd.
-`worker_stop_failed` means systemd rejected/failed stopping;
-`worker_stop_unverified` means services or pending jobs remain after stop.
-
-`update --dry-run` previews the pause/interruption and conditional release/pin/check/
-restart without writes, locks, fetch or unit actions. Provider/harness selectors
-remain refused; origin, slots, saved selections and unrelated config are preserved.
-Deployment/config and provider/env paths must not traverse symlinks, including
-parents. Native config and unit identities still own deployment state; the local
-maintenance receipt is restart intent, not a registry, queue or live qualification.
+It reports `updated`, or `up_to_date` when the release commit did not move; both
+still refresh units and validate. `previous.track`/`previous.head` name the
+observed starting point, and `deployment.deployed_commit` the locked release.
+Origin, slots, provider metadata, harness selection, `.orbi/env` and unrelated
+config bytes are preserved. Update never enables scheduling as an outcome: run
+`start` under its own authority afterwards. Rollback is a deliberate owner edit
+of `engine_source_track` to the previous tag or sha; there is no second state.
+`update --dry-run` performs no write, fetch or lock and reports `planned`.
+- Deployment/config paths and provider/env paths must not traverse symlinks,
+  including parent directories. Validate the raw paths before resolving or writing.
+- Native configs and installed unit identities own deployment state. There is
+  no new registry, queue or mandatory state file.
 
 ## Isolation
 
@@ -350,6 +367,71 @@ reload; do not silently update, invoke activating upstream setup, or rewrite the
 project origin. A stale installed helper is different from a genuinely unsupported
 transport or an owner-required repair.
 
+## Activation evidence
+
+The owner's request to start scheduling and the evidence that permits that operation
+are different inputs. Preserve already-settled intent; do not ask the owner to approve
+the same start again. Read the bound deployment's status, repository instructions,
+applicable [cutover checklist](../../../docs/github-native.md#cutover), and any existing
+issue/PR or qualification record relevant to that repository and requested stage.
+Collect evidence read-only. Do not change labels, protections, units or credentials
+while deciding whether activation is allowed. Help itself performs none of these reads.
+
+Before an actual start, give a short evidence report:
+
+- **Request and target:** name the owner request, repository/deployment and operation
+  (for example first pilot versus rollout); do not infer authority from a successful preview.
+- **Observed:** cite the helper status/preview and relevant checklist or existing record
+  by path/URL and the specific evidence it supplies. Reuse applicable evidence, not stale
+  or unrelated approvals. If no record was found in the inspected sources, say so and
+  name those sources; absence of a record is not itself a new activation gate.
+- **Missing or unknown:** name each applicable check that is unresolved, not just
+  “cutover required.” Depending on the requested stage, this can be unsettled legacy
+  pool ownership, release/worktree-placement compatibility, unreadable scheduler state,
+  protected CI/review evidence, pilot delivery/recovery proof before expansion, or fleet
+  capacity evidence. Apply the existing checklist, not a new gate or mandatory receipt.
+  Do not demand rollout qualification as a prerequisite to an otherwise authorized pilot.
+- **Next safe action:** name the read-only check that can resolve each unknown, or the
+  exact external input/owner-controlled repair needed, and which operation stays held.
+  Do not ask for a generic “cutover record,” manufacture approval, or reconfirm settled
+  owner intent. Keep explicit pauses and human-only gates until their actual requirements
+  are satisfied. [#12](https://github.com/TrebuchetDynamics/kit/issues/12),
+  [#13](https://github.com/TrebuchetDynamics/kit/issues/13) and
+  [#20](https://github.com/TrebuchetDynamics/kit/issues/20) retain live qualification/rollout
+  ownership; this guidance does not release them.
+
+If GitHub reports **unprotected main**, report that observed branch state and the
+missing protection evidence; it is not an access error. If protection or rules reads
+return **HTTP 403**, report access denied and those details as unknown, not absent or
+passing. Both observations can coexist: report each with its source, without claiming
+that the 403 proves no rules exist. Next: obtain a read-only protection/rules view from
+an identity with access, or have the repository owner establish the required protections
+through its governance path if missing. Never weaken protections or invent a review
+approval to clear the blocker. See [protection diagnostics](../../../docs/github-native.md#read-protection-diagnostics-safely).
+
+### Offline guidance examples
+
+These are walkthrough inputs, not current host observations or live qualification.
+Use disposable fake hosts only; do not contact the named repositories' real hosts.
+
+- **Arenaton:** given `deployment.state=absent`, scheduler unavailable, an owner start
+  request, GitHub reporting main unprotected, and protection/rules HTTP 403: explain
+  that authorized implicit-target start will prepare, validate, then activate in one
+  invocation. Offer `start --dry-run` only as a write-free preview, with staged checks
+  deferred. Scheduler activity and rule details are unknown; the branch response is
+  separately unprotected. Cite the applicable cutover checklist and any found record;
+  if none was found, say so. Name the unresolved ownership/pause/qualification checks
+  applicable to this stage, not a blanket missing approval. Next: restore readable
+  scheduler evidence and obtain the read-only protection view/owner repair above.
+  Hold activation on the unresolved applicable checks; no redundant setup or consent loop.
+- **SalmaListApi:** given a setup preview returning `setup_busy`, one active/owned timer
+  and zero observed running services: report “scheduling is active, but no worker was
+  observed within the scan.” Use `status`, not setup, to inspect; this is not stopped or
+  a request to install extra instances. A valid existing start skips setup and retains
+  saved selection, subject to its existing authority/gates. Offer stop/drain only if
+  deliberately re-preparing or pausing, preserve workers, and verify inactivity before
+  setup. Missing reads or out-of-scan activity remain unknown, not zero.
+
 ## Start
 
 After explicit scheduling authority and resolved gates, a first deployment can use:
@@ -527,7 +609,7 @@ preparation remains `prepared` and activation is `none`. Inspect and repair the 
 there is no automatic retry or rollback. Preparation, activation and live qualification
 are separate outcomes.
 
-Start/update/stop errors also retain `target`, deployment config/unit identity,
+Start/stop errors also retain `target`, deployment config/unit identity,
 `original_error`, and completed/failed `steps` at the JSON top level (not under
 `error.evidence`). A failed step names its `unit` when applicable and records
 `mutation: possible` for an attempted write, `none` for an observation failure.
@@ -597,18 +679,19 @@ retry an unchanged timeout. Typical repairs:
   encoding is reported as `config_invalid`.
 - `filesystem_error`: inspect local permissions/files privately and repair the
   cause; the failure step may have partially mutated even though publication is atomic.
-- `setup_busy`: obtain separate stop/drain authorization and verify inactivity;
-  do not kill workers or use setup to stop them.
-- `worker_stop_failed`, `worker_stop_unverified` or `command_timeout` at
-  `stop_services`/`verify_stopped`: inspect actual units/pending jobs and the stop
-  failure, repair the cause, then deliberately use `resume_command`. Never bypass
-  ownership or stop unrelated units. `update_busy` later means work appeared
-  concurrently before restart or during a paused update; inspect before recovery.
+- `setup_busy`: cite observed timer/worker state and inspect with `status`.
+  Offer authorized stop/drain only when deliberately re-preparing or pausing.
+  Verify inactivity before setup; do not kill workers or stop scheduling just
+  to make a preview pass. An existing valid start skips setup.
+- `update_busy`: plain update requires stop/drain first, or use explicit
+  `update --stop` to authorize the pause while preserving workers. Verify no service is
+  active and no owned timer is enabled, then rerun `update`; never kill workers
+  or disable an unrelated deployment to pass the check.
 - `source_dirty`: preserve the tracked checkout changes in a separate operation
   and decide deliberately; update never discards them or rewrites origin.
 - `sync_engine_source_failed` or `command_timeout` during `update`: the pin or
   checkout may already have moved and units may already be refreshed. Read
-  `previous`, `steps`, `disabled_timers`, `stopped_services`, `error.mutated` and the read-only
+  `previous`, `steps`, `disabled_timers`, `error.mutated` and the read-only
   scheduler snapshot before deliberate recovery; inspect the fetch/channel
   privately and do not retry an unchanged timeout.
 - `bootstrap_incompatible` or `bootstrap_conflict`: repair or replace the
@@ -630,3 +713,79 @@ retry an unchanged timeout. Typical repairs:
 
 Offline tests and `doctor` do not qualify a live loop. Real issue pickup, PR,
 independent review, required CI and protected merge remain live acceptance.
+
+## Host round trips and evidence
+
+The common path in `SKILL.md` is shared by Hermes and portable hosts. The host
+LLM interprets intent/authority once; the ACTIONS-backed helper performs checks
+and returns the receipt. Additional reasoning needs a concrete ambiguity,
+missing prerequisite, unresolved gate or failed operation. A failed receipt is
+an answer, not an instruction to retry or silently stop/repair/start.
+
+### Host-required continuations
+
+- Pi's explicit callback still uses `sendUserMessage`, queued as `followUp` while
+  busy. It supplies the portable host contract and canonical workflow with their
+  absolute source directories; no adapter executes or routes lifecycle commands.
+- Claude Code and Codex load the explicit portable adapter, then any missing host
+  contract/workflow together. They use the same common path, not a second router.
+- Hermes registration still requests `skill_view` for the canonical skill. That
+  discovery/tool boundary is not removed by this change.
+- A host that requires a model request after instruction/tool results still owns
+  those continuations. Relay the safe receipt minimally; do not add another
+  interpretation, validation or prose-polishing pass. Direct tool-result return
+  is conditional on host support, not a new API or a claimed tested capability.
+
+Real observed model-request counts and host-required continuation counts are
+**unknown** for Pi, Claude Code, Codex and Hermes: no live host traces were
+collected. One `sendUserMessage`, a fake response or one helper process is not
+one measured model call. Worker inference and independent review are unchanged,
+not exercised by these fixtures and must be counted separately in live traces.
+
+### Comparable offline boundaries
+
+The Pi fixture matrix in `tests/portable_pi.test.mjs` invokes the real registered
+callback with a fake message sink in both idle and busy contexts. Compared with
+base `ed432d13d9f53348b3a2e9bcc466faf46e7dc93d`, in the same worktree under Node
+22.22.2, each request dispatches once before and after. UTF-8 bytes below count
+only Kit's command message, not system/history/tool wrappers or a full provider
+request. Absolute source-path lengths affect these numbers.
+
+| Literal request | Dispatch bytes before → after | Bytes after required instruction loads before → after |
+| --- | ---: | ---: |
+| bare | 1,316 → 14,110 | 21,004 → 14,110 |
+| `status` | 1,322 → 14,116 | 21,010 → 14,116 |
+| `help` | 1,320 → 14,114 | 21,008 → 14,114 |
+| `setup --dry-run` | 1,331 → 14,125 | 21,019 → 14,125 |
+| `start --dry-run` | 1,331 → 14,125 | 21,019 → 14,125 |
+| `stop --dry-run` | 1,330 → 14,124 | 21,018 → 14,124 |
+| `update --dry-run` | 1,332 → 14,126 | 21,020 → 14,126 |
+| `update --config "/missing literal $(file).toml"` | 1,363 → 14,157 | 21,051 → 14,157 |
+| `start or stop?` | 1,330 → 14,124 | 21,018 → 14,124 |
+
+Dispatch is larger because instructions are supplied up front. The canonical
+workflow is 8,262 rather than 15,912 bytes; branch detail stays in this reference.
+The required extra instruction files drop from two (COMMON and canonical) to
+zero on Pi. That removes the need for model-assisted reads, not two proven model
+requests: a host could batch or cache reads. Shared policy/reference reads needed
+by a concrete case remain possible. Ambiguous input is forwarded literally;
+these tests do not prove that a real model asks the right clarification.
+
+The public CLI receipt fixture in `tests/test_orbi_control.py` uses disposable
+homes, a prepared target, an unrelated deployment and fake external tools. The
+same CLI requests against the base and current helper each use **one helper
+invocation**. External tool subprocess counts before → after are: bare/status
+32 → 32 each; help 0 → 0; setup/start previews 33 → 33 each; stop preview 32 → 32;
+update preview 36 → 36; failed busy update 35 → 35. These are helper-internal
+checks, not model calls or host tool invocations. No checks were removed. Routine
+previews return `planned`; busy update exits nonzero with `update_busy`,
+`mutated: false` and the repair action to request a separately authorized
+stop/drain and verify inactivity. No implicit mutation or retry follows.
+
+The workflow removes routine duplicate host discovery/status probes, help
+lookups, separate setup before absent start, preview-then-apply sequences,
+polling and validation/paraphrase passes. This is an instruction/dispatch
+contract with synthetic boundary evidence, **not a measured live round-trip or
+latency saving**. Live qualification must record actual provider requests,
+host tools, prompt bytes, mandatory continuations and worker inference separately
+for the same authorized success/failure fixtures, without releasing live gates.

@@ -22,6 +22,5 @@ a no-op hunt sentence by sentence. It edits documents only within the accepted s
 keeps every tested contract, and never rewrites pinned upstream bytes or changes what
 a skill is authorized to do.
 
-Report the documents changed, lines before and after, meanings moved or deleted,
-pointers added and the tests you ran. Writing advice is not authority: preserve
-read-only requests, review gates, task state and delivery limits.
+Follow the workflow's mode-specific completion and receipt. Writing advice is not
+authority: preserve read-only requests, review gates, task state and delivery limits.

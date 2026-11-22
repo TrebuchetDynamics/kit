@@ -53,7 +53,7 @@ class PluginTests(unittest.TestCase):
 
     def test_registration_applies_only_the_selected_profile_policy(self):
         self.skill('alpha')
-        for owner in ('kit', 'autowork'):
+        for owner in ('kit',):
             for subtree in ('settings', 'config'):
                 for selected in (None, 'interactive', 'autonomous', 'opt-out', 'existing', 'invalid'):
                     with self.subTest(owner=owner, subtree=subtree, policy=selected):
@@ -95,7 +95,7 @@ class PluginTests(unittest.TestCase):
         self.skill('alpha')
         home = Path(self.temp.name) / 'home'
         existing = {'cron/jobs.json': b'{"paused": true}',
-                    'scripts/autowork-start-notice.py': b'# autowork: historical managed script\n'}
+                    'scripts/existing-notice.py': b'# existing managed script\n'}
         for name, data in existing.items():
             path = home / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,7 +104,7 @@ class PluginTests(unittest.TestCase):
         for name, data in existing.items():
             self.assertEqual((home / name).read_bytes(), data)
         self.assertEqual(sorted(p.name for p in (home / 'scripts').iterdir()),
-                         ['autowork-start-notice.py'])
+                         ['existing-notice.py'])
 
     def test_discovers_new_skills_on_next_registration(self):
         self.skill("alpha")
@@ -152,7 +152,6 @@ class PluginTests(unittest.TestCase):
                 if name != 'alpha':
                     self.assertIn('shared Plan Handoff contract', message)
                     self.assertIn('GitHub Issues are the executable backlog', message)
-                    self.assertNotIn('`autowork tasks`', message)
                 else:
                     self.assertNotIn('executable backlog', message)
 
@@ -176,7 +175,7 @@ class PluginTests(unittest.TestCase):
         self.plugin.register(self.ctx)
         self.assertNotIn('engineering', self.ctx.skills)
         self.assertNotIn('engineering', self.ctx.commands)
-        # Installed beside the skills so links from autowork and Docs Sync resolve.
+        # Installed beside the skills so links from planning and Docs Sync resolve.
         self.assertTrue((Path(self.temp.name) / 'home/skills/engineering/REFERENCE.md').is_file())
 
     def test_gateway_routes_first_command_to_origin_including_topic_and_user(self):
@@ -203,18 +202,6 @@ class PluginTests(unittest.TestCase):
         self.assertIn("allow_gateway_injection", result)
         self.assertIn("not started", result)
 
-    def test_injection_rejection_reads_the_legacy_settings_key(self):
-        self.skill("alpha")
-        self.plugin.register(self.ctx)
-        self.ctx.accept = False
-        config = types.ModuleType("hermes_cli.config")
-        config.read_raw_config = lambda: {
-            'plugins': {'entries': {'autowork': {'allow_gateway_injection': False}}}}
-        with patch.dict(sys.modules, {"hermes_cli.config": config}):
-            result = self.ctx.commands["alpha"]("")
-        self.assertIn("plugins.entries.autowork.allow_gateway_injection", result)
-        self.assertIn("plugins.entries.kit.allow_gateway_injection", result)
-        self.assertIn("is false", result)
 
     def test_removed_skill_is_not_queued(self):
         path = self.skill("alpha")
@@ -258,7 +245,7 @@ class PluginTests(unittest.TestCase):
     def test_removed_skills_absent_but_terminal_maintenance_remains(self):
         self.plugin.SKILLS_DIR = ROOT / 'skills'
         self.plugin.register(self.ctx)
-        for name in ('autowork', 'work', 'pending', 'blockers'):
+        for name in ('work', 'pending', 'blockers'):
             self.assertNotIn(name, self.ctx.commands)
             self.assertNotIn(name, self.ctx.skills)
         self.assertEqual(self.ctx.cli_commands, ['kit'])
@@ -281,8 +268,8 @@ class PluginTests(unittest.TestCase):
         register.assert_not_called()
         self.assertIs(self.manager._cli_commands['kit'], foreign)
         self.assertTrue(any('hermes kit' in line and 'already' in line for line in logs.output))
-        # Reloading our own canonical or transitional plugin keeps normal wiring.
-        for owner in ('kit', 'autowork'):
+        # Reloading our Kit plugin keeps normal wiring.
+        for owner in ('kit',):
             self.manager._cli_commands['kit'] = {'plugin': owner}
             with patch.object(self.ctx, 'register_cli_command') as register:
                 self.plugin.register(self.ctx)
@@ -332,9 +319,9 @@ class PluginTests(unittest.TestCase):
         handler.reset_mock()
         with contextlib.redirect_stderr(io.StringIO()) as error:
             with self.assertRaises(SystemExit) as rejected:
-                parser.parse_args(['autowork', 'doctor'])
+                parser.parse_args(['unknown', 'doctor'])
         self.assertEqual(rejected.exception.code, 2)
-        self.assertIn("invalid choice: 'autowork'", error.getvalue())
+        self.assertIn("invalid choice: 'unknown'", error.getvalue())
         handler.assert_not_called()
 
     def test_repository_skills_are_all_discovered(self):

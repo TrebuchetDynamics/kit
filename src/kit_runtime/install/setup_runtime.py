@@ -1,9 +1,8 @@
 """Native profile readback and gateway activation, invoked after explicit setup."""
 from pathlib import Path
 
-# The plugin's name, plus the legacy name a profile still reports mid-upgrade.
 PLUGIN_NAME = 'kit'
-OWNER_NAMES = (PLUGIN_NAME, 'autowork')
+OWNER_NAMES = (PLUGIN_NAME,)
 
 
 def bundled_skill_fallbacks(inventory):

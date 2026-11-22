@@ -23,8 +23,7 @@ Issues → Orbi/Pi implementation and tests → PR, independent review and merge
 
 **Orbi remains paused and live-unqualified** pending the
 [pilot and cutover gates](docs/github-native.md#cutover). Installing Kit or publishing
-an issue does not authorize activation. `pi-autowork` is retired and unsupported;
-[preserve existing work and recovery evidence](#the-runner-autowork), never restart it.
+an issue does not authorize activation. Preserve existing work and recovery evidence.
 
 ## Install
 
@@ -82,8 +81,6 @@ codex plugin marketplace add TrebuchetDynamics/kit --ref main
 codex plugin add kit@kit-marketplace
 ```
 
-Existing Autowork marketplace registrations require [manual migration](docs/cross-host.md#legacy-marketplace-migration); the suite installer does not migrate them.
-
 ### Paseo
 
 Use Kit skills inside a Paseo-hosted Pi, Claude Code or Codex session.
@@ -109,9 +106,8 @@ hermes plugins enable kit
 hermes kit doctor --core
 ```
 
-Fresh Hermes installs use `plugins/kit` and enable `kit`. Verified legacy physical
-slots are retained for safe update discovery, not supported Autowork operation;
-[duplicate/foreign registrations block setup](docs/installation.md#install).
+Fresh Hermes installs use `plugins/kit` and enable `kit`.
+[Duplicate/foreign registrations block setup](docs/installation.md#install).
 
 The opt-out does not undo prior changes or stop full setup from configuring
 external integrations. Existing memory providers and stores are preserved.
@@ -148,7 +144,6 @@ smoke check **you perform**, not an outcome established by automated tests. Cont
 with the [core-only interview](docs/onboarding.md#core-only-requirements-interview) or
 the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-task).
 
-<a id="autowork-flow"></a>
 ## GitHub-native development flow
 
 1. **Plan:** `/plan-with-me` resolves missing intent; `/plan-for-me` investigates and
@@ -188,16 +183,23 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | `help` | Read-only action reference, without a repository or deployment. |
 | `setup` | Prepare source/configuration without scheduling or timer activation. |
 | `start` | Prepare if absent, then activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
-| `update` | Stop owned timers and interrupt owned workers (bounded systemd stop), sync/pin/check the newest official release, then restart eligible scheduling in the same invocation. No extra flag or confirmation; independent operator pauses and startup gates remain. It is not `/update-kit`. |
+| `update` | Advance one stopped and drained deployment to the newest official release. Explicit `update --stop` authorizes pausing owned timers first, defers while workers finish and leaves scheduling stopped; unit refresh waits for the next authorized start. It is not `/update-kit`. |
 | `stop` | Disable owned timers without killing active workers; report draining while they finish. |
 
 Linux supports lifecycle changes. macOS supports status and help only.
 Never run bare `orbi` to inspect: it runs a Runner tick, not status.
-Use `/orbi update --dry-run` to preview interruption/update/restart without writes.
-Failures name the failed stage, actual scheduler and exact recovery command; preserve
-worktrees/run records and repair the cause before deliberately retrying. No engine
-restarts before validation. Already paused deployments stay stopped; their unit
-refresh waits for the next authorized `start`.
+
+To authorize a deployment pause and update in one command (no extra prompt):
+
+```text
+/orbi update --stop --dry-run
+/orbi update --stop
+```
+
+Active workers finish naturally. A `draining` receipt names pending units and the
+exact command to retry after drain; no background update or restart follows.
+Plain `update` still refuses busy deployments. The `--stop` path never enables
+timers, interrupts services or runs activating unit installation.
 
 The upstream CLI remains available for diagnostics:
 
@@ -272,10 +274,26 @@ git clone https://github.com/TrebuchetDynamics/kit && cd kit
 ./install.sh --only pi,tx --dry-run
 ```
 
+Normal `./install.sh` and `./install.sh update` runs first require a successful
+`git pull --ff-only` from the checkout's configured upstream. Staged, unstaged and
+non-ignored untracked changes are saved with `git stash push --include-untracked`
+before pulling; ignored files stay in place. The installer immediately prints the
+stash's full object ID and a shell-quoted `git -C <checkout> stash apply --index <object-id>`
+command, even with `--quiet`. Keep that command for manual recovery: it still targets
+the same stash after newer stashes are added. Kit never applies or removes the stash,
+even after success. If edits were stashed or HEAD advanced, the on-disk installer is
+re-executed once before installing.
+
+A Git checkout without a usable upstream, or a status/stash/pull failure (including
+diverged history), stops before any component install or service restart. Resolve
+the reported Git error or configure the tracking branch, then retry; any created
+stash remains available for manual recovery. Unpacked non-Git releases still work.
+`--no-pull` or `KIT_INSTALL_NO_PULL=1` explicitly installs the checkout as-is without
+stashing or pulling. `--help`, `--list` and `--dry-run` never stash or pull.
+
 `--full` (`--all`) and `--verbose` (`-v`) are the defaults. Missing hosts other than
 Pi are skipped, while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
-installs nothing. The old `autowork` installer component is removed.
-Install/update restarts active host integrations, never legacy Autowork runners;
+installs nothing. Install/update restarts active supported host integrations;
 paused/stopped services stay untouched.
 See [restart scope and failure handling](docs/installation.md#full-suite-from-a-checkout).
 Hermes still runs its complete fleet setup and its own dependency and
@@ -371,35 +389,15 @@ The executor plugin is removed. Paseo remains a host for ordinary Kit agent
 sessions. Use GitHub and Orbi diagnostics for delivery status; historical plugin
 checks do not qualify the new delivery system.
 
-<a id="the-runner-autowork"></a>
-## Retired executor and compatibility names
-
-**`pi-autowork` is retired and unsupported. Its executor, CLI and Paseo plugin
-are removed. Do not develop, repair, reinstall or restart them.** Contributors and
-agents working from older branches must stop executor work and reconcile any
-still-required outcome into GitHub Issues for Orbi; do not discard their changes.
-Existing task records, worktrees and attempts/recovery evidence are preserved,
-not executed. Historical contracts and
-unresolved qualification are available at the
-[immutable pre-removal revision](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork).
-This is evidence, not an installation fallback. Hermes terminal maintenance uses
-`hermes kit`. The obsolete `hermes autowork` command has no alias or redirect.
-Fresh portable installs use Kit marketplace identities;
-[legacy marketplace migration](docs/cross-host.md#legacy-marketplace-migration) is manual.
-Use GitHub Issues/PRs and read-only Orbi diagnostics for delivery status.
-
-Preserve task data, attempts, worktrees and recovery state. Orbi stays paused
-until separately qualified.
-
 ## Your work queue
 
 GitHub Issues are the only executable backlog. Each issue names its outcome,
 scope, exclusions, acceptance, exact verification and governing sources. Native
 GitHub dependencies own ordering; epics coordinate larger plans without execution.
 Merged PRs, checks, reviews and GitHub history preserve delivery evidence.
+Preserve task data, attempts, worktrees and recovery state.
 
-See [Plan Handoff](skills/shared/PLAN-HANDOFF.md) and the
-[legacy migration guide](skills/shared/TODO-WORKCENTER.md). There is no local-main
+See [Plan Handoff](skills/shared/PLAN-HANDOFF.md). There is no local-main
 task-store admission step and no synchronization with `tasks/`.
 
 ## Safety before installing
@@ -438,23 +436,6 @@ does not mean a gateway is running the new code; inspect the printed receipt for
 pending activation. Old profile skills require an authorized normal update and reload;
 source deletion or reinstall alone does not retire preserved native copies.
 
-<details>
-<summary><strong>Migrating from hermes-toolset</strong></summary>
-
-### Renamed from hermes-toolset
-
-This project was called hermes-toolset before 0.3.0, and its plugin was called
-`autowork` until the Kit rename. There is no executable compatibility alias:
-the command namespace is `kit:` and the settings key is
-`plugins.entries.kit`. Settings under `plugins.entries.autowork` keep being read for
-one release, so an opt-out you already set still applies. For Hermes,
-[update the verified existing installation](docs/installation.md#update-all-profiles)
-without creating a second copy or deleting recovery state. Source delivery alone
-does not adopt a release into an installed profile or activate running hosts.
-Preserve existing job state; do not rewire legacy Autowork cron execution for new work.
-
-</details>
-
 ## What verification proves
 
 | Host | Evidence and limits |
@@ -463,7 +444,6 @@ Preserve existing job state; do not rewire legacy Autowork cron execution for ne
 | Claude Code | Plugin validation and an earlier isolated install are recorded; no live model workflow is demonstrated in that record. |
 | Codex | Earlier isolated installation and skill discovery, plus portable-package checks; the current package still needs renewed native/live qualification. |
 | Hermes | Offline tests, native registration/integration checks and gateway activation receipts. Live model behavior and Telegram delivery require separate live checks. |
-| Paseo | The executor plugin is removed. Its [prior qualification record](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork/integrations/paseo/docs/qualification.md) does not qualify Orbi; physical-client/live-control gaps remain historical evidence, not success claims. |
 
 Package contents have changed since some isolated-install runs. The
 [cross-host verification record](docs/cross-host.md#behavior-and-verification) names the
@@ -481,9 +461,9 @@ more effort improving the toolset than building products with it, and take
 explicit autonomous policy and retained permissive profile settings seriously.
 The next step is a 30-day evaluation on real repositories with controlled permissions — tasks completed without intervention,
 regressions, owner attention, cost per verified task, time to merge and crash recovery.
-Measure the new loop through GitHub history and Orbi diagnostics. The earlier
-[Autowork assessment](docs/evaluation.md) remains historical context, not evidence
-that the Orbi pilot or fleet is qualified.
+Measure the new loop through GitHub history and Orbi diagnostics. The
+[evaluation requirements](docs/evaluation.md) do not establish that the Orbi pilot
+or fleet is qualified.
 
 ## Documentation
 

@@ -206,8 +206,8 @@ its own suites: the hook now prints the load average and cpu count when it refus
 so the failure can be attributed instead of bypassed. Run one failing module alone
 before you treat the tree as broken; a second failure there is the tree's.
 
-CI retains the `fast` and `runner` check contexts; runner-named shards now run
-maintained native tests, not the removed executor. Inspect
+CI runs the offline Python suite across three parallel `runner` shards. The
+`fast` check runs the plugin syntax and Pi adapter tests alongside them. Inspect
 [the workflow](../.github/workflows/test.yml) for its current inventory. Live
 Telegram delivery and model execution require separate qualification.
 
@@ -295,14 +295,12 @@ receipt and activation/transport evidence before making those live claims.
 
 The task CLI and executor tests are removed. Existing task records remain
 read-only migration evidence; do not validate by installing the old executor or
-rewrite records to make a check green. See [migration](../skills/shared/TODO-WORKCENTER.md).
+rewrite records to make a check green. See [migration](../skills/shared/PLAN-HANDOFF.md).
 
 ## Paseo plugin checks
 
-The executor plugin and its build/test pipeline are removed. The
-[previous qualification record](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork/integrations/paseo/docs/qualification.md)
-retains physical-client and control gaps; those checks do not qualify Orbi or
-ordinary Paseo-hosted Kit sessions.
+Paseo-hosted Kit sessions and Orbi delivery require separate live qualification;
+offline checks do not establish physical-client or live-control acceptance.
 
 ## Portable package checks
 
@@ -311,7 +309,7 @@ The Pi Node tests cover command registration, literal arguments, queued messages
 and packaged support files. CI uses Node 22 for those tests. See
 [cross-host installation and verification](cross-host.md) for tested client versions
 and disposable-home installation checks. Package discovery does not prove model
-execution or completion of an Autowork task. Required model-driven qualification
+execution or completion of a delivery task. Required model-driven qualification
 remains separate from package discovery and needs explicit scope and real evidence.
 
 ## Qualification boundaries

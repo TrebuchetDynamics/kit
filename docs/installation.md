@@ -1,7 +1,7 @@
 # Installation and profile effects
 
-> **GitHub-native delivery:** The pi-autowork executor, CLI, plugin and installer
-> component are removed. Preserve existing task data, attempts, worktrees and
+> **GitHub-native delivery:** GitHub Issues own executable work; Orbi owns delivery.
+> Preserve existing task data, attempts, worktrees and
 > recovery evidence. Orbi remains paused and live-unqualified; see
 > [setup and migration](github-native.md).
 
@@ -97,10 +97,10 @@ marketplace/plugin changes. Owned canonical sources are reused without removal o
 re-addition; Claude updates preserve installed scope, while Codex snapshot upgrades
 leave an installed plugin's effective enablement/scope alone. Legacy/coexisting,
 foreign, unknown or stale sources hold that component for
-[manual migration or host qualification](cross-host.md#legacy-marketplace-migration).
+manual ownership reconciliation or host qualification.
 No registry/settings rewrite or cache uninstall is attempted. Codex requires
 `plugin marketplace list --json` and filtered `plugin list --marketplace NAME --json`
-for both names; Claude requires `plugin list --json`. Missing interfaces or invalid
+for the Kit marketplace; Claude requires `plugin list --json`. Missing interfaces or invalid
 output fail closed. Codex lists show effective configuration, not all persisted
 scopes. CLI initialization may write cache/auth state; these are not read-only
 probes. Availability detection does not start host CLIs or change settings.
@@ -169,7 +169,7 @@ Successful components remain installed; retry just Hermes with
 
 Every nonempty install/update ends with a restart phase, even when files are
 unchanged or a component failed. It restarts active supported Hermes/Kit host
-integrations, never legacy Autowork runners. Stopped/paused services and unrelated
+integrations only. Stopped/paused services and unrelated
 host services stay untouched. Failures are reported and make installation fail.
 Hosts without Linux user systemd report restarts unavailable. Preview/list/menu
 cancellation perform no restarts. `--no-reload` only defers Hermes setup wiring;
@@ -298,7 +298,7 @@ steps; see [GitHub-native setup](github-native.md#one-repository-per-deployment)
 
 ### Removed runner installation
 
-There is no `autowork` installer component or private runner bootstrap. Existing
+There is no private runner bootstrap. Existing
 private Pi directories, credentials, task data and recovery state must not be
 removed as package cleanup. They are not shared with Orbi automatically. See
 [cutover and qualification](github-native.md#cutover).
@@ -350,15 +350,11 @@ check returns nonzero and reports setup as incomplete.
 
 Fresh native/source installs and isolated registration probes use `plugins/kit`
 and enable `kit`; setup finalizes through `hermes -p PROFILE kit finalize`.
-Setup reuses a canonical link or a verified `plugins/autowork` link to the selected
-checkout **when its manifest already declares Kit**. Source setup requires the
-`timeout` executable and bounds each Kit enablement to 120 seconds; a timeout
-reports incomplete setup, not successful activation. A supported old Autowork
-manifest is migration input for an authorized normal update, not a plugin that
-fresh setup enables. Managed clones under either physical name route to the updater,
-not a second linked installation.
+Source setup requires the `timeout` executable and bounds each Kit enablement to
+120 seconds; a timeout reports incomplete setup, not successful activation.
+Duplicate or foreign registrations require ownership reconciliation, not a second installation.
 
-Both slots are checked before setup mutates components. Two registrations refuse,
+Registrations are checked before setup mutates components. Duplicate registrations refuse,
 even if they resolve to the same source; missing/malformed manifests and foreign
 sources also hold with path/source diagnostics. Preserve both paths and private
 state, reconcile the reported registration/ownership with its owner, then repeat
@@ -408,14 +404,6 @@ then restore desired values. The opt-out takes precedence over either policy:
 it writes no approval, turn, gateway-injection or skill-list policy, but still
 maintains the bundle's Telegram menu entries. It does not undo earlier changes.
 
-**Renamed from Autowork to Kit.** Both settings are also read under the legacy
-`plugins.entries.autowork` key for one release. `settings` takes precedence over
-legacy `config`; within either subtree, `kit` wins per key and missing keys fall
-back to `autowork`. Existing opt-outs remain effective. Writes use `kit`. A legacy
-entry, alone or alongside `kit`, produces a once-per-runtime warning:
-`Migrated settings lookup from plugins.entries.autowork to plugins.entries.kit`.
-This reports compatibility lookup, not a physical config migration; the legacy
-entry is retained.
 Setup, including `--bundle-only`, honors the same opt-out: it skips the approval,
 gateway-injection and skill-disable-list settings for that profile and says so in
 its preview.
@@ -535,13 +523,10 @@ Back up configurations first and review [removal and recovery](uninstall.md).
 Updating this page: reconcile changes to setup flags, profile discovery, runtime
 policy writes and native provisioning against the source links above.
 
-<a id="upgrade-to-autowork"></a>
 ## Migrate from the retired executor
 
-pi-autowork is retired and unsupported. Do not reinstall its executor, CLI, TUI or
-Paseo plugin, or update consumers to its removed task/readiness interfaces.
-Kit planning publishes GitHub Issues for Orbi. Existing Hermes maintenance command
-names remain supported compatibility surfaces, not executor entrypoints.
+Kit planning publishes GitHub Issues for Orbi. Preserve existing task data,
+attempts, worktrees and recovery evidence.
 
 Existing jobs, IDs, schedules, pause state, execution history and private profile
 state are preserved. Do not rewire legacy executor jobs or create new timers as
@@ -728,8 +713,7 @@ checkouts. A shallow checkout gets one trusted fetch with at most 1,000 addition
 history levels; if negative ancestry remains shallow, recovery defers rather than
 assuming a rewrite. Equal/fast-forward updates retain their normal path.
 
-Automatic recovery requires a same-user standalone `plugins/kit` checkout (or a
-verified retained `plugins/autowork` physical slot),
+Automatic recovery requires a same-user standalone `plugins/kit` checkout,
 the expected plugin identity, a native `plugins/.install-metadata.json` record
 bound to the trusted upstream, and HEAD matching its saved installed revision or
 a trusted tracking tip captured **before fetch**. A clean tree or matching URL

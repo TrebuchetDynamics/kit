@@ -33,10 +33,9 @@ own authorization; specific no-write/no-commit restrictions always take preceden
 
 For task operations, load the [GitHub issue contract](PLAN-HANDOFF.md).
 All issues default to `ai-ready`, regardless of author. Preserve explicit pauses,
-incomplete planning, native dependencies and actual ownership. The
-[legacy task store](TODO-WORKCENTER.md) is migration-only; older linked instructions
-to write local tasks, acquire legacy leases or start Autowork are superseded here.
-Never fall back to that executor when GitHub or Orbi is unavailable.
+incomplete planning, native dependencies and actual ownership. GitHub Issues and
+Orbi are the only executable backlog and delivery executor. Never create a second
+queue or executor when GitHub or Orbi is unavailable.
 
 Inspect status and preserve pre-existing edits, untracked files and live ownership.
 Use [worktree isolation](WORKTREE-ISOLATION.md) when a separate writing checkout

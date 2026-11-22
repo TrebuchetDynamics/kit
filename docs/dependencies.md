@@ -63,11 +63,6 @@ versions. Native scans remain enabled; blocked imports mean incomplete setup.
 
 ## Removed executor dependencies
 
-The pi-autowork Python/Rust executors, TUI/web dependencies and Paseo plugin no
-longer ship. Their [prior dependency and licensing record](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/dependencies.md#rust-autowork-candidate)
-remains evidence for retained installations, not a build/install recipe for Kit.
-This removal does not change ordinary host dependencies.
-
 ## Updating
 
 Review changes to the source inventory, defaults, manifest and vendored hashes.

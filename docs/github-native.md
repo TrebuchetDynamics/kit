@@ -24,12 +24,10 @@ qualifies live delivery; its existing pause and live-qualification limits remain
 
 ## Support boundary
 
-`pi-autowork` is retired and unsupported, not a fallback or an active redesign.
-Do not develop, repair, reinstall, restart or restore its executor, CLI or Paseo
-plugin. Contributors with older assignments must stop executor work, preserve
+GitHub Issues are the only executable backlog and Orbi owns delivery. Preserve
 uncommitted changes and recovery evidence, and reconcile still-required outcomes
-into GitHub Issues. Historical plans and research do not authorize new executor
-work or cancel unresolved product acceptance.
+into GitHub Issues. Historical plans and research do not authorize a second executor
+or cancel unresolved product acceptance.
 
 Kit keeps `/plan-with-me` and `/plan-for-me`: both publish issue-based plans under
 the same handoff contract. Orbi is the separate delivery project, not a renamed
@@ -131,12 +129,11 @@ Do not use this helper to overwrite an existing edited issue.
    workers. Installed-executor removal must verify legacy processes stopped and
    registrations removed, while preserving recovery evidence. Do not reinstall the
    removed CLI to inspect state. Do not stop unrelated gateways.
-2. The pi-autowork executor, source, CLI, Paseo plugin and installer component are
-   removed. Ordinary Kit/Pi/Hermes/Claude/Codex functionality remains. Source removal
-   alone does not prove host service removal; report actual host inventory separately.
+2. Report actual host inventory separately; source changes alone do not prove host
+   service removal. Ordinary Kit/Pi/Hermes/Claude/Codex functionality remains.
    **Orbi remains paused and live-unqualified.** Removal does not authorize enabling it.
 3. Reconcile unfinished local tasks against open/closed issues, PRs and merged
-   evidence, following the [migration guide](../skills/shared/TODO-WORKCENTER.md).
+   evidence, following [Plan Handoff](../skills/shared/PLAN-HANDOFF.md).
    Preserve legacy IDs and immutable sources. Never redispatch completed or owned
    work. Do not synchronize two queues or prune worktrees as part of migration.
 4. Pilot one repository only after ownership is settled. Verify actual issue pickup,
@@ -400,14 +397,9 @@ The original requirements are retained through immutable Git sources, not a new
 completed-task archive. Reconcile still-required outcomes into GitHub Issues
 without recreating the executor, duplicating finished work or losing source proof:
 
-- [Recovery, integration and independent-worker acceptance](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/2026-10-16-pi-autowork-coordinator.md)
-  and [safe landing/worktree ownership](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/2026-10-17-runner-landing-and-worktrees.md).
 - [Planning authority and preservation of accepted intent](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/planning-authority-2026-11-01.md)
   and [decision/blocker coverage](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/decision-blocker-coverage.md).
-- [Interface freshness and physical-client qualification](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/tui-responsiveness.md)
-  and [Paseo qualification gaps](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork/integrations/paseo/docs/qualification.md).
-- [State-preserving uninstall requirements](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/autowork-uninstall-retirement.md)
-  and the [remaining original plan contracts](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans).
+
 
 These sources establish prior intent/evidence only. Preserve their still-applicable
 human/live gates and unresolved proof, while the new pilot and fleet stay paused.

@@ -98,7 +98,7 @@ class PreflightTests(unittest.TestCase):
             home = Path(tmp)
             (home / 'skills/docs-sync').mkdir(parents=True)
             (home / 'plugins').mkdir()
-            (home / 'plugins/autowork').write_text('owned')
+            (home / 'plugins/kit').write_text('owned')
             before = sorted(str(p) for p in home.rglob('*'))
             report = self.check(home)
             self.assertTrue(report['errors'])
@@ -109,7 +109,7 @@ class PreflightTests(unittest.TestCase):
             ('', 'interactive', 'manual', 90),
             ('plugins:\n  entries:\n    kit:\n      settings:\n        runtime_policy: autonomous\n',
              'autonomous', 'off', 'unlimited'),
-            ('plugins:\n  entries:\n    autowork:\n      config:\n        runtime_policy: autonomous\n',
+            ('plugins:\n  entries:\n    kit:\n      config:\n        runtime_policy: autonomous\n',
              'autonomous', 'off', 'unlimited'),
             ('approvals:\n  mode: smart\nagent:\n  max_turns: 37\n', 'interactive', 'smart', 37),
             ('plugins:\n  entries:\n    kit:\n      settings:\n        runtime_policy: unknown\n',
@@ -137,13 +137,12 @@ class PreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             plan = '\n'.join(self.check(Path(tmp))['plan'])
         self.assertIn('plugins.entries.kit.allow_gateway_injection', plan)
-        self.assertNotIn('plugins.entries.autowork.allow_gateway_injection', plan)
 
     def test_plan_reports_runtime_defaults_opt_out(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             (home / 'config.yaml').write_text(
-                'plugins:\n  entries:\n    autowork:\n      settings:\n        apply_runtime_defaults: false\n')
+                'plugins:\n  entries:\n    kit:\n      settings:\n        apply_runtime_defaults: false\n')
             report = self.check(home)
             self.assertEqual(report['errors'], [])
             plan = '\n'.join(report['plan'])
@@ -183,8 +182,8 @@ class PreflightTests(unittest.TestCase):
                 self.assertTrue(pre.runtime_check(ROOT, Path(tmp), [], True))
 
 
-class PluginSettingsDualReadTests(unittest.TestCase):
-    """The runtime reads either settings key and writes only the canonical one."""
+class PluginSettingsTests(unittest.TestCase):
+    """The runtime reads and writes only Kit settings."""
 
     def setUp(self):
         self.policy = module('runtime_defaults')
@@ -192,52 +191,16 @@ class PluginSettingsDualReadTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / 'config.yaml'
 
-    def test_legacy_only_profiles_keep_their_opt_out_approvals_and_menu(self):
-        self.path.write_text(
-            'approvals:\n  mode: manual\n'
-            'plugins:\n  entries:\n    autowork:\n      settings:\n        apply_runtime_defaults: false\n')
-        with self.assertLogs(self.policy.logger, level='WARNING') as logs:
-            self.assertTrue(self.policy.setup_opted_out(self.path))
-            raw = yaml.safe_load(self.path.read_text())
-            patch = self.policy.opted_out_settings(raw)
-            entry = self.policy.plugin_entry(raw)
-        self.assertEqual(len(logs.output), 1)
-        self.assertIn('Migrated settings lookup from plugins.entries.autowork', logs.output[0])
-        self.assertIn('writes use plugins.entries.kit', logs.output[0])
-        self.assertEqual(raw['approvals']['mode'], 'manual')
-        self.assertNotIn('approvals', patch)
-        priority = patch['platforms']['telegram']['extra']['command_menu']['priority']
-        self.assertIn('plan_with_me', priority)
-        for retired in ('autowork', 'work', 'pending', 'blockers'):
-            self.assertNotIn(retired, priority)
-        self.assertEqual(entry.get('settings'), {'apply_runtime_defaults': False})
+    def test_other_entry_settings_are_ignored_without_mutation(self):
+        raw = {'plugins': {'entries': {'unrelated': {
+            'settings': {'apply_runtime_defaults': False, 'runtime_policy': 'autonomous'},
+            'allow_gateway_injection': False}}}}
+        before = json.dumps(raw, sort_keys=True)
+        self.assertEqual(self.policy.plugin_entry(raw), {})
+        self.assertEqual(self.policy.runtime_policy(raw), 'interactive')
+        self.assertFalse(self.policy._opted_out(raw))
+        self.assertEqual(json.dumps(raw, sort_keys=True), before)
 
-    def test_canonical_key_wins_when_both_entries_exist(self):
-        cases = ((False, True, False), (True, False, True))
-        for legacy, canonical, expected in cases:
-            with self.subTest(legacy=legacy, canonical=canonical):
-                self.path.write_text(
-                    'plugins:\n  entries:\n'
-                    f'    autowork:\n      settings:\n        apply_runtime_defaults: {str(legacy).lower()}\n'
-                    f'    kit:\n      settings:\n        apply_runtime_defaults: {str(canonical).lower()}\n'
-                    f'      allow_gateway_injection: {str(canonical).lower()}\n')
-                raw = yaml.safe_load(self.path.read_text())
-                self.assertEqual(self.policy.setup_opted_out(self.path), expected)
-                self.assertEqual(self.policy.plugin_entry(raw)['allow_gateway_injection'], canonical)
-
-    def test_mixed_profile_falls_back_to_the_legacy_entry_per_key(self):
-        self.path.write_text(
-            'plugins:\n  entries:\n'
-            '    autowork:\n'
-            '      settings:\n        apply_runtime_defaults: false\n'
-            '      custom_setting: [sample-skill]\n'
-            '    kit:\n      allow_gateway_injection: true\n')
-        raw = yaml.safe_load(self.path.read_text())
-        self.assertTrue(self.policy.setup_opted_out(self.path))
-        entry = self.policy.plugin_entry(raw)
-        self.assertIs(entry['allow_gateway_injection'], True)
-        self.assertEqual(entry['settings'], {'apply_runtime_defaults': False})
-        self.assertEqual(entry['custom_setting'], ['sample-skill'])
 
     def test_runtime_policy_preserves_external_memory_and_disabled_skills(self):
         raw = {'memory': {'provider': 'custom', 'settings': {'mode': 'manual'}},
@@ -273,7 +236,6 @@ class PluginSettingsDualReadTests(unittest.TestCase):
         self.assertEqual(patch['approvals']['mode'], settings['approvals_mode'])
         self.assertEqual(patch['plugins']['entries']['kit']['allow_gateway_injection'],
                          settings['allow_gateway_injection'])
-        self.assertNotIn('autowork', patch['plugins']['entries'])
 
 
 class RuntimeFactsTests(unittest.TestCase):
@@ -360,7 +322,7 @@ class ConfigProbeTests(unittest.TestCase):
                 self.assertEqual(list(Path(tmp).iterdir()), [path])
 
     def test_empty_sections_hermes_treats_as_absent_are_accepted(self):
-        for config in ('memory:\n  # provider: existing\nplugins:\n  enabled: [autowork]\n',
+        for config in ('memory:\n  # provider: existing\nplugins:\n  enabled: [kit]\n',
                        'plugins:\n  entries:\n    foo:\n',
                        'plugins:\n  entries:\n', 'plugins:\napprovals:\nskills:\n',
                        '\ufeffmemory: {}\n'):

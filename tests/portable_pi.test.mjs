@@ -126,13 +126,28 @@ test('Orbi dispatch forwards lifecycle arguments and queues in a busy session', 
   const {fileURLToPath} = await import('node:url');
   const adapterFile = new URL('../adapters/skills/orbi/SKILL.md', import.meta.url);
   const adapter = await readFile(adapterFile, 'utf8');
+  const workflowFile = new URL('../skills/orbi/SKILL.md', import.meta.url);
+  const workflow = await readFile(workflowFile, 'utf8');
+  const hostFile = new URL('../adapters/skills/COMMON.md', import.meta.url);
+  const host = await readFile(hostFile, 'utf8');
   for (const raw of [
+    '', 'status', 'help', 'setup --dry-run', 'start --dry-run',
+    'stop --dry-run', 'update --dry-run',
+    'update --config "/missing literal $(file).toml"', 'start or stop?',
     'setup --dry-run --json\n--repo-dir "/tmp/checkout $(literal)"; no push',
     'start --dry-run --harness pi --pi-providers "/tmp/models $(literal).json" --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
   ]) {
     for (const idle of [true, false]) {
+      const before = messages.length;
       await commands.get('orbi').handler(raw, {isIdle: () => idle});
       const [message, delivery] = messages.at(-1);
+      // One dispatch is NOT a measured model request. The real host owns inference.
+      assert.equal(messages.length - before, 1);
+      for (const [body, source] of [[workflow, workflowFile], [host, hostFile]]) {
+        assert.equal(message.split(body).length - 1, 1, `supplied once: ${source}`);
+        assert.equal(message.includes(`Source: ${fileURLToPath(source)}\n`), true);
+        assert.equal(message.includes(`Resolve its references from ${fileURLToPath(new URL('./', source))}.`), true);
+      }
       assert.equal(message.includes(adapter), true);
       assert.equal(message.includes('../../../skills/orbi/SKILL.md'), true);
       assert.equal(message.includes(`Resolve the workflow references from ${fileURLToPath(new URL('./', adapterFile))}.`), true);
@@ -200,13 +215,13 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     await rm(source, {recursive: true, force: true});
   }
   const paths = new Set(packed.files.map(f => f.path));
-  for (const name of ['autowork', 'work', 'pending', 'blockers'])
+  for (const name of ['work', 'pending', 'blockers'])
     for (const root of ['skills', 'adapters/skills'])
       assert.equal([...paths].some(p => p.startsWith(`${root}/${name}/`)), false);
   assert.equal(paths.has('adapters/skills/grill-me/SKILL.md'), false);
   assert.equal(paths.has('adapters/skills/grill-me/PROTOCOL.md'), true);
   assert.equal([...paths].some(p => p.includes('__pycache__') || p.endsWith('.pyc')), false);
-  assert.equal([...paths].some(p => p.startsWith('pi-autowork/') || p.startsWith('src/')), false);
+  assert.equal([...paths].some(p => p.startsWith('src/')), false);
   assert.equal(paths.has('paseo-plugin.json'), false);
   assert.equal([...paths].some(p => p.startsWith('Src/')), false);
   for (const path of ['adapters/pi.mjs', 'adapters/skills/COMMON.md',
@@ -251,13 +266,11 @@ test('installed archive resolves portable references and commands without checko
       catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
     // Even accidental executor/native files in a source checkout must stay out of npm.
-    await mkdir(join(source, 'pi-autowork/pi_autowork'), {recursive: true});
-    await writeFile(join(source, 'pi-autowork/pi_autowork/fixture.py'), 'raise RuntimeError("retired executor")\n');
     await mkdir(join(source, 'src/kit_runtime'), {recursive: true});
     await writeFile(join(source, 'src/kit_runtime/private.py'), 'raise RuntimeError("native payload")\n');
     const archive = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--offline', '--json', '--pack-destination', scratch],
       {cwd: source, encoding: 'utf8'}))[0];
-    assert.equal(archive.files.some(f => f.path.startsWith('pi-autowork/') || f.path.startsWith('src/')), false);
+    assert.equal(archive.files.some(f => f.path.startsWith('src/')), false);
     execFileSync('tar', ['-xzf', join(scratch, archive.filename), '-C', scratch]);
     const installed = join(scratch, 'package');
     const foreign = join(scratch, 'unrelated cwd');
@@ -338,6 +351,10 @@ test('installed archive resolves portable references and commands without checko
       assert.equal(installedAdapter.includes(forbidden), false, forbidden);
     }
     const canonicalOrbi = await readFile(join(installed, 'skills/orbi/SKILL.md'), 'utf8');
+    await commands.get('orbi').handler('update --dry-run', {isIdle: () => true});
+    assert.equal(messages.at(-1)[0].includes(canonicalOrbi), true);
+    assert.equal(messages.at(-1)[0].includes(await readFile(join(installed, 'adapters/skills/COMMON.md'), 'utf8')), true);
+    assert.equal(messages.at(-1)[0].includes(`Source: ${join(installed, 'skills/orbi/SKILL.md')}\n`), true);
     await readFile(join(installed, 'skills/orbi/references/lifecycle.md'));
     await readFile(join(installed, 'skills/orbi/scripts/orbi_control.py'));
     assert.match(canonicalOrbi, /<this-skill>\/scripts\/orbi_control\.py/);
@@ -353,7 +370,7 @@ test('removed skills are neither commands nor discoverable resources; blockers i
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
   const {existsSync} = await import('node:fs');
-  for (const name of ['autowork', 'work', 'pending', 'blockers']) {
+  for (const name of ['work', 'pending', 'blockers']) {
     assert.equal(commands.has(name), false, name);
     for (const root of ['skills', 'adapters/skills'])
       assert.equal(existsSync(new URL(`../${root}/${name}/`, import.meta.url)), false, `${root}/${name}`);

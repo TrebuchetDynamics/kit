@@ -141,7 +141,7 @@ See [linked profiles](installation.md#linked-profiles-and-pinned-clones).
 
 Source installs link each profile to the checkout. Restore it at the same path,
 or preserve and reconcile the exact dangling plugin slot reported by the diagnostic
-(`plugins/kit` for fresh installs, or a retained `plugins/autowork` slot). Remove
+(`plugins/kit` for fresh installs). Remove
 only that verified dangling link before rerunning setup from the new location;
 setup and update refuse dangling links and duplicate registrations. See
 [update or remove](onboarding.md#update-or-remove).

@@ -2,7 +2,7 @@
 
 Kit supplies coding-agent skills and optional native Hermes integration.
 GitHub Issues own executable work; Orbi is the delivery successor, still paused
-and live-unqualified. The pi-autowork executor and Paseo plugin are removed.
+and live-unqualified.
 This document specifies current product contracts and accepted planned directions,
 not a delivery ledger. Operator procedures belong in [installation](installation.md),
 [cross-host setup](cross-host.md) and [removal/recovery](uninstall.md); current work
@@ -14,6 +14,7 @@ Dated headings remain stable requirement anchors, not claims of fresh qualificat
 Status: Accepted
 
 - Plan With Me asks for consequential missing intent and saves accepted decisions.
+- User-visible changes use [lightweight behavior specs](adr/0001-lightweight-behavior-specs.md); GitHub Issues remain the executable backlog.
 - Plan For Me investigates, chooses supported approaches and records executable
   GitHub Issues. An explicit objective keeps planning focused; a bare or vague request
   starts evidence-based discovery without inventing product direction.
@@ -104,7 +105,7 @@ Command collisions preserve the existing owner ([rules](workflows.md#commands)).
 
 GitHub Issues, native dependencies and PR/check/review evidence own execution.
 Existing local tasks, attempts and recovery state are preserved migration inputs,
-not a second queue. Follow [migration](../skills/shared/TODO-WORKCENTER.md).
+not a second queue. Follow [Plan Handoff](../skills/shared/PLAN-HANDOFF.md).
 No store cleanup, setup preview or source change proves live qualification.
 
 ## Data and trust boundaries
@@ -492,15 +493,6 @@ active consumers and genuine pauses. Files updated is not running-code activatio
 External-memory provisioning and catalog trimming are not Kit responsibilities.
 Preserve existing providers, disabled-skill settings and stores.
 
-## Parallel Autowork (2026-10-15)
-
-The executor implementation/operating direction is superseded by removal.
-The [original requirements and remaining qualification](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/project.md#parallel-autowork-2026-10-15)
-are immutable migration evidence, not current runner instructions. Any still-required
-product outcome must be reconciled into GitHub Issues with its original scope,
-proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
-
 ## Continuous Pi runner (2026-10-15)
 
 The executor implementation/operating direction is superseded by removal.
@@ -520,26 +512,12 @@ adopting candidates; an old review does not prove current source freshness. Pres
 owner-only decisions, stopped schedules and original-environment obligations; a
 replacement host/profile does not satisfy a missing original delivery target.
 
-## Rename to Autowork (2026-10-16)
-
-The current product is Kit. Hermes terminal maintenance uses `hermes kit`;
-`hermes autowork` is unavailable, with no functional alias, redirect or replacement
-chat skill. Existing internal state/package identifiers remain compatibility
-contracts, not an executable Autowork interface. pi-autowork is retired and
-unsupported, not an execution namespace or development target.
-Use current manifests and [installation](installation.md) for package names and
-supported transitional settings. The retired `hermes-toolset` namespace has no
-compatibility executor or automatic settings/cron migration.
+## Kit maintenance
 
 Terminal maintenance uses `hermes kit doctor --json` for inventory and
 `hermes kit update [--check]` for synchronous maintenance with a printed receipt.
-The existing setup/update/pin/doctor/finalize actions, options, scopes, exit codes
-and profile selection are unchanged. Hermes owns foreign-command collision rules;
-Kit does not overwrite another owner or patch Hermes. No chat-maintenance
-replacement is registered. Keep `AUTOWORK_EXECUTION_COMMON`, `# autowork:` cron markers,
-and existing private `maintenance/toolset-update/` / `.toolset-imports.json` state
-identities. A source rename does not reinstall profiles, reset private state or
-restart hosts; live adoption remains a separately authorized operation.
+A source change does not reinstall profiles, reset private state or restart hosts;
+live adoption remains a separately authorized operation.
 
 <a id="pi-agent-harness-bootstrap"></a>
 

@@ -1,6 +1,6 @@
 # Installed Pi RPC delivery pilot requirements
 
-> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> **Historical sources only.** Executor
 > observations, recommendations and pilot procedures below refer to historical
 > sources, not current operating or development instructions. Do not revive it.
 > Preserve unresolved acceptance and recovery evidence; reconcile still-required
@@ -49,11 +49,10 @@ the disposable-target proposal does not authorize interrupting that service.
 2. Pin the installed release selected for the pilot. Record resolved entrypoints,
    source tree, effective transport, Pi executable/version, SDK executable/version,
    model and relevant safe settings. Recheck readiness without a model call.
-3. For this target only, require `PI_AUTOWORK_PUSH=0`,
-   `PI_AUTOWORK_STEERING=0`, review/validation enabled, optimistic integration off,
-   bounded runtime/retries and updates disabled through the supported
-   `PI_AUTOWORK_UPDATE_INTERVAL=0` setting. Verify effective settings after saved
-   repository configuration is applied. Do not change global/fleet settings.
+3. For this target only, require publication and steering disabled, review/validation
+   enabled, optimistic integration off, bounded runtime/retries and updates disabled.
+   Verify effective settings after saved repository configuration is applied.
+   Do not change global/fleet settings.
 4. Freeze a small deterministic engineering task, checks and exclusions, including
    observable work markers and an independent reviewer. Record baseline, contract
    hash and expected files before admission; a prompt-only echo is insufficient.
