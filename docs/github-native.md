@@ -8,10 +8,11 @@ merge gates. Merged PRs and GitHub history retain delivery evidence.
 ## Freshness and delivery ownership
 
 The [shared mode contract](../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership)
-applies to every skill. `/push` inventories paginated issue/PR evidence as well as
-local worktrees, synchronizes already-landed Orbi changes through verified upstream,
-and reports unfinished work by URL, owner, reason and next action. Names and bot
-authors are hints, not ownership proof; default-branch ancestry proves inclusion.
+applies to every skill. `/push` saves every change, pulls `main` and pushes `main`.
+It inventories paginated issue/PR evidence as well as local worktrees, synchronizes
+already-merged upstream Orbi changes, and reports unfinished work by URL, owner,
+reason and next action. Names and bot authors are hints, not ownership proof;
+default-branch ancestry proves inclusion.
 An open Orbi-owned PR stays with its coordinator even if checks pass. No worker-head
 cherry-pick, PR checkout, remote-ref deletion or review/protection bypass is added.
 State/source pins are refreshed before integration and publication; changed inputs
@@ -23,12 +24,10 @@ qualifies live delivery; its existing pause and live-qualification limits remain
 
 ## Support boundary
 
-`pi-autowork` is retired and unsupported, not a fallback or an active redesign.
-Do not develop, repair, reinstall, restart or restore its executor, CLI or Paseo
-plugin. Contributors with older assignments must stop executor work, preserve
+GitHub Issues are the only executable backlog and Orbi owns delivery. Preserve
 uncommitted changes and recovery evidence, and reconcile still-required outcomes
-into GitHub Issues. Historical plans and research do not authorize new executor
-work or cancel unresolved product acceptance.
+into GitHub Issues. Historical plans and research do not authorize a second executor
+or cancel unresolved product acceptance.
 
 Kit keeps `/plan-with-me` and `/plan-for-me`: both publish issue-based plans under
 the same handoff contract. Orbi is the separate delivery project, not a renamed
@@ -130,12 +129,11 @@ Do not use this helper to overwrite an existing edited issue.
    workers. Installed-executor removal must verify legacy processes stopped and
    registrations removed, while preserving recovery evidence. Do not reinstall the
    removed CLI to inspect state. Do not stop unrelated gateways.
-2. The pi-autowork executor, source, CLI, Paseo plugin and installer component are
-   removed. Ordinary Kit/Pi/Hermes/Claude/Codex functionality remains. Source removal
-   alone does not prove host service removal; report actual host inventory separately.
+2. Report actual host inventory separately; source changes alone do not prove host
+   service removal. Ordinary Kit/Pi/Hermes/Claude/Codex functionality remains.
    **Orbi remains paused and live-unqualified.** Removal does not authorize enabling it.
 3. Reconcile unfinished local tasks against open/closed issues, PRs and merged
-   evidence, following the [migration guide](../skills/shared/TODO-WORKCENTER.md).
+   evidence, following [Plan Handoff](../skills/shared/PLAN-HANDOFF.md).
    Preserve legacy IDs and immutable sources. Never redispatch completed or owned
    work. Do not synchronize two queues or prune worktrees as part of migration.
 4. Pilot one repository only after ownership is settled. Verify actual issue pickup,
@@ -191,7 +189,7 @@ Do not serve one repository from multiple deployments or machines.
 
 ### Kit lifecycle skill
 
-Use [`/orbi [status|setup|start|stop|help]`](../skills/orbi/SKILL.md) for one
+Use [`/orbi [status|setup|start|update|stop|help]`](../skills/orbi/SKILL.md) for one
 repository's deployment. Bare invocation reads status; `--repo-dir` selects the
 canonical repository and `--config` selects its existing native configuration.
 Setup prepares without activating scheduling. Start requires separate scheduling
@@ -234,6 +232,16 @@ for serialization, legacy/unknown reporting and repair boundaries. Native Pi-Bol
 extensions, streaming/recovery and installed worker/reviewer compatibility remain
 live-unverified; static routing does not qualify delivery or release pauses.
 
+`update` is the deliberate release channel: for one stopped and drained
+deployment it writes upstream's `release` track, lets `sync-engine-source`
+resolve and check out the newest official semver release, then locks that commit
+as `sha:<commit>`, validates non-activating, refreshes the deployment's owned
+units and disables the timers that install enabled. A live worker or enabled
+timer refuses as `update_busy`; tracked checkout changes refuse as
+`source_dirty`. Update preserves origin, provider, harness and slots, and never
+enables scheduling as an outcome; rollback is a deliberate owner edit of
+`engine_source_track`. It never refreshes Kit itself: that stays `/update-kit`.
+
 For a first authorized deployment, preview with `/orbi start --dry-run
 --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID
 --pi-model PUBLISHED_MODEL_ID`, then remove `--dry-run` only within that authority.
@@ -247,8 +255,9 @@ Context-free `/orbi help` reports the loaded helper path/default policy, parseab
 examples and recovery guidance, not the installed selected harness.
 
 Each mutation reports its own outcome: `setup` says `prepared` (staging, not
-scheduler activation), `start` says `started` or `already-running`, and `stop`
-says `draining` or `stopped`; `--dry-run` says `planned` for all three. Thus `stop`
+scheduler activation), `start` says `started` or `already-running`, `update` says
+`updated` or `up_to_date`, and `stop` says `draining` or `stopped`; `--dry-run`
+says `planned` for all four. Thus `stop`
 can report `draining` while a subsequent status still reports `running`: an active
 worker is preserved, not killed, and status does not remember a global pause.
 Start also retains `preparation.state` (`skipped`, `planned`, `prepared`, `failed`).
@@ -388,14 +397,9 @@ The original requirements are retained through immutable Git sources, not a new
 completed-task archive. Reconcile still-required outcomes into GitHub Issues
 without recreating the executor, duplicating finished work or losing source proof:
 
-- [Recovery, integration and independent-worker acceptance](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/2026-10-16-pi-autowork-coordinator.md)
-  and [safe landing/worktree ownership](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/2026-10-17-runner-landing-and-worktrees.md).
 - [Planning authority and preservation of accepted intent](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/planning-authority-2026-11-01.md)
   and [decision/blocker coverage](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/decision-blocker-coverage.md).
-- [Interface freshness and physical-client qualification](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/tui-responsiveness.md)
-  and [Paseo qualification gaps](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork/integrations/paseo/docs/qualification.md).
-- [State-preserving uninstall requirements](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/autowork-uninstall-retirement.md)
-  and the [remaining original plan contracts](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans).
+
 
 These sources establish prior intent/evidence only. Preserve their still-applicable
 human/live gates and unresolved proof, while the new pilot and fleet stay paused.

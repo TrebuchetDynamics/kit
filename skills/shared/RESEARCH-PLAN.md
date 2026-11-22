@@ -80,7 +80,13 @@ who answers consequential intent. It does not change the sequence.
 3. **Preview and save.** Show the [issue preview](PLAN-HANDOFF.md#progress-and-final-receipt)
    in chat before publication. Write accepted decisions in their existing owners
    and complete GitHub Issues with outcome, scope/exclusions, acceptance, exact
-   verification and sources.
+   verification and sources. For a user-visible change, name the capability and
+   what is added, modified, removed or renamed relative to today. In the issue’s
+   acceptance criteria, give a concrete WHEN (situation) / THEN (observable result).
+   If the project uses or explicitly adopts OpenSpec, link the exact native spec
+   and scenario instead of copying its text. A behavior-preserving refactor
+   needs verification, not a fictional behavior change or new spec. No OpenSpec
+   CLI, parallel task list or separate model pass is required.
    Use native `blockedBy` dependencies and `ai-epic` coordination for larger plans.
    Follow the [single-pass handoff](PLAN-HANDOFF.md#one-planning-pass-one-handoff).
 4. **Validate and report.** Read back the whole batch and dependencies, then publish
@@ -198,9 +204,9 @@ its discovery pass. Read the pinned plan protocol, then adapt its phases here.
   Map only open points that change intent, acceptance or tasks; group shared
   decisions once across the batch. Get the user describing before offering options.
   Ask the highest-impact ready question, with context and consequences; use concrete
-  alternatives with trade-offs only when evidence narrows the choice. A bare “yes”
-  accepts one unambiguous proposal, never several separate recommendations. Clarify
-  ambiguous answers without accepting affected choices. After each reply, update
+  alternatives with trade-offs only when evidence narrows the choice. Apply the
+  linked loop's round-scoped acceptance rule to a bare “yes” or LGTM, including
+  clear recommended batches. Clarify only genuinely ambiguous choices. After each reply, update
   what it actually resolves, investigate changed evidence and ask the next material
   question. Do not finish after one answer or complete a speculative plan before
   learning intent. For vague words such as “easy”, ask for a concrete user situation

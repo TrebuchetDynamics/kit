@@ -83,7 +83,7 @@ function buildMap(root = process.cwd()) {
     let text;
     try {
       if (!fs.lstatSync(path.join(root, f)).isFile()) continue;
-      // Autowork: bound the read itself, not just the string parsed afterwards.
+      // Kit: bound the read itself, not just the string parsed afterwards.
       const fd = fs.openSync(path.join(root, f), 'r');
       try {
         const buffer = Buffer.alloc(65536);

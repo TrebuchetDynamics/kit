@@ -1,14 +1,11 @@
 # Commands and repository workflows
 
 GitHub Issues own executable work; Orbi owns delivery. Kit plans and supplies
-explicit skills. **pi-autowork is retired and unsupported**: do not develop or
-restart it. See [support, setup and migration](github-native.md).
+explicit skills. See [support, setup and migration](github-native.md).
 
 ## Unblock repairs blocked GitHub work
 
-`/unblock` diagnoses GitHub issues, PR/check failures and actual ownership. It
-repairs authorized local causes within its own recovery scope; it never revives the removed
-executor or enables paused Orbi. See [Unblock](../skills/unblock/SKILL.md).
+`/unblock` checks open issues and PRs, fixes actionable causes, and reconciles recovery labels without asking again for routine decisions. It considers every `ai-planning` or `ai-blocked` issue for `ai-ready`. It publishes readiness after confirming the plan is complete or the blocker is repaired (both when both labels apply). It verifies whether work resumed. Read-only requests, explicit pauses, existing PR ownership and human gates remain binding; the skill does not grant GitHub access or enable paused Orbi. See [Unblock](../skills/unblock/SKILL.md).
 
 ## Bundled Ponytail
 
@@ -27,15 +24,33 @@ read fresh GitHub metadata/remote source, but does not sync or commit the checko
 Implementation verifies baseline/ownership and isolates stale/shared source;
 delivery/sync follows the invoked command's scope and caller restrictions.
 
-`/push` inventories local worktrees and paginated GitHub issue/PR evidence, including
-remote-only Orbi work. Already-merged changes enter through verified upstream;
-passing open PRs remain with their Orbi coordinator. Closed-unmerged, failed,
-paused and unknown work stays untouched with its URL, reason and next action.
-A stale base is reconciled through normal merge and affected checks/review before
-publication. API failures mean partial inventory, not an empty backlog; independently
-verified work may proceed, but missing required protection/review holds publication.
-Receipts separate local commits, incoming landed changes, pending URLs, source and
-selected/final SHAs, checks, remote inclusion and remaining local synchronization.
+`/push` saves every eligible change, pulls `main` and pushes `main` without a second
+approval round. An unrestricted invocation includes staged, unstaged, deleted and
+ordinary non-ignored untracked files in the invoking checkout and verified idle
+worktrees. No separate completion note or marker is required. The
+[Push save step](../skills/push/SKILL.md#fast-path) verifies scope, provenance, actual
+inactivity and each worktree's project rules, then rechecks HEAD/index/file baselines
+before staging explicit paths. Secrets, private runtime state, ignored output,
+active or uncertain ownership, pauses and recovery holds stay untouched and are
+reported by path and reason, without contents. Baseline drift reports `Save pending`;
+re-inventory the affected paths and resolve ownership before staging. Narrower
+requests still win; `/git-commit-push` and its standalone clean-worktree sweep keep
+their existing scope.
+
+It inventories local worktrees and paginated GitHub issue/PR evidence, including
+remote-only Orbi work. Already-merged changes enter through verified upstream; passing
+open PRs remain with their Orbi coordinator. Closed-unmerged, failed, paused and
+unknown work stays untouched with its URL, reason and next action. Uncommitted changes
+are committed before the pull, because they block a safe fast-forward. A stale base is
+reconciled through normal merge and affected checks/review before publication, and the
+repository's landing route (direct push or pull request) is used as policy allows. API
+failures mean partial inventory, not an empty backlog; independently verified work may
+proceed, but missing required protection/review holds publication. Receipts separate
+local commits, incoming landed changes, pending URLs, source and selected/final SHAs,
+checks, remote inclusion and remaining local synchronization. A candidate-branch
+push alone is not main delivery. Missing checks/review or an unmerged protected PR
+remain pending: report the exact gate and next action, then verify remote `main`
+inclusion after the permitted landing route completes.
 These are instruction contracts; offline traces do not prove live model delivery.
 
 ## Commands
@@ -53,7 +68,7 @@ is limited, so some commands must be typed directly.
 | `/orbi [status\|setup\|start\|stop\|help]` | `/orbi` | [Repository-scoped lifecycle controls](../skills/orbi/SKILL.md): bare status is read-only, setup prepares without activation, authorized start prepares if absent then schedules, stop drains without killing workers; Linux controls, macOS status-only; help prints the action reference read-only on any platform |
 | `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only eligible clean unmerged ones, keep owned, unknown, dirty and locked worktrees |
-| `/push` | `/push` | Ship eligible local work plus merged upstream Orbi changes to the verified base; report open Orbi work without takeover |
+| `/push` | `/push` | Save all changes, pull `main`, then push `main` through the repository's landing route; report open Orbi work without takeover |
 | `/lgtm` | `/lgtm` | [Continue within inherited authority](../skills/lgtm/SKILL.md): accept unambiguous choices, clarify only ambiguous planning choices; standalone plan approval does not authorize implementation |
 | `/docs_sync` | `/docs_sync` | Maintain repository documentation |
 | `/update-kit` (also `/update_kit`) | `/update_kit` | [Refresh dedicated upstream source and reinstall the suite](../skills/update-kit/SKILL.md); explicit only, full-suite/restart effects, restricted Hermes cascades refused; [preview and ownership](installation.md#update-kit) |
@@ -88,8 +103,9 @@ builder check before publishing the full batch under
 optional `ai-epic` coordination, readback and `ai-ready` last.
 
 `/plan_with_me` asks the highest-impact unresolved intent question, researches
-repository facts itself and marks guesses. A bare "yes" accepts one unambiguous
-proposal, not a batch of recommendations. `/plan_for_me` investigates and chooses
+repository facts itself and marks guesses. A bare "yes" or LGTM accepts the clear
+recommendations in the latest round, including a batch; only genuinely ambiguous
+choices need clarification. `/plan_for_me` investigates and chooses
 within delegated scope without an interview. Both reuse accepted answers and
 existing issues. Questions-only/read-only/no-write/dry-run requests save nothing,
 locally or on GitHub. Explicit no-dispatch requests retain `ai-planning`; ordinary
@@ -600,7 +616,7 @@ or permission to resume a schedule.
 
 ## Scheduling behavior
 
-Kit does not schedule or revive pi-autowork. Existing job IDs, settings, schedules,
+Existing job IDs, settings, schedules,
 pause state and recovery evidence remain intact. Orbi remains paused and live-unqualified.
 Setup confirmation, actual execution and message delivery require separate evidence;
 a changed prompt or installed skill proves none of them.

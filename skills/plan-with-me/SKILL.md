@@ -91,8 +91,9 @@ or "what do you think?", propose something concrete. Allow a free-form answer.
 Work in rounds using the [uncertainty loop](../shared/PLANNING-CRAFT.md#consequential-uncertainty).
 Ask the highest-impact ready question, then wait. If presenting a few independent
 ready decisions together, number them and make each choice and its trade-off
-explicit. A bare "yes" accepts one unambiguous proposal, never several separate
-recommendations. A question whose prerequisites are open belongs to a later round.
+explicit. Apply the linked loop's round-scoped acceptance rule to clear recommended
+batches; clarify only unresolved choices. A question whose prerequisites are open
+belongs to a later round.
 
 After every answer, update only the uncertainty it resolves, investigate changed
 repository facts, and ask the next consequential question. One answered question is
@@ -150,7 +151,7 @@ plan is not execution.
 | Rationalization | Reality |
 | --- | --- |
 | "Ask what the repository can answer." | Find repository facts yourself. Ask only for missing intent, authority or input. |
-| "A bare yes accepts every recommendation." | A bare yes accepts one unambiguous proposal, never several separate recommendations. |
+| "Batch acceptance also settles unanswered alternatives." | Accept the latest round's clear recommendations; clarify only genuinely unresolved choices under the uncertainty loop. |
 | "A polished proposal is accepted scope." | Proposals stay proposed until the owner accepts them. |
 | "I can write code while waiting for an answer." | Planning writes docs and task records. Implementation needs its own authorization. |
 | "Silence means agreement." | Silence is neither an answer nor acceptance. Leave the question open. |
@@ -158,7 +159,7 @@ plan is not execution.
 ## Red Flags
 
 - Asking for facts the repository already answers.
-- Several recommendations accepted by one bare yes.
+- Unanswered alternatives treated as settled, or clear batch approval questioned again.
 - A proposal marked Accepted without an owner answer.
 - Code, tests or fixtures edited during the interview.
 - Settled questions asked again without new evidence.

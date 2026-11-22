@@ -5,6 +5,7 @@ home, disclosure, positive wording) stay with review.
 """
 import importlib.util
 import re
+import subprocess
 from pathlib import Path
 import unittest
 
@@ -12,13 +13,30 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 BANNED_OPENERS = ('use when', 'use to', 'use for', 'use if', 'use after', 'use before')
-# Hermes installs Graphify's own skill into profiles, so Autowork ships the adapter only.
+# Hermes installs Graphify's own skill into profiles, so Kit ships the adapter only.
 ADAPTER_ONLY = {'graphify'}
 PILOT = ('orbi', 'update-kit', 'unslop', 'plan-for-me', 'ponytail-review',
          'git-commit-push', 'push', 'unblock', 'docs-sync', 'plan-with-me')
 
 
 class SkillStandardTests(unittest.TestCase):
+    def test_tracked_content_has_no_retired_executor_name(self):
+        name = 'auto' + 'work'
+        result = subprocess.run(
+            ['git', 'grep', '-i', '-I', '-l', '-e', name, '--'],
+            cwd=ROOT, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1,
+                         'Remove the retired executor name from tracked content:\n'
+                         + result.stdout + result.stderr)
+
+    def test_tracked_paths_have_no_retired_executor_name(self):
+        name = b'auto' + b'work'
+        result = subprocess.run(['git', 'ls-files', '-z'], cwd=ROOT,
+                                capture_output=True, check=True, timeout=30)
+        matches = [path.decode(errors='replace') for path in result.stdout.split(b'\0')
+                   if name in path.lower()]
+        self.assertEqual(matches, [], 'Rename tracked paths containing the retired executor name')
+
     def skills(self, folder):
         return sorted((ROOT / folder).glob('*/SKILL.md'))
 
@@ -129,7 +147,7 @@ class SkillStandardTests(unittest.TestCase):
                       'PLANNING-CRAFT.md#consequential-uncertainty'):
             self.assertIn(f'../shared/{owner}', skill)
         for rule in ('one clear recommendation', 'only ambiguous choices unresolved',
-                     'explicit acceptance of all named choices',
+                     'all clear recommendations in the latest round',
                      'does not authorize implementation',
                      'already-authorized implementation, commit and push',
                      'harmless delegated engineering defaults'):
@@ -138,6 +156,42 @@ class SkillStandardTests(unittest.TestCase):
         for obsolete in ('accept every recommendation', 'accept all six',
                          'LGTM accepts the first stated recommendation'):
             self.assertNotIn(obsolete, skill)
+
+    def test_lgtm_accepts_recommended_batch_without_reopening_settled_rounds(self):
+        skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())
+        for rule in ('A numbered list is not ambiguity by itself',
+                     'no second approval round',
+                     'A new recommendation introduced after approval needs its own answer',
+                     'accept retention and ask only about access',
+                     'Explicit partial approval or corrections narrow acceptance'):
+            owner = (ROOT / 'skills/shared/PLANNING-CRAFT.md').read_text()
+            self.assertIn(rule, skill + ' ' + ' '.join(owner.split()))
+        for threshold in ('at least $5 in settled paper profit per scheduled 24 hours',
+                          'before modeled rebates', 'drawdown at most $50',
+                          'fixed 72-hour test with no extension',
+                          'at least 200 settled market windows with fills',
+                          'at least 24 distinct UTC hours',
+                          '95% interval lower bound above zero',
+                          'pre-rebate profit per filled share',
+                          'accept both exactly as stated',
+                          'or start the bot', 'Keep Round 1 settled'):
+            with self.subTest(threshold=threshold):
+                self.assertIn(threshold, skill)
+
+    def test_shared_planning_acceptance_has_no_blanket_batch_rejection(self):
+        craft = ' '.join((ROOT / 'skills/shared/PLANNING-CRAFT.md').read_text().split())
+        self.assertIn('LGTM accepts all clear recommendations shown in that round', craft)
+        self.assertIn('Acceptance sets planning decisions, not permission to implement', craft)
+        for path, obsolete in (
+            ('skills/shared/PLANNING-CRAFT.md', 'not several recommendations'),
+            ('skills/shared/RESEARCH-PLAN.md', 'never several separate recommendations'),
+            ('skills/plan-with-me/SKILL.md', 'never several separate recommendations'),
+            ('skills/plan-with-me/SKILL.md', 'Several recommendations accepted by one bare yes'),
+            ('skills/plan-with-me/references/special-cases.md',
+             'approval of separate task recommendations'),
+            ('docs/workflows.md', 'not a batch of recommendations'),
+        ):
+            self.assertNotIn(obsolete, (ROOT / path).read_text())
 
     def test_lgtm_portable_adapter_has_no_second_approval_policy(self):
         path = ROOT / 'adapters/skills/lgtm/SKILL.md'

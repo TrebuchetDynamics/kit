@@ -9,7 +9,7 @@ WORKFLOWS = ['plan_with_me', 'plan_for_me', 'docs_sync',
 # earlier priority entries are removed. A retired compatibility spelling may remain
 # typeable; a removed skill (engineering) has no command at all.
 RETIRED = {'autoresearch', 'autogoal', 'grill_me', 'repo_interview', 'repo_docs', 'git_pull_merge',
-           'engineering', 'cron_autowork', 'autowork', 'work', 'pending', 'blockers'}
+           'engineering', 'work', 'pending', 'blockers'}
 
 
 def _bundle_owned(name):

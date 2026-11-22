@@ -5,24 +5,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - &setup-python
+        uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - name: Temporary directory
-        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
-      - name: Git identity
-        run: git config --global user.name CI && git config --global user.email ci@example.invalid
-      - name: Install test dependencies
-        run: python -m pip install -r requirements-test.txt
-      - name: Shared and workflow offline suites
-        run: python scripts/check.py --exclude tests/native
+      - &prepare-tests
+        name: Prepare offline tests
+        run: |
+          export TMPDIR="$RUNNER_TEMP"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+          git config --global user.name CI
+          git config --global user.email ci@example.invalid
+          python -m pip install -r requirements-test.txt
       - name: Plugin syntax
         run: python -m py_compile __init__.py
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - name: Pi command adapter offline tests
         run: node --test tests/portable_pi.test.mjs
-  # Preserve required runner (1), runner (2), runner (3) contexts. These now
-  # partition retained native integration-boundary fixtures, not an executor.
   runner:
     runs-on: ubuntu-latest
     strategy:
@@ -31,13 +30,7 @@ jobs:
         shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - name: Temporary directory
-        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
-      - name: Git identity
-        run: git config --global user.name CI && git config --global user.email ci@example.invalid
-      - name: Install test dependencies
-        run: python -m pip install -r requirements-test.txt
-      - name: Native boundary fixtures, shard ${{ matrix.shard }} of 3
-        run: python scripts/check.py tests/native --shard ${{ matrix.shard }}/3
+      - *setup-python
+      - *prepare-tests
+      - name: Offline suite, shard ${{ matrix.shard }} of 3
+        run: python scripts/check.py --shard ${{ matrix.shard }}/3

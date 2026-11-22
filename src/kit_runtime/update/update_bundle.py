@@ -17,7 +17,7 @@ import tempfile
 import time
 
 UPSTREAM = 'https://github.com/TrebuchetDynamics/kit.git'
-PLUGIN = 'autowork'
+PLUGIN = 'kit'
 HOST_REFRESH_TIMEOUT_S = 300
 HOST_ITEMS = ('pi-bolt', 'tx', 'claude', 'codex', 'orbi')
 
@@ -33,9 +33,9 @@ def refresh_hosts(source):
     try:
         if not (source / 'install.sh').is_file():
             return [{'item': item, 'status': status, 'exit': code} for item in HOST_ITEMS]
-        with tempfile.TemporaryDirectory(prefix='autowork-host-update-') as directory:
+        with tempfile.TemporaryDirectory(prefix='kit-host-update-') as directory:
             report = Path(directory) / 'items.jsonl'
-            env = dict(os.environ, AUTOWORK_INSTALL_REPORT=str(report), NO_COLOR='1')
+            env = dict(os.environ, KIT_INSTALL_REPORT=str(report), NO_COLOR='1')
             with subprocess.Popen(['bash', str(source / 'install.sh'), '--full', '--skip', 'hermes,pi', '-q'],
                                   cwd=source, stdin=subprocess.DEVNULL, env=env,
                                   start_new_session=True) as child:
@@ -61,7 +61,11 @@ def refresh_hosts(source):
     return [rows.get(item, {'item': item, 'status': status, 'exit': code}) for item in HOST_ITEMS]
 
 
-MANIFEST_NAMES = ('kit', PLUGIN)
+MANIFEST_NAMES = (PLUGIN,)
+
+
+class MissingManifestPyYAML(ValueError):
+    """The interpreter has no PyYAML module for reading the plugin manifest."""
 
 
 def _manifest_name(directory):
@@ -73,7 +77,11 @@ def _manifest_name(directory):
     try:
         import yaml
     except ImportError as error:
-        raise ValueError(f'PyYAML is required to verify plugin identity: {directory}/plugin.yaml') from error
+        if not isinstance(error, ModuleNotFoundError) or error.name != 'yaml':
+            raise ValueError(f'Cannot load plugin identity reader: {directory}/plugin.yaml') from error
+        raise MissingManifestPyYAML(f'PyYAML is required to verify plugin identity: {directory}/plugin.yaml; '
+                                   f'install it for python3 (python3 -m pip install --user PyYAML, or the '
+                                   'distribution python3-yaml package) and retry') from error
     try:
         # Inspect YAML nodes, not a line regex: quoted/explicit keys and broken
         # content elsewhere must not conceal an ambiguous or malformed manifest.
@@ -97,20 +105,11 @@ def consumer_slots(root):
 
 
 def plugin_dir(home):
-    """Fresh Kit target or the single verified physical slot, including legacy paths.
-
-    Two registrations are unsafe even when they alias one source. Caller-specific
-    source/provenance checks still apply before adopting or updating the slot.
-    """
-    existing = [p for p in plugin_slots(home) if p.exists() or p.is_symlink()]
-    for path in existing:
-        identity = _manifest_name(path)
-        if path.name == 'kit' and identity != 'kit':
-            raise ValueError(f'Conflicting canonical plugin identity at {path}; preserve and reconcile it')
-    if len(existing) > 1:
-        paths = ', '.join(f'{p} -> {p.resolve()}' for p in existing)
-        raise ValueError(f'Duplicate Kit registrations: {paths}; reconcile registrations before installation/update; neither was removed')
-    return existing[0] if existing else home / 'plugins/kit'
+    """Use only the Kit slot, validating any existing manifest before mutation."""
+    target = home / 'plugins/kit'
+    if target.exists() or target.is_symlink():
+        _manifest_name(target)
+    return target
 
 
 def plugin_name(home):
@@ -119,13 +118,11 @@ def plugin_name(home):
 
 
 def setup_plugin_dir(home, source):
-    """Setup only adopts the selected Kit source; old manifests require an update."""
+    """Setup only adopts the selected Kit source."""
     target = plugin_dir(home)
     if target.exists():
         if target.resolve() != source.resolve():
             raise ValueError(f'Bundle path {target} points to another checkout {target.resolve()}; expected {source.resolve()}; update the existing installation explicitly')
-        if _manifest_name(target) != 'kit':
-            raise ValueError(f'Legacy manifest at {target}; preserve it and update to Kit before setup (Autowork is unsupported)')
     elif _manifest_name(source) != 'kit':
         raise ValueError(f'Setup source {source} must declare Kit; update the source before installing')
     return target
@@ -202,10 +199,7 @@ def managed_evidence(repo, profiles, upstream, *, admitted_head=None):
     if len([line for line in git(repo, 'worktree', 'list', '--porcelain').splitlines()
             if line.startswith(b'worktree ')]) != 1:
         raise ValueError(f'Extra linked worktrees consume {repo}; reconcile them before recovery')
-    # Accept the legacy manifest name too: the updater on this release still has to
-    # recover a checkout that predates the rename.
-    if not re.search(r'^name:\s*[\'\"]?(?:kit|autowork)[\'\"]?\s*$', (repo / 'plugin.yaml').read_text(), re.M):
-        raise ValueError(f'Unexpected managed plugin identity: {repo}')
+    _manifest_name(repo)
     metadata = home / 'plugins/.install-metadata.json'
     safe_path(metadata)
     if metadata.exists() and metadata.stat().st_uid != os.getuid():
@@ -368,7 +362,7 @@ def prepare(source, profiles, *, upstream=UPSTREAM):
             deleted = git(repo, 'log', '--format=', '--name-only', '--diff-filter=D',
                           '--no-renames', state['after'], '--', 'skills').decode().splitlines()
             # Required external skills (such as graphify) may reuse a once-bundled name.
-            external = set(json.loads((_AUTOWORK_LAYOUT.root / 'plugins/defaults.json')
+            external = set(json.loads((_KIT_LAYOUT.root / 'plugins/defaults.json')
                                       .read_text()).get('required_skills', []))
             state['retired'] = sorted({r for r in deleted if r and r not in state['new']
                                        and Path(r).parts[1] not in external})
@@ -561,7 +555,7 @@ def heal_chat_menus(profiles, call=telegram_call):
         if not token or token in seen:
             continue
         seen.add(token)
-        policy = _AUTOWORK_COMPAT.peer(globals(), 'telegram_menu_policy')
+        policy = _KIT_COMPAT.peer(globals(), 'telegram_menu_policy')
         chat_ids, stale_chat_menus = policy.chat_ids, policy.stale_chat_menus
         failed = []
         try:
@@ -968,7 +962,7 @@ def root_home(home):
 
 def native_call(action, home, stage, revision, python):
     """Run native admission in a fresh process bound only to the selected home."""
-    source = _AUTOWORK_COMPAT.peer(globals(), 'setup_preflight').selected_source()
+    source = _KIT_COMPAT.peer(globals(), 'setup_preflight').selected_source()
     if source is None:
         raise ValueError('Cannot resolve source for Hermes selected on PATH; native admission unverified')
     if python is None:
@@ -1087,7 +1081,7 @@ def direct_claim_consumer(claim_path, profile):
 
 def direct_consumer(home, profile):
     """Inspect every repository pointer; a newer claim must not hide an older live one."""
-    directory = home / 'autowork/task-execution-claims'
+    directory = home / 'kit/task-execution-claims'
     receipt = directory
     try:
         if any(path.is_symlink() for path in (directory, *directory.parents)):
@@ -1095,7 +1089,7 @@ def direct_consumer(home, profile):
         if directory.exists() and not directory.is_dir():
             raise ValueError('direct execution pointer path is not a directory')
         receipts = sorted(path for path in directory.iterdir() if path.suffix == '.json') if directory.exists() else []
-        receipts.append(home / 'autowork/task-execution-latest.json')
+        receipts.append(home / 'kit/task-execution-latest.json')
         seen = set()
         for receipt in receipts:
             safe_path(receipt)
@@ -1130,7 +1124,7 @@ def active_consumers(home, profile):
     proc = Path('/proc')
     if not proc.is_dir():
         return 'Native helper process inventory is unavailable on this host'
-    prefixes = [str(home / rel) + '/' for rel in ('skills', 'plugins', 'autowork/runtimes')]
+    prefixes = [str(home / rel) + '/' for rel in ('skills', 'plugins', 'kit/runtimes')]
     for process in proc.iterdir():
         if not process.name.isdigit() or int(process.name) == os.getpid():
             continue
@@ -1148,7 +1142,7 @@ def active_consumers(home, profile):
 
 
 def selected_profiles(root, names):
-    live_profiles = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle').live_profiles
+    live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
     available = dict(live_profiles(root))
     if not names or len(set(names)) != len(names) or any(n not in available for n in names):
         raise ValueError('Explicit distinct existing profile selection is required')
@@ -1204,7 +1198,7 @@ def linked_profiles(profiles, *, upstream=UPSTREAM):
 
 def fleet_linked_profiles(root):
     """Linked profiles of a Hermes home, loadable from the plugin process (no setup_bundle on sys.path)."""
-    module = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle')
+    module = _KIT_COMPAT.peer(globals(), 'setup_bundle')
     return linked_profiles(module.live_profiles(root_home(root)))
 
 
@@ -1215,7 +1209,7 @@ def _pin_records(state, name):
 
 def pin_profile(root, name, *, dry_run=False, upstream=UPSTREAM):
     """Replace one profile's plugin link with a clone of the same revision; the link is kept for unpin."""
-    live_profiles = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle').live_profiles
+    live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
     root = root_home(root)
     home = dict(live_profiles(root)).get(name)
     if home is None:
@@ -1269,7 +1263,7 @@ def pin_profile(root, name, *, dry_run=False, upstream=UPSTREAM):
 
 def unpin_profile(root, name, *, dry_run=False):
     """Restore the link saved by the latest pin; the clone is moved beside the record, not deleted."""
-    live_profiles = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle').live_profiles
+    live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
     root = root_home(root)
     home = dict(live_profiles(root)).get(name)
     if home is None:
@@ -1318,7 +1312,7 @@ def merge_profile_bytes(local, base, new):
         return new
     if base is None or new is None:
         raise ValueError('Native skill addition/deletion conflicts with profile customization')
-    with tempfile.TemporaryDirectory(prefix='autowork-skill-merge-') as directory:
+    with tempfile.TemporaryDirectory(prefix='kit-skill-merge-') as directory:
         paths = [Path(directory) / name for name in ('local', 'base', 'new')]
         for path, content in zip(paths, (local, base, new)):
             path.write_bytes(content)
@@ -1371,16 +1365,9 @@ def bind_recovered_source(home, evidence, revision, stage):
             raise ValueError('Managed source metadata readback failed')
 
 
-def recovery_consumers(root, profiles, *, pending=None):
-    selected = set()
-    for _, home in profiles:
-        slots = [p for p in plugin_slots(home) if p.exists() or p.is_symlink()]
-        if (pending and len(slots) == 1 and slots[0].is_symlink()
-                and slots[0].resolve() in pending):
-            selected.add(slots[0])  # journaled shared link, temporarily dangling during publication
-        else:
-            selected.add(plugin_dir(home))
-    targets = {plugin.resolve() for plugin in selected} | set(pending or ())
+def recovery_consumers(root, profiles):
+    selected = {plugin_dir(home) for _, home in profiles}
+    targets = {plugin.resolve() for plugin in selected}
     for plugin in consumer_slots(root):
         if (plugin.exists() or plugin.is_symlink()) and plugin not in selected and plugin.resolve() in targets:
             raise ValueError(f'Unselected shared consumer {plugin}; reconcile ownership before recovery')
@@ -1410,12 +1397,11 @@ def recovery_consumers(root, profiles, *, pending=None):
             raise ValueError(reason)
 
 
-def recovery_freshness(root, profiles, run, *, pending=None):
-    recovery_consumers(root, profiles, pending=pending)
+def recovery_freshness(root, profiles, run):
+    recovery_consumers(root, profiles)
     for name, home in profiles:
         row = run['profiles'][name]
-        plugin = (Path(row.get('plugin_path', str(home / 'plugins/autowork'))) if pending and name in run['managed']['shared']
-                  else plugin_dir(home))
+        plugin = plugin_dir(home)
         if name in run['managed']['shared']:
             if not plugin.is_symlink() or os.readlink(plugin) != row.get('original_link'):
                 raise ValueError('Shared consumer link changed since preflight')
@@ -1688,7 +1674,7 @@ def scoped_update(root, source, revision, names, python, *, check=False, _recove
             stage = backup / name / 'stage'
             try:
                 # The helper launch uses the same lock; live processes are checked again below.
-                journal = home / 'autowork'
+                journal = home / 'kit'
                 if journal.is_symlink():
                     raise ValueError('Symlinked worker journal')
                 journal.mkdir(exist_ok=True)
@@ -1785,10 +1771,6 @@ def scoped_update(root, source, revision, names, python, *, check=False, _recove
                                 installed = plugin_dir(home)
                             source_tree(installed, revision)
                             check_tree(installed, tree)
-                            if installed != plugin:
-                                if plugin.exists() or plugin.is_symlink():
-                                    raise ValueError(f'Plugin slot changed during native publication: {plugin}')
-                                installed.rename(plugin)
                             source_tree(plugin, revision)
                             check_tree(plugin, tree)
                         row['phase'] = 'installed'
@@ -1958,40 +1940,6 @@ def finish_ordinary_recovery(root, recovery):
     return run
 
 
-def resume_native_slots(root, profiles, run, *, check=False):
-    """Finish an interrupted native publication before resolving shared physical links.
-
-    Native Hermes installs by manifest name. Only a journaled, byte-verified Kit
-    candidate may be returned to the saved legacy physical slot; no unknown output
-    or duplicate registration is moved or removed.
-    """
-    moves = []
-    for name, home in profiles:
-        row = run['profiles'].get(name, {})
-        if row.get('phase') != 'slot_saved' or name in run['managed']['shared']:
-            continue
-        target = Path(row.get('plugin_path', row.get('original_source') or str(home / 'plugins/autowork')))
-        candidate = home / 'plugins/kit'
-        if target not in plugin_slots(home):
-            raise ValueError(f'Unsafe saved plugin path: {target}')
-        if target == candidate or target.exists() or target.is_symlink() or not candidate.exists():
-            continue
-        if candidate.is_symlink() or any(p.is_symlink() for p in target.parents):
-            raise ValueError(f'Unsafe native publication path: {candidate}')
-        original = Path(run['backup']) / name / 'plugin'
-        source_tree(original, row['original_revision'])
-        check_tree(original, row['original_tree'])
-        source_tree(candidate, run['revision'])
-        check_tree(candidate, run['tree'])
-        moves.append((candidate, target))
-    if moves:
-        recovery_freshness(root, profiles, run, pending={target for _, target in moves})
-        if not check:
-            for candidate, target in moves:
-                candidate.rename(target)
-    return bool(moves)
-
-
 def automatic_recovery(root, profiles, *, plan=None, prior=None, check=False):
     """Enter the existing native journal transaction with immutable trusted-source evidence."""
     state = root / 'maintenance/toolset-update'
@@ -2072,7 +2020,7 @@ def automatic_recovery(root, profiles, *, plan=None, prior=None, check=False):
     selected = [(name, dict(profiles)[name]) for name in names]
     with contextlib.ExitStack() as locks:
         for name, home in selected:
-            journal = home / 'autowork'
+            journal = home / 'kit'
             if journal.is_symlink():
                 raise ValueError('Symlinked worker journal')
             journal.mkdir(exist_ok=True)
@@ -2083,11 +2031,6 @@ def automatic_recovery(root, profiles, *, plan=None, prior=None, check=False):
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise ValueError(f'Worker handoff is active for {name}')
-        if prior is not None:
-            pending_slot = resume_native_slots(root, selected, prior, check=check)
-            if pending_slot and check:
-                return {**prior, 'status': 'update_available',
-                        'action': 'Verified native publication awaits physical-slot restoration; rerun without --check to resume'}
         return scoped_update(root, source, revision, names, None, check=check,
                              _recovery=managed, _locked=True)
 
@@ -2119,7 +2062,7 @@ def main(argv=None):
         print(json.dumps(result, indent=2))
         return int(result['status'] == 'refused')
     if args.restart_when_quiet is not None:
-        live_profiles = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle').live_profiles
+        live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
         root = root_home(args.hermes_home)
         homes = [home for _, home in live_profiles(root)]
         print(restart_when_quiet(root, homes, root / 'maintenance/toolset-update',
@@ -2140,7 +2083,7 @@ def main(argv=None):
                                args.native_python, check=args.check or args.dry_run)
         print(json.dumps(result, indent=2))
         return int(result['status'] == 'incomplete')
-    live_profiles = _AUTOWORK_COMPAT.peer(globals(), 'setup_bundle').live_profiles
+    live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
     root = root_home(args.hermes_home)
     state_dir = root / 'maintenance/toolset-update'
     try:
@@ -2148,7 +2091,7 @@ def main(argv=None):
         safe_path(recovery_receipt)
         prior = json.loads(recovery_receipt.read_text()) if recovery_receipt.exists() else None
         # Incomplete native publication is resolved under the transaction lock;
-        # its journal may account for temporarily dangling legacy consumers.
+        # its journal records interrupted publication phases.
         if not prior or prior.get('status') != 'incomplete':
             try:
                 profiles = live_profiles(root)
@@ -2227,7 +2170,7 @@ def main(argv=None):
             temporary.replace(receipt)
         save()
         try:
-            source = _AUTOWORK_LAYOUT.root
+            source = _KIT_LAYOUT.root
             recovery_receipt = state_dir / 'recovery.json'
             safe_path(recovery_receipt)
             prior = json.loads(recovery_receipt.read_text()) if recovery_receipt.exists() else None

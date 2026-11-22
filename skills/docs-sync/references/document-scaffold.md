@@ -114,7 +114,7 @@ All authors receive the same default; unfinished planning retains `ai-planning`.
 
 Do not initialize a local task store, create placeholder tasks, or require a
 local-main commit to publish issues. Preserve existing legacy records and recovery
-state under the [migration guide](../../shared/TODO-WORKCENTER.md); do not convert
+state under the [migration guide](../../shared/PLAN-HANDOFF.md); do not convert
 or prune them as a side effect of document scaffolding. Audit/read-only and docs-only
 requests publish no issues. If GitHub is unavailable, report complete proposals as
 UNSAVED instead of creating a second executable queue.

@@ -3,6 +3,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import subprocess
 import sys
 from pathlib import Path
 import tempfile
@@ -42,12 +43,62 @@ class PreflightTests(unittest.TestCase):
              patch.object(pre.shutil, 'which', return_value='/bin/available'):
             return pre.preflight(ROOT, home, [('default', home)], bundle_only=True)
 
+    def test_a_host_without_pyyaml_names_the_install_step_without_writes(self):
+        # Both PyYAML reads used to stop with a cause the user could not act on.
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, {'yaml': None}):
+            home = Path(tmp)
+            (home / 'config.yaml').write_text('memory:\n  provider: existing\n')
+            before = sorted(str(p) for p in home.rglob('*'))
+            report = self.check(home)
+            errors = ' '.join(report['errors'])
+            self.assertIn('PyYAML is required to verify plugin identity', errors)
+            self.assertIn('cannot verify runtime policy/opt-out; PyYAML is required to read profile policy safely', errors)
+            policy_error, = [e for e in report['errors'] if 'cannot verify runtime policy' in e]
+            self.assertIn('python3 -m pip install --user PyYAML', policy_error)
+            self.assertEqual(before, sorted(str(p) for p in home.rglob('*')))
+
+    def test_policy_read_errors_do_not_reveal_private_text(self):
+        sentinel = 'private-test-marker'
+        original_import = __import__
+        def broken_yaml(name, *args, **kwargs):
+            if name == 'yaml':
+                raise ModuleNotFoundError(sentinel, name='other_module')
+            return original_import(name, *args, **kwargs)
+
+        for failure in (patch.object(yaml, 'safe_load', side_effect=ValueError(sentinel)),
+                        patch.object(yaml, 'safe_load', side_effect=OSError(sentinel)),
+                        patch('builtins.__import__', side_effect=broken_yaml)):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp, failure:
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    report = self.check(Path(tmp))
+                    module('setup_preflight').print_plan(report)
+                output = stdout.getvalue() + stderr.getvalue()
+                self.assertIn('BLOCKED: default: cannot verify runtime policy/opt-out', output)
+                self.assertIn('no installation stages started', output)
+                self.assertNotIn(sentinel, output)
+                self.assertNotIn('pip install', output)
+
+    def test_failed_preview_keeps_child_diagnostics_private(self):
+        for err in ('private-stderr-marker', ''):
+            with self.subTest(stderr=bool(err)), tempfile.TemporaryDirectory() as tmp:
+                child = subprocess.CompletedProcess([], 1, 'private-stdout-marker', err)
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with patch.object(subprocess, 'run', return_value=child), \
+                     contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    report = self.check(Path(tmp))
+                    module('setup_preflight').print_plan(report)
+                output = stdout.getvalue() + stderr.getvalue()
+                self.assertIn('BLOCKED: Installer prerequisite preview failed', output)
+                self.assertNotIn('private-stdout-marker', output)
+                self.assertNotIn('private-stderr-marker', output)
+
     def test_incomplete_skill_and_plugin_conflicts_abort_without_writes(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             (home / 'skills/docs-sync').mkdir(parents=True)
             (home / 'plugins').mkdir()
-            (home / 'plugins/autowork').write_text('owned')
+            (home / 'plugins/kit').write_text('owned')
             before = sorted(str(p) for p in home.rglob('*'))
             report = self.check(home)
             self.assertTrue(report['errors'])
@@ -58,7 +109,7 @@ class PreflightTests(unittest.TestCase):
             ('', 'interactive', 'manual', 90),
             ('plugins:\n  entries:\n    kit:\n      settings:\n        runtime_policy: autonomous\n',
              'autonomous', 'off', 'unlimited'),
-            ('plugins:\n  entries:\n    autowork:\n      config:\n        runtime_policy: autonomous\n',
+            ('plugins:\n  entries:\n    kit:\n      config:\n        runtime_policy: autonomous\n',
              'autonomous', 'off', 'unlimited'),
             ('approvals:\n  mode: smart\nagent:\n  max_turns: 37\n', 'interactive', 'smart', 37),
             ('plugins:\n  entries:\n    kit:\n      settings:\n        runtime_policy: unknown\n',
@@ -86,13 +137,12 @@ class PreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             plan = '\n'.join(self.check(Path(tmp))['plan'])
         self.assertIn('plugins.entries.kit.allow_gateway_injection', plan)
-        self.assertNotIn('plugins.entries.autowork.allow_gateway_injection', plan)
 
     def test_plan_reports_runtime_defaults_opt_out(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             (home / 'config.yaml').write_text(
-                'plugins:\n  entries:\n    autowork:\n      settings:\n        apply_runtime_defaults: false\n')
+                'plugins:\n  entries:\n    kit:\n      settings:\n        apply_runtime_defaults: false\n')
             report = self.check(home)
             self.assertEqual(report['errors'], [])
             plan = '\n'.join(report['plan'])
@@ -132,8 +182,8 @@ class PreflightTests(unittest.TestCase):
                 self.assertTrue(pre.runtime_check(ROOT, Path(tmp), [], True))
 
 
-class PluginSettingsDualReadTests(unittest.TestCase):
-    """The runtime reads either settings key and writes only the canonical one."""
+class PluginSettingsTests(unittest.TestCase):
+    """The runtime reads and writes only Kit settings."""
 
     def setUp(self):
         self.policy = module('runtime_defaults')
@@ -141,52 +191,16 @@ class PluginSettingsDualReadTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / 'config.yaml'
 
-    def test_legacy_only_profiles_keep_their_opt_out_approvals_and_menu(self):
-        self.path.write_text(
-            'approvals:\n  mode: manual\n'
-            'plugins:\n  entries:\n    autowork:\n      settings:\n        apply_runtime_defaults: false\n')
-        with self.assertLogs(self.policy.logger, level='WARNING') as logs:
-            self.assertTrue(self.policy.setup_opted_out(self.path))
-            raw = yaml.safe_load(self.path.read_text())
-            patch = self.policy.opted_out_settings(raw)
-            entry = self.policy.plugin_entry(raw)
-        self.assertEqual(len(logs.output), 1)
-        self.assertIn('Migrated settings lookup from plugins.entries.autowork', logs.output[0])
-        self.assertIn('writes use plugins.entries.kit', logs.output[0])
-        self.assertEqual(raw['approvals']['mode'], 'manual')
-        self.assertNotIn('approvals', patch)
-        priority = patch['platforms']['telegram']['extra']['command_menu']['priority']
-        self.assertIn('plan_with_me', priority)
-        for retired in ('autowork', 'work', 'pending', 'blockers'):
-            self.assertNotIn(retired, priority)
-        self.assertEqual(entry.get('settings'), {'apply_runtime_defaults': False})
+    def test_other_entry_settings_are_ignored_without_mutation(self):
+        raw = {'plugins': {'entries': {'unrelated': {
+            'settings': {'apply_runtime_defaults': False, 'runtime_policy': 'autonomous'},
+            'allow_gateway_injection': False}}}}
+        before = json.dumps(raw, sort_keys=True)
+        self.assertEqual(self.policy.plugin_entry(raw), {})
+        self.assertEqual(self.policy.runtime_policy(raw), 'interactive')
+        self.assertFalse(self.policy._opted_out(raw))
+        self.assertEqual(json.dumps(raw, sort_keys=True), before)
 
-    def test_canonical_key_wins_when_both_entries_exist(self):
-        cases = ((False, True, False), (True, False, True))
-        for legacy, canonical, expected in cases:
-            with self.subTest(legacy=legacy, canonical=canonical):
-                self.path.write_text(
-                    'plugins:\n  entries:\n'
-                    f'    autowork:\n      settings:\n        apply_runtime_defaults: {str(legacy).lower()}\n'
-                    f'    kit:\n      settings:\n        apply_runtime_defaults: {str(canonical).lower()}\n'
-                    f'      allow_gateway_injection: {str(canonical).lower()}\n')
-                raw = yaml.safe_load(self.path.read_text())
-                self.assertEqual(self.policy.setup_opted_out(self.path), expected)
-                self.assertEqual(self.policy.plugin_entry(raw)['allow_gateway_injection'], canonical)
-
-    def test_mixed_profile_falls_back_to_the_legacy_entry_per_key(self):
-        self.path.write_text(
-            'plugins:\n  entries:\n'
-            '    autowork:\n'
-            '      settings:\n        apply_runtime_defaults: false\n'
-            '      custom_setting: [sample-skill]\n'
-            '    kit:\n      allow_gateway_injection: true\n')
-        raw = yaml.safe_load(self.path.read_text())
-        self.assertTrue(self.policy.setup_opted_out(self.path))
-        entry = self.policy.plugin_entry(raw)
-        self.assertIs(entry['allow_gateway_injection'], True)
-        self.assertEqual(entry['settings'], {'apply_runtime_defaults': False})
-        self.assertEqual(entry['custom_setting'], ['sample-skill'])
 
     def test_runtime_policy_preserves_external_memory_and_disabled_skills(self):
         raw = {'memory': {'provider': 'custom', 'settings': {'mode': 'manual'}},
@@ -199,7 +213,7 @@ class PluginSettingsDualReadTests(unittest.TestCase):
         self.assertNotIn('custom', patch['plugins']['entries'])
         self.assertEqual(patch.get('skills'), {'disabled': ['custom-skill']})
         self.assertEqual(json.dumps(raw, sort_keys=True), before)
-        defaults = self.policy._AUTOWORK_COMPAT.peer(self.policy.__dict__, 'bundle').defaults()
+        defaults = self.policy._KIT_COMPAT.peer(self.policy.__dict__, 'bundle').defaults()
         self.assertEqual(set(defaults), {'hermes', 'imported_plugins', 'required_skills'})
         self.assertEqual(defaults['required_skills'], ['graphify'])
         self.assertEqual(defaults['imported_plugins'], ['hermes-speech'])
@@ -222,7 +236,6 @@ class PluginSettingsDualReadTests(unittest.TestCase):
         self.assertEqual(patch['approvals']['mode'], settings['approvals_mode'])
         self.assertEqual(patch['plugins']['entries']['kit']['allow_gateway_injection'],
                          settings['allow_gateway_injection'])
-        self.assertNotIn('autowork', patch['plugins']['entries'])
 
 
 class RuntimeFactsTests(unittest.TestCase):
@@ -252,7 +265,7 @@ class RuntimeFactsTests(unittest.TestCase):
                     errors = pre.runtime_check(ROOT, home, [('default', home)], True)
                 self.assertEqual(errors, ['invalid config'] if code == 1 else [])
                 self.assertEqual(run.call_args_list[0].args[0], [
-                    str(executable), '-B', str(ROOT / 'src/autowork_runtime/install/preflight_config.py'),
+                    str(executable), '-B', str(ROOT / 'src/kit_runtime/install/preflight_config.py'),
                     '--core', str(config)])
                 self.assertEqual(run.call_count, 2 if code == 3 else 1)
                 if code == 3:
@@ -292,7 +305,7 @@ class ConfigProbeTests(unittest.TestCase):
             import ruamel.yaml
         except ImportError:
             self.skipTest('Run with Hermes managed Python to exercise strict YAML parser')
-        spec = importlib.util.spec_from_file_location('config_probe', ROOT / 'src/autowork_runtime/install/preflight_config.py')
+        spec = importlib.util.spec_from_file_location('config_probe', ROOT / 'src/kit_runtime/install/preflight_config.py')
         self.probe = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.probe)
 
@@ -309,7 +322,7 @@ class ConfigProbeTests(unittest.TestCase):
                 self.assertEqual(list(Path(tmp).iterdir()), [path])
 
     def test_empty_sections_hermes_treats_as_absent_are_accepted(self):
-        for config in ('memory:\n  # provider: existing\nplugins:\n  enabled: [autowork]\n',
+        for config in ('memory:\n  # provider: existing\nplugins:\n  enabled: [kit]\n',
                        'plugins:\n  entries:\n    foo:\n',
                        'plugins:\n  entries:\n', 'plugins:\napprovals:\nskills:\n',
                        '\ufeffmemory: {}\n'):

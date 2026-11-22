@@ -15,8 +15,6 @@ class UnblockSkillTests(unittest.TestCase):
                          'do not loop unchanged retries', 'Do not create backlog work',
                          'Orbi remains paused and live-unqualified'):
             self.assertIn(contract, text)
-        self.assertNotIn('autowork tasks', text)
-        self.assertNotIn('autowork restart', text)
 
     def test_waits_are_not_successful_recovery(self):
         text = (ROOT / 'skills/unblock/SKILL.md').read_text()
@@ -26,14 +24,21 @@ class UnblockSkillTests(unittest.TestCase):
             self.assertIn(contract, text)
         self.assertIn('A planning closure or an evidenced wait is not recovery', text)
 
+    def test_promotes_both_eligible_issue_states(self):
+        text = (ROOT / 'skills/unblock/SKILL.md').read_text()
+        for contract in ('`ai-planning` → `ai-ready`', '`ai-blocked` → `ai-ready`',
+                         'If both labels apply, require both conditions',
+                         'explicit no-dispatch request holds publication',
+                         'Confirm readiness before\n  removing resolved state labels'):
+            self.assertIn(contract, text)
+
     def test_service_boundary_preserves_pauses_jobs_and_evidence(self):
         text = (ROOT / 'skills/unblock/references/services.md').read_text()
         for contract in ('deliberate-stop', 'pending service jobs',
                          'Observe an existing restart', 'explicit user authorization',
                          'actual executable release', 'attempts/recovery state',
-                         'Do not reinstall or', 'Orbi remains paused'):
+                         'Orbi remains paused'):
             self.assertIn(contract, text)
-        self.assertNotIn('autowork restart', text)
         self.assertIn('No Hermes runtime', (ROOT / 'adapters/skills/unblock/SKILL.md').read_text())
 
     def test_workflow_reference_links_exist(self):

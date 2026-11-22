@@ -14,12 +14,10 @@ review → merge gates). Read [README.md](README.md) and
   planning do not execute. There is no local task store and no `tasks/` sync.
 - `/plan-with-me` and `/plan-for-me` publish GitHub Issues and stop. Retained
   fix/apply modes keep their own accepted scope and shared ownership/review/PR gates.
-- `pi-autowork` (executor, CLI, Paseo plugin) is retired, unsupported and
-  removed. Do not develop, repair, restore, install or restart it. Preserve
-  existing tasks, worktrees, attempts and recovery evidence; never remove an active
+- GitHub Issues and Orbi are the only executable backlog and delivery executor.
+  Preserve existing tasks, worktrees, attempts and recovery evidence; never remove an active
   attempt or its recovery inputs. Reconcile still-required outcomes into
-  GitHub Issues. Orbi stays paused and
-  live-unqualified — do not enable it as part of other work.
+  GitHub Issues. Orbi stays paused and live-unqualified — do not enable it as part of other work.
 - Accepted scope authorizes reversible implementation and scoped commits under
   [the standing decision policy](docs/autonomy.md). Explicit exclusions,
   pauses, access controls and human-only gates still apply.

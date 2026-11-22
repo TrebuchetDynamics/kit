@@ -12,7 +12,7 @@ live acceptance. Orbi remains paused and live-unqualified.
 
 Use `python3 scripts/check.py --list` for the maintained offline inventory and
 `python3 scripts/check.py PATH ...` for focused modules. Native Hermes source
-lives in `src/autowork_runtime/`; portable packages retain their host adapters.
+lives in `src/kit_runtime/`; portable packages retain their host adapters.
 Source/layout checks do not qualify installed models or delivery.
 
 ## Skill task-persistence contracts
@@ -206,8 +206,8 @@ its own suites: the hook now prints the load average and cpu count when it refus
 so the failure can be attributed instead of bypassed. Run one failing module alone
 before you treat the tree as broken; a second failure there is the tree's.
 
-CI retains the `fast` and `runner` check contexts; runner-named shards now run
-maintained native tests, not the removed executor. Inspect
+CI runs the offline Python suite across three parallel `runner` shards. The
+`fast` check runs the plugin syntax and Pi adapter tests alongside them. Inspect
 [the workflow](../.github/workflows/test.yml) for its current inventory. Live
 Telegram delivery and model execution require separate qualification.
 
@@ -264,7 +264,7 @@ cases skip when ruamel.yaml is unavailable). `test_complete_setup.py` separately
 checks orchestration after admission, including no installation calls on dry-run,
 and rejects missing declared native source/bootstrap payloads before stages run.
 The setup/provisioning and Graphify fixtures copy the same-release Python
-closure and exercise real `src/autowork_runtime` bodies through the `scripts/`
+closure and exercise real `src/kit_runtime` bodies through the `scripts/`
 entrypoints; external commands and gateway responses remain private fixtures.
 No passing preview is evidence of a live model or Telegram workflow.
 
@@ -295,14 +295,12 @@ receipt and activation/transport evidence before making those live claims.
 
 The task CLI and executor tests are removed. Existing task records remain
 read-only migration evidence; do not validate by installing the old executor or
-rewrite records to make a check green. See [migration](../skills/shared/TODO-WORKCENTER.md).
+rewrite records to make a check green. See [migration](../skills/shared/PLAN-HANDOFF.md).
 
 ## Paseo plugin checks
 
-The executor plugin and its build/test pipeline are removed. The
-[previous qualification record](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork/integrations/paseo/docs/qualification.md)
-retains physical-client and control gaps; those checks do not qualify Orbi or
-ordinary Paseo-hosted Kit sessions.
+Paseo-hosted Kit sessions and Orbi delivery require separate live qualification;
+offline checks do not establish physical-client or live-control acceptance.
 
 ## Portable package checks
 
@@ -311,7 +309,7 @@ The Pi Node tests cover command registration, literal arguments, queued messages
 and packaged support files. CI uses Node 22 for those tests. See
 [cross-host installation and verification](cross-host.md) for tested client versions
 and disposable-home installation checks. Package discovery does not prove model
-execution or completion of an Autowork task. Required model-driven qualification
+execution or completion of a delivery task. Required model-driven qualification
 remains separate from package discovery and needs explicit scope and real evidence.
 
 ## Qualification boundaries
