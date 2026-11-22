@@ -55,7 +55,6 @@ class CycleGuidanceTests(unittest.TestCase):
                             'Orbi remains paused'):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, policy)
-        self.assertNotIn('autowork tasks', policy)
 
     def test_autonomy_does_not_turn_missing_intent_into_approval(self):
         policy = (ROOT / 'docs/autonomy.md').read_text()

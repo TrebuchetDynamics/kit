@@ -21,7 +21,7 @@ def main():
     manager.discover_and_load()
     commands = get_plugin_commands()
     assert 'plan-with-me' in commands, 'planning workflow did not load'
-    for name in ('autowork', 'work', 'pending', 'blockers'):
+    for name in ('work', 'pending', 'blockers'):
         assert name not in commands
     # The command's module is the actual loaded plugin package; its bundle module is loaded.
     report = sys.modules[commands['git-commit-push']['handler'].func.__module__ + '.bundle'].inventory()
@@ -42,7 +42,7 @@ def main():
     checked_aliases = 0
     try:
         for name, info in commands.items():
-            if info.get('plugin') != 'autowork':
+            if info.get('plugin') != 'kit':
                 continue
             manager._cli_ref = cli
             tokens = set_session_vars()

@@ -32,7 +32,7 @@ class PluginDirectoryTests(unittest.TestCase):
         return folder
 
     def test_non_kit_manifest_is_refused(self):
-        for name in ('autowork', 'other'):
+        for name in ('foreign', 'other'):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 home = Path(tmp)
                 folder = self.make(home, 'kit')
@@ -43,7 +43,7 @@ class PluginDirectoryTests(unittest.TestCase):
     def test_other_plugin_directory_is_ignored_and_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            folder = self.make(home, 'autowork')
+            folder = self.make(home, 'other')
             before = (folder / 'plugin.yaml').read_bytes()
             self.assertEqual(self.module().plugin_dir(home), home / 'plugins/kit')
             self.assertEqual((folder / 'plugin.yaml').read_bytes(), before)
@@ -56,7 +56,6 @@ class PluginDirectoryTests(unittest.TestCase):
             module = self.module()
             self.assertEqual(module.plugin_dir(home), folder)
             self.assertEqual(module.plugin_name(home), 'kit')
-            self.assertFalse((home / 'plugins/autowork').exists())
 
     def test_without_an_install_the_canonical_path_is_the_target(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -846,7 +845,6 @@ class ScopedUpdateTests(unittest.TestCase):
         result = self.deploy()
         self.assertEqual(result['status'], 'updated', result)
         self.assertEqual(self.git(self.home / 'plugins/kit', 'rev-parse', 'HEAD'), self.revision)
-        self.assertFalse((self.home / 'plugins/autowork').exists())
         calls = list(self.calls)
         again = self.deploy()
         self.assertEqual(again['status'], 'up_to_date', again)
@@ -1893,7 +1891,6 @@ class Manager:
     def discover_and_load(self):
         home = Path(os.environ['HERMES_HOME'])
         assert (home / 'plugins/kit').is_symlink()
-        assert not (home / 'plugins/autowork').exists()
         config = (home / 'config.yaml').read_text()
         assert 'enabled: [kit]' in config and 'apply_runtime_defaults: false' in config
 

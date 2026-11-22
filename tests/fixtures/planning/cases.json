@@ -194,7 +194,7 @@
     ],
     "coordinator": [
       "adapters/skills/plan-for-me/SKILL.md",
-      "This is an Autowork-owned planning substep for FMT-01. The existing coordinator already has implementation authority and is waiting for your bounded planning result, not another worker. Fix normalize so it lowercases as well as trimming; preserve the interface and internal whitespace."
+      "This is an Orbi-owned planning substep for FMT-01. The existing coordinator already has implementation authority and is waiting for your bounded planning result, not another worker. Fix normalize so it lowercases as well as trimming; preserve the interface and internal whitespace."
     ],
     "challenge": [
       "adapters/skills/plan-with-me/SKILL.md",

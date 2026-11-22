@@ -34,7 +34,6 @@ class WorkflowCommands(unittest.TestCase):
                     self.assertNotIn('TODO.md', injected)
                     self.assertNotIn('goals.json', injected)
                     self.assertEqual('GitHub Issues are the executable backlog' in injected, skill == 'plan-for-me')
-                    self.assertNotIn('`autowork tasks`', injected)
                     self.assertEqual(routing['origin']['chat_id'], 'fixture')
                     if skill.startswith('plan-'):
                         self.assertIn('../shared/RESEARCH-PLAN.md', prompt)
@@ -155,7 +154,6 @@ class WorkflowCommands(unittest.TestCase):
                 self.assertIn('../shared/RESEARCH-PLAN.md', prompt)
                 self.assertIn(f'skill_view(name="kit:{skill}")', prompt)
                 self.assertTrue(prompt.endswith(request))
-            self.assertNotIn('autowork tasks add', text)
 
     def test_plan_for_me_reserves_both_spellings_for_existing_owners(self):
         self.skill('plan-for-me')

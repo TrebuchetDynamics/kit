@@ -179,7 +179,7 @@ class UpdateDefersRestartTests(unittest.TestCase):
         self.home = self.root / 'home'
         self.profiles = [('default', self.home)]
         (self.home / 'plugins').mkdir(parents=True)
-        (self.home / 'plugins/autowork').symlink_to(self.repo)
+        (self.home / 'plugins/kit').symlink_to(self.repo)
         (self.home / 'skills/demo').mkdir(parents=True)
         (self.home / 'skills/demo/SKILL.md').write_text('old\n')
         self.mod = load()

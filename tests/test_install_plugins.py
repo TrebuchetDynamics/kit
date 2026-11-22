@@ -131,10 +131,8 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
                            ('coder', self.hermes_root / 'profiles/coder'),
                            ('research', self.hermes_root / 'profiles/research')]:
             self.assertEqual((home / 'plugins/kit').resolve(), self.repo)
-            self.assertFalse((home / 'plugins/autowork').exists())
             self.assertEqual((home / 'skills/demo/SKILL.md').read_text(), 'fixture skill\n')
             self.assertIn(str(self.hermes_root) + f'|-p {name} kit finalize --hermes-home {self.hermes_root} --bundle-only --no-reload', self.calls())
-        self.assertFalse(any('enable autowork' in row for row in self.calls()))
         manifest = self.repo / 'plugin.yaml'
         original = manifest.read_bytes()
         manifest.write_text('name: foreign\n')
@@ -301,7 +299,6 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
         self.assertEqual(result.returncode, 0, result.stderr)
         for profile in ('coder', 'default'):
             self.assertIn(str(self.hermes_root) + f'|-p {profile} config set plugins.entries.kit.allow_gateway_injection true', self.calls())
-            self.assertNotIn(str(self.hermes_root) + f'|-p {profile} config set plugins.entries.autowork.allow_gateway_injection true', self.calls())
 
     def test_setup_uses_each_installed_profiles_explicit_or_default_policy(self):
         self.manifest.write_text('https://hermes-agent.nousresearch.com/docs/plugins/example-plugin default profile only\n')

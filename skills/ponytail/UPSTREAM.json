@@ -42,7 +42,7 @@
     },
     "hooks/ponytail-map.js": {
       "path": "upstream/scripts/ponytail-map.cjs",
-      "sha256": "df473b463bb0f258874b32baf5c8edc3533bc6f87542f3508b1c5fbdc264af4f",
+      "sha256": "6110dd684dbbc652e375d864ca26665e28af7f96f1ad33469c90daedba8b0e28",
       "upstream_sha256": "c876b087accb6655d04f7f48bda85d8304941d0ac0fb78c0c164eb9ec7d35e69",
       "adaptation": "Bound each actual source-file read to 65536 bytes; preserve close-on-error."
     },

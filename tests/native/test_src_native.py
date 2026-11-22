@@ -79,7 +79,7 @@ for entry, (owner, function) in {OWNERS!r}.items():
             settings = json.loads(path.read_text())
             settings['hermes']['policies']['interactive']['approvals_mode'] = mode
             path.write_text(json.dumps(settings))
-            for name in ('autowork', 'blockers', 'plan-with-me'):
+            for name in ('unknown', 'blockers', 'plan-with-me'):
                 path = root / 'skills' / name / 'SKILL.md'
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('---\nname: ' + name + '\n---\nFixture skill.\n')

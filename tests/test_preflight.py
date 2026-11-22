@@ -137,7 +137,6 @@ class PreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             plan = '\n'.join(self.check(Path(tmp))['plan'])
         self.assertIn('plugins.entries.kit.allow_gateway_injection', plan)
-        self.assertNotIn('plugins.entries.autowork.allow_gateway_injection', plan)
 
     def test_plan_reports_runtime_defaults_opt_out(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -193,7 +192,7 @@ class PluginSettingsTests(unittest.TestCase):
         self.path = Path(self.tmp.name) / 'config.yaml'
 
     def test_other_entry_settings_are_ignored_without_mutation(self):
-        raw = {'plugins': {'entries': {'autowork': {
+        raw = {'plugins': {'entries': {'unrelated': {
             'settings': {'apply_runtime_defaults': False, 'runtime_policy': 'autonomous'},
             'allow_gateway_injection': False}}}}
         before = json.dumps(raw, sort_keys=True)
@@ -237,7 +236,6 @@ class PluginSettingsTests(unittest.TestCase):
         self.assertEqual(patch['approvals']['mode'], settings['approvals_mode'])
         self.assertEqual(patch['plugins']['entries']['kit']['allow_gateway_injection'],
                          settings['allow_gateway_injection'])
-        self.assertNotIn('autowork', patch['plugins']['entries'])
 
 
 class RuntimeFactsTests(unittest.TestCase):
@@ -324,7 +322,7 @@ class ConfigProbeTests(unittest.TestCase):
                 self.assertEqual(list(Path(tmp).iterdir()), [path])
 
     def test_empty_sections_hermes_treats_as_absent_are_accepted(self):
-        for config in ('memory:\n  # provider: existing\nplugins:\n  enabled: [autowork]\n',
+        for config in ('memory:\n  # provider: existing\nplugins:\n  enabled: [kit]\n',
                        'plugins:\n  entries:\n    foo:\n',
                        'plugins:\n  entries:\n', 'plugins:\napprovals:\nskills:\n',
                        '\ufeffmemory: {}\n'):

@@ -3,7 +3,7 @@
 ## Decision
 
 Kit is the toolset; GitHub Issues own executable plans and Orbi owns delivery.
-pi-autowork is retired and unsupported. Terminal maintenance uses `hermes kit`, with no `hermes autowork` alias or redirect.
+Terminal maintenance uses `hermes kit`.
 Existing installed-profile settings and internal state retain their compatibility contracts. This document keeps that
 contract and outstanding live proof, not completed rename-stage reports.
 
@@ -18,8 +18,6 @@ contract and outstanding live proof, not completed rename-stage reports.
 | Pi commands | Unprefixed |
 | Local package metadata | `@trebuchet/kit` |
 | New settings writes | `plugins.entries.kit` |
-| Compatible settings input | Existing `plugins.entries.autowork` values remain readable |
-| Former executor | CLI removed; existing `~/.local/state/pi-autowork/` remains preserved recovery evidence |
 
 No npm publication is required. Install from the Git source and existing host
 marketplaces. Neither registry publication nor a scope/deprecation operation is
@@ -30,17 +28,6 @@ part of the remaining qualification.
 Manifest admission, public command namespace and per-profile settings are separate
 boundaries. Preserve all three consistently; a source rename cannot reset approvals,
 menu priority, gateway injection, installed profile identity or private runtime state.
-
-## Stage 1: dual-read settings key
-
-The runtime owns canonical/legacy key selection. Read both entries per key:
-canonical values win and legacy values supply keys absent from the canonical entry.
-Write new settings under `plugins.entries.kit`. Where the actually loaded legacy
-plugin still reads its old gateway-injection entry, preserve that supported bridge
-and report which entry is effective. No profile with neither key loses defaults.
-
-Fixtures cover legacy-only, both-key and neither-key profiles, including approvals,
-menu priority and opt-out. They prove read/write logic, not real-profile migration.
 
 ## Stage 2: plugin identity and namespace
 
@@ -53,7 +40,7 @@ source placement; it does not migrate installed state.
 ## Stage 3: documentation and installers
 
 Current README, runbooks, catalogs and installer labels use supported Kit install
-commands and explain the legacy settings bridge. Do not tell users to invoke the
+commands. Do not tell users to invoke the
 retired namespaced skill spelling. Keep current compatibility instructions, not a
 completed-stage checklist or dated migration report.
 
@@ -61,7 +48,7 @@ completed-stage checklist or dated migration report.
 
 The remaining requirement is pre-rename profile preservation. Under its separately
 authorized live scope, run the renamed plugin against a profile configured under
-`plugins.entries.autowork` and prove approvals mode, menu priority and opt-out stay
+the previous settings key and prove approvals mode, menu priority and opt-out stay
 unchanged. Offline fixtures do not satisfy this requirement. A saved owner answer
 is not live execution or proof, and this cleanup does not mark the goal met.
 
@@ -74,8 +61,7 @@ is not live execution or proof, and this cleanup does not mark the goal met.
 
 ## Rollback
 
-Use supported source/configuration rollback with preserved prior inputs. Removing
-the new key restores the compatible old-key read where applicable. Do not reset,
+Use supported source/configuration rollback with preserved prior inputs. Do not reset,
 rewrite or discard customized profiles, installed state or recovery evidence.
 
 ## What this plan does not cover

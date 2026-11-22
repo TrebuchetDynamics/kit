@@ -3,9 +3,7 @@
 ## Current scope
 
 Kit supplies planning and repository-workflow skills. GitHub Issues own executable
-work and Orbi owns delivery. The pi-autowork terminal UI, web UI and Paseo executor
-plugin are removed and unsupported; this document does not authorize rebuilding
-them. Orbi remains paused and live-unqualified.
+work and Orbi owns delivery. Orbi remains paused and live-unqualified.
 
 Current product contracts live in [the product specification](docs/project.md).
 Use [GitHub-native delivery](docs/github-native.md) for the support boundary,

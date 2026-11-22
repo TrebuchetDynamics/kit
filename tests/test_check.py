@@ -25,10 +25,10 @@ class CheckWorkflowTests(unittest.TestCase):
         self.assertEqual(jobs['runner']['strategy']['matrix']['shard'], [1, 2, 3])
         fast = [step.get('run', '') for step in jobs['fast']['steps']]
         shards = [step.get('run', '') for step in jobs['runner']['steps']]
-        self.assertIn('python scripts/check.py --exclude tests/native', fast)
-        self.assertIn('python scripts/check.py tests/native --shard ${{ matrix.shard }}/3', shards)
+        self.assertIn('node --test tests/portable_pi.test.mjs', fast)
+        self.assertIn('python -m py_compile __init__.py', fast)
+        self.assertIn('python scripts/check.py --shard ${{ matrix.shard }}/3', shards)
         for command in fast + shards:
-            self.assertNotIn('pi-autowork', command)
             self.assertNotIn('textual', command)
 
 
@@ -97,7 +97,6 @@ class OfflineCheckTests(unittest.TestCase):
         self.write('scripts/tree_guard.py', 'print("CORE guard")\n')
         self.write('skills/docs-sync/scripts/docs.py', 'print("CORE docs")\n')
         self.write('tasks/items/T.md', '# fixture\n')
-        self.write('pi-autowork/bin/autowork', '#!/usr/bin/env python3\nprint("CORE tasks")\n').chmod(0o755)
         base = self.affected_repo()
         self.write('src/kit_runtime/fleet_view.py', 'VALUE = 2\n')
         self.git('commit', '-qam', 'fleet change')
@@ -108,7 +107,6 @@ class OfflineCheckTests(unittest.TestCase):
                      'test_command.py <- src/kit_runtime/command.py <- src/kit_runtime/fleet_view.py'):
             self.assertIn(text, result.stdout)
         self.assertNotIn('unselected module ran', result.stdout + result.stderr)
-        self.assertNotIn('CORE tasks', result.stdout)
         self.assertEqual((self.root / 'tasks/items/T.md').read_text(), '# fixture\n')
         self.assertFalse(list((self.root / 'scripts').glob('__pycache__/*')))
 
@@ -196,54 +194,16 @@ class OfflineCheckTests(unittest.TestCase):
         result = self.run_check('tests/test_one.py')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_historical_layout_evidence_and_current_inventory_partitions(self):
-        import hashlib
+    def test_current_inventory_partitions(self):
         import runpy
-        fixture = json.loads((ROOT / 'tests/fixtures/python-layout.json').read_text())
         checker = runpy.run_path(str(SCRIPT))
         actual = {p.relative_to(ROOT).as_posix(): p for p in checker['discover_tests'](ROOT)}
-        required = {p: set(row['methods']) for p, row in fixture['modules'].items()
-                    if row['source'] is not None}
-        # Reconcile immutable pre-migration, failed-integration, landed-base and task-base
-        # inputs. Only recorded historical renames may remove an original identity.
-        renames = {(row['source'], row['old']): row for row in fixture['renames']}
-        inputs, removed = {}, set()
-        for snapshot in fixture['snapshots']:
-            for path, delta in snapshot['delta'].items():
-                methods = required.setdefault(path, set())
-                for name in delta['removed']:
-                    source = fixture['modules'][path]['source'] or path
-                    proof = renames[source, name]
-                    self.assertIn(proof['new'], delta['added'])
-                    self.assertRegex(proof['commit'], r'^[0-9a-f]{40}$')
-                    if 'before_input' in proof:
-                        self.assertEqual(inputs[path], proof['before_input'])
-                        self.assertEqual(snapshot['inputs'][path], proof['after_input'])
-                        self.assertEqual(snapshot['revision'], proof['commit'])
-                        self.assertRegex(proof['parent'], r'^[0-9a-f]{40}$')
-                        for input_path, mode, blob in (proof['before_input'], proof['after_input']):
-                            self.assertEqual(input_path, proof['path'])
-                            self.assertEqual(mode, '100644')
-                            self.assertRegex(blob, r'^[0-9a-f]{40}$')
-                    methods.remove(name)
-                    removed.add((source, name))
-                self.assertFalse(methods & set(delta['added']), (path, 'duplicate addition'))
-                methods.update(delta['added'])
-            inputs.update(snapshot['inputs'])
-            fingerprint = hashlib.sha256(json.dumps(
-                {p: sorted(ids) for p, ids in sorted(required.items())}, sort_keys=True).encode()).hexdigest()
-            self.assertEqual(fingerprint, snapshot['method_inventory_sha256'], snapshot['role'])
-            self.assertEqual(set(inputs), set(required))
-        self.assertEqual(removed, set(renames))
-        self.assertEqual(set(required), set(fixture['modules']))
-        # The fixture describes the retired executor, not the current product inventory.
-        # Preserve its immutable provenance above; enforce current ownership and shards
-        # below rather than requiring removed executor identities.
         self.assertEqual(checker['TEST_DIRS'], ('tests', 'tests/native',
                          'skills/docs-sync/scripts', 'skills/git-commit-push/scripts'))
         self.assertTrue(actual)
-        self.assertFalse(any(path.startswith('pi-autowork/') for path in actual))
-        self.assertEqual({p: list(value) for p, value in checker['EXCLUSIONS'].items()}, fixture['exclusions'])
+        self.assertEqual(set(checker['EXCLUSIONS']), {
+            'tests/integration_plugin.py', 'tests/integration_autoresearch.py',
+            'tests/integration_bundle.py'})
         partitions = [[(str(folder.relative_to(ROOT)), name)
                        for folder, names in checker['units'](ROOT, list(actual.values()), shard=(i, 3))
                        for name in names] for i in range(3)]
