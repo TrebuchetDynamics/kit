@@ -262,6 +262,23 @@ git clone https://github.com/TrebuchetDynamics/kit && cd kit
 ./install.sh --only pi,tx --dry-run
 ```
 
+Normal `./install.sh` and `./install.sh update` runs first require a successful
+`git pull --ff-only` from the checkout's configured upstream. Staged, unstaged and
+non-ignored untracked changes are saved with `git stash push --include-untracked`
+before pulling; ignored files stay in place. The installer immediately prints the
+stash's full object ID and a shell-quoted `git -C <checkout> stash apply --index <object-id>`
+command, even with `--quiet`. Keep that command for manual recovery: it still targets
+the same stash after newer stashes are added. Kit never applies or removes the stash,
+even after success. If edits were stashed or HEAD advanced, the on-disk installer is
+re-executed once before installing.
+
+A Git checkout without a usable upstream, or a status/stash/pull failure (including
+diverged history), stops before any component install or service restart. Resolve
+the reported Git error or configure the tracking branch, then retry; any created
+stash remains available for manual recovery. Unpacked non-Git releases still work.
+`--no-pull` or `KIT_INSTALL_NO_PULL=1` explicitly installs the checkout as-is without
+stashing or pulling. `--help`, `--list` and `--dry-run` never stash or pull.
+
 `--full` (`--all`) and `--verbose` (`-v`) are the defaults. Missing hosts other than
 Pi are skipped, while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
 installs nothing. Install/update restarts active supported host integrations;
