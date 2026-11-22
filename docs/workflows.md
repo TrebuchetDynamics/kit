@@ -5,7 +5,21 @@ explicit skills. See [support, setup and migration](github-native.md).
 
 ## Unblock repairs blocked GitHub work
 
-`/unblock` checks open issues and PRs, fixes actionable causes, and reconciles recovery labels without asking again for routine decisions. It considers every `ai-planning` or `ai-blocked` issue for `ai-ready`. It publishes readiness after confirming the plan is complete or the blocker is repaired (both when both labels apply). It verifies whether work resumed. Read-only requests, explicit pauses, existing PR ownership and human gates remain binding; the skill does not grant GitHub access or enable paused Orbi. See [Unblock](../skills/unblock/SKILL.md).
+`/unblock` checks open issues and PRs, fixes actionable causes, and reconciles
+recovery labels without asking again for routine decisions. It considers every
+`ai-planning` or `ai-blocked` issue for `ai-ready`. It publishes readiness after
+confirming the plan is complete or the blocker is repaired (both when both labels
+apply). It verifies whether work resumed. Read-only requests, explicit pauses,
+existing PR ownership and human gates remain binding; the skill does not grant
+GitHub access or enable paused Orbi.
+
+Its [PR phase](../skills/unblock/SKILL.md#blocked-prs-owner-first-repair-records)
+accounts for every scoped open PR, including those without linked issues. It reuses
+the exact repair's existing issue, owner and branch, with deduplicated evidence
+comments for live workers. Only uncovered actionable repairs or independent
+prerequisites need linked issues under the existing publication contract. Held,
+pending and unknown gates stay explicit. Publishing a repair issue is not recovery.
+See [Unblock](../skills/unblock/SKILL.md) for the full workflow.
 
 ## Bundled Ponytail
 
