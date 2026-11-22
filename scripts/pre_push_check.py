@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Run the tests a push can affect, before the push; the full suite stays CI's job.
+"""Check the pushed revision and core contracts; leave test execution to CI by default.
 
-    git push                      # the hook runs `scripts/affected_tests.py --base <pushed-from> --run --defer-full`
+    git push                      # fast core checks only
+    KIT_PRE_PUSH=affected git push # also run targeted tests before pushing
     python3 scripts/pre_push_check.py --install   # write or chain the hook into .git/hooks/pre-push
     KIT_PRE_PUSH=0 git push       # skip the tests this once (so does `git push --no-verify`)
 
@@ -9,10 +10,9 @@ The core contracts (docs check) run first, in seconds: the selector
 leaves documents to them. Git hands a pre-push hook one line per ref: local ref, local sha, remote ref, remote sha.
 The base of the change is the remote's current sha when this repository knows it, else
 the merge-base with origin/main (the selector's own default). Deleted refs and refs with
-nothing new are skipped. The selection follows the working tree, as the selector does, so
+nothing new are skipped. The optional test selection follows the working tree, as the selector does, so
 uncommitted edits are tested too. Whole-suite selections (check, CI, packaging or unresolved
-mappings) are reported and deferred to CI, not run in the push hook. Targeted selections
-still run locally and failures refuse the push.
+mappings) are reported and deferred to CI, not run in the push hook. In affected mode, targeted selections run locally and failures refuse the push.
 Changed local objects must peel to the checked-out HEAD before checks; HEAD must still
 match afterward. This revision guard does not qualify an immutable candidate tree.
 """
@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ZERO = '0' * 40
 MARKER = 'pre_push_check.py'
 HOOK = '''#!/bin/sh
-# Installed with --install: the affected tests run before a push; the whole suite is CI's job.
+# Kit pre-push checks; use KIT_PRE_PUSH=affected to include targeted tests.
 input=$(cat)
 printf '%s\\n' "$input" | python3 "$(git rev-parse --show-toplevel)/scripts/pre_push_check.py" "$@"
 '''
@@ -173,11 +173,14 @@ def main(argv=None, stdin=None, run=run_affected, core=run_core):
         if candidate != head:
             return revision_refusal(f'candidate {local_ref} ({local_sha}) resolves to {candidate}, '
                                     f'but checked-out HEAD is {head}')
-    bases = pushed_bases(lines)
     if core():
         print('pre-push: a core contract refused this tree; nothing was pushed. Fix it, or leave this one to CI with\n'
               '  git push --no-verify', file=sys.stderr, flush=True)
         return 1
+    affected = os.environ.get('KIT_PRE_PUSH') == 'affected'
+    if not affected:
+        print('pre-push: test execution deferred to CI (KIT_PRE_PUSH=affected to run targeted tests)', flush=True)
+    bases = pushed_bases(lines) if affected else ()
     for base in bases:
         code = run(base)
         if code:

@@ -35,8 +35,8 @@ python3 scripts/affected_tests.py --run   # only tests your change can affect
   inventory; CI runs the full suite on every push, so a focused change does not
   need a local full run. Do not rerun whole test directories "to be safe".
 - The pre-push hook (`python3 scripts/pre_push_check.py --install`, once per
-  clone) runs core contracts plus targeted affected tests and defers whole-suite
-  selections to CI. `KIT_PRE_PUSH=0` or `git push --no-verify` skips it.
+  clone) checks the pushed revision and core contracts; tests run in CI.
+  Use `KIT_PRE_PUSH=affected git push` to also run targeted tests locally. `KIT_PRE_PUSH=0` or `git push --no-verify` skips it.
 - Pi adapter tests need Node 22: `node --test tests/portable_pi.test.mjs`.
 - Offline, registration and native checks prove boundaries, not model output,
   live messaging or Orbi delivery. Keep unproven live gates visible instead of
