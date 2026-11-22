@@ -124,7 +124,7 @@ class GithubNativeDocsTests(unittest.TestCase):
         for phrase in (
                 "`/orbi [status|setup|start|update|stop|help]`",
                 "Bare invocation reads status",
-                "Setup prepares without activating scheduling",
+                "`setup --prepare-only` prepares without activating scheduling",
                 "On Linux, status names the state it observed",
                 "`absent`",
                 "`prepared` when an owned timer is enabled or active",
@@ -155,7 +155,7 @@ class GithubNativeDocsTests(unittest.TestCase):
                 'missing deployment-local provider file',
                 '--config PATH',
                 'matching provider inputs',
-                'does not activate scheduling or qualify live recovery, isolation or delivery'):
+                '`setup --prepare-only` does not activate scheduling or qualify live recovery, isolation or delivery'):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, setup)
         for anchor in ('first-deployment-provider-bootstrap',

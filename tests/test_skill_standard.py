@@ -115,6 +115,29 @@ class SkillStandardTests(unittest.TestCase):
             with self.subTest(file=str(path)):
                 self.assertEqual(docs.check_document(repo, 'skill', path), [])
 
+    def test_writing_for_agents_resolves_kit_invocation_and_read_only_completion(self):
+        # Source contract only: these assertions do not measure model adherence.
+        text = ' '.join((ROOT / 'skills/writing-for-agents/SKILL.md').read_text().split())
+        invocation = text.split('## The bar for a document', 1)[0]
+        for rule in ('before choosing metadata', 'Kit public skills',
+                     'explicit host command', '/docs-sync', 'plain reference',
+                     'disable-model-invocation: true', 'allow_implicit_invocation: false',
+                     '../../docs/skill-standard.md', 'skills-only', 'non-Kit projects'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, invocation)
+        planning = text.split('## Planning or read-only advice', 1)[1].split(
+            '## Editing an existing skill', 1)[0]
+        self.assertIn('Plan a Kit skill that another workflow needs; do not edit.', planning)
+        for rule in ('inline', 'write nothing', 'executable instructions', 'proposed design'):
+            self.assertIn(rule, planning)
+        done = text.split('**Done when:**', 1)[1].split('**Receipt:**', 1)[0]
+        self.assertIn('authorized edit', done)
+        self.assertIn('affected checks', done)
+        self.assertIn('planning/read-only', done)
+        self.assertIn('without implementation or a line delta', done)
+        adapter = (ROOT / 'adapters/skills/writing-for-agents/SKILL.md').read_text()
+        self.assertNotIn('Report the documents changed, lines before and after', adapter)
+
     def test_lgtm_inherits_planning_authority_without_a_second_approval_round(self):
         skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())
         self.assertIn('LGTM is a yes', skill)
@@ -133,6 +156,32 @@ class SkillStandardTests(unittest.TestCase):
         for obsolete in ('accept every recommendation', 'accept all six',
                          'LGTM accepts the first stated recommendation'):
             self.assertNotIn(obsolete, skill)
+
+    def test_lgtm_continues_open_session_todos_without_adding_authority(self):
+        skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())
+        for rule in ('host\'s native todo or task-list tool for the current session',
+                     'Pi and Pi-Bolt todos, Claude Code tasks',
+                     'Without such a list, this rule does not apply',
+                     'session state, not a backlog or a replacement for GitHub Issues',
+                     'A todo item adds no authority',
+                     'outside inherited authority or needing a new owner decision',
+                     'report it and do not do it',
+                     'A blocked item stays open',
+                     'report the exact blocker once',
+                     'continue items that do not depend on it',
+                     'unanswered external request', 'host approval gate',
+                     'continuing no-write/no-push limit',
+                     'only when no actionable todo item is open'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, skill)
+        table = skill.split('## Low-effort input', 1)[1].split('## Fast path', 1)[0]
+        self.assertIn('| Open session todo items after the checkpoint action |', table)
+        fast_path = skill.split('## Fast path', 1)[1].split('## Checkpoint scope', 1)[0]
+        for rule in ('After resolving the checkpoint action, read open session todo items',
+                     'inside inherited authority in dependency order with its checks',
+                     'mark it done only after its check passes',
+                     'continue until each is done or blocked'):
+            self.assertIn(rule, fast_path)
 
     def test_lgtm_accepts_recommended_batch_without_reopening_settled_rounds(self):
         skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())

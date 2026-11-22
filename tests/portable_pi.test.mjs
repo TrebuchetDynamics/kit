@@ -126,13 +126,32 @@ test('Orbi dispatch forwards lifecycle arguments and queues in a busy session', 
   const {fileURLToPath} = await import('node:url');
   const adapterFile = new URL('../adapters/skills/orbi/SKILL.md', import.meta.url);
   const adapter = await readFile(adapterFile, 'utf8');
+  const workflowFile = new URL('../skills/orbi/SKILL.md', import.meta.url);
+  const workflow = await readFile(workflowFile, 'utf8');
+  const hostFile = new URL('../adapters/skills/COMMON.md', import.meta.url);
+  const host = await readFile(hostFile, 'utf8');
   for (const raw of [
+    '', 'status', 'help', 'setup', 'setup --dry-run', 'start --dry-run',
+    'setup --prepare-only', 'setup --prepare-only --dry-run',
+    'setup --resume-setup --config "/tmp/literal $(config).toml"',
+    'setup --prepare-only --resume-setup --config "/tmp/literal $(config).toml"',
+    'setup --harness pi --pi-providers "/tmp/models $(literal).json" --pi-provider openai-codex --pi-model gpt-6.2-sol',
+    'stop --dry-run', 'update --dry-run',
+    'update --config "/missing literal $(file).toml"', 'start or stop?',
     'setup --dry-run --json\n--repo-dir "/tmp/checkout $(literal)"; no push',
     'start --dry-run --harness pi --pi-providers "/tmp/models $(literal).json" --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
   ]) {
     for (const idle of [true, false]) {
+      const before = messages.length;
       await commands.get('orbi').handler(raw, {isIdle: () => idle});
       const [message, delivery] = messages.at(-1);
+      // One dispatch is NOT a measured model request. The real host owns inference.
+      assert.equal(messages.length - before, 1);
+      for (const [body, source] of [[workflow, workflowFile], [host, hostFile]]) {
+        assert.equal(message.split(body).length - 1, 1, `supplied once: ${source}`);
+        assert.equal(message.includes(`Source: ${fileURLToPath(source)}\n`), true);
+        assert.equal(message.includes(`Resolve its references from ${fileURLToPath(new URL('./', source))}.`), true);
+      }
       assert.equal(message.includes(adapter), true);
       assert.equal(message.includes('../../../skills/orbi/SKILL.md'), true);
       assert.equal(message.includes(`Resolve the workflow references from ${fileURLToPath(new URL('./', adapterFile))}.`), true);
@@ -336,6 +355,10 @@ test('installed archive resolves portable references and commands without checko
       assert.equal(installedAdapter.includes(forbidden), false, forbidden);
     }
     const canonicalOrbi = await readFile(join(installed, 'skills/orbi/SKILL.md'), 'utf8');
+    await commands.get('orbi').handler('update --dry-run', {isIdle: () => true});
+    assert.equal(messages.at(-1)[0].includes(canonicalOrbi), true);
+    assert.equal(messages.at(-1)[0].includes(await readFile(join(installed, 'adapters/skills/COMMON.md'), 'utf8')), true);
+    assert.equal(messages.at(-1)[0].includes(`Source: ${join(installed, 'skills/orbi/SKILL.md')}\n`), true);
     await readFile(join(installed, 'skills/orbi/references/lifecycle.md'));
     await readFile(join(installed, 'skills/orbi/scripts/orbi_control.py'));
     assert.match(canonicalOrbi, /<this-skill>\/scripts\/orbi_control\.py/);
