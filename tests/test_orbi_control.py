@@ -1165,6 +1165,42 @@ class FirstDeploymentTests(unittest.TestCase):
                     self.assertEqual(operations.count('setup'), 1)
                     self.assertEqual(operations.count('install-units'), 1)
 
+    def test_public_setup_default_preserves_degraded_timer_failure_receipt(self):
+        routes = dict(re.findall(r'\| `(setup[^`]*?)` \| `([^`]+)` \|',
+                                 (ROOT / 'skills/orbi/SKILL.md').read_text()))
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        timer, service = f'{prefix}@1.timer', f'{prefix}@1.service'
+        marker = self.h.root / 'installed'
+        loaded = self.h.scheduler_rules()
+        writes = {str(marker): 'installed'}
+        for suffix in ('service', 'timer'):
+            path = self.h.unit_dir / f'{prefix}@.{suffix}'
+            writes[str(path)] = path.read_text()
+            path.unlink()
+        for rule in loaded:
+            rule['if_exists'] = str(marker)
+        self.h.rules({'tool': 'orbi', 'argv_contains': ['install-units'],
+                      'write': writes},
+                     {'tool': 'systemctl', 'argv_contains': ['--user enable --now', timer],
+                      'exit': 7}, *loaded)
+        # Real CLI process with the exact helper argv from public setup's table.
+        result = subprocess.run(
+            [sys.executable, '-B', str(HELPER), *shlex.split(routes['setup']),
+             '--repo-dir', str(self.h.repo), '--json', *self.options], env=self.h.env,
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        doc = json.loads(result.stdout)
+        self.assertEqual(doc['preparation']['state'], 'prepared')
+        self.assertEqual(doc['original_error'], 'command_failed')
+        self.assertEqual(doc['recurring_scheduling'], 'incomplete')
+        self.assertEqual(doc['first_tick'], 'requested')
+        self.assertEqual(doc['activated_timers'], [])
+        self.assertEqual(doc['steps'][-1]['unit'], timer)
+        mutations = [c['argv'] for c in self.h.calls() if c['tool'] == 'systemctl'
+                     and set(c['argv']) & {'enable', 'start', 'disable', 'stop', 'kill', 'restart'}]
+        self.assertEqual(mutations, [['--user', 'enable', '--now', timer],
+                                     ['--user', 'start', service]])
+
     def test_first_start_prepares_validates_and_activates_once(self):
         for kind in (None, 'pi', 'donor'):
             with self.subTest(harness=kind):
@@ -2504,11 +2540,17 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                                         'first_tick' if failed_step == 'first_tick' else 'activate_timer',
                                         failed_unit, ('activated_timers', completed))
                     self.assertEqual(doc['activation'], 'possible')
+                    if failed_step != 'first_tick':
+                        self.assertEqual(doc['first_tick'], 'requested' if failure == 'exit' else
+                                         ('blocked' if failure == 'snapshot_unavailable' else 'not-requested'))
+                        self.assertEqual(doc['recurring_scheduling'], 'incomplete')
                     self.assertIn('may already be activated', doc['error']['message'])
                     self.assertEqual([s['step'] for s in doc['steps'][:4]],
                                      ['reuse_existing_deployment', 'lock', 'upstream_setup', 'install_units'])
                     self.assertEqual(self.mutations(),
-                                     [['--user', 'enable', '--now', t] for t in completed] + [failed])
+                                     [['--user', 'enable', '--now', t] for t in completed] + [failed]
+                                     + ([['--user', 'start', service]] if failure == 'exit'
+                                        and failed_step != 'first_tick' else []))
                     commands = [c['argv'][0] for c in self.h.calls() if c['tool'] == 'orbi'
                                 and c['argv'][0] in {'setup', 'install-units'}]
                     self.assertEqual(commands, ['setup', 'install-units'])
@@ -2521,6 +2563,109 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                                      + [('systemctl', argv) for argv in mutations])
                     if failure == 'snapshot_unavailable':
                         self.assertEqual(doc['scheduler']['state'], 'unavailable')
+
+    def test_timer_failure_first_tick_uses_fresh_idle_evidence_and_keeps_error(self):
+        timer, service = f'{self.prefix}@1.timer', f'{self.prefix}@1.service'
+        marker = self.h.root / 'timer-failed'
+        for request in ('success', 'exit', 'timeout'):
+            with self.subTest(request=request):
+                marker.unlink(missing_ok=True)
+                # A failed enable may nevertheless enable/activate the timer.
+                fresh = self.h.scheduler_rules(timers={1: 'active'}, enabled={1: True})
+                for rule in fresh:
+                    rule['if_exists'] = str(marker)
+                self.h.rules(
+                    {'tool': 'systemctl', 'argv_contains': ['--user enable --now', timer], 'exit': 7,
+                     'write': {str(marker): 'partial'}, 'stderr': SECRET},
+                    {'tool': 'systemctl', 'argv_contains': ['start', service],
+                     'exit': 0 if request == 'success' else 9,
+                     'sleep': 2 if request == 'timeout' else 0, 'stderr': SECRET},
+                    *fresh, *self.h.scheduler_rules())
+                self.h.clear_calls()
+                with self.bounded_run(['--user', 'start', service]):
+                    code, doc, err = self.h.run('start')
+                self.assertEqual(code, 1, err)
+                self.assert_receipt(doc, 'command_failed', 'activate_timer', timer,
+                                    ('activated_timers', []))
+                self.assertIn('exit 7', doc['error']['message'])
+                self.assertEqual(doc['first_tick'], {'success': 'requested', 'exit': 'failed',
+                                                     'timeout': 'unverified'}[request])
+                evidence = doc['first_tick_evidence']
+                self.assertEqual(evidence['unit'], service)
+                self.assertEqual(evidence['scheduler']['pending_jobs'], [])
+                self.assertTrue(evidence['scheduler']['timers'][timer]['enabled'])
+                if request != 'success':
+                    self.assertEqual(evidence['error'], 'command_timeout' if request == 'timeout'
+                                     else 'command_failed')
+                self.assertEqual(self.mutations(), [['--user', 'enable', '--now', timer],
+                                                   ['--user', 'start', service]])
+                calls = self.h.calls()
+                failed_at = next(i for i, c in enumerate(calls) if c['argv'] == self.mutations()[0])
+                start_at = next(i for i, c in enumerate(calls) if c['argv'] == self.mutations()[1])
+                reads = calls[failed_at + 1:start_at]
+                self.assertTrue(any('list-jobs' in c['argv'] for c in reads))
+                self.assertTrue(any('FragmentPath' in c['argv'] for c in reads))
+                self.assertTrue(any('ActiveState' in c['argv'] for c in reads))
+                self.assertFalse([c for c in calls if c['tool'] == 'orbi' and not c['argv']])
+                self.assertEqual(snapshot(self.h.a['deploy']), self.h.a['snapshot'])
+
+    def test_timer_failure_blocks_first_tick_on_unsafe_fresh_evidence(self):
+        timer, service = f'{self.prefix}@1.timer', f'{self.prefix}@1.service'
+        marker = self.h.root / 'timer-failed'
+        original_config = self.config.read_text()
+        for unsafe in ('active', 'activating', 'reloading', 'deactivating', 'unknown',
+                       'unavailable', 'pending_service', 'pending_timer', 'surplus_worker',
+                       'foreign', 'config_drift', 'repo_drift', 'missing_service',
+                       'missing_timer', 'timer_transition', 'enablement_unknown', 'jobs_unreadable'):
+            with self.subTest(unsafe=unsafe):
+                marker.unlink(missing_ok=True)
+                self.config.write_text(original_config)
+                fresh = []
+                writes = {str(marker): 'failed'}
+                if unsafe in helper.DRAIN_STATES | {'unknown'}:
+                    fresh = self.h.scheduler_rules(services={1: unsafe})
+                elif unsafe == 'surplus_worker':
+                    fresh = self.h.scheduler_rules(services={6: 'active'})
+                    fresh.insert(0, {'tool': 'systemctl', 'argv_contains': ['list-units'],
+                                     'stdout': f'{self.prefix}@6.service loaded active running -\n'})
+                elif unsafe in ('pending_service', 'pending_timer', 'jobs_unreadable'):
+                    unit = service if unsafe == 'pending_service' else timer
+                    fresh = [{'tool': 'systemctl', 'argv_contains': ['list-jobs'],
+                              'stdout': 'unreadable\n' if unsafe == 'jobs_unreadable' else
+                                        f'42 {unit} start waiting\n'}]
+                elif unsafe == 'unavailable':
+                    fresh = [{'tool': 'systemctl', 'argv_contains': ['show'], 'exit': 1}]
+                elif unsafe == 'foreign':
+                    foreign = self.h.root / f'{self.prefix}@1.service'
+                    foreign.write_text(f'Environment="ORBI_CONFIG={self.h.a["config"]}"\n')
+                    fresh = [{'tool': 'systemctl', 'argv_contains': ['show', service, 'FragmentPath'],
+                              'stdout': str(foreign) + '\n'}]
+                elif unsafe == 'config_drift':
+                    writes[str(self.config)] = original_config + '# changed\n'
+                elif unsafe == 'repo_drift':
+                    fresh = [{'tool': 'git', 'argv_contains': ['config', 'remote.origin.url'],
+                              'stdout': 'https://github.com/other/repo.git\n'}]
+                elif unsafe in ('missing_service', 'missing_timer'):
+                    fresh = [{'tool': 'systemctl', 'argv_contains': ['show', 'FragmentPath',
+                              service if unsafe == 'missing_service' else timer], 'stdout': '\n'}]
+                elif unsafe == 'timer_transition':
+                    fresh = self.h.scheduler_rules(timers={1: 'activating'})
+                elif unsafe == 'enablement_unknown':
+                    fresh = [{'tool': 'systemctl', 'argv_contains': ['is-enabled', timer],
+                              'stdout': 'unknown\n', 'exit': 1}]
+                for rule in fresh:
+                    rule['if_exists'] = str(marker)
+                self.h.rules({'tool': 'systemctl', 'argv_contains': ['--user enable --now', timer],
+                              'exit': 7, 'write': writes}, *fresh, *self.h.scheduler_rules())
+                self.h.clear_calls()
+                code, doc, err = self.h.run('start')
+                self.assertEqual(code, 1, err)
+                self.assertEqual(doc['original_error'], 'command_failed')
+                self.assertEqual(doc['first_tick'], 'blocked')
+                self.assertTrue(doc['first_tick_evidence']['reason'])
+                self.assertEqual(self.mutations(), [['--user', 'enable', '--now', timer]])
+                self.assertEqual(snapshot(self.h.a['deploy']), self.h.a['snapshot'])
+        self.config.write_text(original_config)
 
     def test_post_activation_observation_and_failed_recovery_snapshot(self):
         marker = self.h.root / 'installed'
@@ -2610,7 +2755,9 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                                         (completed_key, timers[:-1]))
                     self.assertTrue(closed, 'lock handle must close even if unlock fails')
                     self.assertEqual(self.mutations(),
-                                     [['--user', operation, '--now', t] for t in timers])
+                                     [['--user', operation, '--now', t] for t in timers]
+                                     + ([['--user', 'start', f'{self.prefix}@1.service']]
+                                        if action == 'start' and failure == 'exit' else []))
                     self.assertNotIn(SECRET, err)
 
     def test_preflight_filesystem_and_dry_run_errors_remain_mutation_free(self):
@@ -2697,7 +2844,9 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                                     (completed_key, [f'{self.prefix}@1.timer']))
                 self.assertEqual(self.mutations(),
                                  [['--user', operation, '--now', f'{self.prefix}@{i}.timer']
-                                  for i in (1, 2)])
+                                  for i in (1, 2)]
+                                 + ([['--user', 'start', f'{self.prefix}@1.service']]
+                                    if action == 'start' else []))
                 self.assertNotIn(SECRET, failed.stdout + failed.stderr)
 
 
