@@ -13,6 +13,10 @@ apply). It verifies whether work resumed. Read-only requests, explicit pauses,
 existing PR ownership and human gates remain binding; the skill does not grant
 GitHub access or enable paused Orbi.
 
+When requirements change, [hand the retained work back on the same issue](../skills/unblock/SKILL.md#changed-requirements-hand-back-on-the-same-issue).
+Name the commit, the missing behavior, and how to verify it. A handoff is not
+evidence of resumed work. See [ADR 0002](adr/0002-hand-back-incomplete-work-on-the-same-issue.md).
+
 Its [PR phase](../skills/unblock/SKILL.md#blocked-prs-owner-first-repair-records)
 accounts for every scoped open PR, including those without linked issues. It reuses
 the exact repair's existing issue, owner and branch, with deduplicated evidence
