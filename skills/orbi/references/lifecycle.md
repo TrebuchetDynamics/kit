@@ -417,6 +417,58 @@ local reads. Missing evidence is `unavailable`, never an empty queue. Status
 and dry-run create no config, lock, receipt or scratch file and suppress child
 Python bytecode writes.
 
+### Pending issues and read coverage
+
+`queue.state` and `queue.ready` remain the ready-queue interface: ready is a list
+of `#number title` strings, now verified against observed holds, ownership and
+open native prerequisites. `queue.pending_count` counts all observed open issues,
+not PRs; `queue.pending` groups them into `actionable_blocker`, `active_owned`,
+`native_dependency`, `planning_paused`, `epic`, `ready` and `unknown`. Each row
+includes number, title, URL, labels, observed owners, native prerequisites, reason
+and next action. Ownership labels/assignees are not proof of a running worker.
+Epics are coordination, not executable work. Planning/paused issues point to their
+owner for the recorded decision/input; when not evidenced here, that input is
+explicitly unknown. Dependencies come only from native `blockedBy`, never issue
+ordering or similar titles. Status does not invent a repository-wide bottleneck
+from one blocked issue.
+
+GitHub reads are bounded: at most three cursor pages of 100 issues (creation
+order), with up to 100 labels, 10 assignees and 20 native prerequisites per issue.
+Non-Issue and closed records are excluded defensively. Native dependency evidence
+is batched with the list, not fetched separately per issue. Only blockers and
+owned/active issues request comment detail, prioritizing blockers. A shared budget
+of ten additional reads covers comments (100 per page, up to three pages per
+issue) and deduplicated same-repository PR links found in those comments. No LLM
+call per issue is required. Unlinked PRs and remote worker ownership remain unknown.
+PR rows report observed state and head; `OPEN` is not successful delivery, and
+`MERGED` alone does not prove issue acceptance or live qualification.
+
+`queue.coverage` reports listing completeness, page/read bounds, reads performed
+and gaps, including truncated nested connections, repeated/missing cursors, detail
+caps and failed/invalid API reads. `queue.state` is `ok` with complete evidence,
+`partial` with retained observations and gaps, or `unavailable` when no reliable
+listing was read. A successful complete empty list is genuinely zero pending;
+an API failure is not. Partial counts/readiness are observed lower bounds, not an
+exhaustive queue. Restore GitHub auth/read access or inspect the named limit, then
+rerun read-only status. Raw API errors are not echoed. JSON exposes these fields;
+text mode renders them as flattened `queue.pending.<group>=...` and coverage lines.
+
+A blocked failure receipt's `retry_safe=false` forbids blind retry/requeue; no
+receipt ever grants safe retry. For a reported branch change/conflict, the next
+action is to compare the current remote head and retained work with the existing
+owner before any retry, preserving both candidates. Follow
+[`/unblock`](../../unblock/SKILL.md) deliberately for recovery; status does not
+invoke it, write labels, launch workers, repair branches or settle planning
+choices. Detail gaps mean the diagnosis may be incomplete, not permission to
+retry. An idle service snapshot plus ready issues calls for inspecting scheduler
+and ownership evidence and existing pauses; only separately authorized `start`
+can activate scheduling. No status result releases a live gate.
+
+`deployment.state=transitional` means activating/reloading services without an
+observed active service. It is neither verified idle nor issue pickup. Existing
+scheduler counts retain their observation semantics below: a transitional unit
+may count in `running_services` for drain safety, not as delivery evidence.
+
 ### Interpreting Linux scheduler inventory
 
 For a bound Linux target, `deployment.slots` and

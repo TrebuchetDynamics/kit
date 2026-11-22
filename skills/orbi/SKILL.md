@@ -38,7 +38,22 @@ lifecycle actions.
    `absent`, not an empty queue.
 2. **Status.** Run `status` (or `status --json`) for the deployment state,
    pinned source, selected harness/executable evidence, shared bootstrap, provider
-   metadata, target timers, service states and ready queue. Distinguish configured
+   metadata, target timers, service states, verified ready queue and grouped open
+   pending issues. Zero ready is not zero pending. Show each issue's number/link,
+   evidenced reason, next action and observed PR/native prerequisite. Groups are
+   actionable blocker, active/owned, native dependency, planning/paused, epic
+   coordination, ready and unknown. Planning input stays explicitly unknown when
+   not evidenced; never invent decisions or infer dependencies from ordering.
+   An open PR is not successful delivery. For a branch-conflict failure with
+   `retry_safe=false`, compare the current remote head and retained work with the
+   existing owner before any retry. Link to `/unblock` for deliberate recovery;
+   status never invokes it, changes labels, requeues or repairs a branch.
+   Bounded paginated reads expose partial/unavailable coverage and observed lower
+   bounds; do not report an empty repository from failed reads. Fetch comment/PR
+   detail only for blocked/owned issues within the shared budget; no per-issue LLM
+   calls. An activating service is transitional, not verified idle or issue pickup.
+   With idle services and ready work, inspect scheduler/ownership and existing
+   pauses rather than automatically starting anything. Distinguish configured
    slots, enabled timers, active timers and running service units: shared template
    availability is not instance enablement. Report, for example, “3 configured slots,
    3 enabled timers; observed instances 1–5,” not “5 installed slots.” Counts are local
@@ -164,7 +179,8 @@ effect. Linux is the only mutation platform in this version.
 | "PYTHONPATH isolates the source, so the uv tool dir can stay shared." | A first tick or packaging change can reinstall the shared tool and change another deployment's launcher. Set `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` with `PYTHONPATH`. |
 | "Stopping the service guarantees the work is done." | Stop owns timers only. A pre-existing invocation may finish; report `draining` and remaining review/merge work. |
 | "`orbi doctor` warns about enforced admins, so relax protection." | The warning describes the merge identity, not a protection defect. Keep enforced admins, strict CI, independent review and human acceptance. |
-| "The queue is empty because the status read failed." | A failed read is `unavailable`. Use the read-only doctor plus explicit `gh` and scheduler reads; never invent an empty queue. |
+| "The queue is empty because the status read failed." | A failed read is `unavailable`; bounded or partial reads disclose gaps. Zero verified ready is not zero pending. Use the read-only doctor plus explicit `gh` and scheduler reads; never invent an empty repository. |
+| "The service is activating and there is an open PR, so delivery is progressing." | Activating is transitional, not pickup. An open PR is not successful delivery; blocked attempts retain their existing owner and recovery inputs. |
 | "A missing launcher is ours to force-reinstall." | The units use the shared user bootstrap. Verify it and fail closed; repairing another deployment's launcher is not this command's scope. |
 | "Update is setup again, so it can skip the drain." | Update moves the engine commit and re-renders units. A live worker would run mixed code, so it refuses `update_busy` until a stop leaves verified inactivity. |
 

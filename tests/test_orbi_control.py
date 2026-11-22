@@ -191,6 +191,9 @@ class Harness:
             {'tool': 'uv', 'argv_contains': [], 'stdout': ''},
             {'tool': 'gh', 'argv_contains': ['auth', 'status'], 'stdout': 'logged in\n'},
             {'tool': 'gh', 'argv_contains': ['issue', 'list'], 'stdout': '[]\n'},
+            {'tool': 'gh', 'argv_contains': ['api', 'graphql'],
+             'stdout': json.dumps({'data': {'repository': {'issues': {
+                 'nodes': [], 'pageInfo': {'hasNextPage': False, 'endCursor': None}}}}})},
             {'tool': 'gh', 'argv_contains': ['pr', 'list'], 'stdout': '[]\n'},
             {'tool': 'node', 'argv_contains': [], 'stdout': 'v24.19.0\n'},
             {'tool': 'pi', 'argv_contains': ['auth', 'check'], 'stdout': 'ready\n'},
@@ -2653,7 +2656,7 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
 class LifecycleSequenceTests(unittest.TestCase):
     CASES = (
         ('active', {1: 'active'}, {1: 'active'}, {1: True}, 'running', 'draining', False),
-        ('activating', {1: 'activating'}, {1: 'active'}, {1: True}, 'running', 'draining', False),
+        ('activating', {1: 'activating'}, {1: 'active'}, {1: True}, 'transitional', 'draining', False),
         ('idle', {1: 'inactive'}, {1: 'inactive'}, {1: False}, 'stopped', 'stopped', True),
         ('surplus', {1: 'inactive'}, {1: 'active'}, {1: True, 2: True, 3: True},
          'prepared', 'stopped', True),
@@ -3045,7 +3048,7 @@ class LifecycleSequenceTests(unittest.TestCase):
                 self.assertEqual(code, 0, err)
                 self.assertEqual(doc['deployment']['state'],
                                  'running' if services.get(1) == 'active' else
-                                 ('running' if services.get(1) == 'activating' else 'stopped'))
+                                 ('transitional' if services.get(1) == 'activating' else 'stopped'))
 
     def test_unsupported_platforms_change_nothing(self):
         h = self.fresh()
@@ -3114,13 +3117,225 @@ class LifecycleSequenceTests(unittest.TestCase):
 
     def test_missing_queue_evidence_is_unavailable_not_empty(self):
         h = self.fresh()
-        h.rules({'tool': 'gh', 'argv_contains': ['issue', 'list'],
+        h.rules({'tool': 'gh', 'argv_contains': ['api', 'graphql'],
                  'stdout': '', 'stderr': 'auth unavailable\n', 'exit': 1},
                 *h.scheduler_rules())
         code, doc, err = h.run('status')
         self.assertEqual(code, 0, err)
         self.assertEqual(doc['queue']['state'], 'unavailable')
         self.assertNotIn('ready', doc['queue'])
+
+
+class PendingStatusTests(unittest.TestCase):
+    """Historical acceptance snapshot, not current remote deployment state."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.h = Harness(Path(self.tmp.name))
+
+    @staticmethod
+    def issue(number, labels=(), *, deps=(), owner=None, **extra):
+        return {'__typename': 'Issue', 'number': number, 'title': f'Issue {number}',
+                'url': f'https://github.com/{REPO}/issues/{number}', 'state': 'OPEN',
+                'labels': {'nodes': [{'name': name} for name in labels],
+                           'pageInfo': {'hasNextPage': False}},
+                'assignees': {'nodes': [{'login': owner}] if owner else [],
+                              'pageInfo': {'hasNextPage': False}},
+                'blockedBy': {'nodes': list(deps), 'pageInfo': {'hasNextPage': False}},
+                **extra}
+
+    @staticmethod
+    def page(nodes, more=False, cursor=None):
+        return json.dumps({'data': {'repository': {'issues': {
+            'nodes': nodes, 'pageInfo': {'hasNextPage': more, 'endCursor': cursor}}}}})
+
+    def rules(self, nodes, *extra):
+        self.h.rules(*extra, {'tool': 'gh', 'argv_contains': ['api', 'graphql'],
+                              'stdout': self.page(nodes)})
+
+    def assert_reads_only(self):
+        for call in self.h.calls():
+            if call['tool'] == 'gh':
+                self.assertTrue(call['argv'][:2] in (['api', 'graphql'], ['api', '--method'],
+                                                    ['pr', 'view']), call)
+            if call['tool'] == 'systemctl':
+                self.assertFalse(set(call['argv']) & {'enable', 'disable', 'start', 'stop',
+                                                      'restart', 'kill', 'daemon-reload'})
+            if call['tool'] == 'git':
+                self.assertFalse(set(call['argv']) & {'fetch', 'checkout', 'merge', 'push'})
+        self.assertFalse([c for c in self.h.calls() if c['tool'] == 'uv'])
+
+    def test_six_pending_activating_and_unsafe_branch_recovery(self):
+        self.h.add_deployment_a()
+        code, _, err = self.h.run('setup')
+        self.assertEqual(code, 0, err)
+        self.h.clear_calls()
+        comments = [{'body': '<!-- orbi:run=existing --> ' +
+                     '<!-- orbi:failure:v1 {"retry_safe":false,"reason_code":"human_decision_required"} -->' +
+                     ' The delivery branch changed on GitHub; retained work conflicts. ' +
+                     f'https://github.com/{REPO}/pull/64',
+                     'html_url': f'https://github.com/{REPO}/issues/62#issuecomment-1'}]
+        self.rules([self.issue(62, ['ai-ready', 'ai-blocked']),
+                    *[self.issue(n, ['ai-planning']) for n in (51, 32, 31, 23)],
+                    self.issue(28, ['ai-ready', 'ai-epic']),
+                    self.issue(61, ['ai-ready'], state='CLOSED')],
+                   {'tool': 'gh', 'argv_contains': ['issues/62/comments'],
+                    'stdout': json.dumps(comments)},
+                   {'tool': 'gh', 'argv_contains': ['pr', 'view', '64'],
+                    'stdout': json.dumps({'number': 64, 'state': 'OPEN',
+                                         'url': f'https://github.com/{REPO}/pull/64',
+                                         'headRefName': 'delivery', 'headRefOid': 'a' * 40})},
+                   *self.h.scheduler_rules(services={1: 'activating'}))
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['deployment']['state'], 'transitional')
+        queue = doc['queue']
+        self.assertEqual(queue['ready'], [])
+        self.assertEqual(queue['pending_count'], 6)
+        groups = queue['pending']
+        blocked = groups['actionable_blocker'][0]
+        self.assertEqual(blocked['number'], 62)
+        self.assertFalse(blocked['retry_safe'])
+        self.assertIn('remote head', blocked['next_action'])
+        self.assertIn('retained work', blocked['next_action'])
+        self.assertIn('existing owner', blocked['next_action'])
+        self.assertIn('/unblock', blocked['next_action'])
+        self.assertEqual(blocked['pull_requests'][0]['state'], 'OPEN')
+        self.assertIn('not successful delivery', blocked['pull_requests'][0]['meaning'])
+        self.assertEqual([i['number'] for i in groups['planning_paused']], [51, 32, 31, 23])
+        self.assertTrue(all('unknown' in i['next_action'] for i in groups['planning_paused']))
+        self.assertEqual(groups['epic'][0]['number'], 28)
+        self.assertIn('coordination', groups['epic'][0]['reason'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertEqual(len([c for c in self.h.calls() if c['tool'] == 'gh']), 3)
+        self.assert_reads_only()
+
+    def test_idle_ready_mixed_labels_native_dependency_and_unknown(self):
+        self.h.add_deployment_a()
+        code, _, err = self.h.run('setup')
+        self.assertEqual(code, 0, err)
+        self.h.clear_calls()
+        deps = [{'number': 10, 'url': f'https://github.com/{REPO}/issues/10',
+                 'title': 'Prerequisite', 'state': 'OPEN'}]
+        self.rules([self.issue(1, ['ai-ready']), self.issue(2, ['ai-ready', 'ai-paused']),
+                    self.issue(3, ['ai-ready'], deps=deps), self.issue(4, owner='operator'),
+                    self.issue(5), self.issue(6, ['ai-ready', 'ai-in-progress']),
+                    self.issue(7, ['ai-ready'], blockedBy={'nodes': [],
+                               'pageInfo': {'hasNextPage': True}})],
+                   {'tool': 'gh', 'argv_contains': ['comments'], 'stdout': '[]'})
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        queue = doc['queue']
+        self.assertEqual(doc['deployment']['state'], 'stopped')
+        self.assertEqual(queue['ready'], ['#1 Issue 1'])
+        self.assertEqual(queue['pending']['native_dependency'][0]['prerequisites'], deps)
+        self.assertEqual([i['number'] for i in queue['pending']['active_owned']], [4, 6])
+        self.assertEqual([i['number'] for i in queue['pending']['unknown']], [5, 7])
+        self.assertEqual(queue['state'], 'partial')
+        self.assert_reads_only()
+
+    def test_pagination_filters_closed_and_pr_nodes_and_discloses_failure(self):
+        first = self.page([self.issue(1, ['ai-ready']),
+                           self.issue(2, __typename='PullRequest'),
+                           self.issue(3, state='CLOSED')], True, 'next')
+        self.h.rules({'tool': 'gh', 'argv_contains': ['cursor=next'],
+                      'stdout': self.page([self.issue(4, ['ai-planning'])])},
+                     {'tool': 'gh', 'argv_contains': ['api', 'graphql'], 'stdout': first})
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['queue']['pending_count'], 2)
+        self.assertTrue(doc['queue']['coverage']['complete'])
+        self.h.clear_calls()
+        self.h.rules({'tool': 'gh', 'argv_contains': ['cursor=next'], 'exit': 1},
+                     {'tool': 'gh', 'argv_contains': ['api', 'graphql'], 'stdout': first})
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['queue']['state'], 'partial')
+        self.assertFalse(doc['queue']['coverage']['complete'])
+        self.assertEqual(doc['queue']['ready'], ['#1 Issue 1'])
+        self.assertIn('Restore', doc['queue']['next_action'])
+        self.assert_reads_only()
+
+    def test_empty_repository_and_graphql_errors_are_not_conflated(self):
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['queue']['pending_count'], 0)
+        self.assertTrue(doc['queue']['coverage']['complete'])
+        for output in ('invalid', '{}', '{"errors":[{"message":"private error"}]}'):
+            with self.subTest(output=output):
+                self.h.rules({'tool': 'gh', 'argv_contains': ['api', 'graphql'], 'stdout': output})
+                code, doc, err = self.h.run('status')
+                self.assertEqual(code, 0, err)
+                self.assertEqual(doc['queue']['state'], 'unavailable')
+                self.assertNotIn('ready', doc['queue'])
+                self.assertNotIn('private error', json.dumps(doc))
+
+    def test_partial_graphql_data_and_pr_details_are_retained_and_deduplicated(self):
+        payload = json.loads(self.page([self.issue(1, ['ai-blocked']),
+                                       self.issue(2, ['ai-pr-opened'])]))
+        payload['errors'] = [{'message': 'sensitive API failure'}]
+        self.h.rules({'tool': 'gh', 'argv_contains': ['api', 'graphql'],
+                      'stdout': json.dumps(payload)},
+                     {'tool': 'gh', 'argv_contains': ['comments'],
+                      'stdout': json.dumps([{'body': f'https://github.com/{REPO}/pull/64'}])},
+                     {'tool': 'gh', 'argv_contains': ['pr', 'view', '64'],
+                      'stdout': json.dumps({'number': 64, 'state': 'OPEN',
+                                           'url': f'https://github.com/{REPO}/pull/64'})})
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['queue']['state'], 'partial')
+        self.assertEqual(doc['queue']['pending_count'], 2)
+        self.assertNotIn('sensitive', json.dumps(doc))
+        self.assertEqual(len([c for c in self.h.calls() if c['argv'][:2] == ['pr', 'view']]), 1)
+        self.assertNotIn('retry_safe', doc['queue']['pending']['actionable_blocker'][0])
+        self.assert_reads_only()
+
+    def test_comment_pagination_and_issue_page_cap(self):
+        self.rules([self.issue(1, ['ai-blocked'])],
+                   {'tool': 'gh', 'argv_contains': ['comments?per_page=100&page=1'],
+                    'stdout': json.dumps([{'body': ''}] * 100)},
+                   {'tool': 'gh', 'argv_contains': ['comments?per_page=100&page=2'],
+                    'stdout': '[{"body":"<!-- orbi:failure:v1 {\\"retry_safe\\":false} -->"}]'})
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertFalse(doc['queue']['pending']['actionable_blocker'][0]['retry_safe'])
+        self.assertEqual(doc['queue']['coverage']['details_read'], 2)
+        self.h.clear_calls()
+        self.h.rules(*[{'tool': 'gh', 'argv_contains': [f'cursor=page{n}'],
+                        'stdout': self.page([self.issue(n)], True, f'page{n+1}')}
+                       for n in (2, 3)],
+                     {'tool': 'gh', 'argv_contains': ['api', 'graphql'],
+                      'stdout': self.page([self.issue(1)], True, 'page2')})
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['queue']['coverage']['pages_read'], 3)
+        self.assertFalse(doc['queue']['coverage']['complete'])
+        self.assertIn('page limit', doc['queue']['reason'])
+        self.assertEqual(len([c for c in self.h.calls() if c['tool'] == 'gh']), 3)
+
+    def test_bounded_pages_details_and_text_cli(self):
+        self.h.rules({'tool': 'gh', 'argv_contains': ['api', 'graphql'],
+                      'stdout': self.page([self.issue(1, ['ai-planning'])], True, 'repeat')})
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertFalse(doc['queue']['coverage']['complete'])
+        self.assertLessEqual(len([c for c in self.h.calls() if c['tool'] == 'gh']), 3)
+        self.rules([self.issue(n, ['ai-blocked']) for n in range(1, 16)],
+                   {'tool': 'gh', 'argv_contains': ['comments'], 'exit': 1})
+        self.h.clear_calls()
+        before = snapshot(self.h.home)
+        result = subprocess.run([sys.executable, '-B', str(HELPER), 'status',
+                                 '--repo-dir', str(self.h.repo)], env=self.h.env,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('queue.pending.actionable_blocker=', result.stdout)
+        self.assertIn('/unblock', result.stdout)
+        self.assertIn('queue.state=partial', result.stdout)
+        self.assertLessEqual(len([c for c in self.h.calls() if c['tool'] == 'gh']), 11)
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assert_reads_only()
 
 
 class UpdateTests(unittest.TestCase):

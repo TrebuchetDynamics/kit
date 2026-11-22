@@ -1533,8 +1533,10 @@ def deployment_state(snapshot):
     states = [item['state'] for item in snapshot['services'].values()]
     if any(state not in DRAIN_STATES | INACTIVE_STATES for state in states):
         return 'unavailable'
-    if any(state in ACTIVE_STATES for state in states):
+    if 'active' in states:
         return 'running'
+    if any(state in {'activating', 'reloading'} for state in states):
+        return 'transitional'
     if any(state in DRAIN_STATES for state in states):
         return 'draining'
     if any(item['owned'] and (item['enabled'] or item['active'] == 'active')
@@ -1543,25 +1545,208 @@ def deployment_state(snapshot):
     return 'stopped'
 
 
-def queue_evidence(ctx, repo):
-    try:
-        proc = ctx.run(['gh', 'issue', 'list', '--repo', repo.full, '--state', 'open',
-                        '--label', 'ai-ready', '--limit', '100',
-                        '--json', 'number,title'], allow_failure=True, timeout=60)
-    except ControlError:
-        return {'state': 'unavailable', 'reason': 'gh issue list is not available'}
-    if proc.returncode != 0:
-        return {'state': 'unavailable', 'reason': 'gh issue list failed'}
-    try:
-        issues = json.loads(proc.stdout or '[]')
-    except ValueError:
-        return {'state': 'unavailable', 'reason': 'gh issue list returned unreadable JSON'}
-    if not isinstance(issues, list):
-        return {'state': 'unavailable', 'reason': 'gh issue list returned an unexpected shape'}
-    return {'state': 'ok',
-            'ready': [f"#{item.get('number')} {item.get('title')}" for item in issues
-                      if isinstance(item, dict)]}
+# Batch native dependency evidence rather than one detail/LLM call per issue.
+QUEUE_PAGE_LIMIT = 3
+QUEUE_DETAIL_LIMIT = 10
+QUEUE_QUERY = '''query($owner:String!, $name:String!, $cursor:String) {
+  repository(owner:$owner, name:$name) {
+    issues(first:100, after:$cursor, states:OPEN,
+           orderBy:{field:CREATED_AT,direction:ASC}) {
+      nodes {
+        __typename number title url state
+        labels(first:100) { nodes { name } pageInfo { hasNextPage } }
+        assignees(first:10) { nodes { login } pageInfo { hasNextPage } }
+        blockedBy(first:20) {
+          nodes { number title url state } pageInfo { hasNextPage }
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}'''
 
+
+def github_read(ctx, argv):
+    """Read JSON without leaking child output (including GraphQL error text)."""
+    try:
+        proc = ctx.run(['gh', *argv], allow_failure=True)
+        value = json.loads(proc.stdout)
+        if proc.returncode:
+            return None
+        return value
+    except (ControlError, ValueError):
+        return None
+
+
+def pending_classification(issue):
+    labels = {node['name'] for node in issue['labels']['nodes']}
+    owners = [node['login'] for node in issue['assignees']['nodes']]
+    deps = [node for node in issue['blockedBy']['nodes'] if node['state'] == 'OPEN']
+    incomplete = any(issue[field]['pageInfo']['hasNextPage']
+                     for field in ('labels', 'assignees', 'blockedBy'))
+    item = {key: issue[key] for key in ('number', 'title', 'url')}
+    item.update(labels=sorted(labels), owners=owners, prerequisites=deps)
+    if 'ai-blocked' in labels:
+        group, reason, action = ('actionable_blocker', 'ai-blocked; recovery diagnosis required',
+                                'Use /unblock deliberately with the existing owner; preserve retained work, '
+                                'inspect the blocker before any retry; do not blindly requeue.')
+    elif labels & {'ai-in-progress', 'ai-pr-opened', 'ai-fix-needed',
+                   'ai-awaiting-merge'} or owners:
+        group, reason, action = ('active_owned', 'ownership/active label or assignee; worker activity unverified',
+                                'Consult the existing owner and linked PR/checks; do not start a competing attempt.')
+    elif 'ai-epic' in labels:
+        group, reason, action = ('epic', 'ai-epic coordination; not executable',
+                                'Inspect child issue outcomes with the planning owner; do not dispatch the epic.')
+    elif labels & {'ai-planning', 'ai-paused', 'ai-needs-detail'}:
+        group, reason, action = ('planning_paused', 'planning/paused label; not dispatchable',
+                                'Next required input is unknown from status evidence; consult the issue and '
+                                'planning owner for the recorded decision or pause gate.')
+    elif deps:
+        group, reason, action = ('native_dependency', 'open native blockedBy prerequisite',
+                                'Follow the linked prerequisites to verified completion; issue ordering is not a dependency.')
+    elif 'ai-ready' in labels and not incomplete:
+        group, reason, action = ('ready', 'ai-ready with no observed ownership, hold or open native prerequisite',
+                                'Ready is not pickup: inspect scheduler/owner evidence and existing pauses; '
+                                'only separately authorized /orbi start may activate scheduling.')
+    else:
+        group, reason, action = ('unknown', 'readiness not evidenced or nested evidence incomplete',
+                                'Inspect the issue with its owner; resolve missing readiness/dependency evidence without guessing.')
+    item.update(reason=reason, next_action=action)
+    return group, item, incomplete
+
+
+def queue_evidence(ctx, repo):
+    issues, gaps, cursor, seen_cursors = {}, [], None, set()
+    pages = 0
+    listing_complete = False
+    for _ in range(QUEUE_PAGE_LIMIT):
+        argv = ['api', 'graphql', '-f', 'query=' + QUEUE_QUERY,
+                '-F', 'owner=' + repo.owner, '-F', 'name=' + repo.name]
+        if cursor:
+            argv += ['-F', 'cursor=' + cursor]
+        value = github_read(ctx, argv)
+        try:
+            if isinstance(value, dict) and value.get('errors'):
+                gaps.append('GitHub reported GraphQL errors; coverage incomplete')
+            connection = value['data']['repository']['issues']
+            nodes, info = connection['nodes'], connection['pageInfo']
+            if not isinstance(nodes, list) or not isinstance(info['hasNextPage'], bool):
+                raise ValueError
+            for issue in nodes:
+                if issue.get('__typename') != 'Issue' or issue.get('state') != 'OPEN':
+                    continue  # Never count PR records or closed issues as pending.
+                # Validate the contract before retaining a row as evidence.
+                if not isinstance(issue['number'], int):
+                    raise ValueError
+                pending_classification(issue)
+                issues[issue['number']] = issue
+            pages += 1
+            if not info['hasNextPage']:
+                listing_complete = True
+                break
+            cursor = info['endCursor']
+            if not cursor or cursor in seen_cursors:
+                gaps.append('issue pagination cursor missing or repeated')
+                break
+            seen_cursors.add(cursor)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            gaps.append('GitHub issue read failed or returned incomplete/unreadable data')
+            break
+    if not listing_complete and not gaps:
+        gaps.append('issue page limit reached; more open issues may exist')
+
+    groups = {name: [] for name in ('actionable_blocker', 'active_owned', 'native_dependency',
+                                   'planning_paused', 'epic', 'ready', 'unknown')}
+    details_left, pr_cache = QUEUE_DETAIL_LIMIT, {}
+    # Prioritize blockers for the bounded detail budget, retaining list order within groups.
+    classified = [pending_classification(issue) for issue in issues.values()]
+    classified.sort(key=lambda row: list(groups).index(row[0]))
+    for group, item, incomplete in classified:
+        groups[group].append(item)
+        if incomplete:
+            gaps.append(f"#{item['number']} nested label/owner/dependency coverage incomplete")
+        if group not in {'actionable_blocker', 'active_owned'}:
+            continue
+        comments, comments_complete = [], False
+        for page in range(1, QUEUE_PAGE_LIMIT + 1):
+            if not details_left:
+                break
+            details_left -= 1
+            value = github_read(ctx, ['api', '--method', 'GET',
+                f'repos/{repo.full}/issues/{item["number"]}/comments?per_page=100&page={page}'])
+            if not isinstance(value, list) or any(not isinstance(row, dict) or
+                                                     not isinstance(row.get('body'), str)
+                                                     for row in value):
+                break
+            comments.extend(value)
+            if len(value) < 100:
+                comments_complete = True
+                break
+        item['detail_coverage'] = 'complete' if comments_complete else 'partial'
+        if not comments_complete:
+            gaps.append(f"#{item['number']} comment detail unavailable or capped")
+        pr_numbers = set()
+        for comment in comments:
+            body = comment['body']
+            # Only structured failure receipts establish retry safety; never infer safe retry.
+            if group == 'actionable_blocker':
+                for match in re.finditer(r'<!-- orbi:failure:v1 (\{.*?\}) -->', body):
+                    try:
+                        failure = json.loads(match.group(1))
+                    except ValueError:
+                        continue
+                    if failure.get('retry_safe') is False:
+                        item['retry_safe'] = False
+                        item['reason'] = 'ai-blocked; failure receipt forbids blind retry (retry_safe=false)'
+                        item['next_action'] = ('Use /unblock deliberately with the existing owner; '
+                            'inspect the failure and retained work before any retry; '
+                            'retry_safe=false forbids blind retry or requeue.')
+                        if re.search(r'(?:branch|remote).{0,120}(?:chang|conflict)', body, re.I):
+                            item['reason'] += '; reported branch change/conflict'
+                            item['next_action'] = ('Use /unblock deliberately: compare the current remote head '
+                                'and retained work with the existing owner before any retry; '
+                                'retry_safe=false forbids blind retry or requeue. Preserve both candidates.')
+            pr_numbers.update(int(number) for number in re.findall(
+                rf'https://github\.com/{re.escape(repo.full)}/pull/(\d+)\b', body))
+        item['pull_request_scope'] = 'observed comment links only; unlinked PRs unknown'
+        item['pull_requests'] = []
+        for number in sorted(pr_numbers):
+            if number not in pr_cache:
+                if not details_left:
+                    gaps.append(f'PR #{number} detail budget exhausted')
+                    continue
+                details_left -= 1
+                pr_cache[number] = github_read(ctx, ['pr', 'view', str(number), '--repo', repo.full,
+                    '--json', 'number,url,state,headRefName,headRefOid'])
+            value = pr_cache[number]
+            if not isinstance(value, dict) or value.get('state') not in {'OPEN', 'CLOSED', 'MERGED'}:
+                gaps.append(f'PR #{number} state unavailable')
+                item['pull_requests'].append({'number': number,
+                    'url': f'https://github.com/{repo.full}/pull/{number}', 'state': 'unavailable'})
+                continue
+            item['pull_requests'].append({key: value.get(key) for key in
+                                         ('number', 'url', 'state', 'headRefName', 'headRefOid')})
+            item['pull_requests'][-1]['meaning'] = (
+                'open PR, not successful delivery' if value['state'] == 'OPEN' else
+                'merged PR; issue acceptance/live qualification not established by status' if value['state'] == 'MERGED' else
+                'closed PR, not evidence of successful delivery')
+
+    coverage = {'complete': listing_complete and not gaps, 'listing_complete': listing_complete,
+                'pages_read': pages, 'page_limit': QUEUE_PAGE_LIMIT, 'page_size': 100,
+                'detail_limit': QUEUE_DETAIL_LIMIT, 'details_read': QUEUE_DETAIL_LIMIT - details_left,
+                'gaps': gaps}
+    result = {'state': 'ok' if coverage['complete'] else 'partial' if issues else 'unavailable',
+              'coverage': coverage,
+              'next_action': ('Inspect the evidenced next actions; zero ready does not mean zero pending. '
+                              'Status authorizes no recovery or scheduler writes.' if coverage['complete'] else
+                              'Restore GitHub auth/read access or inspect the disclosed coverage limits; '
+                              'rerun read-only status. Counts are observed lower bounds, not an empty repository.')}
+    if issues or listing_complete:
+        result.update(ready=[f"#{item['number']} {item['title']}" for item in groups['ready']],
+                      pending_count=len(issues), pending=groups)
+    if gaps:
+        result['reason'] = '; '.join(gaps)
+    return result
 
 def doctor_evidence(ctx, deployment):
     state, _ = bootstrap_evidence(ctx, deployment)
