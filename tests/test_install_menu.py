@@ -2095,6 +2095,36 @@ def restart_services(output):
                     self.assertEqual([event[0] for event in self.events()], ['load'])
                 self.trace.write_text('')
 
+    def test_entrypoint_refuses_foreign_git_environment_before_mutation(self):
+        self.installer_fixture()
+        self.dirty()
+        def state():
+            return [(self.head(repo),
+                     *[self.run_git('git', '-C', str(repo), *args).stdout for args in
+                       (('status', '--porcelain'), ('diff',), ('diff', '--cached'),
+                        ('stash', 'list', '--format=%H'))])
+                    for repo in (self.clone, self.other)]
+        before = state()
+        for name, value in (('GIT_DIR', self.other / '.git'),
+                            ('GIT_INDEX_FILE', self.other / '.git/index')):
+            with self.subTest(name=name):
+                # With GIT_DIR alone, even --show-toplevel reports the requested
+                # -C directory, despite reading another repository's HEAD/index.
+                if name == 'GIT_DIR':
+                    result = subprocess.run(['git', '-C', str(self.clone), 'rev-parse', '--show-toplevel'],
+                                            env={**self.entry_env, name: str(value)},
+                                            capture_output=True, text=True, check=True, timeout=10)
+                    self.assertEqual(Path(result.stdout.strip()), self.clone)
+                result = self.entry('--quiet', env={name: str(value)})
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn('unset ' + name, result.stdout)
+                self.assertIn('Nothing installed or restarted', result.stdout)
+                self.assertEqual([event[0] for event in self.events()], ['load'])
+                self.assertEqual(state(), before)
+                self.assertEqual((self.clone / 'g').read_text(), 'staged\nunstaged\n')
+                self.assertEqual((self.clone / 'untracked').read_text(), 'saved\n')
+                self.trace.write_text('')
+
     def test_entrypoint_divergence_stops_before_component_and_restart(self):
         self.installer_fixture()
         (self.clone / 'local').write_text('local')

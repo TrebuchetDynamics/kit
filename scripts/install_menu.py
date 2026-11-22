@@ -1221,6 +1221,15 @@ def pull_checkout(root, write=print, run=subprocess.run):
     root = Path(root).resolve()
     if not (root / '.git').exists() and not (root / '.git').is_symlink():
         return False  # unpacked release; do not discover a parent repository
+    # -C alone does not override these (for example when called from a Git hook).
+    # Refuse before even reading status rather than stash into a foreign repository
+    # or reset this checkout using somebody else's index/object database.
+    overrides = [name for name in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR',
+                                  'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
+                                  'GIT_NAMESPACE', 'GIT_SHALLOW_FILE') if name in os.environ]
+    if overrides:
+        raise RuntimeError('Git environment redirects checkout state; unset ' +
+                           ', '.join(overrides) + ' before retrying')
 
     def checked(result, args):
         if result.returncode:
