@@ -181,7 +181,8 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | --- | --- |
 | Bare skill invocation or `status` | Read-only status for the repository; missing evidence is unavailable, not an empty queue. |
 | `help` | Read-only action reference, without a repository or deployment. |
-| `setup` | Prepare source/configuration without scheduling or timer activation. |
+| `setup` | Start by default: map to `start`, preparing/validating if absent, then activate only with resolved gates. Explicit invocation expresses scheduling intent. |
+| `setup --prepare-only` | Prepare source/configuration without scheduling or timer activation (direct helper `setup`). |
 | `start` | Prepare if absent, then activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
 | `update` | Advance one stopped and drained deployment to the newest official release, lock that commit, refresh its owned units and leave scheduling inactive. It is not `/update-kit`. |
 | `stop` | Disable owned timers without killing active workers; report draining while they finish. |
@@ -198,7 +199,7 @@ orbi doctor --config /path/to/orbi.toml   # read-only diagnostics
 ```
 
 Upstream `orbi setup` and `orbi install-units` can activate timers. Prefer the
-Kit lifecycle skill for preparation; deployment changes require a separate
+Kit lifecycle skill with `setup --prepare-only` for non-activating preparation; deployment changes require a separate
 checkout and their own authorization. Installing or updating files is not runtime
 activation, and installing the CLI does not start workers or qualify delivery.
 
@@ -222,11 +223,12 @@ running worker. Existing deployments are not silently migrated. See
 for deployment-local routing, drift refusal, service credential references and
 unverified live compatibility.
 
-An authorized first start can prepare and activate in one invocation:
+An authorized `/orbi setup` starts by default, using the same path as `start`
+to prepare and activate in one invocation (no second approval once gates are evidenced):
 
 ```text
-/orbi start --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
-/orbi start --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi setup --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi setup --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
 ```
 
 Replace placeholders with published catalog IDs/paths. Preview checks prerequisites
@@ -241,9 +243,13 @@ and harness evidence are not enabled capacity or running-process proof.
 For interrupted preparation, follow [partial-failure recovery](skills/orbi/references/lifecycle.md#partial-failure-and-recovery).
 The [bounded `--resume-setup` path](skills/orbi/references/lifecycle.md#explicit-bounded-legacy-resume)
 is only for an existing config's missing deployment-local provider file, with
-`--config PATH` and matching provider inputs; other incomplete states need deliberate
-repair. Setup does not activate scheduling or qualify live recovery, isolation or
-delivery. Keep credentials out of Git and preserve workers and recovery state.
+`setup --prepare-only --resume-setup`, `--config PATH` and matching provider inputs;
+without `--prepare-only`, public resume is rejected before mutation with the corrected
+command. Other incomplete states need deliberate repair.
+`setup --prepare-only` does not activate scheduling or qualify live recovery, isolation or
+delivery. Direct Python helper `setup` remains non-activating; `--prepare-only` is a
+public skill flag only. Missing/failed activation gates name the blocker and next safe
+action, never a silent preparation-only success. Keep credentials out of Git and preserve workers and recovery state.
 
 <details>
 <summary><strong>Install every available host and CLI component at once</strong></summary>
