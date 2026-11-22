@@ -83,6 +83,28 @@ class PonytailBundleTests(unittest.TestCase):
             self.assertEqual(installer.install(ROOT / 'skills', [('linked', home / 'linked')],
                                               skills=[ROOT / 'skills/shared'], report=lambda _: None), 1)
 
+    def test_native_writing_guidance_works_with_only_the_skills_bundle(self):
+        spec = importlib.util.spec_from_file_location('writing_install', ROOT / 'scripts/install_skills.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            selected = [ROOT / 'skills' / name for name in ('writing-for-agents', 'shared')]
+            self.assertEqual(installer.install(ROOT / 'skills', [('fixture', home)],
+                                              skills=selected, report=lambda _: None), 0)
+            self.assertFalse((home / 'docs').exists())
+            entry = home / 'skills/writing-for-agents/SKILL.md'
+            text = entry.read_text()
+            self.assertEqual(text, (ROOT / 'skills/writing-for-agents/SKILL.md').read_text())
+            # The essential policy is inline, not dependent on an absent checkout doc.
+            for rule in ('explicit host command', 'disable-model-invocation: true',
+                         'allow_implicit_invocation: false', 'write nothing'):
+                self.assertIn(rule, text)
+            for link in ('upstream/PROTOCOL.md', 'upstream/SKILL-MECHANICS.md',
+                         '../shared/COMMUNICATION.md', '../shared/PONYTAIL.md'):
+                self.assertIn('](' + link + ')', text)
+                self.assertTrue((entry.parent / link).is_file())
+
     def test_map_limits_file_reads_not_only_the_parsed_string(self):
         script = PACK / 'upstream/scripts/ponytail-map.cjs'
         self.assertTrue(script.is_file())

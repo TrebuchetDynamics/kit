@@ -8,11 +8,28 @@ contract nor the protection policy: read
 
 ## Interface
 
+Public skill syntax on all hosts: `/orbi setup` maps to helper `start` and
+expresses scheduling intent. It prepares/validates if absent, then activates only
+when existing gates are resolved; valid existing targets skip preparation and
+retain exact saved selectors. `/orbi setup --prepare-only` maps to helper `setup`.
+The canonical skill consumes the public-only flag, forwarding all other supported
+arguments literally. Default `setup --dry-run` previews start without writes;
+`setup --prepare-only --dry-run` previews only preparation. Reject public
+`setup --resume-setup` before any helper invocation/mutation unless `--prepare-only`
+is explicit; show `setup --prepare-only --resume-setup` with the original arguments.
+Help/status never implicitly prepare or start. See the canonical mapping in
+[SKILL.md](../SKILL.md#common-path).
+
+**Direct Python helper syntax** below is unchanged: helper `setup` is always
+non-activating, and `--prepare-only` is not a helper flag. Unqualified helper action
+names in the technical sections below refer to this direct interface, not public
+setup's default mapping.
+
 ```sh
 python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|stop|help] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
   [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
-  [--resume-setup] [--harness {pi-bolt,pi}]
+  [--resume-setup] [--harness {pi-bolt,pi}] [--stop]
 ```
 
 - Omitted action means `status`. A bare `orbi` runs one Runner tick and is never
@@ -39,7 +56,9 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|sto
 - Setup-only `--resume-setup` is the explicit legacy missing-provider exception:
   require `--config PATH` and complete matching provider inputs. It never changes
   a saved selection, pin or present provider file. See bounded resume below.
-- `update` accepts only `--repo-dir`, `--config`, `--dry-run` and `--json`.
+- `update` accepts `--repo-dir`, `--config`, `--dry-run`, `--json` and update-only
+  `--stop`. The last flag explicitly authorizes pausing owned timers without
+  another prompt, never service interruption or restart.
   Provider, resume and harness selectors are refused: an update preserves the
   saved selection.
 - `--dry-run` prints the plan. It creates no config, scratch file, lock or
@@ -76,6 +95,42 @@ unavailable.
   the deliberate `update` below advances a deployment past that pin.
 
 ## Release update
+
+```text
+/orbi update --stop --dry-run
+/orbi update --stop
+```
+
+`update --stop` pauses the selected deployment and updates only once idle. It
+validates ownership, source cleanliness, saved harness/provider and prerequisites
+before touching timers, then revalidates under the existing deployment lock.
+It disables only owned timers (including inactive-but-enabled and active instances)
+and requires fresh disabled/inactive readback. Unknown/foreign ownership, incomplete
+inventory or unreadable scheduler evidence refuses safely, without syncing.
+Loaded/installed instances and pending jobs are enumerated in addition to configured
+slots and the normal status scan; surplus workers and queued starts are not ignored.
+
+If workers are active/draining or jobs remain, the receipt has `status: draining`,
+`engine_update: deferred`, `scheduler_confirmation: timers_disabled`,
+confirmed disabled timers, `pending_services` and the
+exact `resume_command` to deliberately retry after they finish. Engine source and
+pin are untouched. There is no polling, background continuation, service stop/kill,
+worker cancellation or automatic restart. Retrying does not carry saved restart
+intent: scheduling stays stopped.
+
+Once fresh idle/no-pending-start evidence is available, this path uses the same
+release synchronization, exact pinning and non-activating validation described below.
+It **never calls public `install-units`**, because that installer enables timers,
+even briefly. Unit refresh is `deferred` to the next separately authorized `start`,
+which already installs units. It reports engine `updated`/`up_to_date`, unit refresh
+`deferred` with that reason, and `scheduler_confirmation: stopped` only after final
+scheduler readback proves disabled/inactive timers and no pending work. On failure,
+completed disables, the failed stage, actual scheduler evidence (or `unavailable`)
+and `resume_command` remain visible; no timer re-enable rollback is attempted.
+`--stop --dry-run` previews pause/drain and conditional update without writes,
+locks, fetch or unit actions. Selectors and protected start gates are unchanged.
+
+### Plain update compatibility
 
 `update` advances one prepared deployment to the newest official release and
 repairs its owned units. It needs the same evidence as setup plus a stopped and
@@ -206,7 +261,7 @@ are rewritten to bypass this guard.
 
 ## Setup
 
-`setup` stages the official Orbi checkout at the verified pin, writes the
+Public preparation-only uses `/orbi setup --prepare-only`. Direct helper `setup` stages the official Orbi checkout at the verified pin, writes the
 verified provider metadata, harness launcher and `.orbi/env` atomically, publishes the native config
 last, installs a
 missing user-local bootstrap with `uv tool install --editable --python <compatible>`
@@ -241,7 +296,7 @@ receipt is created. Temporary publication files left by a killed process are
 not a readiness authority and are not automatically deleted on retry.
 
 Upstream `orbi setup` and `install-units` activate timers at this pin, so both
-are deliberately deferred to an explicit `start`. Setup never enables a timer
+are deliberately deferred to helper `start` (public default setup or start). Helper setup never enables a timer
 to disable it again. No sudo, system package, automated login or shell-profile
 change is used.
 
@@ -297,6 +352,11 @@ scheduler activation nor model inference or protected delivery.
 
 ### Explicit bounded legacy resume
 
+At the public surface, use `/orbi setup --prepare-only --resume-setup --config PATH`
+with the complete matching provider inputs below (and preserve `--dry-run` if requested).
+Without `--prepare-only`, refuse before mutation and give that corrected command.
+The direct helper command below stays non-activating for recovery/automation.
+
 Only for an existing valid native config whose saved `pi_providers` names the
 missing deployment-local `.orbi/pi-providers.json`:
 
@@ -329,22 +389,103 @@ reload; do not silently update, invoke activating upstream setup, or rewrite the
 project origin. A stale installed helper is different from a genuinely unsupported
 transport or an owner-required repair.
 
+## Activation evidence
+
+The owner's request to start scheduling and the evidence that permits that operation
+are different inputs. Preserve already-settled intent; do not ask the owner to approve
+the same start again. Read the bound deployment's status, repository instructions,
+applicable [cutover checklist](../../../docs/github-native.md#cutover), and any existing
+issue/PR or qualification record relevant to that repository and requested stage.
+Collect evidence read-only. Do not change labels, protections, units or credentials
+while deciding whether activation is allowed. Help itself performs none of these reads.
+
+Before an actual start, give a short evidence report:
+
+- **Request and target:** name the owner request, repository/deployment and operation
+  (for example first pilot versus rollout); do not infer authority from a successful preview.
+- **Observed:** cite the helper status/preview and relevant checklist or existing record
+  by path/URL and the specific evidence it supplies. Reuse applicable evidence, not stale
+  or unrelated approvals. If no record was found in the inspected sources, say so and
+  name those sources; absence of a record is not itself a new activation gate.
+- **Missing or unknown:** name each applicable check that is unresolved, not just
+  “cutover required.” Depending on the requested stage, this can be unsettled legacy
+  pool ownership, release/worktree-placement compatibility, unreadable scheduler state,
+  protected CI/review evidence, pilot delivery/recovery proof before expansion, or fleet
+  capacity evidence. Apply the existing checklist, not a new gate or mandatory receipt.
+  Do not demand rollout qualification as a prerequisite to an otherwise authorized pilot.
+- **Next safe action:** name the read-only check that can resolve each unknown, or the
+  exact external input/owner-controlled repair needed, and which operation stays held.
+  Do not ask for a generic “cutover record,” manufacture approval, or reconfirm settled
+  owner intent. Keep explicit pauses and human-only gates until their actual requirements
+  are satisfied. [#12](https://github.com/TrebuchetDynamics/kit/issues/12),
+  [#13](https://github.com/TrebuchetDynamics/kit/issues/13) and
+  [#20](https://github.com/TrebuchetDynamics/kit/issues/20) retain live qualification/rollout
+  ownership; this guidance does not release them.
+
+If GitHub reports **unprotected main**, report that observed branch state and the
+missing protection evidence; it is not an access error. If protection or rules reads
+return **HTTP 403**, report access denied and those details as unknown, not absent or
+passing. Both observations can coexist: report each with its source, without claiming
+that the 403 proves no rules exist. Next: obtain a read-only protection/rules view from
+an identity with access, or have the repository owner establish the required protections
+through its governance path if missing. Never weaken protections or invent a review
+approval to clear the blocker. See [protection diagnostics](../../../docs/github-native.md#read-protection-diagnostics-safely).
+
+### Offline guidance examples
+
+These are walkthrough inputs, not current host observations or live qualification.
+Use disposable fake hosts only; do not contact the named repositories' real hosts.
+
+- **Arenaton:** given `deployment.state=absent`, scheduler unavailable, an owner start
+  request, GitHub reporting main unprotected, and protection/rules HTTP 403: explain
+  that authorized implicit-target start will prepare, validate, then activate in one
+  invocation. Offer `start --dry-run` only as a write-free preview, with staged checks
+  deferred. Scheduler activity and rule details are unknown; the branch response is
+  separately unprotected. Cite the applicable cutover checklist and any found record;
+  if none was found, say so. Name the unresolved ownership/pause/qualification checks
+  applicable to this stage, not a blanket missing approval. Next: restore readable
+  scheduler evidence and obtain the read-only protection view/owner repair above.
+  Hold activation on the unresolved applicable checks; no redundant setup or consent loop.
+- **fecim-lattice-tools:** given a previously prepared Pi-Bolt slot with saved
+  `openai-codex/gpt-6.2-sol`, validated config and no enabled timers or inference:
+  preparation is not activation or live qualification, and this is not evidence of
+  model failure. New public `/orbi setup` expresses scheduling intent and delegates
+  to existing-target `start`, skips preparation and retains that exact saved selection;
+  omit provider/model/harness selectors. Once applicable pause/cutover/branch/CI/human
+  gates are evidenced, invoke once without another approval prompt. If a gate is
+  missing, name that blocker and the read-only check or owner repair; do not silently
+  prepare or claim started. `/orbi setup --dry-run` previews this start route;
+  `/orbi setup --prepare-only --dry-run` previews non-activating preparation instead.
+  This walkthrough does not inspect or change the reported deployment.
+- **SalmaListApi:** given a setup preview returning `setup_busy`, one active/owned timer
+  and zero observed running services: report “scheduling is active, but no worker was
+  observed within the scan.” Use `status`, not setup, to inspect; this is not stopped or
+  a request to install extra instances. A valid existing start skips setup and retains
+  saved selection, subject to its existing authority/gates. Offer stop/drain only if
+  deliberately re-preparing or pausing, preserve workers, and verify inactivity before
+  setup. Missing reads or out-of-scan activity remain unknown, not zero.
+
 ## Start
+
+Public `/orbi setup` delegates to this exact helper start path, not another
+activation implementation. `--prepare-only` deliberately opts out. Gate failure
+holds activation with the specific blocker/repair, never a silent preparation-only
+success. Resolved, already-authorized activation needs no second approval.
 
 After explicit scheduling authority and resolved gates, a first deployment can use:
 
 ```text
 /orbi status
 /orbi setup --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
-/orbi setup --harness pi --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
+/orbi setup --prepare-only --harness pi --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
 /orbi start --dry-run --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
 /orbi start --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID
 /orbi start --dry-run
 /orbi stop
 ```
 
-These are alternatives, not a sequence to run blindly: standalone setup stays
-non-activating. If setup already prepared the target, omit the bootstrap/harness
+These are alternatives, not a sequence to run blindly: only public setup with
+`--prepare-only` stays non-activating. If it already prepared the target, omit the bootstrap/harness
 selectors on start. Replace placeholder IDs/paths with published catalog evidence;
 optional `--pi-thinking LEVEL` must also match supported reasoning. Planned,
 prepared, activated and live-qualified are distinct; stop reports drain, not a kill.
@@ -417,6 +558,58 @@ local reads. Missing evidence is `unavailable`, never an empty queue. Status
 and dry-run create no config, lock, receipt or scratch file and suppress child
 Python bytecode writes.
 
+### Pending issues and read coverage
+
+`queue.state` and `queue.ready` remain the ready-queue interface: ready is a list
+of `#number title` strings, now verified against observed holds, ownership and
+open native prerequisites. `queue.pending_count` counts all observed open issues,
+not PRs; `queue.pending` groups them into `actionable_blocker`, `active_owned`,
+`native_dependency`, `planning_paused`, `epic`, `ready` and `unknown`. Each row
+includes number, title, URL, labels, observed owners, native prerequisites, reason
+and next action. Ownership labels/assignees are not proof of a running worker.
+Epics are coordination, not executable work. Planning/paused issues point to their
+owner for the recorded decision/input; when not evidenced here, that input is
+explicitly unknown. Dependencies come only from native `blockedBy`, never issue
+ordering or similar titles. Status does not invent a repository-wide bottleneck
+from one blocked issue.
+
+GitHub reads are bounded: at most three cursor pages of 100 issues (creation
+order), with up to 100 labels, 10 assignees and 20 native prerequisites per issue.
+Non-Issue and closed records are excluded defensively. Native dependency evidence
+is batched with the list, not fetched separately per issue. Only blockers and
+owned/active issues request comment detail, prioritizing blockers. A shared budget
+of ten additional reads covers comments (100 per page, up to three pages per
+issue) and deduplicated same-repository PR links found in those comments. No LLM
+call per issue is required. Unlinked PRs and remote worker ownership remain unknown.
+PR rows report observed state and head; `OPEN` is not successful delivery, and
+`MERGED` alone does not prove issue acceptance or live qualification.
+
+`queue.coverage` reports listing completeness, page/read bounds, reads performed
+and gaps, including truncated nested connections, repeated/missing cursors, detail
+caps and failed/invalid API reads. `queue.state` is `ok` with complete evidence,
+`partial` with retained observations and gaps, or `unavailable` when no reliable
+listing was read. A successful complete empty list is genuinely zero pending;
+an API failure is not. Partial counts/readiness are observed lower bounds, not an
+exhaustive queue. Restore GitHub auth/read access or inspect the named limit, then
+rerun read-only status. Raw API errors are not echoed. JSON exposes these fields;
+text mode renders them as flattened `queue.pending.<group>=...` and coverage lines.
+
+A blocked failure receipt's `retry_safe=false` forbids blind retry/requeue; no
+receipt ever grants safe retry. For a reported branch change/conflict, the next
+action is to compare the current remote head and retained work with the existing
+owner before any retry, preserving both candidates. Follow
+[`/unblock`](../../unblock/SKILL.md) deliberately for recovery; status does not
+invoke it, write labels, launch workers, repair branches or settle planning
+choices. Detail gaps mean the diagnosis may be incomplete, not permission to
+retry. An idle service snapshot plus ready issues calls for inspecting scheduler
+and ownership evidence and existing pauses; only separately authorized `start`
+can activate scheduling. No status result releases a live gate.
+
+`deployment.state=transitional` means activating/reloading services without an
+observed active service. It is neither verified idle nor issue pickup. Existing
+scheduler counts retain their observation semantics below: a transitional unit
+may count in `running_services` for drain safety, not as delivery evidence.
+
 ### Interpreting Linux scheduler inventory
 
 For a bound Linux target, `deployment.slots` and
@@ -467,7 +660,8 @@ One deployment/task pool can have several slot timers; that is not several
 repositories or duplicate pools claiming the same queue. Compare native config,
 explicit enablement and observed activity before naming a scheduling defect.
 Never manually enable instances 4/5 just to match `MAX_INSTANCES`. Use read-only
-status for observation: `setup --dry-run` is preparation preflight, not a harmless
+status for observation: helper `setup --dry-run` (public `setup --prepare-only --dry-run`)
+is preparation preflight, not a harmless
 health substitute. `setup_busy` while scheduling/workers are active is an expected
 refusal, not evidence of extra instances. Any repair still requires its own
 scope/authority; this inventory authorizes no scheduler mutation.
@@ -539,9 +733,9 @@ retry an unchanged timeout. Typical repairs:
 - `provider_unavailable` with no deployment: supply the complete explicit
   bootstrap selectors and published local Pi metadata; creating a donor first
   is not required. For an existing partial deployment, repair its native
-  `pi_providers`/`pi_provider`/`pi_model` selection deliberately, then rerun helper
-  setup without bootstrap flags; only the bounded missing-local-provider case can
-  use explicit `--resume-setup` with complete matching selectors. No credentials are copied.
+  `pi_providers`/`pi_provider`/`pi_model` selection deliberately, then rerun public `setup --prepare-only` (helper
+  setup) without bootstrap flags; only the bounded missing-local-provider case can
+  use public `setup --prepare-only --resume-setup` with complete matching selectors. No credentials are copied.
 - `invalid_provider_selection`, `credential_copy_refused` or a symlink refusal:
   correct the selectors or use regular credential-free metadata paths, then
   preview again. These failures occur before preparation writes.
@@ -550,7 +744,7 @@ retry an unchanged timeout. Typical repairs:
   bounded resume fills only a missing local provider file.
 - `validation_failed` with `error.mutated: true`: files may already be prepared,
   but validation did not pass. Inspect the native config, provider metadata and
-  check failure; repair the cause and rerun helper `setup` without bootstrap
+  check failure; repair the cause and rerun public `setup --prepare-only` (helper `setup`) without bootstrap
   inputs (or non-activating `orbi check --config PATH`). Never run upstream
   `orbi setup`/`install-units` as routine preparation recovery. Use helper
   `status` to observe scheduler state separately, not `start` to repair metadata.
@@ -576,9 +770,12 @@ retry an unchanged timeout. Typical repairs:
   encoding is reported as `config_invalid`.
 - `filesystem_error`: inspect local permissions/files privately and repair the
   cause; the failure step may have partially mutated even though publication is atomic.
-- `setup_busy`: obtain separate stop/drain authorization and verify inactivity;
-  do not kill workers or use setup to stop them.
-- `update_busy`: stop and drain this deployment first, verify no service is
+- `setup_busy`: cite observed timer/worker state and inspect with `status`.
+  Offer authorized stop/drain only when deliberately re-preparing or pausing.
+  Verify inactivity before setup; do not kill workers or stop scheduling just
+  to make a preview pass. An existing valid start skips setup.
+- `update_busy`: plain update requires stop/drain first, or use explicit
+  `update --stop` to authorize the pause while preserving workers. Verify no service is
   active and no owned timer is enabled, then rerun `update`; never kill workers
   or disable an unrelated deployment to pass the check.
 - `source_dirty`: preserve the tracked checkout changes in a separate operation
