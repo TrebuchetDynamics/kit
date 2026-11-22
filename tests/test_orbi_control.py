@@ -289,7 +289,7 @@ class Harness:
                 + str(service_config or self.deploy / 'orbi.toml') + '"\n')
             timer_file.write_text('[Timer]\n')
         rules = []
-        for index in range(1, helper.MAX_INSTANCES + 1):
+        for index in sorted(set(range(1, helper.MAX_INSTANCES + 1)) | set(services) | set(timers) | set(enabled)):
             rules.append({
                 'tool': 'systemctl',
                 'argv_contains': ['show', f'{prefix}@{index}.timer', 'FragmentPath'],
@@ -1202,6 +1202,7 @@ class FirstDeploymentTests(unittest.TestCase):
         self.assertEqual(doc['preparation']['state'], 'failed')
         self.assertEqual(doc['preparation']['steps'][-1]['step'], 'validate_non_activating')
         self.assertEqual(doc['activation'], 'none')
+        self.assertIn('`/orbi setup --prepare-only`', doc['error']['fix'])
         self.assertTrue((self.h.deploy / 'orbi.toml').is_file())
         SetupBoundaryTests.assert_no_activation(self, self.h.calls())
 
@@ -1579,7 +1580,7 @@ class FirstDeploymentTests(unittest.TestCase):
         self.assertEqual(doc['error']['code'], 'validation_failed')
         self.assertTrue(doc['error']['mutated'])
         self.assertIn('partially prepared', doc['error']['fix'])
-        self.assertIn('`/orbi setup` without bootstrap inputs', doc['error']['fix'])
+        self.assertIn('`/orbi setup --prepare-only` without bootstrap inputs', doc['error']['fix'])
         self.assertNotIn('orbi setup --config target', doc['error']['fix'])
         self.h.rules()
         code, doc, err = self.h.run('setup')
@@ -1974,6 +1975,7 @@ class SetupRecoveryTests(unittest.TestCase):
             code, doc, err = self.h.run(action, config=config, options=options)
             self.assertEqual(code, 2, (doc, err))
             self.assertEqual(doc['error']['code'], 'invalid_resume_selection')
+            self.assertIn('/orbi setup --prepare-only --resume-setup', doc['error']['fix'])
             self.assertFalse(doc['error']['mutated'])
         code, doc, err = self.h.run('help', config='/missing', options=['--resume-setup'])
         self.assertEqual(code, 0, (doc, err))
@@ -3394,6 +3396,306 @@ class UpdateTests(unittest.TestCase):
         self.assertFalse(doc['error']['mutated'])
         self.assertEqual(snapshot(self.h.deploy), before)
         self.assertEqual(self.h.config()['engine_source_track'], helper.PIN_TRACK)
+
+
+class ExplicitStopUpdateTests(unittest.TestCase):
+    """Explicit pause/update through the public helper, with no live host changes."""
+
+    setUp = UpdateTests.setUp
+    a_units = UpdateTests.a_units
+    assert_a_unchanged = UpdateTests.assert_a_unchanged
+
+    def fresh(self, name):
+        harness = UpdateTests.fresh(self, name)
+        self.config_before = (harness.deploy / 'orbi.toml').read_text()
+        return harness
+
+    def pause_rules(self, *, timers=None, enabled=None, services=None, jobs='', extra=(),
+                    move=True, installed=True):
+        paused = self.h.root / 'paused'
+        synced = self.h.root / 'synced'
+        rules = [*extra,
+                 {'tool': 'systemctl', 'argv_contains': ['list-units'],
+                  'stdout': ''.join(f'{self.prefix}@{i}.service loaded active running Worker\n'
+                                    for i in (services or {}))},
+                 {'tool': 'systemctl', 'argv_contains': ['list-jobs'], 'stdout': jobs},
+                 {'tool': 'systemctl', 'argv_contains': ['disable'],
+                  'write': {str(paused): '1'}},
+                 {'tool': 'orbi', 'argv_contains': ['sync-engine-source'],
+                  'write': {str(synced): '1'} if move else {}},
+                 {'tool': 'git', 'argv_contains': ['rev-parse', 'HEAD'],
+                  'if_exists': str(synced), 'stdout': NEW_PIN + '\n'}]
+        rules += [dict(r, if_exists=str(paused)) for r in self.h.scheduler_rules(
+            timers={i: 'inactive' for i in set(timers or {}) | set(enabled or {})},
+            services=services, installed=installed)]
+        self.h.rules(*rules, *self.h.scheduler_rules(
+            timers=timers, enabled=enabled, services=services, installed=installed))
+
+    def update(self, **kwargs):
+        return self.h.run('update', options=['--stop'], **kwargs)
+
+    def assert_safe_trace(self):
+        for call in self.h.calls():
+            if call['tool'] == 'systemctl':
+                self.assertFalse(set(call['argv']) & {'enable', 'start', 'stop', 'restart', 'kill'}, call)
+                if 'disable' in call['argv']:
+                    self.assertIn('--now', call['argv'])
+                    self.assertTrue(call['argv'][-1].endswith('.timer'), call)
+            if call['tool'] == 'orbi':
+                self.assertNotIn(call['argv'][:1], (['setup'], ['install-units']), call)
+        self.assert_a_unchanged()
+
+    def test_inactive_enabled_and_active_timers_pause_under_lock_before_source_changes(self):
+        for state in ('inactive', 'active'):
+            with self.subTest(state=state):
+                self.h = self.fresh('pause-' + state)
+                self.pause_rules(timers={1: state}, enabled={1: True})
+                original = helper.rewrite_engine_track
+                def rewrite(target, track):
+                    self.assertTrue((self.h.root / 'paused').exists())
+                    locks = list((self.h.home / '.cache/orbi-control').glob('*.lock'))
+                    with locks[0].open('a+') as handle:
+                        with self.assertRaises(BlockingIOError):
+                            helper.fcntl.flock(handle, helper.fcntl.LOCK_EX | helper.fcntl.LOCK_NB)
+                    return original(target, track)
+                with mock.patch.object(helper, 'rewrite_engine_track', side_effect=rewrite):
+                    code, doc, err = self.update()
+                self.assertEqual(code, 0, (doc, err))
+                self.assertEqual(doc['status'], 'updated')
+                self.assertEqual(doc['engine_update'], 'updated')
+                self.assertEqual(doc['scheduler_confirmation'], 'stopped')
+                self.assertEqual(doc['unit_refresh'], 'deferred')
+                self.assertIn('next authorized start', doc['unit_refresh_reason'])
+                self.assertFalse(doc['activated'])
+                self.assertEqual(doc['previous'], {'track': helper.PIN_TRACK, 'head': PIN})
+                self.assertEqual(doc['deployment']['source'], 'verified')
+                self.assertEqual(doc['deployment']['deployed_commit'], NEW_PIN)
+                self.assertTrue(all(not t['enabled'] and t['active'] == 'inactive'
+                                    for t in doc['scheduler']['timers'].values()))
+                calls = self.h.calls()
+                positions = [next(i for i, c in enumerate(calls) if c['tool'] in ('systemctl', 'orbi')
+                                  and word in c['argv']) for word in ('disable', 'sync-engine-source', 'check')]
+                self.assertEqual(positions, sorted(positions))
+                text = (self.h.deploy / 'orbi.toml').read_text()
+                self.assertEqual(text.replace('sha:' + NEW_PIN, helper.PIN_TRACK), self.config_before)
+                self.assert_safe_trace()
+
+    def test_already_stopped_updated_or_up_to_date_without_unit_install(self):
+        for move, installed in ((True, True), (False, True), (True, False)):
+            with self.subTest(move=move, installed=installed):
+                self.h = self.fresh('stopped-' + str(move) + str(installed))
+                self.pause_rules(move=move, installed=installed)
+                code, doc, err = self.update()
+                self.assertEqual(code, 0, (doc, err))
+                self.assertEqual(doc['status'], 'updated' if move else 'up_to_date')
+                self.assertEqual(doc['engine_update'], doc['status'])
+                self.assertEqual(doc['scheduler_confirmation'], 'stopped')
+                self.assertEqual(doc['unit_refresh'], 'deferred')
+                self.assert_safe_trace()
+
+    def test_installed_surplus_timer_outside_fixed_scan_is_disabled(self):
+        timer = f'{self.prefix}@12.timer'
+        self.pause_rules(timers={12: 'active'}, enabled={12: True}, extra=[
+            {'tool': 'systemctl', 'argv_contains': ['list-unit-files'],
+             'stdout': f'{timer} enabled enabled\n'}])
+        code, doc, err = self.update()
+        self.assertEqual(code, 0, (doc, err))
+        self.assertIn(timer, doc['disabled_timers'])
+        self.assertFalse(doc['scheduler']['timers'][timer]['enabled'])
+        self.assertEqual(doc['scheduler']['timers'][timer]['active'], 'inactive')
+        self.assert_safe_trace()
+
+    def test_workers_and_pending_starts_beyond_scan_defer_without_source_mutation_then_retry(self):
+        for state in ('active', 'activating', 'deactivating', 'queued'):
+            with self.subTest(state=state):
+                self.h = self.fresh('drain-' + state)
+                service = f'{self.prefix}@12.service'
+                self.pause_rules(timers={1: 'active'}, enabled={1: True},
+                                 services={12: 'inactive' if state == 'queued' else state},
+                                 jobs=f'42 {service} start waiting\n' if state == 'queued' else '')
+                before = snapshot(self.h.deploy)
+                code, doc, err = self.update()
+                self.assertEqual(code, 0, (doc, err))
+                self.assertEqual(doc['status'], 'draining')
+                self.assertEqual(doc['engine_update'], 'deferred')
+                self.assertEqual(doc['scheduler_confirmation'], 'timers_disabled')
+                self.assertIn(service, [p['unit'] for p in doc['pending_services']])
+                self.assertTrue(all(not t['enabled'] for t in doc['scheduler']['timers'].values()))
+                self.assertEqual(shlex.split(doc['resume_command']), ['/orbi', 'update', '--stop',
+                                 '--repo-dir', str(self.h.repo), '--config', str(self.h.deploy / 'orbi.toml')])
+                self.assertEqual(snapshot(self.h.deploy), before)
+                self.assertFalse([c for c in self.h.calls() if 'sync-engine-source' in c['argv']])
+                self.assert_safe_trace()
+                # No saved restart intent or background work: only this deliberate retry updates.
+                self.pause_rules()
+                code, doc, err = self.update()
+                self.assertEqual(code, 0, (doc, err))
+                self.assertEqual(doc['status'], 'updated')
+                self.assertEqual(doc['scheduler_confirmation'], 'stopped')
+                self.assert_safe_trace()
+
+    def test_preview_busy_is_conditional_without_writes_fetch_locks_or_unit_actions(self):
+        self.pause_rules(timers={1: 'active'}, enabled={1: True}, services={5: 'active'})
+        before = snapshot(self.h.home)
+        with mock.patch.object(helper, 'locked', side_effect=AssertionError('preview lock')):
+            code, doc, err = self.update(dry_run=True)
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(doc['status'], 'planned')
+        self.assertEqual(doc['steps'][0]['step'], 'pause_owned_timers')
+        self.assertIn('conditional', [s['status'] for s in doc['steps']])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertFalse([c for c in self.h.calls() if set(c['argv']) &
+                          {'disable', 'fetch', 'sync-engine-source', 'install-units'}])
+        self.assert_safe_trace()
+
+    def test_unknown_foreign_incomplete_inventory_refuses_before_disable(self):
+        service = f'{self.prefix}@5.service'
+        for name, rules, error in [
+                ('jobs', [{'tool': 'systemctl', 'argv_contains': ['list-jobs'], 'exit': 1}],
+                 'scheduler_unavailable'),
+                ('bad-job', [{'tool': 'systemctl', 'argv_contains': ['list-jobs'], 'stdout': '???\n'}],
+                 'scheduler_unavailable'),
+                ('inventory', [{'tool': 'systemctl', 'argv_contains': ['list-units'], 'exit': 1}],
+                 'scheduler_unavailable'),
+                ('bad-inventory', [{'tool': 'systemctl', 'argv_contains': ['list-unit-files'],
+                                    'stdout': 'unreadable\n'}], 'scheduler_unavailable'),
+                ('installed-inventory', [{'tool': 'systemctl', 'argv_contains': ['list-unit-files'], 'exit': 1}],
+                 'scheduler_unavailable'),
+                ('unowned-loaded', [{'tool': 'systemctl', 'argv_contains': ['list-units'],
+                                    'stdout': f'{self.prefix}@12.service loaded active running Worker\n'}],
+                 'unit_conflict'),
+                ('state', [{'tool': 'systemctl', 'argv_contains': ['ActiveState', service],
+                            'stdout': 'unknown\n'}], 'scheduler_unavailable'),
+                ('timer', [{'tool': 'systemctl', 'argv_contains': ['is-enabled'],
+                            'stdout': '', 'exit': 1}], 'scheduler_unavailable')]:
+            with self.subTest(name=name):
+                self.pause_rules(extra=rules)
+                before = snapshot(self.h.home)
+                code, doc, err = self.update()
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertEqual(doc['error']['code'], error)
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+                self.assertFalse([c for c in self.h.calls() if 'disable' in c['argv']])
+                self.h.clear_calls()
+        self.h.rules(*self.h.scheduler_rules(service_config=self.a['config']))
+        code, doc, err = self.update()
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'unit_conflict')
+        self.assertFalse([c for c in self.h.calls() if 'disable' in c['argv']])
+
+    def test_disable_readback_sync_validation_failures_preserve_partial_evidence(self):
+        for name, rules, error in [
+                ('disable', [{'tool': 'systemctl', 'argv_contains': ['disable'], 'exit': 1}],
+                 'command_failed'),
+                ('partial-disable', [{'tool': 'systemctl', 'argv_contains': ['disable', f'{self.prefix}@2.timer'], 'exit': 1}],
+                 'command_failed'),
+                ('readback', [{'tool': 'systemctl', 'argv_contains': ['is-enabled'],
+                              'if_exists': 'PAUSED', 'stdout': '', 'exit': 1}], 'scheduler_unavailable'),
+                ('jobs-readback', [{'tool': 'systemctl', 'argv_contains': ['list-jobs'],
+                                   'if_exists': 'PAUSED', 'exit': 1}], 'scheduler_unavailable'),
+                ('still-enabled', [{'tool': 'systemctl', 'argv_contains': ['is-enabled'],
+                                    'stdout': 'enabled\n'}], 'scheduler_unavailable'),
+                ('sync', [{'tool': 'orbi', 'argv_contains': ['sync-engine-source'], 'exit': 1}],
+                 'sync_engine_source_failed'),
+                ('validation', [{'tool': 'orbi', 'argv_contains': ['check'], 'exit': 1}],
+                 'validation_failed')]:
+            with self.subTest(name=name):
+                self.h = self.fresh('fail-' + name)
+                for rule in rules:
+                    if rule.get('if_exists') == 'PAUSED':
+                        rule['if_exists'] = str(self.h.root / 'paused')
+                self.pause_rules(enabled={1: True}, extra=rules)
+                code, doc, err = self.update()
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertEqual(doc['error']['code'], error)
+                self.assertTrue(doc['error']['mutated'])
+                self.assertEqual(doc['steps'][-1]['status'], 'failed')
+                self.assertEqual(bool(doc['disabled_timers']), name != 'disable')
+                if name == 'partial-disable':
+                    self.assertEqual(doc['disabled_timers'], [f'{self.prefix}@1.timer'])
+                    self.assertEqual(doc['steps'][-1]['unit'], f'{self.prefix}@2.timer')
+                if name not in ('sync', 'validation'):
+                    self.assertFalse([c for c in self.h.calls() if 'sync-engine-source' in c['argv']])
+                    self.assertEqual(self.h.config()['engine_source_track'], helper.PIN_TRACK)
+                self.assertIn('scheduler', doc)
+                self.assertIn('resume_command', doc)
+                self.assertNotIn('scheduler_confirmation', doc)
+                self.assert_safe_trace()
+
+    def test_final_readback_missing_never_claims_stopped(self):
+        self.pause_rules(extra=[{'tool': 'systemctl', 'argv_contains': ['list-jobs'],
+                                'if_exists': str(self.h.root / 'synced'), 'exit': 1}])
+        code, doc, err = self.update()
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['steps'][-1]['step'], 'observe_scheduler')
+        self.assertEqual(doc['scheduler']['state'], 'unavailable')
+        self.assertNotIn('scheduler_confirmation', doc)
+        self.assertEqual(self.h.config()['engine_source_track'], 'sha:' + NEW_PIN)
+        self.assert_safe_trace()
+
+    def test_revalidation_under_lock_precedes_disable(self):
+        self.pause_rules(enabled={1: True})
+        original = helper.locked
+        @contextlib.contextmanager
+        def changed_after_preflight(ctx, config):
+            with original(ctx, config):
+                self.pause_rules(enabled={1: True}, extra=[
+                    {'tool': 'systemctl', 'argv_contains': ['list-jobs'], 'exit': 1}])
+                yield
+        with mock.patch.object(helper, 'locked', changed_after_preflight):
+            code, doc, err = self.update()
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'scheduler_unavailable')
+        self.assertFalse([c for c in self.h.calls() if 'disable' in c['argv']])
+        self.assertEqual(self.h.config()['engine_source_track'], helper.PIN_TRACK)
+
+    def test_prerequisite_and_dirty_source_refusals_do_not_pause(self):
+        for action, rules in (
+                ('dirty', [{'tool': 'git', 'argv_contains': ['status', '--porcelain'],
+                            'stdout': ' M src/orbi/runner.py\n'}]),
+                ('auth', [{'tool': 'gh', 'argv_contains': ['auth', 'status'], 'exit': 1}])):
+            with self.subTest(action=action):
+                self.pause_rules(enabled={1: True}, extra=rules)
+                before = snapshot(self.h.home)
+                code, doc, err = self.update()
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+                self.assertFalse([c for c in self.h.calls() if 'disable' in c['argv']])
+
+    def test_stop_flag_only_update_and_selectors_remain_rejected(self):
+        for action in ('status', 'setup', 'start', 'stop'):
+            code, doc, err = self.h.run(action, options=['--stop'])
+            self.assertNotEqual(code, 0, (doc, err))
+            self.assertEqual(doc['error']['code'], 'invalid_stop_selection')
+            self.assertFalse(doc['error']['mutated'])
+        code, doc, err = self.h.run('update', options=['--stop', '--harness', 'pi'])
+        self.assertEqual(doc['error']['code'], 'invalid_harness_selection')
+        code, doc, err = self.h.run('update', options=['--stop', '--pi-provider', 'other'])
+        self.assertEqual(doc['error']['code'], 'invalid_provider_selection')
+        code, doc, err = self.h.run('help', options=['--stop'])
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(doc['options']['--stop']['applies_to'], ['update'])
+
+    def test_public_cli_update_stop_success_and_draining_receipts(self):
+        for busy in (False, True):
+            with self.subTest(busy=busy):
+                self.h = self.fresh('cli-' + str(busy))
+                self.pause_rules(enabled={1: True}, services={1: 'active'} if busy else {})
+                result = subprocess.run([sys.executable, '-B', str(HELPER), 'update', '--stop',
+                                         '--repo-dir', str(self.h.repo), '--json'],
+                                        env=dict(self.h.env), capture_output=True, text=True, timeout=60)
+                doc = json.loads(result.stdout)
+                self.assertNotIn(SECRET, result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 0, (doc, result.stderr))
+                self.assertEqual(doc['scheduler_confirmation'], 'timers_disabled' if busy else 'stopped')
+                self.assertEqual(doc['status'], 'draining' if busy else 'updated')
+                self.assertEqual(doc['unit_refresh'], 'deferred')
+                if busy:
+                    self.assertIn('resume_command', doc)
+                    self.assertEqual(doc['scheduler']['services'][f'{self.prefix}@1.service']['state'], 'active')
+                self.assert_safe_trace()
 
 
 class InterfaceAndSkillTests(unittest.TestCase):

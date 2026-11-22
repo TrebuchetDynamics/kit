@@ -29,7 +29,7 @@ setup's default mapping.
 python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|stop|help] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
   [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
-  [--resume-setup] [--harness {pi-bolt,pi}]
+  [--resume-setup] [--harness {pi-bolt,pi}] [--stop]
 ```
 
 - Omitted action means `status`. A bare `orbi` runs one Runner tick and is never
@@ -56,7 +56,9 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|sto
 - Setup-only `--resume-setup` is the explicit legacy missing-provider exception:
   require `--config PATH` and complete matching provider inputs. It never changes
   a saved selection, pin or present provider file. See bounded resume below.
-- `update` accepts only `--repo-dir`, `--config`, `--dry-run` and `--json`.
+- `update` accepts `--repo-dir`, `--config`, `--dry-run`, `--json` and update-only
+  `--stop`. The last flag explicitly authorizes pausing owned timers without
+  another prompt, never service interruption or restart.
   Provider, resume and harness selectors are refused: an update preserves the
   saved selection.
 - `--dry-run` prints the plan. It creates no config, scratch file, lock or
@@ -93,6 +95,42 @@ unavailable.
   the deliberate `update` below advances a deployment past that pin.
 
 ## Release update
+
+```text
+/orbi update --stop --dry-run
+/orbi update --stop
+```
+
+`update --stop` pauses the selected deployment and updates only once idle. It
+validates ownership, source cleanliness, saved harness/provider and prerequisites
+before touching timers, then revalidates under the existing deployment lock.
+It disables only owned timers (including inactive-but-enabled and active instances)
+and requires fresh disabled/inactive readback. Unknown/foreign ownership, incomplete
+inventory or unreadable scheduler evidence refuses safely, without syncing.
+Loaded/installed instances and pending jobs are enumerated in addition to configured
+slots and the normal status scan; surplus workers and queued starts are not ignored.
+
+If workers are active/draining or jobs remain, the receipt has `status: draining`,
+`engine_update: deferred`, `scheduler_confirmation: timers_disabled`,
+confirmed disabled timers, `pending_services` and the
+exact `resume_command` to deliberately retry after they finish. Engine source and
+pin are untouched. There is no polling, background continuation, service stop/kill,
+worker cancellation or automatic restart. Retrying does not carry saved restart
+intent: scheduling stays stopped.
+
+Once fresh idle/no-pending-start evidence is available, this path uses the same
+release synchronization, exact pinning and non-activating validation described below.
+It **never calls public `install-units`**, because that installer enables timers,
+even briefly. Unit refresh is `deferred` to the next separately authorized `start`,
+which already installs units. It reports engine `updated`/`up_to_date`, unit refresh
+`deferred` with that reason, and `scheduler_confirmation: stopped` only after final
+scheduler readback proves disabled/inactive timers and no pending work. On failure,
+completed disables, the failed stage, actual scheduler evidence (or `unavailable`)
+and `resume_command` remain visible; no timer re-enable rollback is attempted.
+`--stop --dry-run` previews pause/drain and conditional update without writes,
+locks, fetch or unit actions. Selectors and protected start gates are unchanged.
+
+### Plain update compatibility
 
 `update` advances one prepared deployment to the newest official release and
 repairs its owned units. It needs the same evidence as setup plus a stopped and
@@ -684,7 +722,8 @@ retry an unchanged timeout. Typical repairs:
   Offer authorized stop/drain only when deliberately re-preparing or pausing.
   Verify inactivity before setup; do not kill workers or stop scheduling just
   to make a preview pass. An existing valid start skips setup.
-- `update_busy`: stop and drain this deployment first, verify no service is
+- `update_busy`: plain update requires stop/drain first, or use explicit
+  `update --stop` to authorize the pause while preserving workers. Verify no service is
   active and no owned timer is enabled, then rerun `update`; never kill workers
   or disable an unrelated deployment to pass the check.
 - `source_dirty`: preserve the tracked checkout changes in a separate operation

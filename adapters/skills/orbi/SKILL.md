@@ -22,7 +22,10 @@ receipt relay; it is not another routing or planning pass.
 Explicit invocation only. This adapter grants no deployment authority and does not
 release pauses or live gates. Use the existing planners for GitHub issue publication and
 `/unblock` for recovery rather than lifecycle control. `update` advances one stopped
-deployment's engine release; it never refreshes Kit, which stays `/update-kit`.
+deployment's engine release; explicit `update --stop` authorizes pausing owned timers,
+not interrupting workers or restarting scheduling. Draining returns an exact resume
+command; unit refresh waits for the next authorized start. It never refreshes Kit,
+which stays `/update-kit`.
 
 **Done when:** the loaded workflow's completion condition is met and only observed
 results are reported.
