@@ -40,8 +40,9 @@ it or the evidence changed, leave its state alone. Evaluate every open issue tag
 - `ai-blocked` → `ai-ready`: verify the cause was fixed and the same-issue retry
   is safe. Use the deployment's supported requeue; preserve its recovery evidence.
 - If both labels apply, require both conditions. For each eligible unowned issue,
-  remove only the resolved state labels and publish `ai-ready` last. Preserve
-  unrelated labels; read back the result and check for pickup. If a gate remains,
+  publish `ai-ready` last, after the eligibility checks. Confirm readiness before
+  removing resolved state labels. Preserve unrelated labels; read back the result
+  and check for pickup. If a gate remains,
   report its reason and next action, then continue with the other issues.
 
 Do not blindly replace the full label set. Keep real blockers blocked; keep epics,

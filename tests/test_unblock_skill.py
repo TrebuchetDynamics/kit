@@ -29,7 +29,7 @@ class UnblockSkillTests(unittest.TestCase):
         for contract in ('`ai-planning` → `ai-ready`', '`ai-blocked` → `ai-ready`',
                          'If both labels apply, require both conditions',
                          'explicit no-dispatch request holds publication',
-                         'publish `ai-ready` last'):
+                         'Confirm readiness before\n  removing resolved state labels'):
             self.assertIn(contract, text)
 
     def test_service_boundary_preserves_pauses_jobs_and_evidence(self):
