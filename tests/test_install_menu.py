@@ -60,11 +60,83 @@ esac
 LOGGING = '#!/usr/bin/env bash\necho "$(basename "$0") $*" >> "$FAKE_LOG"\n'
 
 
+# Native mutations, persisted across installer invocations. List schemas match the
+# documented CLI contracts; Codex config/read shape is from an isolated real call.
+HOST_MUTATIONS = 'python3 -c ' + shlex.quote(r'''
+import json, os, pathlib, sys
+home = pathlib.Path(os.environ['FAKE_HOME'])
+host = pathlib.Path(sys.argv[1]).name
+args = sys.argv[2:]
+def read(path, default):
+    return json.loads(path.read_text()) if path.exists() else default
+def write(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value))
+if host == 'claude':
+    path = pathlib.Path(os.environ.get('CLAUDE_CONFIG_DIR', home / '.claude')) / 'plugins/known_marketplaces.json'
+    registry = read(path, {})
+    plugins_path = home / 'claude-installed.json'
+    plugins = read(plugins_path, [])
+    scope = args[args.index('--scope') + 1] if '--scope' in args else 'user'
+    if args[:3] == ['plugin', 'marketplace', 'add']:
+        if any(r.get('source', {}).get('repo') == 'TrebuchetDynamics/kit' for r in registry.values()):
+            print('marketplace already present')
+        else:
+            registry['kit'] = {'source': {'source': 'github', 'repo': 'TrebuchetDynamics/kit'}}
+    elif args[:3] == ['plugin', 'marketplace', 'remove']:
+        name = args[3]
+        registry.pop(name, None)
+        plugins = [p for p in plugins if not p['id'].endswith('@' + name)]
+        for settings in (home / '.claude/settings.json', pathlib.Path.cwd() / '.claude/settings.json', pathlib.Path.cwd() / '.claude/settings.local.json'):
+            if settings.exists():
+                data = read(settings, {})
+                data.get('extraKnownMarketplaces', {}).pop(name, None)
+                data['enabledPlugins'] = {k:v for k,v in data.get('enabledPlugins', {}).items() if not k.endswith('@' + name)}
+                write(settings, data)
+    elif args[:2] == ['plugin', 'install']:
+        plugins.append({'id': args[2], 'scope': scope, 'enabled': True, 'projectPath': str(pathlib.Path.cwd())})
+    write(path, registry)
+    write(plugins_path, plugins)
+else:
+    path = home / 'codex-marketplaces.json'
+    registry = read(path, {'marketplaces': []})
+    plugins_path = home / 'codex-plugins.json'
+    plugins = read(plugins_path, {})
+    if args == ['app-server']:
+        effective_home = pathlib.Path(os.environ.get('CODEX_HOME', home / '.codex'))
+        layers_path = home / 'codex-layers.json'
+        entries = {r['name']: {'source_type': r['marketplaceSource']['sourceType'], 'source': r['marketplaceSource']['source']} for r in registry['marketplaces']}
+        layers = read(layers_path, [{'name': {'type': 'user', 'file': str(effective_home / 'config.toml'), 'profile': None}, 'config': {'marketplaces': entries}}])
+        for line in sys.stdin:
+            req = json.loads(line)
+            result = {'codexHome': str(effective_home)} if req['method'] == 'initialize' else {'config': {'marketplaces': entries}, 'origins': {}, 'layers': layers}
+            print(json.dumps({'id': req['id'], 'result': result}), flush=True)
+        sys.exit()
+    if args[:3] == ['plugin', 'marketplace', 'add']:
+        if any(r['marketplaceSource']['source'].endswith('/kit.git') for r in registry['marketplaces']):
+            print('marketplace already present')
+        else:
+            registry['marketplaces'].append({'name': 'kit-marketplace', 'root': str(home / 'kit-marketplace'), 'marketplaceSource': {'sourceType': 'git', 'source': 'https://github.com/TrebuchetDynamics/kit.git'}})
+    elif args[:3] == ['plugin', 'marketplace', 'remove']:
+        registry['marketplaces'] = [r for r in registry['marketplaces'] if r['name'] != args[3]]
+    elif args[:2] == ['plugin', 'remove']:
+        name = args[2].split('@')[1]
+        plugins[name]['installed'] = [p for p in plugins[name]['installed'] if p['pluginId'] != args[2]]
+    elif args[:2] == ['plugin', 'add']:
+        plugin, name = args[2].split('@')
+        row = next(r for r in registry['marketplaces'] if r['name'] == name)
+        plugins[name] = {'installed': [{'name': plugin, 'pluginId': args[2], 'marketplaceName': name, 'installed': True, 'enabled': True, 'source': {'source': 'local', 'path': row['root']}, 'marketplaceSource': row['marketplaceSource']}], 'available': []}
+    write(path, registry)
+    write(plugins_path, plugins)
+''') + ' \"$0\" \"$@\"\n'
+
+
 class InstallMenuTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name).resolve()
+        (self.home / '.codex').mkdir()
         self.project = self.home / 'project'
         self.project.mkdir()
         self.bin = self.home / 'fakebin'
@@ -163,7 +235,7 @@ if [[ "$*" == "plugin list --json" ]]; then
   cat "$FAKE_HOME/claude-installed.json"
 else
   :
-''' + mutation + '\nfi\n')
+''' + mutation + '\n' + HOST_MUTATIONS + '\nfi\n')
 
     def codex_registry(self, marketplaces=(), installed=None, mutation=''):
         """Pinned Codex CLI JSON contract, not private config emulation."""
@@ -176,7 +248,7 @@ elif [[ "$1 $2" == "plugin list" ]]; then
   python3 -c 'import json,os,sys; print(json.dumps(json.load(open(os.environ["FAKE_HOME"]+"/codex-plugins.json")).get(sys.argv[1], {"installed":[],"available":[]})))' "$4"
 else
   :
-''' + mutation + '\nfi\n')
+''' + mutation + '\n' + HOST_MUTATIONS + '\nfi\n')
 
     def marketplace(self, name):
         return {'name': name, 'root': str(self.home / name),
@@ -190,12 +262,339 @@ else
             name: {'source': source or {'source': 'github', 'repo': 'TrebuchetDynamics/kit'}}
             for name in names}))
 
+    def test_wrong_name_source_replacement_converges_and_repeat_is_nondestructive(self):
+        for host, canonical in (('claude', 'kit'), ('codex', 'kit-marketplace')):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                self.wrong_source(host)
+                result = self.install('--only', host)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                calls = self.calls(host)
+                remove = next(i for i,c in enumerate(calls) if 'marketplace remove neutral-source' in c)
+                add = next(i for i,c in enumerate(calls) if 'marketplace add TrebuchetDynamics/kit' in c)
+                self.assertLess(remove, add)
+                self.assert_canonical(host)
+                self.log.write_text('')
+                repeated = self.install('update', '--only', host)
+                self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
+                self.assertFalse(any(' remove ' in c or ' uninstall ' in c for c in self.calls(host)))
+
+    def test_add_success_without_canonical_readback_never_updates_missing_name(self):
+        for host in ('claude', 'codex'):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                if host == 'claude':
+                    self.claude_registry([])
+                    self.claude_host(mutation='echo "added successfully"; exit 0')
+                else:
+                    self.codex_registry(mutation='echo "already present"; exit 0')
+                result = self.install('--only', host)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertFalse(any('marketplace update' in c or 'marketplace upgrade' in c for c in self.calls(host)))
+                self.assertIn('partial state', result.stdout)
+
+    def wrong_source(self, host, names=('neutral-source',), plugin='kit', scope='user', mutation=''):
+        if host == 'claude':
+            self.claude_registry(names)
+            self.claude_host([{'id': f'{plugin}@{names[0]}', 'scope': scope, 'enabled': False,
+                               'projectPath': str(self.project)}] if plugin else [], mutation)
+        else:
+            rows = [self.marketplace(name) for name in names]
+            row = rows[0]
+            self.codex_registry(rows, {names[0]: {'installed': [{
+                'name': plugin, 'pluginId': f'{plugin}@{names[0]}', 'marketplaceName': names[0],
+                'installed': True, 'enabled': False, 'source': {'source': 'local', 'path': row['root']},
+                'marketplaceSource': row['marketplaceSource']}] if plugin else [], 'available': []}}, mutation)
+
+    def assert_canonical(self, host):
+        if host == 'claude':
+            registry = json.loads((self.home / '.claude/plugins/known_marketplaces.json').read_text())
+            self.assertEqual(list(registry), ['kit'])
+            self.assertEqual(registry['kit']['source'], {'source': 'github', 'repo': 'TrebuchetDynamics/kit'})
+            plugins = json.loads((self.home / 'claude-installed.json').read_text())
+            self.assertEqual([p['id'] for p in plugins], ['kit@kit'])
+        else:
+            registry = json.loads((self.home / 'codex-marketplaces.json').read_text())
+            self.assertEqual(registry['marketplaces'], [self.marketplace('kit-marketplace')])
+            plugins = json.loads((self.home / 'codex-plugins.json').read_text())
+            self.assertEqual([p['pluginId'] for p in plugins['kit-marketplace']['installed']], ['kit@kit-marketplace'])
+            self.assertEqual(plugins.get('neutral-source', {}).get('installed', []), [])
+
+    def test_add_discovers_wrong_name_success_or_already_present_then_replaces(self):
+        for host in ('claude', 'codex'):
+            for code in (0, 4):
+                with self.subTest(host=host, add_exit=code):
+                    self.log.write_text('')
+                    marker = self.home / 'first-add'
+                    marker.unlink(missing_ok=True)
+                    if host == 'claude':
+                        self.claude_registry([])
+                        destination = self.home / '.claude/plugins/known_marketplaces.json'
+                        observed = {'neutral-source': {'source': {'source': 'github', 'repo': 'TrebuchetDynamics/kit'}}}
+                    else:
+                        destination = self.home / 'codex-marketplaces.json'
+                        observed = {'marketplaces': [self.marketplace('neutral-source')]}
+                    fixture = self.home / 'discovered.json'
+                    fixture.write_text(json.dumps(observed))
+                    mutation = f'''if [[ "$2 $3" == "marketplace add" && ! -e "$FAKE_HOME/first-add" ]]; then
+  touch "$FAKE_HOME/first-add"
+  cp "$FAKE_HOME/discovered.json" {shlex.quote(str(destination))}
+  echo 'source already registered (not identity evidence)'
+  exit {code}
+fi'''
+                    if host == 'claude':
+                        self.claude_host(mutation=mutation)
+                    else:
+                        self.codex_registry(mutation=mutation)
+                    result = self.install('--only', host)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    calls = self.calls(host)
+                    first_add = next(i for i,c in enumerate(calls) if 'marketplace add' in c)
+                    remove = next(i for i,c in enumerate(calls) if 'marketplace remove neutral-source' in c)
+                    last_add = max(i for i,c in enumerate(calls) if 'marketplace add' in c)
+                    update = next(i for i,c in enumerate(calls) if 'marketplace update' in c or 'marketplace upgrade' in c)
+                    self.assertLess(first_add, remove)
+                    self.assertLess(remove, last_add)
+                    self.assertLess(last_add, update)
+                    self.assertTrue(any(' list ' in c for c in calls[last_add+1:update]))
+                    self.assert_canonical(host)
+
+    def test_replacement_interrupted_after_remove_resumes_from_observed_state(self):
+        for host in ('claude', 'codex'):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                mutation = 'if [[ "$2 $3" == "marketplace add" ]]; then echo "fixture network unavailable"; exit 23; fi'
+                self.wrong_source(host, mutation=mutation)
+                result = self.install('--only', host)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn('partial state', result.stdout)
+                self.assertIn('canonical=False', result.stdout)
+                self.assertIn('rerun', result.stdout)
+                self.assertFalse(any('marketplace update' in c or 'marketplace upgrade' in c for c in self.calls(host)))
+                # Keep persisted state; remove only the injected transient failure.
+                path = self.bin / host
+                path.write_text(path.read_text().replace(mutation, ':'))
+                self.log.write_text('')
+                retry = self.install('--only', host)
+                self.assertEqual(retry.returncode, 0, retry.stdout)
+                self.assertFalse(any(' remove ' in c or ' uninstall ' in c for c in self.calls(host)))
+                self.assert_canonical(host)
+
+    def test_replacement_unsafe_source_or_effects_holds_before_any_mutation(self):
+        for host in ('claude', 'codex'):
+            for case in ('other-plugin', 'duplicate-source', 'foreign-canonical', 'unknown-installed'):
+                with self.subTest(host=host, case=case):
+                    self.log.write_text('')
+                    names = ('neutral-source', 'second-source') if case == 'duplicate-source' else ('neutral-source',)
+                    self.wrong_source(host, names, plugin='other' if case == 'other-plugin' else 'kit')
+                    if case == 'foreign-canonical':
+                        if host == 'claude':
+                            path = self.home / '.claude/plugins/known_marketplaces.json'
+                            data = json.loads(path.read_text())
+                            data['kit'] = {'source': {'source': 'github', 'repo': 'foreign/kit'}}
+                        else:
+                            path = self.home / 'codex-marketplaces.json'
+                            data = json.loads(path.read_text())
+                            row = self.marketplace('kit-marketplace')
+                            row['marketplaceSource']['source'] = 'foreign/kit'
+                            data['marketplaces'].append(row)
+                        path.write_text(json.dumps(data))
+                    if case == 'unknown-installed':
+                        path = self.home / ('claude-installed.json' if host == 'claude' else 'codex-plugins.json')
+                        path.write_text('[null]' if host == 'claude' else '{"neutral-source":{"installed":[null],"available":[]}}')
+                    result = self.install('--only', host)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertTrue(all(' list ' in c for c in self.calls(host)), self.calls(host))
+
+    def test_claude_replacement_preserves_single_scope_and_holds_cross_scope(self):
+        for scope in ('project', 'local', 'managed', 'multiple'):
+            with self.subTest(scope=scope):
+                self.log.write_text('')
+                self.wrong_source('claude', scope='user' if scope == 'multiple' else scope)
+                settings = self.project / '.claude/settings.json'
+                settings.parent.mkdir(exist_ok=True)
+                if scope == 'multiple':
+                    settings.write_text(json.dumps({'extraKnownMarketplaces': {'neutral-source': {
+                        'source': {'source': 'github', 'repo': 'TrebuchetDynamics/kit'}}}}))
+                result = self.install('--only', 'claude')
+                if scope in ('managed', 'multiple'):
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertFalse(any(' remove ' in c for c in self.calls('claude')))
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertIn(f'claude plugin marketplace remove neutral-source --scope {scope}', self.calls())
+                    self.assertIn(f'claude plugin marketplace add TrebuchetDynamics/kit --scope {scope}', self.calls())
+                    self.assertIn(f'claude plugin install kit@kit --scope {scope}', self.calls())
+
+    def test_codex_replacement_requires_base_user_layer_and_kit_only_config(self):
+        for kind in ('system', 'project', 'profile', 'shadowed', 'other-plugin', 'managed-plugin', 'missing'):
+            with self.subTest(kind=kind):
+                self.log.write_text('')
+                self.wrong_source('codex')
+                entry = {'source_type': 'git', 'source': self.marketplace('neutral-source')['marketplaceSource']['source']}
+                user = {'name': {'type': 'user', 'file': str(self.home / '.codex/config.toml'), 'profile': None},
+                        'config': {'marketplaces': {'neutral-source': entry}}}
+                layers = [user]
+                if kind in ('system', 'project'):
+                    user['name']['type'] = kind
+                elif kind == 'profile':
+                    user['name']['profile'] = 'work'
+                elif kind == 'shadowed':
+                    layers.append({'name': {'type': 'system', 'file': '/etc/codex/config.toml'},
+                                   'config': {'marketplaces': {'neutral-source': entry}}})
+                elif kind == 'other-plugin':
+                    user['config']['plugins'] = {'other@neutral-source': {'enabled': False}}
+                elif kind == 'managed-plugin':
+                    layers.append({'name': {'type': 'system', 'file': '/etc/codex/config.toml'},
+                                   'config': {'plugins': {'kit@neutral-source': {'enabled': True}}}})
+                else:
+                    layers = []
+                path = self.home / 'codex-layers.json'
+                path.write_text(json.dumps(layers))
+                result = self.install('--only', 'codex')
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertFalse(any(' remove ' in c for c in self.calls('codex')), self.calls())
+                path.unlink()
+
+    def test_final_installed_id_must_be_read_back(self):
+        for host in ('claude', 'codex'):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                mutation = 'if [[ "$1 $2" == "plugin install" || "$1 $2" == "plugin add" ]]; then echo "installed"; exit 0; fi'
+                if host == 'claude':
+                    self.claude_registry(['kit'])
+                    self.claude_host(mutation=mutation)
+                else:
+                    self.codex_registry([self.marketplace('kit-marketplace')], mutation=mutation)
+                result = self.install('--only', host)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn('expected installed ID', result.stdout)
+
+    def test_replacement_attempt_is_bounded_and_checks_removed_plugin(self):
+        for host in ('claude', 'codex'):
+            for case in ('remove-noop', 'plugin-remains', 'add-wrong-again', 'remove-fails'):
+                with self.subTest(host=host, case=case):
+                    self.log.write_text('')
+                    if case == 'remove-noop':
+                        mutation = 'if [[ "$2 $3" == "marketplace remove" ]]; then exit 0; fi'
+                    elif case == 'plugin-remains':
+                        if host == 'claude':
+                            mutation = 'if [[ "$2 $3" == "marketplace remove" ]]; then echo "{}" > "$FAKE_HOME/.claude/plugins/known_marketplaces.json"; exit 0; fi'
+                        else:
+                            mutation = 'if [[ "$1 $2" == "plugin remove" ]]; then exit 0; fi'
+                    elif case == 'remove-fails':
+                        mutation = 'if [[ "$2 $3" == "marketplace remove" ]]; then echo "fixture remove denied"; exit 27; fi'
+                    else:
+                        mutation = 'if [[ "$2 $3" == "marketplace add" ]]; then cp "$FAKE_HOME/again.json" "$FAKE_HOME/' + ('.claude/plugins/known_marketplaces.json' if host == 'claude' else 'codex-marketplaces.json') + '"; exit 0; fi'
+                    self.wrong_source(host, mutation=mutation)
+                    registry_path = self.home / ('.claude/plugins/known_marketplaces.json' if host == 'claude' else 'codex-marketplaces.json')
+                    (self.home / 'again.json').write_bytes(registry_path.read_bytes())
+                    result = self.install('--only', host)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn('partial state', result.stdout)
+                    self.assertEqual(sum('marketplace remove neutral-source' in c for c in self.calls(host)), 1)
+                    self.assertFalse(any('marketplace update' in c or 'marketplace upgrade' in c for c in self.calls(host)))
+
+    def test_replacement_preserves_unrelated_marketplaces_and_canonical_plugin(self):
+        for host in ('claude', 'codex'):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                self.wrong_source(host, plugin='')
+                if host == 'claude':
+                    path = self.home / '.claude/plugins/known_marketplaces.json'
+                    data = json.loads(path.read_text())
+                    other = {'source': {'source': 'github', 'repo': 'other/plugins'}}
+                    data.update(kit={'source': {'source': 'github', 'repo': 'TrebuchetDynamics/kit'}}, unrelated=other)
+                    path.write_text(json.dumps(data))
+                    self.claude_host([{'id': 'kit@kit', 'scope': 'user', 'enabled': False},
+                                      {'id': 'other@unrelated', 'scope': 'user', 'enabled': True}])
+                else:
+                    path = self.home / 'codex-marketplaces.json'
+                    data = json.loads(path.read_text())
+                    other = {**self.marketplace('unrelated'), 'marketplaceSource': {'sourceType': 'git', 'source': 'other/plugins'}}
+                    data['marketplaces'].extend([self.marketplace('kit-marketplace'), other])
+                    path.write_text(json.dumps(data))
+                result = self.install('--only', host)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                calls = self.calls(host)
+                self.assertFalse(any('marketplace add' in c for c in calls))
+                self.assertFalse(any('unrelated' in c for c in calls))
+                after = json.loads(path.read_text())
+                self.assertEqual(after['unrelated'] if host == 'claude' else next(r for r in after['marketplaces'] if r['name'] == 'unrelated'), other)
+
+    def test_replacement_uses_effective_host_config_home(self):
+        for host, key in (('claude', 'CLAUDE_CONFIG_DIR'), ('codex', 'CODEX_HOME')):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                self.wrong_source(host)
+                effective = self.home / (host + '-alternate')
+                effective.mkdir()
+                if host == 'claude':
+                    shutil.move(str(self.home / '.claude/plugins'), str(effective / 'plugins'))
+                    self.claude_registry(['kit'], {'source': 'github', 'repo': 'foreign/kit'})
+                    untouched = (self.home / '.claude/plugins/known_marketplaces.json').read_bytes()
+                result = self.install('--only', host, env={key: str(effective)})
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertTrue(any('marketplace remove neutral-source' in c for c in self.calls(host)))
+                if host == 'claude':
+                    self.assertEqual((self.home / '.claude/plugins/known_marketplaces.json').read_bytes(), untouched)
+                    self.assertEqual(list(json.loads((effective / 'plugins/known_marketplaces.json').read_text())), ['kit'])
+
+    def test_codex_config_probe_failure_holds_and_timeout_is_bounded(self):
+        for output in ('malformed', '{"id":1,"error":{"message":"unsupported"}}'):
+            with self.subTest(output=output):
+                self.wrong_source('codex')
+                path = self.bin / 'codex'
+                body = path.read_text()
+                path.write_text(body.replace('else\n  :', 'elif [[ "$1" == "app-server" ]]; then\n  echo ' + shlex.quote(output) + '\nelse\n  :'))
+                result = self.install('--only', 'codex')
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn('cannot qualify writable config layers', result.stdout)
+                self.assertFalse(any(' remove ' in c for c in self.calls('codex')))
+        # The unresponsive stdio path has a termination guard: never actually wait
+        # for the 30-second deadline in a test, and require one bounded select.
+        self.codex_registry()
+        from unittest.mock import MagicMock
+        selector = MagicMock()
+        selector.__enter__.return_value = selector
+        selector.select.return_value = []
+        with patch.object(install_menu.selectors, 'DefaultSelector', return_value=selector):
+            with self.assertRaisesRegex(OSError, 'timed out or closed'):
+                install_menu.codex_config_layers(install_menu.Output(verbosity=0))
+        selector.select.assert_called_once()
+        self.assertLessEqual(selector.select.call_args.args[0], 30)
+
+    def test_claude_replacement_requires_writable_registry_parent(self):
+        self.wrong_source('claude')
+        folder = self.home / '.claude/plugins'
+        folder.chmod(0o555)
+        try:
+            result = self.install('--only', 'claude')
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn('unwritable', result.stdout)
+            self.assertFalse(any(' remove ' in c for c in self.calls('claude')))
+        finally:
+            folder.chmod(0o755)
+
+    def test_replacement_readback_failure_reports_partial_state(self):
+        for host in ('claude', 'codex'):
+            with self.subTest(host=host):
+                target = '.claude/plugins/known_marketplaces.json' if host == 'claude' else 'codex-marketplaces.json'
+                mutation = 'if [[ "$2 $3" == "marketplace remove" ]]; then echo "{" > "$FAKE_HOME/' + target + '"; exit 0; fi'
+                self.wrong_source(host, mutation=mutation)
+                result = self.install('--only', host)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn('partial state', result.stdout)
+                self.assertIn('readback failed', result.stdout)
+                self.assertIn('rerun', result.stdout)
+
     def test_marketplace_fresh_and_canonical_traces(self):
         for canonical in (False, True):
             with self.subTest(canonical=canonical):
                 self.log.write_text('')
                 self.codex_registry([self.marketplace('kit-marketplace')] if canonical else [])
                 self.claude_registry(['kit'] if canonical else [])
+                self.claude_host()
                 result = self.install('--only', 'claude,codex')
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 calls = self.calls()
@@ -232,10 +631,13 @@ else
                 result = self.install('update', '--only', 'claude,codex')
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(self.calls('claude'), ['claude plugin list --json',
-                    'claude plugin marketplace update kit', f'claude plugin update kit@kit --scope {scope}'])
+                    'claude plugin marketplace update kit', f'claude plugin update kit@kit --scope {scope}',
+                    'claude plugin list --json'])
                 self.assertEqual(self.calls('codex'), ['codex plugin marketplace list --json',
                     'codex plugin list --marketplace kit-marketplace --json',
-                    'codex plugin marketplace upgrade kit-marketplace'])
+                    'codex plugin marketplace upgrade kit-marketplace',
+                    'codex plugin marketplace list --json',
+                    'codex plugin list --marketplace kit-marketplace --json'])
                 self.assertEqual({p: p.read_bytes() for p in snapshot}, snapshot)
 
     def test_claude_settings_scope_selection(self):
@@ -358,7 +760,8 @@ else
         self.codex_registry([canonical])
         result = self.install('--only', 'codex')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.calls('codex')[-1], 'codex plugin add kit@kit-marketplace')
+        self.assertEqual(self.calls('codex')[-3:], ['codex plugin add kit@kit-marketplace',
+            'codex plugin marketplace list --json', 'codex plugin list --marketplace kit-marketplace --json'])
         self.assertFalse(self.calls('codex plugin marketplace upgrade'))
         self.assertFalse(self.calls('codex plugin marketplace add'))
     def test_marketplace_dry_run_is_not_checked_and_invokes_no_hosts(self):
@@ -835,13 +1238,19 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         # Fresh registrations are qualified before any install, without removal.
         self.assertEqual(self.calls('claude'), ['claude plugin list --json',
                                                 'claude plugin marketplace add TrebuchetDynamics/kit',
+                                                'claude plugin list --json',
                                                 'claude plugin marketplace update kit',
-                                                'claude plugin install kit@kit'])
+                                                'claude plugin install kit@kit',
+                                                'claude plugin list --json'])
         self.assertEqual(self.calls('codex'), ['codex plugin marketplace list --json',
                                                'codex plugin list --marketplace kit-marketplace --json',
                                                'codex plugin marketplace add TrebuchetDynamics/kit --ref main',
+                                               'codex plugin marketplace list --json',
+                                               'codex plugin list --marketplace kit-marketplace --json',
                                                'codex plugin marketplace upgrade kit-marketplace',
-                                               'codex plugin add kit@kit-marketplace'])
+                                               'codex plugin add kit@kit-marketplace',
+                                               'codex plugin marketplace list --json',
+                                               'codex plugin list --marketplace kit-marketplace --json'])
         self.assertEqual((self.home / '.local/bin/tx').read_bytes(), (ROOT / 'tmux/tx').read_bytes())
         self.assertTrue((self.home / '.local/share/bash-completion/completions/tx').is_file())
         for shell in ('bash', 'zsh', 'fish'):
@@ -905,7 +1314,7 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         result = self.install('--only', 'claude')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('claude'), ['claude plugin list --json', 'claude plugin marketplace update kit',
-                                               'claude plugin install kit@kit'])
+                                               'claude plugin install kit@kit', 'claude plugin list --json'])
         self.assertEqual(registry.read_bytes(), before)
         self.assertRegex(result.stdout, r'claude\s+installed')
 
@@ -938,7 +1347,7 @@ exit 0
         result = self.install('--only', 'claude')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('claude'), ['claude plugin list --json', 'claude plugin marketplace update kit',
-                                               'claude plugin install kit@kit'])
+                                               'claude plugin install kit@kit', 'claude plugin list --json'])
 
     def test_a_transient_preflight_race_is_retried_once(self):
         import sys
@@ -1384,7 +1793,9 @@ fi
         self.assertEqual(self.calls('claude'), [
             'claude plugin list --json',
             'claude plugin marketplace add TrebuchetDynamics/kit',
-            'claude plugin marketplace update kit'])
+            'claude plugin list --json',
+            'claude plugin marketplace update kit',
+            'claude plugin list --json'])
         self.assertIn('codex plugin add kit@kit-marketplace', self.calls('codex'))
         import json
         rows = {row['item']: row for row in map(json.loads, report.read_text().splitlines())}
