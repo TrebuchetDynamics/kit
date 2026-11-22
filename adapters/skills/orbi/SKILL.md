@@ -9,9 +9,13 @@ disable-model-invocation: true
 Apply the [shared Ponytail method](../../../skills/shared/PONYTAIL.md) within this workflow's scope.
 Use the [communication rules](../../../skills/shared/COMMUNICATION.md) for user-facing text.
 
-Read the [host contract](../COMMON.md), then follow the
-[host-neutral workflow](../../../skills/orbi/SKILL.md).
-Resolve its helper and references from that workflow's directory, not this adapter.
+Use the [host contract](../COMMON.md) and
+[host-neutral workflow](../../../skills/orbi/SKILL.md). Pi supplies both in the
+command message; use that supplied text without reloading it. On other portable
+hosts, load missing instructions together before interpreting the request.
+Resolve the helper and references from the canonical workflow's directory, not
+this adapter. Keep any host-required tool-result continuation to the workflow's
+receipt relay; it is not another routing or planning pass.
 
 ## Boundaries
 
