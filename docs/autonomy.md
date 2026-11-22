@@ -1,11 +1,9 @@
 # Standing decision policy
 
-> **Executor migration:** the owner selected GitHub Issues and Orbi in place of
-> Autowork, with all issues defaulting to `ai-ready` regardless of author. The
-> scope, exclusion, human-only and evidence limits below remain; legacy task-store
-> grant bookkeeping and runner admission do not apply to new work. Use
-> [GitHub-native publication and delivery](github-native.md), preserve explicit
-> pauses and do not revive the retired executor.
+> GitHub Issues are the only executable backlog and Orbi owns delivery, with all
+> issues defaulting to `ai-ready` regardless of author. The scope, exclusion,
+> human-only and evidence limits below remain. Use
+> [GitHub-native publication and delivery](github-native.md) and preserve explicit pauses.
 
 Status: owner-approved. This policy applies to this repository and to workspaces
 whose owner explicitly adopts it. Approval of implementation delegates execution

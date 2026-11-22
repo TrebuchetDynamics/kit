@@ -1,11 +1,7 @@
 # Language strategy and measurement boundaries
 
-The Python executor and proposed Rust/Octet executor redesign are superseded by
-pi-autowork retirement. Neither is supported or a development target. GitHub Issues
-own executable work; Orbi is the paused, live-unqualified successor. See the
-[current support boundary](../github-native.md#support-boundary). The
-[original Rust direction](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/plans/rust-octet-autowork.md#accepted-direction)
-is immutable evidence, not an instruction to resume development.
+GitHub Issues own executable work; Orbi is the paused, live-unqualified delivery owner.
+See the [current support boundary](../github-native.md#support-boundary).
 Completed sampling results and task timelines remain in Git history.
 
 ## Decision
@@ -63,9 +59,5 @@ benchmark service, restart, worker launch or prototype is authorized by this pag
 ## Sources
 
 Current authority is documented in [GitHub-native delivery](../github-native.md)
-and the [component map](../project.md#current-components). Historical measurement
-surfaces (scorecard, dispatch, slot persistence, execution journal, selection and
-planning authority) are retained in the
-[immutable pre-removal component](https://github.com/TrebuchetDynamics/kit/tree/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/pi-autowork).
-Their tests no longer ship. No historical result is a new execution receipt or
-proof of replacement qualification.
+and the [component map](../project.md#current-components). No historical result
+is a new execution receipt or proof of replacement qualification.

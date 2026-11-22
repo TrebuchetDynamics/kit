@@ -131,8 +131,7 @@ Authorized `docs/` plan-owner writes and transient publication input such as
 `/tmp/batch.json` remain allowed; scratch is not a replacement backlog. Recorded
 `git commit`/`push` (including global options) are refused. Selected activation
 patterns cover `systemctl start/restart/enable`, `launchctl load/bootstrap/kickstart/
-start/enable`, `orbi start/setup/install-units` and retired `pi-autowork
-start/run/resume/restart`; read-only status and history commands remain allowed.
+start/enable` and `orbi start/setup/install-units`; read-only status and history commands remain allowed.
 
 These regex/path checks do not infer arbitrary shell effects, normalize every path
 alias or prove universal write safety. A successful synthetic helper event is **not

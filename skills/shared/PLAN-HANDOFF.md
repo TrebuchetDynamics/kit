@@ -94,7 +94,7 @@ Kit must keep incomplete batches out of dispatch:
 
 1. Check the repository, existing open **and closed** issues, linked PRs and actual
    ownership. Reuse an existing issue; never reopen completed work or change a live
-   worker's contract. Reconcile legacy work using the [migration guide](TODO-WORKCENTER.md).
+   worker's contract. Reconcile legacy work using this publication contract.
 2. Create complete issues with `ai-planning` atomically on creation and without
    `ai-ready`. This explicit temporary exception prevents the default-label workflow
    racing publication. Proposals and unresolved intent retain `ai-planning` and a
@@ -150,7 +150,7 @@ apply `ai-ready` themselves after construction, using this publication protocol.
 ## Persistence, not local-main admission
 
 Read-back GitHub Issues are the saved executable work. Planning no longer requires
-`tasks/` validation, an `autowork tasks` write or a canonical local `main` commit.
+`tasks/` validation, a local task-store write or a canonical local `main` commit.
 Shared decisions may live in the issue itself or in repository documents delivered
 through the repository's normal PR process. A link to an unpublished local file is
 not a reachable governing source: publish it or put the necessary accepted content

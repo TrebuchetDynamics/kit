@@ -82,7 +82,7 @@ class AutoresearchInstructionContracts(unittest.TestCase):
         # Historical tasks/ mentions are valid; the old current-authority direction is not.
         for text in (binding, self.portable):
             self.assertNotRegex(text, r"(?:checkout's|main) `tasks/` (?:store )?is canonical")
-        self.assertIn('../shared/TODO-WORKCENTER.md', binding)
+        self.assertIn('../shared/PLAN-HANDOFF.md', binding)
         self.assertIn('../../../skills/autoresearch/SKILL.md', self.portable)
         self.assertIn('../COMMON.md', self.portable)
         self.assertIn('Preserve legacy records; the task CLI is removed', self.portable)

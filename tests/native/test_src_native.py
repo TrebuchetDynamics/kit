@@ -31,8 +31,8 @@ SUBFOLDER = {'autoresearch_commands.py': 'commands', 'workflow_commands.py': 'co
 
 class SrcNativeTests(unittest.TestCase):
     def test_native_payload_is_owned_by_kit(self):
-        self.assertTrue((ROOT / 'src/autowork_runtime/plugin.py').is_file())
-        self.assertTrue((ROOT / 'src/autowork_bootstrap.py').is_file())
+        self.assertTrue((ROOT / 'src/kit_runtime/plugin.py').is_file())
+        self.assertTrue((ROOT / 'src/kit_bootstrap.py').is_file())
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -63,9 +63,9 @@ for entry, (owner, function) in {OWNERS!r}.items():
     func = getattr(module, function)
     assert func.__globals__ is module.__dict__ and func.__module__ == spec.name
     # Remote command modules live in their own subfolder; the rest stay at the root.
-    source = root / 'src/autowork_runtime' / {SUBFOLDER!r}.get(owner, '') / owner
+    source = root / 'src/kit_runtime' / {SUBFOLDER!r}.get(owner, '') / owner
     assert func.__code__.co_filename == str(source), func.__code__.co_filename
-    assert module._AUTOWORK_LAYOUT.implementation(entry) == source
+    assert module._KIT_LAYOUT.implementation(entry) == source
     tree = ast.parse((root / entry).read_text())
     assert not any(isinstance(n, (ast.FunctionDef, ast.ClassDef)) for n in ast.walk(tree))
     assert spec.name not in sys.modules
@@ -79,7 +79,7 @@ for entry, (owner, function) in {OWNERS!r}.items():
             settings = json.loads(path.read_text())
             settings['hermes']['policies']['interactive']['approvals_mode'] = mode
             path.write_text(json.dumps(settings))
-            for name in ('autowork', 'blockers', 'plan-with-me'):
+            for name in ('unknown', 'blockers', 'plan-with-me'):
                 path = root / 'skills' / name / 'SKILL.md'
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('---\nname: ' + name + '\n---\nFixture skill.\n')
@@ -94,7 +94,7 @@ sys.modules['hermes_cli.plugins'] = types.SimpleNamespace(get_plugin_commands=la
     get_plugin_manager=lambda: types.SimpleNamespace(list_plugin_skill_metadata=lambda: [], _cli_commands={{}}))
 sys.modules['gateway.session_context'] = types.SimpleNamespace(get_session_env=lambda *args: '')
 # Unqualified modules and files in cwd must never supply a native peer.
-for name in ('bundle', 'runtime_defaults', 'telegram_menu_policy', 'autowork_bootstrap'):
+for name in ('bundle', 'runtime_defaults', 'telegram_menu_policy', 'kit_bootstrap'):
     sys.modules[name] = types.SimpleNamespace()
     Path(name + '.py').write_text('raise AssertionError("foreign cwd")\n')
 def read(root, entry, name, cache=False):
@@ -109,11 +109,11 @@ for plugin, root in zip(plugins, roots):
     plugin.register(ctx)
     assert ctx.skills['plan-with-me'] == root / 'skills/plan-with-me/SKILL.md'
     handler = ctx.commands['plan-with-me']
-    bundle = plugin._AUTOWORK_COMPAT.peer(plugin.__dict__, 'bundle')
+    bundle = plugin._KIT_COMPAT.peer(plugin.__dict__, 'bundle')
     assert bundle.__file__ == str(root / 'scripts/bundle.py')
     ctx.commands['plan_with_me']('blockers')
     assert ctx.messages[-1][0].endswith('User arguments:\nblockers')
-    setup = plugin._AUTOWORK_COMPAT.peer(bundle.__dict__, 'setup_runtime')
+    setup = plugin._KIT_COMPAT.peer(bundle.__dict__, 'setup_runtime')
     setup.finalize = lambda selected, report, args: ({{'root': str(selected)}}, 7)
     bundle.inventory = lambda: {{}}
     assert bundle.handle_cli(argparse.Namespace(action='finalize')) == 7
@@ -124,7 +124,7 @@ for plugin, root in zip(plugins, roots):
     assert plugin._discover_skills()[0][2].is_relative_to(roots[1])
 standalone = [read(root, 'scripts/runtime_defaults.py', 'policy_' + str(i)) for i, root in enumerate(roots)]
 assert [m.expected_settings({{}})['approvals']['mode'] for m in standalone] == ['off', 'manual']
-one = standalone[0]._AUTOWORK_COMPAT.peer(standalone[0].__dict__, 'bundle')
+one = standalone[0]._KIT_COMPAT.peer(standalone[0].__dict__, 'bundle')
 patched = one.defaults()
 patched['hermes']['policies']['interactive']['approvals_mode'] = 'smart'
 one.defaults = lambda: patched
@@ -135,13 +135,13 @@ assert standalone[1].expected_settings({{}})['approvals']['mode'] == 'manual'
     def test_missing_migrated_payload_refuses_without_legacy_or_cached_fallback(self):
         for entry, (owner, _) in OWNERS.items():
             with self.subTest(entry=entry):
-                source = self.root / 'src/autowork_runtime' / SUBFOLDER.get(owner, '') / owner
+                source = self.root / 'src/kit_runtime' / SUBFOLDER.get(owner, '') / owner
                 self.assertTrue(source.is_file(), f'missing owner: {source}')
                 source.unlink()
                 self.probe(f'''import importlib.util, sys, types
 from pathlib import Path
 root = Path({str(self.root)!r})
-sys.modules['autowork_runtime.{Path(owner).stem}'] = types.SimpleNamespace()
+sys.modules['kit_runtime.{Path(owner).stem}'] = types.SimpleNamespace()
 spec = importlib.util.spec_from_file_location('missing_payload', root / {entry!r})
 module = importlib.util.module_from_spec(spec)
 try: spec.loader.exec_module(module)

@@ -1,7 +1,7 @@
 # Claude Code, Codex and Pi installation
 
 > **GitHub-native delivery:** GitHub Issues own executable work; Orbi owns delivery.
-> pi-autowork is retired and unsupported. See [setup and support](github-native.md).
+> See [setup and support](github-native.md).
 
 Kit supports Claude Code, Codex, Pi and optional Hermes integration.
 Claude Code, Codex and Pi use the portable adapters, not the Hermes plugin
@@ -324,12 +324,13 @@ compatible native skill edits and requests no runtime restart. `--skip hermes`
 leaves Hermes out; preview runs no updater or recovery network operation. This
 Hermes-specific path does not replace portable hosts' own update commands below.
 Fresh Hermes installation/probes use `plugins/kit` and enable `kit`. Verified
-legacy physical slots are discovery/migration inputs only: no supported Autowork
-CLI or executor is restored. Setup/update refuse duplicate registrations, including
+physical slots are discovery inputs only. Setup/update refuse duplicate registrations, including
 same-source aliases, before component mutation; preserve the paths and reconcile
 ownership rather than reinstalling over them. See [slot identity and setup](installation.md#install).
 Source delivery is not installed adoption, native loader qualification or live activation.
 
+
+<a id="legacy-marketplace-migration"></a>
 
 ## Claude Code
 
@@ -347,7 +348,7 @@ claude plugin marketplace add TrebuchetDynamics/kit
 claude plugin install kit@kit
 ```
 
-`./install.sh` validates both canonical `kit` and legacy `autowork` names in
+`./install.sh` validates Kit identities in
 settings/known-marketplace records and reads installed IDs with
 `claude plugin list --json` during an actual install. It reuses an owned GitHub,
 Git or verified Kit directory source. It does not remove/re-add that marketplace
@@ -355,7 +356,7 @@ or uninstall its cached plugin: an installed canonical plugin uses
 `claude plugin update kit@kit --scope SCOPE`, keeping the selected installed scope.
 A settings-only declaration uses its selected scope for install (user by default).
 Foreign, conflicting, missing or unknown source records, stale directories and
-legacy registrations stop this component with [migration guidance](#legacy-marketplace-migration).
+legacy registrations stop this component with diagnostics requiring ownership reconciliation.
 A stale legacy path is not permission to delete its entry. The installer does not
 rewrite registry/settings files itself. Unsupported installed-list output also
 requires host qualification, not fallback reinstallation.
@@ -436,7 +437,6 @@ During an authorized actual install/update, `./install.sh` first runs:
 
 ```sh
 codex plugin marketplace list --json
-codex plugin list --marketplace autowork-marketplace --json
 codex plugin list --marketplace kit-marketplace --json
 ```
 
@@ -456,72 +456,6 @@ auth state; these are not zero-side-effect probes. Dry-run invokes no registry
 probes or mutations, reports migration/registry status as `NOT_CHECKED` and prints
 planned validation. Independent installer components continue after a refusal.
 This is offline-tested compatibility behavior, not live adoption evidence.
-
-## Legacy marketplace migration
-
-The deprecated marketplace names are Claude `autowork` (`kit@autowork`) and Codex
-`autowork-marketplace` (`kit@autowork-marketplace`). Their replacements are `kit`
-(`kit@kit`) and `kit-marketplace` (`kit@kit-marketplace`). The plugin name and
-portable skill routing remain `kit`. Existing registrations are **not** migrated
-automatically, even when their source directory is gone.
-
-1. Stop Kit work in the affected host. In the **same effective configuration
-   context** as the installer (working directory, environment and configuration
-   selection), inspect registrations and installed plugins. For Claude use
-   `claude plugin marketplace list --json` and `claude plugin list --json`; for
-   Codex use the three filtered commands above. Also inspect inherited/project
-   overrides and any other contexts you use. Effective lists cannot establish that
-   every persisted scope was inspected. If a command is missing or its output lacks
-   required source metadata, update to a supported host or use its documented manual
-   setup. Do not guess alternate syntax or edit private registries.
-2. Make private backups of configuration, plugin data/options/secrets, source
-   directories and existing recovery evidence. Record old IDs, source kind, URL/path,
-   ref/revision, scope and enabled state, plus unrelated plugins using either
-   marketplace. Keep the old checkout/revision for rollback; do not overwrite the
-   only copy. Backups may contain credentials: never commit or publish them.
-3. Separately authorize each host removal. If canonical and legacy coexist, decide
-   which source and scope to retain; do not blindly remove either. Marketplace
-   removal can affect other plugins: do not proceed until unrelated plugins and
-   user data have a safe preservation plan. For an intended legacy Claude removal,
-   use the installed scope (replace `SCOPE` with `user`, `project` or `local`):
-
-   ```sh
-   claude plugin uninstall kit@autowork --scope SCOPE --keep-data
-   claude plugin marketplace remove autowork --scope SCOPE
-   ```
-
-   `--keep-data` preserves the data directory, not a guarantee that options/secrets
-   or ID-bound data transfer to `kit@kit`. Keep backups and follow your host version's
-   documented behavior. Managed declarations require the administrator, not a bypass.
-   For a separately authorized Codex removal in the reviewed context:
-
-   ```sh
-   codex plugin remove kit@autowork-marketplace
-   codex plugin marketplace remove autowork-marketplace
-   ```
-
-   **Codex has no promised keep-data behavior here.** Removal/addition is not data
-   migration or scope-complete cleanup. Recheck inherited/project overrides after
-   removal; a hidden registration may become effective. Never delete recovery inputs
-   or manually rewrite registry files to suppress that result.
-4. After reviewing the new source, separately authorize adding its canonical
-   marketplace and plugin with the fresh commands in the Claude/Codex sections.
-   Preserve your original source kind, ref and scope: use the intended local source
-   path instead of the published Git source when applicable, and retain a selected
-   ref rather than blindly changing it to `main`. For Claude add/install at the
-   selected `--scope`. Do not re-add an already intended canonical registration.
-   Restore data/options deliberately using supported host procedures, preserving
-   unrelated changes. On failure, stop and use the recorded source/revision and
-   private backups with the host's supported commands to restore the old setup;
-   there is no automatic rollback or guaranteed data transfer between IDs.
-5. Repeat the effective-state checks in each relevant context and inspect overrides.
-   Verify only one intended active Kit registration, with the correct source, scope
-   and enablement, then reload/start a new session and verify discovery. Source
-   deprecation alone does not establish disappearance of installed resources.
-
-No live migration on installed host versions is qualified by these instructions or
-the fake-host tests. Live removal, installation and workflow acceptance need separate
-authorization and evidence.
 
 ## Pi coding agent
 
@@ -583,8 +517,7 @@ Use Pi's package controls (`pi list`, `pi update --extensions`, `pi remove <sour
 for management. `./install.sh` also refreshes a registered package that lacks a skill
 folder this checkout ships (a release that added `orbi` left `/skill:orbi` and `/orbi`
 missing until then) and clears an empty `skills: []` or `extensions: []`
-filter on this package: a filter recorded in `pi config`, including one carried from
-the package's previous `autowork` name, survives `pi install` and `pi update` and
+filter on this package: a filter recorded in `pi config` survives `pi install` and `pi update` and
 hides every command and `/skill:<name>`. Non-empty filters are kept. Removing the
 package leaves repository documents and commits intact.
 
@@ -611,14 +544,9 @@ remain evidence; no live login, inference or delivery is established by removal.
 
 ### Removed executor
 
-The pi-autowork executor, service installer, task CLI and Paseo integration are
-removed. Do not start or install them. Preserve existing task records, worktrees,
-attempts and recovery state; they are migration evidence, not an executable queue.
-
-The [prior runner contracts and qualification gaps](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/cross-host.md#run-autowork-continuously)
-remain immutable evidence. Removal does not satisfy outstanding live checks or
-grant a replacement the same capabilities. Use [GitHub/Orbi delivery](github-native.md);
-Orbi remains paused and live-unqualified until the cutover pilot succeeds.
+Use [GitHub/Orbi delivery](github-native.md); Orbi remains paused and
+live-unqualified until the cutover pilot succeeds. Preserve existing task records,
+worktrees, attempts and recovery state; they are not an executable queue.
 
 ## Behavior and verification
 

@@ -110,9 +110,9 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
         self.codex_registry()
         self.env = {'PATH': f'{self.bin}:/usr/bin:/bin', 'HOME': str(self.home), 'FAKE_LOG': str(self.log),
                     'FAKE_HOME': str(self.home), 'XDG_CONFIG_HOME': str(self.home / '.config'),
-                    'PI_AUTOWORK_SYSTEMCTL': str(self.bin / 'systemctl'), 'LANG': 'C.UTF-8',
+                    'KIT_SYSTEMCTL': str(self.bin / 'systemctl'), 'LANG': 'C.UTF-8',
                     'FAKE_KIT_CHECKOUT': str(ROOT),
-                    'TMPDIR': str(self.home), 'AUTOWORK_INSTALL_NO_PULL': '1'}  # never pull the checkout under test
+                    'TMPDIR': str(self.home), 'KIT_INSTALL_NO_PULL': '1'}  # never pull the checkout under test
         # In-process installer tests must also never discover the real host fleet.
         self.environment = patch.dict(os.environ, self.env)
         self.environment.start()
@@ -206,23 +206,6 @@ else
                 self.assertEqual('codex plugin marketplace add TrebuchetDynamics/kit --ref main' in calls,
                                  not canonical)
 
-    def test_legacy_and_coexisting_registrations_refuse_without_mutation(self):
-        for both in (False, True):
-            with self.subTest(both=both):
-                self.log.write_text('')
-                self.claude_registry(['autowork', 'kit'] if both else ['autowork'])
-                names = ['autowork-marketplace', 'kit-marketplace'] if both else ['autowork-marketplace']
-                self.codex_registry([self.marketplace(n) for n in names])
-                before = (self.home / '.claude/plugins/known_marketplaces.json').read_bytes()
-                result = self.install('--only', 'claude,codex,tx', '--quiet')
-                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertIn('manual migration required', result.stdout)
-                self.assertRegex(result.stdout, r'tx\s+installed')
-                self.assertFalse(any(any(' '+verb+' ' in c for verb in
-                                     ('add', 'install', 'remove', 'uninstall', 'update', 'upgrade'))
-                                     for c in self.calls() if c.startswith(('claude ', 'codex '))))
-                self.assertEqual((self.home / '.claude/plugins/known_marketplaces.json').read_bytes(), before)
-
     def test_canonical_installed_updates_preserve_scope_source_and_disabled_state(self):
         for scope in ('user', 'project', 'local'):
             with self.subTest(scope=scope):
@@ -250,12 +233,11 @@ else
                 self.assertEqual(self.calls('claude'), ['claude plugin list --json',
                     'claude plugin marketplace update kit', f'claude plugin update kit@kit --scope {scope}'])
                 self.assertEqual(self.calls('codex'), ['codex plugin marketplace list --json',
-                    'codex plugin list --marketplace autowork-marketplace --json',
                     'codex plugin list --marketplace kit-marketplace --json',
                     'codex plugin marketplace upgrade kit-marketplace'])
                 self.assertEqual({p: p.read_bytes() for p in snapshot}, snapshot)
 
-    def test_claude_settings_scope_selection_and_legacy_installed_identity(self):
+    def test_claude_settings_scope_selection(self):
         self.claude_registry(['kit'])
         settings = self.project / '.claude/settings.json'
         settings.parent.mkdir()
@@ -265,13 +247,6 @@ else
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('claude plugin install kit@kit --scope project', self.calls('claude'))
         self.assertEqual(settings.read_bytes(), before)
-        self.claude_host([{'id': 'kit@autowork', 'scope': 'user', 'enabled': False}])
-        self.log.write_text('')
-        result = self.install('--only', 'claude')
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn('legacy installed kit@autowork', result.stdout)
-        self.assertEqual(self.calls('claude'), ['claude plugin list --json'])
-
     def test_claude_foreign_unknown_conflicting_and_failed_reads_hold(self):
         cases = (
             ({'source': 'github', 'repo': 'foreign/kit'}, 'foreign'),
@@ -315,18 +290,7 @@ else
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertEqual(self.calls('claude'), ['claude plugin list --json'])
 
-    def test_claude_project_legacy_settings_and_malformed_installed_list_hold(self):
-        path = self.project / '.claude/settings.local.json'
-        path.parent.mkdir()
-        path.write_text(json.dumps({'extraKnownMarketplaces': {'autowork': {
-            'source': {'source': 'directory', 'path': '/gone'}}},
-            'enabledPlugins': {'other@elsewhere': True}}))
-        before = path.read_bytes()
-        result = self.install('--only', 'claude')
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertEqual(self.calls('claude'), [])
-        self.assertEqual(path.read_bytes(), before)
-        path.unlink()
+    def test_claude_malformed_installed_list_holds(self):
         (self.home / 'claude-installed.json').write_text('{')
         result = self.install('--only', 'claude')
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -387,7 +351,7 @@ else
         self.assertIn('filtered list unavailable', result.stdout)
         self.assertTrue(all(' list ' in call for call in self.calls('codex')))
 
-    def test_codex_local_source_reused_and_legacy_installed_without_registry_holds(self):
+    def test_codex_local_source_reused(self):
         canonical = self.marketplace('kit-marketplace')
         canonical.update(root=str(ROOT), marketplaceSource={'sourceType': 'local', 'source': str(ROOT)})
         self.codex_registry([canonical])
@@ -396,29 +360,9 @@ else
         self.assertEqual(self.calls('codex')[-1], 'codex plugin add kit@kit-marketplace')
         self.assertFalse(self.calls('codex plugin marketplace upgrade'))
         self.assertFalse(self.calls('codex plugin marketplace add'))
-        legacy = self.marketplace('autowork-marketplace')
-        self.codex_registry([], {'autowork-marketplace': {'installed': [{
-            'pluginId': 'kit@autowork-marketplace', 'name': 'kit',
-            'marketplaceName': 'autowork-marketplace', 'installed': True, 'enabled': False,
-            'source': {'source': 'local', 'path': legacy['root']},
-            'marketplaceSource': legacy['marketplaceSource']}], 'available': []}})
-        self.log.write_text('')
-        result = self.install('--only', 'codex')
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertTrue(all(' list ' in call for call in self.calls('codex')))
-
-    def test_legacy_claude_refusal_does_not_stop_later_codex_install(self):
-        self.claude_registry(['autowork'])
-        result = self.install('--only', 'claude,codex', '--quiet')
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertRegex(result.stdout, r'claude\s+failed.*manual migration required')
-        self.assertRegex(result.stdout, r'codex\s+installed')
-        self.assertEqual(self.calls('claude'), [])
-        self.assertIn('codex plugin add kit@kit-marketplace', self.calls('codex'))
-
     def test_marketplace_dry_run_is_not_checked_and_invokes_no_hosts(self):
-        self.claude_registry(['autowork', 'kit'])
-        self.codex_registry([self.marketplace('autowork-marketplace')])
+        self.claude_registry(['kit'])
+        self.codex_registry([self.marketplace('kit-marketplace')])
         before = {p: p.read_bytes() for p in self.home.rglob('*.json')}
         self.log.write_text('')
         result = self.install('--only', 'claude,codex', '--dry-run')
@@ -491,7 +435,7 @@ else
         self.fake('pi-bolt', LOGGING + 'echo "PATH Pi-Bolt must not run" >&2; exit 98\n')
         destination = self.home / 'custom bin'
         for args in ((), ('update',), ('--dry-run',)):
-            result = self.install(*args, env={'AUTOWORK_BIN_DIR': str(destination)})
+            result = self.install(*args, env={'KIT_BIN_DIR': str(destination)})
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn(str(destination / 'pi-bolt'), result.stdout)
             self.assertEqual(self.calls('pi '), [])
@@ -554,11 +498,11 @@ else
         self.bolt.unlink()
         report = self.home / 'preview.jsonl'
         for args, stdin, env in (
-            (('--no-pull', '--dry-run'), None, {'AUTOWORK_INSTALL_REPORT': str(report)}),
+            (('--no-pull', '--dry-run'), None, {'KIT_INSTALL_REPORT': str(report)}),
             (('--list',), None, {}),
             (('--only', 'pi', '--skip', 'pi'), None, {}),
-            (('--menu', '--dry-run'), '\n', {'AUTOWORK_INSTALL_UI': 'text'}),
-            (('--menu',), 'q\n', {'AUTOWORK_INSTALL_UI': 'text'}),
+            (('--menu', '--dry-run'), '\n', {'KIT_INSTALL_UI': 'text'}),
+            (('--menu',), 'q\n', {'KIT_INSTALL_UI': 'text'}),
         ):
             with self.subTest(args=args):
                 before = sorted(str(p) for p in self.home.rglob('*'))
@@ -585,7 +529,7 @@ else
 
     def test_restart_services_excludes_legacy_runner_and_tries_host_services(self):
         listed = subprocess.CompletedProcess([], 0,
-            'pi-autowork@repo.service loaded active running Runner\n'
+            'unrelated-runner@repo.service loaded active running Runner\n'
             'orbi-kit@1.service loaded active running Orbi\n'
             'hermes-gateway.service loaded active running Hermes\n'
             'kit-helper.service loaded active running Helper\n'
@@ -601,7 +545,7 @@ else
         self.assertEqual(len(commands), 2)
         self.assertEqual(commands[0][-2:], ['try-restart', 'hermes-gateway.service'])
         self.assertEqual(commands[-1][-2:], ['try-restart', 'kit-helper.service'])
-        self.assertNotIn('pi-autowork@*.service', discover.call_args.args[0])
+        self.assertNotIn('unrelated-runner@*.service', discover.call_args.args[0])
 
     def test_restart_phase_runs_on_unchanged_and_failed_installs_but_not_preview(self):
         item = install_menu.Item('fixture', 'Fixture', steps=[
@@ -656,7 +600,7 @@ else
         self.assertTrue((self.home / '.local/bin/tx').is_file())
 
     def test_dynamic_shell_targets_are_left_to_native_host_admission(self):
-        self.fake('hermes', '#!/bin/sh\nexec "/bin/${AUTOWORK_HOST:-sh}" "$@"\n')
+        self.fake('hermes', '#!/bin/sh\nexec "/bin/${KIT_HOST:-sh}" "$@"\n')
         (self.home / '.hermes').mkdir()
         result = self.install('--full', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -823,7 +767,7 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
 
     def test_pi_bolt_uses_the_selected_bin_directory(self):
         destination = self.home / 'custom bin'
-        result = self.install('--only', 'pi-bolt', env={'AUTOWORK_BIN_DIR': str(destination)})
+        result = self.install('--only', 'pi-bolt', env={'KIT_BIN_DIR': str(destination)})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(f'{destination / "pi-bolt"}: 1.4.0', result.stdout)
         self.assertEqual(self.calls('pi-bolt-installer'),
@@ -858,19 +802,18 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
                 if not supported:
                     self.assertIn('unsupported Pi-Bolt platform', item.missing)
 
-    def test_removed_runner_cannot_be_installed_or_updated(self):
-        state = self.home / '.local/state/pi-autowork'
+    def test_unknown_component_refuses_and_preserves_private_state(self):
+        state = self.home / '.local/state/unknown-runner'
         state.mkdir(parents=True)
         evidence = state / 'preserved-attempt.json'
         evidence.write_text('{"unfinished": true}\n')
-        for args in (('--only', 'autowork'), ('update', '--only', 'autowork')):
+        for args in (('--only', 'unknown-runner'), ('update', '--only', 'unknown-runner')):
             with self.subTest(args=args):
                 result = self.install(*args)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn('autowork', result.stdout + result.stderr)
-                self.assertFalse((self.home / '.local/bin/autowork').exists())
+                self.assertIn('unknown-runner', result.stdout + result.stderr)
                 self.assertEqual(evidence.read_text(), '{"unfinished": true}\n')
-        self.assertNotRegex(self.install('--list').stdout, r'(?m)^autowork\s')
+        self.assertNotRegex(self.install('--list').stdout, r'(?m)^unknown-runner\s')
 
     def test_octet_install_is_removed(self):
         for args in (('--only', 'octet'), ('update', '--only', 'octet')):
@@ -894,13 +837,10 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
                                                 'claude plugin marketplace update kit',
                                                 'claude plugin install kit@kit'])
         self.assertEqual(self.calls('codex'), ['codex plugin marketplace list --json',
-                                               'codex plugin list --marketplace autowork-marketplace --json',
                                                'codex plugin list --marketplace kit-marketplace --json',
                                                'codex plugin marketplace add TrebuchetDynamics/kit --ref main',
                                                'codex plugin marketplace upgrade kit-marketplace',
                                                'codex plugin add kit@kit-marketplace'])
-        link = self.home / '.local/bin/autowork'
-        self.assertFalse(link.exists())  # removed executor has no installation path
         self.assertEqual((self.home / '.local/bin/tx').read_bytes(), (ROOT / 'tmux/tx').read_bytes())
         self.assertTrue((self.home / '.local/share/bash-completion/completions/tx').is_file())
         for shell in ('bash', 'zsh', 'fish'):
@@ -983,14 +923,14 @@ exit 0
         self.assertNotIn('claude plugin install kit@kit', self.calls('claude'))
 
     def test_a_marketplace_recording_a_folder_this_host_lacks_is_not_deleted(self):
-        for name in ('autowork', 'kit'):
+        for name in ('kit',):
             with self.subTest(name=name):
                 self.log.write_text('')
                 self.claude_registry([name], {'source': 'directory', 'path': str(self.home / 'gone')})
                 result = self.install('--only', 'claude')
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn('manual migration required', result.stdout)
-                self.assertEqual(self.calls('claude'), [] if name == 'autowork' else ['claude plugin list --json'])
+                self.assertEqual(self.calls('claude'), ['claude plugin list --json'])
 
     def test_a_recorded_marketplace_folder_that_exists_is_left_alone(self):
         self.claude_registry(['kit'], {'source': 'directory', 'path': str(ROOT)})
@@ -1062,7 +1002,7 @@ exit 0
         for text, cause in failures:
             with self.subTest(cause=cause):
                 items = [install_menu.Item(key, key, steps=[install_menu.Step('install', [key])])
-                         for key in ('pi', 'autowork', 'tx', 'hermes', 'claude', 'codex')]
+                         for key in ('pi', 'orbi', 'tx', 'hermes', 'claude', 'codex')]
                 output = io.StringIO()
                 with patch.object(install_menu, 'run_command',
                         side_effect=lambda argv, _: (1, text) if argv == ['hermes'] else (0, 'ok')), \
@@ -1083,7 +1023,6 @@ exit 0
         self.assertEqual(self.calls('pi-bolt install'), [f'pi-bolt install {NEW}'])
         self.assertIn('claude plugin install kit@kit', self.calls('claude'))
         self.assertIn('codex plugin add kit@kit-marketplace', self.calls('codex'))
-        self.assertFalse((self.home / '.local/bin/autowork').exists())
         self.assertTrue((self.home / '.local/bin/tx').is_file())
         self.assertIn('$ codex plugin add kit@kit-marketplace', result.stdout)
         self.assertRegex(result.stdout, r'pi-bolt\s+installed.*1\.4\.0')
@@ -1105,7 +1044,6 @@ exit 0
         (self.home / '.hermes').mkdir()
         result = self.install('--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotRegex(result.stdout, r'autowork\s+planned')
         for key in ('pi', 'pi-bolt', 'tx', 'hermes', 'claude', 'codex'):
             self.assertRegex(result.stdout, rf'{key}\s+planned')
         self.assertEqual(self.calls('pi-bolt install'), [])
@@ -1289,7 +1227,7 @@ exit 0
         self.assertRegex(result.stdout, r'pi\s+installed')
 
     def test_menu_toggles_items_and_needs_a_terminal(self):
-        result = self.install('--dry-run', '--menu', stdin='3 5 6\n\n', env={'AUTOWORK_INSTALL_UI': 'text'})
+        result = self.install('--dry-run', '--menu', stdin='3 5 6\n\n', env={'KIT_INSTALL_UI': 'text'})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('[x] 2 Kit package for Pi', result.stdout)
         self.assertRegex(result.stdout, r'tx\s+skipped\s+not chosen')
@@ -1301,7 +1239,7 @@ exit 0
         binary_dir = self.home / '.local/bin'
         lock_path = binary_dir.with_name('bin.kit-install.lock')
         report = self.home / 'preview.jsonl'
-        env = {'AUTOWORK_INSTALL_REPORT': str(report), 'AUTOWORK_INSTALL_UI': 'text'}
+        env = {'KIT_INSTALL_REPORT': str(report), 'KIT_INSTALL_UI': 'text'}
 
         def previews():
             before = {p.relative_to(self.home): p.read_bytes() if p.is_file() else None
@@ -1362,8 +1300,8 @@ fi
         # Exercise a custom destination too; the lock belongs to the deployment,
         # not the source checkout, selected component, or receipt filename.
         binary_dir = self.home / 'custom/bin'
-        env = {**self.env, 'AUTOWORK_INSTALL_REPORT': str(report),
-               'AUTOWORK_BIN_DIR': str(binary_dir)}
+        env = {**self.env, 'KIT_INSTALL_REPORT': str(report),
+               'KIT_BIN_DIR': str(binary_dir)}
         with subprocess.Popen(['bash', str(INSTALL), '--only', 'claude'], env=env,
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT) as first:
@@ -1414,7 +1352,7 @@ fi
         self.fake('codex', LOGGING + 'echo "marketplace already added" >&2; exit 4\n')
         report = self.home / 'install.jsonl'
         result = self.install('--full', '--skip', 'hermes,pi', '-q',
-                              env={'AUTOWORK_INSTALL_REPORT': str(report)})
+                              env={'KIT_INSTALL_REPORT': str(report)})
         self.assertEqual(result.returncode, 1)
         import json
         rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
@@ -1427,7 +1365,7 @@ fi
         self.assertIn('unknown item(s): nope', self.install('--only', 'nope').stderr)
         (self.bin / 'codex').unlink()
         self.install('--full', '--skip', 'hermes,pi', '-q',
-                     env={'AUTOWORK_INSTALL_REPORT': str(report)})
+                     env={'KIT_INSTALL_REPORT': str(report)})
         rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
         self.assertEqual(rows['codex'], {'item': 'codex', 'status': 'skipped', 'exit': None})
 
@@ -1440,7 +1378,7 @@ fi
 ''')
         report = self.home / 'install.jsonl'
         result = self.install('--only', 'claude,codex', '-q',
-                              env={'AUTOWORK_INSTALL_REPORT': str(report)})
+                              env={'KIT_INSTALL_REPORT': str(report)})
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(self.calls('claude'), [
             'claude plugin list --json',
@@ -1489,7 +1427,7 @@ fi
             install_menu.Step('retryable command', [sys.executable, '-c', script],
                               retry_on='changed since preflight'),
             install_menu.Step('dependent step', run=lambda: continued.append('ran') or 'ok')])
-        with patch.dict(os.environ, AUTOWORK_INSTALL_REPORT=str(report)), contextlib.redirect_stdout(io.StringIO()):
+        with patch.dict(os.environ, KIT_INSTALL_REPORT=str(report)), contextlib.redirect_stdout(io.StringIO()):
             code = install_menu.install([item], {'retry'}, output=install_menu.Output('never', 0))
         self.assertEqual(code, 1)
         self.assertEqual(attempts.read_text(), 'xx')
@@ -1503,7 +1441,6 @@ fi
         (self.home / '.hermes').mkdir()
         result = self.install('--full', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotRegex(result.stdout, r'autowork\s+planned')
         for key in ('pi', 'tx', 'hermes', 'claude', 'codex'):
             self.assertRegex(result.stdout, rf'{key}\s+planned')
         self.assertIn('codex plugin add kit@kit-marketplace', result.stdout)
@@ -1621,7 +1558,7 @@ fi
         self.assertIn('setup_bundle.py --yes-deps --dry-run --hermes-home /h', result.stdout)
         # Profiles with their own plugin clone (`hermes plugins install`) are updated: setup
         # would refuse them as "another checkout".
-        clone = self.home / '.hermes/profiles/work/plugins/autowork'
+        clone = self.home / '.hermes/profiles/work/plugins/kit'
         (clone / '.git').mkdir(parents=True)
         (clone / 'plugin.yaml').write_text('name: kit\n')
         result = self.install('--only', 'hermes', '--dry-run')
@@ -1639,12 +1576,12 @@ fi
         result = self.install('--only', 'hermes', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn('update_bundle.py --hermes-home', result.stdout)
-        (plugins / 'autowork').symlink_to(canonical)
+        (canonical / 'plugin.yaml').write_text('name: foreign\n')
         result = self.install('--only', 'hermes', '--dry-run')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Duplicate Kit registrations', result.stdout)
+        self.assertIn('Invalid or foreign plugin identity', result.stdout)
         self.assertIn(str(canonical), result.stdout)
-        self.assertTrue((plugins / 'autowork').is_symlink())
+        self.assertEqual((canonical / 'plugin.yaml').read_text(), 'name: foreign\n')
         self.assertEqual(self.calls('hermes'), [])
 
     def test_tx_moves_a_symlink_aside_instead_of_writing_through_it(self):
@@ -1754,7 +1691,6 @@ fi
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('pi-bolt install'), [])
         self.assertEqual(self.calls('pi-bolt update'), [f'pi-bolt update {NEW}'])
-        self.assertFalse((self.home / '.local/bin/autowork').exists())
 
     def test_install_clears_empty_pi_filters_that_hide_skills_and_commands(self):
         settings = self.home / '.pi/agent/settings.json'
@@ -1807,7 +1743,7 @@ fi
             '            raise ModuleNotFoundError("fixture", name="yaml")\n'
             'sys.meta_path.insert(0, NoYAML())\n')
         report = self.home / 'report.jsonl'
-        env = {'PYTHONPATH': str(imports), 'AUTOWORK_INSTALL_REPORT': str(report)}
+        env = {'PYTHONPATH': str(imports), 'KIT_INSTALL_REPORT': str(report)}
         for selection, tx_status in ((('--only', 'hermes'), 'skipped'),
                                      (('--full', '--skip', 'pi,pi-bolt,orbi,claude,codex'), 'installed')):
             with self.subTest(selection=selection):
@@ -1843,7 +1779,7 @@ fi
 
     def test_setup_only_hermes_options_are_refused_for_profile_clones(self):
         self.fake('hermes', LOGGING)
-        clone = self.home / '.hermes/profiles/work/plugins/autowork'
+        clone = self.home / '.hermes/profiles/work/plugins/kit'
         (clone / '.git').mkdir(parents=True)
         (clone / 'plugin.yaml').write_text('name: kit\n')
         for flag in ('--no-reload', '--bundle-only', '--yes-deps'):

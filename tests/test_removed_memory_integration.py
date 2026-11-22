@@ -17,7 +17,7 @@ class RemovedMemoryIntegration(unittest.TestCase):
         defaults = json.loads((ROOT / 'plugins/defaults.json').read_text())
         self.assertNotIn('hindsight', defaults)
         self.assertNotIn('hindsight', defaults['imported_plugins'])
-        layout = runpy.run_path(str(ROOT / 'scripts/autowork_bootstrap.py'))['Layout'](ROOT)
+        layout = runpy.run_path(str(ROOT / 'scripts/kit_bootstrap.py'))['Layout'](ROOT)
         for name in ('plugin.yaml', 'plugins/PLUGINS.md', 'scripts/bundle.py', 'scripts/setup_bundle.py', 'install-plugins.sh'):
             source = layout.implementation(name) if name.endswith('.py') else ROOT / name
             self.assertNotIn('hindsight', source.read_text().lower(), name)

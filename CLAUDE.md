@@ -1,7 +1,7 @@
 # Repository instructions for Claude
 
 Read and follow [AGENTS.md](AGENTS.md) in this directory. It owns the repository
-contracts: GitHub Issues and Orbi delivery, the retired `pi-autowork` executor,
+contracts: GitHub Issues and Orbi delivery,
 check selection, worktree placement, delegation and reporting.
 
 Claude Code adds two enforced mechanics on top of those rules:

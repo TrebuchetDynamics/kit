@@ -16,7 +16,7 @@ Use the [communication rules](../shared/COMMUNICATION.md) and follow the
 
 Keep docs accurate and distinguish intent from implementation. Reuse owners.
 GitHub Issues are the authoritative backlog; Orbi owns delivery. The
-[legacy task store](../shared/TODO-WORKCENTER.md) is migration-only, not a new queue.
+[GitHub handoff](../shared/PLAN-HANDOFF.md) owns executable work, not a local queue.
 
 ## 1. Choose mode and scope
 
@@ -78,6 +78,11 @@ current absence. Before retaining a “local-only” or “not on main” claim,
 source blobs; integration can advance independently of an old receipt. Correct
 CHANGELOG and test-plan together while keeping packaging, deployment and live
 qualification separate.
+
+Before describing a changed behavior as current, trace its accepted WHEN/THEN
+scenario (or linked native OpenSpec scenario) to merged code and the relevant
+behavioral test. If either is missing, report the evidence gap; do not promote
+an accepted scenario to implemented behavior or rewrite it to fit the code.
 
 Reconcile retained checks by reading the receipt, result inventory and actual
 runner liveness together. If the runner is gone but its receipt lacks a terminal

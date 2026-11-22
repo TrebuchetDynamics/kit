@@ -36,7 +36,7 @@ For task operations, load the [GitHub issue contract](../../skills/shared/PLAN-H
 All issues default to `ai-ready`, regardless of author; planning publishes it last.
 Preserve explicit pauses, incomplete planning, native dependencies and live ownership.
 Legacy task-store writes, leases and scheduler instructions in older references are
-superseded. Do not start Autowork or use its queue as a fallback.
+superseded. GitHub Issues and Orbi are the only executable backlog and delivery executor.
 
 Explicit invocation authorizes the documented default action within user scope.
 Questions-only/read-only/no-write/no-commit/no-push restrictions propagate through

@@ -14,15 +14,15 @@ def main():
     critical = [(f.file, f.line, f.pattern_id) for f in scan.findings if f.severity == 'critical']
     assert scan.verdict != 'dangerous', critical
     print(f"Native install scan: {scan.verdict}; {len(critical)} critical findings")
-    with tempfile.TemporaryDirectory(prefix="autowork-test-") as directory:
+    with tempfile.TemporaryDirectory(prefix="kit-test-") as directory:
         home = Path(directory)
         os.environ["HERMES_HOME"] = str(home)
         os.environ.pop("HERMES_SAFE_MODE", None)
         (home / "plugins").mkdir()
-        (home / "plugins" / "autowork").symlink_to(root, target_is_directory=True)
+        (home / "plugins" / "kit").symlink_to(root, target_is_directory=True)
         (home / "config.yaml").write_text(
             "plugins:\n  enabled: [kit]\n  entries:\n"
-            "    autowork:\n      allow_gateway_injection: false\n"
+            "    kit:\n      allow_gateway_injection: false\n"
             "approvals:\n  mode: manual\n  destructive_slash_confirm: true\n"
             "  mcp_reload_confirm: true\n  deny: ['keep-this-deny-rule']\n"
             "model:\n  default: keep-this-model\n"
@@ -92,13 +92,13 @@ def main():
         before = (config_path.read_bytes(), config_path.stat().st_mtime_ns)
         policy.apply_runtime_defaults(ctx)
         assert (config_path.read_bytes(), config_path.stat().st_mtime_ns) == before
-        save_config({'plugins': {'entries': {'autowork': {'settings': {
+        save_config({'plugins': {'entries': {'kit': {'settings': {
             'apply_runtime_defaults': False}}}}, 'approvals': {'destructive_slash_confirm': True}},
             merge_existing=True)
         before = config_path.read_bytes()
         policy.apply_runtime_defaults(ctx)
         assert config_path.read_bytes() == before
-        save_config({'plugins': {'entries': {'autowork': {'settings': {
+        save_config({'plugins': {'entries': {'kit': {'settings': {
             'apply_runtime_defaults': True, 'runtime_policy': 'autonomous'}}}}}, merge_existing=True)
         policy.apply_runtime_defaults(ctx)
         configured = require_readable_config_before_write()
@@ -121,7 +121,7 @@ def main():
         commands = get_plugin_commands()
         assert not {'repo-docs', 'repo_docs', 'repo-interview', 'repo_interview'} & commands.keys(), commands.keys()
         assert {"impeccable", "git-commit-push", "lgtm", "docs-sync", "plan-with-me"} <= commands.keys()
-        for name in ('autowork', 'work', 'pending', 'blockers'):
+        for name in ('work', 'pending', 'blockers'):
             assert name not in commands
             assert manager.find_plugin_skill('kit:' + name) is None
         assert manager.find_plugin_skill("kit:docs-sync") == root / "skills/docs-sync/SKILL.md"

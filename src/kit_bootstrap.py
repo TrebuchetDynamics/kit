@@ -45,7 +45,7 @@ class Layout:
 
     @property
     def runtime(self):
-        return self.src / 'autowork_runtime'
+        return self.src / 'kit_runtime'
 
     def resource(self, relative):
         return _inside(self.root, relative)
@@ -81,7 +81,7 @@ class Layout:
         """Sorted, bounded production Python; no tests, fixtures or escaping links."""
         layout = Layout(root)
         paths = set(layout.root.glob('*.py'))
-        paths.update(layout.root / 'scripts' / name for name in (*NATIVE, 'autowork_bootstrap.py')
+        paths.update(layout.root / 'scripts' / name for name in (*NATIVE, 'kit_bootstrap.py')
                      if name != '__init__.py')
         paths.update(layout.src.rglob('*.py'))
         excluded = {'tests', 'test', 'fixtures', 'fixture', '__pycache__'}
@@ -118,9 +118,9 @@ def execute(namespace, source_relative):
         raise ImportError('native entry and bootstrap roots differ')
     source = _inside(layout.root, source_relative, required=True)
     if not source.is_relative_to(layout.runtime):
-        raise ValueError('native source must be under src/autowork_runtime')
-    namespace['_AUTOWORK_LAYOUT'] = layout
-    namespace['_AUTOWORK_COMPAT'] = sys.modules[__name__]
+        raise ValueError('native source must be under src/kit_runtime')
+    namespace['_KIT_LAYOUT'] = layout
+    namespace['_KIT_COMPAT'] = sys.modules[__name__]
     exec(compile(source.read_bytes(), str(source), 'exec'), namespace)
 
 
@@ -128,14 +128,14 @@ def peer(namespace, name):
     """A native peer belongs to the caller's release and plugin package, not cwd."""
     if not name.isidentifier():
         raise ValueError(f'invalid native peer: {name}')
-    layout = namespace.get('_AUTOWORK_LAYOUT') or Layout(Path(namespace['__file__']).resolve().parent)
+    layout = namespace.get('_KIT_LAYOUT') or Layout(Path(namespace['__file__']).resolve().parent)
     if layout.root != _ROOT:
         raise ImportError('native peer and bootstrap roots differ')
     source = _inside(layout.root, 'scripts/' + name + '.py', required=True)
     package = namespace.get('__package__')
     parent = sys.modules.get(package) if package else None
     if parent is None or not hasattr(parent, '__path__'):
-        package = '_autowork_native_' + hashlib.sha256(str(layout.root).encode()).hexdigest()
+        package = '_kit_native_' + hashlib.sha256(str(layout.root).encode()).hexdigest()
         if package not in sys.modules:
             parent = ModuleType(package)
             parent.__path__ = [str(layout.root)]

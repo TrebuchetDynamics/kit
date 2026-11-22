@@ -22,11 +22,10 @@ class EngineeringVendorTests(unittest.TestCase):
             home = Path(td)
             selected = [ROOT / 'skills' / name for name in ('docs-sync', 'engineering')]
             self.assertEqual(module.install(ROOT / 'skills', [('fixture', home)], skills=selected, report=lambda _: None), 0)
-            for name in ('autowork', 'work', 'pending', 'blockers'):
+            for name in ('work', 'pending', 'blockers'):
                 self.assertFalse((home / 'skills' / name).exists())
             self.assertEqual((home / 'skills/docs-sync/scripts/docs.py').read_bytes(),
                              (ROOT / 'skills/docs-sync/scripts/docs.py').read_bytes())
-            self.assertFalse((ROOT / 'pi-autowork').exists())
 
     def test_exact_protocol_selection_has_no_implicit_phase_bundle(self):
         result = subprocess.run(['python3', str(PACK/'scripts/route.py'),
