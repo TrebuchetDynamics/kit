@@ -16,7 +16,7 @@ Use the [communication rules](../shared/COMMUNICATION.md) and follow the
 
 Keep docs accurate and distinguish intent from implementation. Reuse owners.
 GitHub Issues are the authoritative backlog; Orbi owns delivery. The
-[legacy task store](../shared/TODO-WORKCENTER.md) is migration-only, not a new queue.
+[GitHub handoff](../shared/PLAN-HANDOFF.md) owns executable work, not a local queue.
 
 ## 1. Choose mode and scope
 

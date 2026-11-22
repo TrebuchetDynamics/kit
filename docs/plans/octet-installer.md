@@ -13,7 +13,7 @@ not implementation, installation, publication or a runner start.
 ## Evidence and decisions
 
 - Current source: `scripts/install_menu.py::items` declares Pi, tx, Octet,
-  Hermes, Claude Code and Codex; the Autowork executor component is removed. The shell entrypoint delegates selection and
+  Hermes, Claude Code and Codex. The shell entrypoint delegates selection and
   execution to this module. Reuse Item, Step, selection, streamed output and
   per-item failure accounting; do not create another installer framework.
 - `tests/test_install_menu.py::InstallMenuTests` exercises default/all/update,
@@ -60,9 +60,7 @@ lands before implementation, add bootstrap as the first step of that same Octet
 item and preserve its accepted resource behavior; do not register a second item
 or retain an availability check that skips a missing executable. Otherwise add
 only the binary item and leave the retained resource candidate separate. This
-does not revive the superseded Rust Autowork/Octet executor redesign or alter
-historical SDK pins. pi-autowork is retired and unsupported; Octet remains an
-independent coding-agent host.
+does not alter historical SDK pins. Octet remains an independent coding-agent host.
 
 ## Implementation and verification
 

@@ -1,4 +1,4 @@
-"""tx is the tmux session launcher; runners are the autowork command's."""
+"""tx is the tmux session launcher."""
 import json
 import os
 import shutil
@@ -14,7 +14,7 @@ TX = ROOT / 'tmux' / 'tx'
 
 class TxTests(unittest.TestCase):
     def tx(self, *args, config=None):
-        with tempfile.TemporaryDirectory(prefix='autowork-tx-') as folder:
+        with tempfile.TemporaryDirectory(prefix='kit-tx-') as folder:
             path = Path(folder) / 'tx.config'
             if config is not None:
                 path.write_text(config)
@@ -23,20 +23,8 @@ class TxTests(unittest.TestCase):
                    'TX_COMPLETION_COMMAND': str(TX)}
             return subprocess.run(['bash', str(TX), *args], env=env, capture_output=True, text=True, timeout=30)
 
-    def test_tx_has_no_autowork_commands(self):
-        # The dynamic config path can legitimately contain the project/profile name.
-        help_lines = self.tx('help').stdout.splitlines()
-        self.assertNotIn('autowork', '\n'.join(line for line in help_lines if not line.startswith('  Current: ')))
-        self.assertNotIn('autowork', TX.read_text())
-        self.assertEqual(self.tx('autowork').returncode, 1)  # just an unknown alias
-
-    def test_help_guard_still_rejects_a_real_autowork_command(self):
-        from types import SimpleNamespace
-        from unittest.mock import patch
-        with patch.object(self, 'tx', return_value=SimpleNamespace(
-                stdout='  tx autowork\n  Current: /example/autowork/tx.config\n', returncode=1)):
-            with self.assertRaises(AssertionError):
-                self.test_tx_has_no_autowork_commands()
+    def test_unknown_session_alias_is_rejected(self):
+        self.assertEqual(self.tx('unknown-session').returncode, 1)
 
     def test_flag_forms_dispatch_through_the_table(self):
         result = self.tx('-l', config='a=/tmp\n')
@@ -73,7 +61,7 @@ class TxTests(unittest.TestCase):
         self.assertEqual(empty.stdout, '')
 
     def bash_complete(self, words):
-        with tempfile.TemporaryDirectory(prefix='autowork-tx-completion-') as folder:
+        with tempfile.TemporaryDirectory(prefix='kit-tx-completion-') as folder:
             config = Path(folder) / 'session.config'
             config.write_text('sample,sample2=/nonexistent\nother=/tmp\n')
             env = {**os.environ, 'TX_CONFIG': str(config),
@@ -125,7 +113,7 @@ class TxTests(unittest.TestCase):
                 self.assertIn('__complete_aliases', result.stdout)
 
     def test_install_print_paths_is_read_only(self):
-        with tempfile.TemporaryDirectory(prefix='autowork-tx-install-') as folder:
+        with tempfile.TemporaryDirectory(prefix='kit-tx-install-') as folder:
             home = Path(folder)
             env = {**os.environ, 'HOME': str(home),
                    'TMUX_CONF_TARGET': str(home / 'tmux.conf'),
@@ -141,7 +129,7 @@ class TxTests(unittest.TestCase):
             self.assertFalse((home / 'bin').exists())
 
     def test_session_module_uses_a_fake_tmux_adapter(self):
-        with tempfile.TemporaryDirectory(prefix='autowork-tx-tmux-') as folder:
+        with tempfile.TemporaryDirectory(prefix='kit-tx-tmux-') as folder:
             root = Path(folder)
             fake = root / 'tmux'
             shutil.copy(ROOT / 'tests/fixtures/fake_tmux.sh', fake)
@@ -177,7 +165,6 @@ class TxTests(unittest.TestCase):
         package = json.loads((ROOT / 'package.json').read_text())
         self.assertEqual(package['bin'], {'tx': 'tmux/tx'})
         self.assertIn('tmux/', package['files'])
-        self.assertFalse(any('pi-autowork' in path for path in package['files']))
         self.assertTrue(os.access(TX, os.X_OK), TX)
 
 
@@ -423,7 +410,7 @@ if main remove hw1 'hw*' hw2; then :; else exit 7; fi
 
 class TxConfigModuleTests(unittest.TestCase):
     def source(self, config, script):
-        with tempfile.TemporaryDirectory(prefix='autowork-tx-config-') as folder:
+        with tempfile.TemporaryDirectory(prefix='kit-tx-config-') as folder:
             path = Path(folder) / 'session.config'
             path.write_text(config)
             env = {**os.environ, 'TX_CONFIG': str(path), 'TX_COLOR': 'never',
@@ -433,7 +420,7 @@ class TxConfigModuleTests(unittest.TestCase):
                                   env=env, capture_output=True, text=True, timeout=30)
 
     def assert_rejected_mutation(self, script):
-        with tempfile.TemporaryDirectory(prefix='autowork-tx-rejected-') as folder:
+        with tempfile.TemporaryDirectory(prefix='kit-tx-rejected-') as folder:
             path = Path(folder) / 'session.config'
             original = b'# keep\r\nWORK=/tmp\r\na=$WORK\r\nb=/tmp\r\n'
             path.write_bytes(original)
@@ -490,7 +477,7 @@ class TxConfigModuleTests(unittest.TestCase):
                 self.assert_rejected_mutation(script)
 
     def test_valid_mutations_preserve_crlf_comments_variables_and_order(self):
-        with tempfile.TemporaryDirectory(prefix='autowork-tx-preserved-') as folder:
+        with tempfile.TemporaryDirectory(prefix='kit-tx-preserved-') as folder:
             path = Path(folder) / 'session.config'
             path.write_bytes(b'# keep\r\nWORK=/tmp\r\n  a,b = $WORK/agent  \r\n\r\n')
             env = {**os.environ, 'TX_CONFIG': str(path), 'TX_COLOR': 'never'}
@@ -514,7 +501,7 @@ config_rewrite_alias remove a
         self.assertEqual(result.stdout.strip(), '/tmp/agent')
 
     def test_append_and_rewrite_preserve_comments_vars_and_order(self):
-        with tempfile.TemporaryDirectory(prefix='autowork-tx-preserve-') as folder:
+        with tempfile.TemporaryDirectory(prefix='kit-tx-preserve-') as folder:
             path = Path(folder) / 'session.config'
             target = Path(folder) / 'agent with spaces'
             target.mkdir()
@@ -537,7 +524,7 @@ config_rewrite_alias remove a
                         self.assertEqual(path.read_bytes(), expected.replace('\n', newline).encode())
 
     def test_invalid_mutations_preserve_config_and_reload(self):
-        with tempfile.TemporaryDirectory(prefix='autowork-tx-reject-') as folder:
+        with tempfile.TemporaryDirectory(prefix='kit-tx-reject-') as folder:
             path = Path(folder) / 'session.config'
             original = f'# keep\nWORK={folder}\nga,g=$WORK\nother=/other\n'.encode()
             env = {**os.environ, 'TX_CONFIG': str(path), 'TX_COLOR': 'never'}
@@ -568,7 +555,7 @@ config_rewrite_alias remove a
                     self.assertEqual(list(Path(folder).glob('session.config.tmp.*')), [])
 
     def test_writer_rejects_invalid_candidate_and_cleans_staging(self):
-        with tempfile.TemporaryDirectory(prefix='autowork-tx-writer-') as folder:
+        with tempfile.TemporaryDirectory(prefix='kit-tx-writer-') as folder:
             path = Path(folder) / 'session.config'
             original = b'# keep\nga=/original\n'
             env = {**os.environ, 'TX_CONFIG': str(path), 'TX_COLOR': 'never'}

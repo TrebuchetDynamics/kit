@@ -81,7 +81,7 @@ for remote issue/PR discovery and already-landed upstream changes.
 
 ```text
 Worktree sweep: 77 worktrees; 30 unmerged-clean, 28 merged, 3 unmerged-dirty, 16 detached
-Merged: 12 into main (oldest first); 1 conflict (autowork/TOOLSET-410) -> Merge pending
+Merged: 12 into main (oldest first); 1 conflict (delivery/TOOLSET-410) -> Merge pending
 Kept: 3 dirty (paths listed); 16 detached release checkouts left alone
 Checks: <command> on the merged tree, <result>
 Next: coordinate the 3 dirty worktrees with their owners; preserve them until resolved

@@ -3,7 +3,6 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKCENTER = 'skills/shared/TODO-WORKCENTER.md'
 PLANNER = 'skills/plan-for-me/SKILL.md'
 HANDOFF = 'skills/shared/PLAN-HANDOFF.md'
 INTERACTIVE = ('skills/plan-with-me/SKILL.md', 'adapters/skills/plan-with-me/SKILL.md')
@@ -31,8 +30,6 @@ class PlanningCliContractTests(unittest.TestCase):
                 self.assertIn('GitHub', text)
                 self.assertIn('ai-ready', text)
                 self.assertIn('UNSAVED', text)
-                for command in ('autowork tasks add', 'autowork tasks validate', 'autowork tasks prepare'):
-                    self.assertNotIn(command, text)
         for name in ('plan-for-me', 'plan-with-me', 'unslop', 'docs-sync', 'unblock'):
             text = prose(f'adapters/skills/{name}/SKILL.md')
             self.assertIn(f'../../../skills/{name}/SKILL.md', text)
@@ -52,11 +49,6 @@ class PlanningCliContractTests(unittest.TestCase):
         text = prose(HANDOFF)
         self.assertIn('no longer requires', text)
         self.assertIn('canonical local `main` commit', text)
-        center = prose(WORKCENTER)
-        for required in ('Retired as an active backlog contract', 'migration',
-                         'Preserve existing task data', 'currently owned work stays undispatched',
-                         'immutable'):
-            self.assertIn(required, center)
 
 
 

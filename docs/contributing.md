@@ -4,11 +4,9 @@ Source: [command discovery](../__init__.py) and [native provisioning](../scripts
 
 ## Unsupported executor work
 
-Do not submit new pi-autowork features, repairs or restoration work. Its executor,
-CLI and Paseo plugin are retired and unsupported. For an existing assignment,
-preserve the branch, dirty changes and recovery evidence; reconcile any still-needed
-outcome into GitHub Issues for Orbi instead. Do not treat an old plan or open legacy
-issue as approval to revive the executor. See the [support boundary](github-native.md#support-boundary).
+GitHub Issues are the only executable backlog and Orbi owns delivery. Preserve
+existing branches, dirty changes and recovery evidence; reconcile still-needed
+outcomes into GitHub Issues. See the [support boundary](github-native.md#support-boundary).
 
 ## Work on a repository task
 

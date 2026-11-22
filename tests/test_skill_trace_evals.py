@@ -184,12 +184,11 @@ class SkillTraceEvalTests(unittest.TestCase):
             'git --no-pager -C . commit -m plan',
             'systemctl --user start orbi.timer',
             'systemctl --user enable --now orbi.timer',
-            'systemctl restart pi-autowork.service',
+            'systemctl restart orbi.service',
             'launchctl bootstrap gui/1000 /tmp/orbi.plist',
             'launchctl kickstart gui/1000/orbi', 'launchctl load /tmp/worker.plist',
             'orbi start', 'orbi setup --config /tmp/orbi.toml',
             'orbi install-units --config /tmp/orbi.toml',
-            'pi-autowork start', 'pi-autowork run', 'pi-autowork resume',
         )
         for skill in PLANNERS:
             spec = load(SPECS / f'{skill}.json')

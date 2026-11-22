@@ -18,8 +18,8 @@ class ReadmeLinksTests(unittest.TestCase):
         # Keep incoming targets even when the README no longer links to them itself.
         pinned = set('''
             kit a-toolset-of-skills-for-coding-agents the-skills install pi claude-code
-            codex paseo hermes-optional first-use-in-your-project the-runner-autowork
-            your-work-queue safety-before-installing updating renamed-from-hermes-toolset
+            codex paseo hermes-optional first-use-in-your-project
+            your-work-queue safety-before-installing updating
             what-verification-proves project-status paseo-interface documentation
         '''.split())
         self.assertLessEqual(pinned, docs.anchors(repo.text(readme)))

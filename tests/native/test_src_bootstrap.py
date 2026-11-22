@@ -120,7 +120,7 @@ def refuses(call):
     try: call()
     except (ImportError, ValueError, FileNotFoundError): pass
     else: raise AssertionError('borrowed missing or foreign source')
-refuses(lambda: b.Layout(root).entrypoint('autowork'))
+refuses(lambda: b.Layout(root).entrypoint('unknown'))
 refuses(lambda: b.execute(namespace, 'src/kit_runtime/missing.py'))
 refuses(lambda: b.execute(namespace, 'src/kit_runtime/foreign.py'))
 refuses(lambda: b.execute(namespace, '../outside.py'))

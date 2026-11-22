@@ -1,6 +1,6 @@
-# What the dsh-superagent prototype changes in Autowork — 2026-11-04
+# What the dsh-superagent prototype suggests for coordination — 2026-11-04
 
-> **Retired executor context:** pi-autowork is unsupported and removed. Executor
+> **Historical sources only.** Executor
 > observations, recommendations and pilot procedures below refer to historical
 > sources, not current operating or development instructions. Do not revive it.
 > Preserve unresolved acceptance and recovery evidence; reconcile still-required
@@ -8,7 +8,7 @@
 > paused and live-unqualified.
 
 Read-only comparison of [`DeepSeek-ai/dsh-superagent-prototype`](https://github.com/DeepSeek-ai/dsh-superagent-prototype)
-at `8c32a9dc5d72c033816c6a8110b37f40cf94fba4` (2026-10-31) against the Autowork runner in
+at `8c32a9dc5d72c033816c6a8110b37f40cf94fba4` (2026-10-31) against the historical runner in
 this repository. That project is a research prototype, not a product; its own README says
 to review and adapt it. This note records what was adopted, what was deliberately left out,
 and why, so a later session does not re-propose it. It is not qualification of any live
@@ -24,12 +24,12 @@ Source documents read: `docs/000-philosophy.md`, `001-domain.md`, `002-authoriza
 Every message, notification, question, setting and panel element must give more than the
 attention it costs, or it is removed. Everything below follows from that.
 
-## Already present in Autowork
+## Historical overlap
 
 The comparison found far more overlap than gap. These rules are already enforced here, so a
 port would add a second mechanism, not a new guarantee:
 
-| dsh rule | Autowork's existing mechanism |
+| dsh rule | Historical mechanism |
 | --- | --- |
 | Act only when asked or when a written rule allows it | `task_select.blocking`, the `Live authorization`/`Ownership` gate in `parallel_plan.authorization_wait`, and the store-only admission in `task_queue.selectable` |
 | Proactive work starts in `observe` mode, recorded but not executed | the runner never invents work; the planning console stages proposals and requires explicit Apply (`planning_proposals.stage`) |
@@ -45,7 +45,7 @@ port would add a second mechanism, not a new guarantee:
 
 `003-execution.md` gives the concurrency limit **one extra slot for a person's message or a
 status request**, "so new work cannot prevent a person from continuing an existing Ticket".
-Autowork planned resumed attempts first, but the limit still applied to them: with a full
+The historical runner planned resumed attempts first, but the limit still applied to them: with a full
 pool of fresh autonomous work, an attempt the owner had answered, paused or restarted waited
 for a worker to finish (up to the task timeout).
 
@@ -53,16 +53,15 @@ Now at most one paused (person-stopped or answered) attempt may resume beside a 
 N+1 workers. It takes a free normal slot first, fresh work never uses it, the host memory and
 load gates still apply, and the reserve is capped below the hard slot limit. Status reports
 the cycle's effective `max_workers` with `configured_max_workers` and `owner_slot`.
-Source: `Src/pi_autowork/engine/parallel_dispatch.py`, `pi-autowork/engine/test_parallel_dispatch.py`.
 
 ## Deliberately not adopted
 
 | dsh concept | Why it stays out |
 | --- | --- |
-| Source/Thread/Subscription/Channel domain, with fan-out to tickets | Autowork's unit is a task record plus its attempt history; answers already reach the retried attempt (`answers.md`), and there are no chat channels to route. Adding a thread model would duplicate the store and add a second authority for what is open |
+| Source/Thread/Subscription/Channel domain, with fan-out to tickets | The historical unit is a task record plus its attempt history; answers already reach the retried attempt (`answers.md`), and there are no chat channels to route. Adding a thread model would duplicate the store and add a second authority for what is open |
 | Mandate as a separate entity with a Policy version | The pinned contract hash and `record_revision` already bind an attempt to the record it was admitted under, and a merge cannot invent a value that is in neither parent (`task_queue.merge_record_error`) |
 | An `auto`/`observe` accept mode for the runner | The runner does not create work; the planning console is the observe step, with explicit Apply. A second mode would be a setting where a default suffices |
-| Editable, versioned prompt parts | Autowork has no per-deployment prompt configuration to version |
+| Editable, versioned prompt parts | The historical runner had no per-deployment prompt configuration to version |
 | Conversation-ordered outbound delivery with backoff | `BLOCKERS.md` is rewritten atomically per cycle; there is no queued conversation to order |
 | A separate `person/answer` + `person/review` stage table | Health, questions, buckets and blockers already derive precedence separately; unifying them is a candidate refactor below, not a rule change made here |
 

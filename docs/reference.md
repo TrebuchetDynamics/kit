@@ -6,12 +6,8 @@ page has drifted. Conversational workflow commands (`/docs_sync`,
 `/plan_with_me` and the rest) are listed in [workflows](workflows.md#commands);
 procedures and their side effects are in [installation](installation.md).
 
-Kit maintenance uses `hermes kit`. The obsolete `hermes autowork` command is
-unavailable: there is no terminal alias, redirect or replacement chat skill. Replace
-the old root with `kit` and keep the same action/options and `-p PROFILE` selection.
-No maintenance runs merely to explain retirement. The removed `pi-autowork` CLI
-must not be installed or restored. Planning saves GitHub Issues; Orbi owns delivery. See the
-[support boundary](github-native.md#support-boundary).
+Kit maintenance uses `hermes kit`. Planning saves GitHub Issues; Orbi owns delivery.
+See the [support boundary](github-native.md#support-boundary).
 
 ## Terminal: `hermes kit`
 
@@ -74,22 +70,16 @@ relative to this repository.
 
 ## Removed executor helpers
 
-The runner, local task CLI, planning console and worker-check wrapper no longer
-ship. Use [GitHub issue publication](github-native.md#publish-a-planning-batch)
-and the repository's focused test commands directly. Historical contracts are
-[immutable evidence](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/reference.md#worker-long-checks-autowork-run),
-not supported command instructions. Preserve existing task and runtime state.
+Use [GitHub issue publication](github-native.md#publish-a-planning-batch)
+and the repository's focused test commands directly. Preserve existing task and runtime state.
 
 ## Hermes install identity
 
 Fresh setup and native registration probes use `plugins/kit` and enable `kit`.
-Discovery also recognizes verified `plugins/autowork` physical slots by manifest
-identity, including supported old manifests as update/migration input only.
 Setup adopts only Kit from the selected source. Duplicate slots (even aliases),
 foreign sources and uncertain manifests refuse mutation with path diagnostics.
-Both names remain covered by source-replacement consumer protections. No runtime
-state relocation, credential copy or permission reset is required; source delivery
-is not installed adoption or live activation. See [setup/recovery](installation.md#install).
+No runtime state relocation, credential copy or permission reset is required; source
+delivery is not installed adoption or live activation. See [setup/recovery](installation.md#install).
 
 ## Plugin settings
 
@@ -101,10 +91,6 @@ Source: [`scripts/runtime_defaults.py`](../scripts/runtime_defaults.py),
 | --- | --- | --- |
 | `plugins.entries.kit.settings.apply_runtime_defaults` | `true` | Boolean `false` skips approval, turn, injection and skill-list policy in plugin loading and setup, regardless of `runtime_policy`. Telegram menu maintenance still applies. It does not undo prior changes; set it before restoring your own values. |
 | `plugins.entries.kit.settings.runtime_policy` | `interactive` | `interactive` or `autonomous`; other values are rejected. Explicit selection reapplies the policy on every load. When absent, existing approval/turn values are preserved and only missing values get interactive defaults. Setup/preflight show the selected policy and effective values without selecting autonomy. |
-
-Both settings accept the legacy `plugins.entries.autowork` entry and `config`
-subtree: `settings` wins over `config`; within each subtree, canonical `kit` keys
-win and missing keys fall back to `autowork`. Existing opt-outs are retained.
 
 While `apply_runtime_defaults` is not `false`, approval/turn values are:
 

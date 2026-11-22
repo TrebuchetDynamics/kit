@@ -1,10 +1,7 @@
 # Assessment and delivery evaluation
 
-Sustained live reliability remains unproven. The earlier
-[Autowork assessment and evaluation requirements](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/evaluation.md)
-are immutable evidence, not a supported executor runbook. The executor, task CLI,
-TUI and Paseo plugin are removed. Existing task data, attempts, worktrees and
-recovery evidence remain intact; removal does not satisfy their unresolved proof.
+Sustained live reliability remains unproven. Preserve existing task data, attempts,
+worktrees and recovery evidence; documentation cleanup does not satisfy unresolved proof.
 
 ## Current qualification
 
