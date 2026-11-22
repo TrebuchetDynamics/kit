@@ -21,7 +21,7 @@ python3 -B skills/orbi/scripts/orbi_control.py status --repo-dir /path/to/canoni
 | `/orbi setup` | Starts by default. Use `/orbi setup --prepare-only` for non-activating preparation. The direct Python helper’s `setup` action is prepare-only; native `orbi setup` is different. |
 | `start` | Prepares if genuinely absent, then activates the owned timers and requests a first tick if idle. Requires separate scheduling authority. |
 | `stop` | Disables owned timers; active services drain rather than being killed. It does not cancel an issue. |
-| `update` | Advances and pins a stopped, drained deployment. `update --stop` also authorizes pausing owned timers and defers the update while workers finish. Scheduling remains stopped. |
+| `update` | Plain `update` requires a stopped, drained deployment. Refreshing installed units can briefly activate timers before Kit restores inactivity. `update --stop` pauses owned timers, defers while workers finish, and skips the activating unit refresh. |
 
 Kit mutations are Linux-only; `--dry-run` previews them. On an error inspect the JSON `error.code`, `error.fix` and `error.mutated`: nonzero exit does not mean nothing changed. Use the helper for lifecycle changes, not hand-written unit commands.
 
@@ -43,10 +43,10 @@ Use `orbi --help` and `orbi <command> --help` from the installed release. For a 
 | `orbi suggest [--repo OWNER/REPO] [--count N] [--size N] [--locale LANG] [--json]` | Runs two model sessions against a fetched base and retains their artifacts. `--json` does not file issues; interactive confirmation can. `--count` accepts 1–3; `--locale` accepts `en` or `zh`. JSON includes `repo`, `base_sha`, `session_dir` and `suggestions`. Positive `--size N` asks for a task within budget first, if available, and adds `size` estimates; it does not cap every suggestion. |
 | `orbi draft [REQUEST] [--repo OWNER/REPO]` | Interactive drafting; confirmation can create issues. For automation `--session-dir DIR` reads a round from stdin and writes JSON to stdout; **separately**, `--create` reads a confirmed draft and writes `{"created":[...]}`. See the [draft input, error and retry contract](https://github.com/orbi-build/orbi/blob/v0.7.56/docs/public-contracts.mdx#the-draft-command-contract). |
 | `orbi fix-base`, `orbi amend`, `orbi split` | Each requires `--repo OWNER/REPO --issue N`. Respectively open/reuse a base-CI repair ticket, apply proposed acceptance criteria and requeue, or create proposed child issues and turn the original into an epic. |
-| `orbi milestone set TITLE` | Sets the deployment’s active milestone by exact title. |
+| `orbi milestone set TITLE` | Sets the active milestone by exact title. If repository policy declares `active_milestone`, this writes to the default branch through the GitHub Contents API without a PR. Otherwise it rewrites the host config. |
 | `orbi notify test` | Exercises the configured notification path; can send a real message. |
 | `orbi setup [--repo OWNER/REPO] [--installed-dir DIR] [--json]` | Can create config, change the checkout’s origin, repair the CLI, align GitHub labels and activate scheduling. `--json` changes the output, not the effects. |
-| `orbi install-units [--installed-dir DIR]` | Installs scheduler definitions and reconciles timers to `max_concurrency` without restarting a running service. Not an exporter installer or a read-only drift check. |
+| `orbi install-units [--installed-dir DIR]` | Installs scheduler definitions and enables and starts configured Linux timers. A timer can trigger a tick; this does not restart an already running service. Not an exporter installer or a read-only drift check. |
 | `orbi sync-engine-source` | Updates the deployment checkout according to its configured engine source track. |
 
 ## GitHub and run records
