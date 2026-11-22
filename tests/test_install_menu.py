@@ -8,6 +8,7 @@ import json
 import os
 import pty
 import shutil
+import shlex
 import time
 import stat
 from types import SimpleNamespace
@@ -1808,14 +1809,16 @@ class PullCheckoutTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         base = Path(self.tmp.name)
-        self.origin, self.clone, self.other = base / 'origin.git', base / 'clone', base / 'other'
-        run = lambda *a, cwd=None: subprocess.run(a, cwd=cwd, check=True, capture_output=True, text=True)
+        self.origin, self.clone, self.other = base / 'origin.git', base / "clone with 'quote", base / 'other'
+        run = lambda *a, cwd=None: subprocess.run(a, cwd=cwd, check=True, capture_output=True, text=True, timeout=10)
         run('git', 'init', '-q', '--bare', '-b', 'main', str(self.origin))
         for repo in (self.clone, self.other):
             run('git', 'clone', '-q', str(self.origin), str(repo))
             run('git', '-C', str(repo), 'config', 'user.email', 'o@example.invalid')
             run('git', '-C', str(repo), 'config', 'user.name', 'O')
         (self.other / 'f').write_text('1')
+        (self.other / 'g').write_text('base\n')
+        (self.other / '.gitignore').write_text('ignored\n')
         run('git', '-C', str(self.other), 'add', '-A')
         run('git', '-C', str(self.other), 'commit', '-qm', 'one')
         run('git', '-C', str(self.other), 'push', '-q', 'origin', 'main')
@@ -1826,30 +1829,291 @@ class PullCheckoutTests(unittest.TestCase):
         self.run_git = run
 
     def head(self, repo):
-        return subprocess.run(['git', '-C', str(repo), 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout
+        return self.run_git('git', '-C', str(repo), 'rev-parse', 'HEAD').stdout
 
     def test_a_clean_checkout_behind_its_upstream_is_fast_forwarded(self):
-        said = []
-        self.assertTrue(install_menu.pull_checkout(self.clone, write=said.append))
+        said, commands = [], []
+        def run(args, **kwargs):
+            commands.append(args[3:])
+            return subprocess.run(args, **kwargs)
+        self.assertTrue(install_menu.pull_checkout(self.clone, write=said.append, run=run))
         self.assertEqual(self.head(self.clone), self.head(self.other))
         self.assertIn('Updated this checkout', said[0])
-        self.assertFalse(install_menu.pull_checkout(self.clone, write=said.append))  # up to date: quiet
+        (self.clone / 'ignored').write_text('do not stash')
+        self.assertFalse(install_menu.pull_checkout(self.clone, write=said.append, run=run))
         self.assertEqual(len(said), 1)
+        self.assertEqual(sum(cmd[0] == 'pull' for cmd in commands), 2)
+        self.assertFalse(any(cmd[:2] == ['stash', 'push'] for cmd in commands))
+        self.assertEqual(self.stashes(), [])
+        self.assertEqual((self.clone / 'ignored').read_text(), 'do not stash')
 
-    def test_local_changes_are_installed_as_they_are(self):
-        (self.clone / 'f').write_text('mine')
-        said = []
-        self.assertFalse(install_menu.pull_checkout(self.clone, write=said.append))
-        self.assertEqual((self.clone / 'f').read_text(), 'mine')
-        self.assertIn('local changes', said[0])
+    def git(self, *args):
+        return self.run_git('git', '-C', str(self.clone), *args).stdout.strip()
 
-    def test_a_detached_or_local_only_checkout_is_not_pulled(self):
-        self.run_git('git', '-C', str(self.clone), 'checkout', '-q', '--detach')
+    def dirty(self):
+        (self.clone / 'g').write_text('staged\n')
+        self.git('add', 'g')
+        (self.clone / 'g').write_text('staged\nunstaged\n')
+        (self.clone / 'untracked').write_text('saved\n')
+        (self.clone / 'ignored').write_text('kept\n')
+
+    def stashes(self):
+        return self.git('stash', 'list', '--format=%H').splitlines()
+
+    def test_local_changes_are_kept_in_an_object_addressed_stash(self):
+        (self.clone / 'older').write_text('old')
+        self.git('stash', 'push', '--include-untracked', '-m', 'older')
+        older = self.stashes()
+        self.git('config', 'rebase.autoStash', 'true')
+        self.git('config', 'merge.autoStash', 'true')
+        self.dirty()
         said = []
+        self.assertTrue(install_menu.pull_checkout(self.clone, write=said.append))
+        saved, *rest = self.stashes()
+        self.assertEqual(rest, older)
+        self.assertIn('Kit installer', self.git('log', '-1', '--format=%s', saved))
+        self.assertEqual(self.head(self.clone), self.head(self.other))
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertEqual((self.clone / 'g').read_text(), 'base\n')
+        self.assertFalse((self.clone / 'untracked').exists())
+        self.assertEqual((self.clone / 'ignored').read_text(), 'kept\n')
+        self.assertIn(saved, '\n'.join(said))
+        restore = next(line for line in said if ' stash apply --index ' in line)
+        self.assertEqual(shlex.split(restore), ['git', '-C', str(self.clone),
+                                             'stash', 'apply', '--index', saved])
         self.assertFalse(install_menu.pull_checkout(self.clone, write=said.append))
-        self.assertIn('no upstream', said[0])
-        self.assertFalse(install_menu.pull_checkout(Path(self.tmp.name), write=said.append))  # not a checkout
-        self.assertEqual(len(said), 1)
+        self.assertEqual(self.stashes(), [saved, *older])  # no empty stash on repeat
+        (self.clone / 'newer').write_text('new')
+        self.git('stash', 'push', '--include-untracked', '-m', 'newer')
+        entries = self.stashes()
+        self.run_git(*shlex.split(restore))
+        self.assertEqual(self.git('show', ':g'), 'staged')
+        self.assertEqual((self.clone / 'g').read_text(), 'staged\nunstaged\n')
+        self.assertEqual((self.clone / 'untracked').read_text(), 'saved\n')
+        self.assertEqual(self.stashes(), entries)  # apply did not remove any stash
+
+    def test_stashing_requires_reexec_even_when_head_is_current(self):
+        self.git('pull', '--ff-only')
+        before = self.head(self.clone)
+        for count, kind in enumerate(('untracked', 'staged', 'unstaged'), 1):
+            with self.subTest(kind=kind):
+                (self.clone / ('untracked' if kind == 'untracked' else 'g')).write_text(kind)
+                if kind == 'staged':
+                    self.git('add', 'g')
+                self.assertTrue(install_menu.pull_checkout(self.clone, write=lambda _: None))
+                self.assertEqual(self.head(self.clone), before)
+                self.assertEqual(len(self.stashes()), count)
+
+    def test_missing_upstream_aborts_before_stashing(self):
+        self.dirty()
+        self.git('branch', '--unset-upstream')
+        for state in ('local-only', 'missing-ref', 'detached'):
+            with self.subTest(state=state):
+                if state == 'missing-ref':
+                    self.git('branch', '--set-upstream-to=origin/main')
+                    self.git('update-ref', '-d', 'refs/remotes/origin/main')
+                if state == 'detached':
+                    self.git('checkout', '--detach')
+                with self.assertRaisesRegex(RuntimeError, 'upstream'):
+                    install_menu.pull_checkout(self.clone)
+                self.assertEqual(self.stashes(), [])
+                self.assertEqual((self.clone / 'g').read_text(), 'staged\nunstaged\n')
+
+    def test_unpacked_release_does_not_discover_a_parent_repository(self):
+        unpacked = self.clone / 'release'
+        unpacked.mkdir()
+        before = self.head(self.clone)
+        self.assertFalse(install_menu.pull_checkout(unpacked))
+        self.assertEqual(self.head(self.clone), before)
+        self.assertEqual(self.stashes(), [])
+        (unpacked / '.git').write_text('gitdir: missing\n')
+        with self.assertRaisesRegex(RuntimeError, 'git'):
+            install_menu.pull_checkout(unpacked)
+
+    def test_failures_abort_before_components_and_services(self):
+        real_run = subprocess.run
+        original_pull_checkout = install_menu.pull_checkout
+        for failure in ('status', 'stash', 'empty-stash', 'stash-cleanup', 'still-dirty', 'pull'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                repo = Path(tmp) / 'repo'
+                self.run_git('git', 'clone', '-q', str(self.origin), str(repo))
+                self.run_git('git', '-C', str(repo), 'config', 'user.email', 'o@example.invalid')
+                self.run_git('git', '-C', str(repo), 'config', 'user.name', 'O')
+                (repo / 'untracked').write_text('save me')
+                stashed = False
+                def run(args, **kwargs):
+                    nonlocal stashed
+                    operation = args[3]
+                    if ((operation == failure and operation != 'stash') or
+                            (operation == 'stash' and args[4] == 'push' and failure in ('stash', 'empty-stash')) or
+                            (operation == 'status' and stashed and failure == 'still-dirty')):
+                        code = 0 if failure in ('empty-stash', 'still-dirty') else 1
+                        return subprocess.CompletedProcess(args, code, '?? remains' if code == 0 else '',
+                                                           'fixture ' + failure)
+                    result = real_run(args, **kwargs)
+                    if operation == 'stash' and args[4] == 'push':
+                        stashed = True
+                        if failure == 'stash-cleanup':
+                            return subprocess.CompletedProcess(args, 1, '', 'fixture cleanup failure')
+                    return result
+                env = {k: v for k, v in os.environ.items()
+                       if k not in ('KIT_INSTALL_NO_PULL', 'KIT_INSTALL_PULLED')}
+                with patch.dict(os.environ, env, clear=True), patch.object(install_menu, 'ROOT', repo), \
+                        patch.object(install_menu, 'pull_checkout',
+                                     side_effect=lambda *a, **kw: original_pull_checkout(*a, run=run, **kw)), \
+                        patch.object(install_menu, 'items') as components, \
+                        patch.object(install_menu, 'restart_services') as restart:
+                    self.assertEqual(install_menu.main(['--quiet']), 1)
+                    components.assert_not_called()
+                    restart.assert_not_called()
+                saved = self.run_git('git', '-C', str(repo), 'stash', 'list', '--format=%H').stdout.splitlines()
+                self.assertEqual(len(saved), int(failure in ('pull', 'stash-cleanup', 'still-dirty')))
+
+    def test_diverged_history_keeps_stash_and_refuses_install(self):
+        self.git('config', 'pull.rebase', 'true')  # --ff-only must still refuse rewriting commits
+        (self.clone / 'local-commit').write_text('local')
+        self.git('add', 'local-commit')
+        self.git('commit', '-qm', 'local commit')
+        before = self.head(self.clone)
+        self.dirty()
+        said = []
+        with self.assertRaisesRegex(RuntimeError, 'pull'):
+            install_menu.pull_checkout(self.clone, write=said.append)
+        self.assertEqual(self.head(self.clone), before)
+        saved, = self.stashes()
+        self.assertIn(saved, '\n'.join(said))
+        self.assertTrue(any('stash apply --index' in line for line in said))
+
+    def test_pull_failure_after_stash_reports_recovery(self):
+        self.dirty()
+        self.git('remote', 'set-url', 'origin', str(self.clone / 'missing-origin'))
+        said = []
+        with self.assertRaisesRegex(RuntimeError, 'pull'):
+            install_menu.pull_checkout(self.clone, write=said.append)
+        saved, = self.stashes()
+        self.assertIn(saved, '\n'.join(said))
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def installer_fixture(self):
+        """Real shell/Python entry point and dispatcher; only components/services are fake."""
+        scripts = self.other / 'scripts'
+        scripts.mkdir()
+        source = (ROOT / 'scripts/install_menu.py').read_text()
+        fixture = r'''FIXTURE_VERSION = 'clean-v1'
+def fixture_trace(event):
+    with open(os.environ['FIXTURE_TRACE'], 'a') as stream:
+        stream.write(json.dumps([event, FIXTURE_VERSION, sys.argv[1:],
+                                 os.environ.get('KIT_INSTALL_PULLED', '')]) + '\n')
+fixture_trace('load')
+def fixture_component():
+    fixture_trace('component')
+    return 'fixture installed'
+def items(*args, **kwargs):
+    return [Item('tx', 'fixture', steps=[Step('fixture component', run=fixture_component)])]
+def restart_services(output):
+    fixture_trace('restart')
+    return 'fixture restarted'
+
+'''
+        (scripts / 'install_menu.py').write_text(source.replace("if __name__ == '__main__':",
+                                                              fixture + "if __name__ == '__main__':"))
+        shutil.copy2(INSTALL, self.other / 'install.sh')
+        self.run_git('git', '-C', str(self.other), 'add', '.')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qm', 'installer fixture')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        self.git('pull', '--ff-only')
+        base = Path(self.tmp.name)
+        self.trace = base / 'trace.jsonl'
+        self.entry_env = {'PATH': os.environ['PATH'], 'HOME': str(base / 'home'),
+                          'KIT_BIN_DIR': str(base / 'bin'), 'FIXTURE_TRACE': str(self.trace),
+                          'LANG': 'C.UTF-8',
+                          # Identical edits can produce the same stash object within one second.
+                          'GIT_AUTHOR_DATE': '2000-01-01T00:00:00+00:00',
+                          'GIT_COMMITTER_DATE': '2000-01-01T00:00:00+00:00'}
+
+    def entry(self, *args, env=None):
+        return subprocess.run(['./install.sh', *args], cwd=self.clone, capture_output=True,
+                              text=True, timeout=20, env={**self.entry_env, **(env or {})})
+
+    def events(self):
+        return [json.loads(line) for line in self.trace.read_text().splitlines()]
+
+    def test_entrypoint_runs_clean_disk_code_once_after_stashing(self):
+        self.installer_fixture()
+        for advanced in (False, True):
+            with self.subTest(advanced=advanced):
+                script = self.clone / 'scripts/install_menu.py'
+                script.write_text(script.read_text().replace("FIXTURE_VERSION = 'clean-v1'",
+                                                            "FIXTURE_VERSION = 'dirty'"))
+                if advanced:
+                    upstream_script = self.other / 'scripts/install_menu.py'
+                    upstream_script.write_text(upstream_script.read_text().replace('clean-v1', 'clean-v2'))
+                    self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'new installer')
+                    self.run_git('git', '-C', str(self.other), 'push', '-q')
+                args = ['update', '--only', 'tx', '--quiet']
+                result = self.entry(*args)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                clean = 'clean-v2' if advanced else 'clean-v1'
+                self.assertEqual(self.events(), [['load', 'dirty', args, ''],
+                                                ['load', clean, args, '1'],
+                                                ['component', clean, args, '1'],
+                                                ['restart', clean, args, '1']])
+                saved = self.stashes()
+                self.assertEqual(len(saved), 2 if advanced else 1)
+                self.assertIn(saved[0], result.stdout)
+                self.assertIn('stash apply --index', result.stdout)
+                self.assertEqual(self.git('status', '--porcelain'), '')
+                self.trace.write_text('')
+                result = self.entry(*args)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.events(), [[event, clean, args, '']
+                                                for event in ('load', 'component', 'restart')])
+                self.assertEqual(self.stashes(), saved)
+                self.trace.write_text('')
+
+    def test_entrypoint_bypasses_and_previews_leave_checkout_and_stashes_unchanged(self):
+        self.installer_fixture()
+        (self.clone / 'older').write_text('older')
+        self.git('stash', 'push', '-u', '-m', 'older')
+        self.dirty()
+        (self.other / 'f').write_text('upstream advanced')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'advance')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        def state():
+            return (self.head(self.clone), self.git('status', '--porcelain'),
+                    self.git('diff'), self.git('diff', '--cached'), self.stashes(),
+                    (self.clone / 'untracked').read_text())
+        before = state()
+        for args, env in ((['--help'], {}), (['--list'], {}), (['--dry-run', '--only', 'tx'], {}),
+                          (['--no-pull', '--only', 'tx'], {}),
+                          (['--only', 'tx'], {'KIT_INSTALL_NO_PULL': '1'})):
+            with self.subTest(args=args, env=env):
+                result = self.entry(*args, env=env)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(state(), before)
+                if args[0] in ('--help', '--list', '--dry-run'):
+                    self.assertEqual([event[0] for event in self.events()], ['load'])
+                self.trace.write_text('')
+
+    def test_entrypoint_divergence_stops_before_component_and_restart(self):
+        self.installer_fixture()
+        (self.clone / 'local').write_text('local')
+        self.git('add', 'local')
+        self.git('commit', '-qm', 'local')
+        (self.other / 'f').write_text('upstream')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'diverge')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        self.dirty()
+        args = ['--only', 'tx', '--quiet']
+        result = self.entry(*args)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.events(), [['load', 'clean-v1', args, '']])
+        saved, = self.stashes()
+        self.assertIn(saved, result.stdout)
+        self.assertIn('FAILED: checkout preparation: git pull', result.stdout)
+        self.assertIn('Nothing installed or restarted', result.stdout)
+        self.assertIn('Resolve the Git error and retry', result.stdout)
+        self.assertIn('stash apply --index', result.stdout)
 
 
 if __name__ == '__main__':
