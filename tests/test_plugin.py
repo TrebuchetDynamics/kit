@@ -53,7 +53,7 @@ class PluginTests(unittest.TestCase):
 
     def test_registration_applies_only_the_selected_profile_policy(self):
         self.skill('alpha')
-        for owner in ('kit', 'autowork'):
+        for owner in ('kit',):
             for subtree in ('settings', 'config'):
                 for selected in (None, 'interactive', 'autonomous', 'opt-out', 'existing', 'invalid'):
                     with self.subTest(owner=owner, subtree=subtree, policy=selected):
@@ -203,18 +203,6 @@ class PluginTests(unittest.TestCase):
         self.assertIn("allow_gateway_injection", result)
         self.assertIn("not started", result)
 
-    def test_injection_rejection_reads_the_legacy_settings_key(self):
-        self.skill("alpha")
-        self.plugin.register(self.ctx)
-        self.ctx.accept = False
-        config = types.ModuleType("hermes_cli.config")
-        config.read_raw_config = lambda: {
-            'plugins': {'entries': {'autowork': {'allow_gateway_injection': False}}}}
-        with patch.dict(sys.modules, {"hermes_cli.config": config}):
-            result = self.ctx.commands["alpha"]("")
-        self.assertIn("plugins.entries.autowork.allow_gateway_injection", result)
-        self.assertIn("plugins.entries.kit.allow_gateway_injection", result)
-        self.assertIn("is false", result)
 
     def test_removed_skill_is_not_queued(self):
         path = self.skill("alpha")
@@ -258,7 +246,7 @@ class PluginTests(unittest.TestCase):
     def test_removed_skills_absent_but_terminal_maintenance_remains(self):
         self.plugin.SKILLS_DIR = ROOT / 'skills'
         self.plugin.register(self.ctx)
-        for name in ('autowork', 'work', 'pending', 'blockers'):
+        for name in ('work', 'pending', 'blockers'):
             self.assertNotIn(name, self.ctx.commands)
             self.assertNotIn(name, self.ctx.skills)
         self.assertEqual(self.ctx.cli_commands, ['kit'])
@@ -281,8 +269,8 @@ class PluginTests(unittest.TestCase):
         register.assert_not_called()
         self.assertIs(self.manager._cli_commands['kit'], foreign)
         self.assertTrue(any('hermes kit' in line and 'already' in line for line in logs.output))
-        # Reloading our own canonical or transitional plugin keeps normal wiring.
-        for owner in ('kit', 'autowork'):
+        # Reloading our Kit plugin keeps normal wiring.
+        for owner in ('kit',):
             self.manager._cli_commands['kit'] = {'plugin': owner}
             with patch.object(self.ctx, 'register_cli_command') as register:
                 self.plugin.register(self.ctx)

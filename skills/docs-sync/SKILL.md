@@ -79,6 +79,11 @@ source blobs; integration can advance independently of an old receipt. Correct
 CHANGELOG and test-plan together while keeping packaging, deployment and live
 qualification separate.
 
+Before describing a changed behavior as current, trace its accepted WHEN/THEN
+scenario (or linked native OpenSpec scenario) to merged code and the relevant
+behavioral test. If either is missing, report the evidence gap; do not promote
+an accepted scenario to implemented behavior or rewrite it to fit the code.
+
 Reconcile retained checks by reading the receipt, result inventory and actual
 runner liveness together. If the runner is gone but its receipt lacks a terminal
 exit or full aggregate, record the attempt as incomplete/unqualified, not running

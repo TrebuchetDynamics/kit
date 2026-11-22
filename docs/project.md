@@ -14,6 +14,7 @@ Dated headings remain stable requirement anchors, not claims of fresh qualificat
 Status: Accepted
 
 - Plan With Me asks for consequential missing intent and saves accepted decisions.
+- User-visible changes use [lightweight behavior specs](adr/0001-lightweight-behavior-specs.md); GitHub Issues remain the executable backlog.
 - Plan For Me investigates, chooses supported approaches and records executable
   GitHub Issues. An explicit objective keeps planning focused; a bare or vague request
   starts evidence-based discovery without inventing product direction.
