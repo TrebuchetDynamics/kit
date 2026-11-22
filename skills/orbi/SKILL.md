@@ -118,6 +118,26 @@ concrete unmet need, not a fixed sequence of model turns.
    implicit repair, compensating timer changes or worker stops. An unchanged
    timeout is not retryable; killed processes have no receipt.
 
+## Pending queue evidence
+
+Status reports the verified ready queue and grouped open pending issues: actionable
+blocker, active/owned, native dependency, planning/paused, epic coordination, ready
+and unknown. Zero ready is not zero pending. Relay each issue's number/link,
+evidenced reason, next action and observed PR/native prerequisite. Planning input
+stays explicitly unknown when not evidenced; never invent decisions or infer
+dependencies from ordering. An open PR is not successful delivery.
+
+For a branch-conflict failure with `retry_safe=false`, compare the current remote
+head and retained work with the existing owner before any retry. Link to
+[`/unblock`](../unblock/SKILL.md) for deliberate recovery; status never invokes it,
+changes labels, requeues or repairs a branch. Bounded paginated reads expose
+partial/unavailable coverage and observed lower bounds; failed reads do not prove
+an empty repository. Comment/PR detail is limited to blocked/owned issues within
+the shared budget; no per-issue LLM calls. An activating service is transitional,
+not verified idle or issue pickup. Idle services with ready work call for inspecting
+scheduler/ownership evidence and existing pauses, not automatic activation.
+See [pending issues and read coverage](references/lifecycle.md#pending-issues-and-read-coverage).
+
 ## Exceptional paths
 
 Load only the relevant section of the [lifecycle reference](references/lifecycle.md)
@@ -141,6 +161,8 @@ For host/fixture measurement limits, use the reference's
 | "Start needs setup first; update needs an automatic stop." | Absent start composes preparation internally. Plain update holds on busy state; only explicit update --stop authorizes the pause, never service interruption or restart. |
 | "Passing checks releases the pause." | Owner scheduling authority and live gates remain separate. |
 | "The command failed, so nothing changed and retry is safe." | Preserve mutation/activation evidence and repair deliberately; failure can be partially applied. |
+| "The queue is empty because the status read failed." | Failed reads are unavailable; partial reads disclose gaps. Zero verified ready is not zero pending. |
+| "Activating plus an open PR proves progress." | Activating is transitional, not pickup. An open PR is not successful delivery; preserve existing ownership and recovery inputs. |
 
 ## Red Flags
 
