@@ -44,8 +44,9 @@ require it, and do not treat a missing ledger as an empty queue.
 
 All issues default to `ai-ready`, regardless of who opens them. This includes
 external reports; issue authors are not trusted instruction authorities. Keep
-credentials scoped and enforce CI, branch protection, sensitive-change controls
-and any required human acceptance independently of dispatch.
+credentials scoped and preserve existing CI, branch protection, sensitive-change
+controls and any required human acceptance independently of dispatch. Branch
+protection is not a Kit setup/start prerequisite.
 
 Install `.github/workflows/issue-ready.yml` in each participating repository. It
 labels newly opened/reopened ordinary issues without executing their text. It
@@ -352,6 +353,24 @@ Never paste a key, token, `auth.json`, session transcript or private account
 identity into an Issue, PR, test, log or document.
 
 ## Read protection diagnostics safely
+
+Branch protection is not a Kit setup/start prerequisite. Known unprotected branches
+and protection/rules endpoint HTTP 403 are informational, not scheduling blockers.
+A protection-specific 403 means details are unknown, not absent; it does not prove
+failure to authenticate or access the repository. Report each observed state with
+its source. No protection read/repair, PR-only mode, special opt-in, no-base-write
+engine proof, paid GitHub plan, engine release or second approval is required on
+that basis. Normal setup-as-start and start use the same activation path, including
+preparation and the first tick, when scheduling is authorized and other prerequisites
+pass. Do not add a protection probe to the shared preflight.
+
+Authentication, repository access, deployment ownership, explicit pauses and all
+other startup gates still apply. Prepare-only and dry-run never activate. Helper
+status preserves `doctor.state=failed` as a diagnostic outcome, not itself a Kit
+scheduling gate; distinguish protection diagnostics from other failed prerequisites.
+Successful startup does not imply successful merge or live qualification. Ordinary
+engine behavior and the engine pin are unchanged; existing protections, required CI,
+review and merge requirements remain in force.
 
 `orbi doctor` may report
 `merge_gate: FAILED classic protection enforces admins` when the target branch
