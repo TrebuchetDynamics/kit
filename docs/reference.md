@@ -6,6 +6,8 @@ page has drifted. Conversational workflow commands (`/docs_sync`,
 `/plan_with_me` and the rest) are listed in [workflows](workflows.md#commands);
 procedures and their side effects are in [installation](installation.md).
 
+[`/git-commit-push`](../skills/git-commit-push/SKILL.md) commits the current branch,
+syncs and pushes its verified upstream by default; `pull`/`sync`/`merge` only integrates.
 [`/push`](../skills/push/SKILL.md) saves eligible changes in the Git-identified
 invoking checkout only, pulls verified `main` and delivers through the allowed main
 route. Other worktrees are not inspected, saved or integrated; the receipt states

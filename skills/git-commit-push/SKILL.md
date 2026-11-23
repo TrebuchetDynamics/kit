@@ -1,6 +1,6 @@
 ---
 name: git-commit-push
-description: "Commit, push, pull, merge or sweep worktrees."
+description: "Commit current branch, sync and push its upstream."
 version: 2.1.1
 license: MIT
 metadata:
@@ -74,6 +74,9 @@ original commit/push/main-delivery obligation and continue candidate verificatio
 | Authorized local slice, no explicit or standing publication authority | owned task branch under repository policy | **never** |
 | Audit request | nothing | no |
 
+No push means no remote writes, including branch pushes, PR creation or remote merges.
+This limit propagates through every reference and handoff.
+
 Interpret delivery verbs separately: a request to implement and commit authorizes a local commit, not publication. Do not infer push permission from the skill name, an upstream being configured, or a broad request to finish all plans. After a local-only commit, verify `git show --stat HEAD` and repository status; omit remote-write readback because no remote write occurred (freshness inspection uses existing refs and permitted remote metadata; fetch is a write and needs authorized sync).
 
 A repeated commit-only request after you disclosed failing checks authorizes a local
@@ -100,8 +103,9 @@ owned slice. Local-only requests never authorize push; audit never authorizes Gi
 writes. Repo-wide authorization does not override a live writer/lease, unfinished work,
 unapproved product scope, secrets or missing verification. A generic "commit all" does
 not revoke a specific earlier KEEP/preservation decision: resolve it before staging bulk
-deletions. [Shared-worktree safety](references/shared-worktree-safety.md) owns the full
-rule set for cross-agent scope, live writers, secrets and blind staging.
+deletions. For accumulated/concurrent changes or uncertain provenance, load
+[shared-worktree safety](references/shared-worktree-safety.md) before staging;
+it owns the detailed cross-agent and shared-index procedures.
 
 The executor's card-branch helper is removed. Use the repository's ordinary
 owned-branch commit workflow or the [temporary-index safety procedure](references/shared-worktree-safety.md)
@@ -218,23 +222,20 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      intent or authority gap remains; do not revert or delete held work.
 
 3. **Prepare the smallest delivery.**
+   - Before staging into a shared or pre-populated index, load
+     [shared-index commit safety](references/shared-worktree-safety.md#shared-index-commits).
+     Preserve held staged entries, HEAD and dirty work. For main-only temporary-index
+     landing, load the [landing recipe](references/shared-worktree-safety.md#temporary-index-landing-without-a-development-branch)
+     before any writes.
    - Group in-scope work into the fewest coherent commits, one per component or topic. Keep
      each change with its tests and docs. Never commit code without the test that pins it.
    - Make only safe mechanical fixes (formatting, imports, ignored local output, stale paths).
      Do not expand product scope.
-   - Reconcile producer and consumer contracts when combining reviewed slices before the
-     broad gate: run formatting, analysis and their focused regression union on the assembled
-     candidate. A component-removal patch can delete a field still asserted by another slice's
-     tests even when both artifacts passed independently. Remove only assertions for genuinely
-     removed APIs; preserve public-behavior, ownership and recovery regressions. Resolve
-     conflicts in the isolated candidate, never in an actively reviewed worker's workspace.
-   - Classify grouped test failures by their first failing assertion before calling
-     them production regressions or stale fixtures. If setup still supplies inventory
-     through a removed transport, migrate the harness to the supported authority and
-     preserve the ownership, stale-response, denial and explicit-retry assertions;
-     deleting those scenarios can conceal a real recovery gap. Run the focused union
-     before a broad suite. If another reviewed slice is genuinely independent, qualify
-     and deliver it separately without implying the original shipping queue is finished.
+   - Before combining reviewed slices, load
+     [combined-slice gates](references/candidate-gates.md#combining-reviewed-slices).
+     Reconcile producer/consumer contracts and run formatting, analysis and the focused
+     regression union on the assembled candidate before the broad gate. Preserve
+     public-behavior, ownership and recovery regressions; isolate conflicts from live workers.
    - When a feature depends on uncommitted predecessors, trace required symbols and
      select only their necessary hunks with regression tests. Do not import a whole
      backend merely because one fixture gained a contract. If whole-file inclusion
@@ -243,11 +244,14 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      snapshot, not the dirty root or a partial source mirror. Preserve tracked native
      hosts/docs/source-contract inputs, verify every snapshot blob against the index,
      and identify historical local-only receipt links rather than importing unrelated
-     ledgers or generated evidence to make Markdown closure pass. For main-only delivery
-     with a pre-populated shared index, use the temporary-index landing recipe in
-     [shared-worktree-safety.md](references/shared-worktree-safety.md#temporary-index-landing-without-a-development-branch).
+     ledgers or generated evidence to make Markdown closure pass.
 
 4. **Validate once, in the right order: stage → gate → push.**
+   - Before gating an export that needs untracked dependencies or Git-bound validators,
+     load [candidate gates](references/candidate-gates.md). Also load it before handling
+     snapshot-only failures, HEAD drift, long/interrupted gates, asynchronous handoffs,
+     CRLF CSV checks or an after-the-fact missed gate. Scope candidate `GIT_*` overrides
+     to individual Git calls, never build-tool environments.
    - Identify the repository's canonical check command before running the gate
      (`make check`, `make test`, or the documented equivalent). Execute it from
      the complete candidate snapshot with the supported timeout control, retaining
@@ -266,22 +270,12 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
    - Report suite counts from that exact candidate, not a broader dirty-tree run: excluded
      foreign tests can legitimately change the totals. Never import unrelated work merely
      to reproduce an earlier count.
-   - On failure, fix the smallest safe cause and rerun only the failed or affected checks
-     (load `systematic-debugging` for a real behavior failure). Before reporting HELD,
-     distinguish a failed product assertion from an overbroad source-contract guard;
-     an authorized guard repair keeps its prohibited-boundary and negative assertions.
-     Preserve passing receipts
-     for unchanged source, tests, dependencies and tool inputs. A browser-selector-only
-     repair needs browser verification, not another full Flutter suite. Repair missing
-     verification metadata from the executed receipt; do not rerun an unchanged passing
-     gate just to clear a stale warning or refresh a report. Explicit owner requests for
-     a fresh run still apply; identify that run separately from the original qualification.
-   - A running gate is not a pass: never push while its required checks are still
-     running.
-   - Load [candidate gates](references/candidate-gates.md) for the branch playbooks:
-     filesystem-export dependency inputs, snapshot-only failures, a HEAD advance during
-     gating, guards after staging, long or interrupted gates, cross-handoff obligation,
-     CRLF CSV checks, `GIT_*` scoping, gate waivers and after-the-fact misses.
+   - On failure, fix the smallest safe cause and rerun only failed or affected checks.
+     Before repair or reporting HELD, load
+     [gate failures and receipt repair](references/candidate-gates.md#gate-failures-and-receipt-repair).
+     Preserve passing receipts only for unchanged source, tests, dependencies and tool inputs.
+     No waived gate or unverified readiness claim is allowed.
+   - A running gate is not a pass: never push while its required checks are still running.
 5. **Commit.**
    - Stage explicit paths only (`git add -- <paths>`); never `git add -A` / `git add .` on a
      shared tree. Use `git --literal-pathspecs add` for collected filenames. Build the add list
@@ -306,21 +300,15 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      the matcher.
    - Follow the repo's commit-message convention (check `git log --oneline -10`). Read the
      message back before pushing; once it is on a shared branch, fixing it would need a force-push.
-   - Immediately before committing, re-read `git diff --cached --name-only` and compare it with
-     the paths this commit is meant to carry. The index survives across tool calls, so a file
-     staged in an earlier step — for another topic, or for a gate you have not finished — rides
-     along silently and ships under a message that does not describe it, and a pushed message
-     cannot be corrected without a force-push; unstage it (`git restore --staged <path>`) or fold
- it in and say so. A pathspec commit (`git commit -F <msg> -- <paths>`) is the stronger form on
- a shared tree: it records exactly those paths whatever else the index holds, so a file left
- staged by an earlier step cannot ride along even when the re-read misses it. Then compare `git write-tree` with the recorded gated tree
-     and verify HEAD has not moved; concurrent staging can otherwise change what ships.
-     A pathspec commit reads the selected *worktree* contents, so first verify each selected
-     blob still equals its gated index blob. After committing, require `git rev-parse HEAD^{tree}`
-     to match the gated tree; for several topic commits qualified together, pin the combined tree
-     and path partition, check each commit's paths/blobs against its partition, and match only
-     the final tree to the combined one. If hooks or another writer changed it, inspect the difference and rerun affected checks before
-     claiming verification; do not replay a successful gate merely for reassurance.
+   - Before splitting one gated tree into topic commits, load
+     [partitioned commit checks](references/shared-worktree-safety.md#shared-index-commits).
+     Match each commit to its pinned path/blob partition and only the final tree to the combined gated tree.
+   - Immediately before committing, re-read `git diff --cached --name-only` and compare
+     it with the authorized path set. Exclude unrelated staged entries without changing
+     another writer's index; if isolation is unsafe, hold. Compare `git write-tree` with
+     the recorded gated tree and verify HEAD has not moved. For a single commit, require
+     `git rev-parse HEAD^{tree}` to match the gated tree after committing. If hooks or another
+     writer changed it, inspect the difference and rerun affected checks before claiming verification.
 
 6. **Sync with upstream (default).**
    - With sync authorized, after the owned commits exist and before pushing:
@@ -480,8 +468,9 @@ verification evidence, and safety defaults.
 
 ## Shared index safety and checkout isolation
 
-Before staging accumulated or concurrent changes, load
-[shared-worktree-safety.md](references/shared-worktree-safety.md).
+A plain scoped delivery does not require these exceptional playbooks.
+Load shared-index safety at step 3 for accumulated/concurrent or pre-populated indexes;
+load candidate gates only for the branches named at steps 3–4.
 For a new coding checkout, load [WORKTREE-ISOLATION.md](../shared/WORKTREE-ISOLATION.md).
 These references do not grant commit, push, cleanup or execution authority.
 

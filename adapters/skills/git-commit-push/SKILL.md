@@ -1,6 +1,6 @@
 ---
 name: git-commit-push
-description: "Commit, push, pull, merge or sweep worktrees."
+description: "Commit current branch, sync and push its upstream."
 disable-model-invocation: true
 ---
 

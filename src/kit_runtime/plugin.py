@@ -164,7 +164,10 @@ def register(ctx):
         handler = partial(_invoke, ctx, name, path)
         ctx.register_command(
             command, handler,
-            description=f"Run the {name} skill",
+            description={
+                "git-commit-push": "Commit current branch, sync and push its upstream.",
+                "push": "Save this checkout, pull and deliver to main.",
+            }.get(name, f"Run the {name} skill"),
             args_hint="<instructions>" if name in {"autoresearch", "grill-me"} else "[instructions]",
         )
     _KIT_COMPAT.peer(globals(), 'autoresearch_commands').register(ctx, skills, _invoke)
