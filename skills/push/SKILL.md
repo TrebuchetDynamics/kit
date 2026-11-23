@@ -73,6 +73,13 @@ owns mode effects, unknown coverage and coordinator ownership; apply it first.
    `/push` scope, ordinary changes need verification, not the sibling's completed-work
    requirement. Project ownership rules and narrower requests still win.
 
+   Commit all eligible changes locally before deciding what can ship. If an edit
+   can be saved but not published, commit it on a separate local checkpoint
+   branch. Record the publication blocker. Do not include that checkpoint in
+   the candidate for `main`. A pending review or merge gate alone is not a
+   reason to leave eligible edits staged. This does not waive commit-time checks
+   or the exclusions below.
+
    Recheck HEAD, index bytes and file contents against the inventory immediately
    before staging explicit paths. A changed baseline means `Save pending`: preserve
    the affected paths, report the drift, and re-inventory ownership and bytes before
