@@ -48,6 +48,48 @@ class PonytailBundleTests(unittest.TestCase):
                     self.assertIn(COMMUNICATION, targets)
                     self.assertTrue(COMMUNICATION.is_file())
 
+    def test_review_routes_regressions_to_the_existing_change_owner(self):
+        # Instruction contracts, not a simulation of model decisions or GitHub writes.
+        text = ' '.join((ROOT / 'skills/ponytail-review/SKILL.md').read_text().split())
+        for contract in (
+            '## Finding routing and receipt',
+            'current PR URL and head SHA',
+            'owning issue URL',
+            'severity, concrete regression evidence (source lines or reproducer)',
+            'required check with its expected result',
+            'review receipt includes each finding and owner link',
+            'Keep the existing live owner and review lane',
+            'Do not open a tracking issue or start repairs',
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, text)
+
+    def test_review_gates_publication_and_keeps_unknown_findings_inline(self):
+        text = ' '.join((ROOT / 'skills/ponytail-review/SKILL.md').read_text().split())
+        for contract in (
+            'Read the existing review/comments before any authorized post',
+            'Reuse the existing finding link',
+            'unchanged evidence produces no duplicate post',
+            'Post only to that existing PR or issue thread when review publication is already authorized',
+            'Read-only/no-write review never posts',
+            'If ownership is unknown, return the finding inline',
+            'If a required read fails, report the concrete error, missing input and safe resume action',
+            'hold publication rather than guess ownership or absence of a prior finding',
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, text)
+
+    def test_portable_review_reaches_the_canonical_routing_receipt(self):
+        adapter = ROOT / 'adapters/skills/ponytail-review/SKILL.md'
+        text = adapter.read_text()
+        self.assertIn('finding-routing receipt', text)
+        links = re.findall(r'\[[^\]]*\]\(([^)]+)\)', text)
+        canonical = ROOT / 'skills/ponytail-review/SKILL.md'
+        self.assertIn(canonical, {(adapter.parent / link).resolve() for link in links})
+        self.assertIn('## Finding routing and receipt', canonical.read_text())
+        self.assertIn('disable-model-invocation: true', text)
+        self.assertIn('read-only/no-write/no-push restrictions', text)
+
     def test_hermes_setup_no_longer_requires_an_external_ponytail_plugin(self):
         manifest = yaml.safe_load((ROOT / 'plugin.yaml').read_text())
         defaults = json.loads((ROOT / 'plugins/defaults.json').read_text())
