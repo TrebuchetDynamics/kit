@@ -33,9 +33,11 @@ Status: Accepted
 All first-party skills and portable adapters reach the
 [shared freshness and ownership contract](../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership).
 Mode controls effects, not automatic synchronization on every invocation. `/push`
-saves all changes, pulls `main` and pushes `main`; it includes landed Orbi changes
-through the verified upstream and reports outstanding issue/PR candidates without
-taking coordinator-owned heads or bypassing review.
+saves eligible changes in the invoking checkout only, pulls verified `main` and
+delivers to `main`; other local worktrees are not inspected, saved or integrated.
+Explicit `/git-commit-push all` retains its sweep. `/push` includes landed Orbi
+changes through verified upstream and reports outstanding issue/PR candidates
+without taking coordinator-owned heads or bypassing review.
 Read-only/audit and writable planning do not fetch or sync Git; authorized edits
 inspect ownership and isolate stale/shared baselines. Delivery retains caller scope.
 

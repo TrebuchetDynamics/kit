@@ -29,6 +29,11 @@
     },
     {
       "type": "command",
+      "command": "git rev-parse --show-toplevel",
+      "exit": 0
+    },
+    {
+      "type": "command",
       "command": "git status --short --branch",
       "exit": 0
     },
@@ -70,7 +75,7 @@
     },
     {
       "type": "final",
-      "text": "Local commits: none. Incoming landed: verified team/trunk bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb synchronized with its tests. Pending: unavailable/unknown coverage: HTTP 403 rate limit exceeded on page 3; preserve https://github.com/example/project/pull/52 and undiscovered work. Restore API access then refresh once; no retry loop or alternate credentials. Selected/final: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb. Checks: affected local tests passed; required protection/review unavailable, publication HELD. Remote inclusion: no publication claimed; last destination aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Local sync: verified upstream only; partial inventory, not all Orbi work delivered."
+      "text": "Local scope: invoking checkout; other worktrees were not inspected. Local commits: none. Incoming landed: verified team/trunk bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb synchronized with its tests. Pending: unavailable/unknown coverage: HTTP 403 rate limit exceeded on page 3; preserve https://github.com/example/project/pull/52 and undiscovered work. Restore API access then refresh once; no retry loop or alternate credentials. Selected/final: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb. Checks: affected local tests passed; required protection/review unavailable, publication HELD. Remote inclusion: no publication claimed; last destination aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Local sync: verified upstream only; partial inventory, not all Orbi work delivered."
     }
   ]
 }

@@ -29,6 +29,11 @@
     },
     {
       "type": "command",
+      "command": "git rev-parse --show-toplevel",
+      "exit": 0
+    },
+    {
+      "type": "command",
       "command": "git status --short --branch",
       "exit": 0
     },
@@ -55,7 +60,7 @@
     },
     {
       "type": "final",
-      "text": "Local commits: none. Incoming landed: none. Pending: open/owned https://github.com/example/project/pull/52 linked https://github.com/example/project/issues/12, head eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee; passing checks do not release coordinator ownership; wait for its review/merge route. Selected/final: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Checks: no candidate changes; existing required gates not bypassed. Remote inclusion: unchanged destination aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; PR 52 not delivered. Local sync: clean; worker checkout and untracked files untouched. HELD, not repository-wide NO-OP."
+      "text": "Local scope: invoking checkout; other worktrees were not inspected. Local commits: none. Incoming landed: none. Pending: open/owned https://github.com/example/project/pull/52 linked https://github.com/example/project/issues/12, head eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee; passing checks do not release coordinator ownership; wait for its review/merge route. Selected/final: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Checks: no candidate changes; existing required gates not bypassed. Remote inclusion: unchanged destination aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; PR 52 not delivered. Local sync: invoking checkout clean; other checkout contents unknown. HELD, not repository-wide NO-OP."
     }
   ]
 }

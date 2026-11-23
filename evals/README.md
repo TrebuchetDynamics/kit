@@ -144,12 +144,29 @@ call GitHub or establish live model adherence, Orbi pickup or delivery.
 
 `push.json` checks recorded inspection and a receipt that separates local commits,
 incoming landed changes, pending URLs/reasons, selected/final SHAs, checks, remote
-inclusion and remaining local sync. `push-pass.json` represents merged remote-only
+inclusion and remaining local sync. It requires Git checkout identity and a local
+scope receipt that says other worktrees were not inspected. `push-pass.json` represents merged remote-only
 work through a non-`origin`, non-`main` verified upstream. Other `push-*.json`
 fixtures cover a passing-but-owned open PR, API rate-limit/unknown inventory,
 upstream advance with an open PR becoming merged, closed-unmerged/failed/unknown
 work, equivalence and a read-only audit. All commands and API responses are inert
 recorded examples; no fixture contacts GitHub or mutates Git.
+
+`push-local-scope.json` and deliberately failing `push-sibling-fail.json` cover
+invoking-checkout saves, indirect sweep invocation and nested sibling reads/staging.
+The tests vary sibling state, clean/linked invocation and zero versus 32 unrelated
+registrations. Scope guards recognize the pilot's `out-of-scope/` and `nested-worker`
+paths and pinned sibling tip (`999…`, 40 hex digits), plus named sweep invocations
+and selected bulk-staging forms. These are known fixture roles, not a general
+path-boundary or indirect-call detector. Minimal `git worktree list` metadata is
+allowed; commands/read events targeting those siblings are refused. The explicit
+`/git-commit-push all` sweep uses its own spec and remains available.
+
+Zero sibling actions in these synthetic cases is not an observed baseline/candidate
+benchmark. Matched prior/revised skill runs require the same host/model, disposable
+repositories, mocked hosting remote, edits and upstream pins with recorded tool
+calls. Without those runs, observed counts and timings are unrun; do not claim
+wall-clock or end-to-end speedup.
 
 The focused tests use existing `require`/`forbid` clauses for scenario receipts and
 the fixture's held PR head. They apply the read-only review clauses to the push

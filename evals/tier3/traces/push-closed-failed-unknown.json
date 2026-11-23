@@ -43,6 +43,11 @@
     },
     {
       "type": "command",
+      "command": "git rev-parse --show-toplevel",
+      "exit": 0
+    },
+    {
+      "type": "command",
       "command": "git status --short --branch",
       "exit": 0
     },
@@ -69,7 +74,7 @@
     },
     {
       "type": "final",
-      "text": "Local commits: none. Incoming landed: none; equivalent local ref already included/equivalent by patch and blob comparison at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, no duplicate commit. Pending: https://github.com/example/project/pull/53 closed-unmerged, owner must decide whether to reopen; https://github.com/example/project/issues/14 failed/blocked (paused, failed CI), coordinator repairs CI and honors pause; https://github.com/example/project/pull/55 unavailable/unknown ownership, obtain current coordinator evidence. Selected/final: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Checks: no dependent publication, no gate bypass. Remote inclusion: existing destination aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa only. Local sync: all held worktrees and untracked/recovery inputs untouched. Partial result, no claim all Orbi changes landed."
+      "text": "Local scope: invoking checkout; other worktrees were not inspected. Local commits: none. Incoming landed: none; equivalent local ref already included/equivalent by patch and blob comparison at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, no duplicate commit. Pending: https://github.com/example/project/pull/53 closed-unmerged, owner must decide whether to reopen; https://github.com/example/project/issues/14 failed/blocked (paused, failed CI), coordinator repairs CI and honors pause; https://github.com/example/project/pull/55 unavailable/unknown ownership, obtain current coordinator evidence. Selected/final: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Checks: no dependent publication, no gate bypass. Remote inclusion: existing destination aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa only. Local sync: held in-scope changes and recovery inputs preserved. Partial result, no claim all Orbi changes landed."
     }
   ]
 }

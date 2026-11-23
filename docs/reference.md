@@ -6,6 +6,12 @@ page has drifted. Conversational workflow commands (`/docs_sync`,
 `/plan_with_me` and the rest) are listed in [workflows](workflows.md#commands);
 procedures and their side effects are in [installation](installation.md).
 
+[`/push`](../skills/push/SKILL.md) saves eligible changes in the Git-identified
+invoking checkout only, pulls verified `main` and delivers through the allowed main
+route. Other worktrees are not inspected, saved or integrated; the receipt states
+that local scope. Remote issue/PR coverage, ownership and delivery gates remain.
+Explicit `/git-commit-push all` retains the [worktree sweep](../skills/git-commit-push/references/worktree-sweep.md).
+
 Kit maintenance uses `hermes kit`. Planning saves GitHub Issues; Orbi owns delivery.
 See the [support boundary](github-native.md#support-boundary).
 

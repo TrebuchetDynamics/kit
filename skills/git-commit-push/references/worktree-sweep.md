@@ -14,21 +14,12 @@ closed-unmerged work stay with their coordinator. Report their URL, reason and n
 action; a passing check does not release ownership. Use [/push](../../push/SKILL.md)
 for remote issue/PR discovery and already-landed upstream changes.
 
-## When called by `/push`
+## Explicit sweep only
 
-An explicit unrestricted `/push` first saves eligible ordinary changes in verified
-idle worktrees under its [save step](../../push/SKILL.md#fast-path), with no separate
-completion note or marker. That step owns path inventory, project rules, ownership,
-exclusions, baseline rechecks and explicit staging. It does not authorize touching
-coordinator-owned PRs, active/uncertain work, pauses or recovery holds.
-
-The helper still never commits dirty worktrees. After `/push` creates verified local
-commits, use the manual pinned-candidate merge mechanics below for eligible scope;
-excluded paths may remain dirty in the source worktree and stay untouched. Do not
-run `--apply` on that dirty or otherwise ineligible inventory. Reconcile upstream,
-check the assembled candidate and prove inclusion in remote `main` through `/push`;
-a local merge or candidate-branch push alone is not delivery. Cleanup is not included.
-This exception does not widen `/git-commit-push` or its standalone `all` sweep.
+Use this procedure for explicit `/git-commit-push all`. Default `/push` saves only
+its invoking checkout and does not call this helper or integrate sibling tips.
+Its [local scope](../../push/SKILL.md#fast-path) propagates through supporting
+references; reading shared delivery rules does not authorize a sweep.
 
 ## States
 
@@ -84,9 +75,8 @@ This exception does not widen `/git-commit-push` or its standalone `all` sweep.
 - Merge into the base branch only. The sweep refuses when the canonical checkout is on
   another branch, has uncommitted changes, or already has a merge in progress; it never
   moves your HEAD to make a merge possible.
-- The standalone sweep never commits, stashes, resets or discards another writer's
-  uncommitted work. Dirty work stays with its owner; only `/push`'s scoped save step
-  above can prepare eligible ordinary changes before manual integration.
+- The sweep never commits, stashes, resets or discards another writer's
+  uncommitted work. Dirty work stays with its owner.
 - No rebase, no force, no history rewrite, no automatic branch deletion. A supplied
   closeout helper must verify ownership and recovery evidence independently.
 - The standalone sweep merges only worktrees classified as clean. A worktree you

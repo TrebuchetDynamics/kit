@@ -42,21 +42,28 @@ read fresh GitHub metadata/remote source, but does not sync or commit the checko
 Implementation verifies baseline/ownership and isolates stale/shared source;
 delivery/sync follows the invoked command's scope and caller restrictions.
 
-`/push` saves every eligible change, pulls `main` and pushes `main` without a second
-approval round. An unrestricted invocation includes staged, unstaged, deleted and
-ordinary non-ignored untracked files in the invoking checkout and verified idle
-worktrees. No separate completion note or marker is required. The
-[Push save step](../skills/push/SKILL.md#fast-path) verifies scope, provenance, actual
-inactivity and each worktree's project rules, then rechecks HEAD/index/file baselines
-before staging explicit paths. Secrets, private runtime state, ignored output,
+`/push` saves eligible changes in the invoking checkout only, pulls verified `main`
+and delivers to `main` without a second approval round. An unrestricted invocation
+includes staged, unstaged, deleted and ordinary non-ignored untracked files there.
+Git identifies that checkout; invoking from a linked checkout does not authorize
+canonical checkout inspection or writes. Other registered worktrees, including
+nested roots, are boundaries, not content to read or stage. No separate completion
+note or marker is required. The [Push save step](../skills/push/SKILL.md#fast-path)
+verifies scope, provenance, actual inactivity and the invoking checkout's project
+rules, then rechecks HEAD/index/file baselines before staging explicit paths. Secrets, private runtime state, ignored output,
 active or uncertain ownership, pauses and recovery holds stay untouched and are
 reported by path and reason, without contents. Baseline drift reports `Save pending`;
 re-inventory the affected paths and resolve ownership before staging. Narrower
 requests still win; `/git-commit-push` and its standalone clean-worktree sweep keep
 their existing scope.
 
-It inventories local worktrees and paginated GitHub issue/PR evidence, including
-remote-only Orbi work. Already-merged changes enter through verified upstream; passing
+It inventories only invoking-checkout changes locally, plus paginated GitHub
+issue/PR evidence, including remote-only Orbi work. Minimal Git metadata supports
+safe landing, placement and registered-root boundaries; sibling files, status,
+activity and unique tips are not inspected or integrated. It never calls the sweep
+helper. A clean invoking checkout still requires remote/upstream verification.
+Use the existing isolated candidate/PR route instead of accessing another checkout;
+if no safe route exists, preserve work and report the blocker and repair action. Already-merged changes enter through verified upstream; passing
 open PRs remain with their Orbi coordinator. Closed-unmerged, failed, paused and
 unknown work stays untouched with its URL, reason and next action. Uncommitted changes
 are committed before the pull, because they block a safe fast-forward. A stale base is
@@ -64,8 +71,10 @@ reconciled through normal merge and affected checks/review before publication, a
 repository's landing route (direct push or pull request) is used as policy allows. API
 failures mean partial inventory, not an empty backlog; independently verified work may
 proceed, but missing required protection/review holds publication. Receipts separate
-local commits, incoming landed changes, pending URLs, source and selected/final SHAs,
-checks, remote inclusion and remaining local synchronization. A candidate-branch
+local scope (invoking checkout path), local commits, incoming landed changes, pending
+URLs, source and selected/final SHAs, checks, remote inclusion and remaining local
+synchronization. Say other worktrees were not inspected, not that they were clean or
+shipped. A candidate-branch
 push alone is not main delivery. Missing checks/review or an unmerged protected PR
 remain pending: report the exact gate and next action, then verify remote `main`
 inclusion after the permitted landing route completes.
@@ -86,7 +95,7 @@ is limited, so some commands must be typed directly.
 | `/orbi [status\|setup\|start\|stop\|help]` | `/orbi` | [Repository-scoped lifecycle controls](../skills/orbi/SKILL.md): bare status is read-only, setup starts by default via the existing start path; setup --prepare-only prepares without activation; authorized setup/start prepares if absent then schedules, stop drains without killing workers; Linux controls, macOS status-only; help prints the action reference read-only on any platform |
 | `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only eligible clean unmerged ones, keep owned, unknown, dirty and locked worktrees |
-| `/push` | `/push` | Save all changes, pull `main`, then push `main` through the repository's landing route; report open Orbi work without takeover |
+| `/push` | `/push` | Save eligible invoking-checkout changes only, pull verified `main`, then deliver to `main` through the repository's landing route; other worktrees uninspected, open Orbi work reported without takeover |
 | `/lgtm` | `/lgtm` | [Continue within inherited authority](../skills/lgtm/SKILL.md): accept unambiguous choices, clarify only ambiguous planning choices; standalone plan approval does not authorize implementation |
 | `/docs_sync` | `/docs_sync` | Maintain repository documentation |
 | `/update-kit` (also `/update_kit`) | `/update_kit` | [Refresh dedicated upstream source and reinstall the suite](../skills/update-kit/SKILL.md); explicit only, full-suite/restart effects, restricted Hermes cascades refused; [preview and ownership](installation.md#update-kit) |
