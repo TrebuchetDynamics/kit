@@ -40,6 +40,13 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
     }
   }
   const raw = 'read-only\n$(literal); --no-push';
+  assert.equal(commands.get('ponytail-debt').description, 'Publish issues for triggered shortcut debt');
+  for (const args of ['', raw]) {
+    await commands.get('ponytail-debt').handler(args, {isIdle: () => true});
+    await assertWorkflow('ponytail-debt');
+    assert.equal(messages.at(-1)[0].includes('trigger analysis and issue handoff'), true);
+    assert.equal(messages.at(-1)[0].endsWith(`User request (preserve scope and restrictions):\n${args}`), true);
+  }
   await commands.get('ui-taste').handler(raw, {isIdle: () => true});
   await assertWorkflow('ui-taste');
   assert.equal(messages.at(-1)[0].endsWith(raw), true);
@@ -145,7 +152,7 @@ test('Orbi dispatch forwards lifecycle arguments and queues in a busy session', 
   const hostFile = new URL('../adapters/skills/COMMON.md', import.meta.url);
   const host = await readFile(hostFile, 'utf8');
   for (const raw of [
-    '', 'status', 'help', 'setup', 'setup --dry-run', 'start --dry-run',
+    '', 'status', 'status all', 'status all --json', 'help', 'setup', 'setup --dry-run', 'start --dry-run',
     'setup --prepare-only', 'setup --prepare-only --dry-run',
     'setup --resume-setup --config "/tmp/literal $(config).toml"',
     'setup --prepare-only --resume-setup --config "/tmp/literal $(config).toml"',

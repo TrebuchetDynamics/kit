@@ -15,10 +15,6 @@ Read the [host contract](../COMMON.md), then the
 It reuses the bundled test-suite optimization protocol; no Hermes runtime, Pi
 extension or external test tool is required.
 
-Bare invocation audits; explicit reduction/apply or existing implementation
-authority permits one supported batch. Read-only writes nothing. Prioritize proven
-redundant, vacuous and obsolete test removal, then simplify what remains. Meaningless
-tests need no replacement. Preserve distinct supported risks and oracles: rarity,
-unchanged code and irrelevance to today's diff alone do not justify deletion.
-Report actual code/case reductions separately from measured runtime. Keep review,
-user limits, task-state and delivery restrictions throughout.
+Follow its [single-invocation specialist handoff](../../../skills/shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff)
+for the default publication route, no-write overrides and separate authorized local
+apply mode. Use this host's tools; loading the protocol does not change that route.

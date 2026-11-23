@@ -29,9 +29,23 @@ See [Unblock](../skills/unblock/SKILL.md) for the full workflow.
 
 All workflows apply the [shared Ponytail method](../skills/shared/PONYTAIL.md)
 within their existing authority. `/ponytail [lite|full|ultra|off]` reports or changes
-only the conversation's Kit preference. `/ponytail-review`, `/ponytail-audit`,
-`/ponytail-debt`, `/ponytail-gain` and `/ponytail-help` are one-shot reports;
+only the conversation's Kit preference. `/ponytail-review`,
+`/ponytail-gain` and `/ponytail-help` are one-shot reports;
 they do not implement, publish, start an extra reviewer or change persistent modes.
+[`/ponytail-debt`](../skills/ponytail-debt/SKILL.md) checks shortcut markers against
+revisit triggers and publishes supported, uncovered outcomes in the same invocation.
+It keeps the ledger as context, not a queue. Unreached or missing triggers create no
+issue. Explicit read-only/dry-run/no-write reports inline; no-dispatch holds readiness.
+It stops after publication and does not implement or activate services.
+
+An ordinary [`/ponytail-audit AREA`](../skills/ponytail-audit/SKILL.md) analyzes the
+requested scope and publishes warranted issues through Plan Handoff in the same
+invocation, without selection or confirmation. It reports verified links and held
+reasons, then stops; zero qualifying findings means zero new issues. Explicit
+report-only/read-only/no-write/dry-run returns inline findings without writes.
+No-dispatch, ownership and human gates remain binding. Default publication does not
+implement findings or activate services; explicitly authorized local fix/apply
+modes remain separate.
 See [portable host invocations](cross-host.md#bundled-ponytail-on-every-host).
 Existing external command owners keep their handlers; the bundled skills remain
 available as `kit:ponytail` and `kit:ponytail-review` (and the other names).
@@ -92,7 +106,7 @@ is limited, so some commands must be typed directly.
 
 | Hermes CLI chat | Telegram | Purpose |
 | --- | --- | --- |
-| `/orbi [status\|setup\|start\|stop\|help]` | `/orbi` | [Repository-scoped lifecycle controls](../skills/orbi/SKILL.md): bare status is read-only, setup starts by default via the existing start path; setup --prepare-only prepares without activation; authorized setup/start prepares if absent then schedules, stop drains without killing workers; Linux controls, macOS status-only; help prints the action reference read-only on any platform |
+| `/orbi [status\|setup\|start\|stop\|help]` | `/orbi` | [Lifecycle controls and host inventory](../skills/orbi/SKILL.md): `status all [--json]` lists observable local host services without repo selectors or GitHub auth (partial coverage is explicit); bare status is read-only, setup starts by default via the existing start path; setup --prepare-only prepares without activation; authorized setup/start prepares if absent then schedules, stop drains without killing workers; Linux controls, macOS status-only; help prints the action reference read-only on any platform |
 | `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only eligible clean unmerged ones, keep owned, unknown, dirty and locked worktrees |
 | `/push` | `/push` | Save eligible invoking-checkout changes only, pull verified `main`, then deliver to `main` through the repository's landing route; other worktrees uninspected, open Orbi work reported without takeover |
@@ -103,10 +117,10 @@ is limited, so some commands must be typed directly.
 | `/plan_for_me` | `/plan_for_me` | Investigate accepted scope and publish complete GitHub Issues without an interview |
 | `/grill-me` | `/grill_me` | Stress-test a plan through questions |
 | `/autoresearch` | `/autoresearch` | Route a research goal or run a bounded metric loop |
-| `/impeccable` | `/impeccable` | Design and front-end quality workflow |
+| `/impeccable` | `/impeccable` | Publish actionable UI findings; explicit requests design or refine |
 | `/unslop` | `/unslop` | [Audit the UI and publish fixes as GitHub issues](../skills/unslop/SKILL.md) for Orbi; an existing deployment can pick up ready issues. Use `no-dispatch` to save without readiness, or `read-only` to preview. |
-| `/ui-taste` | `/ui_taste` | Uizze's UI Taste playbooks for building, polishing and reviewing web and iOS interfaces |
-| `/beautify-github-readme` | `/beautify_github_readme` | Redesign or audit a GitHub README with project-native SVG assets |
+| `/ui-taste` | `/ui_taste` | Publish actionable UI findings; explicit requests use Uizze's build/polish playbooks |
+| `/beautify-github-readme` | `/beautify_github_readme` | [Audit README reader paths and publish verified issues](../skills/beautify-github-readme/SKILL.md); explicit redesign/hero and audit-only requests keep their scope. Use `no-dispatch` to withhold readiness, or `read-only` for an inline report without writes. |
 
 For the Orbi first-deployment journey, `/orbi help` gives context-free examples and
 recovery. Only after explicit scheduling authority and resolved pauses/gates, use
@@ -373,7 +387,8 @@ live bug-finding effectiveness.
 
 ## Test optimizer
 
-`/test-optimizer` actively reduces executed cases, test code and maintenance cost.
+`/test-optimizer` finds justified reductions in executed cases, test code and maintenance cost
+and publishes GitHub issues for Orbi in the same invocation.
 It reuses the existing [test-suite optimization protocol](../skills/engineering/local/test-suite-optimization/PROTOCOL.md).
 Prioritize deleting proven redundant, vacuous and obsolete tests, then shrink the
 remaining fixtures and cases. A constant assertion such as `assert 0 == 0` needs
@@ -382,20 +397,27 @@ supported risks, not test counts. Rare security, data-loss and named regression
 cases are not expendable merely because they rarely fail. Unchanged code or tests
 unrelated to today's diff are not automatically obsolete.
 
-A bare invocation audits; `read-only` writes nothing. Explicit `apply`, a request
-to reduce/optimize the suite, or an existing authorized implementation task permits
-one supported batch without another approval ceremony. It preserves distinct
-behavioral oracles and justifies deletions with retained equivalent checks, retired
-obligations or evidence of no owned contract/invariant. It then validates and reports
-real reductions and unknowns, without adding replacement tests just to preserve counts. It never optimizes by
-silently skipping tests or weakening CI. This is an agent-guided skill, not an
-automatic test-deletion script.
+A bare invocation analyzes the requested/current scope without editing tests. It
+uses [Plan Handoff](../skills/shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff)
+to reconcile existing work, preview without waiting, publish supported uncovered
+outcomes and report verified links. It holds uncertain findings and continues
+independent work; no qualifying findings means no new issues. Each proposed removal
+names its retained equivalent detector and oracle, retired obligation or evidence
+of no owned contract/invariant.
+
+Explicit report-only/read-only/no-write/dry-run returns findings inline with no writes.
+Only explicitly requested and authorized local fix/apply uses a separate supported
+batch with existing ownership, review, PR and human gates. No-dispatch and pauses
+remain binding. The default route does not implement findings or activate Orbi.
+Actual reductions and measured runtime stay separate from proposals and unknowns;
+neither mode silently skips tests or weakens CI.
 
 Examples (Hermes CLI; Pi uses `/test-optimizer`, Claude Code
 `/kit:test-optimizer`, Codex `$kit:test-optimizer`):
 
 ```text
-/test-optimizer tests/parser; read-only
+/test-optimizer tests/parser
+/test-optimizer tests/parser; report only
 /test-optimizer tests/parser; apply one batch; no commit or push
 ```
 
@@ -504,6 +526,17 @@ GitHub issue authority, review and delivery limits.
 Editing a document is not new authority. Keep every tested contract, move text
 instead of rewriting meaning, and report lines removed with the tests you ran.
 Offline link and packaging checks do not qualify model behavior.
+
+## UI findings
+
+Bare `/impeccable` and `/ui-taste` invocations analyze the current flow and publish
+supported, uncovered outcomes through the [shared UI handoff](../skills/shared/UI-FINDINGS.md),
+then stop. They reuse existing issues across both skills, with screen/state evidence
+and repeatable acceptance; unaccepted visual preferences stay held. Captures are not
+attached by default. Explicit design/edit requests retain their playbooks and delivery
+gates. Read-only/dry-run/no-write returns inline findings without saving; unattended
+runs remain audit-only unless the accepted scope authorizes writes. No-dispatch
+keeps published issues undispatched.
 
 ## Responsive screenshots
 

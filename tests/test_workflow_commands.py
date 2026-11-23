@@ -82,6 +82,13 @@ class WorkflowCommands(unittest.TestCase):
         self.assertEqual(arguments, raw)
         self.assertNotIn('checkout', injected)
         self.assertNotIn('../shared/RESEARCH-PLAN.md', prompt)
+        for raw in ('status all', 'status all --json'):
+            before = len(self.ctx.messages)
+            with patch('subprocess.run') as run:
+                self.ctx.commands['orbi'](raw)
+                run.assert_not_called()
+            self.assertEqual(len(self.ctx.messages), before + 1)
+            self.assertEqual(self.ctx.messages[-1][0].split('User arguments:\n', 1)[1], raw)
 
     def test_update_kit_aliases_preserve_existing_owners(self):
         self.skill('update-kit')

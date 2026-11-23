@@ -18,8 +18,8 @@ Display the following Kit-specific reference, not the upstream help card.
 | --- | --- |
 | `ponytail [lite|full|ultra|off]` | Report/set the conversation's Kit preference; default full. |
 | `ponytail-review` | Read-only review of a diff and connected code. |
-| `ponytail-audit` | Read-only audit of the requested repository/folder. |
-| `ponytail-debt` | Report shortcut comments and missing revisit triggers. |
+| `ponytail-audit` | [Audit and publish warranted issues](../ponytail-audit/SKILL.md); explicit report-only writes nothing. |
+| `ponytail-debt` | Publish issues for triggered shortcuts through the [Debt workflow](../ponytail-debt/SKILL.md); explicit no-write reports inline. |
 | `ponytail-gain` | Show attributed upstream benchmark results, not local savings. |
 | `ponytail-help` | This reference; no mode or file changes. |
 

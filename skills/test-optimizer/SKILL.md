@@ -6,10 +6,11 @@ license: MIT
 
 # Test Optimizer
 
-Actively reduce executed test cases, test code and maintenance/runtime cost.
-Delete tests that add no meaningful protection. Do not settle for reorganizing a
-bloated suite or moving the same executions into a table. Keep the smallest set
-that detects distinct, supported regressions, not a target count or coverage score.
+Find justified reductions in executed test cases, test code and maintenance/runtime
+cost, then publish the work for Orbi. Prioritize tests that add no meaningful
+protection, not cosmetic reorganization or moving the same executions into a table.
+Keep the smallest set that detects distinct, supported regressions, not a target
+count or coverage score.
 
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) and
 [common contract](../shared/COMMON-CONTRACT.md).
@@ -17,16 +18,20 @@ Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for 
 Reuse the existing
 [test-suite optimization protocol](../engineering/local/test-suite-optimization/PROTOCOL.md)
 for evidence, validation, quarantine and review; do not create a competing method
-or backlog. Load its relevant sections once.
+or backlog. Load its relevant sections once. The routing rules below take precedence
+over the protocol's audit/apply defaults.
 
 ## Scope and mode
 
-- Bare invocation audits the named/current repository; it changes no tests.
-- Explicit `apply`, a request to reduce/optimize the suite, or existing implementation
-  authority permits one supported batch without another approval ceremony.
-- Read-only/questions-only/no-write wins over apply: change nothing, including
-  reports or task records. Otherwise reuse the existing task/plan owner through
-  supported GitHub issue tools; unavailable tooling is not permission to hand-edit legacy records.
+- An ordinary invocation without a publication directive analyzes the named/current
+  repository and publishes justified outcomes in the same invocation through the
+  [single-invocation specialist handoff](../shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff).
+  No default test edits: this route changes no tests or product sources.
+- Explicit `report only`, `read-only`, questions-only, `no-write` or `dry-run`
+  wins over apply: return findings inline and write nothing.
+- Only an explicitly requested and authorized local fix/apply mode uses
+  [Authorized local apply](#authorized-local-apply) instead of default publication.
+  A request to optimize an area alone is not local implementation authority.
 - Preserve ownership, required gates and user limits. Explicit stop, time, token,
   spend and batch limits override conflicting continuation advice in references.
   No automatic commits, push, live suites, dependencies or CI-policy changes.
@@ -44,7 +49,7 @@ or backlog. Load its relevant sections once.
    source before removing a detector. For stateful candidates, use the
    [state-machine analysis](../state-machine/PROTOCOL.md) to compare protected
    transitions, sequences and interleavings before declaring detectors equivalent.
-3. **Remove before polishing:** prioritize evidence-backed deletion of redundant,
+3. **Prioritize removal proposals:** prioritize evidence-backed deletion of redundant,
    vacuous and obsolete tests. Prune equivalent inputs to useful representatives,
    retaining distinct boundaries. Then shrink fixtures and share immutable setup.
    Labeled tables may reduce code, but do not count unchanged cases as pruning.
@@ -54,11 +59,24 @@ or backlog. Load its relevant sections once.
    obligation, or evidence that the test protects no owned behavior or invariant.
    Do not invent a replacement for a test that had no meaningful detector.
    Unproven removal candidates remain intact.
-5. **Apply and verify:** change one coherent batch within scope. Preserve product
-   behavior and every distinct required oracle; do not weaken assertions, skip cases
-   or lower thresholds to get green. Run affected checks and required acceptance
-   gates, inspect the diff and obtain required independent review. A gate delegated
-   to the coordinator remains pending, not passed.
+5. **Publish and stop:** use the linked handoff to reconcile existing work, preview
+   the supported batch in chat without waiting and publish it. Carry the
+   detector/oracle mapping or retired/unowned evidence into each issue, with exact
+   test/fixture IDs, source evidence and a verification command. Keep uncertain
+   candidates intact with the missing evidence and resume condition. Use the shared
+   publication receipt for verified links, held findings and partial/failed writes,
+   or explain why no change is warranted. Do not implement the findings locally.
+   Report-only returns the same analysis inline without publication.
+
+## Authorized local apply
+
+Reuse the existing implementation owner and authorization for one coherent supported
+batch. Preserve product behavior and every distinct required oracle; do not weaken
+assertions, skip cases or lower thresholds to get green. Run affected checks and
+required acceptance gates, inspect the diff and obtain required independent review.
+Preserve ownership, review, PR and human-only gates. A gate delegated to the
+coordinator remains pending, not passed. No automatic commit or push. This route
+reports actual changes and checks, not a new publication batch.
 
 ## High-value reduction targets
 
@@ -111,7 +129,9 @@ Report:
 - scope/mode and keep/consolidate/remove/investigate decisions;
 - removed IDs mapped to retained oracles, retired obligations or evidence of no
   owned contract/invariant;
-- before → after test-code lines, declared tests and **executed cases separately**;
+- verified issue links and held/covered dispositions for default publication;
+- proposed reductions versus actual local changes; for apply, before → after
+  test-code lines, declared tests and **executed cases separately**;
 - commands, outcomes, review, remaining risk and pending gates;
 - comparable measured runtime, or **not measured**; stop reason and next action.
 
@@ -126,4 +146,4 @@ from a focused green run.
   [the engineering reference](../engineering/REFERENCE.md).
 - Not dead-code removal; use `/unused-code`.
 
-**Done when:** supported removals are applied with an oracle mapping and the affected checks pass, or a read-only report is delivered.
+**Done when:** justified outcomes map to verified issues or explicit held/unsaved dispositions, no change is warranted, or a no-write report is delivered; authorized apply instead requires justified reductions and passing affected checks.

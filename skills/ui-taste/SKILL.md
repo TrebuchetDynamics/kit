@@ -20,6 +20,18 @@ differ. Its `reference/` playbooks and `references/` policy resolve inside
 `upstream/`; load only the ones the request needs.
 Adapter-local references linked below resolve relative to this SKILL.md.
 
+## Modes
+
+- **Default findings.** A bare invocation, audit or critique uses the shared
+  [UI findings handoff](../shared/UI-FINDINGS.md): analyze and publish eligible
+  outcomes, then stop, rather than starting implementation or ending at a critique.
+- **Requested work.** An explicit design/edit request follows the selected playbook
+  and existing ownership, review and delivery gates. Continue accepted screenshot
+  feedback below instead of substituting issue publication or asking again.
+- **Restricted work.** Report-only/read-only/dry-run/no-write means inline findings
+  with no writes. The shared handoff keeps no-dispatch and live-owner restrictions;
+  the unattended rule below still applies.
+
 ## Toolset rules
 
 - **One design skill per task.** Use the design skill the user names. A UI request
@@ -27,8 +39,9 @@ Adapter-local references linked below resolve relative to this SKILL.md.
   choice for its own commands (`/impeccable <command>`, its `init`, hooks, doctor
   and pin tooling); do not load both for the same task.
 - **Scheduled work is read-only by default.** Scheduled, cron or unattended
-  runs audit only unless their accepted task scope authorizes UI edits; use the
-  protocol's audit playbook and report findings.
+  runs audit only unless their accepted task scope authorizes UI edits or issue
+  publication; use the protocol's audit playbook and report findings inline when
+  writes are not authorized.
 - **Paid Uizze tools stay optional.** Call `find_ui_references` or
   `find_ui_materials` only when the host already exposes them in this session.
   Toolset and this skill never configure an MCP server, sign up for an account, ask
@@ -98,7 +111,8 @@ Adapter-local references linked below resolve relative to this SKILL.md.
   passes from broader retry-enabled gates. Disclose flaky safety-action tests and
   skipped coverage even when the command exits successfully; a clean focused run
   does not erase broader failures or establish reproducibility.
-- **Delivery stays separate.** Documentation changes follow
+- **Delivery stays separate.** The default findings route uses the shared issue
+  handoff above. UI edits and their delivery stay separate. Documentation changes follow
   [Docs Sync](../docs-sync/SKILL.md). Commit, push or publish only through the
   repository's normal delivery workflow (for example
   [Git Commit Push](../git-commit-push/SKILL.md)) and its existing authority.
@@ -147,4 +161,7 @@ and any limitation that affected the result.
 - Not whole-product design; use `/impeccable`.
 - Not README art; use `/beautify-github-readme`.
 
-**Done when:** the chosen playbook's UI change is applied or reported with its checks and screenshots when available.
+**Done when:** default findings have verified issue links or covered, held or
+unsaved dispositions (or no warranted changes); no-write findings are inline with
+nothing saved; explicit work has the chosen playbook's checks and screenshots
+when available.

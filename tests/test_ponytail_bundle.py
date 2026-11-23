@@ -90,6 +90,137 @@ class PonytailBundleTests(unittest.TestCase):
         self.assertIn('disable-model-invocation: true', text)
         self.assertIn('read-only/no-write/no-push restrictions', text)
 
+    def test_debt_requires_evidence_of_a_reached_revisit_trigger(self):
+        # Instruction contracts from #177, not a model or publication simulation.
+        text = ' '.join((ROOT / 'skills/ponytail-debt/SKILL.md').read_text().split())
+        for contract in (
+            'shortcut:', 'ponytail:', 'existing ledger as context',
+            'source, supported configuration or measured evidence',
+            'marker location and text, ceiling, stated revisit trigger',
+            'breached assumption, bounded remedy and verification check',
+            'Do not file markers simply because they exist',
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, text)
+        # Positive: supported capacity exceeds the documented assumption.
+        self.assertIn('100 entries', text)
+        self.assertIn('supported configuration now permits 200', text)
+        self.assertIn('one issue', text)
+
+    def test_debt_unreached_missing_and_unsupported_triggers_create_no_issue(self):
+        text = ' '.join((ROOT / 'skills/ponytail-debt/SKILL.md').read_text().split())
+        for contract in (
+            'still permits only 100 entries: trigger unreached, no issue',
+            'no stated revisit trigger: tag `no-trigger`, no issue',
+            'Missing or conflicting evidence: hold that finding',
+            'exact missing input and resume condition',
+            'continue independent eligible findings',
+            'concrete error and safe resume action',
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, text)
+
+    def test_debt_uses_the_single_invocation_handoff_and_keeps_scan_safeguards(self):
+        text = ' '.join((ROOT / 'skills/ponytail-debt/SKILL.md').read_text().split())
+        self.assertIn('../shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff', text)
+        for contract in (
+            'bare invocation analyzes and publishes eligible outcomes',
+            'without selection, confirmation or a second command',
+            'read-only/dry-run/no-write', 'no-dispatch', 'Stop after publication',
+            'Git exit 1 means no matches', 'literal data', 'Inspect hits before counting',
+            'tracked-but-ignored files', 'No-marker output',
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, text)
+        handoff = ' '.join((ROOT / 'skills/shared/PLAN-HANDOFF.md').read_text().split())
+        for contract in ('open and closed issues', 'linked PRs and ownership',
+                         'Group findings that share a fix and acceptance check',
+                         'native `blockedBy`', 'entire batch', '**final publication phase**'):
+            with self.subTest(handoff=contract):
+                self.assertIn(contract, handoff)
+        method = (ROOT / 'skills/shared/PONYTAIL.md').read_text()
+        self.assertNotIn('Standalone review/audit/debt commands report only', method)
+
+    def test_portable_debt_routes_to_canonical_trigger_analysis(self):
+        adapter = ROOT / 'adapters/skills/ponytail-debt/SKILL.md'
+        text = adapter.read_text()
+        canonical = ROOT / 'skills/ponytail-debt/SKILL.md'
+        links = re.findall(r'\[[^\]]*\]\(([^)]+)\)', text)
+        self.assertIn(canonical, {(adapter.parent / link).resolve() for link in links})
+        self.assertIn('trigger analysis and issue handoff', text)
+        self.assertIn('disable-model-invocation: true', text)
+        self.assertIn('read-only/no-write/no-push restrictions', text)
+        policy = yaml.safe_load((adapter.parent / 'agents/openai.yaml').read_text())
+        self.assertFalse(policy['policy']['allow_implicit_invocation'])
+        help_text = (ROOT / 'skills/ponytail-help/SKILL.md').read_text()
+        self.assertIn('Publish issues for triggered shortcuts', help_text)
+
+    def test_audit_single_invocation_modes_and_finding_dispositions(self):
+        # Source contracts, not simulated model choices or live issue publication.
+        text = ' '.join((ROOT / 'skills/ponytail-audit/SKILL.md').read_text().split())
+        cases = {
+            'bare invocation': (
+                'single-invocation specialist handoff',
+                '../shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff',
+                'ordinary `/ponytail-audit` invocation analyzes the requested scope and publishes',
+                'without selection, confirmation or a planner invocation',
+                'Do not apply the upstream report-only route or 20-finding cap to publication',
+            ),
+            'actionable evidence': (
+                'severity, source/reproducer evidence, expected load where relevant and next action',
+                'an observable check with its expected result',
+                'A badge, unread area or preference alone is not actionable',
+            ),
+            'mixed actionable and held': (
+                'all supported, buildable, uncovered outcomes',
+                'Group findings that share a fix and acceptance check',
+                'Hold only uncertain findings with the reason and resume condition',
+                'continue independent qualifying work',
+                'open and closed issues, linked PRs and actual ownership',
+                'covered, completed, owned and unsupported findings create no duplicate issue',
+            ),
+            'zero qualifying findings': (
+                'Zero qualifying findings means zero new issues',
+            ),
+            'explicit report-only': (
+                'Explicit report-only, read-only, no-write or dry-run means no writes',
+                'Return findings inline without GitHub, label, document or scratch writes',
+            ),
+            'authorized fix/apply': (
+                'explicitly requested and authorized local fix/apply mode',
+                'separate from default publication',
+                'ownership, review, PR and human-only gates',
+                'Default publication does not implement findings locally or activate services',
+            ),
+            'publication and failure receipt': (
+                'preview in chat without waiting',
+                'native `blockedBy` dependencies and `ai-ready` last',
+                'report verified issue links and stop',
+                'Preserve explicit no-dispatch, pauses and live ownership',
+                'concrete error, missing input and safe resume action',
+                'unknown coverage, not an empty backlog',
+                'UNSAVED/UNKNOWN and partial receipts',
+            ),
+        }
+        for scenario, contracts in cases.items():
+            for contract in contracts:
+                with self.subTest(scenario=scenario, contract=contract):
+                    self.assertIn(contract, text)
+        self.assertNotIn('Report only: no fixes, new backlog', text)
+
+    def test_portable_audit_reaches_canonical_publication_and_mode_routing(self):
+        adapter = ROOT / 'adapters/skills/ponytail-audit/SKILL.md'
+        text = adapter.read_text()
+        links = re.findall(r'\[[^\]]*\]\(([^)]+)\)', text)
+        self.assertIn(ROOT / 'skills/ponytail-audit/SKILL.md',
+                      {(adapter.parent / link).resolve() for link in links})
+        self.assertIn('default publication and explicit mode routing', text)
+        self.assertIn('disable-model-invocation: true', text)
+        self.assertIn('read-only/no-write/no-push restrictions', text)
+        shared = ' '.join(METHOD.read_text().split())
+        self.assertNotIn('Standalone review/audit/debt commands report only', shared)
+        self.assertIn('../ponytail-audit/SKILL.md', shared)
+
     def test_hermes_setup_no_longer_requires_an_external_ponytail_plugin(self):
         manifest = yaml.safe_load((ROOT / 'plugin.yaml').read_text())
         defaults = json.loads((ROOT / 'plugins/defaults.json').read_text())
@@ -199,6 +330,11 @@ assert.ok(read > 0 && read <= 65536, 'must read at most 64 KiB');
             self.assertEqual(installer.install(ROOT / 'skills', [('fixture', home)],
                                               skills=selected, report=lambda _: None), 0)
             self.assertEqual((home / 'skills/shared/PONYTAIL.md').read_bytes(), METHOD.read_bytes())
+            debt = home / 'skills/ponytail-debt/SKILL.md'
+            self.assertEqual(debt.read_bytes(), (ROOT / 'skills/ponytail-debt/SKILL.md').read_bytes())
+            self.assertIn('supported configuration now permits 200', debt.read_text())
+            handoff = debt.parent / '../shared/PLAN-HANDOFF.md'
+            self.assertIn('## Single-invocation specialist handoff', handoff.read_text())
             project = home / 'project with spaces'
             project.mkdir()
             subprocess.run(['git', 'init', '-q', str(project)], check=True)

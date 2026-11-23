@@ -1,6 +1,6 @@
 # Orbi API and host inventory
 
-**Use Kit `/orbi status --json` to inspect one repository, the scheduler to list runners on a host, and GitHub to establish what was delivered.** These answer different questions. In particular, bare **`/orbi`** in Kit means *status*; bare **`orbi`** in a shell runs a **real delivery tick**. Use `orbi --version` to identify a binary without running a tick.
+**Use Kit `/orbi status --json` to inspect one repository, `/orbi status all --json` for observable local host services, and GitHub to establish what was delivered.** These answer different questions. In particular, bare **`/orbi`** in Kit means *status*; bare **`orbi`** in a shell runs a **real delivery tick**. Use `orbi --version` to identify a binary without running a tick.
 
 This reference covers Kit’s [lifecycle client](skills/orbi/SKILL.md) and the self-hosted engine at [Orbi v0.7.56](https://github.com/orbi-build/orbi/tree/v0.7.56). Check the deployed version before relying on a flag or format. The engine has no documented HTTP control plane to enumerate deployments, enqueue issues or restart workers. Its [public interface inventory](https://github.com/orbi-build/orbi/blob/v0.7.56/docs/public-contracts.mdx) defines what integrators can rely on; the optional exporter is monitoring, not that API. **Kit remains paused and live-unqualified** under its [cutover policy](docs/github-native.md#cutover). Nothing below authorizes activation.
 
@@ -15,6 +15,46 @@ python3 -B skills/orbi/scripts/orbi_control.py status --repo-dir /path/to/canoni
 
 `--repo-dir` selects the delivery repository; `--config` selects an existing native deployment config. Distinguish `absent` (no deployment found) from `unavailable` (evidence could not be read). Configured slots, enabled timers, active timers and running services are separate observations. None proves a model answered or a PR merged.
 
+### Deployment and per-slot status receipt
+
+Human text leads with the repository, deployed package version + revision and
+metadata provenance, then scheduler capacity/activity and slots. JSON preserves
+legacy `deployment`, `scheduler`, `queue` and `doctor` fields and adds:
+
+- `deployment.engine`: verified deployment `pyproject.toml` version, checked against
+  the pinned Git revision's manifest and clean tracked package source. Unknown or
+  mismatching metadata stays unknown; `selected_source` identifies pin/source
+  evidence separately. `bootstrap_cli` is the bootstrap executable's unscoped
+  `--version`, explicitly unverified as deployment proof, with match/mismatch/unknown
+  comparison. Neither CLI version nor source metadata proves live delivery.
+- `activity.slots`: one record per observed owned scheduler slot (including observed
+  surplus instances). `running` has `issue.number`, `issue.url`, title when available,
+  `run_id` and observed phase/last activity. Other states are `idle`, `starting`,
+  `draining`, `active/issue unknown` or `unknown`. Never substitute the ready head
+  or newest retained run for missing identity.
+- `activity.working`: verified working count, or unavailable/null if observations
+  are incomplete; scheduler inventory still distinguishes configured slots,
+  enabled/active timers and running services. `activity.ticks` carries allowlisted
+  last/next timer timestamps when readable; Linux slot health retains failed states.
+
+Linux attribution binds the owned service's current `InvocationID`, `MainPID` and
+working directory to a `run_start` scene from that same invocation/PID. The journal
+reads select only required fields and recheck the binding. Each read caps at 100
+entries: lifecycle scenes are filtered before the cap, separately from the recent
+activity tail, so command/heartbeat volume cannot evict a retained start binding.
+Missing, stale or conflicting scenes mean active/issue unknown.
+No raw journal, command/action, session, environment or auth data is returned.
+macOS reads at most five owned LaunchAgents with `launchctl print`; a running job
+is issue unknown because retained log scenes lack a current invocation binding.
+Launchd next-fire time and missing job evidence remain unavailable, not zero.
+
+The reusable `local_deployment_summary` contains only local deployment metadata.
+Repository queue/title enrichment and doctor probes stay outside it. The existing
+bounded GitHub read supplies titles **after** local liveness/identity is established;
+GitHub progress/PR/label records alone never establish a running issue. Partial and
+unavailable queue/pending evidence is preserved. Status never fetches, polls, runs a
+tick, activates/repairs anything or updates a stale installed helper.
+
 | Kit action | Effect |
 |---|---|
 | `help`, `status` | Read only. Help works on all platforms; status on Linux and macOS. |
@@ -24,6 +64,50 @@ python3 -B skills/orbi/scripts/orbi_control.py status --repo-dir /path/to/canoni
 | `update` | Plain `update` requires a stopped, drained deployment. Refreshing installed units can briefly activate timers before Kit restores inactivity. `update --stop` pauses owned timers, defers while workers finish, and skips the activating unit refresh. |
 
 Kit mutations are Linux-only; `--dry-run` previews them. On an error inspect the JSON `error.code`, `error.fix` and `error.mutated`: nonzero exit does not mean nothing changed. Use the helper for lifecycle changes, not hand-written unit commands.
+
+## Inspect observable local host services with Kit
+
+From any working directory, invoke `/orbi status all` or `/orbi status all --json`.
+Portable and native command routes preserve the literal arguments in one helper
+call. Scripts can use the absolute loaded helper path:
+
+```sh
+python3 -B /path/to/kit/skills/orbi/scripts/orbi_control.py status all --json
+```
+
+This branches before repository identity: no global Git checkout or GitHub auth
+is required. Do not inject `--repo-dir` or `--config`. Explicit repo/config,
+dry-run, stop and bootstrap/mutation selectors conflict and are rejected before
+probes with `invalid_host_selection`; retry without those selectors.
+
+Linux inventories the accessible current-user and system managers with bulk
+`list-units` and `list-unit-files` JSON queries for services and timers, then
+bounded allowlisted `show`/definition reads. It includes failed/inactive services,
+unloaded installed definitions, orphan instances, templates, nonrunner Orbi
+services and discoverable deployment configs. Full manager + service identity
+separates deployments sharing `@1`; there is no slots-1–5 restriction or Kit-only
+name filter. Timer targets pair with full service identities; timers/templates
+are not workers. Repo ownership requires resolved config evidence, never a basename.
+macOS inventories observable GUI/user/system launchd domains and installed
+LaunchAgents/Daemons separately: an installed/unloaded plist is not a running job.
+
+JSON returns `scope: host`, `rows`, `totals` and `coverage`. Each row preserves
+manager, unit/timer, kind, loaded/installed evidence, scheduler/worker state,
+resolved config binding, repo, deployed engine version/revision or explicit
+unknown, current issue when locally bound and next trigger when available.
+Config-only rows are prepared-only. Engine metadata is shared per resolved config;
+no bootstrap CLI, provider/env/session reads, per-deployment queue/doctor or
+network calls. Linux live issue attribution reuses the invocation-bound evidence
+above; macOS live issue identity and next trigger remain unknown.
+
+Successful empty listings mean zero **observed** workers. Failed/denied managers,
+unreadable configs, conflicting bindings and scan limits yield partial coverage
+without discarding healthy rows. Totals describe observed loaded worker services
+in accessible managers, not all users, namespaces, containers or a remote fleet.
+No sudo, other-user impersonation, container entry or scheduler actions. See the
+[lifecycle inventory contract](skills/orbi/references/lifecycle.md#host-inventory)
+for discovery roots, limits and read-access repairs. Native upstream `orbi status`
+does not implement Kit's literal `all` mode.
 
 ## Native Orbi CLI
 

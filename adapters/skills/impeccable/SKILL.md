@@ -12,4 +12,4 @@ Use the [ASD-STE100 and project language rules](../../../skills/shared/COMMUNICA
 
 Read the [host contract](../COMMON.md).
 
-Read the bundled [Impeccable guidance](../../../skills/impeccable/SKILL.md) and only the relevant supporting material. Use native editing/browser tools and existing project conventions. Do not claim rendered validation without actually observing the result.
+Read the bundled [Impeccable guidance](../../../skills/impeccable/SKILL.md) and only the relevant supporting material; its canonical modes take precedence over upstream routing. Use native editing/browser tools and existing project conventions. Do not claim rendered validation without actually observing the result.

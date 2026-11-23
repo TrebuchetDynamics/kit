@@ -9,7 +9,7 @@ license: MIT
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) and
 [shared communication rules](../shared/COMMUNICATION.md) within this workflow's
 scope. The [GitHub-native contract](../../docs/github-native.md) owns delivery
-gates. This skill is a lifecycle client for one repository, not an executor.
+gates. This skill is a lifecycle client with read-only local host inventory, not an executor.
 
 ## Intent and state: fast path
 
@@ -52,6 +52,7 @@ concrete unmet need, not a fixed sequence of model turns.
 
    | Public skill arguments | Helper arguments |
    | --- | --- |
+   | `status all [--json]` | `status all [--json]` |
    | `setup` | `start` |
    | `setup --dry-run` | `start --dry-run` |
    | `setup --prepare-only` | `setup` |
@@ -68,7 +69,12 @@ concrete unmet need, not a fixed sequence of model turns.
 
    Bare `/orbi` means `status`. **Help first.** For help or command inventory, run
    the helper's `help` and return its observed output; it needs no repository,
-   config, environment or scheduler reads. For lifecycle actions, use the requested
+   config, environment or scheduler reads. **Host inventory:** preserve literal
+   `status all` in one helper invocation, from any working directory. Do not inject
+   `--repo-dir` or `--config`, resolve a checkout or run GitHub probes. Only `--json`
+   may accompany `all`; conflicting selectors are refused before probes. Relay
+   partial manager/config coverage and observed totals, never an absolute host count.
+   For repository lifecycle actions, use the requested
    repo/config or known current checkout. The helper resolves the canonical
    worktree and verifies GitHub origin, deployment discovery and unit ownership;
    do not duplicate those reads in host tools. If target or intent is genuinely
@@ -97,7 +103,8 @@ concrete unmet need, not a fixed sequence of model turns.
 
    | Action | Single-call result and guard |
    | --- | --- |
-   | bare/status | Read-only state/source/harness/scheduler/queue; absent is unconfigured, unavailable is not empty. |
+   | bare/status | Read-only repo/deployed release + revision/scheduler/per-slot activity, then queue; absent is unconfigured, unavailable is not empty. |
+   | status all | Read-only accessible local managers, loaded/installed services and timers, templates, nonrunner services and config-only deployments. No repository binding, queue/doctor fan-out, provider/env/session reads or scheduler actions. See [host inventory](references/lifecycle.md#host-inventory). |
    | help | Authoritative command reference, no deployment binding; accepts and ignores lifecycle inputs. |
    | setup --prepare-only | Helper `setup`: non-activating preparation at the supported pin; `prepared`, `activated: false` is not proof of scheduler inactivity. Preview only when requested. |
    | setup (default) / start | Helper `start`: existing valid target skips preparation; genuinely absent target with no explicit config prepares internally then activates. No separate setup call. Partial/foreign/missing-explicit targets require deliberate repair. |
@@ -128,6 +135,31 @@ concrete unmet need, not a fixed sequence of model turns.
    On failure, stop and return the safe error and repair action. No blind retry,
    implicit repair, compensating timer changes or worker stops. An unchanged
    timeout is not retryable; killed processes have no receipt.
+
+## Deployed engine and current work
+
+Status leads with the repository, deployment-bound package version/revision and
+provenance, scheduler state and each observed slot. Relay `deployment.engine`
+separately from selected source/pin and `bootstrap_cli`: a matching CLI version
+is unverified runtime evidence; a mismatch never replaces the deployed version.
+Missing, modified or unpinned package/revision metadata leaves the version unknown.
+
+`activity.slots` distinguishes running (issue number/title/link, run ID and observed
+phase/last activity), verified idle, starting, draining and unknown identity.
+On Linux, attribution requires an owned service's current InvocationID/MainPID,
+deployment working directory and that invocation's journal `run_start`; a bounded
+read and binding recheck reject retained or conflicting attempts. Missing bindings
+mean **active/issue unknown**, never idle or the newest retained issue. On macOS,
+owned launchd job state is observed, but retained logs cannot bind a current run:
+an active job remains issue unknown. Titles come from the existing bounded queue
+read only after identity is verified; a missing title stays unknown.
+
+Configured slots, enabled/active timers, running services and verified working
+issues are separate observations. Preserve unavailable counts, scan limits,
+health and last/next tick evidence. Ready order, labels, progress and PR records
+never prove pickup or liveness. Status reads once: no tick, fetch, poll, repair,
+activation, session/env dump or implicit installed-helper update. Version/source,
+harness and doctor evidence do not qualify live delivery.
 
 ## Pending queue evidence
 

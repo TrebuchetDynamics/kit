@@ -101,7 +101,13 @@ Existing external Ponytail installations are left alone; check command collision
 The suite also includes `ponytail`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`
 and `ponytail-help`; Pi command aliases use the same hyphenated names.
 `ponytail lite|full|ultra|off` changes the conversation's Kit preference only;
-no argument reports it (default `full`). The other commands report without edits.
+no argument reports it (default `full`).
+[`ponytail-audit`](../skills/ponytail-audit/SKILL.md) publishes warranted issues by
+default; explicit report-only/no-write returns inline findings without writes.
+[`ponytail-debt`](../skills/ponytail-debt/SKILL.md) checks revisit triggers and
+publishes eligible issues, then stops. Explicit read-only/dry-run/no-write
+reports inline without writes; no-dispatch holds readiness.
+The remaining commands report without edits.
 Gain displays attributed upstream benchmarks, never inferred local savings.
 See [provenance and refresh](dependencies.md#bundled-ponytail) and
 [the bundled help](../skills/ponytail-help/SKILL.md).
