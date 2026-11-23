@@ -29,9 +29,18 @@ See [Unblock](../skills/unblock/SKILL.md) for the full workflow.
 
 All workflows apply the [shared Ponytail method](../skills/shared/PONYTAIL.md)
 within their existing authority. `/ponytail [lite|full|ultra|off]` reports or changes
-only the conversation's Kit preference. `/ponytail-review`, `/ponytail-audit`,
-`/ponytail-debt`, `/ponytail-gain` and `/ponytail-help` are one-shot reports;
-they do not implement, publish, start an extra reviewer or change persistent modes.
+only the conversation's Kit preference. `/ponytail-review`, `/ponytail-debt`,
+`/ponytail-gain` and `/ponytail-help` are one-shot reports; they do not implement,
+publish, start an extra reviewer or change persistent modes.
+
+An ordinary [`/ponytail-audit AREA`](../skills/ponytail-audit/SKILL.md) analyzes the
+requested scope and publishes warranted issues through Plan Handoff in the same
+invocation, without selection or confirmation. It reports verified links and held
+reasons, then stops; zero qualifying findings means zero new issues. Explicit
+report-only/read-only/no-write/dry-run returns inline findings without writes.
+No-dispatch, ownership and human gates remain binding. Default publication does not
+implement findings or activate services; explicitly authorized local fix/apply
+modes remain separate.
 See [portable host invocations](cross-host.md#bundled-ponytail-on-every-host).
 Existing external command owners keep their handlers; the bundled skills remain
 available as `kit:ponytail` and `kit:ponytail-review` (and the other names).
