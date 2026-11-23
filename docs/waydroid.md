@@ -74,7 +74,10 @@ invalid image header resets only its timestamp. A newer upstream image may be
 selected during incomplete initialization. Incomplete state alongside existing
 Android data or overlay files refuses reinitialization (empty initial overlay
 scaffolding can be retried): restore known-good images/config
-from backup rather than force-initializing or deleting overlays. Do not use
+from backup rather than force-initializing or deleting overlays. Unreadable overlay
+subdirectories also refuse setup; they are not assumed empty. Initialization is
+rechecked after acquiring the setup lock so a just-completed peer run is not
+reinitialized from an earlier snapshot. Do not use
 `waydroid init --force` as a routine retry. Keep `~/.android/adbkey*` unchanged.
 
 Owned artifacts:
@@ -144,6 +147,7 @@ Failure diagnostics are distinct, and return nonzero without a ready report:
 | `ADB authorization pending` | View and approve the Android prompt for the current key; retry status. |
 | `ADB not connected` | Check Android TCP 5555 and local firewall, without opening ADB externally. |
 | `Android boot timeout` | Inspect journals/rendering and retry with `--wait 300`. Never wipe data to conceal failure. |
+| `Android properties unavailable` | Check `adb devices` and `adb shell getprop`, then retry status after restoring the connection. |
 
 Each external observation is bounded; the wait deadline is checked between calls.
 For service state/logs (unprivileged journal access depends on distro policy):

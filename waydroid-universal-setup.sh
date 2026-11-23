@@ -66,8 +66,9 @@ verify_device() {
                 device)
                     reason=boot
                     if [[ $(timeout 10 adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r') == 1 ]]; then
-                        version=$(timeout 10 adb -s "$serial" shell getprop ro.build.version.release | tr -d '\r')
-                        abi=$(timeout 10 adb -s "$serial" shell getprop ro.product.cpu.abi | tr -d '\r')
+                        version=$(timeout 10 adb -s "$serial" shell getprop ro.build.version.release | tr -d '\r') &&
+                        abi=$(timeout 10 adb -s "$serial" shell getprop ro.product.cpu.abi | tr -d '\r') ||
+                            fail 'Android properties unavailable; check adb devices and adb shell getprop, then retry --status.'
                         [[ -n $version && -n $abi ]] || fail 'Android properties empty; inspect adb shell getprop and retry --status.'
                         printf 'ADB serial: %s\nAndroid: %s\nABI: %s\n' "$serial" "$version" "$abi"
                         return
@@ -116,7 +117,7 @@ run_session() {
 # Do not reinitialize a damaged existing device: upstream init can remove overlays.
 image_state() {
     python3 - "$STATE" "${XDG_DATA_HOME:-$HOME/.local/share}/waydroid/data" <<'PY'
-import configparser, pathlib, sys
+import configparser, os, pathlib, sys
 p = pathlib.Path(sys.argv[1])
 user_data = pathlib.Path(sys.argv[2])
 cfg = configparser.ConfigParser()
@@ -136,11 +137,21 @@ try:
             ok = False
         valid = valid and ok
     complete = valid and (p / 'rootfs').is_dir() and (p / 'lxc/waydroid/config').is_file() and (p / 'waydroid_base.prop').is_file()
-    overlay = p / 'overlay_rw'
+    def overlay_has_data(path):
+        # rglob silently skips permission-denied subtrees: those are NOT empty.
+        # Never follow symlinks, and fail closed if we cannot inspect a directory.
+        try:
+            entries = os.scandir(path)
+        except FileNotFoundError:
+            return False
+        with entries:
+            for entry in entries:
+                if not entry.is_dir(follow_symlinks=False) or overlay_has_data(entry.path):
+                    return True
+        return False
     # Empty scaffolding can remain when init stops before LXC config generation.
-    overlay_data = overlay.exists() and any(not x.is_dir() or x.is_symlink() for x in overlay.rglob('*'))
     if complete: print('complete')
-    elif (p / 'data').exists() or user_data.exists() or overlay_data: print('damaged')
+    elif (p / 'data').exists() or user_data.exists() or overlay_has_data(p / 'overlay_rw'): print('damaged')
     else: print('incomplete')
 except (OSError, configparser.Error, ValueError) as e:
     print('Cannot inspect Waydroid initialization: ' + str(e), file=sys.stderr)
@@ -151,6 +162,8 @@ PY
 PACKAGES=()
 MANAGER=''
 preflight() {
+    PACKAGES=()
+    MANAGER=''
     [[ $(uname -s) == Linux ]] || fail 'Native Waydroid requires Linux; no VM/emulator fallback.'
     [[ $(id -u) != 0 ]] || fail 'Run as the testing user, not root; setup requests sudo when needed.'
     local tool
@@ -229,6 +242,9 @@ setup() {
     mkdir -p "$HOME/.local/share/kit-waydroid"
     exec 9>"$HOME/.local/share/kit-waydroid/setup.lock"
     flock -n 9 || fail 'Another setup is running for this user; wait for it to finish.'
+    # Admission is only a snapshot. A peer may finish between it and this lock;
+    # never force that newly initialized device through init using stale state.
+    preflight
     timeout 300 sudo -v || fail 'Operator sudo authorization required; no host setup performed.'
     # Refresh only the operator-approved timestamp during long image downloads.
     (trap 'kill "${sleeper:-}" 2>/dev/null || true; exit' TERM

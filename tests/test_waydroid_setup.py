@@ -28,6 +28,17 @@ elif name == 'sudo':
     if args == ['-v'] or args == ['-n', '-v']: sys.exit(0)
     if args[0] == '--': args = args[1:]
     os.execvp(args[0], args)
+elif name == 'flock' and mode == 'peer-completed':
+    # Another setup finishes after the read-only admission snapshot, before lock.
+    import subprocess
+    state = root / 'var/lib/waydroid'
+    state.mkdir(parents=True, exist_ok=True)
+    (state / 'waydroid.cfg').write_text('[properties]\nro.hardware.egl = swiftshader\n')
+    subprocess.run([str(root / 'bin/waydroid'), 'init'], check=True, timeout=5)
+    (state / 'data').mkdir()
+    (state / 'overlay_rw/system').mkdir(parents=True)
+    (state / 'overlay_rw/system/sentinel').write_text('keep overlay')
+    (root / 'calls').write_text('')
 elif name == 'waydroid':
     if args == ['--help']:
         print('init status session prop show-full-ui')
@@ -39,6 +50,9 @@ elif name == 'waydroid':
         for image in ['system', 'vendor']:
             p = state / 'images' / (image + '.img')
             if not p.exists(): p.write_bytes(b'\0' * 1080 + b'\x53\xef' + b'\0' * 1024)
+        # Upstream images.get removes existing writable overlays during init.
+        import shutil
+        shutil.rmtree(state / 'overlay_rw', ignore_errors=True)
         # Real init consumes the pre-init rendering config into base properties.
         cfg = (state / 'waydroid.cfg').read_text()
         assert 'ro.hardware.egl = swiftshader' in cfg
@@ -59,6 +73,7 @@ elif name == 'adb':
         print('List of devices attached\n192.0.2.8:5555\t' + state)
     elif 'getprop' in args:
         key = args[-1]
+        if mode == 'properties-failed' and key != 'sys.boot_completed': sys.exit(1)
         print({'sys.boot_completed': '0' if mode == 'boot-timeout' else '1', 'ro.build.version.release': '13', 'ro.product.cpu.abi': 'x86_64'}[key])
 elif name == 'weston':
     if '--help' in args:
@@ -184,6 +199,34 @@ class WaydroidSetupTests(unittest.TestCase):
         self.assert_ok(self.invoke())
         self.assertEqual(image.read_bytes(), before)
         self.assertNotIn('--force', self.calls())
+
+    def test_revalidate_initialization_after_acquiring_setup_lock(self):
+        flock = self.bin / 'flock'
+        flock.unlink()
+        flock.write_text(FAKE)
+        flock.chmod(0o755)
+        self.assert_ok(self.invoke(mode='peer-completed'))
+        self.assertNotIn('waydroid init ', self.calls())
+        self.assertEqual((self.state / 'overlay_rw/system/sentinel').read_text(), 'keep overlay')
+
+    @unittest.skipIf(os.geteuid() == 0, 'root can read mode-000 directories')
+    def test_unreadable_overlay_is_not_treated_as_empty_scaffolding(self):
+        private = self.state / 'overlay_rw/system/private'
+        private.mkdir(parents=True)
+        (private / 'sentinel').write_text('keep overlay')
+        private.chmod(0)
+        self.addCleanup(private.chmod, 0o700)
+        result = self.invoke('--check')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Cannot safely read existing initialization', result.stderr)
+        self.assertNotIn('sudo ', self.calls())
+
+    def test_property_query_failure_names_repair_without_ready_report(self):
+        result = self.invoke('--status', mode='properties-failed')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Android properties unavailable', result.stderr)
+        self.assertIn('--status', result.stderr)
+        self.assertNotIn('ADB serial:', result.stdout)
 
     def test_status_distinguishes_failure_states_and_delayed_dhcp(self):
         for mode, expected in [('no-ip', 'No container IP'), ('unauthorized', 'authorization pending'), ('boot-timeout', 'Android boot timeout')]:
