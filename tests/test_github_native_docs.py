@@ -90,6 +90,19 @@ class GithubNativeDocsTests(unittest.TestCase):
         self.assertNotIn("Do not allow bypassing", TEXT)
         self.assertNotRegex(protection, r"(?i)repair:\s*disable")
 
+    def test_branch_protection_is_not_a_kit_activation_prerequisite(self):
+        protection = compact(section(TEXT, 'Read protection diagnostics safely'))
+        for phrase in ('informational, not scheduling blockers',
+                       'HTTP 403', 'unknown, not absent',
+                       'repository access', 'ownership',
+                       'PR-only', 'paid GitHub plan', 'engine release',
+                       'Successful startup does not imply successful merge'):
+            self.assertIn(phrase, protection)
+        readme = compact(section((ROOT / 'README.md').read_text(), 'Using Orbi', level=3))
+        self.assertIn('Branch protection is not a Kit setup/start prerequisite', readme)
+        self.assertIn('informational, not scheduling blockers', readme)
+        self.assertIn('Existing protections, CI, review and merge requirements remain unchanged', readme)
+
     def test_human_review_gate_is_human_only_and_not_a_protection_substitute(self):
         gate = compact(section(TEXT, "Human acceptance is a separate gate"))
         for phrase in (

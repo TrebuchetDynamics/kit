@@ -28,8 +28,13 @@ not a waiver of deployment gates. Use `setup --prepare-only` to prepare without 
 
 Before an actual start (including default setup), separate **owner scheduling intent**
 from **deployment-specific gate evidence**. Use the [activation evidence guidance](references/lifecycle.md#activation-evidence)
-to report the precise blocker, including unprotected-main versus access-error
-observations. Evidence collection is read-only; a preview does not clear a pause.
+to report the precise blocker. Branch protection is not a Kit setup/start prerequisite:
+known unprotected branches and protection/rules HTTP 403 are informational, not scheduling blockers.
+A protection-specific 403 leaves details unknown; it does not prove absent rules or
+failed repository access. Do not require PR-only mode, special opt-in, a protection
+change, paid GitHub plan, engine release/proof or second approval on that basis.
+Authentication, repository access, ownership and all other applicable gates still apply.
+Evidence collection is read-only; a preview does not clear a pause.
 The [offline examples](references/lifecycle.md#offline-guidance-examples) show first-start
 and active-scheduler recovery without touching real hosts.
 
