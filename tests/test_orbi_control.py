@@ -3693,7 +3693,7 @@ class RunningStatusTests(unittest.TestCase):
                 'EnvironmentVariables': {'ORBI_CONFIG': str(self.h.deploy / 'orbi.toml')
                                          if index != 3 else '/foreign/orbi.toml', 'TOKEN': SECRET}}))
             rules.append({'tool': 'launchctl', 'argv_contains': ['print', label],
-                'stdout': 'state = waiting\n' if index == 1 else 'state = running\npid = 902\n'})
+                'stdout': 'state = not running\n' if index == 1 else 'state = running\npid = 902\n'})
         self.rules(*rules)
         before = snapshot(self.h.home)
         code, doc, err = self.h.run('status', platform='darwin')
@@ -3708,6 +3708,54 @@ class RunningStatusTests(unittest.TestCase):
         self.assertNotIn(SECRET, json.dumps(doc))
         self.assertEqual(snapshot(self.h.home), before)
 
+    def test_macos_torn_plist_keeps_partial_status(self):
+        folder = self.h.home / 'Library/LaunchAgents'
+        folder.mkdir(parents=True)
+        label = f'org.orbi.{helper.derive_unit_name(REPO)}.runner.1'
+        (folder / (label + '.plist')).write_text('<?xml version="1.0"?><plist><dict>')
+        self.rules()
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('status', platform='darwin')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['activity']['slots'][label]['state'], 'unknown')
+        self.assertEqual(doc['queue']['ready'], ['#43 Issue 43'])
+        self.assertIsNone(doc['activity']['working']['value'])
+        self.assertEqual(snapshot(self.h.home), before)
+
+    def test_long_running_issue_survives_noisy_journal_tail(self):
+        binding = self.binding(1, 42, '1234abcd')
+        entry = json.loads(binding[1]['stdout'])
+        heartbeat = {**entry, 'MESSAGE':
+            f'INFO [1234abcd] heartbeat issue={REPO}#42 role=review '
+            'phase=read state=- elapsed=14m idle=1s'}
+        # journalctl applies --grep before -n. A normal task produces many
+        # command/activity lines; its run_start still exists outside that tail.
+        for ended in (False, True):
+            with self.subTest(ended=ended):
+                # --grep with -n implies --reverse (journalctl(1)); lifecycle
+                # results are newest first, unlike the ordinary recent tail.
+                lifecycle = binding[1]['stdout']
+                if ended:
+                    lifecycle = json.dumps({**entry, 'MESSAGE':
+                        f'INFO [1234abcd] run_end run=1234abcd issue={REPO}#42 '
+                        'role=review result=ok elapsed=14m pr=- commit=-'}) + '\n' + lifecycle
+                self.rules(binding[0],
+                    {**binding[1], 'stdout': lifecycle,
+                     'argv_contains': [binding[0]['argv_contains'][1],
+                        '--grep=^(INFO|WARNING|ERROR) \\[([0-9a-f]{8})\\] (run_start|run_end|run_failed) ']},
+                    {**binding[1], 'stdout': (json.dumps(heartbeat) + '\n') * 100},
+                    services={1: 'active'})
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('status')
+                self.assertEqual(code, 0, err)
+                slot = doc['activity']['slots'][f'{self.prefix}@1.service']
+                self.assertEqual(slot['state'], 'active/issue unknown' if ended else 'running')
+                if not ended:
+                    self.assertEqual(slot['issue']['number'], 42)
+                    self.assertEqual(slot['phase'], 'read')
+                else:
+                    self.assertNotIn('issue', slot)
+                self.assert_read_only(before)
 
 
 class PendingStatusTests(unittest.TestCase):

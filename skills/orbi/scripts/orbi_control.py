@@ -49,6 +49,7 @@ import sys
 import stat
 import tempfile
 from pathlib import Path
+from xml.parsers.expat import ExpatError
 
 try:
     import tomllib
@@ -1833,8 +1834,9 @@ def current_run(ctx, target, repo, unit):
     """Only this live service invocation can establish identity, never newest files.
 
     Journal's PID + InvocationID bind a run_start scene to the current owned
-    process. Recheck the binding after the bounded read to reject exit/restart
-    races. Missing start scene in the retained window is deliberately unknown.
+    process. Read lifecycle scenes separately so normal command/activity volume
+    cannot evict the start binding. Recheck after both bounded reads to reject
+    exit/restart races. A start scene absent from retention remains unknown.
     """
     unknown = {'state': 'active/issue unknown',
                'reason': 'current invocation/deployment/run binding is missing or conflicting',
@@ -1850,14 +1852,21 @@ def current_run(ctx, target, repo, unit):
                 or not fragment or installed_config(fragment, home_dir(ctx)) != target.config_path
                 or len(re.findall(r'\bORBI_CONFIG=', bounded_text(fragment))) != 1):
             return unknown
-        proc = ctx.run(['journalctl', '--user', '-u', unit,
-                        '_SYSTEMD_INVOCATION_ID=' + invocation, '-n', '100', '-o', 'json',
-                        '--output-fields=MESSAGE,_PID,_SYSTEMD_INVOCATION_ID', '--no-pager'],
-                       allow_failure=True)
-        if proc.returncode or len(proc.stdout) > 524288:
+        journal = ['journalctl', '--user', '-u', unit,
+                   '_SYSTEMD_INVOCATION_ID=' + invocation, '-n', '100', '-o', 'json',
+                   '--output-fields=MESSAGE,_PID,_SYSTEMD_INVOCATION_ID', '--no-pager']
+        lifecycle = ctx.run([*journal, '--grep=^(INFO|WARNING|ERROR) '
+                             r'\[([0-9a-f]{8})\] (run_start|run_end|run_failed) '],
+                            allow_failure=True)
+        recent = ctx.run(journal, allow_failure=True)
+        if any(proc.returncode or len(proc.stdout) > 524288 for proc in (lifecycle, recent)):
             return unknown
         identity, details, ended = None, {}, False
-        for line in proc.stdout.splitlines():
+        # journalctl --grep with -n implies --reverse; the ordinary tail is
+        # chronological. Reduce lifecycle boundaries oldest first as well.
+        for line in [*reversed(lifecycle.stdout.splitlines()), *recent.stdout.splitlines()]:
+            if not line.strip():
+                continue
             row = json.loads(line)
             if (row.get('_PID') != pid or row.get('_SYSTEMD_INVOCATION_ID') != invocation
                     or not isinstance(row.get('MESSAGE'), str) or len(row['MESSAGE']) > 8192):
@@ -2026,9 +2035,10 @@ def activity_darwin(ctx, target):
                                 'reason': 'launchd retained logs lack current invocation/run binding',
                                 'next_action': 'Inspect current owned process and attempt read-only; '
                                                'do not attribute newest retained logs or queue head.'}
-                    elif states[0] == 'waiting' and not pids:
+                    elif states[0] == 'not running' and not pids:
                         item = {'state': 'idle'}
-        except (OSError, UnicodeError, ValueError, plistlib.InvalidFileException, ControlError, AttributeError):
+        except (OSError, UnicodeError, ValueError, plistlib.InvalidFileException,
+                ExpatError, ControlError, AttributeError):
             pass
         slots[label] = item
     complete = bool(slots) and all(item['state'] == 'idle' for item in slots.values())

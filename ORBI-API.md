@@ -39,8 +39,10 @@ legacy `deployment`, `scheduler`, `queue` and `doctor` fields and adds:
 
 Linux attribution binds the owned service's current `InvocationID`, `MainPID` and
 working directory to a `run_start` scene from that same invocation/PID. The journal
-read selects only required fields, caps at 100 entries and rechecks the binding.
-Missing, stale, conflicting or out-of-window scenes mean active/issue unknown.
+reads select only required fields and recheck the binding. Each read caps at 100
+entries: lifecycle scenes are filtered before the cap, separately from the recent
+activity tail, so command/heartbeat volume cannot evict a retained start binding.
+Missing, stale or conflicting scenes mean active/issue unknown.
 No raw journal, command/action, session, environment or auth data is returned.
 macOS reads at most five owned LaunchAgents with `launchctl print`; a running job
 is issue unknown because retained log scenes lack a current invocation binding.
