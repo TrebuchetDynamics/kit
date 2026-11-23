@@ -32,6 +32,7 @@ sibling to use instead, by command name. Sibling pairs that must stay distinct:
 | Stress-test any idea, challenge a plan, record decisions | `grilling` / `grill-me` / `grill-with-docs` |
 | Improve many lanes, review architecture | `autonomous-codebase-improver` / `improve-codebase-architecture` |
 | Hunt a bug, remove dead code, shrink a suite | `bug-harvest` / `unused-code` / `test-optimizer` |
+| Reconcile instruction evidence/ownership, improve wording/structure | `agents-md-generator` / `writing-for-agents` |
 | Commit and push, review a change, audit a repository | `git-commit-push` / `ponytail-review` / `ponytail-audit` |
 
 ## 3. Done is checkable

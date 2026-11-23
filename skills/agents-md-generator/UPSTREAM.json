@@ -1,0 +1,75 @@
+{
+  "repository": "https://github.com/thienanblog/awesome-ai-agent-skills",
+  "revision": "ac929caec7e5313e5a53033db68673c47a84c42c",
+  "license": "Apache-2.0",
+  "files": {
+    "LICENSE": {
+      "path": "upstream/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "mode": "100644"
+    },
+    "skills/agents-md-generator/SKILL.md": {
+      "path": "upstream/PROTOCOL.md",
+      "sha256": "8f6af61893859daae134e4e55514589aa36a3a9eacb4c7f5351366cadb8bc85a",
+      "mode": "100644"
+    },
+    "skills/agents-md-generator/agents/openai.yaml": {
+      "path": "upstream/agents/openai.yaml",
+      "sha256": "4de84ed69ca4c2ee2899b0984ce483f033c61c7264d6964ed6a9fdfa9539a0c7",
+      "mode": "100644"
+    },
+    "skills/agents-md-generator/references/discovery.md": {
+      "path": "upstream/references/discovery.md",
+      "sha256": "10dddfb039655955d6e97b069c9335fba89541f5428b0d96e4b083e8a5d21c39",
+      "mode": "100644"
+    },
+    "skills/agents-md-generator/references/merge-and-verify.md": {
+      "path": "upstream/references/merge-and-verify.md",
+      "sha256": "03adf690837780aec33baff76438e0507f4a5c942b59c443c4af69e6240e0a6c",
+      "mode": "100644"
+    },
+    "skills/agents-md-generator/references/output-template.md": {
+      "path": "upstream/references/output-template.md",
+      "sha256": "dbae8c9055afb09c34f0ba778efa16c20ed97e31966ff547ebfe325f5436893c",
+      "mode": "100644"
+    },
+    "skills/agents-md-generator/references/tool-compatibility.md": {
+      "path": "upstream/references/tool-compatibility.md",
+      "sha256": "bdd27ffd81e7a7634300f8db8d3b0df613c53d2192555c13a06d4a5773e5b68b",
+      "mode": "100644"
+    },
+    "skills/agents-md-generator/scripts/detect-agent-context": {
+      "path": "upstream/scripts/detect-agent-context",
+      "sha256": "cd4c330743a0d3af9545f4bb37170564589c12513ae218ed424352c7179653cd",
+      "mode": "100755"
+    },
+    "skills/agents-md-generator/scripts/detect-agent-context.cmd": {
+      "path": "upstream/scripts/detect-agent-context.cmd",
+      "sha256": "351ebce50d2a0d03d5be49938f59753552579cc44e60d0cd2d4a55e7365ad33c",
+      "mode": "100644"
+    },
+    "skills/agents-md-generator/scripts/detect-agent-context.ps1": {
+      "path": "upstream/scripts/detect-agent-context.ps1",
+      "sha256": "07ba94190ecb45d31e59302ba0c297168167362659ac8f41826b99ba14622768",
+      "mode": "100644"
+    },
+    "skills/agents-md-generator/scripts/detect-agent-context.py": {
+      "path": "upstream/scripts/detect-agent-context.py",
+      "sha256": "0a612230e0aad322831b3d2825515eb1022122149d2677502ee4ddea9fff384d",
+      "mode": "100755"
+    },
+    "skills/agents-md-generator/scripts/detect-agent-context.sh": {
+      "path": "upstream/scripts/detect-agent-context.sh",
+      "sha256": "f7b9948f36bd14d31dfba1138ae24815eb8675f6da58a25f26f03b4723b9c5bc",
+      "mode": "100755"
+    }
+  },
+  "adaptations": [
+    "Full pinned skill tree copied byte-for-byte; SKILL.md relocated to upstream/PROTOCOL.md to prevent nested public discovery. Original file modes retained.",
+    "upstream/agents/openai.yaml is inert provenance, not active adapter metadata. Local portable agents/openai.yaml disables implicit invocation.",
+    "Local SKILL.md overrides default scope: bare invocation revamps both root AGENTS.md and CLAUDE.md directly; explicit audit/read-only writes nothing; update applies requested scope without a second approval.",
+    "Local wrapper preserves valid intended policy even when implementation disagrees, uses no fixed length quota, and loads Writing For Agents by reference for wording and structure.",
+    "Resources resolve from installed skill path; --root binds only the target. Detector is an index, supplemented by native ancestor/ownership reads. No global configuration, hooks, automatic invocation, installation or runtime activation is imported.",
+    "LICENSE is the upstream repository Apache-2.0 license at the same pin; no separate NOTICE file exists in the pinned skill tree or repository root. Embedded notices are retained."
+  ]
+}

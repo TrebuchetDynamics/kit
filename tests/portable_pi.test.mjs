@@ -7,7 +7,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 48);
+  assert.equal(commands.size, 49);
   assert.equal(commands.has('orbi'), true);
   assert.equal(commands.has('push'), true);
   assert.equal(commands.has('unblock'), true);
@@ -25,6 +25,20 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
     assert.equal(message.includes(await readFile(source, 'utf8')), true, skill);
     assert.equal(message.includes('(../COMMON.md)'), true, skill);
   };
+  // Bare full-write, explicit audit, scoped update and read-only precedence
+  // remain model inputs, not a shell mode parser or a deterministic editor.
+  assert.equal(commands.has('agents-md-generator'), true);
+  assert.equal(commands.has('agents_md_generator'), false);
+  for (const args of ['', 'audit /tmp/target repo; no writes',
+    'update only src/AGENTS.md; preserve human release approval',
+    'read-only: revamp both AGENTS.md and CLAUDE.md']) {
+    for (const idle of [true, false]) {
+      await commands.get('agents-md-generator').handler(args, {isIdle: () => idle});
+      await assertWorkflow('agents-md-generator');
+      assert.equal(messages.at(-1)[0].endsWith(`User request (preserve scope and restrictions):\n${args}`), true);
+      assert.deepEqual(messages.at(-1)[1], idle ? undefined : {deliverAs: 'followUp'});
+    }
+  }
   const raw = 'read-only\n$(literal); --no-push';
   await commands.get('ui-taste').handler(raw, {isIdle: () => true});
   await assertWorkflow('ui-taste');
@@ -91,7 +105,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
     'bug-harvest': 'bug-harvest', 'autonomous-codebase-improver': 'autonomous-codebase-improver',
     'split-folder': 'split-folder', 'unused-code': 'unused-code',
     'test-optimizer': 'test-optimizer', 'apk-get': 'apk-get', graphify: 'graphify',
-    'writing-for-agents': 'writing-for-agents',
+    'writing-for-agents': 'writing-for-agents', 'agents-md-generator': 'agents-md-generator',
     grilling: 'grilling', 'grill-with-docs': 'grill-with-docs',
     'improve-codebase-architecture': 'improve-codebase-architecture',
     'ask-kit': 'ask-kit',
@@ -227,6 +241,8 @@ test('npm package excludes local bytecode and keeps portable support files', asy
   assert.equal([...paths].some(p => p.includes('__pycache__') || p.endsWith('.pyc')), false);
   assert.equal([...paths].some(p => p.startsWith('src/')), false);
   assert.equal(paths.has('paseo-plugin.json'), false);
+  assert.deepEqual([...paths].filter(p => p.startsWith('skills/agents-md-generator/') && p.endsWith('/SKILL.md')),
+    ['skills/agents-md-generator/SKILL.md']);
   assert.equal([...paths].some(p => p.startsWith('Src/')), false);
   for (const path of ['adapters/pi.mjs', 'adapters/skills/COMMON.md',
     'skills/docs-sync/scripts/docs.py', 'skills/autoresearch/upstream/plan.md', 'skills/impeccable/LICENSE',
@@ -235,6 +251,15 @@ test('npm package excludes local bytecode and keeps portable support files', asy
     'skills/state-machine/SKILL.md', 'skills/state-machine/PROTOCOL.md',
     'skills/state-machine/references/sources-and-example.md',
     'adapters/skills/state-machine/SKILL.md', 'adapters/skills/state-machine/agents/openai.yaml',
+    'skills/agents-md-generator/SKILL.md', 'skills/agents-md-generator/UPSTREAM.json',
+    'skills/agents-md-generator/upstream/PROTOCOL.md', 'skills/agents-md-generator/upstream/LICENSE',
+    'skills/agents-md-generator/upstream/agents/openai.yaml',
+    ...['discovery', 'merge-and-verify', 'output-template', 'tool-compatibility'].map(name =>
+      `skills/agents-md-generator/upstream/references/${name}.md`),
+    ...['', '.cmd', '.ps1', '.py', '.sh'].map(ext =>
+      `skills/agents-md-generator/upstream/scripts/detect-agent-context${ext}`),
+    'adapters/skills/agents-md-generator/SKILL.md', 'adapters/skills/agents-md-generator/agents/openai.yaml',
+    'skills/shared/AGENT-INSTRUCTIONS.md',
     'skills/shared/COMMUNICATION.md', 'skills/unslop/SKILL.md',
     'adapters/skills/unslop/SKILL.md', 'adapters/skills/unslop/agents/openai.yaml',
     'skills/orbi/SKILL.md', 'skills/orbi/references/lifecycle.md',
@@ -305,7 +330,54 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
-    assert.equal(skillCount, 35);
+    assert.equal(skillCount, 36);
+    const publicEntries = (await readdir(join(installed, 'adapters/skills'), {withFileTypes: true}))
+      .filter(e => e.isDirectory()).map(e => e.name);
+    assert.equal(publicEntries.includes('agents-md-generator'), true);
+    assert.equal(publicEntries.includes('detect-agent-context'), false);
+    const generator = join(installed, 'skills/agents-md-generator');
+    const generatorText = await readFile(join(generator, 'SKILL.md'), 'utf8');
+    const adapterText = await readFile(join(installed, 'adapters/skills/agents-md-generator/SKILL.md'), 'utf8');
+    assert.match(adapterText, /disable-model-invocation: true/);
+    assert.match(adapterText, /\.\.\/\.\.\/\.\.\/skills\/agents-md-generator\/SKILL\.md/);
+    assert.match(await readFile(join(installed, 'adapters/skills/agents-md-generator/agents/openai.yaml'), 'utf8'),
+      /allow_implicit_invocation: false/);
+    // Walk the actual canonical guide's resource links in the released payload.
+    for (const match of generatorText.matchAll(/\[[^\]]*\]\(([^)#]+)(?:#[^)]*)?\)/g)) {
+      if (!match[1].includes('://')) await stat(join(generator, match[1]));
+    }
+    const target = join(foreign, 'target repo');
+    await mkdir(join(target, 'src'), {recursive: true});
+    await writeFile(join(target, 'AGENTS.md'), 'Use npm run stale. Human release approval required.\n');
+    await writeFile(join(target, 'CLAUDE.md'), 'Read AGENTS.md. Use EnterWorktree. Use npm run stale.\n');
+    await writeFile(join(target, 'src/AGENTS.md'), 'Schema source only.\n');
+    await writeFile(join(target, 'src/AGENTS.override.md'), 'Scoped override.\n');
+    const {symlink, lstat, readlink} = await import('node:fs/promises');
+    await symlink('AGENTS.md', join(target, 'GEMINI.md'));
+    await writeFile(join(target, 'untracked.txt'), 'unrelated content\n');
+    const filesystem = async dir => {
+      const result = [];
+      const visit = async folder => {
+        for (const name of (await readdir(folder)).sort()) {
+          const path = join(folder, name), info = await lstat(path);
+          result.push([path, info.mode, info.isSymbolicLink() ? await readlink(path) :
+            info.isDirectory() ? 'directory' : (await readFile(path)).toString('base64')]);
+          if (info.isDirectory()) await visit(path);
+        }
+      };
+      await visit(dir);
+      return result;
+    };
+    const beforeDetection = await filesystem(foreign);
+    const detector = join(generator, 'upstream/scripts/detect-agent-context');
+    const detected = JSON.parse(execFileSync(detector, ['--root', target, '--format', 'json'],
+      {cwd: installed, encoding: 'utf8', timeout: 15000}));
+    assert.equal(detected.root, target);
+    assert.deepEqual(detected.instruction_sources.map(e => e.path),
+      ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', 'src/AGENTS.md', 'src/AGENTS.override.md']);
+    assert.equal(detected.warnings.some(w => w.includes('shadows src/AGENTS.md')), true);
+    assert.deepEqual(await filesystem(foreign), beforeDetection);
+
     // Execute the packaged CommonJS helper under Kit's ESM package boundary.
     const mapScript = join(installed, 'skills/ponytail/upstream/scripts/ponytail-map.cjs');
     const map = execFileSync('node', [mapScript, installed], {encoding: 'utf8'});
@@ -335,7 +407,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 48);
+    assert.equal(commands.size, 49);
     assert.equal(commands.has('orbi'), true);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {
@@ -364,6 +436,16 @@ test('installed archive resolves portable references and commands without checko
     assert.match(canonicalOrbi, /<this-skill>\/scripts\/orbi_control\.py/);
     // Loading the extension and dispatching every command installs nothing.
     assert.deepEqual(await listing(installed), beforeLoad);
+    // Dispatch only loads text; no target rewrites on registration or any mode.
+    for (const request of ['', `audit ${target}`, `update ${target} only src/AGENTS.md`,
+      `read-only: revamp ${target}`]) {
+      await commands.get('agents-md-generator').handler(request, {isIdle: () => true});
+      assert.equal(messages.at(-1)[0].includes(adapterText), true);
+      assert.equal(messages.at(-1)[0].includes(join(installed, 'adapters/skills/agents-md-generator')), true);
+      assert.equal(messages.at(-1)[0].endsWith(`User request (preserve scope and restrictions):\n${request}`), true);
+    }
+    assert.deepEqual(await filesystem(foreign), beforeDetection);
+
   } finally {
     await rm(scratch, {recursive: true, force: true});
   }

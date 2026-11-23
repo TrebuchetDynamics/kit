@@ -11,6 +11,22 @@ class WorkflowCommands(unittest.TestCase):
     setUp = fixture.PluginTests.setUp
     skill = fixture.PluginTests.skill
 
+    def test_generator_uses_existing_native_discovery_and_literal_invocation(self):
+        # Actual bundle inventory through the native registrar, not a command count.
+        with patch.object(self.plugin, 'SKILLS_DIR', fixture.ROOT / 'skills'):
+            discovered = self.plugin._discover_skills()
+            generator = [(name, command, path) for name, command, path in discovered
+                         if name == 'agents-md-generator']
+            self.assertEqual(generator, [('agents-md-generator', 'agents-md-generator',
+                                          fixture.ROOT / 'skills/agents-md-generator/SKILL.md')])
+            self.plugin.register(self.ctx)
+        for raw in ('', 'audit /target repo', 'update only src/AGENTS.md', 'read-only; revamp both'):
+            self.ctx.commands['agents-md-generator'](raw)
+            prompt, _ = self.ctx.messages[-1]
+            self.assertIn('skill_view(name="kit:agents-md-generator")', prompt)
+            self.assertTrue(prompt.endswith('User arguments:\n' + raw))
+        self.assertNotIn('detect-agent-context', self.ctx.commands)
+
     def test_new_names_route_to_existing_skills_and_preserve_arguments(self):
         for name in ('plan-with-me', 'plan-for-me', 'docs-sync', 'update-kit', 'autoresearch'):
             self.skill(name)
