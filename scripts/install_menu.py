@@ -1490,9 +1490,14 @@ def restart_services(output, observations=None):
                     and re.fullmatch(r'kit-[^/]+\.service', line.split()[0])})
     failed, matched = [], set()
     for unit in units:
-        shown = subprocess.run([ctl, '--user', 'show', unit, '--property=ExecStart',
-                                '--property=EnvironmentFiles', '--property=Environment'],
-                               capture_output=True, text=True, timeout=30)
+        try:
+            shown = subprocess.run([ctl, '--user', 'show', unit, '--property=ExecStart',
+                                    '--property=EnvironmentFiles', '--property=Environment'],
+                                   capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError) as exc:
+            reasons.append(f'{unit}: held (cannot verify executable/config references: {exc}); '
+                           f'inspect systemctl --user show {unit} and restart manually if affected')
+            continue
         # Read executable/config references, not Description, name prefixes or checkout HEAD.
         consumed = '\n'.join(line for line in shown.stdout.splitlines()
                              if line.startswith(('ExecStart=', 'EnvironmentFiles=')))
@@ -1540,11 +1545,16 @@ def restart_services(output, observations=None):
             matched.update(affected)
             argv = [ctl, '--user', 'try-restart', unit]
             output.line('  $ ' + shlex.join(argv), 'command')
-            code, _ = run_command(argv, output, timeout=30)
-            if code:
+            try:
+                code, _ = run_command(argv, output, timeout=30)
+            except (OSError, subprocess.SubprocessError) as exc:
                 failed.append(unit)
+                reasons.append(f'{unit}: restart failed ({exc})')
             else:
-                reasons.append(f'{unit}: restarted ({", ".join(sorted(affected))} changed)')
+                if code:
+                    failed.append(unit)
+                else:
+                    reasons.append(f'{unit}: restarted ({", ".join(sorted(affected))} changed)')
         else:
             reasons.append(f'{unit}: skipped (no proven changed consumer input)')
     for key, row in candidates.items():
@@ -1556,7 +1566,7 @@ def restart_services(output, observations=None):
     return '; '.join(reasons) or 'no active supported consumers; no service restart requests'
 
 
-def install(all_items, chosen, dry_run=False, output=None, mode='install'):
+def install(all_items, chosen, dry_run=False, output=None, mode='install', baseline=None):
     output = output or Output()
     if dry_run or (not chosen and not os.environ.get('KIT_INSTALL_REPORT')):
         return _install(all_items, chosen, dry_run=dry_run, output=output, mode=mode)
@@ -1593,11 +1603,12 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install'):
             lock.truncate()
             lock.write(f'{os.getpid()}\n')
             lock.flush()
-        return _install(all_items, chosen, output=output, mode=mode, lock_fd=lock.fileno())
+        return _install(all_items, chosen, output=output, mode=mode, lock_fd=lock.fileno(), baseline=baseline)
 
 
-def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock_fd=None):
+def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock_fd=None, baseline=None):
     results = []
+    baseline = dict(baseline or {})
     observations = {}
     native_decisions = []
     # Private machine-readable progress for update_bundle.py, separate from native output.
@@ -1612,6 +1623,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                 stream.write(json.dumps({'item': key, 'status': status, 'exit': code, **fields}) + '\n')
 
     def observe(key, status, before, after):
+        before = baseline.get(key, before)
         if key in observations:
             before = observations[key]['before']
             if observations[key]['status'] == 'failed':
@@ -1647,6 +1659,12 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
         if not item.steps:
             record(item.key, 'skipped', item.note)
             continue
+        if not dry_run and item.key == 'hermes' and any(
+                Path(arg).name == 'update_bundle.py' for step in item.steps for arg in (step.argv or [])):
+            # Native apply can advance a source-linked host before launching its
+            # nested installer. Keep that host's original inputs, even --no-pull.
+            missing = {'pi-bolt', 'tx', 'claude', 'codex', 'orbi'} - baseline.keys() - observations.keys()
+            baseline.update(installed_baseline(missing, output))
         before = read_evidence(item) if not dry_run and item.key != 'hermes' else None
         refresh = None
         native = None
@@ -1677,7 +1695,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                         if lock_fd is not None:
                             env['KIT_INSTALL_LOCK_FD'] = str(lock_fd)
                         native = {}
-                        code, text = run_command(step.argv, output, extra_env=env, receipt=native)
+                        code, text = run_command(step.argv, output, extra_env=env, receipt=native, timeout=1800)
                         native = native or terminal_receipt(text)
                     else:
                         code, text = run_command(step.argv, output)
@@ -1785,7 +1803,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
     return int(bool(counts['failed']))
 
 
-def pull_checkout(root, write=print, run=subprocess.run):
+def pull_checkout(root, write=print, run=subprocess.run, before_change=None):
     """Keep local edits in a stash, then require an upstream fast-forward.
 
     Return whether disk code must be re-executed (stash or HEAD change).
@@ -1825,7 +1843,10 @@ def pull_checkout(root, write=print, run=subprocess.run):
     read('rev-parse', '--verify', '@{u}^{commit}')
     before = read('rev-parse', '--verify', 'HEAD')
     stashed = False
-    if read('status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'):
+    dirty = read('status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none')
+    if before_change:
+        before_change()  # installed links may consume this checkout before stash/pull
+    if dirty:
         previous = read('stash', 'list', '--format=%H').splitlines()
         # Git can reuse the object (and not add a reflog entry) for identical
         # edits in the same second. A sub-second message makes this a new stash.
@@ -1851,6 +1872,29 @@ def pull_checkout(root, write=print, run=subprocess.run):
     if after != before:
         write(f'Updated this checkout {before[:8]}..{after[:8]} ({upstream.stdout.strip()}); installing the new version.')
     return stashed or after != before
+
+
+def installed_baseline(keys, output):
+    """Read inputs before source mutation; never use this to skip a refresh."""
+    keys = set(keys)
+    if 'hermes' in keys:  # installed Hermes may refresh these hosts, even --only hermes
+        keys.update(('pi-bolt', 'tx', 'claude', 'codex', 'orbi'))
+    readers = {
+        'pi-bolt': lambda: installed_evidence([BIN.absolute() / 'pi-bolt']),
+        'tx': lambda: installed_evidence([BIN.absolute() / 'tx']),
+        'orbi': lambda: installed_evidence([Path(shutil.which('orbi') or
+            Path(os.environ.get('UV_TOOL_BIN_DIR') or BIN).absolute() / 'orbi')]),
+        'claude': lambda: marketplace_evidence(claude_registration(output)),
+        'codex': lambda: marketplace_evidence(codex_registration(output)),
+    }
+    def pi_inputs():
+        binary = BIN.absolute() / 'pi-bolt'
+        package = pi_package(binary=binary, strict=True) if binary.exists() else None
+        return installed_evidence(([package] if package else []) + [pi_settings_path()],
+                                  identity=str(package) if package else None)
+    readers['pi'] = pi_inputs
+    return {key: read_evidence(Item(key, key, inputs=read)) for key, read in readers.items()
+            if key in keys and (key not in ('claude', 'codex') or shutil.which(key))}
 
 
 def main(argv=None):
@@ -1879,10 +1923,25 @@ def main(argv=None):
                         help='install (default) or update the installed suite in place; both run the same items')
     args = parser.parse_args(argv)
     output = Output(args.color, 0 if args.quiet else 2)
+    baseline = {}
+    inherited = os.environ.pop('KIT_INSTALL_BASELINE_FD', None)
+    if inherited:
+        try:
+            with os.fdopen(int(inherited), encoding='utf-8') as stream:
+                baseline = json.load(stream)
+        except (OSError, ValueError) as exc:
+            output.line(f'FAILED: installed baseline unavailable: {exc}; rerun ./install.sh with the same options', 'failed')
+            return 1
     if not (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
             or os.environ.get('KIT_INSTALL_NO_PULL')):
         try:
-            changed = pull_checkout(ROOT, write=output.line)
+            def snapshot():
+                keys = set((args.only if args.only and not args.menu else
+                            'pi-bolt,pi,tx,hermes,claude,codex,orbi').split(','))
+                if not args.menu:  # menu selection may include initially skipped candidates
+                    keys -= set((args.skip or '').split(','))
+                baseline.update(installed_baseline(keys, output))
+            changed = pull_checkout(ROOT, write=output.line, before_change=snapshot)
         except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
             output.line(f'FAILED: checkout preparation: {exc}', 'failed')
             output.line('Nothing installed or restarted. Resolve the Git error and retry; '
@@ -1890,8 +1949,14 @@ def main(argv=None):
             return 1
         if changed:
             # Pull or stash may have replaced the running installer: run disk code once.
-            os.execvpe('bash', ['bash', str(ROOT / 'install.sh'), *(sys.argv[1:] if argv is None else argv)],
-                       dict(os.environ, KIT_INSTALL_PULLED='1'))
+            # An anonymous descriptor survives exec, but is consumed before any
+            # child/native refresh, so nested installers take their own baseline.
+            with tempfile.TemporaryFile(mode='w+', encoding='utf-8') as stream:
+                json.dump(baseline, stream)
+                stream.seek(0)
+                os.set_inheritable(stream.fileno(), True)
+                os.execvpe('bash', ['bash', str(ROOT / 'install.sh'), *(sys.argv[1:] if argv is None else argv)],
+                           dict(os.environ, KIT_INSTALL_PULLED='1', KIT_INSTALL_BASELINE_FD=str(stream.fileno())))
     hermes = [f for f, on in (('--bundle-only', args.bundle_only), ('--no-reload', args.no_reload),
                               ('--yes-deps', args.yes_deps), ('--dry-run', args.dry_run)) if on]
     if args.hermes_home:
@@ -1925,7 +1990,7 @@ def main(argv=None):
         if not go:
             print('Nothing installed.')
             return 0
-    return install(all_items, chosen, dry_run=args.dry_run, output=output, mode=args.command)
+    return install(all_items, chosen, dry_run=args.dry_run, output=output, mode=args.command, baseline=baseline)
 
 
 if __name__ == '__main__':

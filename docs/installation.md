@@ -172,6 +172,9 @@ Both entrypoints check and apply available updates on every run under existing s
 Successful refresh is separate from effective installed change. The installer compares installed
 identity/revision, executable and payload bytes, modes, symlink targets and relevant settings.
 Timestamps, updater success messages and checkout HEAD alone are not change evidence.
+Installed evidence is captured before automatic stash/pull and carried across installer re-execution,
+so source-linked packages retain their original baseline. This may inspect candidate hosts before
+menu selection; only the final selection can update payloads or request restarts.
 A healthy unchanged repeat requests no service restarts, including nested host refreshes.
 
 Only complete changed payloads are eligible. Restarts affect supported host integrations only.
@@ -187,6 +190,8 @@ Hermes owns gateway disposition on both setup and installed-update paths. Its na
 `gateway_restart` fields (including `deferred`, `pending` and `not_needed`) reach the outer receipt;
 the suite never overrides them with `try-restart`. Setup owns profile wiring and requests no process restart.
 Nested host refreshes return content evidence to the outer installer, which deduplicates by unit.
+The outer installer also retains host evidence before native Hermes apply can change shared source,
+including when `--no-pull` is set or only Hermes is selected.
 The inherited installer lock keeps that nested work under the same writer without admitting a second installer.
 Preview/list/menu cancellation perform no updates or restarts. `--no-reload` defers Hermes setup wiring,
 not other affected-host restarts. Existing machine-readable `item`, `status` and `exit` fields remain;
@@ -245,8 +250,9 @@ Package commands have a ten-minute limit; destination version checks have a
 30-second limit. A command timeout stops its descendants and reports failure.
 Package failures report the cause and return nonzero; independent selected components
 continue. Repair the cause and retry `./install.sh --only pi`. Completed upstream
-changes are not rolled back. Preview/list/menu cancellation execute no Pi command
-or download and write no receipt. The suite restarts only proven active consumers of changed
+changes are not rolled back. Preview/list execute no Pi command or download and write no receipt.
+Menu cancellation performs no package refresh or download; pre-pull installed-evidence reads may run
+before selection. The suite restarts only proven active consumers of changed
 package content or effective settings; no agent/model is started by the package step.
 
 Offline tests exercise isolated homes and fake upstream/package responses, not a

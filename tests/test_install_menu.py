@@ -979,6 +979,36 @@ esac
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn('kit-bolt.service', result.stdout)
 
+    def test_restart_timeout_does_not_drop_independent_changed_consumer(self):
+        path = str(self.bolt)
+        observation = {'pi-bolt': {'status': 'installed', 'change': 'changed',
+                                  'changed_inputs': [path],
+                                  'before': {'inputs': {path: 'old'}},
+                                  'after': {'inputs': {path: 'new'}}}}
+        listed = subprocess.CompletedProcess([], 0,
+            'kit-first.service loaded active running First\n'
+            'kit-next.service loaded active running Next\n', '')
+        shown = subprocess.CompletedProcess([], 0, f'ExecStart={{ path={path} ; }}\n', '')
+        with patch.object(install_menu.platform, 'system', return_value='Linux'), \
+                patch.object(install_menu.shutil, 'which', return_value='/bin/systemctl'), \
+                patch.object(install_menu.subprocess, 'run', side_effect=[listed, shown, shown]), \
+                patch.object(install_menu, 'run_command', side_effect=[
+                    subprocess.TimeoutExpired(['systemctl'], 30), (0, '')]) as run:
+            with self.assertRaisesRegex(RuntimeError, 'kit-first.service'):
+                install_menu.restart_services(install_menu.Output(verbosity=0), observation)
+        self.assertEqual([call.args[0][-1] for call in run.call_args_list],
+                         ['kit-first.service', 'kit-next.service'])
+        with patch.object(install_menu.platform, 'system', return_value='Linux'), \
+                patch.object(install_menu.shutil, 'which', return_value='/bin/systemctl'), \
+                patch.object(install_menu.subprocess, 'run', side_effect=[
+                    listed, subprocess.TimeoutExpired(['systemctl'], 30), shown]), \
+                patch.object(install_menu, 'run_command', return_value=(0, '')) as run:
+            decision = install_menu.restart_services(install_menu.Output(verbosity=0), observation)
+        self.assertIn('kit-first.service: held', decision)
+        self.assertIn('inspect systemctl --user show kit-first.service', decision)
+        self.assertIn('kit-next.service: restarted', decision)
+        self.assertEqual([call.args[0][-1] for call in run.call_args_list], ['kit-next.service'])
+
     def test_same_version_package_and_settings_repairs_restart_once_then_skip(self):
         self.recording_services()
         package = self.installed_package()
@@ -1095,6 +1125,7 @@ if __name__ == '__main__':
     updater = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(updater)
     if os.environ.get('NATIVE_HOST_FAIL'): os.environ['PI_BOLT_FIXTURE_STAGE'] = 'install'
+    if os.environ.get('NATIVE_PAYLOAD'): Path(os.environ['NATIVE_PAYLOAD']).write_text('native-current')
     print(json.dumps({{'status': 'updated', 'gateway_restart': os.environ['NATIVE_DISPOSITION'],
                        'hosts': updater.refresh_hosts(Path(__file__).resolve().parents[1])}}))
 ''')
@@ -1126,6 +1157,34 @@ if __name__ == '__main__':
         self.assertEqual(failed.returncode, 0, failed.stdout + failed.stderr)  # native host refresh remains best effort
         self.assertIn('kit-bolt.service: held (incomplete/unverified pi-bolt)', failed.stdout)
         self.assertEqual(self.calls('systemctl --user try-restart'), [])
+        # Native apply may change a source-linked host before refresh_hosts takes
+        # its own baseline. This must work even when only Hermes is selected.
+        payload = self.home / 'native-payload'
+        payload.mkdir()
+        skill = payload / 'SKILL.md'
+        registration = {**self.marketplace('kit-marketplace'), 'root': str(payload)}
+        self.codex_registry([registration], {'kit-marketplace': {'available': [], 'installed': [{
+            'pluginId': 'kit@kit-marketplace', 'name': 'kit', 'marketplaceName': 'kit-marketplace',
+            'installed': True, 'enabled': True, 'source': {'source': 'local', 'path': str(payload)},
+            'marketplaceSource': registration['marketplaceSource']}]}})
+        self.fake('systemctl', LOGGING + f'''
+if [[ "$*" == *list-units* ]]; then echo 'kit-codex.service loaded active running Codex';
+elif [[ "$*" == *show* ]]; then echo 'ExecStart={{ path=/usr/bin/codex ; argv[]=/usr/bin/codex --plugin {payload}/SKILL.md ; }}'; fi
+''')
+        env.pop('NATIVE_HOST_FAIL')
+        env['NATIVE_PAYLOAD'] = str(skill)
+        for command in ((), ('update',)):
+            with self.subTest(native_source_change=command):
+                self.log.write_text('')
+                skill.write_text('previous-native-payload')
+                for _ in range(2):
+                    updated = subprocess.run(['bash', str(source / 'install.sh'), *command,
+                                              '--no-pull', '--only', 'hermes'], env=env,
+                                             capture_output=True, text=True, timeout=30, cwd=self.project)
+                    self.assertEqual(updated.returncode, 0, updated.stdout + updated.stderr)
+                self.assertEqual(skill.read_text(), 'native-current')
+                self.assertEqual(self.calls('systemctl --user try-restart'),
+                                 ['systemctl --user try-restart kit-codex.service'])
 
     def test_nested_missing_evidence_holds_an_earlier_changed_consumer(self):
         self.recording_services()
@@ -1164,7 +1223,8 @@ if __name__ == '__main__':
             [sys.executable, '-c', 'import json; print(json.dumps(' + repr(receipt) + '))'])])
         original = install_menu.run_command
         def bounded(argv, output, **kwargs):
-            return original(argv, output, timeout=5, **kwargs)
+            kwargs['timeout'] = 5
+            return original(argv, output, **kwargs)
         with patch.dict(os.environ, {'KIT_INSTALL_REPORT': str(report)}), \
                 patch.object(install_menu, 'run_command', side_effect=bounded), \
                 contextlib.redirect_stdout(io.StringIO()):
@@ -2532,6 +2592,90 @@ class PullCheckoutTests(unittest.TestCase):
 
     def head(self, repo):
         return self.run_git('git', '-C', str(repo), 'rev-parse', 'HEAD').stdout
+
+    def test_source_linked_codex_pull_restarts_once_for_both_entrypoints(self):
+        # The supported local marketplace consumes this very checkout. Pull must
+        # not erase its installed baseline, even when the installer re-executes.
+        self.clone = Path(self.tmp.name) / 'source'
+        self.run_git('git', 'clone', '-q', str(self.origin), str(self.clone))
+        scripts = self.other / 'scripts'
+        scripts.mkdir()
+        shutil.copy2(ROOT / 'scripts/install_menu.py', scripts / 'install_menu.py')
+        shutil.copy2(INSTALL, self.other / 'install.sh')
+        manifest = self.other / '.agents/plugins/marketplace.json'
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({'name': 'kit-marketplace', 'plugins': [{'name': 'kit'}]}))
+        (self.other / 'SKILL.md').write_text('old payload')
+        self.run_git('git', '-C', str(self.other), 'add', '.')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qm', 'installed source')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        self.git('pull', '--ff-only')
+        base = Path(self.tmp.name)
+        home, binary = base / 'home', base / 'bin'
+        home.mkdir()
+        binary.mkdir()
+        log, report = base / 'calls', base / 'report.jsonl'
+        source = {'sourceType': 'local', 'source': str(self.clone)}
+        marketplace = {'name': 'kit-marketplace', 'root': str(self.clone), 'marketplaceSource': source}
+        plugin = {'pluginId': 'kit@kit-marketplace', 'name': 'kit', 'marketplaceName': 'kit-marketplace',
+                  'installed': True, 'enabled': True, 'source': {'source': 'local', 'path': str(self.clone)},
+                  'marketplaceSource': source}
+        codex = binary / 'codex'
+        codex.write_text('#!/usr/bin/env python3\nimport json, os, sys\n'
+                         'with open(os.environ["CALLS"], "a") as f: f.write("codex " + " ".join(sys.argv[1:]) + "\\n")\n'
+                         'if sys.argv[1:] == ["plugin", "marketplace", "list", "--json"]: print(' +
+                         repr(json.dumps({'marketplaces': [marketplace]})) + ')\n'
+                         'elif sys.argv[1:3] == ["plugin", "list"]: print(' +
+                         repr(json.dumps({'available': [], 'installed': [plugin]})) + ')\n')
+        codex.chmod(0o755)
+        ctl = binary / 'systemctl'
+        ctl.write_text('#!/usr/bin/env python3\nimport os, sys\n'
+                       'with open(os.environ["CALLS"], "a") as f: f.write("systemctl " + " ".join(sys.argv[1:]) + "\\n")\n'
+                       'if "list-units" in sys.argv: print("kit-codex.service loaded active running Codex")\n'
+                       'elif "show" in sys.argv: print(' + repr(f'ExecStart={{ path=/usr/bin/codex ; argv[]=/usr/bin/codex --plugin {self.clone}/SKILL.md ; }}') + ')\n')
+        ctl.chmod(0o755)
+        env = {'PATH': str(binary) + os.pathsep + os.environ['PATH'], 'HOME': str(home),
+               'KIT_BIN_DIR': str(binary), 'CALLS': str(log), 'KIT_INSTALL_REPORT': str(report)}
+        for command in ([], ['update']):
+            with self.subTest(command=command):
+                before_head = self.head(self.clone).strip()
+                (self.other / 'SKILL.md').write_text('new payload ' + repr(command))
+                self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'payload advance')
+                self.run_git('git', '-C', str(self.other), 'push', '-q')
+                log.write_text('')
+                args = ['./install.sh', *command, '--only', 'codex', '--quiet']
+                preview = subprocess.run([*args, '--dry-run'], cwd=self.clone, env=env,
+                                         capture_output=True, text=True, timeout=30)
+                self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
+                self.assertEqual(log.read_text(), '')
+                self.assertEqual(self.head(self.clone).strip(), before_head)
+                for expected in ('changed', 'unchanged'):
+                    result = subprocess.run(args, cwd=self.clone, env=env, capture_output=True,
+                                            text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
+                    self.assertEqual(rows['codex']['change'], expected, result.stdout)
+                    evidence = rows['codex']['evidence']
+                    if expected == 'changed':
+                        self.assertNotEqual(evidence['before']['inputs'], evidence['after']['inputs'])
+                    else:
+                        self.assertEqual(evidence['before']['inputs'], evidence['after']['inputs'])
+                self.assertEqual((self.clone / 'SKILL.md').read_text(), (self.other / 'SKILL.md').read_text())
+                self.assertEqual(log.read_text().splitlines().count('systemctl --user try-restart kit-codex.service'), 1)
+                self.assertEqual(log.read_text().splitlines().count('codex plugin marketplace list --json'), 6)
+                self.assertEqual(self.git('status', '--porcelain'), '')
+                # Stash-only source repair must also retain the consumed dirty bytes.
+                log.write_text('')
+                (self.clone / 'SKILL.md').write_text('local damaged content')
+                for expected in ('changed', 'unchanged'):
+                    repaired = subprocess.run(args, cwd=self.clone, env=env, capture_output=True,
+                                              text=True, timeout=30)
+                    self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
+                    rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
+                    self.assertEqual(rows['codex']['change'], expected, repaired.stdout)
+                self.assertEqual(log.read_text().splitlines().count('systemctl --user try-restart kit-codex.service'), 1)
+                self.assertTrue(self.stashes())
+                self.assertEqual(self.git('status', '--porcelain'), '')
 
     def test_a_clean_checkout_behind_its_upstream_is_fast_forwarded(self):
         said, commands = [], []
