@@ -124,6 +124,45 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   }
 });
 
+test('planning messages disclose interview detail only through the interactive owner', async () => {
+  const {readFile} = await import('node:fs/promises');
+  const {fileURLToPath} = await import('node:url');
+  const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '');
+  const commands = new Map(), messages = [];
+  register({registerCommand: (name, handler) => commands.set(name, handler),
+    sendUserMessage: (...args) => messages.push(args)});
+  const boundary = await readFile(new URL('../skills/shared/RESEARCH-PLAN.md', import.meta.url), 'utf8');
+  const raw = 'Plan offline support; read-only\n$(literal); --no-push';
+  // Captured at 14e84eaf, identical request/idle state. Normalize only checkout
+  // roots to <kit> so these UTF-8 initial-message comparisons travel with npm.
+  // These are message bytes, NOT model latency or the total bytes read later.
+  for (const [name, baseline] of Object.entries({
+    'plan-for-me': 18423, 'plan-with-me': 18430, 'grill-me': 18456,
+    unslop: 17783, 'autoresearch-plan': 19350, autoresearch: 19328,
+  })) {
+    const args = name === 'autoresearch' ? `plan ${raw}` : raw;
+    for (const idle of [true, false]) {
+      await commands.get(name).handler(args, {isIdle: () => idle});
+      const [message, delivery] = messages.at(-1);
+      const skill = name === 'grill-me' ? 'plan-with-me' : name.startsWith('autoresearch') ? 'autoresearch' : name;
+      const workflow = await readFile(new URL(`../adapters/skills/${skill}/SKILL.md`, import.meta.url), 'utf8');
+      assert.equal(message.split(boundary).length - 1, 1, name);
+      assert.ok(message.indexOf(boundary) < message.indexOf(workflow), name);
+      assert.ok(Buffer.byteLength(message.replaceAll(root, '<kit>'), 'utf8') < baseline, name);
+      assert.doesNotMatch(message, /Turn the initial prompt into a concise working brief|Ask the highest-impact ready question|Stop questioning once/);
+      assert.equal(message.endsWith(`User request (preserve scope and restrictions):\n${args}`), true);
+      assert.deepEqual(delivery, idle ? undefined : {deliverAs: 'followUp'});
+      if (name === 'grill-me') assert.match(message, /Selected mode: challenge/);
+      if (name === 'autoresearch-plan') assert.match(message, /Selected subcommand: plan/);
+    }
+  }
+  for (const [name, args] of [['docs-sync', raw], ['autoresearch-debug', raw],
+    ['autoresearch', `debug ${raw}`], ['autoresearch', `planning ${raw}`]]) {
+    await commands.get(name).handler(args, {isIdle: () => true});
+    assert.equal(messages.at(-1)[0].includes(boundary), false, name);
+  }
+});
+
 test('Update Kit dispatch is explicit-only, literal and queues while busy', async () => {
   const commands = new Map(), messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
@@ -282,7 +321,7 @@ test('npm package excludes local bytecode and keeps portable support files', asy
 
 test('installed archive resolves portable references and commands without checkout files', async () => {
   const {execFileSync} = await import('node:child_process');
-  const {cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile} = await import('node:fs/promises');
+  const {cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile} = await import('node:fs/promises');
   const {tmpdir} = await import('node:os');
   const {join} = await import('node:path');
   const {fileURLToPath, pathToFileURL} = await import('node:url');
@@ -337,6 +376,14 @@ test('installed archive resolves portable references and commands without checko
       }
     };
     await walk(join(installed, 'adapters/skills'));
+    // Follow moved interview links from the released payload, not the checkout.
+    for (const relative of ['skills/shared/RESEARCH-PLAN.md', 'skills/plan-with-me/SKILL.md']) {
+      const path = join(installed, relative);
+      const text = await readFile(path, 'utf8');
+      for (const match of text.matchAll(/\[[^\]]*\]\(([^)#]+)(?:#[^)]*)?\)/g)) {
+        if (!match[1].includes('://')) await stat(fileURLToPath(new URL(match[1], pathToFileURL(path))));
+      }
+    }
     assert.equal(skillCount, 36);
     const publicEntries = (await readdir(join(installed, 'adapters/skills'), {withFileTypes: true}))
       .filter(e => e.isDirectory()).map(e => e.name);
@@ -452,6 +499,19 @@ test('installed archive resolves portable references and commands without checko
       assert.equal(messages.at(-1)[0].endsWith(`User request (preserve scope and restrictions):\n${request}`), true);
     }
     assert.deepEqual(await filesystem(foreign), beforeDetection);
+
+    // Missing authority must surface the concrete package error, not send a
+    // weakened/path-only planning prompt. Restore the fixture before cleanup.
+    const contract = join(installed, 'skills/shared/RESEARCH-PLAN.md');
+    await rename(contract, contract + '.missing');
+    const sent = messages.length;
+    try {
+      await assert.rejects(commands.get('plan-for-me').handler('read-only', {isIdle: () => true}),
+        error => error.code === 'ENOENT' && error.path === contract);
+      assert.equal(messages.length, sent);
+    } finally {
+      await rename(contract + '.missing', contract);
+    }
 
   } finally {
     await rm(scratch, {recursive: true, force: true});
