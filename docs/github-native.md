@@ -194,7 +194,12 @@ Do not serve one repository from multiple deployments or machines.
 ### Kit lifecycle skill
 
 Use [`/orbi [status|setup|start|update|stop|help]`](../skills/orbi/SKILL.md) for one
-repository's deployment. Bare invocation reads status; `--repo-dir` selects the
+repository's deployment. `/orbi status all [--json]` instead inventories observable
+local host services from any directory, without repo/config selectors, GitHub auth
+or network fan-out. Preserve literal `all` in one helper call and never inject
+`--repo-dir`; partial/denied manager coverage is not an empty host. See
+[host inventory](../skills/orbi/references/lifecycle.md#host-inventory).
+Bare invocation reads status; `--repo-dir` selects the
 canonical repository and `--config` selects its existing native configuration.
 Public `setup` starts by default, mapping to helper `start`; explicit invocation
 expresses scheduling intent, not a waiver of existing pauses and cutover gates.

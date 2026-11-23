@@ -3446,6 +3446,390 @@ class LifecycleSequenceTests(unittest.TestCase):
         self.assertNotIn('ready', doc['queue'])
 
 
+class HostStatusTests(unittest.TestCase):
+    """The public CLI is local/read-only, including outside a Git checkout."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.h = Harness(Path(self.tmp.name))
+        self.cwd = self.h.root / 'not-git'
+        self.cwd.mkdir()
+
+    def invoke(self, *flags, platform='linux', json_mode=True):
+        out, err = io.StringIO(), io.StringIO()
+        code = helper.main(['status', 'all', *flags, *(['--json'] if json_mode else [])],
+                           env=self.h.env, cwd=self.cwd, platform=platform,
+                           stdout=out, stderr=err)
+        return code, json.loads(out.getvalue()) if json_mode else out.getvalue(), err.getvalue()
+
+    def lists(self, manager, units=(), files=(), error=False):
+        return [
+            {'tool': 'systemctl', 'argv_contains': [manager, 'list-units'],
+             'stdout': json.dumps(list(units)), 'exit': int(error)},
+            {'tool': 'systemctl', 'argv_contains': [manager, 'list-unit-files'],
+             'stdout': json.dumps(list(files)), 'exit': int(error)},
+        ]
+
+    def unit(self, name, state='inactive'):
+        return {'unit': name, 'load': 'loaded', 'active': state, 'sub': 'dead'}
+
+    def detail(self, manager, name, **values):
+        return {'tool': 'systemctl', 'argv_contains': [manager, 'show', name],
+                'stdout': '\n'.join(f'{key}={value}' for key, value in {'Id': name, **values}.items()) + '\n'}
+
+    def assert_read_only(self, before):
+        self.assertEqual(snapshot(self.h.home), before)
+        for call in self.h.calls():
+            tool, argv = call['tool'], call['argv']
+            self.assertIn(tool, ('systemctl', 'git', 'journalctl'))
+            if tool == 'systemctl':
+                self.assertIn(argv[1], ('list-units', 'list-unit-files', 'show'))
+            elif tool == 'git':
+                self.assertTrue(any(part in argv for part in ('rev-parse', 'show', 'diff')))
+            else:
+                self.assertIn('-n', argv)
+                self.assertIn('100', argv)
+
+    def test_two_managers_deployments_surplus_templates_orphan_and_prepared(self):
+        a = self.h.add_deployment_a()
+        second = self.h.data_home / 'not-kit-named'
+        second.mkdir()
+        config = second / 'orbi.toml'
+        config.write_text(f'source_repos = ["second/project"]\ndeploy_home = "{second}"\n')
+        manifest = '[project]\nname = "orbi"\nversion = "0.7.56"\n'
+        (a['deploy'] / 'pyproject.toml').write_text(manifest)
+        a['config'].write_text(a['config'].read_text().replace(OLD_PIN, PIN))
+        service = self.h.unit_dir / 'bespoke@.service'
+        service.write_text(f'[Service]\nEnvironment="ORBI_CONFIG={config}"\nExecStart=/bin/orbi\n')
+        prepared = self.h.data_home / 'prepared'
+        prepared.mkdir()
+        (prepared / 'orbi.toml').write_text('source_repos = ["prepared/repo"]\n')
+        self.h.rules(
+            *self.lists('--user', [self.unit('orbi-a@1.service'), self.unit('orbi-a@9.service', 'failed'),
+                                   self.unit('orbi-a@1.timer', 'active'), self.unit('orbi-orphan@8.service', 'active')],
+                        [{'unit_file': 'orbi-a@.service', 'state': 'disabled'},
+                         {'unit_file': 'orbi-exporter.service', 'state': 'disabled'}]),
+            *self.lists('--system', [self.unit('bespoke@1.service')]),
+            self.detail('--user', 'orbi-a@1.service', FragmentPath=self.h.unit_dir / 'orbi-a@.service'),
+            self.detail('--user', 'orbi-a@9.service', FragmentPath=self.h.unit_dir / 'orbi-a@.service'),
+            self.detail('--user', 'orbi-a@1.timer', Unit='orbi-a@1.service', UnitFileState='enabled',
+                        NextElapseUSecRealtime='Mon 2026-11-23 08:00:00 UTC'),
+            self.detail('--system', 'bespoke@1.service', FragmentPath=service),
+            {'tool': 'git', 'argv_contains': ['show', 'HEAD:pyproject.toml'], 'stdout': manifest},
+        )
+        before = snapshot(self.h.home)
+        code, doc, _ = self.invoke()
+        self.assertEqual(code, 0)
+        rows = {(r['manager'], r['unit']): r for r in doc['rows'] if r['unit']}
+        self.assertEqual(rows['user', 'orbi-a@1.service']['repo'], 'other/repo-a')
+        self.assertEqual(rows['system', 'bespoke@1.service']['repo'], 'second/project')
+        self.assertEqual(rows['system', 'bespoke@1.service']['state'], 'stopped')
+        self.assertEqual(rows['user', 'orbi-a@1.service']['state'], 'idle')
+        self.assertEqual(rows['user', 'orbi-a@1.service']['engine']['version'], '0.7.56')
+        self.assertEqual(rows['user', 'orbi-a@9.service']['scheduler'], 'failed')
+        self.assertEqual(rows['user', 'orbi-a@9.service']['worker']['state'], 'idle')
+        self.assertEqual(rows['user', 'orbi-a@1.service']['next_trigger'], 'Mon 2026-11-23 08:00:00 UTC')
+        self.assertEqual(rows['user', 'orbi-orphan@8.service']['worker']['state'], 'active/issue unknown')
+        self.assertIsNone(rows['user', 'orbi-orphan@8.service']['repo'])
+        self.assertEqual(rows['user', 'orbi-a@.service']['kind'], 'template')
+        self.assertEqual(rows['user', 'orbi-exporter.service']['kind'], 'nonrunner')
+        self.assertTrue(any(r['kind'] == 'config-only' and r['repo'] == 'prepared/repo' for r in doc['rows']))
+        self.assertEqual(doc['totals']['observed_workers'], 4)
+        self.assert_read_only(before)
+        self.h.clear_calls()
+        code, text, _ = self.invoke(json_mode=False)
+        self.assertEqual(code, 0)
+        for token in ('Host Orbi', 'orbi-a@9.service', 'second/project', 'unknown', 'observed'):
+            self.assertIn(token, text)
+        self.assert_read_only(before)
+
+    def test_partial_denied_manager_keeps_healthy_and_unreadable_config(self):
+        bad = self.h.data_home / 'broken'
+        bad.mkdir()
+        (bad / 'orbi.toml').write_text('source_repos = [')
+        self.h.rules(*self.lists('--user', [self.unit('orbi@12.service')]),
+                     *self.lists('--system', error=True))
+        before = snapshot(self.h.home)
+        code, doc, _ = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertEqual(doc['coverage']['state'], 'partial')
+        self.assertEqual(doc['coverage']['managers']['system']['state'], 'unavailable')
+        self.assertEqual(doc['totals']['observed_workers'], 1)
+        self.assertTrue(any(r['binding']['state'] == 'unreadable' for r in doc['rows']))
+        self.assertIn('read', doc['coverage']['managers']['system']['fix'])
+        self.assert_read_only(before)
+        self.h.rules(*self.lists('--user', [self.unit('orbi@12.service')]),
+                     {'tool': 'systemctl', 'argv_contains': ['--system'], 'exit': 1,
+                      'stderr': 'Access denied ' + SECRET})
+        _, doc, _ = self.invoke()
+        self.assertEqual(doc['coverage']['managers']['system']['state'], 'denied')
+        self.assertNotIn(SECRET, json.dumps(doc))
+
+    def test_successful_empty_is_zero_observed_not_absolute_host_total(self):
+        self.h.rules(*self.lists('--user'), *self.lists('--system'))
+        code, doc, _ = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertEqual(doc['rows'], [])
+        self.assertEqual(doc['totals']['observed_workers'], 0)
+        self.assertEqual(doc['coverage']['state'], 'ok')
+        self.assertIn('other users', doc['coverage']['scope'])
+        self.assertNotIn('host_total', doc['totals'])
+
+    def test_quoted_config_paths_do_not_require_orbi_unit_naming(self):
+        deploy = self.h.root / 'deployment with spaces'
+        deploy.mkdir()
+        config = deploy / 'orbi.toml'
+        config.write_text('source_repos = ["quoted/project"]\n')
+        service = self.h.unit_dir / 'bespoke@1.service'
+        for directive in (f'Environment="ORBI_CONFIG={config}"',
+                          f'ExecStart="/bin/orbi" --config "{config}"'):
+            with self.subTest(directive=directive):
+                service.write_text('[Service]\n' + directive + '\n')
+                self.h.rules(*self.lists('--user', [self.unit(service.name)]), *self.lists('--system'),
+                             self.detail('--user', service.name, FragmentPath=service))
+                _, doc, _ = self.invoke()
+                row = next(r for r in doc['rows'] if r['unit'] == service.name)
+                self.assertEqual(row['repo'], 'quoted/project')
+                self.assertEqual(row['binding']['config'], str(config))
+
+    def test_failed_config_discovery_does_not_discard_scheduler_rows(self):
+        self.h.rules(*self.lists('--user', [self.unit('orbi@21.service')]), *self.lists('--system'))
+        original = helper.Path.is_dir
+
+        def denied(path):
+            if path == self.h.data_home:
+                raise PermissionError('do not echo private evidence')
+            return original(path)
+
+        with mock.patch.object(helper.Path, 'is_dir', denied):
+            code, doc, _ = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertEqual(doc['coverage']['state'], 'partial')
+        self.assertTrue(any(r['unit'] == 'orbi@21.service' for r in doc['rows']))
+        self.assertNotIn('do not echo', json.dumps(doc))
+
+    def test_help_advertises_literal_host_mode_and_rejects_all_on_mutations(self):
+        out = io.StringIO()
+        helper.main(['help', '--json'], stdout=out)
+        help_doc = json.loads(out.getvalue())
+        self.assertTrue(any(e['command'] == '/orbi status all --json' for e in help_doc['examples']))
+        self.assertIn('status all', help_doc['actions']['status']['effect'])
+        for action in ('setup', 'start', 'stop', 'update'):
+            with self.subTest(action=action):
+                out = io.StringIO()
+                code = helper.main([action, 'all', '--json'], stdout=out, env=self.h.env)
+                self.assertEqual(code, 2)
+                self.assertEqual(json.loads(out.getvalue())['error']['code'], 'invalid_host_selection')
+        self.assertEqual(self.h.calls(), [])
+
+    def test_conflicting_selectors_refuse_before_any_probe(self):
+        for flags in (['--repo-dir', str(self.cwd)], ['--config', '/missing'], ['--dry-run'],
+                      ['--stop'], ['--resume-setup'], ['--harness', 'pi'], ['--pi-provider', 'secret']):
+            with self.subTest(flags=flags):
+                code, doc, _ = self.invoke(*flags)
+                self.assertEqual(code, 2)
+                self.assertEqual(doc['error']['code'], 'invalid_host_selection')
+                self.assertIn('status all', doc['error']['fix'])
+                self.assertEqual(self.h.calls(), [])
+
+    def test_conflicting_config_bindings_never_attribute_repo(self):
+        a = self.h.add_deployment_a()
+        other = self.h.data_home / 'another.toml'
+        other.write_text('source_repos = ["wrong/repo"]\n')
+        definition = self.h.unit_dir / 'orbi-a@.service'
+        definition.write_text(f'[Service]\nEnvironment="ORBI_CONFIG={a["config"]}"\n'
+                              f'Environment="ORBI_CONFIG={other}"\n')
+        self.h.rules(*self.lists('--user', [self.unit('orbi-a@1.service', 'active')]),
+                     *self.lists('--system'),
+                     self.detail('--user', 'orbi-a@1.service', FragmentPath=definition))
+        _, doc, _ = self.invoke()
+        row = next(r for r in doc['rows'] if r['unit'] == 'orbi-a@1.service')
+        self.assertEqual(row['binding']['state'], 'conflicting')
+        self.assertIsNone(row['repo'])
+        self.assertEqual(doc['coverage']['state'], 'partial')
+        self.assertNotIn(SECRET, json.dumps(doc))
+
+    def test_real_cli_from_non_git_cwd_needs_no_github_or_global_checkout(self):
+        self.h.rules(*self.lists('--user'), *self.lists('--system'))
+        before = snapshot(self.h.home)
+        proc = subprocess.run([sys.executable, '-B', str(HELPER), 'status', 'all', '--json'],
+                              cwd=self.cwd, env=self.h.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)['totals']['observed_workers'], 0)
+        calls_before = self.h.calls()
+        failure = subprocess.run([sys.executable, '-B', str(HELPER), 'status', 'all', '--config', '/missing'],
+                                 cwd=self.cwd, env=self.h.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(failure.returncode, 2)
+        self.assertIn('error=invalid_host_selection', failure.stderr)
+        self.assertIn('fix=use /orbi status all [--json] without selectors', failure.stderr)
+        self.assertEqual(self.h.calls(), calls_before)
+        self.assert_read_only(before)
+
+    def test_current_issue_binds_to_system_manager_invocation_without_network(self):
+        a = self.h.add_deployment_a()
+        unit = 'orbi-a@17.service'
+        invocation, pid, run = 'c' * 32, '222', '1234abcd'
+        props = dict(ActiveState='active', MainPID=pid, InvocationID=invocation,
+                     WorkingDirectory=a['deploy'], FragmentPath=self.h.unit_dir / 'orbi-a@.service')
+        scene = {'MESSAGE': f'INFO [{run}] run_start issue=other/repo-a#42 run={run} phase=implement',
+                 '_PID': pid, '_SYSTEMD_INVOCATION_ID': invocation}
+        self.h.rules(*self.lists('--user'), *self.lists('--system', [self.unit(unit, 'active')]),
+                     self.detail('--system', unit, **props),
+                     {'tool': 'journalctl', 'argv_contains': ['--system', unit],
+                      'stdout': json.dumps(scene) + '\n'})
+        before = snapshot(self.h.home)
+        reads = []
+        original = helper.bounded_bytes
+
+        def capture(path, *args):
+            reads.append(str(path))
+            return original(path, *args)
+
+        with mock.patch.object(helper, 'bounded_bytes', side_effect=capture):
+            code, doc, _ = self.invoke()
+        self.assertEqual(code, 0)
+        row = next(r for r in doc['rows'] if r['unit'] == unit)
+        self.assertEqual(row['worker']['issue']['number'], 42)
+        self.assertEqual(row['worker']['run_id'], run)
+        self.assertEqual(row['repo'], 'other/repo-a')
+        for path in reads:
+            self.assertNotIn('/.orbi/', path)  # no env, provider files, sessions or auth
+        self.assert_read_only(before)
+        # Another manager/retained invocation must not be borrowed.
+        self.h.rules(*self.lists('--user'), *self.lists('--system', [self.unit(unit, 'active')]),
+                     self.detail('--system', unit, **props),
+                     {'tool': 'journalctl', 'argv_contains': ['--system', unit],
+                      'stdout': json.dumps({**scene, '_SYSTEMD_INVOCATION_ID': 'f' * 32}) + '\n'})
+        _, doc, _ = self.invoke()
+        row = next(r for r in doc['rows'] if r['unit'] == unit)
+        self.assertEqual(row['worker']['state'], 'active/issue unknown')
+
+    def test_timer_identity_follows_explicit_target_even_without_orbi_name(self):
+        self.h.rules(*self.lists('--user', [self.unit('orbi@7.service'),
+                                          self.unit('custom.timer', 'active'),
+                                          self.unit('orbi-alternate.timer', 'active'),
+                                          self.unit('orbi-invalid@2.timer', 'active')]),
+                     *self.lists('--system'),
+                     self.detail('--user', 'orbi@7.service'),
+                     self.detail('--user', 'custom.timer', Unit='orbi@7.service'),
+                     self.detail('--user', 'orbi-alternate.timer', Unit='orbi@7.service'),
+                     self.detail('--user', 'orbi-invalid@2.timer', Unit='invalid target'))
+        _, doc, _ = self.invoke()
+        row = next(r for r in doc['rows'] if r['unit'] == 'orbi@7.service')
+        self.assertEqual(set(row['timers']), {'custom.timer', 'orbi-alternate.timer'})
+        self.assertEqual(doc['totals']['observed_workers'], 1)
+
+    def test_unloaded_definitions_timer_target_and_detail_limit(self):
+        self.h.rules(*self.lists('--user', [self.unit('orbi-alias@99.timer', 'active'),
+                                          self.unit('orbi-target@99.service')],
+                                [{'unit_file': 'orbi-unused@28.service', 'state': 'disabled'}]),
+                     *self.lists('--system'),
+                     self.detail('--user', 'orbi-alias@99.timer', Unit='orbi-target@99.service'),
+                     self.detail('--user', 'orbi-target@99.service'),
+                     self.detail('--user', 'orbi-unused@28.service'))
+        _, doc, _ = self.invoke()
+        rows = {r['unit']: r for r in doc['rows'] if r['unit']}
+        self.assertEqual(rows['orbi-target@99.service']['timer'], 'orbi-alias@99.timer')
+        self.assertEqual(rows['orbi-unused@28.service']['scheduler'], 'unloaded')
+        self.assertTrue(rows['orbi-unused@28.service']['installed'])
+        self.assertFalse(rows['orbi-unused@28.service']['loaded'])
+        self.assertEqual(doc['totals']['observed_workers'], 1)
+        self.h.clear_calls()
+        self.h.rules(*self.lists('--user', [self.unit(f'orbi@{i}.service') for i in range(4)]),
+                     *self.lists('--system'))
+        with mock.patch.object(helper, 'HOST_DETAIL_LIMIT', 2):
+            _, doc, _ = self.invoke()
+        self.assertEqual(doc['coverage']['state'], 'partial')
+        self.assertEqual(sum('show' in c['argv'] for c in self.h.calls()), 2)
+
+    def test_config_permission_error_preserves_healthy_repo_and_engine_unknown_without_git(self):
+        a = self.h.add_deployment_a()
+        original = helper.bounded_bytes
+
+        def denied(path, *args):
+            if Path(path) == a['config']:
+                raise PermissionError('private contents must not appear')
+            return original(path, *args)
+
+        self.h.rules(*self.lists('--user'), *self.lists('--system'))
+        with mock.patch.object(helper, 'bounded_bytes', side_effect=denied):
+            _, doc, _ = self.invoke()
+        self.assertTrue(any(r['binding']['state'] == 'unreadable' for r in doc['rows']))
+        self.assertNotIn('private contents', json.dumps(doc))
+        original_run = helper.Context.run
+
+        def no_git(ctx, argv, **kwargs):
+            if argv[0] == 'git':
+                raise helper.ControlError('prerequisite_missing', 'git missing')
+            return original_run(ctx, argv, **kwargs)
+
+        with mock.patch.object(helper.Context, 'run', no_git):
+            _, doc, _ = self.invoke()
+        row = next(r for r in doc['rows'] if r['binding']['config'] == str(a['config']))
+        self.assertEqual(row['binding']['state'], 'verified')
+        self.assertEqual(row['repo'], 'other/repo-a')
+        self.assertIsNone(row['engine']['version'])
+
+    def test_macos_custom_loaded_job_uses_observed_plist_and_denied_job_is_not_unloaded(self):
+        import plistlib
+        config = self.h.root / 'native.toml'
+        config.write_text('source_repos = ["native/repo"]\n')
+        label, denied = 'vendor.delivery', 'org.orbi.denied.runner.20'
+        definition = self.h.root / 'observed.plist'
+        definition.write_bytes(plistlib.dumps({'Label': label, 'ProgramArguments': ['/bin/orbi'],
+            'EnvironmentVariables': {'ORBI_CONFIG': str(config)}}, fmt=plistlib.FMT_BINARY))
+        domain = f'gui/{os.getuid()}'
+        self.h.rules(
+            {'tool': 'launchctl', 'argv_contains': ['print', domain + '/' + label],
+             'stdout': f'path = {definition}\nstate = running\npid = 123\n'},
+            {'tool': 'launchctl', 'argv_contains': ['print', domain + '/' + denied],
+             'exit': 1, 'stderr': 'Access denied ' + SECRET},
+            {'tool': 'launchctl', 'argv_contains': ['print', domain],
+             'stdout': f'services = {{\n123 0 {label}\n234 0 {denied}\n}}\n'},
+            {'tool': 'launchctl', 'argv_contains': ['print'], 'stdout': 'services = {\n}\n'})
+        before = snapshot(self.h.home)
+        _, doc, _ = self.invoke(platform='darwin')
+        rows = {r['unit']: r for r in doc['rows'] if r['unit']}
+        self.assertEqual(rows[label]['repo'], 'native/repo')
+        self.assertEqual(rows[label]['kind'], 'runner')
+        self.assertEqual(rows[label]['worker']['state'], 'active/issue unknown')
+        self.assertTrue(rows[denied]['loaded'])
+        self.assertEqual(rows[denied]['scheduler'], 'unknown')
+        self.assertEqual(doc['coverage']['state'], 'partial')
+        self.assertNotIn(SECRET, json.dumps(doc))
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertTrue(all(c['tool'] == 'launchctl' and c['argv'][0] == 'print' for c in self.h.calls()))
+
+    def test_macos_installed_is_not_loaded_and_loaded_orphans_are_observed(self):
+        folder = self.h.home / 'Library/LaunchAgents'
+        folder.mkdir(parents=True)
+        import plistlib
+        (folder / 'org.orbi.custom.runner.9.plist').write_bytes(plistlib.dumps({
+            'Label': 'org.orbi.custom.runner.9', 'EnvironmentVariables': {'ORBI_CONFIG': '/missing'}},
+            fmt=plistlib.FMT_BINARY))
+        domain = f'gui/{os.getuid()}'
+        self.h.rules(
+            {'tool': 'launchctl', 'argv_contains': ['print', domain + '/org.orbi.custom.runner.9'], 'exit': 113},
+            {'tool': 'launchctl', 'argv_contains': ['print', domain + '/org.orbi.orphan.runner.7'],
+             'stdout': 'state = running\npid = 123\n'},
+            {'tool': 'launchctl', 'argv_contains': ['print', domain],
+             'stdout': 'services = {\n 123 0 org.orbi.orphan.runner.7\n}\n'},
+            {'tool': 'launchctl', 'argv_contains': ['print', 'user/'], 'stdout': 'services = {\n}\n'},
+            {'tool': 'launchctl', 'argv_contains': ['print', 'system'], 'exit': 1},
+        )
+        before = snapshot(self.h.home)
+        code, doc, _ = self.invoke(platform='darwin')
+        self.assertEqual(code, 0)
+        rows = {r['unit']: r for r in doc['rows'] if r['unit']}
+        self.assertFalse(rows['org.orbi.custom.runner.9']['loaded'])
+        self.assertEqual(rows['org.orbi.custom.runner.9']['scheduler'], 'unloaded')
+        self.assertEqual(rows['org.orbi.orphan.runner.7']['worker']['state'], 'active/issue unknown')
+        self.assertEqual(doc['coverage']['state'], 'partial')
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertTrue(all(c['tool'] == 'launchctl' and c['argv'][0] == 'print' for c in self.h.calls()))
+
+
 class RunningStatusTests(unittest.TestCase):
     """Public helper journey; journal scenes follow upstream pi_activity's contract."""
 

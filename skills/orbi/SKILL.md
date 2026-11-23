@@ -9,7 +9,7 @@ license: MIT
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) and
 [shared communication rules](../shared/COMMUNICATION.md) within this workflow's
 scope. The [GitHub-native contract](../../docs/github-native.md) owns delivery
-gates. This skill is a lifecycle client for one repository, not an executor.
+gates. This skill is a lifecycle client with read-only local host inventory, not an executor.
 
 ## Intent and state: fast path
 
@@ -52,6 +52,7 @@ concrete unmet need, not a fixed sequence of model turns.
 
    | Public skill arguments | Helper arguments |
    | --- | --- |
+   | `status all [--json]` | `status all [--json]` |
    | `setup` | `start` |
    | `setup --dry-run` | `start --dry-run` |
    | `setup --prepare-only` | `setup` |
@@ -68,7 +69,12 @@ concrete unmet need, not a fixed sequence of model turns.
 
    Bare `/orbi` means `status`. **Help first.** For help or command inventory, run
    the helper's `help` and return its observed output; it needs no repository,
-   config, environment or scheduler reads. For lifecycle actions, use the requested
+   config, environment or scheduler reads. **Host inventory:** preserve literal
+   `status all` in one helper invocation, from any working directory. Do not inject
+   `--repo-dir` or `--config`, resolve a checkout or run GitHub probes. Only `--json`
+   may accompany `all`; conflicting selectors are refused before probes. Relay
+   partial manager/config coverage and observed totals, never an absolute host count.
+   For repository lifecycle actions, use the requested
    repo/config or known current checkout. The helper resolves the canonical
    worktree and verifies GitHub origin, deployment discovery and unit ownership;
    do not duplicate those reads in host tools. If target or intent is genuinely
@@ -98,6 +104,7 @@ concrete unmet need, not a fixed sequence of model turns.
    | Action | Single-call result and guard |
    | --- | --- |
    | bare/status | Read-only repo/deployed release + revision/scheduler/per-slot activity, then queue; absent is unconfigured, unavailable is not empty. |
+   | status all | Read-only accessible local managers, loaded/installed services and timers, templates, nonrunner services and config-only deployments. No repository binding, queue/doctor fan-out, provider/env/session reads or scheduler actions. See [host inventory](references/lifecycle.md#host-inventory). |
    | help | Authoritative command reference, no deployment binding; accepts and ignores lifecycle inputs. |
    | setup --prepare-only | Helper `setup`: non-activating preparation at the supported pin; `prepared`, `activated: false` is not proof of scheduler inactivity. Preview only when requested. |
    | setup (default) / start | Helper `start`: existing valid target skips preparation; genuinely absent target with no explicit config prepares internally then activates. No separate setup call. Partial/foreign/missing-explicit targets require deliberate repair. |
