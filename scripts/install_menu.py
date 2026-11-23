@@ -1470,9 +1470,9 @@ def restart_services(output, observations=None):
         if row['change'] == 'unverified':
             error = row['after'].get('error') or row['before'].get('error')
             inputs = ', '.join(sorted(set(row['before'].get('inputs', {})) | set(row['after'].get('inputs', {}))))
-            reasons.append(f'{key}: held (unverified input {inputs or key}: {error})')
+            reasons.append(f'{key}: held (unverified input{": " + inputs if inputs else ""}; {error})')
     if any(row['change'] == 'unverified' for row in observations.values()):
-        reasons.append('Inspect named inputs; retry ./install.sh --only ITEM for the held component')
+        reasons.append('Inspect named inputs; retry ./install.sh --only ITEM')
     if not candidates:
         return '; '.join(reasons) or 'no complete changed payloads; no service restart requests'
     if os.environ.get('KIT_INSTALL_DEFER_SERVICES'):
@@ -1741,7 +1741,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                 else:
                     for key, row in observations.items():
                         if key in ('pi-bolt', 'tx', 'claude', 'codex', 'orbi'):
-                            row['after']['error'] = f'{key}: Hermes nested refresh receipt unavailable'
+                            row['after']['error'] = 'Hermes nested receipt unavailable'
                             row['change'] = 'unverified'
                     native_decisions.append('Hermes: held (native receipt unavailable); inspect setup/update receipt; retry ./install.sh --only hermes; no outer restart')
             else:
