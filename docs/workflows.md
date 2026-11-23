@@ -319,12 +319,10 @@ returns findings inline with no GitHub, document or scratch writes. No-dispatch,
 ownership, pauses and human-only gates still apply. Publication failures use Plan
 Handoff's unsaved/partial receipts and reconciliation, not a replacement queue.
 
-### Explicit local fixes
+### Publish contextual findings
 
-An explicitly requested and authorized fix/apply mode uses Bug Harvest with the map
-and findings as its bounded scope in that invocation, separate from default issue
-publication. To request repairs after a report-only analysis, invoke Bug Harvest in
-the same conversation. In Pi:
+After a state-machine report, a bare Bug Harvest invocation in the same conversation
+uses its findings as the bounded publication scope. In Pi:
 
 ```text
 /skill:bug-harvest
@@ -333,13 +331,37 @@ the same conversation. In Pi:
 Hermes also accepts `/bug-harvest`, Claude Code uses `/kit:bug-harvest`, and Codex
 uses `$kit:bug-harvest`. No finding IDs, copied report or extra prompt are required:
 the [contextual handoff](../skills/bug-harvest/SKILL.md#findings-from-the-preceding-response)
-uses the preceding response as the bounded repair scope. It verifies and fixes
-candidates one at a time, adds regression protection and runs affected checks.
-Hypotheses are not automatically bugs; unclear product rules need `/plan-with-me`.
-The campaign stops when the supplied findings are accounted for or a caller limit
-or genuine blocker stops progress. It does not automatically commit or push.
-Explicit user no-write and live-action restrictions remain binding. A previous
-report-only invocation does not by itself restrict a later authorized repair request.
+reuses the state map and evidence, then verifies each defect's reproducer,
+observed/expected behavior, impact and regression check. It does not start local
+repairs, and it reconciles any issues already published by State Machine.
+
+An ordinary `/bug-harvest AREA` likewise analyzes and publishes in one invocation.
+Bug Harvest reconciles existing work, groups shared fixes and publishes every
+supported, buildable, uncovered outcome through Plan Handoff. The preview does not
+wait for approval: native dependencies precede `ai-ready`, and verified issue links
+end the invocation. Uncertain findings are held with reasons while independent work
+continues. Zero qualifying findings means zero new issues.
+
+Explicit report-only, no-write or dry-run returns findings inline without writes.
+Explicit no-dispatch, ownership and human gates remain binding; a prior read-only
+analysis does not by itself impose a continuing no-write limit. Publication does
+not activate Orbi or prove delivery.
+
+### Explicit local fixes
+
+An explicitly requested and authorized fix/apply mode uses Bug Harvest with the map
+and findings as its bounded repair scope in that invocation, separate from default
+issue publication. To request repairs after a report, explicitly name the fix mode:
+
+```text
+/skill:bug-harvest fix these findings locally
+```
+
+The [authorized local fix branch](../skills/bug-harvest/SKILL.md#authorized-local-fixes)
+verifies and fixes candidates one at a time, adds regression protection and runs
+affected checks. It preserves ownership, review, PR and human-only gates, and does
+not automatically commit or push. Explicit continuing user no-write and live-action
+restrictions remain binding.
 
 Planning, implementation and review use the shared contract's stateful-work trigger.
 Bug Harvest, architecture review and Test Optimizer also link the
