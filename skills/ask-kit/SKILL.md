@@ -69,7 +69,8 @@ not ask for.
 | Uizze's UI playbooks | `/ui-taste` |
 | README visuals and SVG assets | `/beautify-github-readme` |
 | Responsive captures at chosen breakpoints | `/responsive-screenshots` |
-| Writing or pruning a skill, `AGENTS.md` or agent doc | `/writing-for-agents` |
+| Revamp root instructions, audit their evidence, or reconcile scoped rules | `/agents-md-generator` |
+| Wording and structure for a skill or agent document | `/writing-for-agents` |
 | Orientation in code before reading many files | `/graphify` |
 | Ponytail guidance, review, audit, debt or benchmarks | `/ponytail`, `/ponytail-review`,
   `/ponytail-audit`, `/ponytail-debt`, `/ponytail-gain`, `/ponytail-help` |

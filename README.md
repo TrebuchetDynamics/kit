@@ -377,7 +377,10 @@ states its own boundaries and what "done" means.
 - `/impeccable`, `/ui-taste` — design, audit and polish frontend and iOS interfaces.
 - `/beautify-github-readme` — redesign or audit a README with project-native SVG.
 - `/responsive-screenshots` — capture pages at breakpoints, report overflow.
-- `/writing-for-agents` — write and prune skills and `AGENTS.md`.
+- `/agents-md-generator` — [revamp both root instructions, audit, or update scoped rules](docs/workflows.md#repository-instruction-reconciliation).
+  Bare Pi invocation rewrites `AGENTS.md` and `CLAUDE.md`; `audit` is read-only.
+  Claude Code: `/kit:agents-md-generator`; Codex: `$kit:agents-md-generator`.
+- `/writing-for-agents` — improve wording and structure in skills and agent docs.
 - `/graphify` — query a local code graph before reading many files.
 - `/ponytail`, `/ponytail-review`, `/ponytail-audit` and siblings — choose a simplicity
   level, review a change, audit a repository, list deferred shortcuts.
