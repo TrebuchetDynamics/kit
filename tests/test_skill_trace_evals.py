@@ -325,6 +325,125 @@ class SkillTraceEvalTests(unittest.TestCase):
                 missing['events'] = [e for e in missing['events'] if e['type'] != 'final']
                 self.assertFalse(evaluate(missing, spec)['ok'])
 
+    def test_push_local_scope_matrix_has_zero_sibling_actions(self):
+        # Synthetic events, NOT measured host/model tool calls. The same local
+        # invocation is independent of the number/state/location of siblings.
+        spec = load(SPECS / 'push.json')
+        for count in (0, 32):
+            for scenario in ('dirty', 'locked', 'active', 'unique-commits',
+                             'clean-invoking', 'linked-invoking', 'nested-sibling'):
+                trace = load(TRACES / 'push-local-scope.json')
+                siblings = [f'/fixture/out-of-scope/sibling-{i}' for i in range(count)]
+                if scenario == 'linked-invoking':
+                    siblings.append('/fixture/out-of-scope/canonical')
+                if scenario == 'nested-sibling':
+                    siblings.append('/fixture/invoking/nested-worker')
+                trace['context'].update(unrelated_worktrees=count, scenario=scenario,
+                                        out_of_scope=siblings, sibling_state=scenario)
+                for event in trace['events']:
+                    if 'worktree list' in event.get('command', ''):
+                        event['stdout'] = 'worktree /fixture/invoking\n\n' + ''.join(
+                            f'worktree {path}\n\n' for path in siblings)
+                if scenario == 'clean-invoking':
+                    trace['events'] = [e for e in trace['events'] if not (
+                        e.get('type') == 'command' and
+                        (' add ' in e['command'] or ' commit ' in e['command']))]
+                    trace['events'][-1]['text'] = trace['events'][-1]['text'].replace(
+                        'eligible edited.txt saved at ' + '1' * 40 + '.',
+                        'none; invoking checkout clean.')
+                elif scenario == 'linked-invoking':
+                    trace['context']['invoking_checkout'] = '/fixture/invoking-linked'
+                    for event in trace['events']:
+                        if 'stdout' in event:
+                            event['stdout'] = event['stdout'].replace(
+                                '/fixture/invoking', '/fixture/invoking-linked')
+                    trace['events'][-1]['text'] = trace['events'][-1]['text'].replace(
+                        'Local scope: /fixture/invoking;', 'Local scope: /fixture/invoking-linked;')
+                with self.subTest(count=count, scenario=scenario):
+                    result = evaluate(trace, spec)
+                    self.assertTrue(result['ok'], result['failures'])
+                    # The scope guards themselves count zero, not merely an
+                    # assertion that the final answer claimed no inspection.
+                    guarded = [i for i, clause in enumerate(spec['forbid'])
+                               if 'out-of-scope' in json.dumps(clause)
+                               or 'nested-worker' in json.dumps(clause)
+                               or 'worktree[_-]sweep' in clause.get('command', '')]
+                    self.assertTrue(guarded, 'missing sibling/sweep guards')
+                    self.assertEqual(sum(result['matched'][f'forbid[{i}]']
+                                         for i in guarded), 0)
+                    self.assertTrue(any('fetch team' in e.get('command', '')
+                                        for e in trace['events']))
+
+    def test_push_refuses_sibling_access_and_indirect_sweeps(self):
+        # Known fixture roots and tip, not arbitrary path-role inference.
+        spec = load(SPECS / 'push.json')
+        commands = (
+            'git -C /fixture/out-of-scope/sibling-0 status --porcelain',
+            'git -C /fixture/out-of-scope/canonical diff',
+            'stat /fixture/out-of-scope/sibling-0/src/parser.py',
+            'ps aux | grep /fixture/out-of-scope/sibling-0',
+            'cat /fixture/invoking/nested-worker/AGENTS.md',
+            'find /fixture/invoking/nested-worker -type f',
+            'git add -- nested-worker/src/parser.py',
+            'git --literal-pathspecs add -- /fixture/invoking/nested-worker',
+            'git add -- .', 'git add -A',
+            'git merge --no-ff ' + '9' * 40,
+            'git cherry-pick ' + '9' * 40,
+            'python3 skills/git-commit-push/scripts/worktree_sweep.py /fixture/invoking',
+            'python3 -c "import runpy; runpy.run_path(\'worktree_sweep.py\')"',
+            'sh -c "python3 worktree_sweep.py /fixture/invoking"',
+            '/git-commit-push all',
+        )
+        events = [{'type': 'command', 'command': cmd, 'exit': 0} for cmd in commands]
+        for path in ('/fixture/out-of-scope/sibling-0/src/parser.py',
+                     '/fixture/out-of-scope/canonical/AGENTS.md',
+                     '/fixture/invoking/nested-worker/src/parser.py'):
+            events.extend({'type': kind, 'path': path} for kind in ('read', 'write', 'edit'))
+        for event in events:
+            for wrapped in (False, True):
+                trace = load(TRACES / 'push-local-scope.json')
+                if wrapped:
+                    kind = event['type']
+                    event = {'type': 'tool', 'tool': 'bash' if kind == 'command' else kind,
+                             'args': {k: v for k, v in event.items() if k != 'type'}}
+                trace['events'].insert(-1, event)
+                with self.subTest(event=event):
+                    result = evaluate(trace, spec)
+                    self.assertFalse(result['ok'], result)
+                    self.assertTrue(any('forbidden action' in f for f in result['failures']))
+
+    def test_push_requires_git_checkout_identity_and_local_scope_receipt(self):
+        spec = load(SPECS / 'push.json')
+        for missing in ('identity', 'scope', 'not-inspected'):
+            trace = load(TRACES / 'push-local-scope.json')
+            if missing == 'identity':
+                trace['events'] = [e for e in trace['events']
+                                   if '--show-toplevel' not in e.get('command', '')]
+            else:
+                phrase = 'Local scope:' if missing == 'scope' else 'other worktrees were not inspected'
+                trace['events'][-1]['text'] = trace['events'][-1]['text'].replace(phrase, '')
+            with self.subTest(missing=missing):
+                result = evaluate(trace, spec)
+                self.assertFalse(result['ok'])
+                self.assertTrue(any('missing required' in f for f in result['failures']))
+
+    def test_push_scope_cli_reports_refusal_and_repair(self):
+        import subprocess
+        command = [sys.executable, str(ROOT / 'scripts/skill_trace_eval.py'),
+                   str(SPECS / 'push.json')]
+        success = subprocess.run(command + [str(TRACES / 'push-local-scope.json')],
+                                 capture_output=True, text=True, timeout=30)
+        self.assertEqual(success.returncode, 0, success.stderr)
+        failure = subprocess.run(command + [str(TRACES / 'push-sibling-fail.json')],
+                                 capture_output=True, text=True, timeout=30)
+        self.assertEqual(failure.returncode, 1, failure.stdout + failure.stderr)
+        self.assertIn('forbidden action', failure.stdout)
+        self.assertIn('nested-worker', failure.stdout)
+        self.assertIn('worktree[_-]sweep', failure.stdout)
+        # Repair the invocation scope, not the recorded evidence: a separate
+        # conforming synthetic invocation passes. No history is rewritten.
+        self.assertTrue(json.loads(success.stdout)['ok'])
+
     def test_push_read_only_fixture_rejects_fetch_without_running_it(self):
         # The existing grader has no conditional modes or semantic candidate engine.
         # Apply the existing read-only clauses to a push audit scenario explicitly.

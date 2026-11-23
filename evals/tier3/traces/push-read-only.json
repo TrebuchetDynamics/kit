@@ -20,6 +20,11 @@
     },
     {
       "type": "command",
+      "command": "git rev-parse --show-toplevel",
+      "exit": 0
+    },
+    {
+      "type": "command",
       "command": "git status --short --branch",
       "exit": 0
     },
@@ -34,7 +39,7 @@
     },
     {
       "type": "final",
-      "text": "AUDIT: existing refs at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; remote-only PR reported, source freshness unknown without authorized sync. No fetch, refs/worktrees/files changed. Request authorized delivery to synchronize; open owned PR stays with coordinator."
+      "text": "Local scope: invoking checkout; other worktrees were not inspected. AUDIT: existing refs at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; remote-only PR reported, source freshness unknown without authorized sync. No fetch, refs/worktrees/files changed. Request authorized delivery to synchronize; open owned PR stays with coordinator."
     }
   ]
 }

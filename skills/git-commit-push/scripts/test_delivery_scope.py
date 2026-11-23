@@ -95,11 +95,12 @@ class DeliveryScopePolicyTests(unittest.TestCase):
         self.assertIn('committed is not deployed', self.reference)
         self.assertIn('held/asked, not no-op', self.main)
 
-    def test_push_saves_ordinary_idle_work_without_completion_marker(self):
+    def test_push_saves_ordinary_invoking_checkout_work_without_completion_marker(self):
         push = normalized(ROOT / 'skills/push/SKILL.md')
         docs = normalized(ROOT / 'docs/workflows.md')
         for text in (push, docs):
-            self.assertIn('verified idle worktrees', text)
+            self.assertIn('invoking checkout only', text)
+            self.assertNotIn('verified idle worktrees', text)
             self.assertIn('no separate completion note or marker', text)
             self.assertIn('staged, unstaged, deleted', text)
             self.assertIn('ordinary non-ignored untracked', text)
@@ -114,11 +115,16 @@ class DeliveryScopePolicyTests(unittest.TestCase):
         self.assertIn('otherwise push the candidate branch', push)
         self.assertIn('exact publication blocker', push)
 
-    def test_push_exception_does_not_widen_sibling_or_sweep_helper(self):
+    def test_push_local_scope_does_not_invoke_the_explicit_all_sweep(self):
+        push = normalized(ROOT / 'skills/push/SKILL.md')
         sweep = normalized(SKILL / 'references/worktree-sweep.md')
-        self.assertIn('## when called by `/push`', sweep)
-        self.assertIn('no separate completion note or marker', sweep)
-        self.assertIn('the helper still never commits dirty worktrees', sweep)
+        self.assertIn('explicit `/git-commit-push all`', sweep)
+        self.assertIn('does not call this helper or integrate sibling tips', sweep)
+        self.assertIn('dirty work stays with its owner', sweep)
+        self.assertNotIn('references/worktree-sweep.md', push)
+        self.assertIn('git rev-parse --show-toplevel', push)
+        self.assertIn('exclude nested registered roots and their descendants', push)
+        self.assertIn('other worktrees were not inspected', push)
         self.assertIn('the checked-out branch, then its upstream', self.main)
         self.assertIn('completed eligible scope', self.main)
         self.assertIn('a dirty worktree is reported for its owner', self.main)
@@ -131,7 +137,7 @@ class DeliveryScopePolicyTests(unittest.TestCase):
         self.assertIn(Path(__file__).resolve(), checker.discover_tests(ROOT))
 
 
-class PushIdleWorktreeGitTests(unittest.TestCase):
+class PushInvokingCheckoutGitTests(unittest.TestCase):
     """Replay the documented Git path, not a model or an executable /push engine.
 
     Ownership/exclusion decisions are explicit fixture inputs. No completion file
@@ -139,6 +145,7 @@ class PushIdleWorktreeGitTests(unittest.TestCase):
     """
 
     def git(self, cwd, *args, expected=0):
+        self.calls.append((cwd, args))
         result = subprocess.run(['git', '-C', str(cwd), *args], env=self.env,
                                 capture_output=True, timeout=10)
         self.assertEqual(result.returncode, expected,
@@ -146,6 +153,7 @@ class PushIdleWorktreeGitTests(unittest.TestCase):
         return result.stdout
 
     def setUp(self):
+        self.calls = []
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
@@ -195,7 +203,7 @@ class PushIdleWorktreeGitTests(unittest.TestCase):
                 tuple((p, (self.idle / p).read_bytes() if (self.idle / p).exists() else None)
                       for p in paths))
 
-    def test_ordinary_idle_changes_reach_remote_main_and_exclusions_survive(self):
+    def test_linked_invoking_changes_reach_remote_main_without_canonical_access(self):
         self.assertEqual(len(self.git(self.repo, 'worktree', 'list', '--porcelain')
                              .split(b'worktree ')) - 1, 2)
         baseline = self.baseline()
@@ -210,29 +218,48 @@ class PushIdleWorktreeGitTests(unittest.TestCase):
         self.git(self.repo, 'push', 'verified', 'HEAD:refs/heads/main')
         upstream = self.git(self.repo, 'rev-parse', 'HEAD').strip()
         self.assertEqual(self.baseline(), baseline)  # HEAD, index AND file bytes
+        # Invocation begins in the linked checkout. Canonical is now dirty and
+        # out of scope, not a second source or an in-place landing destination.
+        (self.repo / 'edited.txt').write_text('canonical owner is still writing\n')
+        canonical = (self.git(self.repo, 'rev-parse', 'HEAD'),
+                     (self.repo / '.git/index').read_bytes(),
+                     (self.repo / 'edited.txt').read_bytes())
+        self.calls.clear()
+        self.assertEqual(self.git(self.idle, 'rev-parse', '--show-toplevel').strip(),
+                         str(self.idle).encode())
+        self.git(self.idle, 'worktree', 'list', '--porcelain', '-z')
         # Already-staged deletion stays in the expected set, not the add list.
         self.git(self.idle, '--literal-pathspecs', 'add', '--', *self.eligible, 'deleted.txt')
         staged = self.git(self.idle, 'diff', '--cached', '--name-only', '-z').split(b'\0')[:-1]
         self.assertEqual(set(staged), {p.encode() for p in
                                       [*self.eligible, 'deleted.txt', 'staged-delete.txt']})
         self.git(self.idle, 'diff', '--cached', '--check')
-        self.git(self.idle, 'commit', '-m', 'Save ordinary idle work without a completion note')
+        self.git(self.idle, 'commit', '-m', 'Save invoking work without a completion note')
         saved = self.git(self.idle, 'rev-parse', 'HEAD').strip().decode()
-        # Merge on the invoking checkout; never integrate over the held dirty files.
-        self.git(self.repo, 'merge', '--no-ff', saved, '-m', 'Reconcile idle work with upstream')
-        self.git(self.repo, 'merge-base', '--is-ancestor', upstream.decode(), 'HEAD')
-        self.git(self.repo, 'diff', '--check')
-        candidate = self.git(self.repo, 'rev-parse', 'HEAD').strip().decode()
-        self.git(self.repo, 'push', 'verified', 'HEAD:refs/heads/candidate')
+        self.git(self.idle, 'fetch', 'verified')
+        # Isolate without probing canonical status/files/activity. Only metadata
+        # supplies placement; this disposable fixture permits a candidate branch.
+        landing = self.repo / '.worktrees/candidate'
+        self.git(self.idle, 'worktree', 'add', '-b', 'candidate', str(landing), 'verified/main')
+        self.git(landing, 'merge', '--no-ff', saved, '-m', 'Reconcile invoking work with upstream')
+        self.git(landing, 'merge-base', '--is-ancestor', upstream.decode(), 'HEAD')
+        self.git(landing, 'diff', '--check')
+        candidate = self.git(landing, 'rev-parse', 'HEAD').strip().decode()
+        self.git(landing, 'push', 'verified', 'HEAD:refs/heads/candidate')
         # Candidate published but no main inclusion: protected PR/check/review gates
         # would still be pending. This fixture does not pretend to perform those gates.
         self.git(self.remote, 'merge-base', '--is-ancestor', candidate, 'refs/heads/main', expected=1)
         self.assertIn('unmerged protected pr remain pending',
                       normalized(ROOT / 'docs/workflows.md'))
         # This fixture permits direct main writes. Only this readback proves delivery.
-        self.git(self.repo, 'push', 'verified', 'HEAD:refs/heads/main')
-        readback = self.git(self.repo, 'ls-remote', 'verified', 'refs/heads/main').split()[0].decode()
+        self.git(landing, 'push', 'verified', 'HEAD:refs/heads/main')
+        readback = self.git(landing, 'ls-remote', 'verified', 'refs/heads/main').split()[0].decode()
         self.assertEqual(readback, candidate)
+        self.assertNotIn(self.repo, [cwd for cwd, args in self.calls])
+        # Verification outside the simulated invocation may inspect the fixture.
+        self.assertEqual((self.git(self.repo, 'rev-parse', 'HEAD'),
+                          (self.repo / '.git/index').read_bytes(),
+                          (self.repo / 'edited.txt').read_bytes()), canonical)
         self.git(self.remote, 'merge-base', '--is-ancestor', saved, readback)
         for path, content in {**self.eligible, 'invoking.txt': 'invoking checkout change\n'}.items():
             self.assertEqual(self.git(self.remote, 'show', f'{readback}:{path}'), content.encode())
@@ -245,6 +272,39 @@ class PushIdleWorktreeGitTests(unittest.TestCase):
         residual = self.git(self.idle, 'status', '--porcelain=v1', '-z', '--untracked-files=all')
         for path in self.exclusions.keys() - {'ignored/cache.txt'}:
             self.assertIn(path.encode() + b'\0', residual)
+
+    def test_nested_registered_worktree_is_a_boundary_not_untracked_content(self):
+        nested = self.idle / 'nested-worker'
+        self.git(self.idle, 'worktree', 'add', '-b', 'nested-worker', str(nested))
+        (nested / 'nested-only.txt').write_text('unique sibling commit\n')
+        self.git(nested, 'add', '--', 'nested-only.txt')
+        self.git(nested, 'commit', '-m', 'Sibling unique tip')
+        (nested / 'nested-only.txt').write_text('active sibling edits\n')
+        self.git(self.idle, 'worktree', 'lock', '--reason', 'active fixture writer', str(nested))
+        tip = self.git(nested, 'rev-parse', 'HEAD').strip()
+        index = Path(self.git(nested, 'rev-parse', '--git-path', 'index').decode().strip())
+        before = (index.read_bytes(), (nested / 'nested-only.txt').read_bytes())
+        self.calls.clear()
+        root = self.git(self.idle, 'rev-parse', '--show-toplevel').strip().decode()
+        metadata = self.git(self.idle, 'worktree', 'list', '--porcelain', '-z')
+        roots = [Path(part.removeprefix(b'worktree ').decode())
+                 for part in metadata.split(b'\0') if part.startswith(b'worktree ')]
+        self.assertIn(nested, roots)
+        self.assertEqual(Path(root), self.idle)
+        # Git lists the nested repository boundary, not its contents. Filter the
+        # registered roots before any file reads and stage only explicit A files.
+        status = self.git(self.idle, 'status', '--porcelain=v1', '--untracked-files=all')
+        self.assertIn(b'?? nested-worker/', status)
+        self.assertNotIn(b'nested-only.txt', status)
+        self.git(self.idle, '--literal-pathspecs', 'add', '--', *self.eligible, 'deleted.txt')
+        staged = self.git(self.idle, 'diff', '--cached', '--name-only').decode().splitlines()
+        self.assertFalse(any(p.startswith('nested-worker') for p in staged))
+        self.git(self.idle, 'commit', '-m', 'Save invoking checkout, excluding nested boundary')
+        self.git(self.idle, 'merge-base', '--is-ancestor', tip.decode(), 'HEAD', expected=1)
+        self.assertNotIn(nested, [cwd for cwd, args in self.calls])
+        # Post-invocation fixture verification, not part of /push's local inventory.
+        self.assertEqual(self.git(nested, 'rev-parse', 'HEAD').strip(), tip)
+        self.assertEqual((index.read_bytes(), (nested / 'nested-only.txt').read_bytes()), before)
 
     def test_same_status_baseline_drift_requires_reinventory_not_staging(self):
         before = self.baseline()

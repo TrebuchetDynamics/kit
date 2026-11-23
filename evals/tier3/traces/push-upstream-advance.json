@@ -34,6 +34,11 @@
     },
     {
       "type": "command",
+      "command": "git rev-parse --show-toplevel",
+      "exit": 0
+    },
+    {
+      "type": "command",
       "command": "git status --short --branch",
       "exit": 0
     },
@@ -111,7 +116,7 @@
     },
     {
       "type": "final",
-      "text": "Local commits: accepted local fix 1111111111111111111111111111111111111111 retained. Incoming landed: PR 51 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb then PR 52 merge cccccccccccccccccccccccccccccccccccccccc through team/trunk; incoming tests retained. Pending: PR 52 reclassified merged upstream, never imported former owned head eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee. Selected/final: 2222222222222222222222222222222222222222/ffffffffffffffffffffffffffffffffffffffff; base advanced bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb to cccccccccccccccccccccccccccccccccccccccc before publication; rebuilt ordinary merge. Checks: affected parser/auth union and required independent review passed for ffffffffffffffffffffffffffffffffffffffff; unchanged receipts reused. Remote inclusion: publish/trunk ffffffffffffffffffffffffffffffffffffffff, both merges ancestors. Local sync: canonical checkout busy, local trunk stale; owner can fast-forward after release."
+      "text": "Local scope: invoking checkout; other worktrees were not inspected. Local commits: accepted local fix 1111111111111111111111111111111111111111 retained. Incoming landed: PR 51 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb then PR 52 merge cccccccccccccccccccccccccccccccccccccccc through team/trunk; incoming tests retained. Pending: PR 52 reclassified merged upstream, never imported former owned head eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee. Selected/final: 2222222222222222222222222222222222222222/ffffffffffffffffffffffffffffffffffffffff; base advanced bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb to cccccccccccccccccccccccccccccccccccccccc before publication; rebuilt ordinary merge. Checks: affected parser/auth union and required independent review passed for ffffffffffffffffffffffffffffffffffffffff; unchanged receipts reused. Remote inclusion: publish/trunk ffffffffffffffffffffffffffffffffffffffff, both merges ancestors. Local sync: isolated candidate delivered; other local main pointers not inspected or synchronized."
     }
   ]
 }

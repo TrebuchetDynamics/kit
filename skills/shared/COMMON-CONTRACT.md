@@ -61,7 +61,7 @@ protection and required review gates propagate to supporting skills and delegate
 | Read-only / audit / questions / dry-run | Read existing local refs/source and permitted remote metadata only. Never fetch (it writes `.git`), update refs, pull, create worktrees or otherwise mutate Git. Report the observed revision and freshness gaps. |
 | Writable planning | Consult fresh GitHub issue/PR state and available remote source reads; identify stale local source and record unknown evidence when unavailable. Save only authorized planning artifacts/publish issues. Do not sync or commit the checkout. |
 | Authorized implementation | Inspect the baseline, repository identity and actual ownership before edits. If stale or shared, use the existing isolation procedure from a verified base; do not refresh another writer's checkout. If the base cannot be verified within scope, hold dependent edits and name the missing evidence. |
-| Delivery/sync | Follow [/push](../push/SKILL.md) for repository-wide delivery or [/git-commit-push](../git-commit-push/SKILL.md) for its explicit scope. Only authorized sync may fetch a verified configured upstream. Narrower caller limits win. |
+| Delivery/sync | Follow [/push](../push/SKILL.md) for invoking-checkout delivery to `main` or [/git-commit-push](../git-commit-push/SKILL.md) for its explicit scope (`all` retains the sweep). Only authorized sync may fetch a verified configured upstream. Narrower caller limits win. |
 | Non-repository | Report this rule not applicable; do not require Git or GitHub for a non-repository task. |
 
 **Verify identity, not names.** Resolve the actual repository, intended base,
@@ -70,7 +70,11 @@ policy. Distinguish fetch and push URLs/refs; do not assume `origin`, `main`, a
 branch prefix or a bot author establishes identity or ownership. Existing examples
 with those names apply only after verification. Resolve ambiguous destinations
 before writes. Check current issue/PR links, coordinator/run evidence and actual
-writer activity; a quiet or clean worker checkout does not establish release.
+writer activity within the invoking command's local scope; a quiet or clean worker
+checkout does not establish release. `/push` excludes other worktrees from local
+inspection, saving and tip integration, including the canonical checkout when
+invoked from a linked checkout. Minimal Git metadata for boundaries, placement and
+safe landing is allowed; remote issue/PR discovery and freshness remain complete.
 
 **Keep Orbi delivery with its coordinator.** Orbi owns its issue-to-PR/review/merge
 route, including an open PR whose checks pass. Take already-landed code through
