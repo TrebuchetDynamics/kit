@@ -378,7 +378,7 @@ states its own boundaries and what "done" means.
 - `/skill:state-machine` (Pi) — map unsafe transitions and publish warranted issues.
   See [other hosts and usage](docs/workflows.md#state-machine).
 - `/bug-harvest` — hunt evidence-backed defects, one candidate at a time.
-- `/test-optimizer` — delete redundant tests and shrink the suite that remains.
+- `/test-optimizer` — publish justified suite reductions as GitHub issues for Orbi.
 - `/unused-code` — remove code whose unreachability is proven.
 - `/improve-codebase-architecture` — expose waste and bugs; verify explicitly requested fixes.
 - `/autonomous-codebase-improver` — work several improvement lanes in one campaign.
