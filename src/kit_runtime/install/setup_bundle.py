@@ -3,6 +3,7 @@
 Runs only from install/setup entry points, never during plugin discovery.
 """
 import argparse
+import json
 import os
 from pathlib import Path
 import re
@@ -92,6 +93,13 @@ def main(argv=None):
         run(f'verify/wire {profile}', command)
     state = 'incomplete' if failures else ('preview' if args.dry_run else 'complete')
     print(f'Bundle setup {state}: {len(profiles)} profiles; {len(failures)} failed stages.')
+    print(json.dumps({'status': state, 'gateway_restart': 'not_requested',
+                      'gateway_restart_action': ('Native setup owns profile wiring; deferred by --no-reload'
+                                                 if args.no_reload else 'Native setup owns profile wiring; no process restart requested'),
+                      'failed_stages': failures,
+                      **({'error': 'Failed stages: ' + ', '.join(failures),
+                          'action': 'Repair the failed stages and rerun ./install.sh --only hermes with the same setup options'}
+                         if failures else {})}))
     return int(bool(failures))
 
 

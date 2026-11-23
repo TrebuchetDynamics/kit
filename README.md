@@ -310,8 +310,10 @@ stashing or pulling. `--help`, `--list` and `--dry-run` never stash or pull.
 
 `--full` (`--all`) and `--verbose` (`-v`) are the defaults. Missing hosts other than
 Pi are skipped, while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
-installs nothing. Install/update restarts active supported host integrations;
-paused/stopped services stay untouched.
+installs nothing. Both entrypoints check for updates on every run under existing source/pin policies.
+Only complete changes to installed payloads or effective settings can restart a proven active consumer, once.
+Healthy unchanged reruns request no service restarts. Paused, stopped and unrelated services stay untouched.
+Hermes owns its native gateway restart or deferral decision. Unknown input or ownership evidence holds with a manual next action.
 See [restart scope and failure handling](docs/installation.md#full-suite-from-a-checkout).
 Hermes still runs its complete fleet setup and its own dependency and
 security prompts; use `--yes-deps` only when you intend to consent to them.
@@ -334,7 +336,7 @@ non-interactive and installs no optional extensions. See [Pi-Bolt installation](
 Every install refreshes the installed Pi package with `pi-bolt update`, and so does
 `./install.sh update`: a complete-looking skill folder set is not proof of current
 content, so a kept package is never an option. Settings reconciliation still runs,
-as does the service-restart phase.
+followed by change-based service decisions.
 
 </details>
 
@@ -439,9 +441,9 @@ acceptable.
 Codex: `$kit:update-kit`; Hermes also accepts `/update_kit`). It keeps the complete
 upstream `main` checkout at `${XDG_DATA_HOME:-$HOME/.local/share}/kit/source` and
 reruns its installer, even at the same revision. Default scope may bootstrap
-Pi-Bolt (never stock Pi) and restart active supported integrations. Restricted Hermes cascades
-and no-restarts requests are refused before mutation; `--no-reload` does not prevent
-final restarts. See [Update Kit safety, preview and recovery](docs/installation.md#update-kit).
+Pi-Bolt (never stock Pi) and restart only proven affected active integrations. Unchanged reruns do not restart services. Restricted Hermes cascades
+and no-restarts requests are refused before mutation. `--no-reload` defers Hermes setup wiring,
+not other affected-host restarts. See [Update Kit safety, preview and recovery](docs/installation.md#update-kit).
 Reload the current agent session afterward; installation is not live qualification.
 
 **Pi-Bolt:** update the package with

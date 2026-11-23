@@ -38,7 +38,9 @@ def refresh_hosts(source):
             env = dict(os.environ, KIT_INSTALL_REPORT=str(report), NO_COLOR='1')
             with subprocess.Popen(['bash', str(source / 'install.sh'), '--full', '--skip', 'hermes,pi', '-q'],
                                   cwd=source, stdin=subprocess.DEVNULL, env=env,
-                                  start_new_session=True) as child:
+                                  start_new_session=True,
+                                  pass_fds=((int(env['KIT_INSTALL_LOCK_FD']),)
+                                            if env.get('KIT_INSTALL_LOCK_FD') else ())) as child:
                 try:
                     code = child.wait(timeout=HOST_REFRESH_TIMEOUT_S)
                     status = 'failed' if code else 'unreported'
@@ -52,13 +54,15 @@ def refresh_hosts(source):
                         row = json.loads(line)
                     except ValueError:
                         continue  # interrupted last write; account for it below
-                    if (isinstance(row, dict) and row.get('item') in HOST_ITEMS
+                    if (isinstance(row, dict) and row.get('item') in (*HOST_ITEMS, 'services')
                             and row.get('status') in ('installed', 'failed', 'skipped')
                             and (row.get('exit') is None or type(row['exit']) is int)):
-                        rows[row['item']] = {k: row.get(k) for k in ('item', 'status', 'exit')}
+                        rows[row['item']] = {k: row[k] for k in ('item', 'status', 'exit', 'change',
+                            'changed_inputs', 'evidence', 'decision', 'reason') if k in row}
     except (OSError, subprocess.SubprocessError):
         status, code = 'unavailable', None
-    return [rows.get(item, {'item': item, 'status': status, 'exit': code}) for item in HOST_ITEMS]
+    return ([rows.get(item, {'item': item, 'status': status, 'exit': code}) for item in HOST_ITEMS]
+            + ([rows['services']] if 'services' in rows else []))
 
 
 MANIFEST_NAMES = (PLUGIN,)
