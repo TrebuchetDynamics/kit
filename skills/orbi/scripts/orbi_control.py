@@ -3187,49 +3187,114 @@ def host_definition_dirs(ctx, manager):
             Path('/usr/local/lib/systemd/system'), Path('/usr/lib/systemd/system')]
 
 
-def host_definition(ctx, path, *, working_directory=None, instance=None):
+def host_orbi_command(args):
+    """Identify direct CLI/module execution without executing or exposing argv."""
+    if not isinstance(args, list) or not args or not all(isinstance(a, str) for a in args):
+        return {'orbi': False, 'runner': False, 'configs': []}
+    if Path(args[0].lstrip('-+!:@')).name == 'orbi':
+        tail = args[1:]
+    elif len(args) >= 3 and Path(args[0]).name.startswith('python') and args[1] == '-m' and args[2] in {'orbi', 'orbi.runner'}:
+        tail = args[3:]
+    else:
+        return {'orbi': False, 'runner': False, 'configs': []}
+    refs, positionals = [], []
+    index = 0
+    while index < len(tail):
+        arg = tail[index]
+        if arg == '--config' and index + 1 < len(tail):
+            index += 1
+            refs.append(tail[index])
+        elif arg.startswith('--config='):
+            refs.append(arg.split('=', 1)[1])
+        elif not arg.startswith('-'):
+            positionals.append(arg)
+        index += 1
+    # Bare orbi is the delivery tick. Subcommands are not workers.
+    return {'orbi': True, 'runner': not positionals and not any(a in {'--help', '-h', '--version'} for a in tail), 'configs': refs}
+
+
+def host_resolve_configs(references, cwd=None):
+    resolved = set()
+    for value in references:
+        if not value or '%' in value or '$' in value:
+            continue  # unsupported expansion is not a verified binding
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            if not cwd or not Path(cwd).is_absolute():
+                continue
+            candidate = Path(cwd) / candidate
+        try:
+            resolved.add(str(candidate.resolve()))
+        except (OSError, RuntimeError):
+            # Retain an unreadable identity for host_configs instead of losing
+            # healthy rows to a denied parent or a broken symlink chain.
+            resolved.add(str(candidate.absolute()))
+    return sorted(resolved)
+
+
+def host_definition(ctx, path, *, working_directory=None, instance=None, manager='user'):
     """Extract config references only; never return commands or environment contents."""
     text = bounded_text(path)
     references = []
     for assignment in re.findall(r'^Environment=(.*)$', text, re.M):
         references.extend(token.partition('=')[2] for token in shlex.split(assignment)
                           if token.startswith('ORBI_CONFIG='))
-    # --config is a documented upstream selector, including non-Kit units.
-    runner = bool(re.search(r'(?:[/\s=]|^)orbi(?:[\s"\x27]|$)|-m\s+orbi(?:\s|$)', text))
-    if runner:
-        references.extend(next(part for part in match if part) for match in re.findall(
-            r'--config(?:=|\s+)(?:"([^"\n]+)"|\x27([^\x27\n]+)\x27|([^\s"\x27]+))', text))
+    commands = [host_orbi_command(shlex.split(command))
+                for command in re.findall(r'^ExecStart=(.+)$', text, re.M)]
+    for command in commands:
+        references.extend(command['configs'])
+    runner = any(command['runner'] for command in commands)
+    orbi = any(command['orbi'] for command in commands)
     directories = re.findall(r'^WorkingDirectory=(.+)$', text, re.M)
     cwd = working_directory or (directories[0].strip('"\x27') if len(directories) == 1 else None)
-    if not references and runner and cwd and (Path(cwd) / 'orbi.toml').is_file():
+    if not references and orbi and cwd and (Path(cwd) / 'orbi.toml').is_file():
         references.append(str(Path(cwd) / 'orbi.toml'))
-    resolved = set()
+    expanded = []
     for value in references:
-        value = value.replace('%h', str(home_dir(ctx)))
+        # %h belongs to the manager, not the invoking user. Do not attribute a
+        # system unit to the caller's home when the manager home is unobserved.
+        if manager == 'user':
+            value = value.replace('%h', str(home_dir(ctx)))
         if instance is not None:
             value = value.replace('%i', instance)
-        if '%' in value or '$' in value:
-            continue  # unsupported expansion is not a verified binding
-        candidate = Path(value)
-        if not candidate.is_absolute():
-            if not cwd:
-                continue
-            candidate = Path(cwd) / candidate
-        resolved.add(str(candidate.resolve()))
-    return {'configs': sorted(resolved), 'referenced': bool(references), 'runner': runner}
+        expanded.append(value)
+    return {'configs': host_resolve_configs(expanded, cwd), 'referenced': bool(references),
+            'runner': runner, 'orbi': orbi, 'command': bool(commands)}
+
+
+def host_plist(data):
+    """Use the same config/worker evidence for installed and observable jobs."""
+    command = host_orbi_command(data.get('ProgramArguments', [data.get('Program', '')]))
+    references = list(command['configs'])
+    config = data.get('EnvironmentVariables', {}).get('ORBI_CONFIG')
+    if isinstance(config, str):
+        references.append(config)
+    cwd = data.get('WorkingDirectory')
+    if not references and command['orbi'] and cwd and (Path(cwd) / 'orbi.toml').is_file():
+        references.append(str(Path(cwd) / 'orbi.toml'))
+    refs = host_resolve_configs(references, cwd)
+    binding = ('conflicting' if len(refs) > 1 else 'verified' if refs else
+               'unreadable' if references else 'unknown')
+    return {'config': refs[0] if binding == 'verified' else None, 'configs': refs,
+            'binding': binding, 'runner': command['runner'], 'orbi': command['orbi'],
+            'command': bool(data.get('ProgramArguments') or data.get('Program'))}
 
 
 def host_config_paths(ctx, coverage):
     paths = set()
-    for folder, pattern in ((data_home(ctx), '*/orbi.toml'),
-                            (config_home(ctx) / 'orbi', '*/orbi.toml')):
+    for folder in (data_home(ctx), config_home(ctx) / 'orbi'):
         try:
             if folder.is_dir():
-                for index, path in enumerate(folder.glob(pattern)):
+                for index, child in enumerate(folder.iterdir()):
                     if index >= HOST_LIST_LIMIT:
                         host_problem(coverage, None, 'deployment config discovery truncated')
                         break
-                    paths.add(path)
+                    try:
+                        path = child / 'orbi.toml'
+                        if child.is_dir() and path.is_file():
+                            paths.add(path)
+                    except OSError:
+                        host_problem(coverage, None, 'deployment config discovery unreadable: ' + str(child))
         except OSError:
             host_problem(coverage, None, 'deployment config discovery unreadable: ' + str(folder))
     for path in (ctx.cwd / 'orbi.toml', config_home(ctx) / 'orbi/orbi.toml'):
@@ -3245,15 +3310,19 @@ def host_config_paths(ctx, coverage):
 
 def host_configs(ctx, paths, coverage):
     deployments = {}
-    for path in sorted({Path(p).resolve() for p in paths}, key=str):
-        key = str(path)
+    for candidate in sorted({Path(p) for p in paths}, key=str):
+        key = str(candidate.absolute())
         try:
+            path = candidate.resolve()
+            key = str(path)
+            if key in deployments:
+                continue
             target = deployment_from(path, tomllib.loads(bounded_text(path)))
             summary = local_deployment_summary(ctx, target, metadata_only=True)
             deployments[key] = {'binding': {'state': 'verified', 'config': key},
                                 'repo': target.source_repos[0] if len(target.source_repos) == 1 else None,
                                 'repos': list(target.source_repos), 'target': target, 'engine': summary['engine']}
-        except (OSError, ValueError, UnicodeError, ControlError):
+        except (OSError, ValueError, UnicodeError, RuntimeError, ControlError):
             deployments[key] = {'binding': {'state': 'unreadable', 'config': key},
                                 'repo': None, 'engine': {'state': 'unknown', 'version': None}}
             host_problem(coverage, None, 'unreadable or invalid deployment config: ' + key)
@@ -3319,8 +3388,8 @@ def host_linux(ctx, coverage):
         metadata = {}
         for name, path in definitions.items():
             try:
-                item = host_definition(ctx, path)
-                if 'orbi' in name.lower() or item['configs'] or item['runner']:
+                item = host_definition(ctx, path, manager=manager)
+                if 'orbi' in name.lower() or item['configs'] or item['orbi']:
                     metadata[name] = item
                     installed.setdefault(name, {'state': 'unknown'})
                     paths.update(item['configs'])
@@ -3331,15 +3400,16 @@ def host_linux(ctx, coverage):
         for name in definitions:
             if name.endswith('.timer') and name[:-6] + '.service' in metadata:
                 metadata.setdefault(name, {'configs': [], 'runner': False})
-        # Detail every listed loaded unit (also arbitrary names), and relevant installed
+        # Detail listed loaded/installed units (also arbitrary names), and local
         # definitions. Only Orbi/config-evidenced units survive the output filter.
-        names = sorted(set(loaded) | {n for n in installed if 'orbi' in n.lower()} | set(metadata))
+        names = sorted(set(loaded) | set(installed) | set(metadata))
         if len(names) > HOST_DETAIL_LIMIT:
             host_problem(coverage, manager, f'unit detail limit {HOST_DETAIL_LIMIT}; remaining identities unobserved')
             names = sorted(names, key=lambda n: ('orbi' not in n.lower() and n not in metadata, n))[:HOST_DETAIL_LIMIT]
         details = {}
         for name in names:
             values = {}
+            failure = 'invalid'
             try:
                 proc = ctx.run(['systemctl', flag, 'show', name,
                                 *[arg for prop in ('Id', 'LoadState', 'ActiveState', 'SubState', 'Result',
@@ -3348,16 +3418,20 @@ def host_linux(ctx, coverage):
                                                   'LastTriggerUSec', 'NextElapseUSecRealtime') for arg in ('-p', prop)]],
                                allow_failure=True)
                 if proc.returncode or len(proc.stdout) > 65536:
+                    failure = host_read_failure(proc) if proc.returncode else 'oversized'
                     raise ValueError('unavailable details')
                 values = dict(line.split('=', 1) for line in proc.stdout.splitlines() if '=' in line)
                 if values.get('Id') != name:
                     raise ValueError('missing unit identity')
-            except (ControlError, ValueError):
-                if 'orbi' in name.lower() or name in metadata:
-                    host_problem(coverage, manager, 'unit details unavailable: ' + name)
+            except (ControlError, ValueError) as exc:
+                if isinstance(exc, ControlError):
+                    failure = exc.code
+                # Failed arbitrary-name reads also leave possible Orbi units
+                # undiscovered; they cannot certify complete coverage.
+                host_problem(coverage, manager, 'unit details ' + failure + ': ' + name)
             details[name] = values
             # Read actual fragments/drop-ins; do not trust basename or unit_name.
-            refs, unreadable, runner, referenced = set(), False, False, False
+            refs, unreadable, runner, referenced, command, orbi = set(), False, False, False, False, False
             fragment = values.get('FragmentPath') or definitions.get(name)
             sources = [str(fragment)] if fragment else []
             try:
@@ -3367,9 +3441,12 @@ def host_linux(ctx, coverage):
             for source in sources:
                 try:
                     instance = name.split('@', 1)[1].rsplit('.', 1)[0] if '@' in name and '@.' not in name else None
-                    item = host_definition(ctx, source, working_directory=values.get('WorkingDirectory'), instance=instance)
+                    item = host_definition(ctx, source, working_directory=values.get('WorkingDirectory'),
+                                           instance=instance, manager=manager)
                     refs.update(item['configs'])
                     runner |= item['runner']
+                    command |= item['command']
+                    orbi |= item['orbi']
                     referenced |= item['referenced']
                 except (OSError, UnicodeError, ValueError):
                     unreadable = True
@@ -3378,8 +3455,8 @@ def host_linux(ctx, coverage):
                 unreadable = metadata[name].get('unreadable', False)
             paths.update(refs)
             metadata[name] = {'configs': sorted(refs), 'unreadable': unreadable,
-                              'runner': runner, 'referenced': referenced}
-        relevant = {n for n in names if 'orbi' in n.lower() or metadata[n]['configs'] or metadata[n]['runner']}
+                              'runner': runner, 'referenced': referenced, 'command': command, 'orbi': orbi}
+        relevant = {n for n in names if 'orbi' in n.lower() or metadata[n]['configs'] or metadata[n]['orbi']}
         relevant.update(n for n in names if n.endswith('.timer') and
                         (details[n].get('Unit') or details[n].get('Triggers') or n[:-6] + '.service') in relevant)
         # Pair by exact service identity/explicit timer target, not slot number.
@@ -3394,7 +3471,10 @@ def host_linux(ctx, coverage):
             pairs.setdefault(target, []).append(name)
         for unit, members in pairs.items():
             service = details.get(unit, {})
-            timer = next((n for n in members if n.endswith('.timer')), None)
+            timer_names = [n for n in members if n.endswith('.timer')]
+            timer = next((n for n in timer_names if
+                          (details[n].get('ActiveState') or loaded.get(n, {}).get('active')) in ACTIVE_STATES),
+                         next(iter(timer_names), None))
             timer_values = details.get(timer, {})
             refs = sorted({p for n in members for p in metadata[n]['configs']})
             unreadable = any(metadata[n].get('unreadable') for n in members)
@@ -3402,11 +3482,15 @@ def host_linux(ctx, coverage):
             binding = 'conflicting' if len(refs) > 1 else 'unreadable' if unreadable or unresolved else 'verified' if refs else 'unknown'
             if binding in {'conflicting', 'unreadable'}:
                 host_problem(coverage, manager, binding + ' config binding: ' + unit)
-            kind = ('template' if '@.' in unit else 'timer' if unit.endswith('.timer') else 'runner' if '@' in unit or
-                    any(metadata[n].get('runner') and refs for n in members) else 'nonrunner')
+            kind = ('template' if '@.' in unit else 'timer' if unit.endswith('.timer') else
+                    'runner' if metadata.get(unit, {}).get('runner') or
+                    (not metadata.get(unit, {}).get('command') and
+                     re.fullmatch(r'orbi(?:-[^@]+)?@[^.]+\.service', unit)) else 'nonrunner')
             state = service.get('ActiveState') or loaded.get(unit, {}).get('active')
-            is_loaded = (True if service.get('LoadState') == 'loaded' or unit in loaded else
-                         False if evidence['lists'].get('list-units') == 'ok' else None)
+            # show can load an installed definition as a side effect of inspection.
+            # The bulk snapshot, not LoadState from that later read, establishes presence.
+            is_loaded = (unit in loaded if evidence['lists'].get('list-units') == 'ok' else
+                         True if unit in loaded else None)
             if not state:
                 state = 'unloaded' if evidence['lists'].get('list-units') == 'ok' else 'unknown'
             worker = {'state': ('active/issue unknown' if state == 'active' else
@@ -3414,7 +3498,7 @@ def host_linux(ctx, coverage):
                                 'draining' if state == 'deactivating' else
                                 'idle' if state in INACTIVE_STATES else 'unknown')}
             timer_state = timer_values.get('ActiveState') or loaded.get(timer, {}).get('active', 'unknown')
-            scheduled = timer_state in ACTIVE_STATES or timer_values.get('UnitFileState') in {'enabled', 'enabled-runtime'}
+            scheduled = timer_state in ACTIVE_STATES
             observed_state = ('running' if state == 'active' else worker['state'] if state in {'activating', 'reloading', 'deactivating'}
                               else 'idle' if state == 'inactive' and scheduled else
                               'stopped' if state == 'inactive' and (not timer or timer_state == 'inactive') else state)
@@ -3470,22 +3554,21 @@ def host_darwin(ctx, coverage):
             try:
                 if not folder.exists():
                     continue
-                installed_paths = sorted(folder.glob('*.plist'))
+                installed_paths = sorted(p for p in folder.iterdir() if p.suffix == '.plist')
                 if len(installed_paths) > HOST_LIST_LIMIT:
                     host_problem(coverage, manager, 'installed plist discovery truncated')
                 for path in installed_paths[:HOST_LIST_LIMIT]:
                     try:
                         data = plistlib.loads(bounded_bytes(path))
                         label = data.get('Label')
-                        config = data.get('EnvironmentVariables', {}).get('ORBI_CONFIG')
-                        if not isinstance(label, str) or not ('orbi' in label.lower() or config):
+                        item = host_plist(data)
+                        if not isinstance(label, str) or not ('orbi' in label.lower() or item['configs'] or item['orbi']):
                             continue
-                        args = data.get('ProgramArguments', [])
-                        runner = isinstance(args, list) and any(isinstance(arg, str) and Path(arg).name == 'orbi' for arg in args)
-                        definitions[label] = {'config': config if isinstance(config, str) else None, 'runner': runner}
+                        definitions[label] = item
                         labels.add(label)
-                        if config:
-                            paths.add(Path(config).resolve())
+                        paths.update(item['configs'])
+                        if item['binding'] in {'conflicting', 'unreadable'}:
+                            host_problem(coverage, manager, item['binding'] + ' plist config binding: ' + label)
                     except (OSError, ValueError, ExpatError, TypeError, AttributeError):
                         if 'orbi' in path.name.lower():
                             host_problem(coverage, manager, 'unreadable plist: ' + str(path))
@@ -3502,10 +3585,8 @@ def host_darwin(ctx, coverage):
         for label in sorted(candidates, key=lambda label: (label not in labels, label))[:HOST_DETAIL_LIMIT]:
             state, loaded = 'unknown', True if label in listed_labels else None
             definition = definitions.get(label, {})
-            config, binding = definition.get('config'), 'unknown'
-            runner = '.runner.' in label or definition.get('runner', False)
-            if config:
-                binding = 'verified'
+            config, binding = definition.get('config'), definition.get('binding', 'unknown')
+            runner = definition.get('runner', False) or (not definition.get('command') and '.runner.' in label)
             try:
                 proc = ctx.run(['launchctl', 'print', manager + '/' + label], allow_failure=True)
                 if proc.returncode == 0 and len(proc.stdout) <= 65536:
@@ -3518,17 +3599,17 @@ def host_darwin(ctx, coverage):
                     else:
                         try:
                             actual = plistlib.loads(bounded_bytes(job_paths[0]))
-                            actual_config = actual.get('EnvironmentVariables', {}).get('ORBI_CONFIG')
-                            args = actual.get('ProgramArguments', [])
-                            runner |= isinstance(args, list) and any(isinstance(arg, str) and Path(arg).name == 'orbi' for arg in args)
-                            if actual.get('Label') != label or not isinstance(actual_config, str):
+                            item = host_plist(actual)
+                            runner = item['runner'] or (not item['command'] and '.runner.' in label)
+                            paths.update(item['configs'])
+                            if actual.get('Label') != label:
                                 config, binding = None, 'unknown'
-                            elif config and Path(config).resolve() != Path(actual_config).resolve():
+                            elif config and item['config'] and config != item['config']:
                                 config, binding = None, 'conflicting'
-                                host_problem(coverage, manager, 'conflicting loaded/installed plist binding: ' + label)
                             else:
-                                config, binding = actual_config, 'verified'
-                                paths.add(Path(config).resolve())
+                                config, binding = item['config'], item['binding']
+                            if binding in {'conflicting', 'unreadable'}:
+                                host_problem(coverage, manager, binding + ' loaded/installed plist binding: ' + label)
                         except (OSError, ValueError, ExpatError, TypeError, AttributeError):
                             config, binding = None, 'unreadable'
                             host_problem(coverage, manager, 'loaded plist unreadable: ' + label)
@@ -3557,7 +3638,7 @@ def host_darwin(ctx, coverage):
                          'state': 'running' if state == 'active' else 'idle' if state == 'inactive' else state,
                          'next_trigger': None, 'binding': {'state': binding,
                                                          'config': str(Path(config).resolve()) if config else None},
-                         'worker': {'state': 'active/issue unknown' if state == 'active' else
+                         'worker': {'state': 'not a worker' if not runner else 'active/issue unknown' if state == 'active' else
                                     'idle' if state in INACTIVE_STATES else 'unknown'}})
     return rows, paths
 

@@ -3544,6 +3544,133 @@ class HostStatusTests(unittest.TestCase):
             self.assertIn(token, text)
         self.assert_read_only(before)
 
+    def test_worker_kind_uses_execution_evidence_and_inactive_timer_is_stopped(self):
+        config = self.h.root / 'native.toml'
+        config.write_text('source_repos = ["native/repo"]\n')
+        names = ('orbi-metrics@1.service', 'delivery.service', 'orbi@9.service', 'orbi@9.timer')
+        commands = ('/usr/bin/python3 /opt/orbi-exporter.py', '/usr/bin/python3 -m orbi.runner', '/bin/orbi')
+        for name, command in zip(names, commands):
+            (self.h.unit_dir / name).write_text(
+                f'[Service]\nEnvironment="ORBI_CONFIG={config}"\nExecStart={command}\n')
+        self.h.rules(*self.lists('--user', [self.unit(n) for n in names]), *self.lists('--system'),
+                     *(self.detail('--user', n, FragmentPath=self.h.unit_dir / n) for n in names[:3]),
+                     self.detail('--user', names[3], ActiveState='inactive', Unit=names[2], UnitFileState='enabled'))
+        before = snapshot(self.h.home)
+        _, doc, _ = self.invoke()
+        rows = {r['unit']: r for r in doc['rows'] if r['unit']}
+        self.assertEqual(rows[names[0]]['kind'], 'nonrunner')
+        self.assertEqual(rows[names[0]]['worker']['state'], 'not a worker')
+        self.assertEqual(rows[names[1]]['kind'], 'runner')
+        self.assertEqual(rows[names[2]]['state'], 'stopped')
+        self.assertEqual(doc['totals']['observed_workers'], 2)
+        self.assert_read_only(before)
+
+    def test_installed_arbitrary_name_outside_default_definition_roots_is_discovered(self):
+        config = self.h.root / 'native.toml'
+        config.write_text('source_repos = ["native/repo"]\n')
+        definition = self.h.root / 'vendor-delivery.service'
+        definition.write_text(f'[Service]\nExecStart=/bin/orbi --config {config}\n')
+        self.h.rules(*self.lists('--user', files=[{'unit_file': definition.name, 'state': 'disabled'}]),
+                     *self.lists('--system'),
+                     self.detail('--user', definition.name, FragmentPath=definition, LoadState='loaded'))
+        before = snapshot(self.h.home)
+        _, doc, _ = self.invoke()
+        row = next(r for r in doc['rows'] if r['unit'] == definition.name)
+        self.assertEqual(row['repo'], 'native/repo')
+        self.assertEqual(row['kind'], 'runner')
+        self.assertTrue(row['installed'])
+        self.assertFalse(row['loaded'])
+        self.assertEqual(doc['totals']['observed_workers'], 0)
+        self.assert_read_only(before)
+
+    def test_denied_arbitrary_unit_detail_keeps_healthy_rows_with_partial_coverage(self):
+        self.h.rules(*self.lists('--user', [self.unit('orbi@1.service'), self.unit('vendor.service')]),
+                     *self.lists('--system'), self.detail('--user', 'orbi@1.service'),
+                     {'tool': 'systemctl', 'argv_contains': ['show', 'vendor.service'],
+                      'exit': 1, 'stderr': 'Access denied ' + SECRET})
+        before = snapshot(self.h.home)
+        _, doc, _ = self.invoke()
+        self.assertTrue(any(r['unit'] == 'orbi@1.service' for r in doc['rows']))
+        self.assertEqual(doc['coverage']['state'], 'partial')
+        self.assertTrue(any('unit details denied: vendor.service' == p['reason']
+                            for p in doc['coverage']['problems']))
+        self.assertNotIn(SECRET, json.dumps(doc))
+        self.assert_read_only(before)
+
+    def test_broken_config_resolution_does_not_discard_healthy_rows(self):
+        config = self.h.root / 'loop.toml'
+        config.symlink_to(config.name)
+        definition = self.h.unit_dir / 'orbi@2.service'
+        definition.write_text(f'[Service]\nExecStart=/bin/orbi --config {config}\n')
+        self.h.rules(*self.lists('--user', [self.unit('orbi@1.service'), self.unit(definition.name)]),
+                     *self.lists('--system'), self.detail('--user', 'orbi@1.service'),
+                     self.detail('--user', definition.name, FragmentPath=definition))
+        before = snapshot(self.h.home)
+        code, doc, _ = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertEqual(doc['coverage']['state'], 'partial')
+        self.assertTrue(any(r['unit'] == 'orbi@1.service' for r in doc['rows']))
+        row = next(r for r in doc['rows'] if r['unit'] == definition.name)
+        self.assertEqual(row['binding']['state'], 'unreadable')
+        self.assert_read_only(before)
+
+    def test_config_directory_enumeration_denial_is_not_an_empty_discovery(self):
+        self.h.rules(*self.lists('--user'), *self.lists('--system'))
+        original = helper.Path.iterdir
+
+        def denied(path):
+            if path == self.h.data_home:
+                raise PermissionError('private discovery detail')
+            return original(path)
+
+        with mock.patch.object(helper.Path, 'iterdir', denied):
+            _, doc, _ = self.invoke()
+        self.assertEqual(doc['coverage']['state'], 'partial')
+        self.assertTrue(any('deployment config discovery unreadable' in p['reason']
+                            for p in doc['coverage']['problems']))
+        self.assertNotIn('private discovery detail', json.dumps(doc))
+
+    def test_system_home_specifier_does_not_bind_to_invoking_users_config(self):
+        config = self.h.home / 'orbi.toml'
+        config.write_text('source_repos = ["not/system"]\n')
+        definition = self.h.unit_dir / 'orbi@30.service'
+        definition.write_text('[Service]\nEnvironment="ORBI_CONFIG=%h/orbi.toml"\nExecStart=/bin/orbi\n')
+        self.h.rules(*self.lists('--user'), *self.lists('--system', [self.unit(definition.name)]),
+                     self.detail('--system', definition.name, FragmentPath=definition))
+        _, doc, _ = self.invoke()
+        row = next(r for r in doc['rows'] if r['unit'] == definition.name and r['manager'] == 'system')
+        self.assertIsNone(row['repo'])
+        self.assertNotEqual(row['binding']['state'], 'verified')
+
+    def test_macos_custom_plist_config_selector_resolves_from_working_directory(self):
+        import plistlib
+        folder = self.h.home / 'Library/LaunchAgents'
+        folder.mkdir(parents=True)
+        config = self.h.root / 'native.toml'
+        config.write_text('source_repos = ["native/repo"]\n')
+        label = 'vendor.delivery'
+        definition = folder / 'vendor.plist'
+        definition.write_bytes(plistlib.dumps({'Label': label, 'WorkingDirectory': str(self.h.root),
+            'ProgramArguments': ['/bin/orbi', '--config', 'native.toml']}))
+        domain = f'gui/{os.getuid()}'
+        for loaded in (False, True):
+            with self.subTest(loaded=loaded):
+                self.h.rules(
+                    {'tool': 'launchctl', 'argv_contains': ['print', domain + '/' + label],
+                     'exit': 0 if loaded else 113,
+                     'stdout': f'path = {definition}\nstate = running\n' if loaded else ''},
+                    {'tool': 'launchctl', 'argv_contains': ['print', domain],
+                     'stdout': 'services = {\n' + (f'123 0 {label}\n' if loaded else '') + '}\n'},
+                    {'tool': 'launchctl', 'argv_contains': ['print'], 'stdout': 'services = {\n}\n'})
+                before = snapshot(self.h.home)
+                _, doc, _ = self.invoke(platform='darwin')
+                row = next(r for r in doc['rows'] if r['unit'] == label)
+                self.assertEqual(row['binding']['config'], str(config))
+                self.assertEqual(row['repo'], 'native/repo')
+                self.assertEqual(row['kind'], 'runner')
+                self.assertEqual(row['loaded'], loaded)
+                self.assertEqual(snapshot(self.h.home), before)
+
     def test_partial_denied_manager_keeps_healthy_and_unreadable_config(self):
         bad = self.h.data_home / 'broken'
         bad.mkdir()
@@ -3713,11 +3840,13 @@ class HostStatusTests(unittest.TestCase):
                      *self.lists('--system'),
                      self.detail('--user', 'orbi@7.service'),
                      self.detail('--user', 'custom.timer', Unit='orbi@7.service'),
-                     self.detail('--user', 'orbi-alternate.timer', Unit='orbi@7.service'),
+                     self.detail('--user', 'orbi-alternate.timer', Unit='orbi@7.service', ActiveState='inactive'),
                      self.detail('--user', 'orbi-invalid@2.timer', Unit='invalid target'))
         _, doc, _ = self.invoke()
         row = next(r for r in doc['rows'] if r['unit'] == 'orbi@7.service')
         self.assertEqual(set(row['timers']), {'custom.timer', 'orbi-alternate.timer'})
+        self.assertEqual(row['state'], 'idle')
+        self.assertEqual(row['timer'], 'custom.timer')
         self.assertEqual(doc['totals']['observed_workers'], 1)
 
     def test_unloaded_definitions_timer_target_and_detail_limit(self):
@@ -3727,7 +3856,7 @@ class HostStatusTests(unittest.TestCase):
                      *self.lists('--system'),
                      self.detail('--user', 'orbi-alias@99.timer', Unit='orbi-target@99.service'),
                      self.detail('--user', 'orbi-target@99.service'),
-                     self.detail('--user', 'orbi-unused@28.service'))
+                     self.detail('--user', 'orbi-unused@28.service', LoadState='loaded'))
         _, doc, _ = self.invoke()
         rows = {r['unit']: r for r in doc['rows'] if r['unit']}
         self.assertEqual(rows['orbi-target@99.service']['timer'], 'orbi-alias@99.timer')

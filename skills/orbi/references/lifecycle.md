@@ -580,10 +580,18 @@ reference, not a basename or Kit unit naming convention, establishes repository
 attribution. Conflicting/unreadable bindings remain unknown while healthy rows
 survive. Templates and nonrunner services are distinct from worker instances.
 Config-only rows mean prepared metadata, not installed or active scheduling.
+Worker classification uses the service command where readable; a templated
+exporter is not a worker, and a directly evidenced singleton tick is. Enabled
+but inactive timers are stopped, not active scheduling. Loaded presence comes
+from the bulk snapshot, not a later definition inspection. Unsupported config
+expansions (including an unobserved system manager home) do not bind a repo.
 
 macOS lists the current GUI/user and system launchd domains and installed user
 LaunchAgents (including `ORBI_UNIT_DIR`), `/Library/LaunchAgents` and
 `/Library/LaunchDaemons`. Installed plists (XML or binary) are not loaded jobs.
+Config references can use `ORBI_CONFIG`, direct Orbi `--config` arguments or a
+local `orbi.toml` in the job's working directory. Relative references require an
+absolute observed working directory; conflicts remain unattributed.
 A failed job read is not evidence of unloading unless a successful domain listing
 also omits that job. Running jobs remain issue unknown; retained logs cannot bind
 a current invocation. Next-fire time is unknown on launchd.
