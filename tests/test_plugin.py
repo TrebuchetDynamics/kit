@@ -106,6 +106,18 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in (home / 'scripts').iterdir()),
                          ['existing-notice.py'])
 
+    def test_delivery_command_help_names_the_destination_without_loading_a_skill(self):
+        self.plugin.SKILLS_DIR = ROOT / 'skills'
+        self.ctx.register_command = Mock(wraps=self.ctx.register_command)
+        self.plugin.register(self.ctx)
+        descriptions = {call.args[0]: call.kwargs['description']
+                        for call in self.ctx.register_command.call_args_list}
+        self.assertEqual(descriptions['git-commit-push'],
+                         'Commit current branch, sync and push its upstream.')
+        self.assertEqual(descriptions['push'],
+                         'Save this checkout, pull and deliver to main.')
+        self.assertEqual(self.ctx.messages, [])
+
     def test_discovers_new_skills_on_next_registration(self):
         self.skill("alpha")
         (self.root / "not-a-skill").mkdir()

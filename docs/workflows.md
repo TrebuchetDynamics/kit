@@ -107,7 +107,7 @@ is limited, so some commands must be typed directly.
 | Hermes CLI chat | Telegram | Purpose |
 | --- | --- | --- |
 | `/orbi [status\|setup\|start\|stop\|help]` | `/orbi` | [Lifecycle controls and host inventory](../skills/orbi/SKILL.md): `status all [--json]` lists observable local host services without repo selectors or GitHub auth (partial coverage is explicit); bare status is read-only, setup starts by default via the existing start path; setup --prepare-only prepares without activation; authorized setup/start prepares if absent then schedules, stop drains without killing workers; Linux controls, macOS status-only; help prints the action reference read-only on any platform |
-| `/git-commit-push` | `/git_commit_push` | Commit, pull and merge upstream, then push scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
+| `/git-commit-push` | `/git_commit_push` | Commit the current branch, sync and push its verified upstream with scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
 | `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only eligible clean unmerged ones, keep owned, unknown, dirty and locked worktrees |
 | `/push` | `/push` | Save eligible invoking-checkout changes only, pull verified `main`, then deliver to `main` through the repository's landing route; other worktrees uninspected, open Orbi work reported without takeover |
 | `/lgtm` | `/lgtm` | [Continue within inherited authority](../skills/lgtm/SKILL.md): accept unambiguous choices, clarify only ambiguous planning choices; standalone plan approval does not authorize implementation |

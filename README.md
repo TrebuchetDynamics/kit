@@ -363,8 +363,8 @@ states its own boundaries and what "done" means.
 - `/goal` — keep one objective alive until evidence proves it done.
 - `/lgtm` — say yes to the latest recommendation and continue.
 - `/split-folder` — reorganize one folder without changing behavior.
-- `/git-commit-push` — commit, sync and push owned changes; `all` also settles finished
-  worktrees into the base branch.
+- `/git-commit-push` — commit the current branch, sync and push its verified upstream;
+  `pull`/`sync`/`merge` only integrates, and explicit `all` sweeps finished worktrees.
 - `/push` — save eligible changes in the invoking checkout only, pull verified `main`
   and deliver to `main`. Other local worktrees are not inspected, saved or integrated;
   use explicit `/git-commit-push all` for the existing sweep. Include already-merged
