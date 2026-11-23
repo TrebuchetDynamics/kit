@@ -24,10 +24,11 @@ For definitions, online sources or a worked counterexample, read
 
 ## Execute the findings
 
-To request fixes, invoke `/bug-harvest` immediately after the analysis in the same
-conversation, with no extra prompt. Its [contextual handoff](../bug-harvest/SKILL.md#findings-from-the-preceding-response)
-uses the preceding findings as the repair scope and verifies candidates before fixing
-them. This analysis itself remains read-only; it starts no repair workflow.
+To publish verified defects, invoke `/bug-harvest` immediately after the analysis in
+the same conversation, with no extra prompt. Its [contextual handoff](../bug-harvest/SKILL.md#findings-from-the-preceding-response)
+uses the preceding findings as the bounded publication scope, reuses evidence and
+publishes warranted issues without local repairs. This analysis itself remains read-only;
+it starts no publication or repair workflow.
 
 ## Boundaries
 

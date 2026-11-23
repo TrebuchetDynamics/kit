@@ -297,7 +297,7 @@ After updating the installed package, reload skills in the host before use.
 /skill:state-machine inspect checkout retries and cancellation; read-only
 ```
 
-### Fix the findings without another prompt
+### Publish the findings without another prompt
 
 After the analysis, invoke Bug Harvest in the same conversation. In Pi:
 
@@ -308,13 +308,22 @@ After the analysis, invoke Bug Harvest in the same conversation. In Pi:
 Hermes also accepts `/bug-harvest`, Claude Code uses `/kit:bug-harvest`, and Codex
 uses `$kit:bug-harvest`. No finding IDs, copied report or extra prompt are required:
 the [contextual handoff](../skills/bug-harvest/SKILL.md#findings-from-the-preceding-response)
-uses the preceding response as the bounded repair scope. It verifies and fixes
-candidates one at a time, adds regression protection and runs affected checks.
-Hypotheses are not automatically bugs; unclear product rules need `/plan-with-me`.
-The campaign stops when the supplied findings are accounted for or a caller limit
-or genuine blocker stops progress. It does not automatically commit or push.
-Explicit user no-write and live-action restrictions remain binding; State Machine's
-default read-only mode does not make the subsequent repair invocation read-only.
+uses the preceding response as the bounded publication scope. It reuses the state
+map and evidence, then verifies each defect's reproducer, observed/expected behavior,
+impact and regression check. It does not start local repairs.
+
+An ordinary `/bug-harvest AREA` likewise analyzes and publishes in one invocation.
+Bug Harvest reconciles existing work, groups shared fixes and publishes every
+supported, buildable, uncovered outcome through Plan Handoff. The preview does not
+wait for approval: native dependencies precede `ai-ready`, and verified issue links
+end the invocation. Uncertain findings are held with reasons while independent work
+continues. Zero qualifying findings means zero new issues.
+
+Explicit report-only, no-write or dry-run returns findings inline without writes.
+Explicit no-dispatch, ownership and human gates remain binding; State Machine's
+own read-only default does not make the later invocation read-only. Local fixes
+require an explicitly requested and authorized fix/apply mode with the existing
+ownership, review and PR gates. Publication does not activate Orbi or prove delivery.
 
 Planning, implementation and review use the shared contract's stateful-work trigger.
 Bug Harvest, architecture review and Test Optimizer also link the
