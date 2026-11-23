@@ -131,6 +131,60 @@ class DeliveryScopePolicyTests(unittest.TestCase):
         adapter = normalized(ROOT / 'adapters/skills/push/SKILL.md')
         self.assertIn('../../../skills/push/skill.md', adapter)
 
+    def test_catalog_descriptions_name_branch_upstream_versus_main(self):
+        for folder in ('skills', 'adapters/skills'):
+            for skill, expected in (
+                    ('git-commit-push', 'Commit current branch, sync and push its upstream.'),
+                    ('push', 'Save this checkout, pull and deliver to main.')):
+                text = (ROOT / folder / skill / 'SKILL.md').read_text()
+                description = re.search(r'^description: "([^"]+)"$', text, re.M).group(1)
+                self.assertEqual(description, expected)
+                self.assertLessEqual(len(description), 60)
+
+    def test_exceptional_playbooks_are_prerequisites_at_the_point_of_use(self):
+        prepare = self.main.split('3. **prepare the smallest delivery.**')[1].split(
+            '4. **validate once, in the right order: stage → gate → push.**')[0]
+        validate = self.main.split('4. **validate once, in the right order: stage → gate → push.**')[1].split(
+            '5. **commit.**')[0]
+        self.assertIn('before combining reviewed slices', prepare)
+        self.assertIn('references/candidate-gates.md#combining-reviewed-slices', prepare)
+        self.assertIn('before gating an export that needs untracked dependencies or git-bound validators', validate)
+        self.assertIn('references/candidate-gates.md', validate)
+        self.assertNotIn('load [candidate gates](references/candidate-gates.md) for the branch playbooks', validate)
+        self.assertIn('before staging into a shared or pre-populated index', prepare)
+        self.assertIn('references/shared-worktree-safety.md', prepare)
+        self.assertLess(prepare.index('before any writes'), prepare.index('git checkout-index'))
+        self.assertIn('a plain scoped delivery does not require these exceptional playbooks', self.main)
+        gates = normalized(SKILL / 'references/candidate-gates.md')
+        self.assertIn('component-removal patch can delete a field', gates)
+        self.assertNotIn('component-removal patch can delete a field', self.main)
+        self.assertIn('a pathspec commit reads the selected *worktree* contents', self.reference)
+        self.assertIn('temporary-index landing without a development branch', self.reference)
+        self.assertIn('recheck canonical `head`, the real index bytes', self.reference)
+
+    def test_plain_required_read_set_is_smaller_than_frozen_baseline(self):
+        # d26a1d6d: entry plus unconditional candidate-gates read. Same simple
+        # upstream-level scoped branch, no foreign index, successful local gates.
+        # Shared contracts are unchanged and included on both sides, not elided
+        # to exaggerate the relative saving. This measures bytes, not model speed.
+        common = [ROOT / 'skills/shared' / name for name in (
+            'PONYTAIL.md', 'COMMUNICATION.md', 'COMMON-CONTRACT.md',
+            'DEFINITION-OF-DONE.md', 'PLAN-HANDOFF.md', 'RESEARCH-PLAN.md')]
+        common.append(ROOT / 'skills/engineering/upstream/references/definition-of-done.md')
+        shared_bytes = sum(len(path.read_bytes()) for path in common)
+        before = 39601 + 7897 + shared_bytes
+        after = len((SKILL / 'SKILL.md').read_bytes()) + shared_bytes
+        self.assertLess(after, before)
+
+    def test_no_push_and_pull_only_cannot_gain_remote_write_authority(self):
+        self.assertIn('no push means no remote writes', self.main)
+        self.assertIn('it pushes only when the request also asks for a push', self.main)
+        pull = normalized(SKILL / 'references/pull-merge.md')
+        self.assertIn('push only if the user asked', pull)
+        self.assertIn('local-only requests never authorize push', self.main)
+        self.assertIn('push (explicit ship target only)', self.main)
+        self.assertIn('worktree sweep (`all`)', self.main)
+
     def test_canonical_gate_discovers_regression_suite(self):
         sys.path.insert(0, str(ROOT / 'scripts'))
         checker = importlib.import_module('check')

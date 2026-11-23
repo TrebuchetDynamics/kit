@@ -588,8 +588,9 @@ Local installs refer to this checkout; keep it in place. The extension registers
 
 All 13 `/autoresearch-<protocol>` commands are available. The other commands are
 `/autoresearch`, `/impeccable`, `/ui-taste`, `/unslop`, `/beautify-github-readme`,
-`/lgtm` and `/git-commit-push` (`/git-commit-push pull` or `merge <branch>` integrates
-upstream changes). The engineering pack is a reference, not a command; no
+`/lgtm`, `/git-commit-push` (current branch and its upstream) and `/push` (deliver
+to `main`). `/git-commit-push pull` or `merge <branch>` only integrates upstream changes.
+The engineering pack is a reference, not a command; no
 `/engineering` or `/skill:engineering` entry is registered. Native `/skill:<name>`
 invocation is available for the registered skills; both skill names and command
 aliases use hyphens. Underscore aliases

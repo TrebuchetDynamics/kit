@@ -124,6 +124,31 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   }
 });
 
+test('delivery help distinguishes current branch/upstream from main and preserves restrictions', async () => {
+  const commands = new Map(), messages = [];
+  register({registerCommand: (name, handler) => commands.set(name, handler),
+    sendUserMessage: (...args) => messages.push(args)});
+  assert.equal(messages.length, 0); // Registration never invokes delivery.
+  assert.equal(commands.get('git-commit-push').description,
+    'Commit current branch, sync and push its upstream.');
+  assert.equal(commands.get('push').description,
+    'Save this checkout, pull and deliver to main.');
+  for (const name of ['git-commit-push', 'push']) {
+    assert.ok(commands.get(name).description.length <= 60);
+    for (const args of ['src/parser.py', 'src/parser.py; no push', 'audit; no writes']) {
+      await commands.get(name).handler(args, {isIdle: () => true});
+      assert.equal(messages.at(-1)[0].endsWith(
+        `User request (preserve scope and restrictions):\n${args}`), true);
+      assert.match(messages.at(-1)[0], new RegExp(`skills/${name}/SKILL\\.md`));
+    }
+  }
+  for (const args of ['pull', 'sync', 'merge topic; no push', 'all']) {
+    await commands.get('git-commit-push').handler(args, {isIdle: () => false});
+    assert.equal(messages.at(-1)[0].endsWith(args), true);
+    assert.deepEqual(messages.at(-1)[1], {deliverAs: 'followUp'});
+  }
+});
+
 test('planning messages disclose interview detail only through the interactive owner', async () => {
   const {readFile} = await import('node:fs/promises');
   const {fileURLToPath} = await import('node:url');
@@ -228,14 +253,14 @@ test('Orbi dispatch forwards lifecycle arguments and queues in a busy session', 
 });
 
 
-test('Push loads its repo-wide default and preserves narrower requests', async () => {
+test('Push loads its invoking-checkout main default and preserves narrower requests', async () => {
   const commands = new Map();
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
   await commands.get('push').handler('', {isIdle: () => true});
   assert.match(messages[0][0], /host-neutral Push workflow/);
-  assert.match(commands.get('push').description, /pull main/);
+  assert.match(commands.get('push').description, /pull and deliver to main/);
   assert.equal(messages[0][0].endsWith('User request (preserve scope and restrictions):\n'), true);
   assert.equal(messages[0][1], undefined);
   const restricted = 'dry run; no fetch; no sync; no commit; no push; only docs/';

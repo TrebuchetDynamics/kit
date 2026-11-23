@@ -78,6 +78,29 @@ Use only after an isolated candidate preserved upstream changes, passed its gate
 3. Under the canonical lock, recheck HEAD, index and file baselines, keep backups, apply only those paths and run `git merge --ff-only <published-sha>` without a new commit, stash or reset. Stop on any unexpected conflict.
 4. Read back local HEAD and the remote ref, selected blobs and residual work. A concurrent remote advance is new input, not proof the publication failed.
 
+## Shared-index commits
+
+Before staging accumulated or concurrent changes, apply the procedure above.
+A pathspec commit is not a substitute for released ownership or permission to
+change HEAD. Preserve held staged entries; isolate or hold if that is unsafe.
+
+- Immediately before committing, re-read `git diff --cached --name-only` and compare it with
+  the paths this commit is meant to carry. The index survives across tool calls, so a file
+  staged in an earlier step — for another topic, or for a gate you have not finished — rides
+  along silently and ships under a message that does not describe it, and a pushed message
+  cannot be corrected without a force-push. For owned unrelated entries, unstage them
+  (`git restore --staged <path>`) or fold them in only when authorized and say so.
+  Never alter held or foreign index entries; isolate or hold instead. A pathspec commit (`git commit -F <msg> -- <paths>`) is the stronger form on
+  a shared tree: it records exactly those paths whatever else the index holds, so a file left
+  staged by an earlier step cannot ride along even when the re-read misses it. Then compare `git write-tree` with the recorded gated tree
+  and verify HEAD has not moved; concurrent staging can otherwise change what ships.
+  A pathspec commit reads the selected *worktree* contents, so first verify each selected
+  blob still equals its gated index blob. After committing, require `git rev-parse HEAD^{tree}`
+  to match the gated tree; for several topic commits qualified together, pin the combined tree
+  and path partition, check each commit's paths/blobs against its partition, and match only
+  the final tree to the combined one. If hooks or another writer changed it, inspect the difference and rerun affected checks before
+  claiming verification; do not replay a successful gate merely for reassurance.
+
 ## Temporary-index landing without a development branch
 
 Use this recipe only when repository policy permits canonical main commits and
