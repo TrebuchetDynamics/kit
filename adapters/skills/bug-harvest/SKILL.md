@@ -1,6 +1,6 @@
 ---
 name: bug-harvest
-description: "Hunt evidence-backed bugs one at a time."
+description: "Verify defects and publish warranted GitHub issues."
 disable-model-invocation: true
 ---
 
@@ -16,3 +16,6 @@ Read the [host contract](../COMMON.md), the
 Use this host's native tools; no Hermes runtime or Pi extension is required.
 Preserve explicit limits, read-only/no-write requests, review gates and delivery
 restrictions. Load only this workflow's pinned protocol and relevant references.
+Follow its default
+[single-invocation specialist handoff](../../../skills/shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff)
+and its separate explicit report-only and authorized local fix/apply branches.
