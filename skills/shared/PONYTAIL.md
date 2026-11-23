@@ -45,8 +45,9 @@ alternative, then identify its verified source and gaps.
 Apply the pinned [review criteria](../ponytail/upstream/skills/ponytail-review/PROTOCOL.md)
 in the existing required review lane: correctness, safety, expected load, tests,
 speed, then unnecessary complexity. Do not spawn an extra reviewer or claim approval
-merely because the diff is lean. Standalone review/audit/debt commands report only;
-`Ship` is an assessment, not permission to commit, push, deploy or close a task.
+merely because the diff is lean. Standalone review/audit commands report only;
+[Debt](../ponytail-debt/SKILL.md) checks revisit triggers and uses its issue-publication
+handoff by default. `Ship` is an assessment, not permission to commit, push, deploy or close a task.
 
 Prefer the host's repository search. When a compact reuse index would help and Node
 is available, optionally run the bundled read-only helper (resolve to an absolute

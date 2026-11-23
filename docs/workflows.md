@@ -30,8 +30,13 @@ See [Unblock](../skills/unblock/SKILL.md) for the full workflow.
 All workflows apply the [shared Ponytail method](../skills/shared/PONYTAIL.md)
 within their existing authority. `/ponytail [lite|full|ultra|off]` reports or changes
 only the conversation's Kit preference. `/ponytail-review`, `/ponytail-audit`,
-`/ponytail-debt`, `/ponytail-gain` and `/ponytail-help` are one-shot reports;
+`/ponytail-gain` and `/ponytail-help` are one-shot reports;
 they do not implement, publish, start an extra reviewer or change persistent modes.
+[`/ponytail-debt`](../skills/ponytail-debt/SKILL.md) checks shortcut markers against
+revisit triggers and publishes supported, uncovered outcomes in the same invocation.
+It keeps the ledger as context, not a queue. Unreached or missing triggers create no
+issue. Explicit read-only/dry-run/no-write reports inline; no-dispatch holds readiness.
+It stops after publication and does not implement or activate services.
 See [portable host invocations](cross-host.md#bundled-ponytail-on-every-host).
 Existing external command owners keep their handlers; the bundled skills remain
 available as `kit:ponytail` and `kit:ponytail-review` (and the other names).
