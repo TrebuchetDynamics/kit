@@ -194,7 +194,7 @@ class PortablePackageTests(unittest.TestCase):
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
             'ponytail-gain', 'ponytail-help', 'bug-harvest',
             'autonomous-codebase-improver', 'split-folder', 'unused-code',
-            'test-optimizer', 'apk-get', 'graphify', 'writing-for-agents',
+            'test-optimizer', 'apk-get', 'graphify', 'writing-for-agents', 'agents-md-generator',
             'grilling', 'grill-with-docs', 'improve-codebase-architecture', 'ask-kit',
             'responsive-screenshots', 'state-machine'})
         for source in folder.rglob('*.md'):

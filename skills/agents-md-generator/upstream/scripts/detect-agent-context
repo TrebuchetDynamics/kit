@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+  exec python3 "$script_dir/detect-agent-context.py" "$@"
+fi
+if command -v python >/dev/null 2>&1 && python -c 'import sys; raise SystemExit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+  exec python "$script_dir/detect-agent-context.py" "$@"
+fi
+
+echo "Python is unavailable; using the portable text detector." >&2
+exec sh "$script_dir/detect-agent-context.sh" "$@"

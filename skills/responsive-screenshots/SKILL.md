@@ -75,6 +75,41 @@ python3 "<skill-dir>/scripts/capture.py" URL [URL ...] \
 4. Look at one image per breakpoint yourself when the claim is visual. A file that exists
    proves a render happened, not that the layout is correct.
 
+## UI review handoff
+
+After verification, return a concise inline handoff for `/ui-taste` or `/impeccable`.
+Use `report.md` and `captures.json` as the evidence sources, not a new artifact.
+Keep one entry per relevant route/state, requested viewport and color scheme:
+
+- Give the sanitized route/state and safe steps to reproduce it, including readiness
+  selector or session source when used. Remove credentials and private data from paths,
+  query text, fragment text, diagnostics and evidence references. If safe reproduction
+  context is missing, name that gap instead of exposing it or inventing a state.
+- Include requested viewport, color scheme, actual pixel dimensions, horizontal overflow
+  (`yes`, `no` or `unknown`), capture status, diagnostics and command exit status.
+  Give local evidence paths for the report, JSON record and image when available.
+- Separate **Observed** measurements and inspected image findings from **Unverified**
+  visual quality, interactions, states or schemes not checked. Captured does not mean visually correct.
+  A failed capture is not defect proof: name the cause and repair action. Keep unmeasured
+  dimensions and overflow unknown, and do not present a failed image as usable evidence.
+
+Example handoff (illustrative measurements, not a live result):
+
+> Route/state: /settings, default state on the authorized local server.
+> Requested: 375x667, light. Actual: 420x900. Overflow: yes. Status: captured; exit 2 under --fail-on-overflow.
+> Observed: horizontal overflow recorded. Unverified: visual quality and interactions; image not inspected.
+> Reproduce: open /settings in that state; rerun the capture command with --sizes 375x667 --scheme light --fail-on-overflow.
+> Evidence: local report.md row and captures.json record for this route/viewport/scheme; image at that record's path.
+
+Failure handoff: `navigation timed out`, status `FAILED`, exit `1`; actual dimensions
+and overflow unknown if not measured. Unverified: layout and visual quality.
+Repair action: check authorized route availability and any readiness selector, then
+rerun the same matrix. Report partial observations separately from the failure.
+
+Preserve user restrictions and existing live owners. This handoff does not authorize
+review edits or publication. Do not create GitHub issues or attachments.
+Do not upload captures or raw reports.
+
 ## Safety and delivery
 
 - Open only pages the request authorizes: local files, a dev server, or staging the owner
@@ -95,4 +130,5 @@ python3 "<skill-dir>/scripts/capture.py" URL [URL ...] \
   reference set.
 
 **Done when:** every requested page and breakpoint has a capture whose real size and
-overflow result are reported, or each failure names its cause.
+overflow result are reported, or each failure names its cause, with an inline UI review
+handoff that separates observed evidence from unverified behavior.

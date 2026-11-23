@@ -77,6 +77,8 @@ Use these steps only for an authorized edit.
 
 ## Boundaries
 
+- `/agents-md-generator` owns instruction-chain discovery, source evidence and
+  reconciliation; this reference owns wording and structure within that scope.
 - Not a rewriter of pinned upstream bytes, a hosting dependency or a change to what a
   skill is authorized to do.
 - Not a review or delivery authority: editing a document never widens scope.

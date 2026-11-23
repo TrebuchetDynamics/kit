@@ -280,6 +280,7 @@ class SkillStandardTests(unittest.TestCase):
                  ('grilling', 'grill-with-docs'), ('grill-me', 'grill-with-docs'),
                  ('bug-harvest', 'unused-code'), ('bug-harvest', 'test-optimizer'),
                  ('unused-code', 'split-folder'),
+                 ('agents-md-generator', 'writing-for-agents'),
                  ('git-commit-push', 'ponytail-review'),
                  ('ponytail-review', 'ponytail-audit')]
         for a, b in pairs:

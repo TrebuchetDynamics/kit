@@ -1,20 +1,8 @@
-# Repository instructions for Claude
+# Claude Code in Kit
 
-Read and follow [AGENTS.md](AGENTS.md) in this directory. It owns the repository
-contracts: GitHub Issues and Orbi delivery,
-check selection, worktree placement, delegation and reporting.
+Read and follow [AGENTS.md](AGENTS.md) for shared repository policy.
 
-Claude Code adds two enforced mechanics on top of those rules:
+- **Creating a worktree:** Use `EnterWorktree`. The user’s `WorktreeCreate` hook places the checkout under `<canonical-repo>/.worktrees/<task>/`. This location overrides bundled skill examples. Do not bypass the Bash guard with manual `git worktree add`.
+- **If `checkout-lock` denies an edit:** Wait for the holder or use `EnterWorktree` for your own checkout. Never release a live holder’s lock to proceed. Release a lock manually only if you confirm the holder is stale. Preserve live sessions, uncommitted files and unmerged branches.
 
-- **Worktrees:** use `EnterWorktree`. The user `WorktreeCreate` hook creates the
-  checkout under `<canonical-repo>/.worktrees/<task>/` and refuses sibling or
-  `.claude/worktrees/` locations. Do not create task worktrees with manual
-  `git worktree add`; the Bash guard redirects it. See
-  [docs/worktree-placement.md](docs/worktree-placement.md).
-- **One interactive writer:** the `checkout-lock` hook denies an edit in the
-  canonical checkout while another session holds it. Continue in your own
-  worktree or wait; release only a stale holder, never a live one with
-  uncommitted files.
-
-The explicit user location overrides bundled skill examples. Preserve other
-sessions, dirty files and unmerged branches.
+For hook behavior and ownership checks, see [worktree placement](docs/worktree-placement.md).
