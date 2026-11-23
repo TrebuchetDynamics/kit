@@ -128,7 +128,7 @@ scheduler readback proves disabled/inactive timers and no pending work. On failu
 completed disables, the failed stage, actual scheduler evidence (or `unavailable`)
 and `resume_command` remain visible; no timer re-enable rollback is attempted.
 `--stop --dry-run` previews pause/drain and conditional update without writes,
-locks, fetch or unit actions. Selectors and protected start gates are unchanged.
+locks, fetch or unit actions. Selectors and other start gates are unchanged.
 
 ### Plain update compatibility
 
@@ -410,7 +410,7 @@ Before an actual start, give a short evidence report:
 - **Missing or unknown:** name each applicable check that is unresolved, not just
   “cutover required.” Depending on the requested stage, this can be unsettled legacy
   pool ownership, release/worktree-placement compatibility, unreadable scheduler state,
-  protected CI/review evidence, pilot delivery/recovery proof before expansion, or fleet
+  required CI/review evidence, pilot delivery/recovery proof before expansion, or fleet
   capacity evidence. Apply the existing checklist, not a new gate or mandatory receipt.
   Do not demand rollout qualification as a prerequisite to an otherwise authorized pilot.
 - **Next safe action:** name the read-only check that can resolve each unknown, or the
@@ -422,14 +422,23 @@ Before an actual start, give a short evidence report:
   [#20](https://github.com/TrebuchetDynamics/kit/issues/20) retain live qualification/rollout
   ownership; this guidance does not release them.
 
-If GitHub reports **unprotected main**, report that observed branch state and the
-missing protection evidence; it is not an access error. If protection or rules reads
-return **HTTP 403**, report access denied and those details as unknown, not absent or
-passing. Both observations can coexist: report each with its source, without claiming
-that the 403 proves no rules exist. Next: obtain a read-only protection/rules view from
-an identity with access, or have the repository owner establish the required protections
-through its governance path if missing. Never weaken protections or invent a review
-approval to clear the blocker. See [protection diagnostics](../../../docs/github-native.md#read-protection-diagnostics-safely).
+Branch protection is not a Kit setup/start prerequisite. If GitHub reports
+**unprotected main**, report that observed branch state; it is not an access error.
+If protection or rules reads return **HTTP 403**, report access denied for that
+endpoint and details as unknown, not absent or passing. Both observations can coexist:
+report each with its source, without claiming the 403 proves no rules exist. These
+are informational, not scheduling blockers. Do not require a protection read/repair,
+PR-only mode, special opt-in, no-base-write engine proof, paid GitHub plan, engine
+release or second approval on that basis. Once scheduling is authorized and other
+prerequisites pass, use normal setup/start, including preparation and the first tick.
+Do not add a protection probe to that path.
+
+Failure of authentication, repository access or deployment ownership validation is
+still a specific refusal, not a protection-only diagnostic. Preserve every other
+startup gate, explicit pause and human-only requirement. Prepare-only and dry-run
+never activate. Existing protections, CI, review and merge requirements remain
+unchanged; never bypass them or use an administrator override. Startup is neither
+successful merge nor live qualification. See [protection diagnostics](../../../docs/github-native.md#read-protection-diagnostics-safely).
 
 ### Offline guidance examples
 
@@ -444,14 +453,15 @@ Use disposable fake hosts only; do not contact the named repositories' real host
   separately unprotected. Cite the applicable cutover checklist and any found record;
   if none was found, say so. Name the unresolved ownership/pause/qualification checks
   applicable to this stage, not a blanket missing approval. Next: restore readable
-  scheduler evidence and obtain the read-only protection view/owner repair above.
-  Hold activation on the unresolved applicable checks; no redundant setup or consent loop.
+  scheduler evidence and resolve the actual ownership/pause checks. The unprotected
+  branch and protection-only 403 are informational, not reasons to hold activation.
+  Hold only on the other unresolved applicable checks; no redundant setup or consent loop.
 - **fecim-lattice-tools:** given a previously prepared Pi-Bolt slot with saved
   `openai-codex/gpt-6.2-sol`, validated config and no enabled timers or inference:
   preparation is not activation or live qualification, and this is not evidence of
   model failure. New public `/orbi setup` expresses scheduling intent and delegates
   to existing-target `start`, skips preparation and retains that exact saved selection;
-  omit provider/model/harness selectors. Once applicable pause/cutover/branch/CI/human
+  omit provider/model/harness selectors. Once applicable pause/cutover/CI/human
   gates are evidenced, invoke once without another approval prompt. If a gate is
   missing, name that blocker and the read-only check or owner repair; do not silently
   prepare or claim started. `/orbi setup --dry-run` previews this start route;
@@ -566,7 +576,10 @@ unverified: report `scheduler_unavailable`, preserving any disabled-timer eviden
 Drain does not promise that an issue reaches merge: report remaining review and
 merge work.
 
-`status` is read-only. Upstream `orbi status` fetches refs through `freeze_base`
+`status` is read-only. Its `doctor.state=failed` retains the upstream diagnostic
+outcome; it is not itself a Kit scheduling gate. A protection-only diagnostic is
+informational; inspect other failed prerequisites separately. No protection endpoint
+read is required by the shared Python preflight. Upstream `orbi status` fetches refs through `freeze_base`
 at this pin, so use read-only `orbi doctor` plus explicit `gh`, scheduler and
 local reads. Missing evidence is `unavailable`, never an empty queue. Status
 and dry-run create no config, lock, receipt or scratch file and suppress child
