@@ -11,7 +11,6 @@
     "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "destination_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "orbi_association": "linked issue and PR body run marker plus coordinator continuation, not branch prefix or author",
-    "local_worktrees": "clean; no PR-51 ref or checkout",
     "merged_pr": {
       "url": "https://github.com/example/project/pull/51",
       "issue": "https://github.com/example/project/issues/11",
@@ -19,12 +18,18 @@
       "head_sha": "dddddddddddddddddddddddddddddddddddddddd",
       "merge_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "classification": "merged upstream"
-    }
+    },
+    "invoking_checkout": "clean; no PR-51 ref or checkout"
   },
   "events": [
     {
       "type": "read",
       "path": "skills/push/SKILL.md"
+    },
+    {
+      "type": "command",
+      "command": "git rev-parse --show-toplevel",
+      "exit": 0
     },
     {
       "type": "command",
@@ -91,7 +96,7 @@
     },
     {
       "type": "final",
-      "text": "Local commits: none. Incoming landed: PR 51 via team/trunk bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, including regression tests; default-branch ancestry verified, former head dddddddddddddddddddddddddddddddddddddddd not imported. Pending: none. Selected/final: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb. Checks: affected tests and required review passed at final tree. Remote inclusion: publish/trunk readback bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; merge bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ancestor. Local sync: idle canonical trunk fast-forwarded; no worker checkout modified."
+      "text": "Local scope: invoking checkout; other worktrees were not inspected. Local commits: none. Incoming landed: PR 51 via team/trunk bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, including regression tests; default-branch ancestry verified, former head dddddddddddddddddddddddddddddddddddddddd not imported. Pending: none. Selected/final: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb. Checks: affected tests and required review passed at final tree. Remote inclusion: publish/trunk readback bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; merge bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ancestor. Local sync: invoking checkout fast-forwarded; no other checkout probed."
     }
   ]
 }

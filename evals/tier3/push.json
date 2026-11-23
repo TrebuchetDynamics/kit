@@ -1,11 +1,16 @@
 {
   "skill": "push",
   "tier": 3,
-  "description": "Synthetic delivery receipt pilot, not semantic candidate selection, model adherence or live delivery. Read-only clauses are applied separately in tests.",
+  "description": "Synthetic invoking-checkout delivery pilot, not model adherence or observed command counts. Scope guards recognize known fixture roots/tip, not arbitrary path roles; read-only clauses are applied separately.",
   "require": [
     {
       "event": "read",
       "path": "*"
+    },
+    {
+      "event": "command",
+      "command": "\\bgit\\s+rev-parse\\s+--show-toplevel\\b",
+      "exit": 0
     },
     {
       "event": "command",
@@ -20,6 +25,8 @@
     {
       "event": "final",
       "contains": [
+        "Local scope:",
+        "other worktrees were not inspected",
         "Local commits:",
         "Incoming landed:",
         "Pending:",
@@ -38,6 +45,46 @@
     {
       "event": "command",
       "command": "\\bgh\\s+pr\\s+checkout\\b"
+    },
+    {
+      "event": "command",
+      "command": "worktree[_-]sweep|git[-_]commit[-_]push\\s+all\\b"
+    },
+    {
+      "event": "command",
+      "command": "out-of-scope/|nested-worker(?:[/\\s\\\"\\x27]|$)"
+    },
+    {
+      "event": "command",
+      "command": "\\bgit\\b[^;\\n]*\\badd\\s+(?:--\\s+\\.(?:\\s|$)|-A(?:\\s|$))"
+    },
+    {
+      "event": "command",
+      "command": "\\b(?:merge|cherry-pick)\\b[^;\\n]*\\b9999999999999999999999999999999999999999\\b"
+    },
+    {
+      "event": "read",
+      "path": "*out-of-scope/*"
+    },
+    {
+      "event": "read",
+      "path": "*nested-worker*"
+    },
+    {
+      "event": "write",
+      "path": "*out-of-scope/*"
+    },
+    {
+      "event": "write",
+      "path": "*nested-worker*"
+    },
+    {
+      "event": "edit",
+      "path": "*out-of-scope/*"
+    },
+    {
+      "event": "edit",
+      "path": "*nested-worker*"
     }
   ]
 }

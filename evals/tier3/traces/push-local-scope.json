@@ -1,0 +1,129 @@
+{
+  "name": "push-local-scope",
+  "skill": "push",
+  "model": "fixture",
+  "note": "Synthetic checkout-scope fixture only, not an observed host run or command-count benchmark.",
+  "context": {
+    "repository": "example/project",
+    "base": "trunk",
+    "upstream": "team/trunk",
+    "destination": "publish/refs/heads/trunk",
+    "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "destination_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "orbi_association": "linked issue and PR body run marker plus coordinator continuation, not branch prefix or author",
+    "merged_pr": {
+      "url": "https://github.com/example/project/pull/51",
+      "issue": "https://github.com/example/project/issues/11",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "head_sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "merge_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "classification": "merged upstream"
+    },
+    "invoking_checkout": "/fixture/invoking",
+    "sibling_state": "dirty/locked/active/unique commits",
+    "unrelated_worktrees": 1,
+    "out_of_scope": [
+      "/fixture/out-of-scope/sibling-0",
+      "/fixture/invoking/nested-worker"
+    ],
+    "local_commit_sha": "1111111111111111111111111111111111111111",
+    "final_sha": "ffffffffffffffffffffffffffffffffffffffff"
+  },
+  "events": [
+    {
+      "type": "read",
+      "path": "skills/push/SKILL.md"
+    },
+    {
+      "type": "command",
+      "command": "git rev-parse --show-toplevel",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git worktree list --porcelain -z",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git status --short --branch",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git diff --stat",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-1.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/issues-page-2.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-links-and-ownership.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-51-merged.json"
+    },
+    {
+      "type": "read",
+      "path": "recorded/invoking/head-index-and-eligible-file-bytes-recheck.json"
+    },
+    {
+      "type": "command",
+      "command": "git --literal-pathspecs add -- edited.txt",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git commit -m \"Save invoking checkout\"",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git fetch team",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git merge-base --is-ancestor bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb team/trunk",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pr-51-refresh.json"
+    },
+    {
+      "type": "command",
+      "command": "git merge --no-ff bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "python3 -m unittest tests.test_parser",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/github/pre-publication-refresh.json"
+    },
+    {
+      "type": "command",
+      "command": "git push publish ffffffffffffffffffffffffffffffffffffffff:refs/heads/trunk",
+      "exit": 0
+    },
+    {
+      "type": "read",
+      "path": "recorded/git/publish-trunk-readback.json"
+    },
+    {
+      "type": "final",
+      "text": "Local scope: /fixture/invoking; other worktrees were not inspected. Local commits: eligible edited.txt saved at 1111111111111111111111111111111111111111. Incoming landed: PR 51 via team/trunk bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, including regression tests; default-branch ancestry verified, former head dddddddddddddddddddddddddddddddddddddddd not imported. Pending: none. Selected/final: ffffffffffffffffffffffffffffffffffffffff/ffffffffffffffffffffffffffffffffffffffff. Checks: affected tests and required review passed at final tree. Remote inclusion: publish/trunk readback ffffffffffffffffffffffffffffffffffffffff; merge bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ancestor. Local sync: invoking checkout synchronized; nested-worker excluded at its registered boundary, not read or staged."
+    }
+  ]
+}
