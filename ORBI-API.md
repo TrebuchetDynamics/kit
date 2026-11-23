@@ -1,6 +1,6 @@
 # Orbi API and host inventory
 
-**Use Kit `/orbi status --json` to inspect one repository, the scheduler to list runners on a host, and GitHub to establish what was delivered.** These answer different questions. In particular, bare **`/orbi`** in Kit means *status*; bare **`orbi`** in a shell runs a **real delivery tick**. Use `orbi --version` to identify a binary without running a tick.
+**Use Kit `/orbi status --json` to inspect one repository, `/orbi status all --json` for observable local host services, and GitHub to establish what was delivered.** These answer different questions. In particular, bare **`/orbi`** in Kit means *status*; bare **`orbi`** in a shell runs a **real delivery tick**. Use `orbi --version` to identify a binary without running a tick.
 
 This reference covers Kit’s [lifecycle client](skills/orbi/SKILL.md) and the self-hosted engine at [Orbi v0.7.56](https://github.com/orbi-build/orbi/tree/v0.7.56). Check the deployed version before relying on a flag or format. The engine has no documented HTTP control plane to enumerate deployments, enqueue issues or restart workers. Its [public interface inventory](https://github.com/orbi-build/orbi/blob/v0.7.56/docs/public-contracts.mdx) defines what integrators can rely on; the optional exporter is monitoring, not that API. **Kit remains paused and live-unqualified** under its [cutover policy](docs/github-native.md#cutover). Nothing below authorizes activation.
 
@@ -64,6 +64,50 @@ tick, activates/repairs anything or updates a stale installed helper.
 | `update` | Plain `update` requires a stopped, drained deployment. Refreshing installed units can briefly activate timers before Kit restores inactivity. `update --stop` pauses owned timers, defers while workers finish, and skips the activating unit refresh. |
 
 Kit mutations are Linux-only; `--dry-run` previews them. On an error inspect the JSON `error.code`, `error.fix` and `error.mutated`: nonzero exit does not mean nothing changed. Use the helper for lifecycle changes, not hand-written unit commands.
+
+## Inspect observable local host services with Kit
+
+From any working directory, invoke `/orbi status all` or `/orbi status all --json`.
+Portable and native command routes preserve the literal arguments in one helper
+call. Scripts can use the absolute loaded helper path:
+
+```sh
+python3 -B /path/to/kit/skills/orbi/scripts/orbi_control.py status all --json
+```
+
+This branches before repository identity: no global Git checkout or GitHub auth
+is required. Do not inject `--repo-dir` or `--config`. Explicit repo/config,
+dry-run, stop and bootstrap/mutation selectors conflict and are rejected before
+probes with `invalid_host_selection`; retry without those selectors.
+
+Linux inventories the accessible current-user and system managers with bulk
+`list-units` and `list-unit-files` JSON queries for services and timers, then
+bounded allowlisted `show`/definition reads. It includes failed/inactive services,
+unloaded installed definitions, orphan instances, templates, nonrunner Orbi
+services and discoverable deployment configs. Full manager + service identity
+separates deployments sharing `@1`; there is no slots-1–5 restriction or Kit-only
+name filter. Timer targets pair with full service identities; timers/templates
+are not workers. Repo ownership requires resolved config evidence, never a basename.
+macOS inventories observable GUI/user/system launchd domains and installed
+LaunchAgents/Daemons separately: an installed/unloaded plist is not a running job.
+
+JSON returns `scope: host`, `rows`, `totals` and `coverage`. Each row preserves
+manager, unit/timer, kind, loaded/installed evidence, scheduler/worker state,
+resolved config binding, repo, deployed engine version/revision or explicit
+unknown, current issue when locally bound and next trigger when available.
+Config-only rows are prepared-only. Engine metadata is shared per resolved config;
+no bootstrap CLI, provider/env/session reads, per-deployment queue/doctor or
+network calls. Linux live issue attribution reuses the invocation-bound evidence
+above; macOS live issue identity and next trigger remain unknown.
+
+Successful empty listings mean zero **observed** workers. Failed/denied managers,
+unreadable configs, conflicting bindings and scan limits yield partial coverage
+without discarding healthy rows. Totals describe observed loaded worker services
+in accessible managers, not all users, namespaces, containers or a remote fleet.
+No sudo, other-user impersonation, container entry or scheduler actions. See the
+[lifecycle inventory contract](skills/orbi/references/lifecycle.md#host-inventory)
+for discovery roots, limits and read-access repairs. Native upstream `orbi status`
+does not implement Kit's literal `all` mode.
 
 ## Native Orbi CLI
 

@@ -26,7 +26,7 @@ names in the technical sections below refer to this direct interface, not public
 setup's default mapping.
 
 ```sh
-python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|stop|help] \
+python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|stop|help] [all] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
   [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
   [--resume-setup] [--harness {pi-bolt,pi}] [--stop]
@@ -35,7 +35,7 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|sto
 - Omitted action means `status`. A bare `orbi` runs one Runner tick and is never
   the lifecycle entry.
 - `help` takes no repository, reads no deployment and is available on every
-  platform. It is the only action that needs no deployment context; `status`
+  platform. `status all` also needs no repository context; bare/current-repo `status`
   still binds a repository and reports an absent deployment. Help accepts and
   ignores `--repo-dir`, `--config`, `--dry-run` and all setup inputs.
 - `--repo-dir` names the repository checkout; the helper resolves the canonical
@@ -562,6 +562,58 @@ pauses or blocked work and never touches another deployment. Enforced
 administrators, strict required CI, independent review and human-only
 acceptance stay in place; a doctor warning about enforced admins never
 authorizes a protection change.
+
+## Host inventory
+
+`/orbi status all [--json]` is one read-only helper call from any directory.
+Preserve the literal `all`; never inject `--repo-dir` or `--config`. Explicit
+repo/config and all mutation/bootstrap selectors (including dry-run) conflict
+and return `invalid_host_selection` before probes. Repair by using
+`/orbi status all --json` without selectors. Bare/current-repo status is unchanged.
+
+Linux lists loaded services/timers and installed unit files in the current user
+and system managers, without sudo. It reads accessible installed definitions,
+actual fragments/drop-ins and discoverable configs under XDG data/config roots,
+`ORBI_CONFIG` and the current directory. Full unit identity plus manager separates
+slots; explicit timer targets take precedence over matching stems. A config
+reference, not a basename or Kit unit naming convention, establishes repository
+attribution. Conflicting/unreadable bindings remain unknown while healthy rows
+survive. Templates and nonrunner services are distinct from worker instances.
+Config-only rows mean prepared metadata, not installed or active scheduling.
+Worker classification uses the service command where readable; a templated
+exporter is not a worker, and a directly evidenced singleton tick is. Enabled
+but inactive timers are stopped, not active scheduling. Loaded presence comes
+from the bulk snapshot, not a later definition inspection. Unsupported config
+expansions (including an unobserved system manager home) do not bind a repo.
+
+macOS lists the current GUI/user and system launchd domains and installed user
+LaunchAgents (including `ORBI_UNIT_DIR`), `/Library/LaunchAgents` and
+`/Library/LaunchDaemons`. Installed plists (XML or binary) are not loaded jobs.
+Config references can use `ORBI_CONFIG`, direct Orbi `--config` arguments or a
+local `orbi.toml` in the job's working directory. Relative references require an
+absolute observed working directory; conflicts remain unattributed.
+A failed job read is not evidence of unloading unless a successful domain listing
+also omits that job. Running jobs remain issue unknown; retained logs cannot bind
+a current invocation. Next-fire time is unknown on launchd.
+
+The host receipt has `scope: host`, `rows`, `totals` and `coverage`. Rows include
+manager/unit/timer, kind, loaded/installed evidence, scheduler and worker state,
+config binding, repository, deployment-bound engine metadata, current issue when
+locally verified and next trigger when available. No provider/env/session contents,
+raw commands, queue scan, doctor or network fan-out. Engine metadata is reused once
+per resolved config; bootstrap CLI checks are omitted. Linux issue binding uses
+the same bounded current InvocationID/MainPID journal evidence as repo status,
+in the observed manager. Missing identity is active/issue unknown, not idle.
+
+Totals count **observed loaded worker services**, not timers, templates or an
+absolute host population. Coverage is scoped to observed local managers: other
+users, namespaces, containers and remote hosts remain unobserved. Successful empty
+lists are zero observed. Failed/denied discovery, unreadable configs and truncated
+reads produce partial coverage with a read-access repair action; no automatic
+repair or privilege escalation. Lists/definition scans cap at 8192 entries and
+unit/job details at 256 per manager; overflow is explicit. Detail reads are bounded,
+not a full status/doctor per deployment. This inventory grants no activation or
+live qualification.
 
 ## Stop, status and drain
 
