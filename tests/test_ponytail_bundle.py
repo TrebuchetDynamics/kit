@@ -155,6 +155,72 @@ class PonytailBundleTests(unittest.TestCase):
         help_text = (ROOT / 'skills/ponytail-help/SKILL.md').read_text()
         self.assertIn('Publish issues for triggered shortcuts', help_text)
 
+    def test_audit_single_invocation_modes_and_finding_dispositions(self):
+        # Source contracts, not simulated model choices or live issue publication.
+        text = ' '.join((ROOT / 'skills/ponytail-audit/SKILL.md').read_text().split())
+        cases = {
+            'bare invocation': (
+                'single-invocation specialist handoff',
+                '../shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff',
+                'ordinary `/ponytail-audit` invocation analyzes the requested scope and publishes',
+                'without selection, confirmation or a planner invocation',
+                'Do not apply the upstream report-only route or 20-finding cap to publication',
+            ),
+            'actionable evidence': (
+                'severity, source/reproducer evidence, expected load where relevant and next action',
+                'an observable check with its expected result',
+                'A badge, unread area or preference alone is not actionable',
+            ),
+            'mixed actionable and held': (
+                'all supported, buildable, uncovered outcomes',
+                'Group findings that share a fix and acceptance check',
+                'Hold only uncertain findings with the reason and resume condition',
+                'continue independent qualifying work',
+                'open and closed issues, linked PRs and actual ownership',
+                'covered, completed, owned and unsupported findings create no duplicate issue',
+            ),
+            'zero qualifying findings': (
+                'Zero qualifying findings means zero new issues',
+            ),
+            'explicit report-only': (
+                'Explicit report-only, read-only, no-write or dry-run means no writes',
+                'Return findings inline without GitHub, label, document or scratch writes',
+            ),
+            'authorized fix/apply': (
+                'explicitly requested and authorized local fix/apply mode',
+                'separate from default publication',
+                'ownership, review, PR and human-only gates',
+                'Default publication does not implement findings locally or activate services',
+            ),
+            'publication and failure receipt': (
+                'preview in chat without waiting',
+                'native `blockedBy` dependencies and `ai-ready` last',
+                'report verified issue links and stop',
+                'Preserve explicit no-dispatch, pauses and live ownership',
+                'concrete error, missing input and safe resume action',
+                'unknown coverage, not an empty backlog',
+                'UNSAVED/UNKNOWN and partial receipts',
+            ),
+        }
+        for scenario, contracts in cases.items():
+            for contract in contracts:
+                with self.subTest(scenario=scenario, contract=contract):
+                    self.assertIn(contract, text)
+        self.assertNotIn('Report only: no fixes, new backlog', text)
+
+    def test_portable_audit_reaches_canonical_publication_and_mode_routing(self):
+        adapter = ROOT / 'adapters/skills/ponytail-audit/SKILL.md'
+        text = adapter.read_text()
+        links = re.findall(r'\[[^\]]*\]\(([^)]+)\)', text)
+        self.assertIn(ROOT / 'skills/ponytail-audit/SKILL.md',
+                      {(adapter.parent / link).resolve() for link in links})
+        self.assertIn('default publication and explicit mode routing', text)
+        self.assertIn('disable-model-invocation: true', text)
+        self.assertIn('read-only/no-write/no-push restrictions', text)
+        shared = ' '.join(METHOD.read_text().split())
+        self.assertNotIn('Standalone review/audit/debt commands report only', shared)
+        self.assertIn('../ponytail-audit/SKILL.md', shared)
+
     def test_hermes_setup_no_longer_requires_an_external_ponytail_plugin(self):
         manifest = yaml.safe_load((ROOT / 'plugin.yaml').read_text())
         defaults = json.loads((ROOT / 'plugins/defaults.json').read_text())
