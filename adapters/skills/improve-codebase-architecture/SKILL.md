@@ -1,6 +1,6 @@
 ---
 name: improve-codebase-architecture
-description: "Find and report deepening opportunities."
+description: "Analyze architecture and publish warranted issues."
 disable-model-invocation: true
 ---
 
@@ -18,8 +18,9 @@ Pi extension or external service is required.
 Where the pinned upstream entry calls another skill by name, the host-neutral workflow
 states the composition directly: this host exposes commands, not a Skill tool. Delegate
 a bounded search only when the host provides a sub-agent tool. Preserve read-only
-requests, review gates, task state and delivery limits, and stop before implementation
-until the owner confirms the outcome the workflow requires.
+requests, review gates, task state and delivery limits. Follow its default
+[single-invocation specialist handoff](../../../skills/shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff)
+and its separate explicit report-only and authorized fix/apply branches.
 
 Report what the workflow's receipt asks for, and separate what you read from what you
 changed.

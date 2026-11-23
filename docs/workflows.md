@@ -478,11 +478,23 @@ named concept or resolved ambiguity. It follows Docs Sync for the write rules.
 `/improve-codebase-architecture` uses Graphify for scoped discovery and Ponytail to
 challenge shallow modules, leaking seams, duplicated rules, concrete bugs and measured
 performance costs. It verifies graph leads in source and ranks defects before structural
-waste. Default review writes an HTML candidate report to the OS temp directory; a
-no-write request gets an inline report. Missing Graphify falls back to native search.
-Explicit `fix`, `patch` or `optimize` requests implement one
-bounded finding within the skill's accepted scope, with regression evidence, affected checks and Ponytail review in the
-existing review lane. Unresolved design or ADR choices still need a decision; no new
+waste. The architecture publication pilot uses the shared
+[single-invocation specialist handoff](../skills/shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff):
+one ordinary invocation analyzes and publishes warranted GitHub Issues, previews in
+chat without waiting for selection or confirmation, reports links and stops. It
+requires affected callers, failure or measured cost, the smallest compatible fix,
+risk and a check. Existing/owned work is reconciled; uncertain findings, speculative
+refactors and unresolved ADR decisions stay held with reasons while independent work
+continues. No qualifying findings means no new issues. Other skills' defaults do not change.
+
+Writable modes also produce a temporary HTML report, never a governing issue source.
+Explicit `report only`, `read-only`, `no-write` or `dry-run` returns inline findings
+without GitHub, document or scratch writes. Missing Graphify falls back to native
+search. Default publication does not implement findings or activate Orbi; no-dispatch,
+ownership and human gates still apply. Explicit `fix`, `apply`, `patch` or `optimize`
+requests instead implement one bounded finding within the skill's accepted scope,
+with regression evidence, affected checks and Ponytail review in the existing review
+lane. Unresolved design or ADR choices still need a decision; no new
 commit, push or deployment authority is implied.
 
 Examples (Hermes CLI; Pi uses the same hyphen names, Claude Code prefixes
@@ -491,6 +503,7 @@ Examples (Hermes CLI; Pi uses the same hyphen names, Claude Code prefixes
 ```text
 /grilling the retry design; recommend answers; read-only
 /grill-with-docs the cache plan; record ADRs; no commit
+/improve-codebase-architecture src/runner
 /improve-codebase-architecture src/runner; report only
 /improve-codebase-architecture src/cache; fix the highest-severity verified finding; no commit
 ```
