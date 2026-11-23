@@ -2,8 +2,10 @@
 
 The Hermes item runs only as a dry run here: the real setup changes live profiles.
 """
+import contextlib
 import errno
 import fcntl
+import io
 import json
 import os
 import pty
@@ -1018,6 +1020,35 @@ esac
         self.assertEqual(self.calls('systemctl --user try-restart'),
                          ['systemctl --user try-restart kit-bolt.service'])
 
+    def test_failed_pi_package_does_not_hold_a_proven_different_profile(self):
+        self.recording_services()
+        self.installed_package()
+        body = (self.bin / 'systemctl').read_text().replace(
+            'PI_CODING_AGENT_DIR=%s/.pi/agent', 'PI_CODING_AGENT_DIR=%s/other-profile')
+        self.fake('systemctl', body)
+        self.bolt.write_text(PI + '# previous release\n')
+        result = self.install('--only', 'pi-bolt,pi', env={'FAKE_PI_UPDATE_FAIL': '1'})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'),
+                         ['systemctl --user try-restart kit-bolt.service'])
+
+    def test_unknown_pi_profile_holds_even_with_a_changed_executable(self):
+        self.recording_services()
+        package = self.installed_package()
+        original = (self.bin / 'systemctl').read_text()
+        for replacement in ('', 'OTHER_PI_CODING_AGENT_DIR'):
+            with self.subTest(environment=replacement):
+                self.log.write_text('')
+                body = original.replace('PI_CODING_AGENT_DIR', replacement) if replacement else original.replace(
+                    "    printf 'Environment=PI_CODING_AGENT_DIR=%s/.pi/agent\\n' \"$FAKE_HOME\"", ':')
+                self.fake('systemctl', body)
+                (package / 'adapters/skills/update-kit/SKILL.md').write_text('damaged package')
+                self.bolt.write_text(PI + '# previous release\n')
+                result = self.install('--only', 'pi-bolt,pi')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.calls('systemctl --user try-restart'), [])
+                self.assertIn('kit-bolt.service: held (unverified Pi profile', result.stdout)
+
     def test_unverified_service_references_hold_with_manual_action(self):
         self.fake('systemctl', LOGGING + r'''
 if [[ "$*" == *list-units* ]]; then echo 'kit-unknown.service loaded active running Unknown'; fi
@@ -1096,6 +1127,53 @@ if __name__ == '__main__':
         self.assertIn('kit-bolt.service: held (incomplete/unverified pi-bolt)', failed.stdout)
         self.assertEqual(self.calls('systemctl --user try-restart'), [])
 
+    def test_nested_missing_evidence_holds_an_earlier_changed_consumer(self):
+        self.recording_services()
+        before = (PI + '# old release\n').encode()
+        bolt = install_menu.Item('pi-bolt', 'Bolt', inputs=lambda:
+            install_menu.installed_evidence([self.bolt]), steps=[install_menu.Step(
+                'refresh', run=lambda: (self.bolt.write_text(PI) and 'refreshed'))])
+        hermes = install_menu.Item('hermes', 'Hermes', steps=[install_menu.Step('native', ['native'])])
+        for state in ('failed', 'timeout', 'unavailable', 'installed'):
+            with self.subTest(state=state):
+                self.bolt.write_bytes(before)
+                self.log.write_text('')
+                receipt = {'status': 'updated', 'gateway_restart': 'deferred',
+                           'hosts': [{'item': 'pi-bolt', 'status': state, 'exit': 1}]}
+                original = install_menu.run_command
+                def native(argv, output, **kwargs):
+                    if argv == ['native']:
+                        return 0, json.dumps(receipt)
+                    return original(argv, output, **kwargs)
+                with patch.object(install_menu, 'BIN', self.bolt.parent), \
+                        patch.object(install_menu, 'run_command', side_effect=native), \
+                        patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()) as out:
+                    self.assertEqual(install_menu.install([bolt, hermes], {'pi-bolt', 'hermes'}), 0)
+                self.assertEqual(self.calls('systemctl --user try-restart'), [])
+                self.assertIn('kit-bolt.service: held (incomplete/unverified pi-bolt)', out.getvalue())
+                self.assertIn('repair those inputs before manual restart', out.getvalue())
+
+    def test_large_native_receipt_keeps_gateway_and_nested_evidence(self):
+        report = self.home / 'large-native-report.jsonl'
+        evidence = install_menu.installed_evidence([self.bolt])
+        receipt = {'status': 'updated', 'gateway_restart': 'pending',
+                   'activation': [{'status': 'ready', 'commands': ['command'] * 5000}],
+                   'hosts': [{'item': 'pi-bolt', 'status': 'installed', 'exit': 0,
+                              'evidence': {'before': evidence, 'after': evidence}}]}
+        item = install_menu.Item('hermes', 'Hermes', steps=[install_menu.Step('native',
+            [sys.executable, '-c', 'import json; print(json.dumps(' + repr(receipt) + '))'])])
+        original = install_menu.run_command
+        def bounded(argv, output, **kwargs):
+            return original(argv, output, timeout=5, **kwargs)
+        with patch.dict(os.environ, {'KIT_INSTALL_REPORT': str(report)}), \
+                patch.object(install_menu, 'run_command', side_effect=bounded), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(install_menu.install([item], {'hermes'}), 0)
+        row = next(r for r in map(json.loads, report.read_text().splitlines()) if r['item'] == 'hermes')
+        self.assertEqual(row['gateway_restart'], 'pending')
+        self.assertEqual(row['activation'], receipt['activation'])
+        self.assertEqual(row['hosts'], receipt['hosts'])
+
     def test_marketplace_payload_repairs_at_same_identity_restart_only_own_consumer(self):
         for host, command in (('claude', ()), ('codex', ('update',))):
             with self.subTest(host=host):
@@ -1162,7 +1240,7 @@ rm -r {shlex.quote(str(payload))}
 exit 23
 ''')
         body = (self.bin / 'systemctl').read_text().replace(
-            'argv[]=%s ; }', f'argv[]=%s --plugin {payload} ; }}')
+            'argv[]=%s ; }', f'argv[]=%s --plugin {payload}/SKILL.md ; }}')
         self.fake('systemctl', body)
         self.bolt.write_text(PI + '# previous release\n')
         result = self.install('--only', 'pi-bolt,claude')

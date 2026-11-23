@@ -95,7 +95,7 @@ class Output:
         print(message, end='', flush=True)
 
 
-def run_command(argv, output, extra_env=None, timeout=None):
+def run_command(argv, output, extra_env=None, timeout=None, receipt=None):
     """Stream both child channels, including prompts without a trailing newline.
 
     Keep a bounded diagnostic tail for quiet failures; stdin remains inherited.
@@ -109,6 +109,9 @@ def run_command(argv, output, extra_env=None, timeout=None):
     stream = output.verbosity > 0 or sys.stdin.isatty()
     decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
     tail = ''
+    # Native receipts can exceed the diagnostic tail (many profiles/commands).
+    # Spool only when requested; ordinary commands retain bounded diagnostics.
+    captured = tempfile.TemporaryFile(mode='w+', encoding='utf-8') if receipt is not None else None
     terminal = None
     previous_ttou = None
     if timeout is not None:
@@ -149,10 +152,14 @@ def run_command(argv, output, extra_env=None, timeout=None):
                         if not chunk:
                             break
                         text = decoder.decode(chunk)
+                        if captured is not None:
+                            captured.write(text)
                         tail = (tail + text)[-16384:]
                         if stream:
                             output.raw(text)
                 text = decoder.decode(b'', final=True)
+                if captured is not None:
+                    captured.write(text)
                 tail = (tail + text)[-16384:]
                 if stream:
                     output.raw(text)
@@ -179,6 +186,12 @@ def run_command(argv, output, extra_env=None, timeout=None):
                     child.wait()
                 raise
     finally:
+        if captured is not None:
+            try:
+                captured.seek(0)
+                receipt.update(terminal_receipt(captured.read()) or {})
+            finally:
+                captured.close()
         if terminal is not None:
             try:
                 os.tcsetpgrp(terminal, os.getpgrp())
@@ -194,7 +207,6 @@ def run_command(argv, output, extra_env=None, timeout=None):
 
 def terminal_receipt(text):
     """Read a final JSON receipt, never infer a native decision from log wording."""
-    text = text[-16384:]
     decoder = json.JSONDecoder()
     receipt = None
     for index, character in enumerate(text):
@@ -759,6 +771,8 @@ def host_changes(commands, read, output, before=None):
             evidence = marketplace_evidence(observed)
             if before:
                 evidence['inputs'] = {**before['inputs'], **evidence['inputs']}
+                evidence['directories'] = sorted(set(before.get('directories', []))
+                                                  | set(evidence.get('directories', [])))
             exc.installed_evidence = evidence
             detail = (f'canonical={observed.registered}, mismatched={observed.mismatch}, '
                       f'installed={observed.installed}')
@@ -1230,34 +1244,38 @@ def install_pi_package(output=None, mode='install'):
                                 identity=str(package) if package else None)
     if probe_error:
         before['error'] = probe_error
-    action = 'update' if package else 'install'
-    reason = ''
-    if package:
-        stale = missing_package_skills(package)
-        if mode == 'update':
-            reason = 'update requested'
-        elif stale:
-            reason = f'skills missing: {", ".join(stale)}'
-        else:
-            reason = 'every install refreshes the installed package'
-    if reason and output.verbosity:
-        output.line(f'  refreshing {package} ({reason})')
-    argv = [str(binary), action, PI_SOURCE]
-    if output.verbosity > 1:
-        output.line('  $ ' + shlex.join(argv), 'command')
-    code, text = run_command(argv, output, timeout=600)
-    if code:
-        raise OSError(f'Pi package {action} failed (exit {code}): {failure_summary(text)}; '
-                      'repair the reported cause and retry ./install.sh --only pi')
-    package = pi_package(binary=binary)
-    missing = missing_package_skills(package) if package else []
-    if not package or missing:
-        detail = f'skills still missing: {", ".join(missing)}' if package else 'package is not registered at an existing directory'
-        raise OSError(f'Pi package {action} did not complete: {detail}; '
-                      'check Pi-Bolt output and PI_OFFLINE (offline mode skips package updates), '
-                      'then retry ./install.sh --only pi')
-    return Refresh(f'{binary}: {action} {PI_SOURCE}', before,
-                   installed_evidence([package, pi_settings_path()], identity=str(package)))
+    try:
+        action = 'update' if package else 'install'
+        reason = ''
+        if package:
+            stale = missing_package_skills(package)
+            if mode == 'update':
+                reason = 'update requested'
+            elif stale:
+                reason = f'skills missing: {", ".join(stale)}'
+            else:
+                reason = 'every install refreshes the installed package'
+        if reason and output.verbosity:
+            output.line(f'  refreshing {package} ({reason})')
+        argv = [str(binary), action, PI_SOURCE]
+        if output.verbosity > 1:
+            output.line('  $ ' + shlex.join(argv), 'command')
+        code, text = run_command(argv, output, timeout=600)
+        if code:
+            raise OSError(f'Pi package {action} failed (exit {code}): {failure_summary(text)}; '
+                          'repair the reported cause and retry ./install.sh --only pi')
+        package = pi_package(binary=binary)
+        missing = missing_package_skills(package) if package else []
+        if not package or missing:
+            detail = f'skills still missing: {", ".join(missing)}' if package else 'package is not registered at an existing directory'
+            raise OSError(f'Pi package {action} did not complete: {detail}; '
+                          'check Pi-Bolt output and PI_OFFLINE (offline mode skips package updates), '
+                          'then retry ./install.sh --only pi')
+        return Refresh(f'{binary}: {action} {PI_SOURCE}', before,
+                       installed_evidence([package, pi_settings_path()], identity=str(package)))
+    except (OSError, subprocess.SubprocessError) as exc:
+        exc.installed_evidence = before
+        raise
 
 
 def items(hermes_args, output=None, mode='install'):
@@ -1329,11 +1347,13 @@ def payload_digest(path, ancestors=(), *, settings=False):
 
 
 def installed_evidence(paths, identity=None):
-    evidence = {'inputs': {}, 'identity': identity}
+    evidence = {'inputs': {}, 'identity': identity, 'directories': []}
     try:
         for path in paths:
             path = Path(path).absolute()
             value = payload_digest(path, settings=path == pi_settings_path())
+            if path.is_dir():
+                evidence['directories'].append(str(path))
             if path.is_dir() and (path / '.git').exists():
                 revision = subprocess.run(['git', '-C', str(path), 'rev-parse', '--verify', 'HEAD'],
                                           capture_output=True, text=True, timeout=30, check=True).stdout.strip()
@@ -1348,7 +1368,7 @@ def installed_evidence(paths, identity=None):
 
 def read_evidence(item):
     try:
-        return item.inputs() if item.inputs else {'inputs': {}, 'error': 'installed inputs unavailable'}
+        return item.inputs() if item and item.inputs else {'inputs': {}, 'error': 'installed inputs unavailable'}
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         return {'inputs': {}, 'error': str(exc)}
 
@@ -1447,9 +1467,10 @@ def restart_services(output, observations=None):
             reasons.append(f'{key}: held (incomplete payload); repair and rerun ./install.sh --only {key}')
         elif row['change'] == 'unchanged':
             reasons.append(f'{key}: skipped (effective installed contents unchanged)')
-        elif row['change'] == 'unverified':
-            error = row['before'].get('error') or row['after'].get('error')
-            reasons.append(f'{key}: held (unverified input: {error})')
+        if row['change'] == 'unverified':
+            error = row['after'].get('error') or row['before'].get('error')
+            inputs = ', '.join(sorted(set(row['before'].get('inputs', {})) | set(row['after'].get('inputs', {}))))
+            reasons.append(f'{key}: held (unverified input {inputs or key}: {error})')
     if any(row['change'] == 'unverified' for row in observations.values()):
         reasons.append('Inspect named inputs; retry ./install.sh --only ITEM for the held component')
     if not candidates:
@@ -1488,15 +1509,24 @@ def restart_services(output, observations=None):
                 paths.update(row['after'].get('inputs', {}))
             # The executable alone does not prove which Pi profile/package it loads.
             if key == 'pi' and (paths or row['status'] == 'failed'):
-                profile = re.search(r'PI_CODING_AGENT_DIR=([^\s"]+)', shown.stdout)
+                environment = next((line.removeprefix('Environment=') for line in shown.stdout.splitlines()
+                                    if line.startswith('Environment=')), '')
+                try:
+                    profile = dict(value.split('=', 1) for value in shlex.split(environment)
+                                   if '=' in value).get('PI_CODING_AGENT_DIR')
+                except ValueError:
+                    profile = None
                 env_files = re.search(r'^EnvironmentFiles=\s*\S', shown.stdout, re.MULTILINE)
-                if row['status'] == 'failed' or (profile and not env_files
-                        and Path(profile[1]) == pi_settings_path().parent):
+                if profile and not env_files and Path(profile) == pi_settings_path().parent:
                     paths.add(str(BIN.absolute() / 'pi-bolt'))
-                elif BIN.absolute() / 'pi-bolt' in references:
+                elif (not profile or env_files) and BIN.absolute() / 'pi-bolt' in references:
+                    blocked.add(key)
                     reasons.append(f'{unit}: held (unverified Pi profile for {pi_settings_path()}); '
                                    'inspect unit Environment/EnvironmentFiles and restart manually if it consumes this package')
-            consumes = any(Path(path) == ref or (Path(path).is_dir() and ref.is_relative_to(path))
+            # A failed refresh may already have removed a payload directory.
+            # Preserve its before/after type evidence instead of probing it now.
+            directories = set(row['before'].get('directories', [])) | set(row['after'].get('directories', []))
+            consumes = any(Path(path) == ref or (path in directories and ref.is_relative_to(path))
                            for path in paths for ref in references)
             if not consumes:
                 continue
@@ -1646,8 +1676,9 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                         env = {'KIT_INSTALL_DEFER_SERVICES': '1'}
                         if lock_fd is not None:
                             env['KIT_INSTALL_LOCK_FD'] = str(lock_fd)
-                        code, text = run_command(step.argv, output, extra_env=env)
-                        native = terminal_receipt(text)
+                        native = {}
+                        code, text = run_command(step.argv, output, extra_env=env, receipt=native)
+                        native = native or terminal_receipt(text)
                     else:
                         code, text = run_command(step.argv, output)
                     if code and attempt == 1 and step.retry_on and step.retry_on in text:
@@ -1692,9 +1723,21 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                     disposition = native.get('gateway_restart', 'unverified')
                     native_decisions.append(f'Hermes: native gateway disposition {disposition}; no outer restart')
                     for row in native.get('hosts', []):
+                        key = row['item']
+                        if key == 'services' or row['status'] == 'skipped':
+                            continue
                         evidence = row.get('evidence', {})
                         if 'before' in evidence and 'after' in evidence:
-                            observe(row['item'], row['status'], evidence['before'], evidence['after'])
+                            observe(key, row['status'], evidence['before'], evidence['after'])
+                        else:
+                            # An interrupted/older nested installer may report no
+                            # evidence. It must not leave an earlier success eligible.
+                            previous = observations.get(key)
+                            selected = next((i for i in all_items if i.key == key), None)
+                            held = (previous['after'] if previous else read_evidence(selected))
+                            after = {**held, 'error': f'{key}: nested refresh {row["status"]}; '
+                                                     'installed payload evidence unavailable'}
+                            observe(key, 'failed', held, after)
                 else:
                     for key, row in observations.items():
                         if key in ('pi-bolt', 'tx', 'claude', 'codex', 'orbi'):
