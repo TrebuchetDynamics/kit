@@ -38,7 +38,10 @@ independent review and PR gates. Orbi remains paused and live-unqualified.
 
 ## OpenCode
 
-With OpenCode installed, run this from a persistent Kit checkout:
+With OpenCode installed, run this from a persistent Kit checkout. Use a path with
+letters, digits, spaces, directory separators, drive colon, dots, underscores or
+hyphens; the installer refuses other characters rather than embedding OpenCode
+template syntax in the commands:
 
 ```sh
 python3 adapters/opencode/install.py

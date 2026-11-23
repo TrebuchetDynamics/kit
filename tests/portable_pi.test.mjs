@@ -380,6 +380,16 @@ test('installed archive resolves portable references and commands without checko
     const openCodeOptions = {
       cwd: foreign, encoding: 'utf8', env: {...process.env, XDG_CONFIG_HOME: configHome},
     };
+    const unsafe = join(scratch, 'package-$1');
+    await rename(installed, unsafe);
+    try {
+      const result = spawnSync('python3', [join(unsafe, 'adapters/opencode/install.py')], openCodeOptions);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /Unsupported character in Kit checkout path/);
+      await assert.rejects(stat(configHome), {code: 'ENOENT'});
+    } finally {
+      await rename(unsafe, installed);
+    }
     const invalidHome = spawnSync('python3', [openCodeInstaller], {
       ...openCodeOptions, env: {...openCodeOptions.env, XDG_CONFIG_HOME: 'relative'},
     });

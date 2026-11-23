@@ -8,6 +8,9 @@ from pathlib import Path
 
 def main():
     adapters = Path(__file__).resolve().parents[1]
+    # The path becomes OpenCode command-template text, not just a JSON string.
+    if any(not (c.isalnum() or c in " /\\:._-") for c in str(adapters)):
+        raise SystemExit("Unsupported character in Kit checkout path for OpenCode commands.")
     config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
     # XDG base directories must be absolute; never install into the current project.
     if not config_home.is_absolute():
@@ -38,8 +41,8 @@ def main():
 
     commands_dir.mkdir(parents=True, exist_ok=True)
     for command, template in pending.items():
-        with command.open("x", encoding="utf-8") as stream:
-            stream.write(template)
+        with command.open("xb") as stream:
+            stream.write(template.encode("utf-8"))
     print(f"Kit planning commands are installed in {commands_dir}")
 
 
