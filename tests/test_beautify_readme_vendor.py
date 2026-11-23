@@ -50,6 +50,40 @@ class BeautifyReadmeVendorTests(unittest.TestCase):
                      'docs.py check', 'audit only unless'):
             self.assertIn(rule, adapter)
 
+    def test_bare_invocation_files_verified_install_mismatch(self):
+        """Instruction contract, not a simulation of live model decisions."""
+        entry = (SKILL / 'SKILL.md').read_text()
+        modes = entry.split('## Invocation modes', 1)[1].split('## ', 1)[0]
+        reader_audit = entry.split('## Reader audit and publication', 1)[1].split('## ', 1)[0]
+        for required in ('bare invocation', 'without a scope question',
+                         'without selection, confirmation or a second command'):
+            self.assertIn(required, modes)
+        for required in ('current package exports', 'install instructions', 'documented user paths',
+                         'nonexistent published package', 'supported package',
+                         'source', 'exact validation check', 'expected result',
+                         'Do not run arbitrary README commands'):
+            self.assertIn(required, reader_audit)
+        self.assertNotIn('Otherwise ask the one compact scope question', entry)
+
+    def test_bare_invocation_holds_preferences_and_preserves_limits(self):
+        entry = (SKILL / 'SKILL.md').read_text()
+        modes = entry.split('## Invocation modes', 1)[1].split('## ', 1)[0]
+        reader_audit = entry.split('## Reader audit and publication', 1)[1].split('## ', 1)[0]
+        for required in ('subjective branding preference alone yields no issue',
+                         'Hold unsupported findings', 'resume condition',
+                         'open and closed issues', 'PRs', 'ownership',
+                         'Group findings that share a fix',
+                         'PLAN-HANDOFF.md#single-invocation-specialist-handoff',
+                         'native dependencies', 'ai-ready last', 'Stop after publication'):
+            self.assertIn(required, reader_audit)
+        for required in ('hero', 'redesign', 'audit-only', 'read-only', 'dry-run', 'no-write',
+                         'no-dispatch', 'audit only unless'):
+            self.assertIn(required, modes)
+        portable = (ROOT / 'adapters/skills/beautify-github-readme/SKILL.md').read_text()
+        for required in ('canonical invocation modes', 'take precedence over the protocol',
+                         'disable-model-invocation: true'):
+            self.assertIn(required, portable)
+
     def test_vendored_audit_script_runs(self):
         result = subprocess.run([sys.executable, str(SKILL / 'upstream/scripts/audit_readme.py'), str(ROOT / 'README.md')],
                                 capture_output=True, text=True, timeout=60)
