@@ -24,7 +24,7 @@ const workflows = {
   'bug-harvest': ['bug-harvest', 'Hunt evidence-backed bugs within scope and limits'],
   'autonomous-codebase-improver': ['autonomous-codebase-improver', 'Improve a repository through reviewed bounded slices'],
   'split-folder': ['split-folder', 'Split one named folder without changing behavior'],
-  'unused-code': ['unused-code', 'Remove only proven unreachable code'],
+  'unused-code': ['unused-code', 'Publish proven dead-code cleanup issues'],
   ponytail: ['ponytail', 'Choose Ponytail simplicity guidance or level'],
   'ponytail-review': ['ponytail-review', 'Review a change and connected code'],
   'ponytail-audit': ['ponytail-audit', 'Audit a repository or folder'],
