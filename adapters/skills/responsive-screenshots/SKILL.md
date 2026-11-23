@@ -17,3 +17,5 @@ Python package is absent, use the host's MCP browser tools or its Playwright CLI
 say which path you used. Never install a browser or driver, never put credentials in a
 URL, keep captures out of Git unless the request publishes them, and report real pixel
 sizes and overflow results rather than a claim that the layout looks right.
+Finish with the workflow's [inline UI review handoff](../../../skills/responsive-screenshots/SKILL.md#ui-review-handoff),
+using the existing local reports and its evidence and publication limits.

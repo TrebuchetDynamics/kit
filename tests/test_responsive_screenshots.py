@@ -319,6 +319,38 @@ class CaptureContractTests(unittest.TestCase):
         self.assertNotIn('pip install', source)
         self.assertNotIn('playwright install', source)
 
+    def test_ui_review_handoff_makes_recorded_overflow_reproducible(self):
+        text = (ROOT / 'skills/responsive-screenshots/SKILL.md').read_text()
+        handoff = text.split('## UI review handoff\n', 1)[1].split('\n## ', 1)[0]
+        for required in ('report.md', 'captures.json', 'inline', '/ui-taste', '/impeccable',
+                         'sanitized route/state', 'requested viewport', 'color scheme',
+                         'actual pixel dimensions', 'horizontal overflow', 'capture status',
+                         'Observed', 'Unverified', 'Reproduce', 'local evidence paths'):
+            with self.subTest(required=required):
+                self.assertIn(required, handoff)
+        # The worked handoff distinguishes viewport from full-page artifact size,
+        # and tells the reviewer which state to open, not just which PNG exists.
+        for example in ('/settings, default state', '375x667, light', '420x900',
+                        'horizontal overflow recorded', 'captured; exit 2',
+                        'open /settings', '--sizes 375x667 --scheme light --fail-on-overflow'):
+            with self.subTest(example=example):
+                self.assertIn(example, handoff)
+        adapter = (ROOT / 'adapters/skills/responsive-screenshots/SKILL.md').read_text()
+        self.assertIn('../../../skills/responsive-screenshots/SKILL.md#ui-review-handoff', adapter)
+
+    def test_ui_review_handoff_does_not_turn_capture_results_into_defect_or_delivery_proof(self):
+        text = (ROOT / 'skills/responsive-screenshots/SKILL.md').read_text()
+        handoff = text.split('## UI review handoff\n', 1)[1].split('\n## ', 1)[0]
+        for boundary in ('Captured does not mean visually correct',
+                         'A failed capture is not defect proof',
+                         'unknown', 'navigation timed out', 'repair action',
+                         'credentials', 'private data', 'query', 'fragment', 'diagnostics',
+                         'user restrictions', 'existing live owners',
+                         'Do not create GitHub issues or attachments',
+                         'Do not upload captures', 'not a new artifact'):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, handoff)
+
     def test_the_skill_entry_states_scope_and_evidence(self):
         text = (ROOT / 'skills/responsive-screenshots/SKILL.md').read_text()
         for phrase in ('## Boundaries', '**Done when:**', '--fail-on-overflow',
