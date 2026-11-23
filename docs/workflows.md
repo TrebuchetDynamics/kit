@@ -373,7 +373,8 @@ live bug-finding effectiveness.
 
 ## Test optimizer
 
-`/test-optimizer` actively reduces executed cases, test code and maintenance cost.
+`/test-optimizer` finds justified reductions in executed cases, test code and maintenance cost
+and publishes GitHub issues for Orbi in the same invocation.
 It reuses the existing [test-suite optimization protocol](../skills/engineering/local/test-suite-optimization/PROTOCOL.md).
 Prioritize deleting proven redundant, vacuous and obsolete tests, then shrink the
 remaining fixtures and cases. A constant assertion such as `assert 0 == 0` needs
@@ -382,20 +383,27 @@ supported risks, not test counts. Rare security, data-loss and named regression
 cases are not expendable merely because they rarely fail. Unchanged code or tests
 unrelated to today's diff are not automatically obsolete.
 
-A bare invocation audits; `read-only` writes nothing. Explicit `apply`, a request
-to reduce/optimize the suite, or an existing authorized implementation task permits
-one supported batch without another approval ceremony. It preserves distinct
-behavioral oracles and justifies deletions with retained equivalent checks, retired
-obligations or evidence of no owned contract/invariant. It then validates and reports
-real reductions and unknowns, without adding replacement tests just to preserve counts. It never optimizes by
-silently skipping tests or weakening CI. This is an agent-guided skill, not an
-automatic test-deletion script.
+A bare invocation analyzes the requested/current scope without editing tests. It
+uses [Plan Handoff](../skills/shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff)
+to reconcile existing work, preview without waiting, publish supported uncovered
+outcomes and report verified links. It holds uncertain findings and continues
+independent work; no qualifying findings means no new issues. Each proposed removal
+names its retained equivalent detector and oracle, retired obligation or evidence
+of no owned contract/invariant.
+
+Explicit report-only/read-only/no-write/dry-run returns findings inline with no writes.
+Only explicitly requested and authorized local fix/apply uses a separate supported
+batch with existing ownership, review, PR and human gates. No-dispatch and pauses
+remain binding. The default route does not implement findings or activate Orbi.
+Actual reductions and measured runtime stay separate from proposals and unknowns;
+neither mode silently skips tests or weakens CI.
 
 Examples (Hermes CLI; Pi uses `/test-optimizer`, Claude Code
 `/kit:test-optimizer`, Codex `$kit:test-optimizer`):
 
 ```text
-/test-optimizer tests/parser; read-only
+/test-optimizer tests/parser
+/test-optimizer tests/parser; report only
 /test-optimizer tests/parser; apply one batch; no commit or push
 ```
 

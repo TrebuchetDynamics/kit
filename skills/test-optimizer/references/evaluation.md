@@ -34,11 +34,23 @@ consolidation solely on missing optional measurements.
 
 ## Mode controls
 
-- Bare invocation: audit, no test edits; reuse the existing task/plan owner for
-  findings only when writes are permitted.
-- Read-only plus apply: read-only wins; no edits, task records or saved reports.
-- Authorized reduction: one supported batch, focused checks and required gates/
-  review. Reuse authorization rather than requesting it again.
+Use the canonical workflow's routing over the generic protocol's audit/apply defaults.
+
+- Bare invocation: analyze the named/current scope with no test edits. The same
+  invocation publishes justified, uncovered outcomes through Plan Handoff, with a
+  non-blocking chat preview and verified issue links, not a selection or planner prompt.
+- Mixed actionable/held/covered: publish all independent supported outcomes, grouping
+  shared fixes. Reuse existing open/closed work and preserve live ownership. Hold
+  uncertain removal evidence with a reason/resume condition; distinct boundaries
+  cannot be treated as duplicate detectors. Each issue carries the retained detector
+  and oracle or retired/unowned proof, exact IDs and verification.
+- Zero qualifying findings: zero new issues; report dispositions or no warranted change.
+- Explicit report-only/no-write/dry-run, including read-only plus apply: no edits,
+  GitHub/label writes, scratch, task records or saved reports; return findings inline.
+- Explicitly requested and authorized local fix/apply: one supported batch, focused
+  checks and required ownership/review/PR/human gates, separate from publication.
+  Reuse authorization rather than requesting it again. “Optimize this area” alone
+  uses publication, not local edits. No-dispatch holds readiness, not the analysis.
 - One-batch/pause/ownership conflict: stop new writes and disclose exact remaining
   work. Do not bypass a limit or overwrite a concurrent change.
 - Failing baseline: diagnose or report it; do not delete a failing detector just
