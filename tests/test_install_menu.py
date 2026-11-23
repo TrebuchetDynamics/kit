@@ -2,8 +2,10 @@
 
 The Hermes item runs only as a dry run here: the real setup changes live profiles.
 """
+import contextlib
 import errno
 import fcntl
+import io
 import json
 import os
 import pty
@@ -931,43 +933,391 @@ fi'''
         self.assertEqual(self.calls('pi-bolt update'), [])
         self.assertEqual(self.calls('pi-bolt list'), [])
 
-    def test_restart_services_excludes_legacy_runner_and_tries_host_services(self):
-        listed = subprocess.CompletedProcess([], 0,
-            'unrelated-runner@repo.service loaded active running Runner\n'
-            'orbi-kit@1.service loaded active running Orbi\n'
-            'hermes-gateway.service loaded active running Hermes\n'
-            'kit-helper.service loaded active running Helper\n'
-            'unrelated.service loaded active running Other\n', '')
-        with patch.object(install_menu.platform, 'system', return_value='Linux'), \
-                patch.object(install_menu.shutil, 'which', return_value='/bin/systemctl'), \
-                patch.object(install_menu.subprocess, 'run', return_value=listed) as discover, \
-                patch.object(install_menu, 'run_command', side_effect=[(1, 'failure'), (0, ''), (0, '')]) as run:
-            with self.assertRaisesRegex(RuntimeError, 'hermes-gateway.service'):
-                install_menu.restart_services(install_menu.Output(verbosity=0))
-        self.assertIn('--state=active', discover.call_args.args[0])
-        commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(len(commands), 2)
-        self.assertEqual(commands[0][-2:], ['try-restart', 'hermes-gateway.service'])
-        self.assertEqual(commands[-1][-2:], ['try-restart', 'kit-helper.service'])
-        self.assertNotIn('unrelated-runner@*.service', discover.call_args.args[0])
+    def recording_services(self):
+        self.fake('systemctl', LOGGING + r'''
+case "$*" in
+  *list-units*)
+    printf '%s\n' 'kit-bolt.service loaded active running Bolt' 'kit-other.service loaded active running Other' 'kit-stopped.service loaded inactive dead Stopped' 'orbi-kit@1.service loaded active running Paused' 'hermes-gateway.service loaded active running Hermes' ;;
+  *show*kit-bolt.service*)
+    printf 'ExecStart={ path=%s ; argv[]=%s ; }\n' "$FAKE_HOME/.local/bin/pi-bolt" "$FAKE_HOME/.local/bin/pi-bolt"
+    printf 'Environment=PI_CODING_AGENT_DIR=%s/.pi/agent\n' "$FAKE_HOME" ;;
+  *show*kit-other.service*) echo 'ExecStart={ path=/unrelated/bin/server ; argv[]=/unrelated/bin/server ; }' ;;
+esac
+''')
 
-    def test_restart_phase_runs_on_unchanged_and_failed_installs_but_not_preview(self):
-        item = install_menu.Item('fixture', 'Fixture', steps=[
-            install_menu.Step('unchanged', run=lambda: 'already current')])
-        with patch.object(install_menu, 'restart_services', return_value='restarted') as restart:
-            for _ in range(2):
-                self.assertEqual(install_menu.install([item], {'fixture'}), 0)
-            self.assertEqual(restart.call_count, 2)
-            install_menu.install([item], {'fixture'}, dry_run=True)
-            self.assertEqual(restart.call_count, 2)
-            item.refuse = 'fixture failure'
-            self.assertEqual(install_menu.install([item], {'fixture'}), 1)
-            self.assertEqual(restart.call_count, 3)
+    def test_paired_entrypoints_check_every_time_restart_only_changed_consumer(self):
+        self.recording_services()
+        for command in ((), ('update',)):
+            with self.subTest(command=command):
+                self.log.write_text('')
+                self.bolt.write_text(PI + '# previous release\n')
+                first = self.install(*command, '--only', 'pi-bolt')
+                second = self.install(*command, '--only', 'pi-bolt')
+                self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+                self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+                self.assertEqual(len(self.calls('pi-bolt-installer')), 2)
+                self.assertEqual(self.calls('systemctl --user try-restart'),
+                                 ['systemctl --user try-restart kit-bolt.service'])
+                self.assertIn('unchanged', second.stdout)
+
+    def test_tx_without_consumer_and_failed_or_preview_payloads_never_restart(self):
+        self.recording_services()
+        for args, env, code in ((('--only', 'tx'), {}, 0),
+                                (('--only', 'pi-bolt'), {'PI_BOLT_FIXTURE_STAGE': 'install'}, 1),
+                                (('--only', 'pi-bolt', '--dry-run'), {}, 0)):
+            with self.subTest(args=args, env=env):
+                result = self.install(*args, env=env)
+                self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [])
 
     def test_restart_failure_makes_install_fail(self):
-        with patch.object(install_menu, 'restart_services', side_effect=RuntimeError('restart failed')):
-            item = install_menu.Item('fixture', 'Fixture')
-            self.assertEqual(install_menu.install([item], {'fixture'}), 1)
+        self.recording_services()
+        original = (self.bin / 'systemctl').read_text()
+        self.fake('systemctl', original + '\nif [[ "$*" == *try-restart* ]]; then exit 17; fi\n')
+        self.bolt.write_text(PI + '# previous release\n')
+        result = self.install('--only', 'pi-bolt')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('kit-bolt.service', result.stdout)
+
+    def test_restart_timeout_does_not_drop_independent_changed_consumer(self):
+        path = str(self.bolt)
+        observation = {'pi-bolt': {'status': 'installed', 'change': 'changed',
+                                  'changed_inputs': [path],
+                                  'before': {'inputs': {path: 'old'}},
+                                  'after': {'inputs': {path: 'new'}}}}
+        listed = subprocess.CompletedProcess([], 0,
+            'kit-first.service loaded active running First\n'
+            'kit-next.service loaded active running Next\n', '')
+        shown = subprocess.CompletedProcess([], 0, f'ExecStart={{ path={path} ; }}\n', '')
+        with patch.object(install_menu.platform, 'system', return_value='Linux'), \
+                patch.object(install_menu.shutil, 'which', return_value='/bin/systemctl'), \
+                patch.object(install_menu.subprocess, 'run', side_effect=[listed, shown, shown]), \
+                patch.object(install_menu, 'run_command', side_effect=[
+                    subprocess.TimeoutExpired(['systemctl'], 30), (0, '')]) as run:
+            with self.assertRaisesRegex(RuntimeError, 'kit-first.service'):
+                install_menu.restart_services(install_menu.Output(verbosity=0), observation)
+        self.assertEqual([call.args[0][-1] for call in run.call_args_list],
+                         ['kit-first.service', 'kit-next.service'])
+        with patch.object(install_menu.platform, 'system', return_value='Linux'), \
+                patch.object(install_menu.shutil, 'which', return_value='/bin/systemctl'), \
+                patch.object(install_menu.subprocess, 'run', side_effect=[
+                    listed, subprocess.TimeoutExpired(['systemctl'], 30), shown]), \
+                patch.object(install_menu, 'run_command', return_value=(0, '')) as run:
+            decision = install_menu.restart_services(install_menu.Output(verbosity=0), observation)
+        self.assertIn('kit-first.service: held', decision)
+        self.assertIn('inspect systemctl --user show kit-first.service', decision)
+        self.assertIn('kit-next.service: restarted', decision)
+        self.assertEqual([call.args[0][-1] for call in run.call_args_list], ['kit-next.service'])
+
+    def test_same_version_package_and_settings_repairs_restart_once_then_skip(self):
+        self.recording_services()
+        package = self.installed_package()
+        settings = self.home / '.pi/agent/settings.json'
+        settings.parent.mkdir(parents=True)
+        settings.write_text(json.dumps({'packages': [{'source': NEW, 'skills': []}]}))
+        report = self.home / 'report.jsonl'
+        for command in ((), ('update',)):
+            with self.subTest(command=command):
+                (package / 'adapters/skills/update-kit/SKILL.md').write_text('damaged same-version skill')
+                self.log.write_text('')
+                first = self.install(*command, '--only', 'pi', env={'KIT_INSTALL_REPORT': str(report)})
+                self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+                rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
+                self.assertEqual(rows['pi']['change'], 'changed')
+                self.assertNotEqual(rows['pi']['evidence']['before']['inputs'][str(package)],
+                                    rows['pi']['evidence']['after']['inputs'][str(package)])
+                settings.write_text(json.dumps(json.loads(settings.read_text()), indent=4))
+                second = self.install(*command, '--only', 'pi', env={'KIT_INSTALL_REPORT': str(report)})
+                self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+                self.assertEqual(len(self.calls('pi-bolt update')), 2)
+                rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
+                self.assertEqual(rows['pi']['change'], 'unchanged')
+                self.assertEqual(self.calls('systemctl --user try-restart'),
+                                 ['systemctl --user try-restart kit-bolt.service'])
+
+    def test_failed_payload_holds_shared_consumer_but_not_independent_success(self):
+        self.recording_services()
+        self.installed_package()
+        self.bolt.write_text(PI + '# previous release\n')
+        failed = self.install('--only', 'pi-bolt,pi', env={'FAKE_PI_UPDATE_FAIL': '1'})
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [])
+        self.assertIn('kit-bolt.service: held (incomplete/unverified pi)', failed.stdout)
+        self.bolt.write_text(PI + '# previous release\n')
+        self.claude_host(mutation='exit 23')
+        independent = self.install('--only', 'pi-bolt,claude')
+        self.assertEqual(independent.returncode, 1, independent.stdout + independent.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'),
+                         ['systemctl --user try-restart kit-bolt.service'])
+
+    def test_failed_pi_package_does_not_hold_a_proven_different_profile(self):
+        self.recording_services()
+        self.installed_package()
+        body = (self.bin / 'systemctl').read_text().replace(
+            'PI_CODING_AGENT_DIR=%s/.pi/agent', 'PI_CODING_AGENT_DIR=%s/other-profile')
+        self.fake('systemctl', body)
+        self.bolt.write_text(PI + '# previous release\n')
+        result = self.install('--only', 'pi-bolt,pi', env={'FAKE_PI_UPDATE_FAIL': '1'})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'),
+                         ['systemctl --user try-restart kit-bolt.service'])
+
+    def test_unknown_pi_profile_holds_even_with_a_changed_executable(self):
+        self.recording_services()
+        package = self.installed_package()
+        original = (self.bin / 'systemctl').read_text()
+        for replacement in ('', 'OTHER_PI_CODING_AGENT_DIR'):
+            with self.subTest(environment=replacement):
+                self.log.write_text('')
+                body = original.replace('PI_CODING_AGENT_DIR', replacement) if replacement else original.replace(
+                    "    printf 'Environment=PI_CODING_AGENT_DIR=%s/.pi/agent\\n' \"$FAKE_HOME\"", ':')
+                self.fake('systemctl', body)
+                (package / 'adapters/skills/update-kit/SKILL.md').write_text('damaged package')
+                self.bolt.write_text(PI + '# previous release\n')
+                result = self.install('--only', 'pi-bolt,pi')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.calls('systemctl --user try-restart'), [])
+                self.assertIn('kit-bolt.service: held (unverified Pi profile', result.stdout)
+
+    def test_unverified_service_references_hold_with_manual_action(self):
+        self.fake('systemctl', LOGGING + r'''
+if [[ "$*" == *list-units* ]]; then echo 'kit-unknown.service loaded active running Unknown'; fi
+''')
+        self.bolt.write_text(PI + '# previous release\n')
+        result = self.install('--only', 'pi-bolt')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('kit-unknown.service: held (unverified executable/config references for pi-bolt)', result.stdout)
+        self.assertIn('inspect systemctl --user show kit-unknown.service', result.stdout)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [])
+
+    def test_symlink_target_repair_is_change_even_when_version_and_bytes_match(self):
+        self.recording_services()
+        old = self.home / 'old-bolt'
+        old.write_text(PI)
+        old.chmod(0o755)
+        self.bolt.unlink()
+        self.bolt.symlink_to(old)
+        self.upstream.write_text(self.upstream.read_text().replace(
+            'cp "$FAKE_HOME', 'rm -f "$PIBOLT_BIN_DIR/pi-bolt"\ncp "$FAKE_HOME'))
+        result = self.install('--only', 'pi-bolt')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.bolt.is_symlink())
+        self.assertEqual(self.calls('systemctl --user try-restart'),
+                         ['systemctl --user try-restart kit-bolt.service'])
+
+    def test_outer_and_real_nested_installer_preserve_native_gateway_decisions(self):
+        self.recording_services()
+        source = self.home / 'nested-source'
+        (source / 'scripts').mkdir(parents=True)
+        shutil.copy2(INSTALL, source / 'install.sh')
+        shutil.copy2(ROOT / 'scripts/install_menu.py', source / 'scripts/install_menu.py')
+        shutil.copytree(ROOT / 'tmux', source / 'tmux')
+        clone = self.home / '.hermes/plugins/kit'
+        (clone / '.git').mkdir(parents=True)
+        self.fake('hermes', LOGGING)
+        (source / 'scripts/update_bundle.py').write_text(f'''
+from pathlib import Path
+import importlib.util, json, os
+
+def plugin_dir(home): return home / 'plugins/kit'
+if __name__ == '__main__':
+    spec = importlib.util.spec_from_file_location('native_fixture', {str(ROOT / 'scripts/update_bundle.py')!r})
+    updater = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(updater)
+    if os.environ.get('NATIVE_HOST_FAIL'): os.environ['PI_BOLT_FIXTURE_STAGE'] = 'install'
+    if os.environ.get('NATIVE_PAYLOAD'): Path(os.environ['NATIVE_PAYLOAD']).write_text('native-current')
+    print(json.dumps({{'status': 'updated', 'gateway_restart': os.environ['NATIVE_DISPOSITION'],
+                       'hosts': updater.refresh_hosts(Path(__file__).resolve().parents[1])}}))
+''')
+        report = self.home / 'report.jsonl'
+        for command in ((), ('update',)):
+            for disposition in ('deferred', 'pending', 'not_needed'):
+                with self.subTest(command=command, disposition=disposition):
+                    self.log.write_text('')
+                    self.bolt.write_text(PI + '# previous release\n')
+                    env = {**self.env, 'KIT_INSTALL_REPORT': str(report), 'NATIVE_DISPOSITION': disposition}
+                    for _ in range(2):
+                        result = subprocess.run(['bash', str(source / 'install.sh'), *command,
+                                                 '--only', 'pi-bolt,hermes'], env=env,
+                                                capture_output=True, text=True, timeout=30, cwd=self.project)
+                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                        rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
+                        self.assertEqual(rows['hermes']['gateway_restart'], disposition)
+                        nested = {r['item']: r for r in rows['hermes']['hosts']}
+                        self.assertIn('evidence', nested['pi-bolt'])
+                        self.assertIn('delegated to outer installer', nested['services']['decision'])
+                    self.assertEqual(len(self.calls('pi-bolt-installer')), 4)
+                    self.assertEqual(self.calls('systemctl --user try-restart'),
+                                     ['systemctl --user try-restart kit-bolt.service'])
+        self.log.write_text('')
+        self.bolt.write_text(PI + '# previous release\n')
+        env['NATIVE_HOST_FAIL'] = '1'
+        failed = subprocess.run(['bash', str(source / 'install.sh'), '--only', 'pi-bolt,hermes'],
+                                env=env, capture_output=True, text=True, timeout=30, cwd=self.project)
+        self.assertEqual(failed.returncode, 0, failed.stdout + failed.stderr)  # native host refresh remains best effort
+        self.assertIn('kit-bolt.service: held (incomplete/unverified pi-bolt)', failed.stdout)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [])
+        # Native apply may change a source-linked host before refresh_hosts takes
+        # its own baseline. This must work even when only Hermes is selected.
+        payload = self.home / 'native-payload'
+        payload.mkdir()
+        skill = payload / 'SKILL.md'
+        registration = {**self.marketplace('kit-marketplace'), 'root': str(payload)}
+        self.codex_registry([registration], {'kit-marketplace': {'available': [], 'installed': [{
+            'pluginId': 'kit@kit-marketplace', 'name': 'kit', 'marketplaceName': 'kit-marketplace',
+            'installed': True, 'enabled': True, 'source': {'source': 'local', 'path': str(payload)},
+            'marketplaceSource': registration['marketplaceSource']}]}})
+        self.fake('systemctl', LOGGING + f'''
+if [[ "$*" == *list-units* ]]; then echo 'kit-codex.service loaded active running Codex';
+elif [[ "$*" == *show* ]]; then echo 'ExecStart={{ path=/usr/bin/codex ; argv[]=/usr/bin/codex --plugin {payload}/SKILL.md ; }}'; fi
+''')
+        env.pop('NATIVE_HOST_FAIL')
+        env['NATIVE_PAYLOAD'] = str(skill)
+        for command in ((), ('update',)):
+            with self.subTest(native_source_change=command):
+                self.log.write_text('')
+                skill.write_text('previous-native-payload')
+                for _ in range(2):
+                    updated = subprocess.run(['bash', str(source / 'install.sh'), *command,
+                                              '--no-pull', '--only', 'hermes'], env=env,
+                                             capture_output=True, text=True, timeout=30, cwd=self.project)
+                    self.assertEqual(updated.returncode, 0, updated.stdout + updated.stderr)
+                self.assertEqual(skill.read_text(), 'native-current')
+                self.assertEqual(self.calls('systemctl --user try-restart'),
+                                 ['systemctl --user try-restart kit-codex.service'])
+
+    def test_nested_missing_evidence_holds_an_earlier_changed_consumer(self):
+        self.recording_services()
+        before = (PI + '# old release\n').encode()
+        bolt = install_menu.Item('pi-bolt', 'Bolt', inputs=lambda:
+            install_menu.installed_evidence([self.bolt]), steps=[install_menu.Step(
+                'refresh', run=lambda: (self.bolt.write_text(PI) and 'refreshed'))])
+        hermes = install_menu.Item('hermes', 'Hermes', steps=[install_menu.Step('native', ['native'])])
+        for state in ('failed', 'timeout', 'unavailable', 'installed'):
+            with self.subTest(state=state):
+                self.bolt.write_bytes(before)
+                self.log.write_text('')
+                receipt = {'status': 'updated', 'gateway_restart': 'deferred',
+                           'hosts': [{'item': 'pi-bolt', 'status': state, 'exit': 1}]}
+                original = install_menu.run_command
+                def native(argv, output, **kwargs):
+                    if argv == ['native']:
+                        return 0, json.dumps(receipt)
+                    return original(argv, output, **kwargs)
+                with patch.object(install_menu, 'BIN', self.bolt.parent), \
+                        patch.object(install_menu, 'run_command', side_effect=native), \
+                        patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()) as out:
+                    self.assertEqual(install_menu.install([bolt, hermes], {'pi-bolt', 'hermes'}), 0)
+                self.assertEqual(self.calls('systemctl --user try-restart'), [])
+                self.assertIn('kit-bolt.service: held (incomplete/unverified pi-bolt)', out.getvalue())
+                self.assertIn('repair those inputs before manual restart', out.getvalue())
+
+    def test_large_native_receipt_keeps_gateway_and_nested_evidence(self):
+        report = self.home / 'large-native-report.jsonl'
+        evidence = install_menu.installed_evidence([self.bolt])
+        receipt = {'status': 'updated', 'gateway_restart': 'pending',
+                   'activation': [{'status': 'ready', 'commands': ['command'] * 5000}],
+                   'hosts': [{'item': 'pi-bolt', 'status': 'installed', 'exit': 0,
+                              'evidence': {'before': evidence, 'after': evidence}}]}
+        item = install_menu.Item('hermes', 'Hermes', steps=[install_menu.Step('native',
+            [sys.executable, '-c', 'import json; print(json.dumps(' + repr(receipt) + '))'])])
+        original = install_menu.run_command
+        def bounded(argv, output, **kwargs):
+            kwargs['timeout'] = 5
+            return original(argv, output, **kwargs)
+        with patch.dict(os.environ, {'KIT_INSTALL_REPORT': str(report)}), \
+                patch.object(install_menu, 'run_command', side_effect=bounded), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(install_menu.install([item], {'hermes'}), 0)
+        row = next(r for r in map(json.loads, report.read_text().splitlines()) if r['item'] == 'hermes')
+        self.assertEqual(row['gateway_restart'], 'pending')
+        self.assertEqual(row['activation'], receipt['activation'])
+        self.assertEqual(row['hosts'], receipt['hosts'])
+
+    def test_marketplace_payload_repairs_at_same_identity_restart_only_own_consumer(self):
+        for host, command in (('claude', ()), ('codex', ('update',))):
+            with self.subTest(host=host):
+                self.log.write_text('')
+                payload = self.home / ('payload-' + host)
+                payload.mkdir()
+                skill = payload / 'SKILL.md'
+                skill.write_text('stale')
+                self.fake('systemctl', LOGGING + f'''
+if [[ "$*" == *list-units* ]]; then
+  echo 'kit-{host}.service loaded active running Host'
+  echo 'kit-unrelated.service loaded active running Other'
+elif [[ "$*" == *show*kit-{host}.service* ]]; then
+  echo 'ExecStart={{ path=/usr/bin/host ; argv[]=/usr/bin/host --plugin {payload} ; }}'
+elif [[ "$*" == *show* ]]; then echo 'ExecStart={{ path=/unrelated ; }}'; fi
+''')
+                mutation = f'printf current > {shlex.quote(str(skill))}'
+                if host == 'claude':
+                    self.claude_registry(['kit'])
+                    self.claude_host([{'id': 'kit@kit', 'scope': 'user', 'enabled': True,
+                                       'version': 'same', 'installPath': str(payload)}], mutation=mutation)
+                else:
+                    registration = {**self.marketplace('kit-marketplace'), 'root': str(payload)}
+                    self.codex_registry([registration], {'kit-marketplace': {'available': [], 'installed': [{
+                        'pluginId': 'kit@kit-marketplace', 'name': 'kit', 'marketplaceName': 'kit-marketplace',
+                        'installed': True, 'enabled': True, 'source': {'source': 'local', 'path': str(payload)},
+                        'marketplaceSource': registration['marketplaceSource']}]}}, mutation=mutation)
+                first = self.install(*command, '--only', host)
+                second = self.install(*command, '--only', host)
+                self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+                self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+                self.assertEqual(skill.read_text(), 'current')
+                self.assertIn('unchanged', second.stdout)
+                freshness = ('claude plugin marketplace update' if host == 'claude'
+                             else 'codex plugin marketplace upgrade')
+                self.assertEqual(len(self.calls(freshness)), 2)
+                self.assertEqual(self.calls('systemctl --user try-restart'),
+                                 [f'systemctl --user try-restart kit-{host}.service'])
+
+    def test_missing_installed_payload_is_unverified_not_unchanged(self):
+        self.recording_services()
+        self.claude_registry(['kit'])
+        self.claude_host([{'id': 'kit@kit', 'scope': 'user', 'enabled': True, 'version': 'same',
+                           'installPath': str(self.home / 'unavailable-payload')}])
+        report = self.home / 'report.jsonl'
+        result = self.install('--only', 'claude', env={'KIT_INSTALL_REPORT': str(report)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        row = next(r for r in map(json.loads, report.read_text().splitlines()) if r['item'] == 'claude')
+        self.assertEqual(row['change'], 'unverified')
+        self.assertIn(str(self.home / 'unavailable-payload'), result.stdout)
+        self.assertIn('Inspect named inputs', result.stdout)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [])
+
+    def test_partial_marketplace_removal_blocks_shared_changed_consumer(self):
+        self.recording_services()
+        self.claude_registry(['kit'])
+        payload = self.home / 'claude-payload'
+        payload.mkdir()
+        (payload / 'SKILL.md').write_text('installed')
+        self.claude_host([{'id': 'kit@kit', 'scope': 'user', 'enabled': True,
+                           'version': 'same', 'installPath': str(payload)}], mutation=f'''
+printf '[]' > "$FAKE_HOME/claude-installed.json"
+rm -r {shlex.quote(str(payload))}
+exit 23
+''')
+        body = (self.bin / 'systemctl').read_text().replace(
+            'argv[]=%s ; }', f'argv[]=%s --plugin {payload}/SKILL.md ; }}')
+        self.fake('systemctl', body)
+        self.bolt.write_text(PI + '# previous release\n')
+        result = self.install('--only', 'pi-bolt,claude')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('kit-bolt.service: held (incomplete/unverified claude)', result.stdout)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [])
+
+    def test_unverified_pi_profile_does_not_infer_package_consumer_from_executable(self):
+        self.recording_services()
+        self.installed_package()
+        body = (self.bin / 'systemctl').read_text().replace(
+            "    printf 'Environment=PI_CODING_AGENT_DIR=%s/.pi/agent\\n' \"$FAKE_HOME\"", ':')
+        self.fake('systemctl', body)
+        result = self.install('--only', 'pi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('kit-bolt.service: held (unverified Pi profile', result.stdout)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [])
 
     def test_every_host_includes_bundled_ponytail_without_a_second_plugin(self):
         self.fake('hermes', LOGGING)
@@ -1305,7 +1655,7 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         self.assertEqual(self.calls('pi-bolt install'), [f'pi-bolt install {NEW}'])
         self.assertEqual(self.calls('pi-bolt update'), [f'pi-bolt update {NEW}'])  # never kept
         self.assertEqual(json.loads(settings.read_text())['packages'], [NEW])
-        self.assertIn('Restart active Kit services', second.stdout)
+        self.assertIn('Service decisions', second.stdout)
 
     def test_a_marketplace_from_a_configured_source_is_used_and_not_rewritten(self):
         self.claude_registry(['kit'], {'source': 'directory', 'path': str(ROOT)})
@@ -1357,7 +1707,7 @@ exit 0
         original = install_menu.run_command
         self.addCleanup(setattr, install_menu, 'run_command', original)
         answers = [(1, 'ValueError: Destination changed since preflight: /x/skills/SKILL.md'), (0, '')]
-        install_menu.run_command = lambda argv, output: answers.pop(0)
+        install_menu.run_command = lambda argv, output, **kwargs: answers.pop(0)
         continued = self.home / 'after-retry'
         def next_step():
             continued.touch()
@@ -1378,7 +1728,7 @@ exit 0
         self.addCleanup(setattr, install_menu, 'run_command', original)
         seen = []
 
-        def fake(argv, output):
+        def fake(argv, output, **kwargs):
             seen.append(argv)
             return 1, 'some other failure'
 
@@ -1415,7 +1765,7 @@ exit 0
                          for key in ('pi', 'orbi', 'tx', 'hermes', 'claude', 'codex')]
                 output = io.StringIO()
                 with patch.object(install_menu, 'run_command',
-                        side_effect=lambda argv, _: (1, text) if argv == ['hermes'] else (0, 'ok')), \
+                        side_effect=lambda argv, _, **kwargs: (1, text) if argv == ['hermes'] else (0, 'ok')), \
                      contextlib.redirect_stdout(output):
                     code = install_menu.install(items, {item.key for item in items},
                                                 output=install_menu.Output('never', 0))
@@ -1747,7 +2097,8 @@ fi
                                         ('tx', 'skipped', None), ('hermes', 'skipped', None),
                                         ('claude', 'installed', 0), ('codex', 'skipped', None),
                                         ('orbi', 'skipped', None), ('services', 'installed', 0)])
-                self.assertEqual(report.read_bytes(), expected)
+                self.assertEqual(b''.join((json.dumps({k: row[k] for k in ('item', 'status', 'exit')}) + '\n').encode()
+                                         for row in map(json.loads, report.read_text().splitlines())), expected)
                 # The same entry point succeeds after the holder finishes.
                 repaired = self.install('--only', 'tx', '--quiet', env=env)
                 self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
@@ -1768,7 +2119,7 @@ fi
         rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
         self.assertEqual(rows['claude'], {'item': 'claude', 'status': 'failed', 'exit': 1})
         self.assertEqual(rows['codex'], {'item': 'codex', 'status': 'failed', 'exit': 4})
-        self.assertEqual(rows['tx'], {'item': 'tx', 'status': 'installed', 'exit': 0})
+        self.assertEqual({k: rows['tx'][k] for k in ('item', 'status', 'exit')}, {'item': 'tx', 'status': 'installed', 'exit': 0})
         self.assertEqual(rows['hermes'], {'item': 'hermes', 'status': 'skipped', 'exit': None})
         self.assertRegex(result.stdout, r'claude\s+failed.*boom: no network')
         self.assertRegex(result.stdout, r'codex\s+failed.*marketplace already added')
@@ -1800,7 +2151,7 @@ fi
         import json
         rows = {row['item']: row for row in map(json.loads, report.read_text().splitlines())}
         self.assertEqual(rows['claude'], {'item': 'claude', 'status': 'failed', 'exit': 23})
-        self.assertEqual(rows['codex'], {'item': 'codex', 'status': 'installed', 'exit': 0})
+        self.assertEqual({k: rows['codex'][k] for k in ('item', 'status', 'exit')}, {'item': 'codex', 'status': 'installed', 'exit': 0})
 
     def test_step_exceptions_stop_only_the_failed_component(self):
         import contextlib
@@ -1846,7 +2197,7 @@ fi
         self.assertEqual(continued, [])
         rows = [json.loads(line) for line in report.read_text().splitlines()]
         self.assertEqual(rows[0], {'item': 'retry', 'status': 'failed', 'exit': 23})
-        self.assertEqual(rows[1], {'item': 'services', 'status': 'installed', 'exit': 0})
+        self.assertEqual({k: rows[1][k] for k in ('item', 'status', 'exit')}, {'item': 'services', 'status': 'installed', 'exit': 0})
 
     def test_full_selects_all_hosts_and_bundled_skills(self):
         self.fake('hermes', LOGGING)
@@ -2242,6 +2593,90 @@ class PullCheckoutTests(unittest.TestCase):
     def head(self, repo):
         return self.run_git('git', '-C', str(repo), 'rev-parse', 'HEAD').stdout
 
+    def test_source_linked_codex_pull_restarts_once_for_both_entrypoints(self):
+        # The supported local marketplace consumes this very checkout. Pull must
+        # not erase its installed baseline, even when the installer re-executes.
+        self.clone = Path(self.tmp.name) / 'source'
+        self.run_git('git', 'clone', '-q', str(self.origin), str(self.clone))
+        scripts = self.other / 'scripts'
+        scripts.mkdir()
+        shutil.copy2(ROOT / 'scripts/install_menu.py', scripts / 'install_menu.py')
+        shutil.copy2(INSTALL, self.other / 'install.sh')
+        manifest = self.other / '.agents/plugins/marketplace.json'
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({'name': 'kit-marketplace', 'plugins': [{'name': 'kit'}]}))
+        (self.other / 'SKILL.md').write_text('old payload')
+        self.run_git('git', '-C', str(self.other), 'add', '.')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qm', 'installed source')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        self.git('pull', '--ff-only')
+        base = Path(self.tmp.name)
+        home, binary = base / 'home', base / 'bin'
+        home.mkdir()
+        binary.mkdir()
+        log, report = base / 'calls', base / 'report.jsonl'
+        source = {'sourceType': 'local', 'source': str(self.clone)}
+        marketplace = {'name': 'kit-marketplace', 'root': str(self.clone), 'marketplaceSource': source}
+        plugin = {'pluginId': 'kit@kit-marketplace', 'name': 'kit', 'marketplaceName': 'kit-marketplace',
+                  'installed': True, 'enabled': True, 'source': {'source': 'local', 'path': str(self.clone)},
+                  'marketplaceSource': source}
+        codex = binary / 'codex'
+        codex.write_text('#!/usr/bin/env python3\nimport json, os, sys\n'
+                         'with open(os.environ["CALLS"], "a") as f: f.write("codex " + " ".join(sys.argv[1:]) + "\\n")\n'
+                         'if sys.argv[1:] == ["plugin", "marketplace", "list", "--json"]: print(' +
+                         repr(json.dumps({'marketplaces': [marketplace]})) + ')\n'
+                         'elif sys.argv[1:3] == ["plugin", "list"]: print(' +
+                         repr(json.dumps({'available': [], 'installed': [plugin]})) + ')\n')
+        codex.chmod(0o755)
+        ctl = binary / 'systemctl'
+        ctl.write_text('#!/usr/bin/env python3\nimport os, sys\n'
+                       'with open(os.environ["CALLS"], "a") as f: f.write("systemctl " + " ".join(sys.argv[1:]) + "\\n")\n'
+                       'if "list-units" in sys.argv: print("kit-codex.service loaded active running Codex")\n'
+                       'elif "show" in sys.argv: print(' + repr(f'ExecStart={{ path=/usr/bin/codex ; argv[]=/usr/bin/codex --plugin {self.clone}/SKILL.md ; }}') + ')\n')
+        ctl.chmod(0o755)
+        env = {'PATH': str(binary) + os.pathsep + os.environ['PATH'], 'HOME': str(home),
+               'KIT_BIN_DIR': str(binary), 'CALLS': str(log), 'KIT_INSTALL_REPORT': str(report)}
+        for command in ([], ['update']):
+            with self.subTest(command=command):
+                before_head = self.head(self.clone).strip()
+                (self.other / 'SKILL.md').write_text('new payload ' + repr(command))
+                self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'payload advance')
+                self.run_git('git', '-C', str(self.other), 'push', '-q')
+                log.write_text('')
+                args = ['./install.sh', *command, '--only', 'codex', '--quiet']
+                preview = subprocess.run([*args, '--dry-run'], cwd=self.clone, env=env,
+                                         capture_output=True, text=True, timeout=30)
+                self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
+                self.assertEqual(log.read_text(), '')
+                self.assertEqual(self.head(self.clone).strip(), before_head)
+                for expected in ('changed', 'unchanged'):
+                    result = subprocess.run(args, cwd=self.clone, env=env, capture_output=True,
+                                            text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
+                    self.assertEqual(rows['codex']['change'], expected, result.stdout)
+                    evidence = rows['codex']['evidence']
+                    if expected == 'changed':
+                        self.assertNotEqual(evidence['before']['inputs'], evidence['after']['inputs'])
+                    else:
+                        self.assertEqual(evidence['before']['inputs'], evidence['after']['inputs'])
+                self.assertEqual((self.clone / 'SKILL.md').read_text(), (self.other / 'SKILL.md').read_text())
+                self.assertEqual(log.read_text().splitlines().count('systemctl --user try-restart kit-codex.service'), 1)
+                self.assertEqual(log.read_text().splitlines().count('codex plugin marketplace list --json'), 6)
+                self.assertEqual(self.git('status', '--porcelain'), '')
+                # Stash-only source repair must also retain the consumed dirty bytes.
+                log.write_text('')
+                (self.clone / 'SKILL.md').write_text('local damaged content')
+                for expected in ('changed', 'unchanged'):
+                    repaired = subprocess.run(args, cwd=self.clone, env=env, capture_output=True,
+                                              text=True, timeout=30)
+                    self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
+                    rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
+                    self.assertEqual(rows['codex']['change'], expected, repaired.stdout)
+                self.assertEqual(log.read_text().splitlines().count('systemctl --user try-restart kit-codex.service'), 1)
+                self.assertTrue(self.stashes())
+                self.assertEqual(self.git('status', '--porcelain'), '')
+
     def test_a_clean_checkout_behind_its_upstream_is_fast_forwarded(self):
         said, commands = [], []
         def run(args, **kwargs):
@@ -2421,7 +2856,7 @@ def fixture_component():
     return 'fixture installed'
 def items(*args, **kwargs):
     return [Item('tx', 'fixture', steps=[Step('fixture component', run=fixture_component)])]
-def restart_services(output):
+def restart_services(output, observations=None):
     fixture_trace('restart')
     return 'fixture restarted'
 

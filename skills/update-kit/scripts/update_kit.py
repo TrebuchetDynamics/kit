@@ -15,8 +15,9 @@ import tempfile
 SOURCE = 'https://github.com/TrebuchetDynamics/kit.git'
 TEMPORARY_ROOTS = ('/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp')
 COMPONENTS = {'pi', 'pi-bolt', 'tx', 'hermes', 'claude', 'codex', 'orbi'}
-NOTICE = ('Default scope: all available components; may bootstrap Pi-Bolt and restart active '
-          'supported integrations. --no-reload does NOT suppress final restarts. Hermes may '
+NOTICE = ('Default scope: all available components; check for updates every run under source/pin policies. '
+          'May bootstrap Pi-Bolt; restart only proven affected active integrations, never unchanged payloads. '
+          'Hermes owns native gateway deferrals/restarts. --no-reload does NOT suppress other affected-host restarts. Hermes may '
           'perform a nested broader full-suite refresh, including another source advance. '
           'Native prompts, missing-host rules and partial failures remain installer-owned.')
 
@@ -139,7 +140,7 @@ def parse(argv):
     parser.add_argument('--menu', action='store_true', help='unsupported here; use --only/--skip')
     args = parser.parse_args(argv)
     if args.no_restarts:
-        raise Hold('No-restarts restriction cannot be honored: --no-reload does not suppress final restart; no changes made')
+        raise Hold('No-restarts restriction cannot be honored: --no-reload does not suppress other affected-host restarts; no changes made')
     if args.menu:
         raise Hold('Menu scope cannot be checked before mutation; use --only/--skip excluding Hermes, or unrestricted full suite')
     selected = set(COMPONENTS)

@@ -30,7 +30,8 @@ Keep source after installation because native installs can link to it.
 
 Before execution, the workflow explains the [full-suite effects](#full-suite-from-a-checkout):
 all available components by default, possible Pi-Bolt bootstrap and active supported
-integration restarts. It delegates native prompts, availability/skips, verbose output
+integration restarts only for proven effective changes. Unchanged reruns still check for updates,
+but request no service restarts. It delegates native prompts, availability/skips, verbose output
 and nonzero partial-failure behavior rather than implementing host update logic.
 For example, `/update-kit --only pi,tx` narrows outer components. A restriction that
 still selects Hermes while excluding another component is refused before mutation:
@@ -38,7 +39,7 @@ Hermes can run a nested **broader full-suite** refresh. Exclude Hermes (for exam
 `--only pi,tx` or `--skip hermes`) or separately authorize unrestricted full-suite
 behavior. Outer flags do not constrain nested updates. Menu selection is not supported
 by the updater; use explicit flags. No-restarts requests are refused before mutation;
-`--no-reload` does not suppress the final restart phase.
+`--no-reload` defers Hermes setup wiring, not other affected-host restarts.
 
 Read-only/questions-only/`--dry-run` (also `--list`) shows intended source path/argv
 with unavailable facts `NOT_CHECKED`. It does not clone, fetch, create directories
@@ -167,13 +168,34 @@ JSON brace. Non-JSON or truncated output gets a bounded diagnostic fallback.
 Successful components remain installed; retry just Hermes with
 `./install.sh --only hermes` (and the same `--hermes-home` if supplied).
 
-Every nonempty install/update ends with a restart phase, even when files are
-unchanged or a component failed. It restarts active supported Hermes/Kit host
-integrations only. Stopped/paused services and unrelated
-host services stay untouched. Failures are reported and make installation fail.
-Hosts without Linux user systemd report restarts unavailable. Preview/list/menu
-cancellation perform no restarts. `--no-reload` only defers Hermes setup wiring;
-it does not suppress the final restart phase.
+Both entrypoints check and apply available updates on every run under existing source/pin policies.
+Successful refresh is separate from effective installed change. The installer compares installed
+identity/revision, executable and payload bytes, modes, symlink targets and relevant settings.
+Timestamps, updater success messages and checkout HEAD alone are not change evidence.
+Installed evidence is captured before automatic stash/pull and carried across installer re-execution,
+so source-linked packages retain their original baseline. This may inspect candidate hosts before
+menu selection; only the final selection can update payloads or request restarts.
+A healthy unchanged repeat requests no service restarts, including nested host refreshes.
+
+Only complete changed payloads are eligible. Restarts affect supported host integrations only.
+On Linux user systemd, active `kit-*` units
+must reference the affected executable or configuration input before one `try-restart` is requested.
+The prefix alone proves no ownership. Stopped, paused, unrelated and Orbi deployment units stay untouched.
+A tx-only change without a proven active consumer restarts nothing. Unknown installed inputs or
+unit references are held with the named input/service and an inspection/retry action, not reported as unchanged.
+Hosts without Linux user systemd report restarts unavailable. Restart failures make installation fail.
+A failed payload holds its consumer while independent successful changes remain eligible.
+
+Hermes owns gateway disposition on both setup and installed-update paths. Its native
+`gateway_restart` fields (including `deferred`, `pending` and `not_needed`) reach the outer receipt;
+the suite never overrides them with `try-restart`. Setup owns profile wiring and requests no process restart.
+Nested host refreshes return content evidence to the outer installer, which deduplicates by unit.
+The outer installer also retains host evidence before native Hermes apply can change shared source,
+including when `--no-pull` is set or only Hermes is selected.
+The inherited installer lock keeps that nested work under the same writer without admitting a second installer.
+Preview/list/menu cancellation perform no updates or restarts. `--no-reload` defers Hermes setup wiring,
+not other affected-host restarts. Existing machine-readable `item`, `status` and `exit` fields remain;
+additive change evidence, native gateway fields and a separate service decision explain checks versus activation.
 
 `--dry-run` prints selected commands without installing. `--hermes-home`,
 `--bundle-only`, `--no-reload` and `--yes-deps` apply only to Hermes. When a
@@ -228,9 +250,10 @@ Package commands have a ten-minute limit; destination version checks have a
 30-second limit. A command timeout stops its descendants and reports failure.
 Package failures report the cause and return nonzero; independent selected components
 continue. Repair the cause and retry `./install.sh --only pi`. Completed upstream
-changes are not rolled back. Preview/list/menu cancellation execute no Pi command
-or download and write no receipt. The suite's active-integration restart phase is
-unchanged; no agent/model is started by the package step.
+changes are not rolled back. Preview/list execute no Pi command or download and write no receipt.
+Menu cancellation performs no package refresh or download; pre-pull installed-evidence reads may run
+before selection. The suite restarts only proven active consumers of changed
+package content or effective settings; no agent/model is started by the package step.
 
 Offline tests exercise isolated homes and fake upstream/package responses, not a
 real upstream installation, package refresh, model run or live skill discovery.
@@ -292,8 +315,7 @@ set `pi_executable`, copy provider files or credentials, or change the lifecycle
 skill's separately supported source pin. Those remain explicit deployment work.
 This component installs **only the CLI**, not an execution-ready deployment: no
 `orbi setup`, `install-units`, bare tick, authentication or config changes, and no
-Orbi service start/restart/stop. The suite's existing host-only restart phase still
-runs. Repository deployment and activation remain separate, explicitly authorized
+Orbi service start/restart/stop. Other selected hosts use the suite's change-based service decisions. Repository deployment and activation remain separate, explicitly authorized
 steps; see [GitHub-native setup](github-native.md#one-repository-per-deployment).
 
 ### Removed runner installation
