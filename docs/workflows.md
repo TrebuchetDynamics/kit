@@ -117,9 +117,9 @@ is limited, so some commands must be typed directly.
 | `/plan_for_me` | `/plan_for_me` | Investigate accepted scope and publish complete GitHub Issues without an interview |
 | `/grill-me` | `/grill_me` | Stress-test a plan through questions |
 | `/autoresearch` | `/autoresearch` | Route a research goal or run a bounded metric loop |
-| `/impeccable` | `/impeccable` | Design and front-end quality workflow |
+| `/impeccable` | `/impeccable` | Publish actionable UI findings; explicit requests design or refine |
 | `/unslop` | `/unslop` | [Audit the UI and publish fixes as GitHub issues](../skills/unslop/SKILL.md) for Orbi; an existing deployment can pick up ready issues. Use `no-dispatch` to save without readiness, or `read-only` to preview. |
-| `/ui-taste` | `/ui_taste` | Uizze's UI Taste playbooks for building, polishing and reviewing web and iOS interfaces |
+| `/ui-taste` | `/ui_taste` | Publish actionable UI findings; explicit requests use Uizze's build/polish playbooks |
 | `/beautify-github-readme` | `/beautify_github_readme` | Redesign or audit a GitHub README with project-native SVG assets |
 
 For the Orbi first-deployment journey, `/orbi help` gives context-free examples and
@@ -526,6 +526,17 @@ GitHub issue authority, review and delivery limits.
 Editing a document is not new authority. Keep every tested contract, move text
 instead of rewriting meaning, and report lines removed with the tests you ran.
 Offline link and packaging checks do not qualify model behavior.
+
+## UI findings
+
+Bare `/impeccable` and `/ui-taste` invocations analyze the current flow and publish
+supported, uncovered outcomes through the [shared UI handoff](../skills/shared/UI-FINDINGS.md),
+then stop. They reuse existing issues across both skills, with screen/state evidence
+and repeatable acceptance; unaccepted visual preferences stay held. Captures are not
+attached by default. Explicit design/edit requests retain their playbooks and delivery
+gates. Read-only/dry-run/no-write returns inline findings without saving; unattended
+runs remain audit-only unless the accepted scope authorizes writes. No-dispatch
+keeps published issues undispatched.
 
 ## Responsive screenshots
 

@@ -386,7 +386,7 @@ states its own boundaries and what "done" means.
 
 **Design, capture and write**
 
-- `/impeccable`, `/ui-taste` — design, audit and polish frontend and iOS interfaces.
+- `/impeccable`, `/ui-taste` — [publish actionable UI findings](docs/workflows.md#ui-findings); explicit design/edit requests keep their playbooks.
 - `/beautify-github-readme` — redesign or audit a README with project-native SVG.
 - `/responsive-screenshots` — capture pages at breakpoints, report overflow.
 - `/agents-md-generator` — [revamp both root instructions, audit, or update scoped rules](docs/workflows.md#repository-instruction-reconciliation).
