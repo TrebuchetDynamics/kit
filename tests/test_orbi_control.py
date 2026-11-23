@@ -1165,6 +1165,91 @@ class FirstDeploymentTests(unittest.TestCase):
                     self.assertEqual(operations.count('setup'), 1)
                     self.assertEqual(operations.count('install-units'), 1)
 
+    def test_protection_observations_do_not_gate_public_setup_or_existing_start(self):
+        # Official REST GET branch exposes `protected`; a protection-only 403
+        # leaves details unknown. These are prior read-only owner observations,
+        # not a new protection probe in Kit's activation path.
+        # https://docs.github.com/en/rest/branches/branches#get-a-branch
+        # https://docs.github.com/en/rest/branches/branch-protection#get-branch-protection
+        routes = dict(re.findall(r'\| `(setup[^`]*?)` \| `([^`]+)` \|',
+                                 (ROOT / 'skills/orbi/SKILL.md').read_text()))
+        branch = f'repos/{REPO}/branches/main'
+        for state, protected, denied in (('protected', True, False),
+                                         ('unprotected', False, False),
+                                         ('protection-only-403', False, True)):
+            with self.subTest(observation=state):
+                h = Harness(Path(self.tmp.name) / state)
+                h.rules(
+                    {'tool': 'gh', 'argv_contains': ['api', branch + '/protection'],
+                     'stdout': '' if denied else '{}',
+                     'stderr': 'HTTP 403 Forbidden' if denied else '',
+                     'exit': 1 if denied else 0},
+                    {'tool': 'gh', 'argv_contains': ['api', branch],
+                     'stdout': json.dumps({'name': 'main', 'protected': protected})},
+                    {'tool': 'orbi', 'argv_contains': ['doctor'], 'exit': 1,
+                     'stdout': ('protection details: HTTP 403' if denied else
+                                'merge_gate: FAILED classic protection enforces admins'
+                                if protected else 'main unprotected')})
+                observed = subprocess.run(['gh', 'api', branch], env=h.env,
+                                          capture_output=True, text=True, timeout=10)
+                self.assertEqual(observed.returncode, 0, observed.stderr)
+                self.assertEqual(json.loads(observed.stdout)['protected'], protected)
+                if denied:
+                    details = subprocess.run(['gh', 'api', branch + '/protection'],
+                                             env=h.env, capture_output=True, text=True, timeout=10)
+                    self.assertNotEqual(details.returncode, 0)
+                    self.assertIn('403', details.stderr)
+                for public, argv, options in (('setup', shlex.split(routes['setup']), self.options),
+                                               ('start', ['start'], [])):
+                    with self.subTest(public=public):
+                        h.clear_calls()
+                        result = subprocess.run(
+                            [sys.executable, '-B', str(HELPER), *argv, '--repo-dir',
+                             str(h.repo), '--json', *options], env=h.env,
+                            capture_output=True, text=True, timeout=30)
+                        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+                        doc = json.loads(result.stdout)
+                        self.assertEqual(doc['status'], 'started')
+                        self.assertEqual(doc['preparation']['state'],
+                                         'prepared' if public == 'setup' else 'skipped')
+                        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+                        mutations = [c['argv'] for c in h.calls() if c['tool'] == 'systemctl'
+                                     and set(c['argv']) & {'enable', 'start', 'disable',
+                                                         'stop', 'kill', 'restart'}]
+                        self.assertEqual(mutations, [['--user', 'enable', '--now', f'{prefix}@1.timer'],
+                                                     ['--user', 'start', f'{prefix}@1.service']])
+                        # Kit neither queries nor changes protection to permit activation.
+                        self.assertFalse([c for c in h.calls() if c['tool'] == 'gh'
+                                          and 'api' in c['argv']])
+                        config = h.config()
+                        self.assertEqual(config['engine_source_track'], 'sha:' + PIN)
+                        self.assertFalse(config['human_review_gate'])
+                    # A failed doctor diagnostic is still visible, not a Kit start refusal.
+                    code, status, err = h.run('status')
+                    self.assertEqual(code, 0, err)
+                    self.assertEqual(status['doctor']['state'], 'failed')
+
+    def test_start_keeps_github_auth_and_repository_validation_refusals(self):
+        for name, rule, code, repair in (
+                ('auth', {'tool': 'gh', 'argv_contains': ['auth', 'status'], 'exit': 1},
+                 'gh_auth_unavailable', 'gh auth login'),
+                ('repo-access', {'tool': 'orbi', 'argv_contains': ['check'], 'exit': 1,
+                                 'stderr': 'repository access denied (HTTP 403)'},
+                 'validation_failed', 'setup --prepare-only')):
+            with self.subTest(failure=name):
+                h = Harness(Path(self.tmp.name) / name)
+                h.rules(rule)
+                result = subprocess.run(
+                    [sys.executable, '-B', str(HELPER), 'start', '--repo-dir', str(h.repo),
+                     '--json', *self.options], env=h.env,
+                    capture_output=True, text=True, timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                doc = json.loads(result.stdout)
+                self.assertEqual(doc['error']['code'], code)
+                self.assertIn(repair, doc['error']['fix'])
+                self.assertEqual(doc['activation'], 'none')
+                SetupBoundaryTests.assert_no_activation(self, h.calls())
+
     def test_public_setup_default_preserves_degraded_timer_failure_receipt(self):
         routes = dict(re.findall(r'\| `(setup[^`]*?)` \| `([^`]+)` \|',
                                  (ROOT / 'skills/orbi/SKILL.md').read_text()))
@@ -4233,7 +4318,9 @@ class InterfaceAndSkillTests(unittest.TestCase):
         activation = doc['recovery']['activation']
         for term in ('specific missing evidence', 'checklist', 'existing record',
                      'no record was found', 'unprotected main', 'HTTP 403',
-                     'read-only', 'not approval', 'settled owner intent'):
+                     'read-only', 'not approval', 'settled owner intent',
+                     'informational, not scheduling blockers', 'PR-only',
+                     'repository access', 'ownership', 'explicit pauses'):
             self.assertIn(term, activation)
         busy = doc['recovery']['setup_busy']
         for term in ('observed timer/worker state', 'status', 'only when',

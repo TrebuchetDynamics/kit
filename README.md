@@ -165,11 +165,22 @@ pickup, passing tests, independent review or protected merge.
 
 **Activation is a separate gate.** Orbi stays paused and live-unqualified until the
 [pilot and cutover checks](docs/github-native.md#cutover) pass. Keep scoped
-credentials, strict required CI, enforced branch protection, independent review,
+credentials, existing branch protection and strict required CI, independent review,
 sensitive-change controls and human-only acceptance. Dispatch does not replace them.
+Branch protection is not a Kit setup/start prerequisite.
 See [publication, migration and deployment](docs/github-native.md).
 
 ### Using Orbi
+
+Branch protection is not a Kit setup/start prerequisite. Known unprotected branches
+and protection-only HTTP 403 are informational, not scheduling blockers; a 403
+leaves protection details unknown, not absent. Authorized setup/start uses the normal
+activation path without PR-only mode, special opt-in, protection repair, paid GitHub
+plan, engine upgrade/proof or second approval on that basis. Authentication,
+repository access, ownership, explicit pauses and other gates still apply.
+Existing protections, CI, review and merge requirements remain unchanged. Startup
+is not successful merge or live qualification; prepare-only and dry-run never activate.
+See [protection diagnostics](docs/github-native.md#read-protection-diagnostics-safely).
 
 One Orbi deployment owns one repository. The suite installer adds only the CLI
 (`./install.sh --only orbi`, needs `uv`); a working Orbi installation is kept.

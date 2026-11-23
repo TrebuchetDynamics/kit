@@ -138,6 +138,19 @@ class SkillStandardTests(unittest.TestCase):
         adapter = (ROOT / 'adapters/skills/writing-for-agents/SKILL.md').read_text()
         self.assertNotIn('Report the documents changed, lines before and after', adapter)
 
+    def test_orbi_protection_observations_do_not_override_activation_authority(self):
+        skill = ' '.join((ROOT / 'skills/orbi/SKILL.md').read_text().split())
+        lifecycle = ' '.join((ROOT / 'skills/orbi/references/lifecycle.md').read_text().split())
+        for text in (skill, lifecycle):
+            for rule in ('Branch protection is not a Kit setup/start prerequisite',
+                         'informational, not scheduling blockers', 'HTTP 403',
+                         'PR-only', 'repository access', 'ownership'):
+                self.assertIn(rule, text)
+        self.assertIn('explicit pauses, cutover requirements and human-only gates', skill)
+        self.assertIn('Keep explicit pauses and human-only gates', lifecycle)
+        self.assertNotIn('obtain the read-only protection view/owner repair above', lifecycle)
+        self.assertNotIn('pause/cutover/branch/CI/human', lifecycle)
+
     def test_lgtm_inherits_planning_authority_without_a_second_approval_round(self):
         skill = ' '.join((ROOT / 'skills/lgtm/SKILL.md').read_text().split())
         self.assertIn('LGTM is a yes', skill)
