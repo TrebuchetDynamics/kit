@@ -28,7 +28,7 @@ const workflows = {
   ponytail: ['ponytail', 'Choose Ponytail simplicity guidance or level'],
   'ponytail-review': ['ponytail-review', 'Review a change and connected code'],
   'ponytail-audit': ['ponytail-audit', 'Audit a repository or folder'],
-  'ponytail-debt': ['ponytail-debt', 'Report deferred shortcut comments'],
+  'ponytail-debt': ['ponytail-debt', 'Publish issues for triggered shortcut debt'],
   'ponytail-gain': ['ponytail-gain', 'Show upstream Ponytail benchmark results'],
   'ponytail-help': ['ponytail-help', 'Explain bundled Ponytail commands'],
   impeccable: ['impeccable', 'Improve interface design'],

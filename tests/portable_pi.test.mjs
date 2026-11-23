@@ -40,6 +40,13 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
     }
   }
   const raw = 'read-only\n$(literal); --no-push';
+  assert.equal(commands.get('ponytail-debt').description, 'Publish issues for triggered shortcut debt');
+  for (const args of ['', raw]) {
+    await commands.get('ponytail-debt').handler(args, {isIdle: () => true});
+    await assertWorkflow('ponytail-debt');
+    assert.equal(messages.at(-1)[0].includes('trigger analysis and issue handoff'), true);
+    assert.equal(messages.at(-1)[0].endsWith(`User request (preserve scope and restrictions):\n${args}`), true);
+  }
   await commands.get('ui-taste').handler(raw, {isIdle: () => true});
   await assertWorkflow('ui-taste');
   assert.equal(messages.at(-1)[0].endsWith(raw), true);
