@@ -407,6 +407,46 @@ Examples (Hermes CLI; Pi uses `/graphify`, Claude Code `/kit:graphify`, Codex
 Link and packaging checks do not qualify a live graph build, dead-code finding or
 model behavior.
 
+## Repository instruction reconciliation
+
+[Agents MD Generator](../skills/agents-md-generator/SKILL.md) owns instruction-chain
+inspection, source evidence and reconciliation. Writing For Agents owns wording
+and structure and is applied by reference, not copied into a second method.
+
+From the target repository in Pi:
+
+```text
+/agents-md-generator
+/agents-md-generator audit
+/agents-md-generator update only src/AGENTS.md
+```
+
+Bare invocation inspects the whole applicable chain and directly revamps both root
+`AGENTS.md` and `CLAUDE.md` end to end, creating missing instructions as needed.
+It can reorganize, consolidate or remove sections without a mode menu, diff approval
+or follow-up. Valid requirements and compatible shared ownership survive, not the
+old layout. A working symlink stays intact; it never grants writes outside the target.
+Explicit `audit` or any read-only restriction returns findings and proposals inline
+with no writes, including scratch, reports, issues or cache-writing tests. `update`
+edits the requested scope without a second confirmation.
+
+Inspect applicable ancestor/nested instructions, overrides, compatibility files,
+commands, CI, generated ownership, source boundaries and maintained docs first.
+Give each material rule a keep/update/move/remove/unresolved disposition with evidence
+and reason. Preserve intended maintainer policy even when source disagrees; hold
+conflicts with the precise question and continue independent accepted work.
+There is no fixed length quota. Verify referenced paths/commands and separate checks
+inspected, run and unrun. Report the actual diff and dispositions inline, not in a
+permanent audit log. [Host spellings and package boundaries](cross-host.md#repository-instruction-reconciliation)
+include Hermes and explicit external target use.
+
+During ordinary delivery, read the committed
+[same-PR maintenance procedure](../skills/shared/AGENT-INSTRUCTIONS.md) only when
+accepted work changes an instruction-bearing fact. Reconcile affected guidance in
+the same PR; no affected guidance means no instruction edit. This is not a routine
+full audit or automatic skill invocation. Full cleanup requires explicit generator
+scope. Existing ownership, pauses, acceptance and PR/review gates remain.
+
 ## Writing for agents
 
 `/writing-for-agents` applies mattpocock's skill-writing reference, the skill formerly

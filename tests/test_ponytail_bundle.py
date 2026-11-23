@@ -131,7 +131,8 @@ class PonytailBundleTests(unittest.TestCase):
         spec.loader.exec_module(installer)
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
-            selected = [ROOT / 'skills' / name for name in ('writing-for-agents', 'shared')]
+            selected = [ROOT / 'skills' / name for name in
+                        ('writing-for-agents', 'agents-md-generator', 'shared')]
             self.assertEqual(installer.install(ROOT / 'skills', [('fixture', home)],
                                               skills=selected, report=lambda _: None), 0)
             self.assertFalse((home / 'docs').exists())
@@ -146,6 +147,13 @@ class PonytailBundleTests(unittest.TestCase):
                          '../shared/COMMUNICATION.md', '../shared/PONYTAIL.md'):
                 self.assertIn('](' + link + ')', text)
                 self.assertTrue((entry.parent / link).is_file())
+            generator = home / 'skills/agents-md-generator/SKILL.md'
+            for link in re.findall(r'\]\(([^)#]+)(?:#[^)]*)?\)', generator.read_text()):
+                if '://' not in link:
+                    self.assertTrue((generator.parent / link).is_file(), link)
+            helper = generator.parent / 'upstream/scripts/detect-agent-context'
+            self.assertTrue(helper.stat().st_mode & 0o111)
+            self.assertEqual(list((generator.parent / 'upstream').rglob('SKILL.md')), [])
 
     def test_map_limits_file_reads_not_only_the_parsed_string(self):
         script = PACK / 'upstream/scripts/ponytail-map.cjs'

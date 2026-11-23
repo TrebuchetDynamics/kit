@@ -153,6 +153,43 @@ not proof: `EXTRACTED` and `INFERRED` edges still need live-source checks, and U
 Code keeps its own liveness rules. `graphify-out/` is never committed. See
 [workflow and evidence requirements](workflows.md#graphify).
 
+## Repository instruction reconciliation
+
+The explicit [Agents MD Generator](../skills/agents-md-generator/SKILL.md) command
+reconciles evidence and instruction ownership. It uses Writing For Agents for
+wording and structure, rather than replacing that reference.
+
+| Host | Full revamp | Read-only audit | Scoped update |
+| --- | --- | --- | --- |
+| Pi | `/agents-md-generator` | `/agents-md-generator audit` | `/agents-md-generator update only src/AGENTS.md` |
+| Claude Code | `/kit:agents-md-generator` | `/kit:agents-md-generator audit` | `/kit:agents-md-generator update only src/AGENTS.md` |
+| Codex | `$kit:agents-md-generator` | `$kit:agents-md-generator audit` | `$kit:agents-md-generator update only src/AGENTS.md` |
+| Hermes CLI | `/agents-md-generator` | `/agents-md-generator audit` | `/agents-md-generator update only src/AGENTS.md` |
+
+Hermes Telegram normalizes the generic command as `/agents_md_generator`; existing
+command collisions retain their owner. Hermes discovers immediate canonical skill
+children; Claude Code and Codex load portable adapters; Pi uses the existing generic
+dispatch route. The nested upstream `PROTOCOL.md` is not another public entry.
+Upstream `agents/openai.yaml` is inert provenance; only the local portable policy
+controls implicit invocation (disabled). No new discovery roots, hooks or dependencies.
+
+The target is the current repository unless explicitly named, for example
+`/agents-md-generator audit /path/to/target`. Guides and detector resolve from the
+installed canonical skill directory, not the target. After inspecting its source/help,
+run `"<installed-skill>/upstream/scripts/detect-agent-context" --root "/path/to/target" --format json`.
+Native reads supplement the detector's ancestor, symlink and depth limitations, or
+replace it when unavailable. Audit writes nothing; explicit read-only always wins
+and scoped update needs no second approval. See [mode and evidence requirements](workflows.md#repository-instruction-reconciliation).
+
+Files in a worktree are not a released package, and packaged resources are not actual
+worker registration. Command use requires separate authorized installation/configuration
+in that worker's Pi environment. This change installs no worker package, changes no
+live runtime and does not qualify model behavior or Orbi delivery. The committed
+[maintenance reference](../skills/shared/AGENT-INSTRUCTIONS.md) works by reading
+Markdown with no skill registration. Installing/registering the command does not
+rewrite any target instructions. Offline archive, detector and source-contract checks
+prove resource closure and routing, not observed model adherence.
+
 ## Writing for agents
 
 [Writing For Agents](../skills/writing-for-agents/SKILL.md) pins mattpocock's

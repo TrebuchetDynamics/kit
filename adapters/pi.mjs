@@ -15,6 +15,7 @@ const workflows = {
   'test-optimizer': ['test-optimizer', 'Reduce redundant tests while preserving real regression protection'],
   graphify: ['graphify', 'Query a local Graphify code graph before wide reading'],
   'writing-for-agents': ['writing-for-agents', 'Write and prune skills, AGENTS.md and agent docs'],
+  'agents-md-generator': ['agents-md-generator', 'Reconcile repository instructions against evidence'],
   'ask-kit': ['ask-kit', 'Find the skill that fits the situation'],
   'responsive-screenshots': ['responsive-screenshots', 'Capture pages at breakpoints and check overflow'],
   grilling: ['grilling', 'Stress-test a plan or idea with rounds of questions'],
