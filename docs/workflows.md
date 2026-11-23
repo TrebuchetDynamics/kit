@@ -120,7 +120,7 @@ is limited, so some commands must be typed directly.
 | `/impeccable` | `/impeccable` | Publish actionable UI findings; explicit requests design or refine |
 | `/unslop` | `/unslop` | [Audit the UI and publish fixes as GitHub issues](../skills/unslop/SKILL.md) for Orbi; an existing deployment can pick up ready issues. Use `no-dispatch` to save without readiness, or `read-only` to preview. |
 | `/ui-taste` | `/ui_taste` | Publish actionable UI findings; explicit requests use Uizze's build/polish playbooks |
-| `/beautify-github-readme` | `/beautify_github_readme` | Redesign or audit a GitHub README with project-native SVG assets |
+| `/beautify-github-readme` | `/beautify_github_readme` | [Audit README reader paths and publish verified issues](../skills/beautify-github-readme/SKILL.md); explicit redesign/hero and audit-only requests keep their scope. Use `no-dispatch` to withhold readiness, or `read-only` for an inline report without writes. |
 
 For the Orbi first-deployment journey, `/orbi help` gives context-free examples and
 recovery. Only after explicit scheduling authority and resolved pauses/gates, use

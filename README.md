@@ -387,7 +387,7 @@ states its own boundaries and what "done" means.
 **Design, capture and write**
 
 - `/impeccable`, `/ui-taste` — [publish actionable UI findings](docs/workflows.md#ui-findings); explicit design/edit requests keep their playbooks.
-- `/beautify-github-readme` — redesign or audit a README with project-native SVG.
+- `/beautify-github-readme` — audit reader paths and publish verified issues; explicit redesign/hero and audit-only requests keep their scope.
 - `/responsive-screenshots` — capture pages at breakpoints, report overflow.
 - `/agents-md-generator` — [revamp both root instructions, audit, or update scoped rules](docs/workflows.md#repository-instruction-reconciliation).
   Bare Pi invocation rewrites `AGENTS.md` and `CLAUDE.md`; `audit` is read-only.

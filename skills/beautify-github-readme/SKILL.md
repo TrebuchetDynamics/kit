@@ -19,17 +19,53 @@ precedence over it where they differ. Its `references/` and `scripts/` paths res
 inside `upstream/`, except its README audit: run this skill's
 `scripts/audit_readme.py` instead.
 
+## Invocation modes
+
+- **Default: reader audit and publication.** A bare invocation or "beautify it"
+  audits the current README and publishes eligible reader problems below, without a scope question.
+  Analyze and publish without selection, confirmation or a second command. This
+  mode authorizes neither README/asset edits nor implementation of the findings.
+- **Explicit edits.** Preserve the protocol's README redesign and asset-only modes
+  for requests such as "redesign the whole README" or "only a hero". Reuse scope
+  already answered for the current task; corrections and repeat invocations
+  continue it unless the user changes it. Ask only for consequential missing intent
+  within that explicit edit scope, not before a default reader audit.
+- **Explicit audit-only.** "Audit it" or report-only returns findings inline without
+  edits or issue publication. For read-only/dry-run/no-write, write nothing,
+  including scratch files. A no-dispatch request permits issue publication under
+  `ai-planning` but withholds readiness; it does not authorize implementation.
+  Scheduled, cron or unattended runs audit only unless their accepted task scope
+  authorizes publication or README/asset edits.
+
+## Reader audit and publication
+
+1. **Trace first use.** Compare README claims and examples with current package exports,
+   install instructions and documented user paths. Follow the reader from host/package
+   selection through installation and the first supported action. Inspect manifests,
+   export maps, authoritative guides and relevant tests. Use authoritative registry
+   metadata when needed to establish published package availability; a local manifest
+   alone does not prove another package nonexistent. Do not run arbitrary README commands
+   as verification, install packages or start live workflows for this audit.
+2. **Qualify findings.** File observable reader failures, not unaccepted design choices.
+   If an install example names a nonexistent published package and repository evidence
+   identifies the supported package, file the mismatch without asking about design scope.
+   Include the README location, governing source, user impact, bounded correction and
+   an exact validation check with its expected result. Separate observed results from
+   unrun checks. A subjective branding preference alone yields no issue.
+   Hold unsupported findings with the missing evidence and resume condition;
+   continue independent supported findings.
+3. **Reconcile and publish.** Check current source, open and closed issues, PRs and
+   actual ownership before creating work. Reuse covered work; completed or owned
+   outcomes create no duplicate issue. Group findings that share a fix and acceptance
+   check. Follow the [single-invocation specialist handoff](../shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff)
+   for the preview, complete issue contracts, batch verification, native dependencies,
+   ai-ready last and publication/partial-failure receipts. Preserve no-dispatch,
+   pauses and existing live owners. Stop after publication and report verified issue
+   links plus covered/held findings, or explain why zero new issues are warranted.
+   Publication is not pickup, implementation or service activation.
+
 ## Toolset rules
 
-- **Scope first.** Keep the protocol's choice between README mode and asset-only
-  mode, and its audit-only path. Only a request that names the scope ("redesign the
-  whole README", "only a hero", "audit it") answers it; a bare "beautify it" does not.
-  Otherwise ask the one compact scope question, through `clarify` when available.
-  Before asking, reuse scope already answered for the current task: corrections and
-  repeat invocations continue it unless the user changes it. Ask only when that
-  context leaves scope genuinely unknown; do not restart the interview.
-  Scheduled, cron or unattended runs audit only unless their accepted task scope
-  authorizes README or asset edits.
 - **The README is documentation.** Its claims, commands and safety statements are
   Docs Sync facts. A redesign may reorder and shorten copy but must not drop a
   safety or policy statement, invent adoption, benchmarks or compatibility, or
@@ -147,4 +183,4 @@ run and any claim you could not verify.
 - Not product UI design; use `/impeccable`.
 - Not application UI review; use `/ui-taste`.
 
-**Done when:** an audit reports findings without edits, or the requested README changes are complete and the report distinguishes verified light and dark rendering from checks not run.
+**Done when:** a default reader audit reports verified issue links and covered/held findings (or zero eligible outcomes), an explicit audit-only run reports inline without writes, or requested README/asset edits are complete. Distinguish checks run, verified light/dark rendering and unverified claims; publication never implies implementation.
