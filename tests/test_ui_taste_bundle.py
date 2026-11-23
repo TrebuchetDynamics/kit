@@ -67,6 +67,28 @@ class UiTasteBundleTests(unittest.TestCase):
         self.assertIn('../../../skills/ui-taste/SKILL.md', portable)
         self.assertIn('../../../skills/ui-taste/upstream/PROTOCOL.md', portable)
 
+    def test_ui_taste_default_and_portable_modes_use_shared_findings(self):
+        skill = (PACK / 'SKILL.md').read_text()
+        portable = (ROOT / 'adapters/skills/ui-taste/SKILL.md').read_text()
+        self.assertIn('../shared/UI-FINDINGS.md', skill)
+        for rule in ('bare invocation', 'explicit design/edit', 'audit only unless'):
+            self.assertIn(rule, skill)
+        self.assertIn('canonical modes take precedence', portable)
+
+    def test_shared_findings_contract_holds_preferences_and_private_evidence(self):
+        path = ROOT / 'skills/shared/UI-FINDINGS.md'
+        self.assertTrue(path.is_file(), 'shared evidence/privacy rules must ship')
+        guidance = ' '.join(path.read_text().split())
+        for rule in ('Unslop', '../unslop/SKILL.md', 'unaccepted visual preferences',
+                     'do not publish', 'missing input and resume condition',
+                     'continue independent eligible outcomes',
+                     'inspection is not permission to attach', 'private capture',
+                     'read-only', 'dry-run', 'no-write', 'no-dispatch',
+                     'ownership', 'no writes', 'inline',
+                     'without selection, confirmation or a second command',
+                     'UNSAVED', 'UNKNOWN', 'stable key'):
+            self.assertIn(rule, guidance)
+
     def test_clean_profile_receives_ui_taste_offline(self):
         spec = importlib.util.spec_from_file_location('ui_taste_installer', ROOT / 'scripts/install_skills.py')
         module = importlib.util.module_from_spec(spec)

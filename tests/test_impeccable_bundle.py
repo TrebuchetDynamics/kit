@@ -29,6 +29,34 @@ class CompleteBundleTests(unittest.TestCase):
         self.assertIn('scripts/impeccable', manifest['sha256'])
         self.assertIn('reference/routing.md', manifest['sha256'])
 
+    def test_impeccable_default_uses_shared_finding_handoff_not_vendor_menu(self):
+        skill = (ROOT / 'skills/impeccable/SKILL.md').read_text()
+        portable = (ROOT / 'adapters/skills/impeccable/SKILL.md').read_text()
+        self.assertIn('../shared/UI-FINDINGS.md', skill)
+        for rule in ('take precedence', 'bare invocation', 'explicit design/edit',
+                     'Scheduled, cron or unattended'):
+            self.assertIn(rule, skill)
+        self.assertIn('../../../skills/impeccable/SKILL.md', portable)
+        self.assertIn('canonical modes take precedence', portable)
+
+    def test_shared_keyboard_finding_contract_reuses_issue_across_skills(self):
+        # Instruction coverage, not a simulation or proof of model publication.
+        path = ROOT / 'skills/shared/UI-FINDINGS.md'
+        self.assertTrue(path.is_file(), 'the two workflows need one evidence contract')
+        guidance = ' '.join(path.read_text().split())
+        for rule in ('route, state, viewport and source', 'observed', 'inferred',
+                     'repeatable check', 'sanitized', 'freshness',
+                     'open and closed issues', 'linked PRs', 'same fix and acceptance check',
+                     'regardless of which skill found it', 'report its verified link',
+                     '/checkout', 'Tab', 'Enter', 'validation error',
+                     'single-invocation-specialist-handoff', 'ai-planning',
+                     'blockedBy', 'ai-ready', 'last', 'stop after publication'):
+            self.assertIn(rule, guidance)
+        # Both public entries must resolve to this same contract.
+        for name in ('impeccable', 'ui-taste'):
+            skill = (ROOT / f'skills/{name}/SKILL.md').read_text()
+            self.assertIn('../shared/UI-FINDINGS.md', skill, name)
+
     def test_clean_profiles_receive_every_skill_and_support_file_offline(self):
         spec = importlib.util.spec_from_file_location('complete_bundle_installer', ROOT / 'scripts/install_skills.py')
         module = importlib.util.module_from_spec(spec)
