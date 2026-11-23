@@ -274,7 +274,7 @@ test('npm package excludes local bytecode and keeps portable support files', asy
 });
 
 test('installed archive resolves portable references and commands without checkout files', async () => {
-  const {execFileSync} = await import('node:child_process');
+  const {execFileSync, spawnSync} = await import('node:child_process');
   const {cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile} = await import('node:fs/promises');
   const {tmpdir} = await import('node:os');
   const {join} = await import('node:path');
@@ -304,6 +304,29 @@ test('installed archive resolves portable references and commands without checko
     const installed = join(scratch, 'package');
     const foreign = join(scratch, 'unrelated cwd');
     await mkdir(foreign);
+    const openCodeInstaller = join(installed, 'adapters/opencode/install.py');
+    const configHome = join(scratch, 'user config');
+    const openCodeOptions = {
+      cwd: foreign, encoding: 'utf8', env: {...process.env, XDG_CONFIG_HOME: configHome},
+    };
+    for (let run = 0; run < 2; run++) {
+      execFileSync('python3', [openCodeInstaller], openCodeOptions);
+    }
+    const commandsDir = join(configHome, 'opencode/commands');
+    assert.deepEqual((await readdir(commandsDir)).sort(), ['plan-for-me.md', 'plan-with-me.md']);
+    for (const name of ['plan-for-me', 'plan-with-me']) {
+      const adapter = join(installed, 'adapters/skills', name, 'SKILL.md');
+      const command = await readFile(join(commandsDir, `${name}.md`), 'utf8');
+      assert.ok(command.includes(JSON.stringify(adapter)));
+      assert.ok((await stat(adapter)).isFile());
+    }
+    const customCommand = join(commandsDir, 'plan-for-me.md');
+    await writeFile(customCommand, 'Custom command\n');
+    const conflict = spawnSync('python3', [openCodeInstaller], openCodeOptions);
+    assert.equal(conflict.status, 1);
+    assert.match(conflict.stderr, /Existing OpenCode command differs/);
+    assert.equal(await readFile(customCommand, 'utf8'), 'Custom command\n');
+
     const batch = {issues: [{key: 'example', title: 'Example task',
       outcome: 'Bounded outcome', scope: 'Docs only', exclusions: 'No deployment',
       acceptance: 'Guide explains the contract', verification: 'Run focused tests', sources: 'Accepted request'}]};

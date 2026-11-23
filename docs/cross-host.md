@@ -36,6 +36,25 @@ Both planners publish GitHub Issues and stop. Orbi owns automatic delivery.
 Retained authorized fix/apply modes keep their scope, actual ownership, checks,
 independent review and PR gates. Orbi remains paused and live-unqualified.
 
+## OpenCode
+
+With OpenCode installed, run this from a persistent Kit checkout:
+
+```sh
+python3 adapters/opencode/install.py
+```
+
+The installer writes `plan-with-me.md` and `plan-for-me.md` under
+`${XDG_CONFIG_HOME:-$HOME/.config}/opencode/commands/`. Both commands load the
+existing Kit adapters directly from the checkout. Keep it at the same path so
+updating the checkout updates the workflow instructions. The installer can be
+run again and preserves existing command files with different contents.
+
+In a fresh OpenCode session for any project, use `/plan-with-me` or
+`/plan-for-me`. In T3 Code, select OpenCode as the session provider to use these
+spellings. To uninstall the commands, remove the two generated Markdown files.
+This opt-in installation covers the two planning commands.
+
 ## Orbi lifecycle controls
 
 Use `/kit:orbi [status|setup|start|update|stop|help]` in Claude Code, `$kit:orbi` in Codex,

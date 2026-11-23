@@ -43,6 +43,7 @@ three portable agents.
 | **Pi** | Git package | `/plan-with-me` |
 | **Claude Code** | Marketplace plugin | `/kit:plan-with-me` |
 | **Codex** | Marketplace plugin | `$kit:plan-with-me` |
+| **OpenCode** | Optional planning commands | `/plan-with-me`, `/plan-for-me` |
 | **Hermes** | Optional native plugin | `/plan-with-me` |
 
 To use the skills inside Paseo, install
@@ -80,6 +81,13 @@ Requires a CLI with plugin support:
 codex plugin marketplace add TrebuchetDynamics/kit --ref main
 codex plugin add kit@kit-marketplace
 ```
+
+### OpenCode
+
+From a persistent Kit checkout, run `python3 adapters/opencode/install.py` once.
+Start a new OpenCode session in your project, including when using OpenCode
+through T3 Code. See the [global command setup](docs/cross-host.md#opencode)
+for installation paths and removal.
 
 ### Paseo
 
