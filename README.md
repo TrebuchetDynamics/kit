@@ -395,7 +395,8 @@ states its own boundaries and what "done" means.
 - `/writing-for-agents` — improve wording and structure in skills and agent docs.
 - `/graphify` — query a local code graph before reading many files.
 - `/ponytail`, `/ponytail-review`, `/ponytail-audit` and siblings — choose a simplicity
-  level, review a change, audit a repository, list deferred shortcuts.
+  level, review a change, audit a repository. [`/ponytail-debt`](skills/ponytail-debt/SKILL.md)
+  checks revisit triggers and publishes eligible shortcut-debt issues; explicit no-write reports only.
 
 **Operate**
 
