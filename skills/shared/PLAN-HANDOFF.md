@@ -37,6 +37,32 @@ A larger plan uses an `ai-epic` coordination issue linked to its executable chil
 epics never execute. Future evidence-dependent expansion remains in that plan,
 not a second local task graph or an automatic legacy rolling-planning job.
 
+## Single-invocation specialist handoff
+
+This default applies only to specialist workflows that explicitly link this section;
+`/improve-codebase-architecture` is the pilot. Other skills keep their own defaults.
+An ordinary invocation without a publication directive analyzes its requested scope
+and publishes in the same invocation through this handoff, not a separate planner.
+Explicit report-only/read-only/no-write/dry-run requests return findings inline with
+no writes under [the persistence rules](#persistence-not-local-main-admission).
+Explicitly requested and authorized local fix/apply modes remain separate under
+their existing scope, ownership, review, PR and human-only gates.
+
+Reconcile findings through [the intake below](#conversation-findings-to-issues):
+covered, completed, owned and unsupported findings create no duplicate issue.
+Publish all supported, buildable, uncovered outcomes within the requested scope.
+Group findings that share a fix and acceptance check. Hold only uncertain findings
+with the reason and resume condition; continue independent qualifying work.
+Zero qualifying findings means zero new issues: report covered/held dispositions or
+that no change is warranted.
+
+Show a preview in chat without waiting, using [Plan preview](#plan-preview). Do not ask for
+finding numbers, approval, a second command or a planner invocation. Follow
+[publication and dependencies](#publication-and-dependencies), then report verified
+issue links and stop. Preserve explicit no-dispatch, pauses and live ownership;
+publication authorizes neither local implementation nor service activation.
+Use the existing [failure and partial receipts](#publication-receipt), not a new queue.
+
 ## Conversation findings to issues
 
 Start with the current request and relevant conversation, not only the last message.
