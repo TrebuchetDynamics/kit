@@ -40,6 +40,7 @@ except ModuleNotFoundError:  # pragma: no cover - Windows is unsupported and ref
 import hashlib
 import json
 import os
+import plistlib
 import re
 import shutil
 import shlex
@@ -48,6 +49,7 @@ import sys
 import stat
 import tempfile
 from pathlib import Path
+from xml.parsers.expat import ExpatError
 
 try:
     import tomllib
@@ -1768,6 +1770,208 @@ def doctor_evidence(ctx, deployment):
     return {'state': 'ok' if proc.returncode == 0 else 'failed'}
 
 
+def bounded_text(path, limit=65536):
+    """Read metadata, never sessions/env/journals, with a hard byte limit."""
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise ValueError('metadata is not a regular file')
+        raw = handle.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError('metadata exceeds read limit')
+    return raw.decode('utf-8')
+
+
+def engine_summary(ctx, target, source):
+    """Deployment-bound package metadata is not the bootstrap CLI's version."""
+    result = {'state': 'unknown', 'version': None, 'revision': source.get('head'),
+              'provenance': str(target.deploy_home / 'pyproject.toml'),
+              'selected_source': source,
+              'reason': 'deployment package/revision metadata is not verified'}
+    try:
+        manifest = bounded_text(target.deploy_home / 'pyproject.toml')
+        project = tomllib.loads(manifest)['project']
+        committed = ctx.run(['git', '-C', str(target.deploy_home), 'show',
+                             'HEAD:pyproject.toml'], allow_failure=True)
+        # git diff's default autoRefreshIndex may otherwise write stat data.
+        clean = ctx.run(['git', '-C', str(target.deploy_home), 'diff', '--quiet',
+                         'HEAD', '--', 'pyproject.toml', 'src/orbi'],
+                        env={**ctx.env, 'GIT_OPTIONAL_LOCKS': '0'}, allow_failure=True)
+        if (source['state'] == 'verified' and clean.returncode == 0 and committed.returncode == 0
+                and committed.stdout == manifest and project.get('name') in {'orbi', 'orbi-cli'}
+                and isinstance(project.get('version'), str)
+                and re.fullmatch(r'\d+\.\d+\.\d+(?:[a-zA-Z0-9.+-]*)', project['version'])):
+            result.update(state='verified', version=project['version'])
+            result.pop('reason')
+    except (OSError, UnicodeError, ValueError, KeyError, TypeError, ControlError):
+        pass
+    path = home_dir(ctx) / '.local/bin/orbi'
+    cli = {'state': 'unavailable', 'path': str(path), 'version': None,
+           'provenance': 'bootstrap --version (not deployment release proof)'}
+    try:
+        proc = ctx.run([str(path), '--version'], allow_failure=True)
+        match = re.fullmatch(r'orbi (\d+\.\d+\.\d+[a-zA-Z0-9.+-]*)\s*', proc.stdout)
+        if proc.returncode == 0 and match:
+            cli.update(state='unverified', version=match[1])
+    except ControlError:
+        pass
+    cli['comparison'] = ('unknown' if not result['version'] or not cli['version'] else
+                         'match' if cli['version'] == result['version'] else 'mismatch')
+    result['bootstrap_cli'] = cli
+    return result
+
+
+def service_binding(ctx, unit):
+    proc = ctx.run(['systemctl', '--user', 'show', unit,
+                    '-p', 'ActiveState', '-p', 'MainPID', '-p', 'InvocationID',
+                    '-p', 'WorkingDirectory', '-p', 'FragmentPath'], allow_failure=True)
+    if proc.returncode or len(proc.stdout) > 16384:
+        return {}
+    return dict(line.split('=', 1) for line in proc.stdout.splitlines() if '=' in line)
+
+
+def current_run(ctx, target, repo, unit):
+    """Only this live service invocation can establish identity, never newest files.
+
+    Journal's PID + InvocationID bind a run_start scene to the current owned
+    process. Read lifecycle scenes separately so normal command/activity volume
+    cannot evict the start binding. Recheck after both bounded reads to reject
+    exit/restart races. A start scene absent from retention remains unknown.
+    """
+    unknown = {'state': 'active/issue unknown',
+               'reason': 'current invocation/deployment/run binding is missing or conflicting',
+               'next_action': 'Inspect owned service invocation and deployment logs read-only; '
+                              'restore readable bindings before attributing an issue. Do not requeue or restart.'}
+    try:
+        binding = service_binding(ctx, unit)
+        invocation, pid = binding.get('InvocationID', ''), binding.get('MainPID', '')
+        fragment = binding.get('FragmentPath', '')
+        if (binding.get('ActiveState') != 'active' or not re.fullmatch(r'[0-9a-f]{32}', invocation)
+                or not pid.isdecimal() or int(pid) <= 0
+                or binding.get('WorkingDirectory') != str(target.deploy_home)
+                or not fragment or installed_config(fragment, home_dir(ctx)) != target.config_path
+                or len(re.findall(r'\bORBI_CONFIG=', bounded_text(fragment))) != 1):
+            return unknown
+        journal = ['journalctl', '--user', '-u', unit,
+                   '_SYSTEMD_INVOCATION_ID=' + invocation, '-n', '100', '-o', 'json',
+                   '--output-fields=MESSAGE,_PID,_SYSTEMD_INVOCATION_ID', '--no-pager']
+        lifecycle = ctx.run([*journal, '--grep=^(INFO|WARNING|ERROR) '
+                             r'\[([0-9a-f]{8})\] (run_start|run_end|run_failed) '],
+                            allow_failure=True)
+        recent = ctx.run(journal, allow_failure=True)
+        if any(proc.returncode or len(proc.stdout) > 524288 for proc in (lifecycle, recent)):
+            return unknown
+        identity, details, ended = None, {}, False
+        # journalctl --grep with -n implies --reverse; the ordinary tail is
+        # chronological. Reduce lifecycle boundaries oldest first as well.
+        for line in [*reversed(lifecycle.stdout.splitlines()), *recent.stdout.splitlines()]:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if (row.get('_PID') != pid or row.get('_SYSTEMD_INVOCATION_ID') != invocation
+                    or not isinstance(row.get('MESSAGE'), str) or len(row['MESSAGE']) > 8192):
+                continue
+            # Upstream journal.RunIdFilter + pi_activity.format_run_scene.
+            match = re.fullmatch(r'(?:INFO|WARNING|ERROR) \[([0-9a-f]{8})\] '
+                                 r'(run_start|activity|heartbeat|run_end|run_failed) (.*)', row['MESSAGE'])
+            if not match:
+                continue
+            fields = {}
+            for token in shlex.split(match[3]):
+                if '=' in token:
+                    key, value = token.split('=', 1)
+                    if key in fields:  # conflicting/torn scenes are not identity
+                        return unknown
+                    fields[key] = value
+            reference = fields.get('issue', '')
+            if not re.fullmatch(re.escape(repo.full) + r'#[1-9][0-9]*', reference):
+                return unknown
+            run = fields.get('run', match[1])
+            if run != match[1]:
+                return unknown
+            candidate = (int(reference.rsplit('#', 1)[1]), run)
+            if identity is not None and identity != candidate:
+                return unknown
+            if match[2] == 'run_start':
+                identity = candidate
+                ended = False
+            elif identity is None:
+                continue
+            if match[2] in {'run_end', 'run_failed'}:
+                ended = True
+            for key, pattern in (('phase', r'[a-z_]{1,40}'),
+                                 ('last_activity', r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z')):
+                value = fields.get(key, '')
+                if re.fullmatch(pattern, value):
+                    details[key] = value
+        if identity is None or ended or service_binding(ctx, unit) != binding:
+            return unknown
+        number, run = identity
+        return {'state': 'running', 'issue': {'number': number,
+                'url': f'https://github.com/{repo.full}/issues/{number}'},
+                'run_id': run, 'provenance': 'current owned service InvocationID + MainPID journal run_start',
+                **details}
+    except (ControlError, OSError, UnicodeError, ValueError, TypeError, AttributeError):
+        return unknown
+
+
+def activity_linux(ctx, target, repo, snapshot):
+    slots, ticks = {}, {}
+    for unit, service in snapshot.get('services', {}).items():
+        state = service['state']
+        if not service['owned'] or not service['installed']:
+            item = {'state': 'unknown', 'reason': 'no verified owned service binding'}
+        elif state == 'active':
+            item = current_run(ctx, target, repo, unit)
+        elif state in {'activating', 'reloading', 'deactivating'}:
+            item = {'state': 'draining' if state == 'deactivating' else 'starting'}
+        elif state in INACTIVE_STATES:
+            item = {'state': 'idle'}
+        else:
+            item = {'state': 'unknown', 'reason': 'service state unavailable'}
+        item['health'] = 'failed' if state == 'failed' else 'unknown' if state == 'unavailable' else state
+        slots[unit] = item
+    for timer, item in snapshot.get('timers', {}).items():
+        if not item['owned']:
+            continue
+        try:
+            proc = ctx.run(['systemctl', '--user', 'show', timer, '-p', 'LastTriggerUSec',
+                            '-p', 'NextElapseUSecRealtime'], allow_failure=True)
+            values = dict(line.split('=', 1) for line in proc.stdout.splitlines() if '=' in line)
+            ticks[timer] = {key: value for key, value in values.items()
+                            if key in {'LastTriggerUSec', 'NextElapseUSecRealtime'}
+                            and len(value) <= 100} if proc.returncode == 0 else {}
+        except (ControlError, ValueError):
+            ticks[timer] = {}
+    complete = (snapshot['state'] == 'ok' and bool(slots)
+                and snapshot.get('inventory', {}).get('configured_slots_covered', False)) and all(
+        item['state'] in {'running', 'idle'} for item in slots.values())
+    return {'slots': slots, 'working': {'state': 'ok' if complete else 'unavailable',
+             'value': sum(item['state'] == 'running' for item in slots.values()) if complete else None},
+            'ticks': ticks, 'scope': 'local-target-prefix; outside scheduler scan unobserved'}
+
+
+def local_deployment_summary(ctx, target):
+    """Reusable local metadata; no queue, GitHub, doctor or repo-specific probes."""
+    source = source_evidence(ctx, target)
+    harness = harness_evidence(ctx, target)
+    usable = harness['state'] == 'verified' or (harness['management'] == 'legacy' and harness['state'] == 'unknown')
+    return {'config': str(target.config_path), 'deploy_home': str(target.deploy_home),
+            'unit_name': target.unit_name, 'pin': target.pin, 'source': source['state'],
+            'bootstrap': bootstrap_evidence(ctx, target)[0] if usable else 'unavailable',
+            'provider': provider_evidence(target), 'slots': target.max_concurrency,
+            'harness': harness, 'engine': engine_summary(ctx, target, source)}
+
+
+def enrich_activity(activity, queue):
+    # Queue listing enriches titles only AFTER local liveness/identity is proven.
+    pending = {item['number']: item for group in queue.get('pending', {}).values() for item in group}
+    for slot in activity['slots'].values():
+        issue = slot.get('issue')
+        if issue and issue['number'] in pending:
+            issue['title'] = pending[issue['number']]['title']
+
+
 def status_linux(ctx, repo, explicit_config):
     target = select_target(ctx, repo, explicit_config)
     queue = queue_evidence(ctx, repo)
@@ -1780,27 +1984,16 @@ def status_linux(ctx, repo, explicit_config):
                               'timers': {}, 'services': {}},
                 'queue': queue, 'doctor': {'state': 'skipped'}}
     validate_target(target, repo)
-    source = source_evidence(ctx, target)
-    harness = harness_evidence(ctx, target)
-    bootstrap = (bootstrap_evidence(ctx, target)[0] if (harness['state'] == 'verified' or harness['management'] == 'legacy' and harness['state'] == 'unknown')
-                 else 'unavailable')
-    provider = provider_evidence(target)
+    summary = local_deployment_summary(ctx, target)
     snapshot = safe_scheduler_snapshot(ctx, target)
+    activity = activity_linux(ctx, target, repo, snapshot)
+    enrich_activity(activity, queue)
+    harness = summary['harness']
     document = {
         'action': 'status', 'platform': 'linux', 'repo': repo.full,
         'repo_dir': str(repo.path),
-        'deployment': {
-            'state': deployment_state(snapshot),
-            'config': str(target.config_path),
-            'deploy_home': str(target.deploy_home),
-            'unit_name': target.unit_name,
-            'pin': target.pin,
-            'source': source['state'],
-            'bootstrap': bootstrap,
-            'provider': provider,
-            'slots': target.max_concurrency,
-            'harness': harness,
-        },
+        'deployment': {'state': deployment_state(snapshot), **summary},
+        'activity': activity,
         'scheduler': snapshot,
         'queue': queue,
         'doctor': (doctor_evidence(ctx, target) if (harness['state'] == 'verified' or harness['management'] == 'legacy' and harness['state'] == 'unknown')
@@ -1818,6 +2011,43 @@ def plist_labels(ctx, deployment):
                   if path.stem.startswith(relative))
 
 
+def activity_darwin(ctx, target):
+    # launchd logs do not carry an invocation token/PID. Retained log scenes
+    # cannot safely identify a live attempt; report that limitation explicitly.
+    slots = {}
+    labels = plist_labels(ctx, target)
+    base = f'org.orbi.{target.unit_name}.runner' if target.unit_name else 'org.orbi.runner'
+    labels = sorted(set(labels) | {f'{base}.{i}' for i in range(1, min(target.max_concurrency, MAX_INSTANCES) + 1)})
+    for label in labels[:MAX_INSTANCES]:
+        item = {'state': 'unknown', 'reason': 'loaded job ownership/state unavailable'}
+        try:
+            path = home_dir(ctx) / 'Library/LaunchAgents' / (label + '.plist')
+            definition = plistlib.loads(bounded_text(path).encode('utf-8'))
+            if (definition.get('Label') == label
+                    and definition.get('EnvironmentVariables', {}).get('ORBI_CONFIG') == str(target.config_path)
+                    and definition.get('WorkingDirectory') == str(target.deploy_home)):
+                proc = ctx.run(['launchctl', 'print', f'gui/{os.getuid()}/{label}'], allow_failure=True)
+                states = re.findall(r'^\s*state = ([a-z ]+)$', proc.stdout, re.M)
+                pids = re.findall(r'^\s*pid = ([0-9]+)$', proc.stdout, re.M)
+                if proc.returncode == 0 and len(states) == 1:
+                    if states[0] == 'running':
+                        item = {'state': 'active/issue unknown',
+                                'reason': 'launchd retained logs lack current invocation/run binding',
+                                'next_action': 'Inspect current owned process and attempt read-only; '
+                                               'do not attribute newest retained logs or queue head.'}
+                    elif states[0] == 'not running' and not pids:
+                        item = {'state': 'idle'}
+        except (OSError, UnicodeError, ValueError, plistlib.InvalidFileException,
+                ExpatError, ControlError, AttributeError):
+            pass
+        slots[label] = item
+    complete = bool(slots) and all(item['state'] == 'idle' for item in slots.values())
+    return {'slots': slots, 'working': {'state': 'ok' if complete else 'unavailable',
+                                       'value': 0 if complete else None},
+            'scope': f'local launchd jobs; at most {MAX_INSTANCES}; other slots unobserved',
+            'ticks': {'state': 'unavailable', 'reason': 'launchd exposes no next-fire time'}}
+
+
 def status_darwin(ctx, repo, explicit_config):
     target = select_target(ctx, repo, explicit_config)
     queue = queue_evidence(ctx, repo)
@@ -1830,22 +2060,13 @@ def status_darwin(ctx, repo, explicit_config):
                               'reason': 'no deployment config owns this repository'},
                 'queue': queue, 'doctor': {'state': 'skipped'}}
     validate_target(target, repo)
-    source = source_evidence(ctx, target)
-    harness = harness_evidence(ctx, target)
-    bootstrap = (bootstrap_evidence(ctx, target)[0] if (harness['state'] == 'verified' or harness['management'] == 'legacy' and harness['state'] == 'unknown')
-                 else 'unavailable')
-    provider = provider_evidence(target)
+    summary = local_deployment_summary(ctx, target)
+    harness = summary['harness']
     return {
         'action': 'status', 'platform': 'darwin', 'repo': repo.full,
         'repo_dir': str(repo.path),
-        'deployment': {
-            'state': 'prepared', 'config': str(target.config_path),
-            'deploy_home': str(target.deploy_home), 'unit_name': target.unit_name,
-            'pin': target.pin, 'source': source['state'],
-            'bootstrap': bootstrap, 'provider': provider,
-            'slots': target.max_concurrency,
-            'harness': harness,
-        },
+        'deployment': {'state': 'prepared', **summary},
+        'activity': activity_darwin(ctx, target),
         'scheduler': {'state': 'launchd', 'labels': plist_labels(ctx, target),
                       'active': 'unavailable',
                       'reason': 'macOS is status-only; active state needs launchctl'},
@@ -2867,6 +3088,33 @@ def render(ctx, document, json_mode):
     if json_mode:
         ctx.out.write(json.dumps(document, indent=2) + '\n')
         return
+    if document.get('action') == 'status' and 'repo' in document:
+        engine = document.get('deployment', {}).get('engine', {})
+        ctx.out.write(f"Repository: {document['repo']}\n")
+        ctx.out.write(f"Orbi: {engine.get('version') or 'unknown'} "
+                      f"revision={engine.get('revision') or 'unknown'} "
+                      f"({engine.get('state', 'unknown')}; {engine.get('provenance', 'no deployment metadata')})\n")
+        cli = engine.get('bootstrap_cli', {})
+        ctx.out.write(f"Bootstrap CLI: {cli.get('version') or 'unknown'} "
+                      f"({cli.get('state', 'unavailable')}; {cli.get('comparison', 'unknown')})\n")
+        inventory = document.get('scheduler', {}).get('inventory', {})
+        counts = inventory.get('counts', {})
+        working = document.get('activity', {}).get('working', {}).get('value')
+        ctx.out.write(f"Scheduler: {document.get('deployment', {}).get('state', 'unavailable')} "
+                      f"configured={document.get('deployment', {}).get('slots', 'unknown')} "
+                      f"enabled={counts.get('enabled_timers', {}).get('value', 'unknown')} "
+                      f"active={counts.get('active_timers', {}).get('value', 'unknown')} "
+                      f"working={working if working is not None else 'unknown'}\n")
+        for unit, slot in document.get('activity', {}).get('slots', {}).items():
+            issue = slot.get('issue', {})
+            identity = (f" #{issue['number']} {issue.get('title', '')} {issue['url']} "
+                        f"run_id={slot['run_id']} phase={slot.get('phase', 'unknown')} "
+                        f"last_activity={slot.get('last_activity', 'unknown')}" if issue else '')
+            ctx.out.write(f"Slot {unit}: {slot['state']}{identity}\n")
+        queue = document.get('queue', {})
+        ctx.out.write(f"Queue: ready={len(queue['ready']) if 'ready' in queue else 'unknown'} "
+                      f"pending={queue.get('pending_count', 'unknown')} "
+                      f"({queue.get('state', 'unavailable')})\n")
     for line in flatten(document):
         ctx.out.write(line + '\n')
 
@@ -3095,7 +3343,8 @@ def command_help(ctx, args):
 ACTIONS = {
     'status': {
         'handler': command_status,
-        'effect': 'Inspect local deployment, source, providers, timers, services and queue.',
+        'effect': 'Inspect deployment release/revision with provenance, scheduler and per-slot running issues; '
+                  'queue order is not pickup. Missing live bindings mean active/issue unknown, not idle.',
         'mutates': 'none',
         'platforms': ['linux', 'darwin'],
         'applies': ['--repo-dir', '--config', '--json'],

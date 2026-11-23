@@ -88,7 +88,7 @@ record = {{
     "cwd": os.getcwd(),
     "env": {{key: os.environ.get(key) for key in (
         "PYTHONPATH", "UV_TOOL_DIR", "UV_TOOL_BIN_DIR",
-        "PYTHONDONTWRITEBYTECODE", "PATH", "HOME")}},
+        "PYTHONDONTWRITEBYTECODE", "PATH", "HOME", "GIT_OPTIONAL_LOCKS")}},
 }}
 with open(os.environ["FAKE_CALLS"], "a", encoding="utf-8") as handle:
     handle.write(json.dumps(record) + "\\n")
@@ -166,7 +166,7 @@ class Harness:
         for name in ('pi', 'pi-bolt'):
             (self.bin / name).write_text(tool.read_text())
             (self.bin / name).chmod(0o755)
-        for name in ('git', 'uv', 'gh', 'node', 'orbi', 'systemctl', 'launchctl'):
+        for name in ('git', 'uv', 'gh', 'node', 'orbi', 'systemctl', 'launchctl', 'journalctl'):
             (self.bin / name).symlink_to(tool)
         self.bootstrap.symlink_to(tool)
 
@@ -845,7 +845,9 @@ class SetupBoundaryTests(unittest.TestCase):
         for call in calls:
             if call['tool'] == 'systemctl':
                 self.assertTrue(call['argv'][:2] == ['--user', 'show']
-                                and ('ActiveState' in call['argv'] or 'FragmentPath' in call['argv'])
+                                and ('ActiveState' in call['argv'] or 'FragmentPath' in call['argv']
+                                     or call['argv'][3:] == ['-p', 'LastTriggerUSec',
+                                                            '-p', 'NextElapseUSecRealtime'])
                                 or call['argv'][:2] == ['--user', 'is-enabled'], call)
             if call['tool'] == 'orbi':
                 self.assertNotIn(call['argv'][0] if call['argv'] else '',
@@ -1103,7 +1105,9 @@ class SetupBoundaryTests(unittest.TestCase):
         for call in calls:
             if call['tool'] == 'systemctl':
                 self.assertTrue(call['argv'][:2] == ['--user', 'show']
-                                and ('ActiveState' in call['argv'] or 'FragmentPath' in call['argv'])
+                                and ('ActiveState' in call['argv'] or 'FragmentPath' in call['argv']
+                                     or call['argv'][3:] == ['-p', 'LastTriggerUSec',
+                                                            '-p', 'NextElapseUSecRealtime'])
                                 or call['argv'][:2] == ['--user', 'is-enabled'], call)
             if call['tool'] == 'orbi':
                 self.assertNotIn(call['argv'][0] if call['argv'] else '',
@@ -3057,7 +3061,9 @@ class LifecycleSequenceTests(unittest.TestCase):
                 ['--user', 'is-enabled', timer],
                 ['--user', 'show', '-p', 'ActiveState', '--value', timer]])
         self.assertEqual([c['argv'] for c in h.calls() if c['tool'] == 'systemctl'],
-                         expected_reads * 2)
+                         expected_reads + [
+                             ['--user', 'show', f'{prefix}@{i}.timer', '-p', 'LastTriggerUSec',
+                              '-p', 'NextElapseUSecRealtime'] for i in range(1, 6)] + expected_reads)
 
         # Exercise the actual CLI's text/JSON rendering, not just flatten().
         for json_mode in (False, True):
@@ -3438,6 +3444,318 @@ class LifecycleSequenceTests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(doc['queue']['state'], 'unavailable')
         self.assertNotIn('ready', doc['queue'])
+
+
+class RunningStatusTests(unittest.TestCase):
+    """Public helper journey; journal scenes follow upstream pi_activity's contract."""
+
+    def setUp(self):
+        self.h = LifecycleSequenceTests.fresh(self)
+        self.prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        self.manifest = '[project]\nname = "orbi-cli"\nversion = "0.7.56"\n'
+        (self.h.deploy / 'pyproject.toml').write_text(self.manifest)
+
+    def binding(self, index, number, run_id, *, pid=None, invocation=None, message=None):
+        pid = pid or 400 + index
+        invocation = invocation or str(index) * 32
+        unit = f'{self.prefix}@{index}.service'
+        properties = (f'ActiveState=active\nMainPID={pid}\nInvocationID={invocation}\n'
+                      f'WorkingDirectory={self.h.deploy}\n'
+                      f'FragmentPath={self.h.unit_dir}/{self.prefix}@.service\n')
+        # Verbatim run_start field grammar from orbi-build/orbi 080590b3
+        # src/orbi/pi_activity.py:format_run_scene (private fields must not leak).
+        scene = (f'INFO [{run_id}] run_start run={run_id} issue={REPO}#{number} '
+                 'role=implement branch=private worktree=/private session=private '
+                 'session_file=/private phase=session_pending '
+                 'last_activity=2026-11-23T06:18:00Z action=private result=-')
+        entry = {'MESSAGE': message or scene, '_PID': str(pid),
+                 '_SYSTEMD_INVOCATION_ID': invocation}
+        return [
+            {'tool': 'systemctl', 'argv_contains': ['show', unit, 'MainPID'],
+             'stdout': properties},
+            {'tool': 'journalctl', 'argv_contains': [unit],
+             'stdout': json.dumps(entry) + '\n'}]
+
+    def rules(self, *extra, services=None, nodes=None):
+        self.h.rules(*extra,
+            {'tool': 'git', 'argv_contains': ['show', 'HEAD:pyproject.toml'],
+             'stdout': self.manifest},
+            {'tool': 'gh', 'argv_contains': ['api', 'graphql'],
+             'stdout': PendingStatusTests.page(nodes or [PendingStatusTests.issue(43, ['ai-ready']),
+                                                       PendingStatusTests.issue(42, ['ai-in-progress'])])},
+            *self.h.scheduler_rules(services=services or {}, timers={1: 'active'}, enabled={1: True}))
+
+    def assert_read_only(self, before):
+        self.assertEqual(snapshot(self.h.home), before)
+        for call in self.h.calls():
+            argv, tool = call['argv'], call['tool']
+            if tool == 'systemctl':
+                self.assertIn(argv[1], ('show', 'is-enabled'), call)
+                self.assertNotIn('Environment', argv)
+            elif tool == 'journalctl':
+                self.assertIn('-n', argv)
+                self.assertEqual(argv[argv.index('-n') + 1], '100')
+                self.assertTrue(any(a.startswith('_SYSTEMD_INVOCATION_ID=') for a in argv))
+                self.assertNotIn('--follow', argv)
+            elif tool == 'orbi':
+                self.assertIn(argv[0], ('--version', 'doctor'), call)
+            elif tool == 'git':
+                self.assertIn(argv[2], ('worktree', 'config', 'rev-parse', 'show', 'diff'), call)
+                if argv[2] == 'diff':
+                    self.assertEqual(call['env']['GIT_OPTIONAL_LOCKS'], '0')
+            elif tool == 'gh':
+                self.assertIn(argv[:2], (['api', 'graphql'], ['api', '--method'], ['pr', 'view']))
+            elif tool in ('pi', 'pi-bolt'):
+                self.assertEqual(argv, ['--version'])
+            else:
+                self.fail(f'unexpected tool {tool}: {argv}')
+
+    def test_running_is_not_queue_head_text_json_and_two_slots(self):
+        self.rules(*self.binding(1, 42, '1234abcd'), *self.binding(2, 44, 'abcd1234'),
+                   services={1: 'active', 2: 'active'},
+                   nodes=[PendingStatusTests.issue(43, ['ai-ready']),
+                          PendingStatusTests.issue(42, ['ai-in-progress']),
+                          PendingStatusTests.issue(44, ['ai-in-progress'])])
+        before = snapshot(self.h.home)
+        for json_mode in (False, True):
+            proc = subprocess.run([sys.executable, '-B', str(HELPER),
+                '--repo-dir', str(self.h.repo), *(['--json'] if json_mode else [])],
+                env=self.h.env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            if json_mode:
+                doc = json.loads(proc.stdout)
+                slots = doc['activity']['slots']
+                self.assertEqual([slots[f'{self.prefix}@{i}.service']['issue']['number']
+                                  for i in (1, 2)], [42, 44])
+                self.assertEqual(slots[f'{self.prefix}@1.service']['run_id'], '1234abcd')
+                self.assertEqual(slots[f'{self.prefix}@1.service']['phase'], 'session_pending')
+                self.assertEqual(slots[f'{self.prefix}@1.service']['issue']['title'], 'Issue 42')
+                self.assertEqual(doc['queue']['ready'], ['#43 Issue 43'])
+                self.assertEqual(doc['activity']['working'], {'state': 'ok', 'value': 2})
+                engine = doc['deployment']['engine']
+                self.assertEqual(engine['state'], 'verified')
+                self.assertEqual(engine['version'], '0.7.56')
+                self.assertEqual(engine['revision'], PIN)
+                self.assertEqual(engine['bootstrap_cli']['version'], '0.7.41')
+                self.assertEqual(engine['bootstrap_cli']['comparison'], 'mismatch')
+            else:
+                self.assertTrue(proc.stdout.startswith(f'Repository: {REPO}\n'))
+                self.assertIn('Orbi: 0.7.56', proc.stdout)
+                self.assertIn('running #42 Issue 42', proc.stdout)
+                self.assertIn('running #44 Issue 44', proc.stdout)
+                self.assertIn('#43 Issue 43', proc.stdout)
+            self.assertNotIn('/private', proc.stdout)
+            self.assertNotIn('action=private', proc.stdout)
+        self.assert_read_only(before)
+
+    def test_active_unknown_never_borrows_retained_issue(self):
+        for kind in ('missing', 'stale_invocation', 'wrong_pid', 'wrong_repo', 'ended', 'conflict'):
+            with self.subTest(kind=kind):
+                binding = self.binding(1, 42, '1234abcd')
+                entry = json.loads(binding[1]['stdout'])
+                if kind == 'missing':
+                    binding = []
+                elif kind == 'stale_invocation':
+                    entry['_SYSTEMD_INVOCATION_ID'] = 'f' * 32
+                elif kind == 'wrong_pid':
+                    entry['_PID'] = '999'
+                elif kind == 'wrong_repo':
+                    entry['MESSAGE'] = entry['MESSAGE'].replace(REPO, 'other/repo')
+                elif kind == 'ended':
+                    binding[1]['stdout'] += json.dumps({**entry, 'MESSAGE':
+                        'INFO [1234abcd] run_end run=1234abcd issue=example/kit#42 result=ok'}) + '\n'
+                elif kind == 'conflict':
+                    binding[1]['stdout'] += json.dumps({**entry, 'MESSAGE':
+                        entry['MESSAGE'].replace('#42', '#99')}) + '\n'
+                if kind not in ('missing', 'ended', 'conflict'):
+                    binding[1]['stdout'] = json.dumps(entry) + '\n'
+                self.rules(*binding, services={1: 'active'})
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('status')
+                self.assertEqual(code, 0, err)
+                slot = doc['activity']['slots'][f'{self.prefix}@1.service']
+                self.assertEqual(slot['state'], 'active/issue unknown')
+                self.assertNotIn('issue', slot)
+                self.assertIn('next_action', slot)
+                self.assertIsNone(doc['activity']['working']['value'])
+                self.assert_read_only(before)
+
+    def test_idle_and_transitions_and_unverifiable_version(self):
+        self.rules(services={1: 'inactive', 2: 'activating', 3: 'deactivating'})
+        (self.h.deploy / 'pyproject.toml').unlink()
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['deployment']['engine']['state'], 'unknown')
+        self.assertIsNone(doc['deployment']['engine']['version'])
+        slots = doc['activity']['slots']
+        for i, state in ((1, 'idle'), (2, 'starting'), (3, 'draining')):
+            self.assertEqual(slots[f'{self.prefix}@{i}.service']['state'], state)
+            self.assertNotIn('issue', slots[f'{self.prefix}@{i}.service'])
+        self.assertEqual(doc['queue']['ready'], ['#43 Issue 43'])
+        self.assertFalse([c for c in self.h.calls() if c['tool'] == 'journalctl'])
+        self.assert_read_only(before)
+
+    def test_idle_with_queue_and_failed_health_and_tick_times(self):
+        timer = f'{self.prefix}@1.timer'
+        self.rules({'tool': 'systemctl', 'argv_contains': ['show', timer, 'LastTriggerUSec'],
+                    'stdout': 'LastTriggerUSec=Mon 2026-11-23 06:00:00 UTC\n'
+                              'NextElapseUSecRealtime=Mon 2026-11-23 06:05:00 UTC\n'
+                              'Environment=DO_NOT_RETURN\n'}, services={2: 'failed'})
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['activity']['working'], {'state': 'ok', 'value': 0})
+        self.assertEqual(doc['activity']['slots'][f'{self.prefix}@1.service']['state'], 'idle')
+        self.assertEqual(doc['activity']['slots'][f'{self.prefix}@2.service']['health'], 'failed')
+        self.assertEqual(doc['activity']['ticks'][timer], {
+            'LastTriggerUSec': 'Mon 2026-11-23 06:00:00 UTC',
+            'NextElapseUSecRealtime': 'Mon 2026-11-23 06:05:00 UTC'})
+        self.assertNotIn('DO_NOT_RETURN', json.dumps(doc))
+        code, text, err = self.h.run('status', json_mode=False)
+        self.assertEqual(code, 0, err)
+        self.assertIn('working=0', text)
+        self.assertIn('Queue: ready=1 pending=2', text)
+        self.assertNotIn('running #42', text)
+        self.assert_read_only(before)
+
+    def test_queue_unavailable_cannot_hide_a_verified_live_issue(self):
+        self.rules({'tool': 'gh', 'argv_contains': ['api', 'graphql'], 'exit': 1},
+                   *self.binding(1, 42, '1234abcd'), services={1: 'active'})
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['queue']['state'], 'unavailable')
+        slot = doc['activity']['slots'][f'{self.prefix}@1.service']
+        self.assertEqual(slot['state'], 'running')
+        self.assertEqual(slot['issue']['number'], 42)
+        self.assertNotIn('title', slot['issue'])
+        self.assert_read_only(before)
+
+    def test_version_unknown_for_modified_missing_or_unpinned_metadata(self):
+        for kind in ('modified', 'dirty_source', 'unpinned', 'oversized'):
+            with self.subTest(kind=kind):
+                config = self.h.deploy / 'orbi.toml'
+                original = config.read_text()
+                (self.h.deploy / 'pyproject.toml').write_text(
+                    self.manifest.replace('0.7.56', '9.9.9') if kind == 'modified' else
+                    self.manifest + '# ' + 'x' * 65536 if kind == 'oversized' else self.manifest)
+                if kind == 'unpinned':
+                    config.write_text(original.replace(helper.PIN_TRACK, 'main'))
+                self.rules(*([{'tool': 'git', 'argv_contains': ['diff', '--quiet'], 'exit': 1}]
+                              if kind == 'dirty_source' else []))
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('status')
+                self.assertEqual(code, 0, err)
+                engine = doc['deployment']['engine']
+                self.assertEqual(engine['state'], 'unknown')
+                self.assertIsNone(engine['version'])
+                self.assertEqual(engine['bootstrap_cli']['version'], '0.7.41')
+                self.assertEqual(engine['bootstrap_cli']['comparison'], 'unknown')
+                self.assert_read_only(before)
+                config.write_text(original)
+
+    def test_snapshot_restart_and_capped_journal_are_unknown(self):
+        self.rules(*self.binding(1, 42, '1234abcd'), services={1: 'active'})
+        original = helper.service_binding
+        calls = []
+
+        def restarted(*args):
+            binding = original(*args)
+            calls.append(binding)
+            return {**binding, 'InvocationID': 'f' * 32} if len(calls) > 1 else binding
+
+        with mock.patch.object(helper, 'service_binding', restarted):
+            code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(doc['activity']['slots'][f'{self.prefix}@1.service']['state'],
+                         'active/issue unknown')
+        # A heartbeat within the current invocation cannot substitute for the
+        # run_start that fell outside the bounded tail. No newest-run fallback.
+        self.rules(*self.binding(1, 42, '1234abcd', message=
+            f'INFO [1234abcd] heartbeat issue={REPO}#42 role=implement phase=working'),
+            services={1: 'active'})
+        code, text, err = self.h.run('status', json_mode=False)
+        self.assertEqual(code, 0, err)
+        self.assertIn('active/issue unknown', text)
+        self.assertNotIn('running #42', text)
+
+    def test_macos_owned_jobs_idle_active_and_foreign_remain_read_only(self):
+        import plistlib
+        folder = self.h.home / 'Library/LaunchAgents'
+        folder.mkdir(parents=True)
+        labels = [f'org.orbi.{helper.derive_unit_name(REPO)}.runner.{i}' for i in (1, 2, 3)]
+        rules = []
+        for index, label in enumerate(labels, 1):
+            (folder / (label + '.plist')).write_bytes(plistlib.dumps({
+                'Label': label, 'WorkingDirectory': str(self.h.deploy),
+                'EnvironmentVariables': {'ORBI_CONFIG': str(self.h.deploy / 'orbi.toml')
+                                         if index != 3 else '/foreign/orbi.toml', 'TOKEN': SECRET}}))
+            rules.append({'tool': 'launchctl', 'argv_contains': ['print', label],
+                'stdout': 'state = not running\n' if index == 1 else 'state = running\npid = 902\n'})
+        self.rules(*rules)
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('status', platform='darwin')
+        self.assertEqual(code, 0, err)
+        slots = doc['activity']['slots']
+        self.assertEqual([slots[label]['state'] for label in labels],
+                         ['idle', 'active/issue unknown', 'unknown'])
+        self.assertEqual(doc['deployment']['engine']['version'], '0.7.56')
+        self.assertFalse([c for c in self.h.calls() if c['tool'] in {'systemctl', 'journalctl'}])
+        self.assertEqual([c['argv'] for c in self.h.calls() if c['tool'] == 'launchctl'],
+                         [['print', f'gui/{os.getuid()}/{label}'] for label in labels[:2]])
+        self.assertNotIn(SECRET, json.dumps(doc))
+        self.assertEqual(snapshot(self.h.home), before)
+
+    def test_macos_torn_plist_keeps_partial_status(self):
+        folder = self.h.home / 'Library/LaunchAgents'
+        folder.mkdir(parents=True)
+        label = f'org.orbi.{helper.derive_unit_name(REPO)}.runner.1'
+        (folder / (label + '.plist')).write_text('<?xml version="1.0"?><plist><dict>')
+        self.rules()
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('status', platform='darwin')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['activity']['slots'][label]['state'], 'unknown')
+        self.assertEqual(doc['queue']['ready'], ['#43 Issue 43'])
+        self.assertIsNone(doc['activity']['working']['value'])
+        self.assertEqual(snapshot(self.h.home), before)
+
+    def test_long_running_issue_survives_noisy_journal_tail(self):
+        binding = self.binding(1, 42, '1234abcd')
+        entry = json.loads(binding[1]['stdout'])
+        heartbeat = {**entry, 'MESSAGE':
+            f'INFO [1234abcd] heartbeat issue={REPO}#42 role=review '
+            'phase=read state=- elapsed=14m idle=1s'}
+        # journalctl applies --grep before -n. A normal task produces many
+        # command/activity lines; its run_start still exists outside that tail.
+        for ended in (False, True):
+            with self.subTest(ended=ended):
+                # --grep with -n implies --reverse (journalctl(1)); lifecycle
+                # results are newest first, unlike the ordinary recent tail.
+                lifecycle = binding[1]['stdout']
+                if ended:
+                    lifecycle = json.dumps({**entry, 'MESSAGE':
+                        f'INFO [1234abcd] run_end run=1234abcd issue={REPO}#42 '
+                        'role=review result=ok elapsed=14m pr=- commit=-'}) + '\n' + lifecycle
+                self.rules(binding[0],
+                    {**binding[1], 'stdout': lifecycle,
+                     'argv_contains': [binding[0]['argv_contains'][1],
+                        '--grep=^(INFO|WARNING|ERROR) \\[([0-9a-f]{8})\\] (run_start|run_end|run_failed) ']},
+                    {**binding[1], 'stdout': (json.dumps(heartbeat) + '\n') * 100},
+                    services={1: 'active'})
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('status')
+                self.assertEqual(code, 0, err)
+                slot = doc['activity']['slots'][f'{self.prefix}@1.service']
+                self.assertEqual(slot['state'], 'active/issue unknown' if ended else 'running')
+                if not ended:
+                    self.assertEqual(slot['issue']['number'], 42)
+                    self.assertEqual(slot['phase'], 'read')
+                else:
+                    self.assertNotIn('issue', slot)
+                self.assert_read_only(before)
 
 
 class PendingStatusTests(unittest.TestCase):

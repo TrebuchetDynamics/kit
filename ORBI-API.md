@@ -15,6 +15,46 @@ python3 -B skills/orbi/scripts/orbi_control.py status --repo-dir /path/to/canoni
 
 `--repo-dir` selects the delivery repository; `--config` selects an existing native deployment config. Distinguish `absent` (no deployment found) from `unavailable` (evidence could not be read). Configured slots, enabled timers, active timers and running services are separate observations. None proves a model answered or a PR merged.
 
+### Deployment and per-slot status receipt
+
+Human text leads with the repository, deployed package version + revision and
+metadata provenance, then scheduler capacity/activity and slots. JSON preserves
+legacy `deployment`, `scheduler`, `queue` and `doctor` fields and adds:
+
+- `deployment.engine`: verified deployment `pyproject.toml` version, checked against
+  the pinned Git revision's manifest and clean tracked package source. Unknown or
+  mismatching metadata stays unknown; `selected_source` identifies pin/source
+  evidence separately. `bootstrap_cli` is the bootstrap executable's unscoped
+  `--version`, explicitly unverified as deployment proof, with match/mismatch/unknown
+  comparison. Neither CLI version nor source metadata proves live delivery.
+- `activity.slots`: one record per observed owned scheduler slot (including observed
+  surplus instances). `running` has `issue.number`, `issue.url`, title when available,
+  `run_id` and observed phase/last activity. Other states are `idle`, `starting`,
+  `draining`, `active/issue unknown` or `unknown`. Never substitute the ready head
+  or newest retained run for missing identity.
+- `activity.working`: verified working count, or unavailable/null if observations
+  are incomplete; scheduler inventory still distinguishes configured slots,
+  enabled/active timers and running services. `activity.ticks` carries allowlisted
+  last/next timer timestamps when readable; Linux slot health retains failed states.
+
+Linux attribution binds the owned service's current `InvocationID`, `MainPID` and
+working directory to a `run_start` scene from that same invocation/PID. The journal
+reads select only required fields and recheck the binding. Each read caps at 100
+entries: lifecycle scenes are filtered before the cap, separately from the recent
+activity tail, so command/heartbeat volume cannot evict a retained start binding.
+Missing, stale or conflicting scenes mean active/issue unknown.
+No raw journal, command/action, session, environment or auth data is returned.
+macOS reads at most five owned LaunchAgents with `launchctl print`; a running job
+is issue unknown because retained log scenes lack a current invocation binding.
+Launchd next-fire time and missing job evidence remain unavailable, not zero.
+
+The reusable `local_deployment_summary` contains only local deployment metadata.
+Repository queue/title enrichment and doctor probes stay outside it. The existing
+bounded GitHub read supplies titles **after** local liveness/identity is established;
+GitHub progress/PR/label records alone never establish a running issue. Partial and
+unavailable queue/pending evidence is preserved. Status never fetches, polls, runs a
+tick, activates/repairs anything or updates a stale installed helper.
+
 | Kit action | Effect |
 |---|---|
 | `help`, `status` | Read only. Help works on all platforms; status on Linux and macOS. |
