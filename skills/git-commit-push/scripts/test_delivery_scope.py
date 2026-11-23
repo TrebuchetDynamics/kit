@@ -162,6 +162,16 @@ class DeliveryScopePolicyTests(unittest.TestCase):
         self.assertIn('temporary-index landing without a development branch', self.reference)
         self.assertIn('recheck canonical `head`, the real index bytes', self.reference)
 
+    def test_topic_commits_load_partition_checks_without_requiring_shared_index(self):
+        commit = self.main.split('5. **commit.**')[1].split(
+            '6. **sync with upstream (default).**')[0]
+        self.assertIn('before splitting one gated tree into topic commits', commit)
+        self.assertIn('references/shared-worktree-safety.md#shared-index-commits', commit)
+        self.assertIn('match each commit to its pinned path/blob partition', commit)
+        self.assertIn('only the final tree to the combined gated tree', commit)
+        self.assertIn('for a single commit, require', commit)
+        self.assertIn('check each commit\'s paths/blobs against its partition', self.reference)
+
     def test_plain_required_read_set_is_smaller_than_frozen_baseline(self):
         # d26a1d6d: entry plus unconditional candidate-gates read. Same simple
         # upstream-level scoped branch, no foreign index, successful local gates.

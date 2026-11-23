@@ -300,12 +300,15 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      the matcher.
    - Follow the repo's commit-message convention (check `git log --oneline -10`). Read the
      message back before pushing; once it is on a shared branch, fixing it would need a force-push.
+   - Before splitting one gated tree into topic commits, load
+     [partitioned commit checks](references/shared-worktree-safety.md#shared-index-commits).
+     Match each commit to its pinned path/blob partition and only the final tree to the combined gated tree.
    - Immediately before committing, re-read `git diff --cached --name-only` and compare
      it with the authorized path set. Exclude unrelated staged entries without changing
      another writer's index; if isolation is unsafe, hold. Compare `git write-tree` with
-     the recorded gated tree and verify HEAD has not moved. After committing, require
-     `git rev-parse HEAD^{tree}` to match the gated tree. If hooks or another writer
-     changed it, inspect the difference and rerun affected checks before claiming verification.
+     the recorded gated tree and verify HEAD has not moved. For a single commit, require
+     `git rev-parse HEAD^{tree}` to match the gated tree after committing. If hooks or another
+     writer changed it, inspect the difference and rerun affected checks before claiming verification.
 
 6. **Sync with upstream (default).**
    - With sync authorized, after the owned commits exist and before pushing:
