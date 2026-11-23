@@ -363,7 +363,7 @@ states its own boundaries and what "done" means.
 
 **Improve the codebase**
 
-- `/skill:state-machine` (Pi) — map implicit states and unsafe transitions, read-only.
+- `/skill:state-machine` (Pi) — map unsafe transitions and publish warranted issues.
   See [other hosts and usage](docs/workflows.md#state-machine).
 - `/bug-harvest` — hunt evidence-backed defects, one candidate at a time.
 - `/test-optimizer` — delete redundant tests and shrink the suite that remains.

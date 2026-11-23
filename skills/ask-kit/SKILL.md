@@ -42,7 +42,7 @@ not ask for.
 
 | Situation | Skill |
 | --- | --- |
-| Map lifecycle rules and unexpected event sequences | `/state-machine` (Pi: `/skill:state-machine`) |
+| Map lifecycle rules and publish warranted unsafe-transition issues | `/state-machine` (Pi: `/skill:state-machine`) |
 | Something is broken and you cannot yet reproduce it | `/bug-harvest` |
 | The suite is bloated, slow or full of low-value tests | `/test-optimizer` |
 | Code looks unused and you want it gone | `/unused-code` |
