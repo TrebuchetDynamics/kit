@@ -38,8 +38,8 @@ const workflows = {
   lgtm: ['lgtm', 'Continue the last approved action'],
   goal: ['goal', 'Keep one objective alive until evidence proves it done'],
   unblock: ['unblock', 'Resolve blocked GitHub work without releasing pauses'],
-  'git-commit-push': ['git-commit-push', 'Commit and push, or pull and merge, owned changes'],
-  push: ['push', 'Save all changes, pull main, then push main'],
+  'git-commit-push': ['git-commit-push', 'Commit current branch, sync and push its upstream.'],
+  push: ['push', 'Save this checkout, pull and deliver to main.'],
 };
 
 /** Native Pi command adapter. No subprocess, permission changes or install hooks. */

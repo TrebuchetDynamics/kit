@@ -14,13 +14,15 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this scope and 
 
 1. **Scope.** Run only after explicit invocation. Read the caller's restrictions.
    Before execution explain: default scope includes all available components, may
-   bootstrap Pi-Bolt, and may restart active supported integrations.
+   bootstrap Pi-Bolt, and may restart only proven affected active integrations.
+   Every run checks for updates under source/pin policies. Healthy unchanged reruns
+   request no service restarts. Hermes owns its native gateway deferral/restart decision.
    Pi-Bolt is the only Pi harness Kit installs; the Kit Pi package is installed or
    refreshed through the verified destination Pi-Bolt, never stock Pi. Native
    dependency/security prompts remain in force. Missing hosts and partial failures
    follow the [suite installer contract](../../docs/installation.md#full-suite-from-a-checkout).
    An explicit no-restarts restriction cannot be honored: `--no-reload` does **not**
-   suppress the final restart phase. Refuse incompatible restrictions before any
+   suppress other affected-host restarts. Refuse incompatible restrictions before any
    source/host mutation; never translate them into weaker flags.
 2. **Preview branch.** For read-only, questions-only or dry-run requests, run only
    the helper's `--dry-run` with applicable literal flags, or explain without tools.
@@ -75,7 +77,7 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this scope and 
 | --- | --- |
 | The current checkout is more convenient. | Only the dedicated persistent source is updater-owned. |
 | Same SHA means nothing to do. | Host installation can be stale; rerun the installer. |
-| `--no-reload` means no restarts. | The final restart phase still runs; refuse a no-restarts request. |
+| `--no-reload` means no restarts. | Other changed hosts can still restart; refuse a no-restarts request. |
 | `--only hermes` contains the update. | Hermes can launch a broader refresh; restricted cascades hold. |
 | A successful install proves the session is updated. | Reload and live checks are separate evidence. |
 

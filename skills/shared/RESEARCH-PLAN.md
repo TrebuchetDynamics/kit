@@ -191,49 +191,7 @@ new technical findings to its existing issue only when they add evidence.
 
 ## Interactive planning: Plan With Me
 
-Use the same research and persistence method, with the user participating in
-consequential decisions. Do not invoke Plan For Me as another coordinator or repeat
-its discovery pass. Read the pinned plan protocol, then adapt its phases here.
-
-- Turn the initial prompt into a concise working brief: intended users, problem,
-  desired outcome, scope/non-goals, constraints and observable success. Separate
-  explicit requirements from assumptions and unresolved choices; improve clarity
-  without expanding the user's goal. Reuse this brief in the existing plan owner.
-- Inspect enough evidence to ask a useful first question, then use the
-  [consequential uncertainty loop](PLANNING-CRAFT.md#consequential-uncertainty).
-  Map only open points that change intent, acceptance or tasks; group shared
-  decisions once across the batch. Get the user describing before offering options.
-  Ask the highest-impact ready question, with context and consequences; use concrete
-  alternatives with trade-offs only when evidence narrows the choice. Apply the
-  linked loop's round-scoped acceptance rule to a bare “yes” or LGTM, including
-  clear recommended batches. Clarify only genuinely ambiguous choices. After each reply, update
-  what it actually resolves, investigate changed evidence and ask the next material
-  question. Do not finish after one answer or complete a speculative plan before
-  learning intent. For vague words such as “easy”, ask for a concrete user situation
-  or success example. No habitual opening offer to skip; honor an explicit switch
-  to Plan For Me using existing answers and evidence.
-- Think wide privately to expose alternatives, and use Grill Me's decision tree to
-  challenge important assumptions, failure cases and costly choices. Load the grill
-  protocol only when that depth is useful or requested. This interview's round size,
-  scope and stop rules override grill's exhaustive questioning and generic final
-  implementation-approval prompt. Do not ask every possible question. Play each
-  understood part back with guesses marked, and run the builder check before
-  handing off saved tasks.
-- Research repository facts yourself; ask the user about preferences, ambiguities
-  and consequential tradeoffs the evidence cannot settle. “You decide” delegates
-  that choice within the stated constraints; record your reasoned decision and
-  continue. Explicit answers stay settled unless new evidence conflicts with them.
-- Stop questioning once relevant intent and concrete acceptance are actionable,
-  with no fixed question count or filler for fully specified requests, or when the
-  user says finish/stop (including confirmation questions). A skipped choice stays
-  open; a delegated choice becomes a planner call. Preserve corrections and reuse
-  accepted decisions on resume. Keep remaining questions only on affected work.
-  Save answers, evidence, decisions and task records in one coherent affected batch; meaningful
-  interim answers may be saved for continuity. Do not require another interview or
-  a complete documentation pass per answer. Questions-only/read-only/no-write and
-  dry-run stay nonmutating; return the refined brief in chat instead.
-
-The output is the same durable plan and work queue as Plan For Me, with the user's
-answers informing it. Clearly distinguish their choices from delegated engineering
-choices, proposals and unverified assumptions. A refined prompt alone is not the
-writable-mode deliverable. Read back the saved plan/tasks before claiming persistence.
+Only in interactive or challenge mode, follow the interview steps in
+[Plan With Me](../plan-with-me/SKILL.md). If that workflow is already loaded,
+continue there without rereading it. Other planning modes use the common method
+above without loading the interview.

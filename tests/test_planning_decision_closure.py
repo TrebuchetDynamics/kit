@@ -57,10 +57,23 @@ class PlanningDecisionClosureTests(unittest.TestCase):
         self.assertIn('Plan For Me resolves evidence-supported engineering trade-offs', craft)
         self.assertIn('Plan With Me retains consequential intent interviews', craft)
         self.assertIn('Never infer authorization from an engineering preference, silence or an Accepted heading', craft)
-        interactive = section('skills/shared/RESEARCH-PLAN.md', 'Interactive planning: Plan With Me')
+        interactive = ' '.join((ROOT / 'skills/plan-with-me/SKILL.md').read_text().split())
         for rule in ('user participating in consequential decisions', 'Ask the highest-impact ready question',
                      'A skipped choice stays open', 'no fixed question count'):
             self.assertIn(rule, interactive)
+
+    def test_interview_compatibility_anchor_is_conditional_and_not_a_reread_loop(self):
+        pointer = section('skills/shared/RESEARCH-PLAN.md', 'Interactive planning: Plan With Me')
+        self.assertIn('../plan-with-me/SKILL.md', pointer)
+        self.assertIn('interactive or challenge mode', pointer)
+        self.assertLess(len(pointer.split()), 65)
+        owner = ' '.join((ROOT / 'skills/plan-with-me/SKILL.md').read_text().split())
+        self.assertNotIn('RESEARCH-PLAN.md#interactive-planning-plan-with-me', owner)
+        for rule in ('bare “yes” or LGTM', 'round-scoped acceptance',
+                     'including confirmation questions', 'exhaustive questioning',
+                     'implementation-approval prompt', 'Do not invoke Plan For Me',
+                     'Already-loaded sources need no reread'):
+            self.assertIn(rule, owner)
 
     def test_handoff_requires_reachable_contract_not_just_valid_metadata(self):
         handoff = section('skills/shared/PLAN-HANDOFF.md', 'One planning pass, one handoff')

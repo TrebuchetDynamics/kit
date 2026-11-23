@@ -45,7 +45,8 @@ python3 adapters/opencode/install.py
 ```
 
 The installer writes `plan-with-me.md` and `plan-for-me.md` under
-`${XDG_CONFIG_HOME:-$HOME/.config}/opencode/commands/`. Both commands load the
+`${XDG_CONFIG_HOME:-$HOME/.config}/opencode/commands/`. If set, `XDG_CONFIG_HOME`
+must be absolute; the installer rejects a relative path without writing files. Both commands load the
 existing Kit adapters directly from the checkout. Keep it at the same path so
 updating the checkout updates the workflow instructions. The installer can be
 run again and preserves existing command files with different contents.
@@ -607,8 +608,9 @@ Local installs refer to this checkout; keep it in place. The extension registers
 
 All 13 `/autoresearch-<protocol>` commands are available. The other commands are
 `/autoresearch`, `/impeccable`, `/ui-taste`, `/unslop`, `/beautify-github-readme`,
-`/lgtm` and `/git-commit-push` (`/git-commit-push pull` or `merge <branch>` integrates
-upstream changes). The engineering pack is a reference, not a command; no
+`/lgtm`, `/git-commit-push` (current branch and its upstream) and `/push` (deliver
+to `main`). `/git-commit-push pull` or `merge <branch>` only integrates upstream changes.
+The engineering pack is a reference, not a command; no
 `/engineering` or `/skill:engineering` entry is registered. Native `/skill:<name>`
 invocation is available for the registered skills; both skill names and command
 aliases use hyphens. Underscore aliases

@@ -102,3 +102,32 @@ push — and these branches keep the failure modes it meets.
   words (naming the commit whose message does not describe what it carried), and fix
   forward with a scoped commit if it fails. A pushed message cannot be corrected without a
   force-push, so the honest record is the report plus the after-the-fact result.
+
+## Combining reviewed slices
+
+- Reconcile producer and consumer contracts when combining reviewed slices before the
+  broad gate: run formatting, analysis and their focused regression union on the assembled
+  candidate. A component-removal patch can delete a field still asserted by another slice's
+  tests even when both artifacts passed independently. Remove only assertions for genuinely
+  removed APIs; preserve public-behavior, ownership and recovery regressions. Resolve
+  conflicts in the isolated candidate, never in an actively reviewed worker's workspace.
+- Classify grouped test failures by their first failing assertion before calling
+  them production regressions or stale fixtures. If setup still supplies inventory
+  through a removed transport, migrate the harness to the supported authority and
+  preserve the ownership, stale-response, denial and explicit-retry assertions;
+  deleting those scenarios can conceal a real recovery gap. Run the focused union
+  before a broad suite. If another reviewed slice is genuinely independent, qualify
+  and deliver it separately without implying the original shipping queue is finished.
+
+## Gate failures and receipt repair
+
+- On failure, fix the smallest safe cause and rerun only the failed or affected checks
+  (load `systematic-debugging` for a real behavior failure). Before reporting HELD,
+  distinguish a failed product assertion from an overbroad source-contract guard;
+  an authorized guard repair keeps its prohibited-boundary and negative assertions.
+  Preserve passing receipts
+  for unchanged source, tests, dependencies and tool inputs. A browser-selector-only
+  repair needs browser verification, not another full Flutter suite. Repair missing
+  verification metadata from the executed receipt; do not rerun an unchanged passing
+  gate just to clear a stale warning or refresh a report. Explicit owner requests for
+  a fresh run still apply; identify that run separately from the original qualification.

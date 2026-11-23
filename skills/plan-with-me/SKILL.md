@@ -15,11 +15,13 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this workflow's
 Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for user-facing text.
 
 The interactive adapter over the [shared planning protocol](../shared/RESEARCH-PLAN.md#shared-planning-interface).
-It researches the repository, finds out what the user wants through focused
-questions, and saves the plan and tasks. Read the protocol first, then the
-[planning craft](../shared/PLANNING-CRAFT.md), the pinned
-[plan protocol](../autoresearch/upstream/plan.md) and the
-[interactive adaptations](../shared/RESEARCH-PLAN.md#interactive-planning-plan-with-me).
+Use its research and persistence method, with the user participating in
+consequential decisions. Read that authority contract first, then the
+[planning craft](../shared/PLANNING-CRAFT.md) and pinned
+[plan protocol](../autoresearch/upstream/plan.md); adapt its phases with the interview
+steps below. Already-loaded sources need no reread, including a contract supplied
+inline by the host. Do not invoke Plan For Me as another coordinator or repeat its
+discovery pass.
 Follow the [shared contract](../shared/COMMON-CONTRACT.md) and
 [plan handoff](../shared/PLAN-HANDOFF.md). For cancelled tasks, blockers, pending-task
 lists, validation performance, simpler test cleanup, companion frontends, onboarding
@@ -45,11 +47,15 @@ For recovery, changed baselines or stale audits, apply the shared
 
 ## Challenge mode
 
-For “grill me”, “challenge this plan” or the compatibility `/grill_me` command,
-read [the questioning protocol](../grill-me/SKILL.md) on demand. This is a mode of
-Plan With Me, not a second planning workflow. Its decision tree drives the order:
-ask only frontier decisions whose prerequisites are settled, and work in rounds.
-No exhaustive interrogation or repeat approval of settled answers.
+For “grill me”, “challenge this plan”, the compatibility `/grill_me` command or
+`Selected mode: challenge`, read [the questioning protocol](../grill-me/SKILL.md).
+Otherwise load it only when that depth is useful or requested. Think wide privately
+to expose alternatives; its decision tree challenges important assumptions, failure
+cases and costly choices. This is a mode of Plan With Me, not a second planning
+workflow. Ask only frontier decisions whose prerequisites are settled, in rounds.
+This interview's round size, scope and stop rules override grill's exhaustive
+questioning and generic final implementation-approval prompt. Do not ask every
+possible question or repeat approval of settled answers.
 
 ## Learn enough to ask a useful question
 
@@ -61,6 +67,11 @@ README/PRD/spec/ADR and backlog owners; do not perform a full docs-sync bootstra
 before asking. Distinguish implemented behavior from intended behavior. Facts are
 yours to find; never ask for something the repository can answer, or reopen a
 settled answer without new contradictory evidence.
+
+Turn the initial prompt into a concise working brief: intended users, problem,
+desired outcome, scope/non-goals, constraints and observable success. Separate
+explicit requirements from assumptions and unresolved choices; improve clarity
+without expanding the user's goal. Reuse this brief in the existing plan owner.
 
 Size the work and track its [consequential uncertainty](../shared/PLANNING-CRAFT.md#consequential-uncertainty).
 A fully specified request needs no interview: briefly explain that no material
@@ -91,13 +102,15 @@ or "what do you think?", propose something concrete. Allow a free-form answer.
 Work in rounds using the [uncertainty loop](../shared/PLANNING-CRAFT.md#consequential-uncertainty).
 Ask the highest-impact ready question, then wait. If presenting a few independent
 ready decisions together, number them and make each choice and its trade-off
-explicit. Apply the linked loop's round-scoped acceptance rule to clear recommended
-batches; clarify only unresolved choices. A question whose prerequisites are open
+explicit. Apply the linked loop's round-scoped acceptance rule to a bare “yes” or
+LGTM, including clear recommended batches; clarify only genuinely ambiguous choices.
+A question whose prerequisites are open
 belongs to a later round.
 
 After every answer, update only the uncertainty it resolves, investigate changed
 repository facts, and ask the next consequential question. One answered question is
-not a finish condition. Across a bulk batch, ask a shared constraint once and apply
+not a finish condition; do not complete a speculative plan before learning intent.
+Across a bulk batch, ask a shared constraint once and apply
 its answer to all affected tasks; keep unrelated ready work independent. Cover the
 ground in [planning craft](../shared/PLANNING-CRAFT.md#cover-the-ground-not-a-script)
 only where it is unresolved and relevant.
@@ -107,15 +120,25 @@ acceptable outcome. When an answer contradicts accepted intent or the code, expl
 the conflict and ask which direction governs; preserve history rather than silently
 replacing it. `You decide` delegates that choice: recommend and record a compatible
 decision inside the stated constraints as the planner's call. It does not grant
-unrelated execution or publication authority. `Skip` leaves the question open;
-`stop` ends questioning and preserves answered progress. Silence is neither an
-answer nor acceptance. In scheduled/noninteractive runs, report the single
-highest-value question and leave it pending; do not fabricate replies or poll.
+unrelated execution or publication authority. A skipped choice stays open; a
+delegated choice becomes a planner call. Silence is neither an answer nor
+acceptance. In scheduled/noninteractive runs, report the single highest-value
+question and leave it pending; do not fabricate replies or poll.
+
+Stop questioning once relevant intent and concrete acceptance are actionable,
+with no fixed question count or filler for fully specified requests, or when the
+user says finish/stop (including confirmation questions). Preserve corrections
+and reuse accepted decisions on resume; keep remaining questions only on affected
+work.
 
 ## Save answers and finish the plan
 
-Save meaningful decisions in their existing document owners; keep proposals and
-remaining questions scoped to affected work. Run the
+Save answers, evidence, decisions and task records in one coherent affected batch
+in their existing owners; meaningful interim answers may be saved for continuity.
+Do not require another interview or a complete documentation pass per answer.
+Distinguish the user's choices from delegated engineering choices, proposals and
+unverified assumptions. A refined prompt alone is not the writable-mode deliverable;
+in no-write mode return it in chat instead. Run the
 [builder check](../shared/PLANNING-CRAFT.md#builder-check-before-handoff) and resolve
 material findings before publication. Reuse the answers and evidence already gathered.
 

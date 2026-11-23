@@ -489,6 +489,51 @@ class SkillTraceEvalTests(unittest.TestCase):
         self.assertFalse(result['ok'])
         self.assertTrue(any('missing required' in failure for failure in result['failures']))
 
+    def test_delivery_plain_no_push_and_shared_index_scenarios(self):
+        # The canonical skill owns routing; selected clauses describe these
+        # synthetic scenarios, not a runtime mode parser or model adherence.
+        owner = ROOT / 'skills/git-commit-push/SKILL.md'
+        text = ' '.join(owner.read_text().lower().split())
+        self.assertIn('a plain scoped delivery does not require these exceptional playbooks', text)
+        self.assertIn('no push means no remote writes', text)
+        self.assertIn('before staging into a shared or pre-populated index', text)
+        source = 'skills/git-commit-push/SKILL.md'
+        safety = 'skills/git-commit-push/references/shared-worktree-safety.md'
+        trace = {'skill': 'git-commit-push', 'events': [
+            {'type': 'read', 'path': source},
+            {'type': 'command', 'command': 'git status --short --branch', 'exit': 0},
+            {'type': 'command', 'command': 'git diff --stat', 'exit': 0},
+            {'type': 'command', 'command': 'git add -- src/parser.py', 'exit': 0},
+            {'type': 'command', 'command': 'git diff --cached --check', 'exit': 0},
+            {'type': 'command', 'command': 'git commit -m "Fix parser"', 'exit': 0},
+            {'type': 'final', 'text': 'COMMITTED — local checkpoint, no remote writes.'},
+        ]}
+        spec = load(SPECS / 'git-commit-push.json')
+        self.assertTrue(evaluate(trace, spec)['ok'])  # No exceptional reads needed.
+        no_push = json.loads(json.dumps(spec))
+        no_push['forbid'].append({'event': 'command',
+            'command': r'\bgit\b.*\bpush\b|\bgh\s+pr\s+(?:create|merge)\b'})
+        self.assertTrue(evaluate(trace, no_push)['ok'])
+        for command in ('git push team HEAD:refs/heads/feature',
+                        'git -C /fixture push team HEAD:main',
+                        'gh pr create --base main', 'gh pr merge 52'):
+            bad = json.loads(json.dumps(trace))
+            bad['events'].insert(-1, {'type': 'command', 'command': command, 'exit': 0})
+            with self.subTest(command=command):
+                self.assertFalse(evaluate(bad, no_push)['ok'])
+        shared = json.loads(json.dumps(spec))
+        shared['require'].append({'event': 'read', 'path': safety,
+            'before_first': {'event': 'command',
+                             'command': r'\bgit\s+(?:add|read-tree|apply|commit)\b'}})
+        self.assertFalse(evaluate(trace, shared)['ok'])  # Missing prerequisites.
+        late = json.loads(json.dumps(trace))
+        late['events'].insert(-1, {'type': 'read', 'path': safety})
+        self.assertFalse(evaluate(late, shared)['ok'])
+        ready = json.loads(json.dumps(trace))
+        ready['events'].insert(3, {'type': 'read', 'path': safety})
+        result = evaluate(ready, shared)
+        self.assertTrue(result['ok'], result['failures'])
+
     def test_delivery_trace_refuses_destructive_history(self):
         spec = load(SPECS / 'git-commit-push.json')
         for command in ('git reset --hard', 'git -C . push --force', 'git clean -fd'):

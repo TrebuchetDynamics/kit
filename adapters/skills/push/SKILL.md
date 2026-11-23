@@ -1,6 +1,6 @@
 ---
 name: push
-description: "Save this checkout, pull main, then push main."
+description: "Save this checkout, pull and deliver to main."
 disable-model-invocation: true
 ---
 

@@ -104,6 +104,9 @@ sys.exit(5 if os.environ.get('VERIFY_FAIL')==sys.argv[2] else 0)
         for option in ('--sources-only', '--setup', '--enable'): self.assertIn(option, calls[1])
         self.assertEqual([c[2] for c in calls[2:]], ['default', 'sample'])
         self.assertTrue(all(c[3:5] == ['kit', 'finalize'] for c in calls[2:]))
+        receipt = json.loads(result.stdout.splitlines()[-1])
+        self.assertEqual(receipt['status'], 'complete')
+        self.assertEqual(receipt['gateway_restart'], 'not_requested')
 
     def test_failure_keeps_finalization_and_nonzero_status(self):
         self.env['CHILD_FAIL'] = '9'
@@ -111,6 +114,9 @@ sys.exit(5 if os.environ.get('VERIFY_FAIL')==sys.argv[2] else 0)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual([c[2] for c in self.calls() if c[0]=='hermes'], ['default','sample'])
         self.assertIn('incomplete', result.stdout.lower())
+        receipt = json.loads(result.stdout.splitlines()[-1])
+        self.assertEqual(receipt['gateway_restart'], 'not_requested')
+        self.assertIn('failed stages', receipt['error'].lower())
 
     def test_verification_failure_does_not_claim_complete(self):
         self.env['VERIFY_FAIL'] = 'sample'
@@ -123,6 +129,9 @@ sys.exit(5 if os.environ.get('VERIFY_FAIL')==sys.argv[2] else 0)
         result = self.run_setup('--bundle-only', '--no-reload')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('--bundle-only', self.calls()[1])
+        receipt = json.loads(result.stdout.splitlines()[-1])
+        self.assertEqual(receipt['gateway_restart'], 'not_requested')
+        self.assertIn('deferred by --no-reload', receipt['gateway_restart_action'])
         for call in self.calls()[2:]:
             self.assertIn('--bundle-only', call)
             self.assertIn('--no-reload', call)
