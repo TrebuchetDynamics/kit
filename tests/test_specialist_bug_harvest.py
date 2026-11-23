@@ -38,7 +38,7 @@ class SpecialistBugHarvestTests(unittest.TestCase):
         for rule in ('without arguments after an analysis such as `/state-machine`',
                      'Reuse the state map and evidence', 'not local repairs',
                      'No extra prompt, report file or repeated analysis',
-                     'Recheck current source and ownership',
+                     'Recheck the findings against current source and ownership',
                      "prior skill's read-only default"):
             self.assertIn(rule, text)
         for obsolete in ('findings as the repair scope', 'invocation requests local fixes',
@@ -48,9 +48,9 @@ class SpecialistBugHarvestTests(unittest.TestCase):
         self.assertIn('bounded publication scope', docs)
         self.assertNotIn('uses the preceding response as the bounded repair scope', docs)
         caller = prose(ROOT / 'skills/state-machine/SKILL.md')
-        self.assertIn('bounded publication scope', caller)
+        self.assertIn('Default publication does not implement findings locally', caller)
         self.assertNotIn('before fixing them', caller)
-        self.assertIn('This analysis itself remains read-only', caller)
+        self.assertIn('In no-write mode, deliver the analysis inline and stop', caller)
 
     def test_verified_defects_need_reproducer_behavior_impact_and_regression(self):
         text = prose(SKILL)

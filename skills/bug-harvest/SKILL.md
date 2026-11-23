@@ -27,7 +27,7 @@ live-action and human-only limits in every mode.
 When invoked without arguments after an analysis such as `/state-machine`, use
 that response's findings as the bounded publication scope, not local repairs.
 No extra prompt, report file or repeated analysis is required. Reuse the state map and evidence
-instead of starting a fresh repository hunt. Recheck current source and ownership;
+instead of starting a fresh repository hunt. Recheck the findings against current source and ownership;
 a polished report is not proof of a bug. Hypotheses remain leads until verified.
 A prior skill's read-only default does not make this invocation read-only, but
 explicit continuing user no-write and delivery limits remain binding.

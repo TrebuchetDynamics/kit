@@ -279,8 +279,12 @@ Retained Hermes terminal maintenance names and private state identities do not r
 
 [State Machine](../skills/state-machine/SKILL.md) maps lifecycle rules scattered
 across functions, fields and services. It reports state predicates, transition
-rules, source-backed counterexamples and coverage gaps. The default is read-only
-and inline; it neither repairs code nor writes task or report files.
+rules, source-backed counterexamples and coverage gaps, then publishes all supported,
+buildable, uncovered outcomes in the same invocation through
+[Plan Handoff](../skills/shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff).
+It reconciles existing/owned work, groups findings that share a fix, previews in chat
+without waiting for selection or approval, reports verified issue links and stops.
+The default route neither repairs code locally nor starts Orbi.
 
 | Host | Invocation |
 | --- | --- |
@@ -293,13 +297,23 @@ In Pi, this is a native skill command, not a `/state-machine` extension alias.
 After updating the installed package, reload skills in the host before use.
 
 ```text
+/skill:state-machine inspect checkout retries and cancellation
 /skill:state-machine find all implicit state machines in this app; no writes
-/skill:state-machine inspect checkout retries and cancellation; read-only
+/skill:state-machine inspect checkout retries and cancellation; report only
 ```
 
-### Publish the findings without another prompt
+Each actionable finding needs the trigger, initial and resulting state, violated
+invariant, source location and regression sequence. Undecided product rules are held
+with the missing input; independent qualifying findings continue. Zero qualifying
+findings means zero new issues. Explicit report-only, read-only, no-write or dry-run
+returns findings inline with no GitHub, document or scratch writes. No-dispatch,
+ownership, pauses and human-only gates still apply. Publication failures use Plan
+Handoff's unsaved/partial receipts and reconciliation, not a replacement queue.
 
-After the analysis, invoke Bug Harvest in the same conversation. In Pi:
+### Publish contextual findings
+
+After a state-machine report, a bare Bug Harvest invocation in the same conversation
+uses its findings as the bounded publication scope. In Pi:
 
 ```text
 /skill:bug-harvest
@@ -308,9 +322,9 @@ After the analysis, invoke Bug Harvest in the same conversation. In Pi:
 Hermes also accepts `/bug-harvest`, Claude Code uses `/kit:bug-harvest`, and Codex
 uses `$kit:bug-harvest`. No finding IDs, copied report or extra prompt are required:
 the [contextual handoff](../skills/bug-harvest/SKILL.md#findings-from-the-preceding-response)
-uses the preceding response as the bounded publication scope. It reuses the state
-map and evidence, then verifies each defect's reproducer, observed/expected behavior,
-impact and regression check. It does not start local repairs.
+reuses the state map and evidence, then verifies each defect's reproducer,
+observed/expected behavior, impact and regression check. It does not start local
+repairs, and it reconciles any issues already published by State Machine.
 
 An ordinary `/bug-harvest AREA` likewise analyzes and publishes in one invocation.
 Bug Harvest reconciles existing work, groups shared fixes and publishes every
@@ -320,10 +334,25 @@ end the invocation. Uncertain findings are held with reasons while independent w
 continues. Zero qualifying findings means zero new issues.
 
 Explicit report-only, no-write or dry-run returns findings inline without writes.
-Explicit no-dispatch, ownership and human gates remain binding; State Machine's
-own read-only default does not make the later invocation read-only. Local fixes
-require an explicitly requested and authorized fix/apply mode with the existing
-ownership, review and PR gates. Publication does not activate Orbi or prove delivery.
+Explicit no-dispatch, ownership and human gates remain binding; a prior read-only
+analysis does not by itself impose a continuing no-write limit. Publication does
+not activate Orbi or prove delivery.
+
+### Explicit local fixes
+
+An explicitly requested and authorized fix/apply mode uses Bug Harvest with the map
+and findings as its bounded repair scope in that invocation, separate from default
+issue publication. To request repairs after a report, explicitly name the fix mode:
+
+```text
+/skill:bug-harvest fix these findings locally
+```
+
+The [authorized local fix branch](../skills/bug-harvest/SKILL.md#authorized-local-fixes)
+verifies and fixes candidates one at a time, adds regression protection and runs
+affected checks. It preserves ownership, review, PR and human-only gates, and does
+not automatically commit or push. Explicit continuing user no-write and live-action
+restrictions remain binding.
 
 Planning, implementation and review use the shared contract's stateful-work trigger.
 Bug Harvest, architecture review and Test Optimizer also link the

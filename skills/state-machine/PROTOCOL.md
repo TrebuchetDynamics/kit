@@ -1,8 +1,8 @@
 # State-machine analysis
 
 This method supplies analysis, not authority. The caller owns scope, write limits,
-task state, review gates and delivery. Direct invocation uses the read-only
-[State Machine skill](SKILL.md). Other workflows read this file as reference,
+task state, review gates and delivery. Direct invocation uses the
+[State Machine skill](SKILL.md) and its mode-specific handoff. Other workflows read this file as reference,
 without invoking a second command or inheriting another workflow's default actions.
 
 ## 1. Bound the search
