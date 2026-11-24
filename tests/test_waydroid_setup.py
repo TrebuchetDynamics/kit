@@ -23,8 +23,14 @@ session = session_file.read_text() if session_file.exists() else ('gui' if mode.
 if name == 'timeout':
     if mode == 'gui-stop-hang' and args[1:] == ['waydroid', 'session', 'stop']:
         sys.exit(124)  # deterministic timeout contract, no sleeping/hung test
-    os.execv(str(root / 'real-timeout'), ['timeout', *args])
+    # Preserve the installed name: multicall coreutils reject renamed links.
+    os.execv(os.environ['REAL_TIMEOUT'], ['timeout', *args])
 elif name == 'busctl':
+    if args == ['--system', '--auto-start=no', '--timeout=10', 'call',
+                'org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus',
+                'NameHasOwner', 's', 'id.waydro.Container']:
+        if mode == 'manager-owner-failure': sys.exit(1)
+        print('b false' if mode == 'manager-absent' or (root / 'manager-lost').exists() else 'b true'); sys.exit(0)
     assert args == ['--system', '--auto-start=no', '--timeout=10', '--json=short', 'call',
                     'id.waydro.Container', '/ContainerManager', 'id.waydro.ContainerManager', 'GetSession']
     if mode == 'gui-bus-failure' and (root / 'stop-attempted').exists(): sys.exit(1)
@@ -34,8 +40,9 @@ elif name == 'busctl':
         session_file.write_text('stopped')
     data = {} if session == 'stopped' else {
         'user_id': '2000' if session == 'foreign' else '1000',
-        'wayland_display': 'wayland-kit' if session == 'managed' else 'wayland-0',
+        'wayland_display': 'wayland-kit' if session == 'managed' or mode == 'gui-display-conflict' else 'wayland-0',
         'pid': '123' if session != 'changed' else '456'}
+    if mode == 'gui-missing-owner': data.pop('user_id', None)
     with (root / 'calls').open('a') as f:
         f.write('bus-reply ' + ('session' if data else 'empty') + '\n')
     print(json.dumps({'type': 'a{ss}', 'data': [data]}))
@@ -54,6 +61,8 @@ elif name == 'sudo':
     if args == ['-n', '-v']: sys.exit(0)
     if args[0] == '--': args = args[1:]
     os.execvp(args[0], args)
+elif name == 'flock' and mode == 'gui-lock-manager-loss':
+    (root / 'manager-lost').touch()
 elif name == 'flock' and mode in ['gui-lock-race', 'gui-lock-same-uid-race']:
     session_file.write_text('foreign' if mode == 'gui-lock-race' else 'changed')
 elif name == 'flock' and mode == 'peer-completed':
@@ -159,7 +168,6 @@ class WaydroidSetupTests(unittest.TestCase):
         self.bin.mkdir()
         for name in ['bash', 'cat', 'python3', 'timeout', 'readlink', 'awk', 'tr', 'sed', 'grep', 'mkdir', 'flock', 'sleep', 'mktemp', 'rm', 'install']:
             (self.bin / name).symlink_to(shutil.which(name))
-        (self.base / 'real-timeout').symlink_to(shutil.which('timeout'))
         for name in ['timeout', 'flock']:
             (self.bin / name).unlink()
             (self.bin / name).write_text(FAKE)
@@ -182,7 +190,7 @@ class WaydroidSetupTests(unittest.TestCase):
             p.chmod(0o755)
         self.env = dict(os.environ, HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / '.config'),
                         XDG_DATA_HOME=str(self.home / '.local/share'), XDG_RUNTIME_DIR=str(self.run),
-                        PATH=str(self.bin), FIXTURE=str(self.base))
+                        PATH=str(self.bin), FIXTURE=str(self.base), REAL_TIMEOUT=shutil.which('timeout'))
 
     def invoke(self, *args, mode='', cwd=None):
         result = subprocess.run([str(self.script), *args], env=dict(self.env, MODE=mode),
@@ -211,6 +219,18 @@ class WaydroidSetupTests(unittest.TestCase):
         return {p: p.read_bytes() for base in [self.state, key.parent]
                 for p in base.rglob('*') if p.is_file()}
 
+    def test_timeout_fixture_preserves_native_executable_name(self):
+        native = self.base / 'native/timeout'
+        native.parent.mkdir()
+        native.write_text('#!/bin/sh\n'
+                          '[ "${0##*/}" = timeout ] || exit 126\n'
+                          'echo used > "$FIXTURE/native-timeout-used"\n'
+                          'exec "$NATIVE_TIMEOUT" "$@"\n')
+        native.chmod(0o755)
+        self.env.update(NATIVE_TIMEOUT=self.env['REAL_TIMEOUT'], REAL_TIMEOUT=str(native))
+        self.assert_ok(self.invoke('--check'))
+        self.assertTrue((self.base / 'native-timeout-used').exists())
+
     def test_default_graphical_transfer_and_retry_preserve_device(self):
         before = self.complete_device()
         result = self.invoke(mode='gui-release-delay')
@@ -238,21 +258,39 @@ class WaydroidSetupTests(unittest.TestCase):
         self.assertEqual(before, {p: p.read_bytes() for p in before})
 
     def test_check_plans_graphical_transfer_without_mutation(self):
+        self.complete_device()
+        before = {p: p.read_bytes() for p in self.home.rglob('*') if p.is_file()}
         result = self.invoke('--check', mode='gui')
         self.assert_ok(result)
         self.assertIn('Planned same-user graphical transfer', result.stdout)
         self.assertNotIn('sudo ', self.calls())
         self.assertNotIn('session stop', self.calls())
         self.assertNotIn('enable --now', self.calls())
-        self.assertFalse((self.home / '.local').exists())
+        self.assertNotIn('waydroid status', self.calls())
+        self.assertEqual(before, {p: p.read_bytes() for p in self.home.rglob('*') if p.is_file()})
+
+    def test_check_absent_or_unavailable_manager_never_activates_it(self):
+        self.complete_device()
+        for mode in ['manager-absent', 'manager-owner-failure']:
+            with self.subTest(mode=mode):
+                result = self.invoke('--check', mode=mode)
+                if mode == 'manager-absent':
+                    self.assert_ok(result)
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('repair D-Bus', result.stderr)
+                self.assertNotIn('waydroid status', self.calls())
+                self.assertNotIn('sudo ', self.calls())
+                self.assertNotIn('enable --now', self.calls())
 
     def test_transfer_admission_races_and_conflicts_never_stop(self):
         self.complete_device()
         for mode in ['gui-missing-owner', 'gui-display-conflict', 'gui-no-weston',
                      'gui-sudo-fail', 'gui-lock-race', 'gui-lock-same-uid-race',
-                     'gui-sudo-race', 'gui-malformed-bus', 'gui-foreign-unit', 'gui-unit-activating']:
+                     'gui-sudo-race', 'gui-malformed-bus', 'gui-foreign-unit', 'gui-unit-activating',
+                     'gui-lock-manager-loss']:
             with self.subTest(mode=mode):
-                for name in ['session', 'sudo-admitted']:
+                for name in ['session', 'sudo-admitted', 'manager-lost']:
                     (self.base / name).unlink(missing_ok=True)
                 (self.base / 'calls').write_text('')
                 result = self.invoke(mode=mode)
@@ -260,6 +298,7 @@ class WaydroidSetupTests(unittest.TestCase):
                 self.assertNotIn('waydroid session stop', self.calls())
                 self.assertNotIn('enable --now', self.calls())
         (self.base / 'session').unlink(missing_ok=True)
+        (self.base / 'manager-lost').unlink(missing_ok=True)
         (self.base / 'calls').write_text('')
         (self.run / 'wayland-kit').touch()
         result = self.invoke(mode='gui')

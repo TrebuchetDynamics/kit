@@ -68,7 +68,9 @@ active owned `kit-waydroid.service`. A stopped device starts as needed; a workin
 managed session is not stopped or restarted on repeat.
 
 `--check` reports a planned same-user graphical transfer without sudo, writes,
-stops or service changes. Default setup finishes capability, image/data, ownership,
+stops or service changes. Classification uses non-activating system-bus queries,
+not `waydroid status` (whose D-Bus proxy can activate a stopped manager).
+Default setup finishes capability, image/data, ownership,
 package and sudo checks before disrupting the GUI. Under the existing setup lock
 it re-reads the session UID, display and process identity immediately before one
 bounded, **unprivileged** `waydroid session stop`. Changed identity refuses the stop.

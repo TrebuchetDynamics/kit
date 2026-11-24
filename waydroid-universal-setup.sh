@@ -200,7 +200,7 @@ PYBUS
 classify_session() {
     SESSION_KIND=stopped
     SESSION_ID=''
-    local fragment active=false unit_state status owner display session_state
+    local fragment active=false unit_state manager_owner owner display pid
     fragment=$(timeout 10 systemctl --user show "$UNIT" --property=FragmentPath --value) || fail 'Cannot inspect user unit ownership; repair user systemd before setup.'
     if [[ -n $fragment && $fragment != "$USER_UNITS/$UNIT" ]]; then
         fail "Foreign loaded $UNIT ($fragment); resolve the unit conflict before setup."
@@ -214,27 +214,32 @@ classify_session() {
         inactive|failed) ;;
         *) fail "Ambiguous user service state ($unit_state); inspect $UNIT before setup." ;;
     esac
-    if command -v waydroid >/dev/null; then
-        status=$(timeout 10 waydroid status) || fail 'Cannot inspect current Waydroid session; repair it before setup.'
-        session_state=$(sed -n 's/^Session:[[:space:]]*//p' <<< "$status")
-        owner=$(sed -n 's/^Session user:.*(\([0-9]*\)).*/\1/p' <<< "$status")
-        display=$(sed -n 's/^Wayland display:[[:space:]]*//p' <<< "$status")
-        case "$session_state" in
-            RUNNING)
-                [[ $owner == "$(id -u)" && -n $display && $display != None ]] || fail "Foreign or ambiguous Waydroid session (uid=${owner:-missing}); coordinate with its operator before setup."
+    # `waydroid status` uses an auto-activating D-Bus proxy, even in --check.
+    # Probe ownership without activation, then read the manager directly. Upstream
+    # cannot have an initialized session without both its config and rootfs.
+    manager_owner=$(timeout 10 busctl --system --auto-start=no --timeout=10 call \
+        org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus \
+        NameHasOwner s id.waydro.Container) || fail 'Cannot inspect system bus ownership; repair D-Bus before setup.'
+    case "$manager_owner" in
+        'b true')
+            if [[ -f $STATE/waydroid.cfg && -d $STATE/rootfs ]]; then
                 SESSION_ID=$(manager_session) || fail 'Cannot verify Waydroid manager GetSession; inspect the container journal and retry setup.'
-                [[ $SESSION_ID == "$owner|$display|"* ]] || fail 'Waydroid status and manager identity disagree; inspect the session and retry setup.'
-                if [[ $display == wayland-kit ]]; then
-                    [[ $active == true && $fragment == "$USER_UNITS/$UNIT" ]] || fail 'Conflicting wayland-kit display without an owned active user service; resolve it before setup.'
-                    SESSION_KIND=managed
-                else
-                    [[ $active == false ]] || fail 'User service is active alongside a graphical session; inspect and resolve the conflict before setup.'
-                    SESSION_KIND=graphical
-                fi ;;
-            STOPPED)
-                [[ -z $owner && -z $display && $active == false ]] || fail 'Ambiguous stopped session or active user service; inspect ownership before setup.' ;;
-            *) fail 'Unknown Waydroid session state; inspect waydroid status before setup.' ;;
-        esac
+            fi ;;
+        'b false') ;;
+        *) fail 'Ambiguous Waydroid manager ownership; inspect the system bus before setup.' ;;
+    esac
+    if [[ -n $SESSION_ID ]]; then
+        IFS='|' read -r owner display pid <<< "$SESSION_ID"
+        [[ $owner == "$(id -u)" ]] || fail "Foreign or ambiguous Waydroid session (uid=${owner:-missing}); coordinate with its operator before setup."
+        if [[ $display == wayland-kit ]]; then
+            [[ $active == true && $fragment == "$USER_UNITS/$UNIT" ]] || fail 'Conflicting wayland-kit display without an owned active user service; resolve it before setup.'
+            SESSION_KIND=managed
+        else
+            [[ $active == false ]] || fail 'User service is active alongside a graphical session; inspect and resolve the conflict before setup.'
+            SESSION_KIND=graphical
+        fi
+    else
+        [[ $active == false ]] || fail 'Ambiguous stopped session or active user service; inspect ownership before setup.'
     fi
     if [[ $SESSION_KIND != managed ]]; then
         local socket="${XDG_RUNTIME_DIR}/wayland-kit" path
