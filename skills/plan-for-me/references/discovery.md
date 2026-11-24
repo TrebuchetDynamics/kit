@@ -70,9 +70,32 @@ confidence. Label them:
 Never promote `INFERRED` to verified fact. Absence from one inspected file is not
 absence from the repository.
 
+### Stop or widen
+
+For open-ended discovery, evaluate the proposed frontier after each consequential
+seam:
+
+1. Verify that each selected outcome has source evidence, observable acceptance,
+   and an existing-issue and active-ownership check. Reuse covering issues rather
+   than manufacture new findings, even when that means zero new tasks.
+2. List remaining uncertainties and whether each could change selection, priority,
+   prerequisites, scope or safety. Name the evidence and area that would settle
+   each material uncertainty.
+3. If an uncertainty could block or displace the batch, inspect the relevant area
+   before selecting affected work. Do not stop on unresolved material risk to the
+   selected work. If required evidence is unavailable, keep affected work pending
+   with the exact missing input and resume condition; continue independent work.
+4. Stop widening when the frontier is supported and no identified open choice
+   could change it. Leave unrelated packages unassessed. This is a decision bound,
+   not a file or time quota, and not repository-wide certification.
+
+Record the boundary and stop/widen rationale in the [report](#report). This bounds
+open-ended discovery, not the investigation needed for the
+[full requested batch](../../shared/RESEARCH-PLAN.md#full-requested-batch).
+
 ## Build the project model
 
-State, briefly:
+State, briefly, within the inspected boundary:
 
 - what the product is for and who uses it;
 - its most important user journeys;
@@ -83,7 +106,8 @@ State, briefly:
 - which problems impede further delivery;
 - which next improvements offer the greatest return.
 
-Trace each important requirement:
+Within the inspected boundary, trace each important requirement that supports the
+frontier or could change its selection:
 
 `Goal -> Specification -> Implementation -> Verification -> Task`
 
@@ -195,6 +219,9 @@ issue links to the same coordinator.
 Keep the final report concise and evidence-bound:
 
 - **Project understanding** — product, architecture, maturity.
+- **Inspection boundary** — inspected projects/seams and source paths, remaining
+  uncertainties and their effect on selection, and the stop/widen rationale.
+  Report other areas as uninspected, not free of gaps.
 - **Accepted goals** — existing goals plus any derived engineering goals, marked as
   planner decisions.
 - **Most important gaps** — ranked, with evidence and confidence.
