@@ -17,7 +17,7 @@ arguments literally. Default `setup --dry-run` previews start without writes;
 `setup --prepare-only --dry-run` previews only preparation. Reject public
 `setup --resume-setup` before any helper invocation/mutation unless `--prepare-only`
 is explicit; show `setup --prepare-only --resume-setup` with the original arguments.
-Help/status never implicitly prepare or start. See the canonical mapping in
+Help/status/version never implicitly prepare or start. See the canonical mapping in
 [SKILL.md](../SKILL.md#common-path).
 
 **Direct Python helper syntax** below is unchanged: helper `setup` is always
@@ -26,7 +26,7 @@ names in the technical sections below refer to this direct interface, not public
 setup's default mapping.
 
 ```sh
-python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|stop|help] [all] \
+python3 -B <loaded-skill>/scripts/orbi_control.py [status|version|setup|start|update|stop|help] [all] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
   [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
   [--resume-setup] [--harness {pi-bolt,pi}] [--stop]
@@ -38,6 +38,18 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|setup|start|update|sto
   platform. `status all` also needs no repository context; bare/current-repo `status`
   still binds a repository and reports an absent deployment. Help accepts and
   ignores `--repo-dir`, `--config`, `--dry-run` and all setup inputs.
+- `version [--repo-dir PATH] [--config PATH] [--json]` binds one repository using
+  the same safe discovery as status, then reads only deployment identity and engine
+  evidence. Linux and macOS return `deployment.config`, `deploy_home`, `unit_name`
+  and `engine` (version, observed revision, verification state, provenance/reason
+  and selected source). `deployment.state=configured` says nothing about scheduling.
+  No deployment returns `deployment.state=absent` and `engine.state=unconfigured`;
+  unverifiable pin/manifest/clean source returns unknown, never the global CLI version.
+  Text and JSON use the same evidence as status, without `bootstrap_cli`. There is
+  no full-status call, bootstrap execution, scheduler/worker/queue/auth/network probe,
+  latest-release lookup, lock or write. `version all` and mutation/bootstrap flags
+  (including `--dry-run`) are refused before probes. Missing explicit, foreign and
+  ambiguous configs retain status binding errors and repair actions, with no fallback.
 - `--repo-dir` names the repository checkout; the helper resolves the canonical
   worktree, then verifies its GitHub origin against the native config.
 - `--config` names one existing native `orbi.toml`. Without it, visible local
@@ -745,7 +757,7 @@ health substitute. `setup_busy` while scheduling/workers are active is an expect
 refusal, not evidence of extra instances. Any repair still requires its own
 scope/authority; this inventory authorizes no scheduler mutation.
 
-macOS supports status and help; setup/start/stop are refused before side effects.
+macOS supports status, version and help; setup/start/update/stop are refused before side effects.
 Other platforms support help only; lifecycle actions fail clearly. Secrets never appear in commands, output or
 error receipts.
 

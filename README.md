@@ -193,12 +193,13 @@ See [protection diagnostics](docs/github-native.md#read-protection-diagnostics-s
 One Orbi deployment owns one repository. The suite installer adds only the CLI
 (`./install.sh --only orbi`, needs `uv`); a working Orbi installation is kept.
 
-Use `/orbi [status|setup|start|update|stop|help]` in Pi or Hermes, `/kit:orbi` in Claude
+Use `/orbi [status|version|setup|start|update|stop|help]` in Pi or Hermes, `/kit:orbi` in Claude
 Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 
 | Action | Effect and boundary |
 | --- | --- |
 | Bare skill invocation or `status` | Read-only status for the repository; missing evidence is unavailable, not an empty queue. |
+| `version` | Read-only selected deployment engine release/revision and verification evidence, without full status or global CLI probes. |
 | `help` | Read-only action reference, without a repository or deployment. |
 | `setup` | Start by default: map to `start`, preparing/validating if absent, then activate only with resolved gates. Explicit invocation expresses scheduling intent. |
 | `setup --prepare-only` | Prepare source/configuration without scheduling or timer activation (direct helper `setup`). |
@@ -206,7 +207,7 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | `update` | Advance one stopped and drained deployment to the newest official release. Explicit `update --stop` authorizes pausing owned timers first, defers while workers finish and leaves scheduling stopped; unit refresh waits for the next authorized start. It is not `/update-kit`. |
 | `stop` | Disable owned timers without killing active workers; report draining while they finish. |
 
-Linux supports lifecycle changes. macOS supports status and help only.
+Linux supports lifecycle changes. macOS supports status, version and help only.
 Never run bare `orbi` to inspect: it runs a Runner tick, not status.
 
 To authorize a deployment pause and update in one command (no extra prompt):

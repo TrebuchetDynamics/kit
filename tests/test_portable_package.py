@@ -125,7 +125,7 @@ class PortablePackageTests(unittest.TestCase):
             reference = (installed / 'skills/orbi/references/lifecycle.md').read_text()
             self.assertIn('<this-skill>/scripts/orbi_control.py', canonical)
             self.assertIn('Linux is the only mutation platform', canonical)
-            self.assertIn('macOS supports status and help; setup/start/stop are refused before side effects.',
+            self.assertIn('macOS supports status, version and help; setup/start/update/stop are refused before side effects.',
                           reference)
             checkout = foreign / 'target repo'
             checkout.mkdir()
@@ -147,7 +147,7 @@ class PortablePackageTests(unittest.TestCase):
                                    cwd=foreign, capture_output=True, text=True,
                                    timeout=60, env=sandbox)
             self.assertEqual(usage.returncode, 0, usage.stderr)
-            self.assertIn('[status|setup|start|update|stop|help]', usage.stdout)
+            self.assertIn('[status|version|setup|start|update|stop|help]', usage.stdout)
             before = sorted(path.relative_to(checkout) for path in checkout.rglob('*'))
             status = subprocess.run(
                 [sys.executable, '-B', str(helper), 'status',
@@ -168,6 +168,23 @@ class PortablePackageTests(unittest.TestCase):
                              before, 'status wrote into the target repository')
             self.assertEqual(list(home.rglob('.orbi*')), [], 'status staged a deployment')
             self.assertEqual(list(state.rglob('*')), [], 'status installed a deployment')
+
+            # The new engine-only action also works from the actual portable archive.
+            version = subprocess.run(
+                [sys.executable, '-B', str(helper), 'version',
+                 '--repo-dir', str(checkout), '--json'],
+                cwd=foreign, capture_output=True, text=True, timeout=30, env=sandbox)
+            self.assertEqual(version.returncode, 0, version.stdout + version.stderr)
+            report = json.loads(version.stdout)
+            self.assertEqual(report['action'], 'version')
+            self.assertEqual(report['repo'], 'example/project')
+            self.assertEqual(report['deployment']['state'], 'absent')
+            self.assertEqual(report['deployment']['engine']['state'], 'unconfigured')
+            self.assertIsNone(report['deployment']['engine']['version'])
+            self.assertNotIn('scheduler', report)
+            self.assertEqual(sorted(path.relative_to(checkout) for path in checkout.rglob('*')), before)
+            self.assertEqual(list(home.iterdir()), [], 'version wrote to HOME')
+            self.assertEqual(list(state.iterdir()), [], 'version installed a deployment')
 
             # Update preview from the shipped archive: no git/bash/lsof/host probes,
             # no checkout, locks, cache or destination directory creation.

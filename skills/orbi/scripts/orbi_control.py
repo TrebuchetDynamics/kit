@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Orbi repository lifecycle controls and read-only local host inventory.
 
-`python3 -B orbi_control.py [status|setup|start|update|stop|help] [all] [--repo-dir PATH]
+`python3 -B orbi_control.py [status|version|setup|start|update|stop|help] [all] [--repo-dir PATH]
 [--config PATH] [--dry-run] [--json]`
 
 - `status` (the default) is read-only: local reads, read-only `orbi doctor`
   and explicit `gh`/`systemctl` reads. It never fetches, installs, locks or
   creates a receipt.
+- `version` reads one deployment identity and engine release/revision without bootstrap, scheduler or network probes.
 - `status all` inventories accessible local managers/configs without repo binding,
   GitHub, provider/env/session reads or scheduler actions; partial coverage is explicit.
 - `setup` prepares one repository deployment without activating a timer:
@@ -25,7 +26,7 @@
   surplus instances); it never stops, kills or restarts a service and reports
   `draining` until active services finish.
 
-Linux owns the mutations; macOS also supports status; help works on every platform.
+Linux owns the mutations; macOS also supports status/version; help works on every platform.
 All subprocesses use an argv list (no shell). Secrets are never printed: the
 helper never copies credentials and never echoes environment values or child
 stderr. Minimum compatible Python: 3.11 (stdlib only, `tomllib` included).
@@ -3118,6 +3119,12 @@ def render(ctx, document, json_mode):
         for line in flatten(document['coverage'], 'coverage.'):
             ctx.out.write(line + '\n')
         return
+    if document.get('action') == 'version':
+        engine = document['deployment']['engine']
+        ctx.out.write(f"Repository: {document['repo']}\n")
+        ctx.out.write(f"Orbi: {engine.get('version') or 'unknown'} "
+                      f"revision={engine.get('revision') or 'unknown'} "
+                      f"({engine['state']}; {engine.get('reason', engine.get('provenance'))})\n")
     if document.get('action') == 'status' and 'repo' in document:
         engine = document.get('deployment', {}).get('engine', {})
         ctx.out.write(f"Repository: {document['repo']}\n")
@@ -3683,6 +3690,23 @@ def command_status(ctx, args):
     return status_darwin(ctx, repo, args.config)
 
 
+def command_version(ctx, args):
+    """Bind one deployment and read its engine evidence, without full status."""
+    repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
+    target = select_target(ctx, repo, args.config)
+    if target is None:
+        deployment = {'state': 'absent', 'engine': {
+            'state': 'unconfigured', 'version': None, 'revision': None,
+            'reason': 'no deployment config owns this repository'}}
+    else:
+        validate_target(target, repo)
+        deployment = {'state': 'configured', 'deploy_home': str(target.deploy_home),
+                      'unit_name': target.unit_name,
+                      **local_deployment_summary(ctx, target, metadata_only=True)}
+    return {'action': 'version', 'platform': ctx.platform, 'repo': repo.full,
+            'repo_dir': str(repo.path), 'deployment': deployment}
+
+
 def action_usage():
     return ('python3 -B orbi_control.py [' + '|'.join(ACTIONS) + '] [all] '
             '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] '
@@ -3756,6 +3780,8 @@ def command_help(ctx, args):
         'examples': [
             {'command': '/orbi status all --json',
              'outcome': 'Read-only host overview: distinct deployments/services, installed and loaded evidence, partial coverage; no queue or doctor fan-out.'},
+            {'command': '/orbi version --json',
+             'outcome': 'Identify one deployment engine read-only; no bootstrap, scheduler or network probes.'},
             {'command': '/orbi status --json', 'outcome': 'Inspect only; bare /orbi is equivalent.'},
             {'command': '/orbi setup --dry-run --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
@@ -3821,7 +3847,7 @@ def command_help(ctx, args):
                           'status or the error scheduler evidence. Offer authorized stop/drain only when '
                           'deliberately re-preparing or pausing; do not stop workers to pass a preview. '
                           'Existing valid start skips preparation.',
-            'platform': 'unsupported_platform: use Linux for authorized mutations; macOS supports status/help; '
+            'platform': 'unsupported_platform: use Linux for authorized mutations; macOS supports status/version/help; '
                         'other platforms support help only.',
             'update': 'update_busy/source_dirty/sync_engine_source_failed: stop and drain first, preserve tracked '
                       'checkout changes, and inspect the failed fetch or channel privately. Update never '
@@ -3846,7 +3872,7 @@ def command_help(ctx, args):
         'boundaries': [
             'Direct Python helper syntax (not public skill syntax): ' + action_usage(),
             'Minimum Python 3.11; the Python floor guard also applies to help.',
-            'Linux supports mutations; macOS supports status and help; other platforms '
+            'Linux supports mutations; macOS supports status, version and help; other platforms '
             'support help only.',
             'Help needs no repository or deployment and reads no deployment, config, '
             'environment values or scheduler; it runs no subprocess and performs no writes.',
@@ -3901,6 +3927,16 @@ ACTIONS = {
         'when': 'Run by default to inspect a canonical GitHub checkout; no deployment is required '
                 '(an absent deployment is reported as absent). Use status all for host inventory from any directory; '
                 'only --json may accompany all.',
+    },
+    'version': {
+        'handler': command_version,
+        'effect': 'Inspect one deployment identity, verified engine release and observed revision, '
+                  'with verification state and provenance or reason; no bootstrap or full status probes.',
+        'mutates': 'none',
+        'platforms': ['linux', 'darwin'],
+        'applies': ['--repo-dir', '--config', '--json'],
+        'when': 'Run to identify the selected deployment without scheduler, queue, authentication or network reads. '
+                'Absent is unconfigured; unverifiable release metadata is unknown, never the global CLI version.',
     },
     'setup': {
         'handler': command_setup,
@@ -3996,7 +4032,7 @@ def parse_args(argv):
                     '/orbi setup --prepare-only maps to helper setup.\nRepository-scoped Orbi lifecycle controls:\n'
                     + '\n'.join(f"{name} [{entry['mutates']}]: {entry['effect']}"
                                 for name, entry in ACTIONS.items())
-                    + ' Default: status. Linux mutates; macOS also supports status; '
+                    + ' Default: status. Linux mutates; macOS also supports status/version; '
                     'help works everywhere; minimum Python 3.11.')
     parser.add_argument('action', nargs='?', default='status',
                         metavar='[' + '|'.join(ACTIONS) + ']')
@@ -4056,6 +4092,9 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             raise ControlError('invalid_host_selection',
                                'literal all requires status with no repo/config or mutation selectors',
                                fix='use /orbi status all [--json] without selectors', exit_code=2)
+        if args.action == 'version' and args.dry_run:
+            raise ControlError('invalid_version_selection', '--dry-run does not apply to read-only version',
+                               fix='use /orbi version [--repo-dir PATH] [--config PATH] [--json]', exit_code=2)
         if args.stop and args.action not in ('update', 'help'):
             raise ControlError('invalid_stop_selection', '--stop requires update',
                                fix='omit --stop or explicitly invoke update --stop', exit_code=2)
@@ -4085,14 +4124,14 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             if ctx.platform == 'darwin':
                 raise ControlError(
                     'unsupported_platform',
-                    'macOS supports status only; setup/start/update/stop is refused before any '
+                    'macOS supports status/version only; setup/start/update/stop is refused before any '
                     'side effect',
                     fix='run `/orbi status` on macOS; use Linux for authorized lifecycle mutations',
                     exit_code=2)
             raise ControlError(
                 'unsupported_platform',
                 f'platform {ctx.platform} is unsupported; Linux mutates and macOS is '
-                'status-only',
+                'read-only (status/version)',
                 fix='run status on a supported host', exit_code=2)
         document = entry['handler'](ctx, args)
         if args.action == 'help':

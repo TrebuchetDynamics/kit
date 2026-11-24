@@ -1,6 +1,6 @@
 # Orbi API and host inventory
 
-**Use Kit `/orbi status --json` to inspect one repository, `/orbi status all --json` for observable local host services, and GitHub to establish what was delivered.** These answer different questions. In particular, bare **`/orbi`** in Kit means *status*; bare **`orbi`** in a shell runs a **real delivery tick**. Use `orbi --version` to identify a binary without running a tick.
+**Use Kit `/orbi version --json` to identify one deployment’s engine, `/orbi status --json` to inspect one repository, `/orbi status all --json` for observable local host services, and GitHub to establish what was delivered.** These answer different questions. In particular, bare **`/orbi`** in Kit means *status*; bare **`orbi`** in a shell runs a **real delivery tick**. Use `orbi --version` to identify a binary without running a tick.
 
 This reference covers Kit’s [lifecycle client](skills/orbi/SKILL.md) and the self-hosted engine at [Orbi v0.7.56](https://github.com/orbi-build/orbi/tree/v0.7.56). Check the deployed version before relying on a flag or format. The engine has no documented HTTP control plane to enumerate deployments, enqueue issues or restart workers. Its [public interface inventory](https://github.com/orbi-build/orbi/blob/v0.7.56/docs/public-contracts.mdx) defines what integrators can rely on; the optional exporter is monitoring, not that API. **Kit remains paused and live-unqualified** under its [cutover policy](docs/github-native.md#cutover). Nothing below authorizes activation.
 
@@ -10,10 +10,35 @@ Use `/orbi help` in Pi or Hermes, `/kit:orbi help` in Claude Code, or `$kit:orbi
 
 ```sh
 python3 -B skills/orbi/scripts/orbi_control.py help --json
+python3 -B skills/orbi/scripts/orbi_control.py version --repo-dir /path/to/canonical/repo --json
 python3 -B skills/orbi/scripts/orbi_control.py status --repo-dir /path/to/canonical/repo --json
 ```
 
 `--repo-dir` selects the delivery repository; `--config` selects an existing native deployment config. Distinguish `absent` (no deployment found) from `unavailable` (evidence could not be read). Configured slots, enabled timers, active timers and running services are separate observations. None proves a model answered or a PR merged.
+
+### Deployment engine version
+
+`/orbi version [--repo-dir PATH] [--config PATH] [--json]` works on Linux and macOS.
+Portable hosts forward it unchanged to one read-only helper invocation. It uses
+status's canonical repository/config discovery and safe binding rules; explicit
+missing/foreign or ambiguous targets fail with the existing error and repair,
+without fallback to another deployment.
+
+Text and JSON identify the repository, config, deploy home and unit name. JSON
+returns `action: version`, `platform`, `repo`, `repo_dir` and `deployment` with
+`state: configured` and `engine`: verified `version`, observed `revision`,
+verification `state`, `provenance` or `reason`, and `selected_source`. The engine
+uses the same pin/manifest/clean-source evidence as repository status, but omits
+`bootstrap_cli`. An observed revision alone is not a verified release. Unknown
+metadata returns `state: unknown` and a reason, not a guessed version. No deployment
+returns `deployment.state: absent` and `engine.state: unconfigured`, with null
+version/revision and a reason.
+
+This action does not run full status, a bootstrap/global CLI, latest-release
+lookup, scheduler/queue/worker/authentication/network probes, acquire locks or
+write files. There is no `version all`; mutation/bootstrap flags, including
+`--dry-run`, are refused before probes. Bare `/orbi` remains status, and upstream
+`orbi --version` still identifies only that binary, not a selected deployment.
 
 ### Deployment and per-slot status receipt
 
@@ -57,7 +82,7 @@ tick, activates/repairs anything or updates a stale installed helper.
 
 | Kit action | Effect |
 |---|---|
-| `help`, `status` | Read only. Help works on all platforms; status on Linux and macOS. |
+| `help`, `status`, `version` | Read only. Help works on all platforms; status/version on Linux and macOS. Version reads only selected deployment engine evidence. |
 | `/orbi setup` | Starts by default. Use `/orbi setup --prepare-only` for non-activating preparation. The direct Python helper’s `setup` action is prepare-only; native `orbi setup` is different. |
 | `start` | Prepares if genuinely absent, then activates the owned timers and requests a first tick if idle. Requires separate scheduling authority. |
 | `stop` | Disables owned timers; active services drain rather than being killed. It does not cancel an issue. |
