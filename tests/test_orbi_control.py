@@ -5078,6 +5078,8 @@ class PauseUpdateTests(unittest.TestCase):
                 for rule in rules:
                     if rule.get('if_exists') == 'PAUSED':
                         rule['if_exists'] = str(self.h.root / 'paused')
+                if name == 'sync':
+                    rules[0]['write'] = {str(self.h.root / 'synced'): '1'}
                 self.pause_rules(enabled={1: True}, extra=rules)
                 code, doc, err = self.update()
                 self.assertNotEqual(code, 0, (doc, err))
@@ -5088,6 +5090,10 @@ class PauseUpdateTests(unittest.TestCase):
                 if name == 'partial-disable':
                     self.assertEqual(doc['disabled_timers'], [f'{self.prefix}@1.timer'])
                     self.assertEqual(doc['steps'][-1]['unit'], f'{self.prefix}@2.timer')
+                if name == 'sync':
+                    # A failed sync may already have moved HEAD; it is not proof of no change.
+                    self.assertTrue((self.h.root / 'synced').exists())
+                    self.assertEqual(doc['engine_update'], 'sync_unverified')
                 if name not in ('sync', 'validation'):
                     self.assertFalse([c for c in self.h.calls() if 'sync-engine-source' in c['argv']])
                     self.assertEqual(self.h.config()['engine_source_track'], helper.PIN_TRACK)
@@ -5105,6 +5111,9 @@ class PauseUpdateTests(unittest.TestCase):
         self.assertEqual(doc['scheduler']['state'], 'unavailable')
         self.assertNotIn('scheduler_confirmation', doc)
         self.assertEqual(self.h.config()['engine_source_track'], 'sha:' + NEW_PIN)
+        self.assertEqual(shlex.split(doc['repair_command']), ['/orbi', 'update',
+                         '--repo-dir', str(self.h.repo), '--config',
+                         str(self.h.deploy / 'orbi.toml'), '--stop'])
         self.assert_safe_trace()
 
     def test_revalidation_under_lock_precedes_disable(self):
@@ -5503,6 +5512,33 @@ class SchedulingUpdateTests(unittest.TestCase):
         self.assertEqual(doc['engine_update'], 'updated')
         self.assertEqual(doc['activation'], 'held')
         self.assert_safe_trace()
+
+    def test_stop_post_validation_failure_text_preserves_pause_choice(self):
+        self.pause_rules(extra=[{'tool': 'systemctl', 'argv_contains': ['list-jobs'],
+                                'if_exists': str(self.h.root / 'synced'), 'exit': 1}])
+        code, text, err = self.h.run('update', options=['--stop'], json_mode=False)
+        self.assertNotEqual(code, 0, text + err)
+        self.assertIn('Engine validated; scheduling remains stopped or unverified.', err)
+        self.assertIn('/orbi update --repo-dir', err)
+        self.assertIn('--stop', err)
+        self.assertNotIn('/orbi start', err)
+        self.assertNotIn('start failed', err)
+        self.assertEqual(err.count('Next:'), 1)
+        self.assert_safe_trace()
+
+    def test_repair_command_preserves_literal_update_words_in_paths(self):
+        original_repo = self.h.repo
+        self.h.repo = self.h.repo.rename(self.h.root / 'orbi update --stop')
+        config = self.h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace(str(original_repo), str(self.h.repo)))
+        self.active_rules(extra=[{'tool': 'systemctl', 'argv_contains': ['enable --now'], 'exit': 1}])
+        code, doc, err = self.update()
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['engine_update'], 'updated')
+        self.assertEqual(shlex.split(doc['repair_command']), ['/orbi', 'start',
+                         '--repo-dir', str(self.h.repo), '--config', str(config)])
+        self.assertFalse(any(set(c['argv']) & {'start', 'stop', 'restart', 'kill'}
+                             for c in self.h.calls()))
 
     def test_start_failure_text_separates_validated_revision_and_bound_repair(self):
         self.active_rules(extra=[{'tool': 'systemctl', 'argv_contains': ['enable --now'], 'exit': 1}])

@@ -3025,9 +3025,10 @@ def command_update(ctx, args):
         evidence = prerequisites(ctx, target, action='update', provider=provider,
                                  allow_bootstrap_install=False)
         snapshot = update_observation(ctx, target)
-        resume = ('/orbi update --repo-dir ' + shlex.quote(str(repo.path))
-                  + ' --config ' + shlex.quote(str(target.config_path))
-                  + (' --stop' if args.stop else ''))
+        bound_selectors = (' --repo-dir ' + shlex.quote(str(repo.path))
+                           + ' --config ' + shlex.quote(str(target.config_path)))
+        resume = '/orbi update' + bound_selectors + (' --stop' if args.stop else '')
+        start_command = '/orbi start' + bound_selectors
         human_resume = resume
         try:
             same_checkout = repo_identity(ctx, ctx.cwd) == repo and select_target(ctx, repo) == target
@@ -3116,6 +3117,8 @@ def command_update(ctx, args):
             release_target = deployment_from(target.config_path)
             release_identities = setup_file_identities(release_target)
             current = {'step': 'sync_engine_source', 'mutation': 'possible'}
+            # A nonzero exit or timeout can follow a partially applied source sync.
+            engine_result = 'sync_unverified'
             run_upstream_step(ctx, target, 'sync-engine-source', timeout=MUTATION_TIMEOUT)
             head = checkout_head(ctx, target)
             engine_result = 'synced_unvalidated'
@@ -3191,7 +3194,7 @@ def command_update(ctx, args):
                 'activation': activation, 'activation_reason': activation_reason,
                 'next_action': ('None.' if eligible else 'Leave scheduling stopped.' if args.stop else
                                 'Resolve independent pauses/start gates, then run ' +
-                                resume.replace('/orbi update', '/orbi start').removesuffix(' --stop')),
+                                start_command),
                 'steps': steps, 'activated': eligible,
                 'warnings': []}
     except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
@@ -3213,7 +3216,8 @@ def command_update(ctx, args):
                                 snapshot_reader=update_observation)
         if engine_result in {'updated', 'up_to_date'}:
             exc.evidence['engine_revision'] = head
-        repair = resume.replace('/orbi update', '/orbi start').removesuffix(' --stop') if engine_result in {'updated', 'up_to_date'} else resume
+        repair = (start_command if engine_result in {'updated', 'up_to_date'} and not args.stop
+                  else resume)
         exc.fix += '; after repairing the cause, run ' + repair
         exc.evidence['repair_command'] = repair
         raise exc from (error if exc is not error else None)
@@ -3319,7 +3323,10 @@ def render_error(ctx, action, exc, json_mode):
     elif action == 'update':
         ctx.err.write(f"Orbi update: {exc.evidence.get('target', 'unbound target')}\n")
         if exc.evidence.get('engine_update') in {'updated', 'up_to_date'}:
-            ctx.err.write('Engine validated; start failed or remains unverified.\n')
+            ctx.err.write('Engine validated; ' + (
+                'start failed or remains unverified.\n'
+                if exc.evidence.get('activation') in {'possible', 'started'} else
+                'scheduling remains stopped or unverified.\n'))
         ctx.err.write(f"Engine: {exc.evidence.get('engine_update', 'not_applied')} "
                       f"revision={exc.evidence.get('engine_revision', 'unverified')}; "
                       f"activation: {exc.evidence.get('activation', 'none')}.\n")

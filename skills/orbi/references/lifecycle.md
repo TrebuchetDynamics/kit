@@ -163,6 +163,9 @@ and leave stopped. It is not equivalent to plain update.
 On partial/unknown activation, the nonzero error retains the validated engine result,
 completed/failed steps, actual timer state (or unavailable), and exact bound
 `repair_command`/`error.fix`. It does not claim rollback or successful scheduling.
+A failed or timed-out source sync reports `engine_update: sync_unverified`: source
+may already have changed, but validation is not proven. Recovery commands preserve
+literal selectors and the explicit `--stop` choice, including after validation.
 Inspect and repair that cause before deliberate recovery; never retry errors unchanged.
 Dry-run neither waits nor mutates: it previews conditional activation for plain update
 and continued stopped scheduling for `--stop`.
