@@ -17,6 +17,8 @@ it to the managed headless service in the same invocation. **Open GUI apps will 
 interrupted.** There is no extra flag, manual stop or second confirmation; ordinary
 sudo admission still applies. A device is reported ready only after the managed
 session, authorized ADB, Android boot, release and ABI checks succeed.
+No graphical login is required for setup, operation or recovery. An incoming
+same-user graphical session is transferred, not a supported steady state.
 **Live qualification is still outstanding**; fixture tests are not installation or
 reboot evidence. Prior run `374a5fbe` remains prior environment evidence, not proof.
 
@@ -35,7 +37,9 @@ ashmem, cgroups and container namespaces. Bash, Python 3 with `os.memfd_create`
 (unless ashmem is present), GNU timeout/coreutils, util-linux flock and sudo must
 already be installed, including systemd's `busctl` with JSON output support.
 Waydroid's distro package supplies LXC/networking helpers;
-Weston must include the headless backend and `--use-pixman`. Official images,
+Weston must include the headless backend and `--use-pixman`. Its private
+`wayland-kit` socket is not a desktop environment requirement; neither `DISPLAY`
+nor an inherited desktop `WAYLAND_DISPLAY` is needed. Official images,
 working DNS/HTTPS, storage for downloaded archives plus extracted Android images,
 and working local DHCP/Waydroid networking are also necessary.
 
@@ -124,29 +128,23 @@ require ordinary sudo. Android data and ADB keys are never removed by the script
 
 ## Authorization and ordinary testing
 
-On the first connection Android may show an RSA authorization prompt. Approve the
-fingerprint for **this user's** ADB key and select “Always allow” if appropriate.
-A headless compositor has no interactive screen. Use trusted local/remote desktop
-access to view Android; do not inject keys or turn off secure ADB. For example,
-from a graphical **Wayland** terminal as the same user, temporarily replace the
-headless compositor with a nested visible one (requires Weston's Wayland backend):
+Android must already trust **the current user's unchanged ADB key**. A previously
+authorized key can proceed without a desktop, after the normal serial, boot,
+release and ABI checks. Secure ADB requires Android-side RSA trust; a successful
+headless startup or ADB connection attempt does not grant that trust.
 
-```sh
-systemctl --user stop kit-waydroid.service
-# WAYLAND_DISPLAY here must still name the desktop compositor's socket.
-weston --backend=wayland-backend.so --use-pixman --socket=wayland-kit --idle-time=0 --no-config
-# In a second terminal, same user:
-WAYLAND_DISPLAY=wayland-kit waydroid session start
-# In a third terminal:
-WAYLAND_DISPLAY=wayland-kit waydroid show-full-ui
-```
+If Android reports `unauthorized`, setup and `--status` return **exit 2** with
+`ADB authorization pending` after the bounded wait, not a ready report. The managed
+headless service stays running and existing data and keys stay intact. Do not stop
+it, switch to a graphical session, replace/inject keys or disable secure ADB to
+conceal this result. Kit cannot provide unattended first-time authorization and
+does not offer a graphical authorization recovery procedure.
 
-Run the status command to trigger ADB connection, approve the visible prompt, then
-stop that temporary session (`waydroid session stop`), close nested Weston and run
-`systemctl --user start kit-waydroid.service`. On an X11 desktop use Weston's
-`--backend=x11-backend.so` instead. A machine without any trusted interactive display
-path must first acquire one to approve authorization; unattended setup cannot
-legitimately bypass this gate.
+Retry `--status` only after valid Android authorization for this same user's key
+exists. Establishing that trust is an external prerequisite, not something setup
+or repeated status calls can approve. If it cannot be satisfied, the device remains
+non-ready; leave headless operation and keys intact. Once valid trust exists,
+`--status` can verify readiness without restarting or changing display mode:
 
 ```sh
 ~/.local/share/kit-waydroid/waydroid-universal-setup.sh --status --wait 180
@@ -163,12 +161,13 @@ query `--status` again. No sudo or repo configuration is needed. Always select t
 reported serial if other ADB devices exist. ADB keys remain private to this user;
 never publish them or expose the Android ADB port to untrusted networks.
 
-Failure diagnostics are distinct, and return nonzero without a ready report:
+Setup/status return 0 only for verified readiness and 2 for authorization pending.
+Other failures return nonzero. Failure diagnostics return no ready report:
 
 | Error | Next action |
 | --- | --- |
 | `No container IP` | Inspect `waydroid status` and container journal; repair waydroid0/DHCP/network policy. UNKNOWN may be transient; retry status. |
-| `ADB authorization pending` | View and approve the Android prompt for the current key; retry status. |
+| `ADB authorization pending` (exit 2) | Missing Android trust for the current user's key. Keep headless running and keys intact; retry status only after valid authorization for that same key exists. Kit cannot establish first-time trust unattended. |
 | `ADB not connected` | Check Android TCP 5555 and local firewall, without opening ADB externally. |
 | `Android boot timeout` | Inspect journals/rendering and retry with `--wait 300`. Never wipe data to conceal failure. |
 | `Android properties unavailable` | Check `adb devices` and `adb shell getprop`, then retry status after restoring the connection. |
@@ -179,8 +178,10 @@ startup was requested/confirmed. Stop failure, timeout, continued ownership or f
 D-Bus readback prevents headless activation. After release, a startup or ADB failure
 does not restore the GUI automatically. Inspect the reported status/journals below,
 repair the cause, then retry default setup; if managed headless is running, retry
-`--status`. For authorization failure, use the visible approval procedure above;
-never replace keys or bypass Android authorization.
+`--status`. Authorization pending is different: headless startup has succeeded,
+but Android trust for the current user's key is missing. Keep that service running;
+retry `--status` only when the authorization prerequisite above is satisfied, not
+by restoring a GUI or replacing keys. No graphical recovery is required or offered.
 
 Each external observation is bounded; the wait deadline is checked between calls.
 `--wait` (default 180 seconds) also bounds the release and managed-session observation

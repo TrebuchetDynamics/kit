@@ -192,6 +192,9 @@ class WaydroidSetupTests(unittest.TestCase):
         self.env = dict(os.environ, HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / '.config'),
                         XDG_DATA_HOME=str(self.home / '.local/share'), XDG_RUNTIME_DIR=str(self.run),
                         PATH=str(self.bin), FIXTURE=str(self.base), REAL_TIMEOUT=shutil.which('timeout'))
+        # A PAM/user-systemd runtime is required, not a graphical login.
+        self.env.pop('DISPLAY', None)
+        self.env.pop('WAYLAND_DISPLAY', None)
 
     def invoke(self, *args, mode='', cwd=None):
         result = subprocess.run([str(self.script), *args], env=dict(self.env, MODE=mode),
@@ -217,6 +220,7 @@ class WaydroidSetupTests(unittest.TestCase):
         key = self.home / '.android/adbkey'
         key.parent.mkdir(parents=True, exist_ok=True)
         key.write_text('private fixture key')
+        key.with_suffix('.pub').write_text('public fixture key')
         return {p: p.read_bytes() for base in [self.state, key.parent]
                 for p in base.rglob('*') if p.is_file()}
 
@@ -453,6 +457,74 @@ class WaydroidSetupTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Cannot safely read existing initialization', result.stderr)
         self.assertNotIn('sudo ', self.calls())
+
+    def test_headless_authorization_pending_then_status_ready_without_restart(self):
+        before = self.complete_device()
+        for session in ['stopped', 'gui', 'managed']:
+            with self.subTest(session=session):
+                (self.base / 'session').write_text(session)
+                (self.base / 'calls').write_text('')
+                self.assertNotIn('DISPLAY', self.env)
+                self.assertNotIn('WAYLAND_DISPLAY', self.env)
+                mode = 'gui-unauthorized' if session == 'gui' else 'unauthorized'
+                result = self.invoke('--wait', '1', mode=mode)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn('ADB authorization pending', result.stderr)
+                self.assertIn("Android does not trust the current user's ADB key", result.stderr)
+                self.assertIn('only after valid Android authorization', result.stderr)
+                self.assertIn('unattended first-time authorization', result.stderr)
+                self.assertIn('--status', result.stderr)
+                self.assertNotIn('ADB serial:', result.stdout)
+                self.assertEqual((self.base / 'session').read_text(), 'managed')
+                setup_calls = self.calls()
+                self.assertEqual(setup_calls.splitlines().count('waydroid session stop'), int(session == 'gui'))
+                self.assertNotIn('getprop', setup_calls)
+                self.assertNotIn('disable', setup_calls)
+                self.assertNotIn('restart', setup_calls)
+                pending_error = result.stderr
+                self.assertEqual(before, {p: p.read_bytes() for p in before})
+
+                # --status must give the same distinct result without mutation.
+                (self.base / 'calls').write_text('')
+                result = self.invoke('--status', '--wait', '1', mode='unauthorized')
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn('ADB authorization pending', result.stderr)
+                self.assertNotIn('ADB serial:', result.stdout)
+                pending_calls = self.calls()
+                self.assertLessEqual(pending_calls.count('adb devices\n'), 2)
+
+                # Trust now exists externally for the same key; Kit does not grant it.
+                (self.base / 'calls').write_text('')
+                result = self.invoke('--status', '--wait', '1')
+                self.assert_ok(result)
+                self.assertIn('ADB serial: 192.0.2.8:5555\nAndroid: 13\nABI: x86_64', result.stdout)
+                ready_calls = self.calls()
+                for prop in ['sys.boot_completed', 'ro.build.version.release', 'ro.product.cpu.abi']:
+                    self.assertIn('adb -s 192.0.2.8:5555 shell getprop ' + prop, ready_calls)
+                for calls in [pending_calls, ready_calls]:
+                    self.assertNotIn('sudo ', calls)
+                    self.assertNotIn('systemctl ', calls)
+                    self.assertNotIn('waydroid session ', calls)
+                for text in [pending_error, result.stderr, setup_calls, pending_calls, ready_calls, self.script.read_text()]:
+                    for forbidden in ['show-full-ui', 'wayland-backend.so', 'x11-backend.so', 'Open Android UI']:
+                        self.assertNotIn(forbidden, text)
+                self.assertEqual((self.base / 'session').read_text(), 'managed')
+                self.assertEqual(before, {p: p.read_bytes() for p in before})
+                self.assertEqual(set(before), {p for base in [self.state, self.home / '.android']
+                                              for p in base.rglob('*') if p.is_file()})
+
+    def test_headless_authorization_help_and_operator_guidance(self):
+        help_result = self.invoke('--help')
+        self.assert_ok(help_result)
+        self.assertIn('2 authorization pending', help_result.stdout)
+        self.assertIn('No graphical login', help_result.stdout)
+        guide = (ROOT / 'docs/waydroid.md').read_text()
+        self.assertIn('exit 2', guide)
+        self.assertIn('unattended first-time authorization', guide)
+        for text in [guide, help_result.stdout]:
+            for forbidden in ['show-full-ui', 'wayland-backend.so', 'x11-backend.so',
+                              'visible approval procedure', 'Open Android UI']:
+                self.assertNotIn(forbidden, text)
 
     def test_property_query_failure_names_repair_without_ready_report(self):
         (self.base / 'session').write_text('managed')

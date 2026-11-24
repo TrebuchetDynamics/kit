@@ -13,11 +13,11 @@ ACTION=setup
 TRANSFER_STAGE=''
 TRANSFER_STATE=''
 fail() {
-    printf 'waydroid-setup: %s\n' "$*" >&2
+    printf 'waydroid-setup: %s\n' "$1" >&2
     if [[ -n $TRANSFER_STAGE ]]; then
         printf 'waydroid-setup: transfer stage=%s; %s. No GUI rollback attempted. Inspect waydroid status, systemctl --user status kit-waydroid.service, journalctl --user -u kit-waydroid.service and journalctl -u waydroid-container.service; repair the reported cause, then retry setup (or --status if headless is running).\n' "$TRANSFER_STAGE" "$TRANSFER_STATE" >&2
     fi
-    exit 1
+    exit "${2:-1}"
 }
 usage() {
     cat <<'EOF'
@@ -29,6 +29,11 @@ Usage: waydroid-universal-setup.sh [--check | --status | --stop] [--wait SECONDS
   --stop       Disable this user's headless service; preserve Android data/keys.
   --wait       Per-stage session/device wait (default 180 seconds, max 3600).
   --help       Show this help. Operator/removal guide: docs/waydroid.md
+No graphical login is required; Weston uses a private headless Wayland socket.
+Setup/status exit: 0 verified ready, 2 authorization pending; other failures nonzero.
+Pending means Android does not trust the current user's ADB key. Keep headless
+running and keys unchanged; retry --status only after valid Android authorization
+for that same key exists. Kit cannot provide unattended first-time authorization.
 EOF
 }
 while (($#)); do
@@ -98,7 +103,7 @@ verify_device() {
     done
     case "$reason" in
         ip) fail 'No container IP after wait. Inspect waydroid status and journalctl -u waydroid-container; repair DHCP/waydroid0 networking, then retry --status.' ;;
-        authorization) fail "ADB authorization pending. Open Android UI and approve this user's ADB fingerprint (see docs/waydroid.md), then retry --status. Do not replace keys." ;;
+        authorization) fail "ADB authorization pending. Android does not trust the current user's ADB key. Headless service and existing keys are preserved. Retry --status only after valid Android authorization for this same key exists; Kit cannot provide unattended first-time authorization. See docs/waydroid.md. Do not replace keys." 2 ;;
         connection) fail "ADB not connected ($serial, state=${state:-absent}). Check container TCP 5555 and host firewall; retry --status. Do not expose ADB externally." ;;
         boot) fail 'Android boot timeout. Inspect journalctl --user -u kit-waydroid and journalctl -u waydroid-container; repair boot/rendering and retry --status --wait 300.' ;;
     esac
