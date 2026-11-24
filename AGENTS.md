@@ -27,6 +27,6 @@
 
 ## Verify and report
 
-Run `python3 scripts/affected_tests.py --run` for affected checks. Test only what the change can affect. CI runs the full offline suite on pushes and pull requests; do not repeat whole suites or directories locally for a focused change. The default pre-push hook checks the pushed revision and core contracts. For test selection, environments, hook setup, opt-in checks and bypass controls, read [testing](docs/testing.md).
+Run `python3 scripts/affected_tests.py --run` for affected checks. Test only what the change can affect. CI runs the full offline suite on pull requests and pushes to `main` or tags; do not repeat whole suites or directories locally for a focused change. The default pre-push hook checks the pushed revision and core contracts. For test selection, environments, hook setup, opt-in checks and bypass controls, read [testing](docs/testing.md).
 
 Report what changed, what ran and which live, device, production or human gates remain. Distinguish commit, integration, push, installation and live acceptance. Offline, registration and native checks do not prove model output, live messaging or Orbi delivery. If a blocker repeats, repair its cause, continue independent accepted work or name the exact missing external input.
