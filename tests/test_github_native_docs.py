@@ -152,6 +152,12 @@ class GithubNativeDocsTests(unittest.TestCase):
                 "shared bootstrap"):
             self.assertIn(phrase, lifecycle)
 
+    def test_readme_lists_read_only_version_and_platforms(self):
+        setup = compact(section((ROOT / 'README.md').read_text(), 'Using Orbi', level=3))
+        self.assertIn('`/orbi [status|version|setup|start|update|stop|help]`', setup)
+        self.assertIn('| `version` | Read-only selected deployment engine release/revision', setup)
+        self.assertIn('macOS supports status, version and help only', setup)
+
     def test_readme_setup_matches_shipped_bootstrap_and_recovery(self):
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
         setup = compact(section(readme, 'Using Orbi', level=3))
