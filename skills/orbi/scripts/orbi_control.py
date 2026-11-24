@@ -16,11 +16,11 @@
 - `start` re-reads ownership/source/provider evidence, runs the supported
   upstream `setup`/`install-units` with the exact scoped environment, enables
   only target timers and requests one first tick only when no worker runs.
-- `update` advances one inactive deployment to the newest official release
-  through the upstream `sync-engine-source` channel, locks the resolved commit as
-  `sha:<commit>`, validates non-activating, re-renders owned units and restores
-  the verified inactive timers. Explicit `--stop` pauses owned timers under lock,
-  defers while workers drain and leaves unit refresh to the next authorized start.
+- `update` pauses owned timers under lock, defers while workers drain, then
+  advances to the newest official release through `sync-engine-source`, locks
+  the resolved commit as `sha:<commit>` and validates non-activating. Scheduling
+  stays stopped; unit refresh waits for the next authorized start. `--stop` is
+  a compatible spelling with the same behavior.
   It never selects a provider or harness.
 - `stop` disables only target-owned timer instances (including installed
   surplus instances); it never stops, kills or restarts a service and reports
@@ -2751,27 +2751,16 @@ def command_stop(ctx, args):
 UPDATE_TRACK = 'release'
 
 
-def update_plan_steps(*, stop=False):
-    if stop:
-        return [
-            {'step': 'pause_owned_timers', 'status': 'planned'},
-            {'step': 'observe_drain', 'status': 'planned',
-             'reason': 'defer if workers or pending jobs remain; never stop services or poll'},
-            {'step': 'sync_engine_source', 'status': 'conditional',
-             'reason': 'only after confirmed idle: sync release, pin exact commit and validate'},
-            {'step': 'refresh_units', 'status': 'deferred',
-             'reason': 'next authorized start installs units; public install-units activates timers'},
-            {'step': 'observe_scheduler', 'status': 'conditional'},
-        ]
+def update_plan_steps():
     return [
-        {'step': 'set_release_track', 'status': 'planned', 'track': UPDATE_TRACK},
-        {'step': 'sync_engine_source', 'status': 'planned',
-         'reason': 'resolves the newest official release and checks it out'},
-        {'step': 'pin_release', 'status': 'planned',
-         'reason': 'locks the resolved release commit as sha:<commit>'},
-        {'step': 'validate_non_activating', 'status': 'planned'},
-        {'step': 'refresh_units', 'status': 'planned'},
-        {'step': 'restore_scheduling', 'status': 'planned'},
+        {'step': 'pause_owned_timers', 'status': 'planned'},
+        {'step': 'observe_drain', 'status': 'planned',
+         'reason': 'defer if workers or pending jobs remain; never stop services or poll'},
+        {'step': 'sync_engine_source', 'status': 'conditional',
+         'reason': 'only after confirmed idle: sync release, pin exact commit and validate'},
+        {'step': 'refresh_units', 'status': 'deferred',
+         'reason': 'next authorized start installs units; public install-units activates timers'},
+        {'step': 'observe_scheduler', 'status': 'conditional'},
     ]
 
 
@@ -2817,22 +2806,6 @@ def rewrite_engine_track(deployment, track):
         return 'unchanged'
     atomic_publish(path, replacement)
     return 'updated'
-
-
-def restore_scheduling(ctx, deployment):
-    """install-units enables timers; restore the verified inactive pre-update state."""
-    snapshot = scheduler_snapshot(ctx, deployment)
-    if snapshot['state'] != 'ok':
-        raise ControlError('scheduler_unavailable',
-                           f"cannot read the target scheduler: {snapshot.get('reason')}",
-                           fix='verify the systemd user session, then rerun')
-    disabled = []
-    for timer, item in owned_timers(ctx, deployment, snapshot):
-        if item['enabled'] or item['active'] == 'active':
-            ctx.run(['systemctl', '--user', 'disable', '--now', timer],
-                    timeout=MUTATION_TIMEOUT)
-            disabled.append(timer)
-    return disabled
 
 
 def update_observation(ctx, target):
@@ -2926,7 +2899,7 @@ def update_pending(snapshot):
 
 
 def command_update(ctx, args):
-    """Update one deployment; --stop authorizes pausing timers, never workers."""
+    """Pause owned timers, defer until drained, then update and leave stopped."""
     target = None
     steps, disabled = [], []
     mutated = False
@@ -2947,9 +2920,8 @@ def command_update(ctx, args):
         identities = setup_file_identities(target)
         evidence = prerequisites(ctx, target, action='update', provider=provider,
                                  allow_bootstrap_install=False)
-        snapshot = (update_observation(ctx, target) if args.stop else
-                    require_setup_idle(ctx, target, action='update'))
-        resume = ('/orbi update --stop --repo-dir ' + shlex.quote(str(repo.path))
+        snapshot = update_observation(ctx, target)
+        resume = ('/orbi update --repo-dir ' + shlex.quote(str(repo.path))
                   + ' --config ' + shlex.quote(str(target.config_path)))
         report = new_deployment_report(ctx, target, provider)
         report['source'] = source_evidence(ctx, target)['state']
@@ -2957,7 +2929,7 @@ def command_update(ctx, args):
             return {'action': 'update', 'platform': ctx.platform, 'status': 'planned',
                     'dry_run': True, 'repo': repo.full, 'deployment': report,
                     'previous': previous, 'prerequisites': evidence,
-                    'scheduler': snapshot, 'steps': update_plan_steps(stop=args.stop),
+                    'scheduler': snapshot, 'steps': update_plan_steps(),
                     'activated': False, 'warnings': []}
         steps.append({'step': 'preflight_target', 'status': 'ok'})
         current, mutated = {'step': 'lock', 'mutation': 'possible'}, True
@@ -2974,31 +2946,28 @@ def command_update(ctx, args):
             require_unit_ownership(ctx, target)
             require_source(ctx, target)
             require_clean_checkout(ctx, target)
-            if args.stop:
-                require_setup_transport(repo, target)
-                require_harness(ctx, target)
-                provider = require_provider(target)
-                evidence = prerequisites(ctx, target, action='update', provider=provider,
-                                         allow_bootstrap_install=False)
-                snapshot = update_observation(ctx, target)
-                disable_owned_timers(ctx, target, snapshot, disabled, steps, current)
-                current = {'step': 'observe_drain', 'mutation': 'none'}
-                idle = paused_observation(ctx, target)
-                pending = update_pending(idle)
-                if pending:
-                    steps.append({'step': 'observe_drain', 'status': 'draining'})
-                    current = {'step': 'release_lock', 'mutation': 'possible'}
-                    return {'action': 'update', 'platform': ctx.platform, 'status': 'draining',
-                            'dry_run': False, 'repo': repo.full, 'deployment': report,
-                            'previous': previous, 'prerequisites': evidence,
-                            'scheduler': idle, 'scheduler_confirmation': 'timers_disabled',
-                            'disabled_timers': disabled, 'pending_services': pending,
-                            'engine_update': 'deferred', 'unit_refresh': 'deferred',
-                            'unit_refresh_reason': 'next authorized start installs units',
-                            'resume_command': resume, 'steps': steps, 'activated': False,
-                            'warnings': ['Workers may finish; no polling or background continuation.']}
-            else:
-                idle = require_setup_idle(ctx, target, action='update')
+            require_setup_transport(repo, target)
+            require_harness(ctx, target)
+            provider = require_provider(target)
+            evidence = prerequisites(ctx, target, action='update', provider=provider,
+                                     allow_bootstrap_install=False)
+            snapshot = update_observation(ctx, target)
+            disable_owned_timers(ctx, target, snapshot, disabled, steps, current)
+            current = {'step': 'observe_drain', 'mutation': 'none'}
+            idle = paused_observation(ctx, target)
+            pending = update_pending(idle)
+            if pending:
+                steps.append({'step': 'observe_drain', 'status': 'draining'})
+                current = {'step': 'release_lock', 'mutation': 'possible'}
+                return {'action': 'update', 'platform': ctx.platform, 'status': 'draining',
+                        'dry_run': False, 'repo': repo.full, 'deployment': report,
+                        'previous': previous, 'prerequisites': evidence,
+                        'scheduler': idle, 'scheduler_confirmation': 'timers_disabled',
+                        'disabled_timers': disabled, 'pending_services': pending,
+                        'engine_update': 'deferred', 'unit_refresh': 'deferred',
+                        'unit_refresh_reason': 'next authorized start installs units',
+                        'resume_command': resume, 'steps': steps, 'activated': False,
+                        'warnings': ['Workers may finish; no polling or background continuation.']}
             steps.append({'step': 'recheck_target', 'status': 'ok'})
             current = {'step': 'set_release_track', 'mutation': 'possible'}
             track_state = rewrite_engine_track(target, UPDATE_TRACK)
@@ -3023,27 +2992,13 @@ def command_update(ctx, args):
                                    fix='inspect concurrent changes; preserve recovery inputs', exit_code=2)
             steps.append({'step': 'validate_non_activating', 'status': 'ok',
                           'mutation': 'completed'})
-            current = {'step': 'refresh_units', 'mutation': 'none' if args.stop else 'possible'}
-            if args.stop:
-                # The public installer enables timers, even briefly. Only start may use it.
-                steps.append({'step': 'refresh_units', 'status': 'deferred',
-                              'reason': 'next authorized start installs units; installer activates timers'})
-            elif any(item['installed'] for item in idle['timers'].values()):
-                run_upstream_step(ctx, target, 'install-units', timeout=MUTATION_TIMEOUT)
-                steps.append({'step': 'refresh_units', 'status': 'refreshed',
-                              'mutation': 'completed'})
-            else:
-                # Update repairs installed services; start installs first units.
-                steps.append({'step': 'refresh_units', 'status': 'deferred',
-                              'reason': 'no owned unit is installed; start installs and enables it'})
-            if not args.stop:
-                current = {'step': 'restore_scheduling', 'mutation': 'possible'}
-                disabled = restore_scheduling(ctx, target)
-                steps.append({'step': 'restore_scheduling', 'status': 'disabled',
-                              'timers': disabled, 'mutation': 'completed'})
+            current = {'step': 'refresh_units', 'mutation': 'none'}
+            # The public installer enables timers, even briefly. Only start may use it.
+            steps.append({'step': 'refresh_units', 'status': 'deferred',
+                          'reason': 'next authorized start installs units; installer activates timers'})
             current = {'step': 'observe_scheduler', 'mutation': 'none'}
-            after = paused_observation(ctx, target) if args.stop else scheduler_snapshot(ctx, target)
-            if args.stop and update_pending(after):
+            after = paused_observation(ctx, target)
+            if update_pending(after):
                 raise ControlError('update_busy', 'work appeared during update',
                                    fix='inspect pending work and source state before retrying',
                                    evidence={'scheduler': after, 'pending_services': update_pending(after)})
@@ -3055,22 +3010,18 @@ def command_update(ctx, args):
         report = new_deployment_report(ctx, target, provider)
         report['source'] = source_evidence(ctx, target)['state']
         report['deployed_commit'] = head
-        refreshed = any(step['step'] == 'refresh_units' and step['status'] == 'refreshed'
-                        for step in steps)
         return {'action': 'update', 'platform': ctx.platform,
                 'status': 'up_to_date' if head == previous['head'] else 'updated',
                 'dry_run': False, 'repo': repo.full, 'deployment': report,
                 'previous': previous, 'prerequisites': evidence,
                 'scheduler': after, 'disabled_timers': disabled,
-                'pending_services': update_pending(after) if args.stop else pending_services(ctx, target),
-                **({'engine_update': 'up_to_date' if head == previous['head'] else 'updated',
-                    'unit_refresh': 'deferred',
-                    'unit_refresh_reason': 'next authorized start installs units',
-                    'scheduler_confirmation': 'stopped'} if args.stop else {}),
+                'pending_services': update_pending(after),
+                'engine_update': 'up_to_date' if head == previous['head'] else 'updated',
+                'unit_refresh': 'deferred',
+                'unit_refresh_reason': 'next authorized start installs units',
+                'scheduler_confirmation': 'stopped',
                 'steps': steps, 'activated': False,
-                'warnings': (['install-units enables configured timers while it re-reads the '
-                              'refreshed unit templates; update disabled them again to restore the '
-                              'verified inactive state'] if refreshed else [])}
+                'warnings': []}
     except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
         if not mutated and not steps:
             # A preflight refusal changed nothing; keep its own precise fix text.
@@ -3078,8 +3029,8 @@ def command_update(ctx, args):
         exc = lifecycle_failure(ctx, target, error, target_path=args.config, steps=steps,
                                 current=current, mutated=mutated,
                                 evidence={'previous': previous, 'disabled_timers': disabled,
-                                          **({'resume_command': resume} if args.stop else {})},
-                                snapshot_reader=update_observation if args.stop else safe_scheduler_snapshot)
+                                          'resume_command': resume},
+                                snapshot_reader=update_observation)
         raise exc from (error if exc is not error else None)
 
 
@@ -3721,7 +3672,7 @@ def command_help(ctx, args):
         '--config': 'explicit native Orbi config for this deployment',
         '--dry-run': 'preview without locking, writing, installing or activating',
         '--json': 'print one JSON document',
-        '--stop': 'update only: authorize pausing owned timers, defer while workers drain; leave stopped',
+        '--stop': 'update only: compatible spelling of the default pause/drain update; leave stopped',
         '--resume-setup': 'setup only: fill a legacy missing local provider; requires explicit '
                           '--config and complete matching --pi-* inputs; never overwrite',
         '--pi-providers': 'regular Pi metadata JSON for new setup/absent start or explicit bounded setup resume (no credentials)',
@@ -3769,10 +3720,10 @@ def command_help(ctx, args):
             'scheduling is active but no worker was observed if running-service reads show none; '
             'not stopped or setup needed. Missing evidence or activity outside the scan is unknown, not zero. '
             'Template rows are not enabled capacity.',
-            'Update advances one inactive deployment to the newest official release through upstream '
-            'sync-engine-source, locks that commit as sha:<commit>, refreshes owned units and leaves '
-            'scheduling inactive. It never selects a provider, harness or origin. '
-            'Update --stop authorizes a pause without another prompt: disable owned timers, including '
+            'Update authorizes a pause without another prompt; --stop is a compatible spelling. '
+            'It advances one deployment to the newest official release through upstream '
+            'sync-engine-source and locks that commit as sha:<commit>. It preserves provider, harness '
+            'and origin. Disable owned timers, including '
             'inactive enabled instances, defer while workers/pending starts remain, then sync/pin/check '
             'only when idle. It never stops services or restarts scheduling; unit refresh is deferred '
             'to the next authorized start because public install-units activates timers.',
@@ -3807,13 +3758,13 @@ def command_help(ctx, args):
                         'without a donor, add the complete first-deployment selectors above.'},
             {'command': '/orbi stop', 'outcome': 'Disable owned timers; active services drain, never killed.'},
             {'command': '/orbi update --dry-run',
-             'outcome': 'Preview the release channel change and unit refresh; no writes.'},
+             'outcome': 'Preview pause/drain and conditional release update; no writes, lock or activation.'},
             {'command': '/orbi update --stop',
              'outcome': 'Pause owned timers, allow workers to finish; return draining with resume_command '
                         'or update when idle and leave stopped. Unit refresh waits for authorized start.'},
             {'command': '/orbi update',
-             'outcome': 'Only after an authorized stop/drain: sync the newest official release, lock '
-                        'its commit, refresh owned units and leave scheduling inactive.'},
+             'outcome': 'Pause owned timers, defer with exact resume_command while workers drain; once idle, '
+                        'sync/pin/check the newest release and leave stopped. Same behavior as --stop.'},
         ],
         'recovery': {
             'harness': 'prerequisite_missing/harness_unavailable: provision the exact selected pi-bolt or pi '
@@ -3849,9 +3800,9 @@ def command_help(ctx, args):
                           'Existing valid start skips preparation.',
             'platform': 'unsupported_platform: use Linux for authorized mutations; macOS supports status/version/help; '
                         'other platforms support help only.',
-            'update': 'update_busy/source_dirty/sync_engine_source_failed: stop and drain first, preserve tracked '
+            'update': 'update_busy/source_dirty/sync_engine_source_failed: inspect concurrent work, preserve tracked '
                       'checkout changes, and inspect the failed fetch or channel privately. Update never '
-                      'discards work or rewrites origin. Explicit update --stop pauses owned timers without stopping '
+                      'discards work or rewrites origin. Update (also --stop) pauses owned timers without stopping '
                       'workers; draining receipts name pending units and exact resume_command. Failed disable '
                       'or scheduler readback blocks sync. Inspect partial steps/scheduler, repair the cause '
                       'and deliberately retry; no timer re-enable rollback.',
@@ -3907,8 +3858,8 @@ def command_help(ctx, args):
             'Local visibility only: no cross-machine lock or capacity guarantee.',
             'Next steps: use status to inspect; public setup --prepare-only (helper setup) to prepare; '
             'public setup or start only after an '
-            'owner scheduling request and resolved pauses, cutover and human-only gates; update only after '
-            'an authorized stop/drain, or use update --stop to authorize the pause and leave stopped; '
+            'owner scheduling request and resolved pauses, cutover and human-only gates; update pauses owned '
+            'timers, defers until drained and leaves stopped (--stop is compatible); '
             'stop disables owned timers while preserving active workers.',
         ],
     }
@@ -3962,14 +3913,13 @@ ACTIONS = {
     },
     'update': {
         'handler': command_update,
-        'effect': 'Update an idle deployment; --stop authorizes pausing owned timers and defers while draining.',
+        'effect': 'Pause owned timers, defer while draining, then update and leave stopped; --stop is compatible.',
         'mutates': 'scheduler',
         'platforms': ['linux'],
         'applies': ['--repo-dir', '--config', '--dry-run', '--json', '--stop'],
-        'when': 'Run for a prepared deployment after an authorized stop/drain: it refuses live workers '
-                'and enabled timers, locks the newest official release as sha:<commit>, re-renders owned '
-                'units and restores the verified inactive scheduler state. With --stop, pause owned timers '
-                'under lock, defer while workers drain, update only after fresh idle evidence and leave '
+        'when': 'Run for a prepared deployment: pause owned timers under lock, defer while workers or '
+                'pending starts remain, then lock the newest official release as sha:<commit> after '
+                'fresh idle evidence. Explicit --stop has the same behavior. Leave scheduling '
                 'stopped. No service interruption, restart, timer enable or activating unit install.',
     },
     'stop': {
@@ -4045,7 +3995,7 @@ def parse_args(argv):
                         help='show the plan without locking, writing, installing or activating')
     parser.add_argument('--json', action='store_true', help='print one JSON document')
     parser.add_argument('--stop', action='store_true',
-                        help='update only: pause owned timers, defer while workers drain and leave stopped')
+                        help='update only: compatible spelling of the default pause/drain update; leave stopped')
     parser.add_argument('--resume-setup', action='store_true',
                         help='setup only: resume legacy missing provider with explicit --config '
                              'and complete matching --pi-* inputs')
