@@ -49,6 +49,44 @@ class PlanningCliContractTests(unittest.TestCase):
                          'not pickup, implementation or merge'):
             self.assertIn(required, text)
 
+    def test_all_requests_reconcile_outcomes_against_complete_issue_inventory(self):
+        text = prose(HANDOFF).split('## Open-issue reconciliation', 1)[1].split('## ', 1)[0]
+        for rule in ('focused and discovery', 'before proposing new work',
+                     'verified target repository', 'pagination exhaustion',
+                     'exclude PRs from issue counts', 'number/ID, URL, title',
+                     'full bodies', 'relevant comments', 'linked PRs',
+                     'ownership', 'native dependencies', 'parents',
+                     'outcome, acceptance, subsystem, aliases and referenced evidence',
+                     'different title or author', 'closed issues/PRs',
+                     'reuse the inventory during the interview',
+                     'refresh candidate identity, state and ownership', 'new matches',
+                     'partial or unavailable', 'failed page', 'uniqueness',
+                     'read-only', 'inline without mutations'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, text)
+
+    def test_reconciliation_preserves_contracts_and_separates_relationships(self):
+        text = prose(HANDOFF).split('## Open-issue reconciliation', 1)[1].split('## ', 1)[0]
+        for rule in ('covered as-is', 'refine an unowned open issue in place',
+                     'link genuinely complementary work', 'already delivered',
+                     'new', 'only the accepted delta', 'IDs, history, third-party intent',
+                     'contract and labels unchanged', 'existing owner',
+                     'cross-reference with a reason', 'actual prerequisites',
+                     'file overlap', 'blockedBy', 'stable-key publisher idempotence',
+                     'not topic matching', 'No automatic closing, merging, reopening or relabeling'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, text)
+
+    def test_planners_and_protocol_route_to_reconciliation_and_show_ids(self):
+        for path in (PLANNER, INTERACTIVE[0], 'skills/shared/RESEARCH-PLAN.md'):
+            with self.subTest(path=path):
+                self.assertIn('PLAN-HANDOFF.md#open-issue-reconciliation', prose(path))
+        text = prose(HANDOFF)
+        for heading in ('### Plan preview', '### Publication receipt'):
+            section = text.split(heading, 1)[1].split('### ', 1)[0]
+            self.assertIn('reused, improved, related and new', section)
+            self.assertIn('IDs', section)
+
     def test_local_main_and_legacy_store_are_not_admission_requirements(self):
         text = prose(HANDOFF)
         self.assertIn('no longer requires', text)
