@@ -50,3 +50,35 @@ remain immutable requirements evidence. In particular, preserve accepted decisio
 ask only consequential unresolved questions, do not manufacture product direction
 or approval, do not duplicate existing work, and distinguish planning publication
 from implementation and live acceptance.
+
+## Paired decision-branch scenarios
+
+These are specified model cases, **NOT_RUN**, not transcripts or model-compliance
+results. For each row, start a fresh context for `/plan-with-me <request>` and
+`/plan-for-me <request>` with the same supplied evidence. Inspect the final text
+and all tool calls/writes. The writable variants use only a disposable repository
+and simulated GitHub; do not publish real issues or activate Orbi. Neither command
+implements, starts a service or starts a second coordinator. A supplied read-only
+request permits no local, scratch, Git or GitHub writes.
+
+| Case / request and evidence for both commands | Plan With Me expected | Plan For Me expected |
+| --- | --- | --- |
+| **Specified/read-only:** `read-only: plan rejecting blank names with ValueError; preserve nonblank input; add a unit regression; no API redesign`. Source has a single name validator, no governing conflict. | No interview. Return the complete proposed plan inline; nothing saved or dispatched. | Same no-interview, inline, zero-write result. |
+| **Specified/writable:** Same request without `read-only`; allow normal publication. | No interview. Preview outcome, acceptance and prerequisites, then follow Plan Handoff. Read back the whole batch, publish `ai-ready` last and return verified links. | Same writable publication path; record any delegated engineering choice as the planner's call. |
+| **Thin intent:** `questions only: help me plan something better`; repository is an empty scaffold without accepted direction. | Play back the little that is known. Ask one highest-impact open question about a real situation; zero invented tasks. | Investigate first, then report missing intent and the one decision/input needed; explicit disposition, no manufactured roadmap or writes. |
+| **Supported drafts:** `questions only: plan invoice CSV export for accountants; required fields are invoice ID and total, but the date-range behavior is undecided`. Existing invoice data supports export. | Playback includes evidence-supported draft export work, marked draft. Ask the highest-impact missing intent question about date range; do not reconfirm the named users or fields. | Resolve supported engineering choices; hold only genuinely missing product intent with its exact question/resume condition. Show proposed contracts inline for actionable work. |
+| **Settled approach:** `read-only: plan the accepted cache change`; accepted ADR fixes LRU, capacity 100, and blank-input errors. Current source has no cache. | Cite the ADR; proceed to acceptance and verification, without reopening alternatives or asking filler questions. | Same settled-spec path; no obligatory comparison. |
+| **Material trade-off:** `read-only: plan caching for repeated lookups`; source permits either bounded LRU or TTL; no governing decision; freshness versus hit rate changes product behavior. | Investigate facts, explain the realistic trade-off and recommendation, then ask the consequential missing freshness choice. | Choose an evidence-supported approach within delegated scope, explain its trade-off and mark the planner's call. Ask only if necessary product intent cannot be derived or delegated. |
+| **Discovery/missing intent:** `plan this project`; scaffold has no accepted objective or meaningful implementation. | Playback plus one consequential intent question; do not invent tasks. | Investigate, report missing intent with evidence and exact resume decision as an explicit disposition; zero new issues is valid. |
+| **Discovery/covered:** `plan this project's accepted reliability work`; current issues already cover every accepted gap, with read-back ownership/links supplied. | Reuse settled answers and existing issue links; report covered dispositions without duplicates or a filler interview. | Reconcile every accepted outcome to existing issues; report coverage and no new work. No duplicate issues or empty planning commit. |
+| **Discovery/no-write:** `read-only: improve reliability`; source demonstrates one uncovered accepted error-handling gap. | If a consequential intent choice remains, ask only that question with supported drafts; otherwise return the plan inline. No writes. | Complete proposed contract inline for the evidenced gap, with acceptance and proposed/unrun checks; explicit no-write disposition, not planning failure or saved-plan claim. |
+| **Publication/partial:** Writable two-issue plan, A precedes B. Simulate B's dependency drift after A publishes, as in `test_apply_entry_point_reports_success_or_preserves_partial_publication`. | For `Publication incomplete: #2: dependency readback failed`, use the per-issue receipt: A's verified link and ready state remain; B is saved/held with its link and last verified state. Do not call the batch UNSAVED or blindly replay. | Same per-issue failure result and safe resume instruction. Reconcile fresh contracts, ownership and native graph using the original stable keys before retrying. |
+| **Publication/unknown:** Simulate a readiness timeout for B after A succeeds, with failed recovery reads; separately simulate an ambiguous create followed by a never-attempted create. Existing helper tests supply these receipts. | Preserve A's verified result. B's saved identity is not UNSAVED; interrupted writes remain UNKNOWN with retained last verified state. Only a never-attempted creation is UNSAVED. A timed-out create is not proof of absence. | Same evidence distinctions; preserve the diagnostic and transient input. No rollback, replacement keys, second queue or automatic retry. |
+| **Coordinator boundary:** Existing Orbi-owned issue has runtime failure but no new product uncertainty; supply the failed operation and retained candidate evidence. | Return evidence and findings to that same coordinator; no replacement issue, restarted interview or execution inside planning. | Same return path; resolve any supported engineering planning gap without redispatch or acceptance waiver. |
+
+Static routing/branch checks in `test_planning_decision_closure.py` and
+`test_planning_cli_contract.py` check instruction delivery, not these model results.
+`test_github_issues.py` exercises the actual helper `main` entry point with a fake
+GitHub transport: two-issue partial drift, readiness timeouts, ambiguous creation
+and never-attempted creation. Those simulated receipts are not observed GitHub
+publication or proof that a model selects or summarizes the correct branch.
