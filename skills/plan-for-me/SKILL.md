@@ -68,7 +68,10 @@ projects in one coherent batch, retaining independent ready lanes.
 
 Inspect project instructions, relevant implementation and tests, existing docs,
 accepted decisions, GitHub Issues and their linked PRs, and active task
-ownership. Reuse existing answers and task IDs. When a governing decision fixes
+ownership. For focused and discovery requests, apply
+[open-issue reconciliation](../shared/PLAN-HANDOFF.md#open-issue-reconciliation)
+before proposing work and refresh before writes. Reuse existing answers and task IDs.
+When a governing decision fixes
 the approach, cite it and proceed to acceptance and verification. Compare practical
 approaches when a material choice remains, recording the evidence and trade-off
 for the selected one. Own the complex part: resolve design,

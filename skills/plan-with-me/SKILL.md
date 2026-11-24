@@ -62,6 +62,10 @@ possible question or repeat approval of settled answers.
 
 First apply [conversation intake](../shared/PLAN-HANDOFF.md#conversation-findings-to-issues)
 to earlier analyses, grill answers and UI findings; settled answers stay settled.
+For focused and discovery requests, apply
+[open-issue reconciliation](../shared/PLAN-HANDOFF.md#open-issue-reconciliation)
+before proposing work; reuse that inventory through the interview and refresh
+before writes, including when no interview is needed.
 Read repository instructions, the user's current request, relevant existing docs,
 glossary, accepted decisions and scoped source/tests. Reuse the actual
 README/PRD/spec/ADR and backlog owners; do not perform a full docs-sync bootstrap
