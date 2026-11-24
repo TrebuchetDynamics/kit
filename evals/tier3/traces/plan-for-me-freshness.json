@@ -1,0 +1,53 @@
+{
+  "name": "standalone-writable-verified-planner-freshness",
+  "skill": "plan-for-me",
+  "context": {
+    "synthetic": true,
+    "mode": "standalone-writable",
+    "checkout": "/fixture/analysis",
+    "branch": "analysis",
+    "fetch_remote": "team",
+    "upstream_ref": "refs/heads/trunk",
+    "ownership": "exclusive",
+    "state": "clean-behind"
+  },
+  "events": [
+    {
+      "type": "read",
+      "path": "skills/shared/COMMON-CONTRACT.md"
+    },
+    {
+      "type": "assistant",
+      "text": "Source preflight: standalone writable; canonical repository verified; analysis branch verified; fetch URL and team refs/heads/trunk verified; exclusively held, clean including untracked; no local-only commits. Observed upstream bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; HEAD aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa."
+    },
+    {
+      "type": "command",
+      "command": "timeout 60 git -C /fixture/analysis pull --ff-only --no-rebase --no-autostash --no-recurse-submodules team refs/heads/trunk",
+      "exit": 0
+    },
+    {
+      "type": "command",
+      "command": "git -C /fixture/analysis rev-parse HEAD FETCH_HEAD",
+      "exit": 0,
+      "stdout": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+    },
+    {
+      "type": "read",
+      "path": "src/parser.py",
+      "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "type": "assistant",
+      "text": "Plan preview \u2014 OWNER/REPO: one parser issue, ready after publication; no prerequisites."
+    },
+    {
+      "type": "command",
+      "command": "python3 scripts/github_issues.py --repo OWNER/REPO --batch /tmp/batch.json --apply",
+      "exit": 0
+    },
+    {
+      "type": "final",
+      "text": "Published https://github.com/OWNER/REPO/issues/1; ready, no dependencies. Source receipt: /fixture/analysis, analysis, team refs/heads/trunk; pre-pull HEAD aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; observed/fetched upstream and resulting HEAD bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; analysis revision bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb. Fast-forward verified. Publication metadata unchanged; local-only evidence none; live model adherence unverified."
+    }
+  ]
+}

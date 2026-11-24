@@ -7,6 +7,9 @@ These adapters run repository workflows in the current Claude Code, Codex or Pi 
 Use this host's actual file, terminal, search, question and delegation tools.
 Read repository instructions and user scope first; preserve unrelated work.
 Apply the [shared source freshness and ownership contract](../../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership) before probes or handoffs; select the current mode rather than automatically syncing Git.
+For standalone writable Plan With Me / Plan For Me, apply
+[planner freshness](../../skills/shared/COMMON-CONTRACT.md#standalone-planner-freshness)
+before code analysis; this is not a sync on skill loading.
 Every bundled workflow applies the [shared Ponytail method](../../skills/shared/PONYTAIL.md)
 within its own authority. The pinned suite is included on all hosts; no external
 Ponytail plugin or persistent activation is required.
