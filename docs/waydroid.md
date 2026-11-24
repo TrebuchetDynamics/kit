@@ -12,7 +12,11 @@ installation. It asks for ordinary sudo authorization, installs missing packages
 initializes native Waydroid, enables its container at boot and enables a lingering
 headless user service. It does not install APKs, accounts, Maestro or project tests.
 No VM, emulator, SELinux relaxation, firewall change or ADB authorization bypass is
-provided. A device is reported ready only after authorized ADB and Android boot.
+provided. If this user has a graphical Waydroid session, default setup transfers
+it to the managed headless service in the same invocation. **Open GUI apps will be
+interrupted.** There is no extra flag, manual stop or second confirmation; ordinary
+sudo admission still applies. A device is reported ready only after the managed
+session, authorized ADB, Android boot, release and ABI checks succeed.
 **Live qualification is still outstanding**; fixture tests are not installation or
 reboot evidence. Prior run `374a5fbe` remains prior environment evidence, not proof.
 
@@ -29,7 +33,8 @@ system and user managers with D-Bus, a normal PAM login and `XDG_RUNTIME_DIR`,
 Android Binder IPC (loaded nodes or available `binder_linux` module), memfd or
 ashmem, cgroups and container namespaces. Bash, Python 3 with `os.memfd_create`
 (unless ashmem is present), GNU timeout/coreutils, util-linux flock and sudo must
-already be installed. Waydroid's distro package supplies LXC/networking helpers;
+already be installed, including systemd's `busctl` with JSON output support.
+Waydroid's distro package supplies LXC/networking helpers;
 Weston must include the headless backend and `--use-pixman`. Official images,
 working DNS/HTTPS, storage for downloaded archives plus extracted Android images,
 and working local DHCP/Waydroid networking are also necessary.
@@ -56,8 +61,27 @@ requirements; supplying a distro name does not establish the capabilities.
 ## What persists and how retries work
 
 One host Waydroid container is shared by one testing user, not one per repository.
-A different session owner or a foreign managed unit refuses takeover. Stop your
-existing graphical session with `waydroid session stop` before headless setup.
+A different or missing session UID, ambiguous display, foreign loaded user unit,
+or colliding `wayland-kit` socket/lock refuses takeover. A running session is
+recognized as managed only with the current UID, `wayland-kit` display and an
+active owned `kit-waydroid.service`. A stopped device starts as needed; a working
+managed session is not stopped or restarted on repeat.
+
+`--check` reports a planned same-user graphical transfer without sudo, writes,
+stops or service changes. Classification uses non-activating system-bus queries,
+not `waydroid status` (whose D-Bus proxy can activate a stopped manager).
+Default setup finishes capability, image/data, ownership,
+package and sudo checks before disrupting the GUI. Under the existing setup lock
+it re-reads the session UID, display and process identity immediately before one
+bounded, **unprivileged** `waydroid session stop`. Changed identity refuses the stop.
+It then waits for successful system-bus container `GetSession` evidence of **no
+session**. A successful stop exit or a `STOPPED` status line alone is insufficient:
+upstream can hide D-Bus errors in both commands. Loss of the manager fails closed,
+without starting a competing session. Ownership is checked again before activation.
+Startup uses the existing user-systemd/Weston `--session` path, not an extra unmanaged
+session. The active owned unit and expected UID/display are confirmed before ADB
+boot, release and ABI verification, and checked again before printing readiness.
+No global service restart or speculative GUI rollback is performed.
 
 The setup uses explicit official channels on initialization:
 `https://ota.waydro.id/system` and `https://ota.waydro.id/vendor` (VANILLA upstream
@@ -149,7 +173,18 @@ Failure diagnostics are distinct, and return nonzero without a ready report:
 | `Android boot timeout` | Inspect journals/rendering and retry with `--wait 300`. Never wipe data to conceal failure. |
 | `Android properties unavailable` | Check `adb devices` and `adb shell getprop`, then retry status after restoring the connection. |
 
+Transfer failures also report the stage (`stop`, `release`, `provision`, `start`
+or `adb`), whether GUI stop was attempted/release confirmed and whether headless
+startup was requested/confirmed. Stop failure, timeout, continued ownership or failed
+D-Bus readback prevents headless activation. After release, a startup or ADB failure
+does not restore the GUI automatically. Inspect the reported status/journals below,
+repair the cause, then retry default setup; if managed headless is running, retry
+`--status`. For authorization failure, use the visible approval procedure above;
+never replace keys or bypass Android authorization.
+
 Each external observation is bounded; the wait deadline is checked between calls.
+`--wait` (default 180 seconds) also bounds the release and managed-session observation
+loops separately; the stop command itself has a 30-second timeout.
 For service state/logs (unprivileged journal access depends on distro policy):
 
 ```sh
@@ -195,12 +230,18 @@ interruption during initial download followed by recovery; reboot without login
 and automatic Android startup; authorized boot/actual serial/version/ABI; and
 unprivileged queries from two unrelated working directories. Include native
 non-Fedora evidence and relevant kernel/package/init differences, not just one
-successful distribution. Do not post keys, private account identities or APK data.
+successful distribution. Separately authorize a default-setup run from this user's
+graphical session: confirm the interruption warning, release, owned headless session
+and authorized boot serial/version/ABI; repeat without a bounce and compare preserved
+images/data/overlays/keys. Do not post keys, private account identities or APK data.
 These checks require operator authorization and are **not performed by offline
 fixtures or by the delivery runner**.
 
 Contracts: [official installation](https://docs.waydro.id/usage/install-on-desktops),
 [Waydroid CLI](https://docs.waydro.id/usage/waydroid-command-line-options),
+[pinned status semantics](https://github.com/waydroid/waydroid/blob/a1a1936a7ed74e1537deeb3420302997869d8a4d/tools/actions/status.py),
+[pinned stop semantics](https://github.com/waydroid/waydroid/blob/a1a1936a7ed74e1537deeb3420302997869d8a4d/tools/actions/session_manager.py),
+[pinned GetSession contract](https://github.com/waydroid/waydroid/blob/a1a1936a7ed74e1537deeb3420302997869d8a4d/tools/actions/container_manager.py),
 [official initialization source](https://github.com/waydroid/waydroid/blob/main/tools/actions/initializer.py),
 [official image handling](https://github.com/waydroid/waydroid/blob/main/tools/helpers/images.py),
 [ADB](https://developer.android.com/tools/adb),
