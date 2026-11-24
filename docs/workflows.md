@@ -51,8 +51,10 @@ Existing external command owners keep their handlers; the bundled skills remain
 available as `kit:ponytail` and `kit:ponytail-review` (and the other names).
 
 All workflows inherit the [shared freshness and ownership contract](../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership).
-Read-only/audit/questions/dry-run never fetch or mutate Git. Writable planning may
-read fresh GitHub metadata/remote source, but does not sync or commit the checkout.
+Read-only/audit/questions/dry-run never fetch or mutate Git. Standalone writable
+Plan With Me / Plan For Me apply the shared
+[planner freshness exception](../skills/shared/COMMON-CONTRACT.md#standalone-planner-freshness).
+Other planning routes read permitted remote source without syncing. Planning never commits.
 Implementation verifies baseline/ownership and isolates stale/shared source;
 delivery/sync follows the invoked command's scope and caller restrictions.
 

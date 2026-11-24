@@ -22,7 +22,10 @@ State/source pins are refreshed before integration and publication; changed inpu
 need normal merge reconciliation and affected checks/review. API failure means
 unknown/partial coverage, never an empty queue. Independent verified delivery can
 continue, but required unavailable gates still hold dependent publication.
-Read-only and planning do not fetch or sync Git. None of this activates Orbi or
+Read-only and restricted planning never fetch or sync Git. Only standalone writable
+Plan With Me / Plan For Me use the shared
+[planner freshness exception](../skills/shared/COMMON-CONTRACT.md#standalone-planner-freshness).
+None of this activates Orbi or
 qualifies live delivery; its existing pause and live-qualification limits remain.
 
 ## Support boundary

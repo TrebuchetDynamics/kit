@@ -60,6 +60,10 @@ possible question or repeat approval of settled answers.
 
 ## Learn enough to ask a useful question
 
+Before scoped source/tests reads, apply
+[standalone planner freshness](../shared/COMMON-CONTRACT.md#standalone-planner-freshness).
+Reuse the chosen source and receipt throughout this planning pass.
+
 First apply [conversation intake](../shared/PLAN-HANDOFF.md#conversation-findings-to-issues)
 to earlier analyses, grill answers and UI findings; settled answers stay settled.
 Read repository instructions, the user's current request, relevant existing docs,

@@ -38,8 +38,11 @@ delivers to `main`; other local worktrees are not inspected, saved or integrated
 Explicit `/git-commit-push all` retains its sweep. `/push` includes landed Orbi
 changes through verified upstream and reports outstanding issue/PR candidates
 without taking coordinator-owned heads or bypassing review.
-Read-only/audit and writable planning do not fetch or sync Git; authorized edits
-inspect ownership and isolate stale/shared baselines. Delivery retains caller scope.
+Read-only/audit and restricted planning never fetch or sync Git. Standalone writable
+Plan With Me / Plan For Me apply the shared
+[pre-analysis fast-forward exception](../skills/shared/COMMON-CONTRACT.md#standalone-planner-freshness)
+and record the chosen source revision. Other planning routes keep no-sync behavior.
+Authorized edits inspect ownership and isolate stale/shared baselines. Delivery retains caller scope.
 
 These contracts are detailed in [workflows](workflows.md). Planning does not grant
 implementation, publication or deployment authority. Accepted scope does not settle
