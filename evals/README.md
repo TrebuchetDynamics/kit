@@ -256,6 +256,49 @@ checks, not semantic candidate selection, ancestry validation, a shell sandbox,
 state ordering or model adherence. Neither a receipt's words nor exit 0 establishes
 live delivery. Source-backed inventory and independent PR review remain necessary.
 
+## Conditional GUI evidence scenarios
+
+`GuiEvidenceTraceTests` in `tests/test_skill_trace_evals.py` uses sanitized,
+fabricated [observations](tier3/traces/gui-observations.json) and the existing
+ordered event grader. The scenarios select the
+[shared GUI decision](../skills/shared/COMMON-CONTRACT.md#gui-actions-and-visual-evidence)
+without a new command, runtime or model call. `fixture click`, `fixture capture`
+and similar command-event strings are **inert action notation**, not supported
+Kit or host CLI commands. Reads carry fabricated trees, state changes, capture
+metrics and pixel descriptions; those descriptions are not real rendered pixels.
+
+Positive traces and deliberately wrong traces discriminate:
+
+- Unique actionable ref beside a similar button; supported unique role+name.
+- Changed/stale state resolved before use; failed side effect reconciled before
+  any retry, with fresh result evidence rather than action status alone.
+- Canvas coordinates grounded in matching state/viewport; wrong viewport,
+  invented refs and missing pixels rejected.
+- Ambiguous targets or neither modality: no click, report the gap/repair and
+  continue independent source checks.
+- Full tree label versus narrow clipped render: tree-only fit/clipping claims
+  fail; matching pixel evidence passes, unrelated wide evidence fails.
+- Screenshot-only, capture-only and read-only limits, including no manufactured
+  refs, interaction, edits, publication, uploads or needless snapshot.
+- Complete non-GUI source/CLI evidence: needless browser use fails.
+
+Each positive trace must contain its selected evidence/action sequence in order.
+Counterexamples assert the intended missing-evidence/order or forbidden-action
+diagnostic, not keyword presence in instructions. The oracle binds known fixture
+identities/actions and selected receipt wording; it does not interpret arbitrary
+screenshots, natural language, host APIs or state transitions. Structural tests
+also reject replacing the GUI link with an existing but wrong anchor or removing
+its conditional loading instruction, including the portable Graphify route.
+The archive check enumerates the actual shipped canonical and portable inventory,
+including compatibility entries. None proves a model read the linked rules.
+
+Run the focused modules through `scripts/check.py` as listed in the issue.
+Host/model GUI runs: **NOT_RUN**. No live GUI service, real account, screenshot/tree
+upload, TREX integration or performance claim is part of these offline fixtures.
+Hosts expose different modalities; missing refs or pixels limit the claim, not
+independent work. Any separately authorized model/harness comparison must use
+matched tasks and report source, tools, model and limitations separately.
+
 ## Run
 
 ```sh

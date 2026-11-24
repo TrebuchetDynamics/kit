@@ -19,6 +19,43 @@ PILOT = ('orbi', 'update-kit', 'unslop', 'plan-for-me', 'ponytail-review',
          'git-commit-push', 'push', 'unblock', 'docs-sync', 'plan-with-me')
 
 
+GUI_ANCHOR = 'gui-actions-and-visual-evidence'
+GUI_TRIGGER = 'For an authorized GUI action or a visual claim, read'
+
+
+def gui_entrypoint_routes(root):
+    """Check the explicit conditional instruction, not fragment-stripped reachability.
+
+    Also used against the actual npm archive. Only Kit-owned SKILL entrypoints are
+    in scope: independently installed upstream Hermes Graphify is not bundled.
+    """
+    owner = root / 'skills/shared/COMMON-CONTRACT.md'
+    if '## GUI actions and visual evidence' not in owner.read_text():
+        raise AssertionError('missing GUI decision anchor')
+    routes = (root / 'skills/shared/PONYTAIL.md', root / 'adapters/skills/COMMON.md')
+    for route in routes:
+        text = ' '.join(route.read_text().split())
+        target = ('COMMON-CONTRACT.md' if route.parent.name == 'shared' else
+                  '../../skills/shared/COMMON-CONTRACT.md') + '#' + GUI_ANCHOR
+        if GUI_TRIGGER not in text or '](' + target + ')' not in text:
+            raise AssertionError(f'{route}: missing conditional GUI anchor instruction')
+        # Safety instruction must precede optional Ponytail levels/coaching.
+        if route.parent.name == 'shared' and text.index(GUI_TRIGGER) > text.index('## Scope and levels'):
+            raise AssertionError('GUI decision hidden behind optional coaching')
+    inventory = {}
+    for folder in ('skills', 'adapters/skills'):
+        for entry in sorted((root / folder).glob('*/SKILL.md')):
+            targets = {(entry.parent / link.split('#')[0]).resolve()
+                       for link in re.findall(r'\]\(([^)\s]+)\)', entry.read_text())}
+            reached = [route for route in routes if route.resolve() in targets]
+            if not reached:
+                raise AssertionError(f'{entry}: no explicit shared entry route')
+            inventory[str(entry.relative_to(root))] = [str(r.relative_to(root)) for r in reached]
+    if not inventory:
+        raise AssertionError('empty shipped entrypoint inventory')
+    return inventory
+
+
 class SkillStandardTests(unittest.TestCase):
     def test_tracked_content_has_no_retired_executor_name(self):
         name = 'auto' + 'work'
@@ -63,6 +100,50 @@ class SkillStandardTests(unittest.TestCase):
         for mode in ('Read-only', 'Writable planning', 'Authorized implementation',
                      'Delivery/sync', 'Non-repository'):
             self.assertIn(mode, text)
+
+    def test_all_public_entrypoints_load_the_gui_decision(self):
+        inventory = gui_entrypoint_routes(ROOT)
+        self.assertIn('adapters/skills/graphify/SKILL.md', inventory)
+        self.assertIn('skills/grill-me/SKILL.md', inventory)
+        self.assertEqual(set(inventory), {
+            str(p.relative_to(ROOT)) for folder in ('skills', 'adapters/skills')
+            for p in self.skills(folder)})
+
+    def test_gui_route_rejects_wrong_fragment_or_missing_conditional_instruction(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for path in ('skills/shared/COMMON-CONTRACT.md', 'skills/shared/PONYTAIL.md',
+                         'adapters/skills/COMMON.md', 'adapters/skills/graphify/SKILL.md'):
+                target = root / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text((ROOT / path).read_text())
+            self.assertIn('adapters/skills/graphify/SKILL.md', gui_entrypoint_routes(root))
+            for relative in ('skills/shared/PONYTAIL.md', 'adapters/skills/COMMON.md'):
+                route = root / relative
+                original = route.read_text()
+                for old, new in ((GUI_ANCHOR, 'source-freshness-and-delivery-ownership'),
+                                 ('For an authorized GUI action or a visual claim, read',
+                                  'Optional reference:')):
+                    with self.subTest(route=relative, missing=old):
+                        route.write_text(original.replace(old, new))
+                        with self.assertRaisesRegex(AssertionError, 'conditional GUI anchor'):
+                            gui_entrypoint_routes(root)
+                        route.write_text(original)
+
+    def test_visual_owners_cover_findings_and_explicit_edit_verification(self):
+        for name in ('ui-taste', 'impeccable', 'unslop',
+                     'responsive-screenshots', 'beautify-github-readme'):
+            with self.subTest(skill=name):
+                text = (ROOT / f'skills/{name}/SKILL.md').read_text()
+                self.assertIn('../shared/COMMON-CONTRACT.md#' + GUI_ANCHOR, text)
+        findings = (ROOT / 'skills/shared/UI-FINDINGS.md').read_text()
+        self.assertIn('COMMON-CONTRACT.md#' + GUI_ANCHOR, findings)
+        for name, section in (('ui-taste', '## Toolset rules'),
+                              ('beautify-github-readme', '## Toolset rules'),
+                              ('impeccable', '## Verification')):
+            text = (ROOT / f'skills/{name}/SKILL.md').read_text().split(section, 1)[1]
+            self.assertIn('../shared/COMMON-CONTRACT.md#' + GUI_ANCHOR, text)
 
     def test_planning_fast_forward_exception_is_narrow_and_source_bound(self):
         text = ' '.join((ROOT / 'skills/shared/COMMON-CONTRACT.md').read_text().split())

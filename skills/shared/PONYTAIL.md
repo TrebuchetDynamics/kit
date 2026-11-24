@@ -7,6 +7,10 @@ read-only, task scope, approval, review and delivery limits still govern.
 
 Before acting, apply the [shared source freshness and ownership contract](COMMON-CONTRACT.md#source-freshness-and-delivery-ownership) for the current mode, including non-repository applicability.
 
+For an authorized GUI action or a visual claim, read the
+[shared GUI decision](COMMON-CONTRACT.md#gui-actions-and-visual-evidence).
+This safety/evidence rule applies even when optional Ponytail coaching is off.
+
 ## Choose the smallest complete result
 
 Read the task and the connected source first. Account for callers, tests, fixtures,

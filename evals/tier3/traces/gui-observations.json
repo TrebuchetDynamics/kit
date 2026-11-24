@@ -1,0 +1,21 @@
+{
+  "note": "Sanitized fabricated observations. Pixel descriptions are inert synthetic data, NOT actual renders, real accounts or model evidence. fixture action strings in tests are notation, not a runnable API.",
+  "settings-tree-v1": {"route": "/settings", "state": "v1", "viewport": [800, 600], "source": "fixture-host tree", "buttons": [{"ref": "e7", "role": "button", "name": "Save draft", "actionable": true}, {"ref": "e8", "role": "button", "name": "Save and publish", "actionable": true}]},
+  "settings-role-only": {"route": "/settings", "state": "v1", "source": "fixture-host roles", "supported_locator": "role+name", "buttons": [{"role": "button", "name": "Save draft", "unique": true, "actionable": true}]},
+  "saved-tree-v2": {"route": "/settings", "state": "v2", "source": "fixture-host tree", "status": "Draft saved"},
+  "layout-changed": {"state": "v3", "change": "Dialog opened and controls remounted; old refs invalid"},
+  "settings-tree-v3": {"state": "v3", "source": "fixture-host tree", "buttons": [{"ref": "e19", "role": "button", "name": "Save draft", "unique": true, "actionable": true}]},
+  "saved-tree-v4": {"state": "v4", "source": "fixture-host tree", "status": "Draft saved"},
+  "timeout-result-unknown": {"action_result": "timeout", "effect": "unknown; reobserve before retry"},
+  "canvas-tree": {"route": "/canvas", "state": "v1", "viewport": [800, 600], "source": "fixture-host tree", "nodes": [{"role": "canvas", "name": "Editor"}], "actionable_targets": []},
+  "canvas-pixels-800x600-v1": {"state": "v1", "viewport": [800, 600], "source": "fabricated pixel description", "target": "One blue node centered at 410,210; no other nearby target", "supported_action": "viewport coordinates"},
+  "canvas-pixels-375x667-v1": {"state": "v1", "viewport": [375, 667], "source": "fabricated pixel description", "target": "Blue node at 120,210"},
+  "canvas-pixels-v2": {"state": "v2", "viewport": [800, 600], "source": "fabricated pixel description", "result": "Blue node selected with visible outline"},
+  "ambiguous-tree-and-pixels": {"tree": "Two buttons named Continue, no unique actionable refs", "pixels": "Overlapping indistinguishable Continue controls", "target": "uncertain"},
+  "no-modalities": {"tree": "unavailable", "pixels": "unavailable", "source_cli": "available"},
+  "source-check": {"source": "fabricated source/CLI", "result": "Independent contract verified"},
+  "narrow-tree-full-label": {"route": "/settings", "state": "v1", "viewport": [375, 667], "source_revision": "fixture-A", "source": "fixture-host tree", "label": "Save draft and continue", "visual_fit": "unknown"},
+  "narrow-pixels-clipped": {"route": "/settings", "state": "v1", "viewport": [375, 667], "source_revision": "fixture-A", "source": "fabricated pixel description", "appearance": "Save draft and cont... clipped at right edge"},
+  "wide-pixels-fit": {"route": "/settings", "state": "v1", "viewport": [1440, 900], "source_revision": "fixture-A", "source": "fabricated pixel description", "appearance": "Full label fits"},
+  "capture-metrics": {"source": "fabricated capture script report", "viewport": [375, 667], "scroll_width": 420, "captured": true, "image_inspected": false}
+}
