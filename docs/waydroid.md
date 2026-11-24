@@ -45,8 +45,20 @@ and working local DHCP/Waydroid networking are also necessary.
 
 - APT: installs missing `waydroid`, `weston`, `adb` from **already configured**
   repositories. Configure Waydroid's official repository first if absent.
-- DNF: installs missing `waydroid`, `weston`, `android-tools`. Admission uses cached
-  package metadata; configure repositories/refresh metadata yourself if missing.
+- DNF: maps missing `waydroid`, `weston`, `adb` binaries to `waydroid`, `weston`,
+  `android-tools`. Ordinary setup does not require a warm/readable user cache:
+  after sudo authorization, under the setup lock, one bounded
+  `dnf --refresh install -y` transaction resolves and installs only the mapped
+  missing packages (and their dependencies) from **already enabled** repositories.
+  There is no separate metadata refresh or reliance on root sharing the user cache.
+  With all binaries present, no DNF install or refresh runs. No repositories are
+  added/enabled, signature policy changed or broad upgrade requested.
+  `--check` uses only `dnf --cacheonly list --available` inspection: it names each
+  missing binary/candidate and returns nonzero for missing DNF dependencies, even
+  if a candidate appears in cached metadata. Failed/insufficient cached inspection
+  means **availability unknown**, not package absence; fresh availability cannot
+  be verified without modifying the cache. Run ordinary setup for authorized
+  fresh resolution, rather than prewarming metadata yourself.
 - Other Linux distributions/package managers: install those native capabilities
   using the distribution's supported Waydroid instructions, then run the same
   script. An unknown distro name is not rejected. No arbitrary third-party
@@ -166,6 +178,8 @@ Other failures return nonzero. Failure diagnostics return no ready report:
 
 | Error | Next action |
 | --- | --- |
+| `DNF resolution/install failed` | Read the retained DNF diagnostic: explicit no match differs from repository metadata, DNS/network or permission failures. Repair the reported package/repository/access cause using the distro's official instructions, then retry ordinary setup. A user-cache failure alone does not prove absence. No GUI stop or device service activation has occurred. |
+| `DNF resolution/install timed out after 1800 seconds` | Inspect DNF/package-manager state and connectivity before retrying setup; the transaction may have partially installed packages. GUI transfer and device activation have not begun. |
 | `No container IP` | Inspect `waydroid status` and container journal; repair waydroid0/DHCP/network policy. UNKNOWN may be transient; retry status. |
 | `ADB authorization pending` (exit 2) | Missing Android trust for the current user's key. Keep headless running and keys intact; retry status only after valid authorization for that same key exists. Kit cannot establish first-time trust unattended. |
 | `ADB not connected` | Check Android TCP 5555 and local firewall, without opening ADB externally. |
@@ -235,6 +249,10 @@ successful distribution. Separately authorize a default-setup run from this user
 graphical session: confirm the interruption warning, release, owned headless session
 and authorized boot serial/version/ABI; repeat without a bounce and compare preserved
 images/data/overlays/keys. Do not post keys, private account identities or APK data.
+For DNF, also verify one ordinary invocation with missing Weston and a cold user
+cache: authorized fresh resolution/install must precede headless capability checks
+and any GUI transfer. Capture repository/package errors without disrupting the GUI
+when resolution fails. Fake DNF tests do not prove package availability on Fedora.
 These checks require operator authorization and are **not performed by offline
 fixtures or by the delivery runner**.
 

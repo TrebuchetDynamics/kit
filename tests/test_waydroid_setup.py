@@ -23,6 +23,8 @@ session = session_file.read_text() if session_file.exists() else ('gui' if mode.
 if name == 'timeout':
     if mode == 'gui-stop-hang' and args[1:] == ['waydroid', 'session', 'stop']:
         sys.exit(124)  # deterministic timeout contract, no sleeping/hung test
+    if os.environ.get('DNF_FAILURE') == 'timeout' and args[1:4] == ['sudo', '--', 'dnf']:
+        sys.exit(124)  # bounded package transaction timeout, no real wait
     # Preserve the installed name: multicall coreutils reject renamed links.
     os.execv(os.environ['REAL_TIMEOUT'], ['timeout', *args])
 elif name == 'busctl':
@@ -136,9 +138,28 @@ elif name == 'weston':
 elif name == 'apt-cache':
     sys.exit(1 if mode == 'no-package' else 0)
 elif name == 'dnf' and 'list' in args:
-    sys.exit(1 if mode == 'no-package' else 0)
+    assert args[:3] == ['--cacheonly', 'list', '--available']
+    cache = os.environ.get('DNF_CACHE', 'cold')
+    if cache == 'available':
+        print('Available Packages\n' + args[-1] + '.x86_64 1.0 fixture')
+    else:
+        print({'cold': 'Cache-only enabled but no cache for fixture-repo',
+               'no-match': 'Error: No matching Packages to list',
+               'access': 'Permission denied reading cached metadata',
+               'timeout': ''}[cache], file=sys.stderr)
+        sys.exit(124 if cache == 'timeout' else 1)
 elif name in ['apt-get', 'dnf']:
-    for package in args[2:]:
+    if name == 'dnf':
+        assert args[:3] == ['--refresh', 'install', '-y']
+        assert (root / 'sudo-admitted').exists()
+        failure = os.environ.get('DNF_FAILURE', '')
+        if failure:
+            print({'no-match': 'No match for argument: weston\nError: Unable to find a match: weston',
+                   'repo': "Error: Failed to download metadata for repo 'fixture-repo'",
+                   'network': 'Curl error (6): Could not resolve host: fixture.invalid',
+                   'access': 'Permission denied opening repository metadata'}[failure], file=sys.stderr)
+            sys.exit(1)
+    for package in args[3:] if name == 'dnf' else args[2:]:
         p = root / 'bin' / ('adb' if package == 'android-tools' else package)
         p.write_text(Path(sys.argv[0]).read_text())
         p.chmod(0o755)
@@ -563,18 +584,114 @@ class WaydroidSetupTests(unittest.TestCase):
         self.assert_ok(self.invoke())
         self.assertIn('apt-get install -y waydroid', self.calls())
 
-    def test_dnf_android_tools_mapping_and_admission(self):
-        (self.bin / 'apt-get').unlink()
-        (self.bin / 'adb').unlink()
+    def use_dnf(self, *missing):
+        for name in ['apt-get', 'apt-cache', *missing]:
+            (self.bin / name).unlink()
         dnf = self.bin / 'dnf'
         dnf.write_text(FAKE)
         dnf.chmod(0o755)
-        result = self.invoke('--check', mode='no-package')
+        self.env.update(DNF_CACHE='cold', DNF_FAILURE='')
+
+    def test_dnf_android_tools_mapping_and_admission(self):
+        self.use_dnf('waydroid', 'adb')
+        result = self.invoke('--check')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('cached DNF package android-tools', result.stderr)
+        self.assertIn('Missing binary: adb; DNF candidate: android-tools', result.stderr)
+        self.assertIn('availability unknown', result.stderr)
         self.assertNotIn('sudo ', self.calls())
+        self.assertFalse((self.home / '.local').exists())
+        (self.base / 'calls').write_text('')
         self.assert_ok(self.invoke())
-        self.assertIn('dnf install -y android-tools', self.calls())
+        self.assertEqual([c for c in self.calls().splitlines() if c.startswith('dnf ')],
+                         ['dnf --refresh install -y waydroid android-tools'])
+        self.assertNotIn('dnf --cacheonly', self.calls())
+
+    def test_dnf_cold_user_cache_installs_before_headless_checks_and_transfer(self):
+        before = self.complete_device()
+        self.use_dnf('weston')
+        result = self.invoke(mode='gui')
+        self.assert_ok(result)
+        self.assertIn('ADB serial: 192.0.2.8:5555\nAndroid: 13\nABI: x86_64', result.stdout)
+        calls = self.calls().splitlines()
+        install = calls.index('dnf --refresh install -y weston')
+        self.assertLess(calls.index('flock -n 9'), calls.index('sudo -v'))
+        self.assertLess(calls.index('sudo -v'), install)
+        self.assertIn('timeout 1800 sudo -- dnf --refresh install -y weston', calls)
+        self.assertEqual([c for c in calls if c.startswith('dnf ')], ['dnf --refresh install -y weston'])
+        self.assertLess(install, calls.index('weston --help'))
+        self.assertLess(install, calls.index('waydroid session stop'))
+        self.assertLess(install, calls.index('systemctl enable --now waydroid-container.service'))
+        self.assertLess(install, calls.index('systemctl --user enable --now kit-waydroid.service'))
+        self.assertEqual(before, {p: p.read_bytes() for p in before})
+
+    def test_dnf_fresh_resolution_failures_preserve_gui_and_diagnostics(self):
+        self.complete_device()
+        self.use_dnf('weston')
+        before = {p: p.read_bytes() for base in [self.state, self.home]
+                  for p in base.rglob('*') if p.is_file()}
+        for failure, diagnostic in [
+            ('no-match', 'No match for argument: weston'),
+            ('repo', "Failed to download metadata for repo 'fixture-repo'"),
+            ('network', 'Could not resolve host: fixture.invalid'),
+            ('access', 'Permission denied opening repository metadata'),
+            ('timeout', 'timed out after 1800 seconds'),
+        ]:
+            with self.subTest(failure=failure):
+                self.env['DNF_FAILURE'] = failure
+                (self.base / 'calls').write_text('')
+                result = self.invoke(mode='gui')
+                self.assertEqual(result.returncode, 124 if failure == 'timeout' else 1, result.stderr)
+                self.assertIn(diagnostic, result.stderr)
+                self.assertIn('weston', result.stderr)
+                self.assertIn('retry setup', result.stderr)
+                self.assertNotIn('Missing cached DNF package', result.stderr)
+                self.assertNotIn('ADB serial:', result.stdout)
+                calls = self.calls()
+                self.assertIn('timeout 1800 sudo -- dnf --refresh install -y weston', calls)
+                for forbidden in ['--cacheonly', 'weston --help', 'session stop', 'enable --now',
+                                  'daemon-reload', 'enable-linger', 'waydroid init']:
+                    self.assertNotIn(forbidden, calls)
+                self.assertFalse((self.base / 'stop-attempted').exists())
+                self.assertFalse((self.base / 'session').exists())
+                self.assertEqual(before, {p: p.read_bytes() for p in before})
+                self.assertEqual(set(before), {p for base in [self.state, self.home]
+                                              for p in base.rglob('*') if p.is_file()})
+
+    def test_dnf_check_uses_only_cached_evidence_and_reports_missing_binary(self):
+        self.use_dnf('weston')
+        for cache in ['cold', 'no-match', 'access', 'timeout', 'available']:
+            with self.subTest(cache=cache):
+                self.env['DNF_CACHE'] = cache
+                (self.base / 'calls').write_text('')
+                result = self.invoke('--check', mode='gui')
+                self.assertNotEqual(result.returncode, 0)
+                output = result.stdout + result.stderr
+                self.assertIn('Missing binary: weston; DNF candidate: weston', output)
+                if cache == 'available':
+                    self.assertIn('available in cached metadata only', output)
+                else:
+                    self.assertIn('availability unknown', output)
+                    self.assertIn('without refreshing metadata', output)
+                    if cache == 'timeout':
+                        self.assertIn('timed out after 30 seconds', result.stderr)
+                    else:
+                        self.assertIn({'cold': 'Cache-only enabled but no cache for fixture-repo',
+                                       'no-match': 'No matching Packages to list',
+                                       'access': 'Permission denied reading cached metadata'}[cache], result.stderr)
+                self.assertIn('run ordinary setup', result.stderr)
+                calls = self.calls().splitlines()
+                self.assertEqual([c for c in calls if c.startswith('dnf ')],
+                                 ['dnf --cacheonly list --available weston'])
+                for forbidden in ['sudo ', '--refresh', 'install -y', 'session stop', 'enable --now']:
+                    self.assertNotIn(forbidden, self.calls())
+                self.assertFalse((self.home / '.local').exists())
+                self.assertFalse((self.base / 'session').exists())
+
+    def test_dnf_all_dependencies_present_never_installs_or_refreshes(self):
+        self.use_dnf()
+        self.assert_ok(self.invoke('--check'))
+        self.assert_ok(self.invoke())
+        self.assertNotIn('dnf ', self.calls())
 
     def test_foreign_unit_and_damaged_data_refuse_before_sudo(self):
         unit = self.home / '.config/systemd/user/kit-waydroid.service'
