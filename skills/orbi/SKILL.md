@@ -87,9 +87,11 @@ concrete unmet need, not a fixed sequence of model turns.
    repository access. Do not require PR-only mode, special opt-in, a protection change,
    paid GitHub plan, engine release/proof or second approval on that basis.
    Authentication, repository access, ownership and all other applicable gates still apply.
-   `update` (also spelled `update --stop`) authorizes pausing owned timers
-   without another confirmation; workers
-   finish naturally and scheduling stays stopped. It never authorizes a start.
+   Plain `update` requests maintenance and eligible scheduling after engine validation,
+   without another confirmation. Preserve independent pauses, cutover and human-only
+   gates before invoking it; when unresolved, name the exact missing evidence instead
+   of invoking an activating update. `update --stop` is the compatibility opt-out:
+   pause/update and leave stopped. Workers finish naturally.
    Stop disables only owned timers; `draining` is not `stopped`. Never kill/restart workers.
    Other mutations likewise require accepted scope. Installation and offline checks grant none.
 3. **Invoke once.** Preserve literal argument values, quoting, paths, provider/model
@@ -111,14 +113,16 @@ concrete unmet need, not a fixed sequence of model turns.
 4. **Relay receipt.** Return the helper's safe result directly wherever the host
    supports it. If a tool-result model turn is mandatory, relay only observed facts;
    no new plan or paraphrase pass. Lead with target and outcome, then a next action
-   only when needed. Relay the helper's exact `resume_command` or `error.fix`;
-   never guess selectors or shorten a bound recovery command.
+   only when needed. Use the helper's `human_resume_command` for a deliberate drain
+   retry: plain `/orbi update` only when the helper verifies this checkout selects
+   the same deployment. Keep the exact `resume_command` for automation and outside
+   that context. Relay `error.fix`; never guess selectors or shorten bound recovery commands.
 
    Distinguish partial, uncertain and failed results, even on exit 0. For example,
    given one draining worker and `engine_update: deferred`, say: “sdrhf: scheduling
    paused. The engine was not updated; one worker is still running.” Follow with
-   the exact supplied resume command. Disabled timers are not an applied engine
-   update, and `prepared`, `activated: false` does not prove scheduler inactivity.
+   the supplied human retry action. Do not suggest start while the engine is deferred.
+   Disabled timers are not an applied engine update, and `prepared`, `activated: false` does not prove scheduler inactivity.
 
    Keep structured evidence available: errors, `error.fix`, `error.mutated`,
    completed/failed `steps`, confirmed timer lists, `preparation`, `activation` and
@@ -216,8 +220,8 @@ For host/fixture measurement limits, use the reference's
 - Extra routing/validation/paraphrase models, routine polling or duplicate host probes.
 - A guessed alias, shell interpolation, changed literal selectors or removed dry-run.
 - Prepare-only/dry-run enables timers, status writes, or stop/update kills/restarts a service.
-- Update invokes activating install-units, syncs before fresh idle/no-pending-start
-  evidence, re-enables timers or reports stopped from missing scheduler evidence.
+- Update syncs before fresh idle/no-pending-start evidence, activates before engine
+  validation or despite an independent pause, or reports stopped from missing evidence.
 - Missing ownership/authorization, silently changed pin/provider/harness/origin,
   or an automatic install/login/repair/retry after a refusal.
 - An empty queue or stopped state inferred from unavailable evidence, or secrets
