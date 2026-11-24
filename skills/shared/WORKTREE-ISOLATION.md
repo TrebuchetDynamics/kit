@@ -1,6 +1,8 @@
 # Worktree isolation
 
-Apply the [mode-aware freshness contract](COMMON-CONTRACT.md#source-freshness-and-delivery-ownership) first. Read-only and planning modes do not create worktrees or fetch.
+Apply the [mode-aware freshness contract](COMMON-CONTRACT.md#source-freshness-and-delivery-ownership) first. Read-only and planning modes do not create worktrees. Only eligible standalone
+planners have the narrow [pre-analysis pull exception](COMMON-CONTRACT.md#standalone-planner-freshness);
+this isolation procedure does not widen planning authority.
 
 Before creating an authorized writing checkout, inspect repository instructions, Git status,
 existing worktrees and active ownership. Pin the intended base to an immutable

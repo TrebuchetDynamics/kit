@@ -58,6 +58,10 @@ well written.
 
 ## Investigate and decide
 
+Before scoped source/tests reads, apply
+[standalone planner freshness](../shared/COMMON-CONTRACT.md#standalone-planner-freshness).
+Reuse the chosen source and receipt throughout this planning pass.
+
 Size the work first and say the size in plain words: a clear task gets one complete
 task contract without an interview; a project gets a written plan section and
 tasks with real dependencies. In no-write mode, return the complete plan inline and

@@ -52,17 +52,88 @@ Report changed artifacts, verified behavior, limitations and remaining work.
 ## Source freshness and delivery ownership
 
 Select the mode before repository probes or handoffs. This rule overrides conflicting
-first-party delivery text and linked upstream methods; it grants no new authority.
+first-party delivery text and linked upstream methods. Only the narrow
+standalone-planner exception below adds Git-write authority.
 Scope, explicit no-pull/no-sync/no-commit/no-push limits, pauses, host permissions,
 protection and required review gates propagate to supporting skills and delegates.
 
 | Mode | Source evidence and permitted effects |
 | --- | --- |
-| Read-only / audit / questions / dry-run | Read existing local refs/source and permitted remote metadata only. Never fetch (it writes `.git`), update refs, pull, create worktrees or otherwise mutate Git. Report the observed revision and freshness gaps. |
-| Writable planning | Consult fresh GitHub issue/PR state and available remote source reads; identify stale local source and record unknown evidence when unavailable. Save only authorized planning artifacts/publish issues. Do not sync or commit the checkout. |
+| Read-only / audit / questions / dry-run | Read existing local refs/source and permitted remote metadata/source only. Never fetch (it writes `.git`), update refs, pull, create worktrees or otherwise mutate Git. Report the observed revision and freshness gaps. |
+| Writable planning | Save authorized planning artifacts/publish issues and consult fresh issue/PR evidence. Standalone Plan With Me / Plan For Me apply [planner freshness](#standalone-planner-freshness) before code analysis. Other planning routes use permitted remote reads without Git sync. Never commit the checkout. |
 | Authorized implementation | Inspect the baseline, repository identity and actual ownership before edits. If stale or shared, use the existing isolation procedure from a verified base; do not refresh another writer's checkout. If the base cannot be verified within scope, hold dependent edits and name the missing evidence. |
 | Delivery/sync | Follow [/push](../push/SKILL.md) for invoking-checkout delivery to `main` or [/git-commit-push](../git-commit-push/SKILL.md) for its explicit scope (`all` retains the sweep). Only authorized sync may fetch a verified configured upstream. Narrower caller limits win. |
 | Non-repository | Report this rule not applicable; do not require Git or GitHub for a non-repository task. |
+
+### Standalone planner freshness
+
+**Scope.** This prospective exception is for standalone writable Plan With Me and
+Plan For Me only. It is not delivery permission. Read-only, audit, questions-only,
+dry-run, no-write and explicit no-pull/no-sync invocations never fetch or alter
+refs. Honor historical/pinned source requests without this exception. An Orbi-owned
+substep preserves its coordinator's pinned candidate. Supporting methods and other
+planning routes do not inherit this authority.
+
+1. **Bind before reading code.** Do this once before scoped code analysis, including
+   discovery and interview preparation. Read the request and repository instructions
+   needed to establish identity, restrictions and ownership first. Resolve the
+   canonical repository with `git worktree list --porcelain`, the invoking checkout,
+   intended analysis branch from request/policy, attached current branch, and its
+   configured `branch.<branch>.remote` and `branch.<branch>.merge`. Verify the fetch
+   URL (not the push URL), upstream ref and tracking mapping against that repository.
+   Do not infer `origin/main`, switch branches or set missing upstream configuration.
+   A missing or ambiguous target holds local sync.
+2. **Prove safe ownership and ancestry.** Require an exclusively held checkout on
+   that verified branch, with a clean index and worktree including untracked files
+   and submodules, no in-progress Git operation, and no active/foreign-worker or
+   uncertain ownership. A clean status or a worktree name alone proves no release.
+   Use current issue/PR/run and local writer evidence without modifying other trees.
+   Use nonmutating probes, including `GIT_OPTIONAL_LOCKS=0` to prevent status from
+   refreshing the index. Read upstream metadata without fetching, for example
+   `timeout 60 git -C "$checkout" ls-remote --exit-code "$fetch_remote" "$upstream_ref"`.
+   Require one exact ref/SHA. Establish that local HEAD has no local-only commits
+   relative to that SHA, using available Git objects/ancestry or permitted remote
+   comparison reads. Cached tracking refs alone do not prove current ancestry.
+   If ancestry cannot be verified without fetching, use remote-source analysis.
+   Never pull an ahead, diverged, detached, dirty, wrong-branch or owned checkout.
+3. **Fast-forward once.** Recheck branch, HEAD, clean status and ownership immediately
+   before the write. Only after all gates pass, use the verified values below:
+
+   ```sh
+   timeout 60 git -C "$checkout" pull --ff-only --no-rebase --no-autostash --no-recurse-submodules "$fetch_remote" "$upstream_ref"
+   ```
+
+   This is the only added Git-write operation, including its fetch. Do not run a
+   separate fetch or substitute a generic delivery recipe. Record pre-pull HEAD,
+   the observed remote SHA, exit status, resulting HEAD and fetched upstream commit
+   (`git rev-parse FETCH_HEAD`). Require resulting HEAD = fetched upstream SHA,
+   even for an already-current no-op. If the fetched SHA differs from the earlier
+   observation, verify identity/ancestry and use the fetched revision only after
+   assessing affected evidence. A rejection, timeout, postcondition failure or
+   ownership drift is not success. Preserve the actual error and observed state,
+   including any changed fetch metadata/refs. No retry or repair: no commit, push,
+   rebase, merge commit, stash, reset, forced checkout, service changes or repair of
+   another tree.
+4. **Choose and attribute source.** If sync is unsafe, forbidden or fails, use
+   permitted read-only source at a verified remote SHA for the intended ref. Read
+   source/tests at that SHA, not a moving branch URL. A metadata-only SHA is not
+   evidence that its code was read. Keep local-only changes distinctly attributed
+   to their local revision or dirty paths, never silently combine them with upstream.
+   For pinned/coordinator requests, use the requested source rather than replacing
+   it with latest. If remote source is unavailable too, disclose actual local/pinned
+   source and the freshness gap. Hold freshness-dependent decisions, not independent
+   planning. Name the repair/resume condition, such as verifying the intended
+   upstream or obtaining read access; do not repair or release another worker.
+5. **Reuse and report.** Coordinate existing planning reads with this check, then
+   investigate source/tests at the chosen revision. Reuse still-valid evidence,
+   not a second discovery pass or a pull per question. Recheck permitted upstream
+   metadata before publication, not on every interview turn. Revisit only material
+   drift affecting decisions or acceptance; hold affected publication if unresolved.
+   The source receipt names repository/checkout, branch, fetch remote/ref, pre-pull
+   HEAD, observed/fetched upstream SHA, resulting HEAD, chosen analysis revision,
+   sync outcome (fast-forward, already-current, skipped or failed), local-only
+   evidence and gaps. Use not-applicable/unknown rather than inventing a fetched
+   revision for a no-sync path. Report what was and was not verified.
 
 **Verify identity, not names.** Resolve the actual repository, intended base,
 configured upstream and push destination from Git configuration and repository
