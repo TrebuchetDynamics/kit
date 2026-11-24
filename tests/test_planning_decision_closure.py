@@ -309,6 +309,45 @@ class PlanningDecisionClosureTests(unittest.TestCase):
                          'one useful progress update', 'ready/waiting/proposed'):
             self.assertIn(expected, readme)
 
+    def test_paired_reconciliation_specimens_retain_page_two_and_failure_evidence(self):
+        # Inert model-evaluation inputs and expected results, not a matching engine.
+        fixture_dir = ROOT / 'tests/fixtures/planning'
+        cases = json.loads((fixture_dir / 'cases.json').read_text())['cases']
+        expected = section('tests/fixtures/planning/README.md', 'Paired open-issue reconciliation specimens')
+        for scenario in ('issue-inventory', 'issue-drift', 'issue-page-failure'):
+            paired = []
+            for mode in ('plan-with-me', 'plan-for-me'):
+                name = f'{mode}-{scenario}'
+                with self.subTest(case=name):
+                    self.assertIn(name, cases)
+                    route, request, files = cases[name]
+                    self.assertEqual(route, f'skills/{mode}/SKILL.md')
+                    self.assertIn('do not implement', request)
+                    self.assertIn('no-write', request)
+                    self.assertIn(name, expected)
+                    self.assertIn('GitHub Issues', files['AGENTS.md'])
+                    inventory = files['notes/github.md']
+                    for evidence in ('Page 1', 'Page 2', 'per_page=3', 'pull_request',
+                                     '#812', 'Quiet reconnects', 'external-reporter',
+                                     'relevant comments', 'linked PR', 'parent #800',
+                                     'blockedBy #805', '#811', 'owner=worker-a',
+                                     '#809', 'merged PR #808', '#813'):
+                        self.assertIn(evidence, inventory)
+                    if scenario == 'issue-drift':
+                        for evidence in ('#812 now owned', '#814', 'new match', 'foreign edit'):
+                            self.assertIn(evidence, files['notes/refresh.md'])
+                    if scenario == 'issue-page-failure':
+                        self.assertIn('Page 2: HTTP 403', inventory)
+                        self.assertIn('unknown', inventory)
+                    paired.append(files)
+            self.assertEqual(*paired)
+        for outcome in ('#810 covered as-is', '#812 refine only the missing acceptance',
+                        '#811 contract and labels unchanged', '#813 related, not blockedBy',
+                        '#809 already delivered', 'only P1 new', '#814 reuse after refresh',
+                        'no writes', 'Page 2: HTTP 403', 'uniqueness unverified',
+                        'NOT_RUN', 'not model recall'):
+            self.assertIn(outcome, expected)
+
     def test_lgtm_continuation_specimens_bind_inputs_to_scoped_results(self):
         """Inert source examples, not executed conversations or a model evaluator."""
         examples = section('skills/lgtm/SKILL.md', 'Examples').split(' - ')

@@ -17,6 +17,35 @@ evaluation, use a fresh context, preserve actual owner edits and pauses, invento
 all writes/tools and bind results to exact source and host/model inputs. Do not
 score missing runs as compliance or fabricate replies.
 
+## Discovery stop/widen scenarios
+
+These matched `/plan-for-me` scenarios are **NOT_RUN** model specifications, not
+observed responses. Start a fresh context for each case. Use a disposable
+monorepo and simulated GitHub readbacks; do not publish real issues, implement or
+activate Orbi. The canonical skill and portable adapter use the same discovery
+reference. Offline instruction guards live in `test_planning_decomposition_contract.py`.
+
+Shared evidence: the request is `read-only: improve reliability`. The repository
+map identifies `packages/api`, its `packages/storage` dependency and unrelated
+`packages/gallery`. Accepted specifications, API source and failing regression
+output support an API retry fix with observable acceptance: one transient failure
+retries once, while a permanent error does not retry. Storage's documented atomic
+write contract and current source/test evidence support that fix. Supplied issue
+readbacks show no covering issue or active owner. Remaining gallery layout
+uncertainty cannot affect the API batch. No other selection-changing choice is
+identified. Checks proposed by the planner stay proposed/unrun.
+
+| Case / evidence delta | Expected decision and user-visible result |
+| --- | --- |
+| **Stable frontier** — shared evidence unchanged. | Stop widening. Return the supported API task contract inline with source evidence, acceptance and the issue/ownership disposition. Record the API/storage inspected boundary and why gallery uncertainty cannot change selection. Leave gallery uninspected, not gap-free. Save nothing. |
+| **Material prerequisite** — same inputs, except storage's atomic write guarantee is now UNKNOWN: the proposed retry may duplicate a committed write. | Widen into storage's write/commit implementation and tests before selecting the retry work. Resolve the named duplication risk rather than inspect gallery. If evidence confirms non-idempotent writes, plan the real safety prerequisite before retry work. If storage evidence is unavailable, report `Storage commit/idempotency evidence unavailable; retry work pending`, name the required source/test evidence and resume condition, and continue only independent supported work. No early-stop claim while that risk remains. |
+| **Existing coverage** — stable inputs, except supplied current readbacks show open issue #800 already covers the retry outcome, acceptance and verification, and its linked PR #801 has an active owner. | Reuse #800 and preserve its owner/PR. Report coverage and zero new tasks; do not create replacement findings, audit gallery to fill an allowance or claim delivery. |
+| **Explicit batch** — replace the discovery request with the nine specified outcomes in `cases.json`'s `native-for-bulk` case. | Apply the full requested-batch contract: account for all nine outcomes, reusing FMT-01 and retaining only the specified unresolved choice on affected work. Neither a supported first task nor the eight-new-task discovery ceiling truncates the batch. Preserve real prerequisites and independent lanes. |
+
+The pair differs only in the storage prerequisite evidence. Grade the actual
+reads, final response and absence of writes if a model evaluation is later run.
+Static checks and this table do not prove model adherence or live qualification.
+
 ## Paired recovery specimens and expected outcomes
 
 These synthetic pairs use the same inputs for both canonical planners. All intent
@@ -107,3 +136,26 @@ Static routing/branch checks in `test_planning_decision_closure.py` and
 GitHub transport: two-issue partial drift, readiness timeouts, ambiguous creation
 and never-attempted creation. Those simulated receipts are not observed GitHub
 publication or proof that a model selects or summarizes the correct branch.
+
+## Paired open-issue reconciliation specimens
+
+These `cases.json` pairs are inert inputs, **NOT_RUN**, not model recall or live
+GitHub evidence. Both planners get identical repository/evidence files. All
+product outcomes are accepted; `no-write` means no writes, including scratch,
+comments, labels or proposed issue edits. Return the complete dispositions inline.
+Use a fresh context per canonical or portable invocation. A separately authorized
+writable evaluation may remove `no-write` only in a disposable repository with
+simulated GitHub, retaining normal publication and final-readiness gates. No real
+publication or Orbi activation is part of these fixtures.
+
+| Specimens | Expected outcome |
+| --- | --- |
+| `plan-with-me-issue-inventory`, `plan-for-me-issue-inventory` | Focused accepted batch. Read both pages (per_page=3); Page 1 has a PR, so count four issues, not five, and still follow Page 2. #810 covered as-is; #812 refine only the missing acceptance for bounded jitter, preserving cancel/keepalive text, third-party intent, parent #800 and blockedBy #805. Its paraphrased title and external author without a Kit marker do not justify a duplicate. #811 contract and labels unchanged; route the genuinely new duplicate-metric evidence to worker-a. #813 related, not blockedBy: help is useful independently of retry jitter despite sharing a file. #809 already delivered by merged PR #808, not new JSON-error work. With complete refreshed coverage, only P1 new: CSV connection-event export. Show reused, proposed-improved, related and proposed-new IDs/keys and relationship reasons; save nothing. |
+| `plan-with-me-issue-drift`, `plan-for-me-issue-drift` | Discovery inside accepted reliability goals uses the same inventory/dispositions, then reads refreshed evidence. #812 is now owned; preserve its foreign edit and route only new jitter evidence to worker-b, with no body/label/edge mutation or replacement. #814 reuse after refresh covers CSV (alias “audit rows”); zero new issues. Do not let the old inventory or an unused publisher key authorize P1. |
+| `plan-with-me-issue-page-failure`, `plan-for-me-issue-page-failure` | Report `Page 2: HTTP 403` and remaining open inventory unknown, not empty. Cached candidate details are not current coverage; uniqueness unverified for P1, so do not publish supposedly new work. Continue permitted investigation, show provisional dispositions and the gap inline. Repair: restore API access/rate budget, read missing pages to exhaustion, refresh/reconcile candidates and new matches, then follow normal publication checks only with write authority. |
+
+`test_planning_cli_contract.py` checks the shared instructions and both planner
+pointers. `test_planning_decision_closure.py` checks paired input/expected-outcome
+coverage, not an agent's actual matching choices. Existing Tier 3 publication
+traces remain a separate bounded helper-publication pilot: stable-key idempotence
+and successful helper exit do not prove semantic uniqueness or a live receipt.

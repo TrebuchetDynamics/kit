@@ -80,7 +80,10 @@ who answers consequential intent. It does not change the sequence.
    at the chosen revision and retain its source receipt. Other planning routes and
    restricted/coordinator invocations keep their no-sync contract.
 3. **Investigate and decide.** Read the actual source, tests, docs and current task
-   state. Resolve consequential engineering choices within delegated scope. Ask the
+   state. For every focused or discovery request, complete
+   [open-issue reconciliation](PLAN-HANDOFF.md#open-issue-reconciliation) before
+   proposing new work; reuse it through questions and refresh before writes.
+   Resolve consequential engineering choices within delegated scope. Ask the
    owner only for missing intent, authority or an external input. For a concrete
    method gap, select one technique through [engineering](../engineering/REFERENCE.md);
    routine planning needs no experiment loop. Apply
