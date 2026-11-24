@@ -41,6 +41,7 @@ Then route by meaning, not a short phrase list:
 
 | Request | Route |
 | --- | --- |
+| "One failed write makes the whole batch unsaved." | Use the linked per-issue partial receipt and reconcile before retrying. |
 | No concrete objective in the request or relevant conversation; "plan this project"; "make it better"; a broad direction such as "improve reliability" or "improve performance" | Autonomous discovery: read [autonomous project discovery](references/discovery.md), investigate the repository, derive accepted and engineering goals, then save one executable frontier. Do not ask for a goal before investigating. |
 | A named outcome, feature, defect, spec slice or accepted plan | Focused planning for that outcome and its authorized prerequisites; do not expand into unrelated project work. |
 | Read-only, chat-only, no-write or dry-run | Use the matching route above but save nothing, including queue metadata. |
@@ -58,16 +59,19 @@ well written.
 ## Investigate and decide
 
 Size the work first and say the size in plain words: a clear task gets one complete
-saved task record without an interview; a project gets a written plan section and
-tasks with real dependencies. When neither request nor conversation supplies an
-objective, say that this is project discovery, then establish the project model and
+task contract without an interview; a project gets a written plan section and
+tasks with real dependencies. In no-write mode, return the complete plan inline and
+write nothing; otherwise preview and publish through Plan Handoff. When neither
+request nor conversation supplies an objective, say that this is project discovery, then establish the project model and
 evidence-backed goal classes before choosing the frontier. Plan all requested
 projects in one coherent batch, retaining independent ready lanes.
 
 Inspect project instructions, relevant implementation and tests, existing docs,
 accepted decisions, GitHub Issues and their linked PRs, and active task
-ownership. Reuse existing answers and task IDs. Compare practical approaches and
-record the evidence for the selected one. Own the complex part: resolve design,
+ownership. Reuse existing answers and task IDs. When a governing decision fixes
+the approach, cite it and proceed to acceptance and verification. Compare practical
+approaches when a material choice remains, recording the evidence and trade-off
+for the selected one. Own the complex part: resolve design,
 decomposition, interfaces and acceptance within delegated scope, and choose
 reversible engineering details yourself rather than leaving them as worker
 permission questions. Hand off the smallest clear outcome, decided approach, exact
@@ -79,9 +83,8 @@ settled choices without new evidence.
 Write down what the user asked for as theirs and everything else as yours: goals,
 non-goals and anti-goals (what would make the result a failure even if it works),
 constraints, and every default you chose, each marked as the planner's call so the
-user can reject it. Generate several approaches before choosing; record the rejected
-ones only when the reason is non-obvious. Surface any contradiction between the
-request and the code instead of planning around it. Name new domain terms precisely
+user can reject it. Record rejected alternatives only when the reason is non-obvious.
+Surface any contradiction between the request and the code instead of planning around it. Name new domain terms precisely
 and record them, and give a decision its own ADR only when it is hard to reverse,
 surprising without context and a real trade-off.
 
@@ -110,34 +113,25 @@ owner/external-blocked affected tasks pending.
 
 ## Save the plan and hand off
 
-Save meaningful decisions in their existing document owners; keep proposals and
-remaining questions scoped to affected work. Run the
+Account for every actionable accepted outcome with a new or reused issue, or a
+proposed contract inline in no-write mode. When missing intent, existing coverage
+or no-write mode leaves no new issues to publish, report an explicit disposition
+with evidence and any missing input/resume condition. Zero new tasks is not itself
+failure; an unaccounted accepted outcome is.
+
+In writable mode, save meaningful decisions in their existing document owners;
+keep proposals and remaining questions scoped to affected work. Run the
 [builder check](../shared/PLANNING-CRAFT.md#builder-check-before-handoff) and resolve
 material findings before publication. Reuse the answers and evidence already gathered.
 
-Follow [Plan Handoff](../shared/PLAN-HANDOFF.md) for idempotent GitHub Issue
-publication, native `blockedBy` dependencies and optional `ai-epic` coordination.
-GitHub Issues, not `tasks/` or a local-main commit, are executable-work authority.
-Each issue includes outcome, scope, exclusions, acceptance, verification commands
-and governing sources. Read back the entire batch and publish `ai-ready` last.
-All issue authors receive that default; incomplete planning retains `ai-planning`.
-Explicit no-dispatch requests withhold readiness. Read-only/questions-only/no-write
-or dry-run requests make no local or GitHub writes. Failed persistence is **UNSAVED**,
-not a complete handoff or a reason to create a second queue.
+Follow Plan Handoff's [publication and dependencies](../shared/PLAN-HANDOFF.md#publication-and-dependencies),
+[persistence rules](../shared/PLAN-HANDOFF.md#persistence-not-local-main-admission)
+and [progress and final receipt](../shared/PLAN-HANDOFF.md#progress-and-final-receipt)
+for the writable preview, validation and publication. For failed publication, use
+its [per-issue partial receipt](../shared/PLAN-HANDOFF.md#publication-receipt).
 
-Use the shared [progress and final receipt](../shared/PLAN-HANDOFF.md#progress-and-final-receipt):
-preview outcomes, acceptance and issue dependencies in chat before publication;
-then replace proposed keys with read-back links and actual publication states.
-Stop planning without implementing or starting a service. A delivery-owned substep returns to
-its same coordinator. Runtime failure without new product uncertainty goes back
-to that coordinator with the existing issue, failed operation and candidate evidence;
-do not create replacement work or reopen the product interview.
-
-## Execution handoff
-
-Use the [execution handoff](../shared/PLAN-HANDOFF.md#execution-handoff): Orbi owns
-Pi implementation, tests, PR creation, independent review and merge gates.
-A published plan is not evidence those steps ran. No legacy runner starts here.
+Stop planning without implementing or starting a service. Return an Orbi-owned
+substep to its same coordinator under the [execution handoff](../shared/PLAN-HANDOFF.md#execution-handoff).
 
 ## Common Rationalizations
 
@@ -148,18 +142,22 @@ saved plan is not execution.
 | --- | --- |
 | "The request is vague, so ask for a goal first." | Reuse concrete conversation findings; otherwise investigate the repository through discovery. |
 | "A well-written proposal is accepted scope." | New product directions stay proposals until the owner accepts them. |
-| "A plan without tasks is enough." | The handoff needs complete GitHub Issues with acceptance, verification and bounded scope. |
+| "No new tasks means planning failed." | Missing intent, existing coverage and no-write mode can justify an explicit disposition; account for every actionable accepted outcome. |
+| "Every request needs competing approaches." | Cite a governing decision; compare approaches only for a material open choice. |
 | "The queue is short, so invent useful work." | Save only the evidence-backed frontier. A short queue is not permission to invent work. |
 | "I can write code or tests while planning." | Planning writes docs and task records; implementation needs its own authorization. |
 
 ## Red Flags
 
+- Whole-batch UNSAVED claims after partial publication, or blind replay of unknown writes.
 - A goal question before repository investigation.
-- A roadmap or prose plan with no task records.
+- An actionable accepted outcome missing its issue or no-write proposed contract.
 - A fresh audit instead of using the preceding findings, or issue links without outcomes.
 - A proposal marked accepted without an owner answer.
 - Code, tests or fixtures written during planning.
 - Acceptance or evidence invented to make the queue look ready.
+- New tasks invented to avoid reporting missing intent or existing coverage.
+- A settled approach reopened without contradictory evidence.
 
 ## Boundaries
 
@@ -167,6 +165,8 @@ saved plan is not execution.
 - Not implementation; Orbi delivers published issues through PR and review gates.
 - Not an Orbi-owned execution; return to that coordinator.
 
-**Done when:** every in-scope topic is mapped to a validated issue or explicit disposition,
-and the chat receipt shows outcomes, dependencies and actual publication state
-(or clearly unsaved proposals in no-write or failed-publication mode).
+**Done when:** every in-scope topic is mapped to a validated issue or explicit
+disposition, every actionable accepted outcome is accounted for, and the chat
+receipt shows outcomes, dependencies and observed publication state. No-write
+requests return complete proposals inline. Failed publication uses the
+[per-issue partial receipt](../shared/PLAN-HANDOFF.md#publication-receipt).

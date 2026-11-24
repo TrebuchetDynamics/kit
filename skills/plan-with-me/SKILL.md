@@ -35,7 +35,8 @@ before asking for missing intent
 ([special cases](references/special-cases.md#blockers-and-recovery)). Its default
 scope includes saving answered decisions and maintaining affected docs. Only
 `questions only`, `read-only`, `no changes` or `dry run` means no file changes; an
-audit or an "is it ready?" question is planning like any other and ends with tasks
+audit or an "is it ready?" question is planning like any other and accounts for
+its findings
 ([audits and readiness](references/special-cases.md#audits-and-readiness-questions)).
 It does not perform code changes or start a service. Standalone planning narrows
 this occurrence despite earlier unrelated implementation permission; an
@@ -73,14 +74,22 @@ desired outcome, scope/non-goals, constraints and observable success. Separate
 explicit requirements from assumptions and unresolved choices; improve clarity
 without expanding the user's goal. Reuse this brief in the existing plan owner.
 
+When a governing decision fixes the approach, cite it and proceed to acceptance
+and verification. Compare practical approaches when a material choice remains;
+bring consequential intent choices to the user and resolve delegated engineering
+choices within scope.
+
 Size the work and track its [consequential uncertainty](../shared/PLANNING-CRAFT.md#consequential-uncertainty).
 A fully specified request needs no interview: briefly explain that no material
-product choices remain, save the complete requested batch and stop planning.
+product choices remain. In no-write mode, return the complete plan inline and write
+nothing. In writable mode, preview the batch, then follow Plan Handoff.
 Otherwise the first response has two parts, in this order:
 
-1. A short playback: what they want and why, in their words; what already exists
-   that it builds on; and the draft shape, the tasks you would save, one line each
-   and marked as a draft. Mark guesses as guesses.
+1. A short playback: what they want and why, in their words, and what already
+   exists that it builds on. Include draft tasks only when supported by known intent
+   and evidence, one line each and marked as a draft. With thin intent, use zero
+   invented tasks; omit the draft task list until an outcome is supported.
+   Mark guesses as guesses.
 2. One question, the highest-impact decision still open. The request's own words
    are answers: never ask to confirm what it already says.
 
@@ -142,29 +151,14 @@ in no-write mode return it in chat instead. Run the
 [builder check](../shared/PLANNING-CRAFT.md#builder-check-before-handoff) and resolve
 material findings before publication. Reuse the answers and evidence already gathered.
 
-Follow [Plan Handoff](../shared/PLAN-HANDOFF.md) for idempotent GitHub Issue
-publication, native `blockedBy` dependencies and optional `ai-epic` coordination.
-GitHub Issues, not `tasks/` or a local-main commit, are executable-work authority.
-Each issue includes outcome, scope, exclusions, acceptance, verification commands
-and governing sources. Read back the entire batch and publish `ai-ready` last.
-All issue authors receive that default; incomplete planning retains `ai-planning`.
-Explicit no-dispatch requests withhold readiness. Read-only/questions-only/no-write
-or dry-run requests make no local or GitHub writes. Failed persistence is **UNSAVED**,
-not a complete handoff or a reason to create a second queue.
+Follow Plan Handoff's [publication and dependencies](../shared/PLAN-HANDOFF.md#publication-and-dependencies),
+[persistence rules](../shared/PLAN-HANDOFF.md#persistence-not-local-main-admission)
+and [progress and final receipt](../shared/PLAN-HANDOFF.md#progress-and-final-receipt)
+for the writable preview, validation and publication. For failed publication, use
+its [per-issue partial receipt](../shared/PLAN-HANDOFF.md#publication-receipt).
 
-Use the shared [progress and final receipt](../shared/PLAN-HANDOFF.md#progress-and-final-receipt):
-preview outcomes, acceptance and issue dependencies in chat before publication;
-then replace proposed keys with read-back links and actual publication states.
-Stop planning without implementing or starting a service. A delivery-owned substep returns to
-its same coordinator. Runtime failure without new product uncertainty goes back
-to that coordinator with the existing issue, failed operation and candidate evidence;
-do not create replacement work or reopen the product interview.
-
-## Execution handoff
-
-Use the [execution handoff](../shared/PLAN-HANDOFF.md#execution-handoff): Orbi owns
-Pi implementation, tests, PR creation, independent review and merge gates.
-A published plan is not evidence those steps ran. No legacy runner starts here.
+Stop planning without implementing or starting a service. Return an Orbi-owned
+substep to its same coordinator under the [execution handoff](../shared/PLAN-HANDOFF.md#execution-handoff).
 
 ## Common Rationalizations
 
@@ -173,6 +167,9 @@ plan is not execution.
 
 | Rationalization | Reality |
 | --- | --- |
+| "One failed write makes the whole batch unsaved." | Use the linked per-issue partial receipt and reconcile before retrying. |
+| "Every request needs an interview and a draft task list." | Skip questions for settled intent; show only evidence-supported drafts. |
+| "A settled approach needs another comparison." | Cite its governing decision; compare only material open choices. |
 | "Ask what the repository can answer." | Find repository facts yourself. Ask only for missing intent, authority or input. |
 | "Batch acceptance also settles unanswered alternatives." | Accept the latest round's clear recommendations; clarify only genuinely unresolved choices under the uncertainty loop. |
 | "A polished proposal is accepted scope." | Proposals stay proposed until the owner accepts them. |
@@ -181,6 +178,9 @@ plan is not execution.
 
 ## Red Flags
 
+- Whole-batch UNSAVED claims after partial publication, or blind replay of unknown writes.
+- An interview for fully specified intent, or invented tasks in a thin-intent playback.
+- Alternative approaches generated only to reopen a settled decision.
 - Asking for facts the repository already answers.
 - Unanswered alternatives treated as settled, or clear batch approval questioned again.
 - A proposal marked Accepted without an owner answer.
@@ -193,4 +193,7 @@ plan is not execution.
 - Not implementation; Orbi delivers published issues through PR and review gates.
 - Challenge mode loads `/grill-me`; the interview engine is `/grilling`.
 
-**Done when:** the requested interview round ends at the next owner question, or settled work has a verified issue handoff. For a read-only request, return the question or plan inline. Identify any failed handoff as UNSAVED.
+**Done when:** the requested interview round ends at the next consequential owner
+question, or settled work has a verified handoff or explicit disposition. No-write
+requests return the question or complete plan inline. Failed publication uses the
+[per-issue partial receipt](../shared/PLAN-HANDOFF.md#publication-receipt).

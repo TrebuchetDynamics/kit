@@ -14,22 +14,26 @@ def prose(path):
 
 class PlanningCliContractTests(unittest.TestCase):
     def test_runtime_failure_preserves_existing_contract(self):
+        text = prose('skills/shared/RESEARCH-PLAN.md').split(
+            '## Existing execution is not a new planning problem', 1)[1]
+        for rule in ('same coordinator', 'exact failed operation and evidence',
+                     'existing issue', 'Do not create a replacement implementation task'):
+            self.assertIn(rule, text)
         for path in (PLANNER, INTERACTIVE[0]):
-            text = prose(path)
-            with self.subTest(path=path):
-                self.assertIn('same coordinator', text)
-                self.assertIn('existing issue', text)
-                self.assertIn('candidate evidence', text)
-                self.assertIn('do not create replacement work', text)
+            self.assertIn('../shared/RESEARCH-PLAN.md#shared-planning-interface', prose(path))
+            self.assertIn('../shared/PLAN-HANDOFF.md#execution-handoff', prose(path))
 
     def test_active_planning_routes_share_github_authority(self):
-        for path in (PLANNER, INTERACTIVE[0], 'skills/unslop/SKILL.md', 'skills/docs-sync/SKILL.md',
+        for path in ('skills/unslop/SKILL.md', 'skills/docs-sync/SKILL.md',
                      'skills/shared/RESEARCH-PLAN.md', HANDOFF):
             text = prose(path)
             with self.subTest(path=path):
                 self.assertIn('GitHub', text)
                 self.assertIn('ai-ready', text)
                 self.assertIn('UNSAVED', text)
+        for path in (PLANNER, INTERACTIVE[0]):
+            self.assertIn('../shared/PLAN-HANDOFF.md#publication-and-dependencies', prose(path))
+            self.assertIn('../shared/PLAN-HANDOFF.md#persistence-not-local-main-admission', prose(path))
         for name in ('plan-for-me', 'plan-with-me', 'unslop', 'docs-sync', 'unblock'):
             text = prose(f'adapters/skills/{name}/SKILL.md')
             self.assertIn(f'../../../skills/{name}/SKILL.md', text)
