@@ -276,6 +276,9 @@ symlink to the expected upstream command. A proven match leaves the payload and
 links untouched and runs no bootstrap, archive download or installer shell.
 `PIBOLT_VERSION`, `PIBOLT_CHANNEL`, `PIBOLT_VARIANT` and `PIBOLT_INSTALL` retain
 upstream meanings; default x86-64 selection follows upstream's AVX2/libc rules.
+With no channel override, upstream selects the latest stable release for this
+install but preserves any stored beta channel for future `pi-bolt update` calls;
+an explicit channel override must match the stored channel to skip installation.
 Special modes (including Termux, mirrors and `PIBOLT_NO_PATH=1`) and layouts that
 cannot be safely matched retain the official install/repair path. Missing, stale,
 broken or wrong-build destinations also use that path. A failed or malformed

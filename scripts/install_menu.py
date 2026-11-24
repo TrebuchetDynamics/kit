@@ -1239,7 +1239,11 @@ def pi_bolt_current(destination, release):
         build = root / name
         jit = 'on' if variant.endswith('-jit') else 'off'
         channel = (root / 'channel').read_text().strip() if (root / 'channel').exists() else 'stable'
-        if channel != (os.environ.get('PIBOLT_CHANNEL') or 'stable'):
+        # Upstream selects stable latest when the override is unset, but preserves
+        # the stored channel for future native updates. Only an explicit override
+        # requests a channel change during this install.
+        requested_channel = os.environ.get('PIBOLT_CHANNEL')
+        if channel not in ('stable', 'beta') or (requested_channel and channel != requested_channel):
             return None
         target = build / 'pi'
         if system == 'linux' and variant == 'x64' and (
@@ -1258,6 +1262,9 @@ def pi_bolt_current(destination, release):
             return None
         required = ['pi', 'pi-bolt.txt', 'package.json', 'README.md',
                     'photon_rs_bg.wasm', 'export-html/template.html']
+        native_platform = f'{system}-{"arm64" if arm else "x64"}'
+        helper = 'darwin-platform.node' if system == 'darwin' else 'linux-platform-x11.node'
+        required += [f'native/{system}/prebuilds/{native_platform}/{helper}']
         if system == 'darwin':
             required += ['pi-bin', 'pi-spawn']
         if any(not (build / file).is_file() or not (build / file).stat().st_size for file in required):
@@ -1268,7 +1275,7 @@ def pi_bolt_current(destination, release):
         if any(not os.access(binary, os.X_OK) for binary in executables):
             return None
         if any(not (build / folder).is_dir() or not any((build / folder).iterdir())
-               for folder in ('docs', 'examples', 'theme', 'assets', f'native/{system}/prebuilds')):
+               for folder in ('docs', 'examples', 'theme', 'assets')):
             return None
         banner = pi_bolt_version(destination)
         match = re.fullmatch(r'([0-9]+\.[0-9]+\.[0-9]+) \(Pi-Bolt '

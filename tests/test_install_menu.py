@@ -1520,6 +1520,8 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         root = root or self.home / '.pi-bolt'
         build = root / f'pi-bolt-{system}-{variant}'
         build.mkdir(parents=True, exist_ok=True)
+        native_platform = f'{system}-{"arm64" if variant.startswith("arm64") else "x64"}'
+        helper = 'darwin-platform.node' if system == 'darwin' else 'linux-platform-x11.node'
         banner = f'0.67.1 (Pi-Bolt {version}, {system}-{variant}, JIT {"on" if variant.endswith("-jit") else "off"})'
         payload = PI.replace('echo 1.4.0', f'echo "{banner}"')
         (build / 'pi').write_text(payload)
@@ -1528,7 +1530,7 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         (build / 'package.json').write_text('{"version": "0.67.1"}')
         for name in ('README.md', 'photon_rs_bg.wasm', 'export-html/template.html',
                      'theme/dark.json', 'assets/logo.txt', 'docs/PLUGINS.md',
-                     'examples/example.ts', f'native/{system}/prebuilds/{system}-{variant}/native.node'):
+                     'examples/example.ts', f'native/{system}/prebuilds/{native_platform}/{helper}'):
             file = build / name
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text('fixture')
@@ -1596,7 +1598,8 @@ cp -R "$FAKE_HOME/release-build" "$root/pi-bolt-linux-x64"
 rm -f "$PIBOLT_BIN_DIR/pi-bolt" "$root/channel"
 ln -s "$root/pi-bolt-linux-x64/pi" "$PIBOLT_BIN_DIR/pi-bolt"'''))
         for state in ('absent', 'stale', 'broken-link', 'wrong-link', 'wrong-platform',
-                      'wrong-variant', 'wrong-root', 'missing-assets', 'bad-manifest', 'channel'):
+                      'wrong-variant', 'wrong-root', 'missing-assets', 'wrong-native',
+                      'empty-native', 'bad-manifest', 'channel'):
             with self.subTest(state=state):
                 build = self.native_bolt()
                 release_build = self.home / 'release-build'
@@ -1618,6 +1621,11 @@ ln -s "$root/pi-bolt-linux-x64/pi" "$PIBOLT_BIN_DIR/pi-bolt"'''))
                     env['PIBOLT_INSTALL'] = str(self.home / 'selected root')
                 elif state == 'missing-assets':
                     (build / 'export-html/template.html').unlink()
+                elif state == 'wrong-native':
+                    native = build / 'native/linux/prebuilds/linux-x64'
+                    native.rename(native.with_name('linux-arm64'))
+                elif state == 'empty-native':
+                    (build / 'native/linux/prebuilds/linux-x64/linux-platform-x11.node').write_bytes(b'')
                 elif state == 'bad-manifest':
                     (build / 'pi-bolt.txt').write_text('Pi-Bolt 9.9.9 (Pi 0.67.1), linux-x64, JIT off, built today')
                 elif state == 'channel':
@@ -1659,6 +1667,22 @@ ln -s "$root/pi-bolt-linux-x64/pi" "$PIBOLT_BIN_DIR/pi-bolt"'''))
                     self.assertEqual(self.calls('pi-bolt-installer'), [])
                     self.assertFalse(any('install.sh' in call for call in self.calls('curl')))
                     self.assertEqual(self.calls('systemctl --user try-restart'), [])
+
+    def test_pi_bolt_preserves_stored_channel_without_override(self):
+        build = self.native_bolt()
+        (build.parent / 'channel').write_text('beta\n')
+        before = install_menu.installed_evidence([self.bolt, build.parent / 'channel'])
+        # Upstream's unset channel selects latest stable for this install but leaves
+        # the stored channel unchanged for future pi-bolt updates.
+        for command in ((), ('update',)):
+            self.log.write_text('')
+            result = self.install(*command, '--only', 'pi-bolt', env={'PIBOLT_VARIANT': 'x64'})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('current (release checked', result.stdout)
+            self.assertEqual(install_menu.installed_evidence([self.bolt, build.parent / 'channel']), before)
+            self.assertTrue(self.calls('curl')[0].endswith('/releases/latest'))
+            self.assertEqual(self.calls('pi-bolt-installer'), [])
+            self.assertEqual(self.calls('systemctl --user try-restart'), [])
 
     def test_pi_bolt_upstream_release_overrides_and_channel(self):
         root = self.home / 'custom install'
