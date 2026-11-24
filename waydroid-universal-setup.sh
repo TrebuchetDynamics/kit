@@ -376,12 +376,66 @@ PY
         help=$(timeout 10 weston --help)
         [[ $help == *headless* && $help == *--use-pixman* ]] || fail 'Weston lacks headless/pixman backend options. Install a Weston build with headless support.'
     fi
-    printf 'Prerequisite inspection (%s); initialization: %s; missing packages: %s\n' "$arch" "$INIT_STATE" "${PACKAGES[*]:-none}"
+    if [[ ${1:-} != quiet ]]; then
+        printf 'Prerequisite inspection (%s); initialization: %s; missing packages: %s\n' "$arch" "$INIT_STATE" "${PACKAGES[*]:-none}"
+    fi
 }
 
-root() { timeout 1800 sudo -- "$@"; }
+# Never ask for a second password after admission, including during long downloads.
+root() {
+    local rc
+    if timeout --foreground --kill-after=5 1800 sudo -n -- "$@"; then return; else rc=$?; fi
+    printf 'waydroid-setup: Privileged step failed during %s: %s (exit %s). Sudo is noninteractive; inspect the diagnostic above and repair authorization or the command before retrying setup.\n' "$setup_stage" "$1" "$rc" >&2
+    return "$rc"
+}
+sudo_failure() {
+    case "$1" in
+        124) fail 'Sudo authorization timed out; no host provisioning performed. Retry setup in the same terminal when ready.' "$1" ;;
+        130) fail 'Sudo authorization interrupted; no host provisioning performed. Retry setup in the same terminal when ready.' "$1" ;;
+        143) fail 'Sudo authorization terminated; no host provisioning performed. Retry setup in the same terminal when ready.' "$1" ;;
+        137) fail 'Sudo authorization forcibly terminated (possibly after timeout); inspect terminal state and retry setup in the same terminal.' "$1" ;;
+        1) fail 'Sudo authorization rejected; no host provisioning performed. Repair sudo authorization and retry setup in the same terminal.' "$1" ;;
+        *) fail "Sudo authorization failed (exit $1); no host provisioning performed. Repair the reported cause and retry setup in the same terminal." "$1" ;;
+    esac
+}
+sudo_admission() {
+    local rc
+    # Cached/passwordless access works even without a controlling terminal.
+    if timeout --foreground --kill-after=5 10 sudo -n -v 2>/dev/null; then return; else rc=$?; fi
+    [[ $rc == 1 ]] || sudo_failure "$rc"
+    if ! ( : </dev/tty ) 2>/dev/null; then
+        fail 'Sudo authorization needs interaction but no controlling terminal is available; no host provisioning performed. Log in normally and retry setup in the same terminal (do not pipe credentials).'
+    fi
+    # Keep sudo in the terminal's foreground job; sudo alone handles password input
+    # and echo restoration. The script never reads, stores or forwards a password.
+    if timeout --foreground --kill-after=5 300 sudo -v; then return; else rc=$?; fi
+    sudo_failure "$rc"
+}
+setup_cleanup() {
+    local rc=$?
+    trap - EXIT
+    if [[ -n $keepalive ]]; then
+        kill "$keepalive" 2>/dev/null || true
+        wait "$keepalive" 2>/dev/null || true
+    fi
+    [[ -z $stage ]] || rm -rf -- "$stage"
+    exec 9>&-
+    exit "$rc"
+}
+setup_failure() {
+    local rc=$1 reason=$2
+    if [[ $setup_stage == admission ]]; then
+        fail "$reason during admission; no host provisioning performed. Retry setup in the same terminal." "$rc"
+    fi
+    fail "$reason during $setup_stage (exit $rc); host provisioning may be partial. No rollback attempted. Inspect package/device state and service journals; preserve data and keys, repair the cause, then retry setup (or --status if headless is running)." "$rc"
+}
 setup() {
-    preflight
+    keepalive='' stage='' setup_stage=admission
+    trap setup_cleanup EXIT
+    trap 'sudo_failure 130' INT
+    trap 'sudo_failure 143' TERM
+    trap 'setup_failure $? "Setup failed"' ERR
+    preflight quiet
     local expected_kind=$SESSION_KIND expected_id=$SESSION_ID
     # All read-only admission checks precede files, package installs and sudo.
     mkdir -p "$HOME/.local/share/kit-waydroid"
@@ -390,16 +444,20 @@ setup() {
     # Admission is only a snapshot. A peer may finish between it and this lock;
     # never force that newly initialized device through init using stale state.
     preflight
-    timeout 300 sudo -v || fail 'Operator sudo authorization required; no host setup performed.'
-    # Refresh only the operator-approved timestamp during long image downloads.
-    (trap 'kill "${sleeper:-}" 2>/dev/null || true; exit' TERM
-     while :; do sleep 60 & sleeper=$!; wait "$sleeper"; timeout 10 sudo -n -v || exit; done
+    sudo_admission
+    setup_stage=packages
+    trap 'setup_failure 130 "Setup interrupted"' INT
+    trap 'setup_failure 143 "Setup terminated"' TERM
+    # Reap only this refresher and its current child. Background wait lets TERM
+    # interrupt either sleep or validation; timeout bounds sudo's termination.
+    (child=''
+     trap 'trap - TERM; kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; exit' TERM
+     while :; do
+         sleep 60 & child=$!; wait "$child" || exit
+         timeout --kill-after=5 10 sudo -n -v & child=$!; wait "$child" || exit
+     done
     ) </dev/null >/dev/null 2>&1 9>&- &
     keepalive=$!
-    stage=''
-    trap 'kill "$keepalive" 2>/dev/null || true; wait "$keepalive" 2>/dev/null || true; rm -rf -- "$stage"' EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
     stage=$(mktemp -d)
     if ((${#PACKAGES[@]})); then
         if [[ $MANAGER == dnf ]]; then
@@ -426,7 +484,9 @@ setup() {
     help=$(timeout 10 weston --help)
     [[ $help == *headless* && $help == *--use-pixman* ]] || fail 'Installed Weston lacks headless/pixman support; no device services configured.'
     [[ $(timeout 10 systemctl show waydroid-container.service --property=LoadState --value) == loaded ]] || fail 'Missing waydroid-container.service; install the distro systemd integration.'
+    setup_stage=transfer
     transfer_session "$expected_kind" "$expected_id"
+    setup_stage=initialization
     if [[ $INIT_STATE != complete ]]; then
         # Configure fresh software rendering BEFORE init generates base properties.
         # No existing data/overlays are admitted to this recovery path.
@@ -461,6 +521,7 @@ PY
         root waydroid init -c https://ota.waydro.id/system -v https://ota.waydro.id/vendor
         [[ $(image_state) == complete ]] || fail 'Waydroid initialization incomplete despite init returning. Inspect waydroid log and retry setup; keep downloaded images/data.'
     fi
+    setup_stage=container-service
     cat > "$stage/container.conf" <<EOF
 # kit-waydroid user=$(id -u)
 [Service]
@@ -472,6 +533,7 @@ EOF
     root systemctl daemon-reload
     root systemctl enable --now waydroid-container.service
     root loginctl enable-linger "$(id -un)"
+    setup_stage=user-service
     mkdir -p "$USER_UNITS"
     [[ $SELF == "$PAYLOAD" ]] || install -m 755 "$SELF" "$PAYLOAD"
     cat > "$stage/user.service" <<'EOF'
@@ -510,6 +572,7 @@ PY
     fi
     [[ -z $TRANSFER_STAGE ]] || TRANSFER_STATE='GUI stopped; managed headless startup requested'
     timeout 30 systemctl --user enable --now "$UNIT" || fail 'Managed headless service activation failed; inspect user service journal and retry setup.'
+    setup_stage=verification
     confirm_managed
     [[ -z $TRANSFER_STAGE ]] || { TRANSFER_STAGE=adb; TRANSFER_STATE='GUI stopped; managed headless session confirmed'; }
     verify_device
