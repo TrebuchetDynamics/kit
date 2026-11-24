@@ -199,7 +199,8 @@ their original result.
 Checks still run against the current working tree, including same-HEAD dirty files.
 This guard checks revision identity, not an immutable candidate tree: uncommitted
 changes and changes not observable from HEAD remain outside that guarantee. CI
-checks the pushed revision.
+checks the PR merge revision or the commit pushed to `main` or a tag. A feature
+branch push alone does not start a second copy of the PR checks.
 
 A failing affected run is not proof of a red tree on a busy host. Every runner and
 worker test that waits on a window or a check slot can fail while the machine runs

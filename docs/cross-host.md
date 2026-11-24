@@ -61,11 +61,13 @@ This opt-in installation covers the two planning commands.
 
 ## Orbi lifecycle controls
 
-Use `/kit:orbi [status|setup|start|update|stop|help]` in Claude Code, `$kit:orbi` in Codex,
+Use `/kit:orbi [status|version|setup|start|update|stop|help]` in Claude Code, `$kit:orbi` in Codex,
 or `/orbi` in Pi or Hermes. All hosts load the same
-[Orbi workflow](../skills/orbi/SKILL.md); default status is read-only. `help` prints the action reference read-only and needs no repository.
+[Orbi workflow](../skills/orbi/SKILL.md); default status is read-only. `version [--repo-dir PATH] [--config PATH] [--json]`
+passes unchanged into one read-only helper invocation and identifies the selected
+deployment engine without full status, bootstrap, scheduler or network probes. `help` prints the action reference read-only and needs no repository.
 Linux lifecycle changes require the workflow's ownership and authorization gates;
-macOS is status-only. Installing the skill does not activate a deployment or
+macOS supports read-only status/version. Installing the skill does not activate a deployment or
 qualify live delivery. Existing pauses and cutover gates remain in force.
 
 ## Update Kit on every host

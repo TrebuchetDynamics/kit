@@ -3959,6 +3959,182 @@ class HostStatusTests(unittest.TestCase):
         self.assertTrue(all(c['tool'] == 'launchctl' and c['argv'][0] == 'print' for c in self.h.calls()))
 
 
+class VersionActionTests(unittest.TestCase):
+    """One read-only helper call, with deployment evidence rather than PATH CLI."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.h = Harness(Path(tmp.name))
+        self.h.add_deployment_a()
+        self.h.deploy.mkdir()
+        self.config = self.h.deploy / 'orbi.toml'
+        self.config.write_text(
+            f'source_repos = ["{REPO}"]\nrepo_dir = "{self.h.repo}"\n'
+            f'deploy_home = "{self.h.deploy}"\nunit_name = "version-test"\n'
+            f'engine_source_track = "sha:{PIN}"\n')
+        self.manifest = '[project]\nname = "orbi-cli"\nversion = "0.7.56"\n'
+        (self.h.deploy / 'pyproject.toml').write_text(self.manifest)
+        self.rules()
+
+    def rules(self, *extra):
+        self.h.rules(*extra, {'tool': 'git', 'argv_contains': ['show', 'HEAD:pyproject.toml'],
+                              'stdout': self.manifest})
+
+    def assert_read_only(self, before):
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertTrue(self.h.calls())
+        for call in self.h.calls():
+            self.assertEqual(call['tool'], 'git', call)
+            argv = call['argv'][2:]
+            self.assertIn(argv, [
+                ['worktree', 'list', '--porcelain'],
+                ['config', '--get', 'remote.origin.url'], ['rev-parse', 'HEAD'],
+                ['show', 'HEAD:pyproject.toml'],
+                ['diff', '--quiet', 'HEAD', '--', 'pyproject.toml', 'src/orbi']], call)
+            if argv[0] == 'diff':
+                self.assertEqual(call['env']['GIT_OPTIONAL_LOCKS'], '0')
+
+    def test_verified_text_json_and_status_agree_on_linux_and_macos(self):
+        for platform in ('linux', 'darwin'):
+            with self.subTest(platform=platform):
+                code, status, err = self.h.run('status', platform=platform)
+                self.assertEqual(code, 0, err)
+                expected = status['deployment']['engine'].copy()
+                self.assertEqual(expected.pop('bootstrap_cli')['version'], '0.7.41')
+                for json_mode in (True, False):
+                    self.h.clear_calls()
+                    before = snapshot(self.h.home)
+                    code, doc, err = self.h.run('version', platform=platform, json_mode=json_mode)
+                    self.assertEqual(code, 0, err)
+                    if json_mode:
+                        self.assertEqual(doc['action'], 'version')
+                        self.assertEqual(doc['repo'], REPO)
+                        self.assertEqual(doc['repo_dir'], str(self.h.repo))
+                        self.assertEqual(set(doc), {'action', 'platform', 'repo', 'repo_dir', 'deployment'})
+                        deployment = doc['deployment']
+                        self.assertEqual(deployment['config'], str(self.config))
+                        self.assertEqual(deployment['deploy_home'], str(self.h.deploy))
+                        self.assertEqual(deployment['unit_name'], 'version-test')
+                        self.assertEqual(deployment['engine'], expected)
+                        self.assertEqual(expected['state'], 'verified')
+                        self.assertEqual(expected['version'], '0.7.56')
+                        self.assertEqual(expected['revision'], PIN)
+                    else:
+                        for value in (REPO, str(self.config), str(self.h.deploy),
+                                      'version-test', '0.7.56', PIN, 'verified', 'pyproject.toml'):
+                            self.assertIn(value, doc)
+                        self.assertNotIn('0.7.41', doc)
+                    self.assert_read_only(before)
+
+    def test_unknown_metadata_never_substitutes_observed_revision_for_release(self):
+        for kind in ('missing', 'modified', 'dirty_source', 'unpinned', 'drift', 'unreadable_head'):
+            with self.subTest(kind=kind):
+                manifest = self.h.deploy / 'pyproject.toml'
+                manifest.write_text(self.manifest)
+                if kind == 'missing':
+                    manifest.unlink()
+                if kind == 'modified':
+                    manifest.write_text(self.manifest.replace('0.7.56', '9.9.9'))
+                self.config.write_text(self.config.read_text().replace('main', 'sha:' + PIN))
+                if kind == 'unpinned':
+                    self.config.write_text(self.config.read_text().replace('sha:' + PIN, 'main'))
+                self.rules(*(
+                    [{'tool': 'git', 'argv_contains': ['diff', '--quiet'], 'exit': 1}]
+                    if kind == 'dirty_source' else
+                    [{'tool': 'git', 'argv_contains': [str(self.h.deploy), 'rev-parse', 'HEAD'],
+                      'stdout': OLD_PIN + '\n' if kind == 'drift' else '',
+                      'exit': 0 if kind == 'drift' else 1}]
+                    if kind in ('drift', 'unreadable_head') else []))
+                self.h.clear_calls()
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('version')
+                self.assertEqual(code, 0, err)
+                engine = doc['deployment']['engine']
+                self.assertEqual(engine['state'], 'unknown')
+                self.assertIsNone(engine['version'])
+                self.assertTrue(engine['reason'])
+                self.assertEqual(engine['revision'], OLD_PIN if kind == 'drift' else
+                                 None if kind in ('unpinned', 'unreadable_head') else PIN)
+                self.assertNotIn('bootstrap_cli', engine)
+                self.assert_read_only(before)
+
+    def test_absent_is_unconfigured_on_both_platforms(self):
+        self.config.unlink()
+        for platform in ('linux', 'darwin'):
+            self.h.clear_calls()
+            before = snapshot(self.h.home)
+            code, doc, err = self.h.run('version', platform=platform)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(doc['deployment']['state'], 'absent')
+            self.assertEqual(doc['deployment']['engine']['state'], 'unconfigured')
+            self.assertIsNone(doc['deployment']['engine']['version'])
+            code, text, err = self.h.run('version', platform=platform, json_mode=False)
+            self.assertEqual(code, 0, err)
+            self.assertIn('unconfigured', text)
+            self.assert_read_only(before)
+
+    def test_target_errors_preserve_binding_and_repair_without_fallback(self):
+        original = self.config.read_text()
+        duplicate = self.h.data_home / 'duplicate/orbi.toml'
+        for kind, error in (('missing', 'config_missing'), ('foreign', 'config_mismatch'),
+                            ('repo', 'repo_mismatch'), ('ambiguous', 'ambiguous_deployment'),
+                            ('missing_repo', 'repo_missing')):
+            with self.subTest(kind=kind):
+                self.config.write_text(original.replace(str(self.h.repo), '/foreign/repo')
+                                       if kind == 'repo' else original)
+                if kind == 'ambiguous':
+                    duplicate.parent.mkdir(exist_ok=True)
+                    duplicate.write_text(original)
+                self.h.clear_calls()
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('version', config=(
+                    self.h.root / 'missing.toml' if kind == 'missing' else
+                    self.h.a['config'] if kind == 'foreign' else self.config),
+                    options=['--repo-dir', str(self.h.root / 'missing-repo')]
+                            if kind == 'missing_repo' else [])
+                self.assertNotEqual(code, 0)
+                self.assertEqual(doc['error']['code'], error)
+                self.assertTrue(doc['error']['fix'])
+                self.assertFalse(doc['error']['mutated'])
+                if kind != 'missing_repo':
+                    self.assert_read_only(before)
+                else:
+                    self.assertEqual(self.h.calls(), [])
+                duplicate.unlink(missing_ok=True)
+
+    def test_invalid_version_selectors_refuse_before_probes(self):
+        for options in (['all'], ['--dry-run'], ['--stop'], ['--harness', 'pi'],
+                        ['--resume-setup'], ['--pi-providers', '/missing']):
+            self.h.clear_calls()
+            # Positional all precedes flags, as in the real helper interface.
+            out = io.StringIO()
+            code = helper.main(['version', *options, '--json'], env=self.h.env,
+                               platform='linux', stdout=out)
+            self.assertNotEqual(code, 0, options)
+            self.assertTrue(json.loads(out.getvalue())['error']['fix'])
+            self.assertEqual(self.h.calls(), [])
+
+    def test_real_cli_single_call_and_missing_explicit_config_receipt(self):
+        for config, expected_code in ((self.config, 0), (self.h.root / 'missing.toml', 1)):
+            self.h.clear_calls()
+            before, repo_before = snapshot(self.h.home), snapshot(self.h.repo)
+            result = subprocess.run(
+                [sys.executable, '-B', str(HELPER), 'version', '--repo-dir', str(self.h.repo),
+                 '--config', str(config), '--json'],
+                cwd=self.h.root, env=self.h.env, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, expected_code, result.stdout + result.stderr)
+            self.assertEqual(result.stderr, '')
+            doc = json.loads(result.stdout)
+            if expected_code == 0:
+                self.assertEqual(doc['deployment']['engine']['version'], '0.7.56')
+            else:
+                self.assertEqual(doc['error']['code'], 'config_missing')
+                self.assertEqual(doc['error']['fix'], 'pass an existing native Orbi config path')
+            self.assertEqual(snapshot(self.h.repo), repo_before)
+            self.assert_read_only(before)
+
+
 class RunningStatusTests(unittest.TestCase):
     """Public helper journey; journal scenes follow upstream pi_activity's contract."""
 
@@ -4994,7 +5170,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
             self.assertEqual(code, 0, err)
             h.rules(*h.scheduler_rules())
             before = snapshot(h.home)
-            cases = [([], 'status'), (['status'], 'status'), (['help'], 'help'),
+            cases = [([], 'status'), (['status'], 'status'), (['version'], 'version'), (['help'], 'help'),
                      *[([action, '--dry-run'], action)
                        for action in ('setup', 'start', 'stop', 'update')]]
             for request, action in cases:
@@ -5047,7 +5223,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
             scratch = h.root / 'scratch'
             scratch.mkdir()
             before = snapshot(h.home)
-            expected = {'status': 'none', 'setup': 'staging', 'start': 'scheduler',
+            expected = {'status': 'none', 'version': 'none', 'setup': 'staging', 'start': 'scheduler',
                         'update': 'scheduler', 'stop': 'scheduler', 'help': 'none'}
             for options in ([], ['--repo-dir', '/missing/repo', '--config',
                                   '/missing/config', '--dry-run']):
@@ -5075,8 +5251,8 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                 self.assertTrue(entry['effect'])
                                 self.assertTrue(entry['when'])
                             for flag, actions in {
-                                '--repo-dir': ['status', 'setup', 'start', 'update', 'stop'],
-                                '--config': ['status', 'setup', 'start', 'update', 'stop'],
+                                '--repo-dir': ['status', 'version', 'setup', 'start', 'update', 'stop'],
+                                '--config': ['status', 'version', 'setup', 'start', 'update', 'stop'],
                                 '--dry-run': ['setup', 'start', 'update', 'stop'],
                                 '--json': list(expected),
                                 '--pi-providers': ['setup', 'start'],
@@ -5104,7 +5280,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                 self.assertIn(boundary, ' '.join(document['boundaries']))
                             self.assertNotIn(SECRET, result.stdout)
                         else:
-                            self.assertIn('[status|setup|start|update|stop|help]', result.stdout)
+                            self.assertIn('[status|version|setup|start|update|stop|help]', result.stdout)
                             for action, mutation in expected.items():
                                 lines = [line for line in result.stdout.splitlines()
                                          if line.startswith(f'  {action} [')]
@@ -5183,6 +5359,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                 self.assertEqual(doc['platform'], normalized)
                 self.assertEqual(doc['mutations_supported'], supported)
                 self.assertEqual(doc['actions']['status']['platforms'], ['linux', 'darwin'])
+                self.assertEqual(doc['actions']['version']['platforms'], ['linux', 'darwin'])
                 self.assertEqual(doc['actions']['help']['platforms'], ['all'])
                 for action in ('setup', 'start', 'update', 'stop'):
                     self.assertEqual(doc['actions'][action]['platforms'], ['linux'])
@@ -5223,7 +5400,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
             result = subprocess.run([sys.executable, '-B', str(HELPER), flag],
                                     capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn('[status|setup|start|update|stop|help]', result.stdout)
+            self.assertIn('[status|version|setup|start|update|stop|help]', result.stdout)
             for action in ('status', 'setup', 'start', 'update', 'stop', 'help'):
                 self.assertRegex(result.stdout, rf'{action} \[(none|staging|scheduler)\]')
 
@@ -5297,7 +5474,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertIn('../shared/DEFINITION-OF-DONE.md', skill)
         self.assertIn('references/lifecycle.md', skill)
         self.assertIn('scripts/orbi_control.py', skill)
-        self.assertIn('`/orbi [status|setup|start|update|stop|help]`', skill)
+        self.assertIn('`/orbi [status|version|setup|start|update|stop|help]`', skill)
         self.assertIn('**Help first.**', skill)
         self.assertIn("helper's `help`", skill)
         self.assertIn('observed output', skill)
@@ -5306,7 +5483,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
         router = (ROOT / 'skills/ask-kit/SKILL.md').read_text()
         self.assertIn('`/orbi`', router)
         reference = (ROOT / 'skills/orbi/references/lifecycle.md').read_text()
-        self.assertIn('[status|setup|start|update|stop|help]', reference)
+        self.assertIn('[status|version|setup|start|update|stop|help]', reference)
         self.assertIn('for lifecycle actions; `help` prints a compact human block', reference)
         for topic in ('PYTHONPATH', 'UV_TOOL_DIR', 'UV_TOOL_BIN_DIR',
                       f'sha:{PIN}', 'five', 'draining', 'is read-only', 'help'):

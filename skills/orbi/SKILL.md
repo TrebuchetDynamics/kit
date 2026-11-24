@@ -45,7 +45,7 @@ scope, restrictions and authorization. No separate model routes, validates, poll
 or paraphrases a routine command. Extra reasoning or clarification requires a
 concrete unmet need, not a fixed sequence of model turns.
 
-1. **Resolve intent.** `/orbi [status|setup|start|update|stop|help]` uses
+1. **Resolve intent.** `/orbi [status|version|setup|start|update|stop|help]` uses
    `python3 -B <this-skill>/scripts/orbi_control.py` with the mapping below on **every host**.
    These are public skill arguments, not direct Python helper syntax; all unlisted
    actions pass through unchanged.
@@ -103,6 +103,7 @@ concrete unmet need, not a fixed sequence of model turns.
 
    | Action | Single-call result and guard |
    | --- | --- |
+   | version | Read-only selected deployment identity and engine release/revision, verification state and provenance/reason. Reuse repository/config binding in one helper call; no bootstrap, scheduler, queue, auth or network probes. Absent is unconfigured; unverifiable release is unknown, not the global CLI version. |
    | bare/status | Read-only repo/deployed release + revision/scheduler/per-slot activity, then queue; absent is unconfigured, unavailable is not empty. |
    | status all | Read-only accessible local managers, loaded/installed services and timers, templates, nonrunner services and config-only deployments. No repository binding, queue/doctor fan-out, provider/env/session reads or scheduler actions. See [host inventory](references/lifecycle.md#host-inventory). |
    | help | Authoritative command reference, no deployment binding; accepts and ignores lifecycle inputs. |
@@ -117,7 +118,7 @@ concrete unmet need, not a fixed sequence of model turns.
    (default Pi-Bolt) and complete `--pi-providers PATH --pi-provider ID --pi-model ID`
    with optional `--pi-thinking LEVEL`. Reuse existing selections without bootstrap
    flags. Missing prerequisites are repair inputs, not authority to install/login.
-   Linux is the only mutation platform; macOS supports status/help.
+   Linux is the only mutation platform; macOS supports status/version/help.
 4. **Relay receipt.** Return the helper's safe result directly wherever the host
    supports it. If a tool-result model turn is mandatory, relay only observed
    outcome, target and relevant evidence; no new plan or paraphrase pass. Preserve
@@ -137,6 +138,14 @@ concrete unmet need, not a fixed sequence of model turns.
    timeout is not retryable; killed processes have no receipt.
 
 ## Deployed engine and current work
+
+`version [--repo-dir PATH] [--config PATH] [--json]` reads only the selected
+deployment identity and engine evidence on Linux/macOS. Pass `version` unchanged
+in one helper invocation. It does not run full status, bootstrap, scheduler, worker,
+queue, authentication or network probes, acquire a lock or write files. There is
+no `version all`; mutation/bootstrap selectors (including `--dry-run`) are refused.
+No deployment means unconfigured. An observed revision is not a verified release;
+unverifiable pin, manifest or clean source means unknown with a reason.
 
 Status leads with the repository, deployment-bound package version/revision and
 provenance, scheduler state and each observed slot. Relay `deployment.engine`
