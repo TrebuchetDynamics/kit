@@ -185,9 +185,10 @@ limits, document ownership and completed task history.
 
 Save through [GitHub publication](../../shared/PLAN-HANDOFF.md). Do not create a
 local task queue, bypass a pause or clear another writer's claim. If publication
-fails, preserve the failure, continue permitted discovery and report complete
-UNSAVED proposals. Standalone planning stops after its batch; an Orbi substep
-returns findings and issue links to the same coordinator.
+fails, preserve the failure, continue permitted discovery and use the
+[per-issue partial receipt](../../shared/PLAN-HANDOFF.md#publication-receipt).
+Standalone planning stops after its batch; an Orbi substep returns findings and
+issue links to the same coordinator.
 
 ## Report
 

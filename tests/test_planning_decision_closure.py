@@ -213,11 +213,61 @@ class PlanningDecisionClosureTests(unittest.TestCase):
                     self.assertNotIn(f'## {heading}', canonical.read_text())
                 for owner in ('PONYTAIL.md', 'COMMUNICATION.md'):
                     self.assertIn(f'../shared/{owner}', canonical.read_text())
-                for boundary in ('Read-only/questions-only/no-write', 'publish `ai-ready` last',
-                                 'Stop planning', 'without implementing or starting a service',
-                                 'same coordinator', 'existing issue'):
+                for heading in ('Publication and dependencies',
+                                'Persistence, not local-main admission',
+                                'Publication receipt', 'Execution handoff'):
+                    anchor = heading.lower().replace(',', '').replace(' ', '-')
+                    self.assertIn(f'../shared/PLAN-HANDOFF.md#{anchor}', canonical.read_text())
+                for boundary in ('Stop planning', 'without implementing or starting a service',
+                                 'same coordinator'):
                     self.assertIn(boundary, ' '.join(canonical.read_text().split()))
                 self.assertNotIn('An existing Orbi deployment can consume published work immediately', canonical.read_text())
+
+    def test_fully_specified_interactive_request_branches_before_saving(self):
+        intake = section('skills/plan-with-me/SKILL.md', 'Learn enough to ask a useful question')
+        for rule in ('A fully specified request needs no interview',
+                     'In no-write mode, return the complete plan inline and write nothing',
+                     'In writable mode, preview the batch, then follow Plan Handoff'):
+            self.assertIn(rule, intake)
+        self.assertNotIn('save the complete requested batch and stop planning', intake)
+
+    def test_thin_intent_does_not_force_speculative_draft_tasks(self):
+        intake = section('skills/plan-with-me/SKILL.md', 'Learn enough to ask a useful question')
+        for rule in ('Include draft tasks only when supported by known intent and evidence',
+                     'zero invented tasks', 'One question, the highest-impact decision still open'):
+            self.assertIn(rule, intake)
+
+    def test_autonomous_completion_allows_evidenced_zero_new_issues(self):
+        text = ' '.join((ROOT / 'skills/plan-for-me/SKILL.md').read_text().split())
+        for rule in ('missing intent, existing coverage or no-write mode',
+                     'explicit disposition', 'every actionable accepted outcome',
+                     'new or reused issue', 'proposed contract inline'):
+            self.assertIn(rule, text)
+        self.assertNotIn('A roadmap or prose plan with no task records', text)
+        self.assertNotIn('A plan without tasks is enough', text)
+
+    def test_settled_approach_and_material_choice_are_distinct_branches(self):
+        for mode in ('plan-with-me', 'plan-for-me'):
+            with self.subTest(mode=mode):
+                text = ' '.join((ROOT / f'skills/{mode}/SKILL.md').read_text().split())
+                self.assertIn('When a governing decision fixes the approach, cite it', text)
+                self.assertIn('acceptance and verification', text)
+                self.assertIn('Compare practical approaches when a material choice remains', text)
+                self.assertNotIn('Generate several approaches before choosing', text)
+
+    def test_failed_handoff_summaries_route_to_per_issue_receipt(self):
+        for path in ('skills/plan-with-me/SKILL.md', 'skills/plan-for-me/SKILL.md',
+                     'skills/plan-for-me/references/discovery.md',
+                     'skills/shared/RESEARCH-PLAN.md'):
+            with self.subTest(path=path):
+                text = (ROOT / path).read_text()
+                self.assertIn('PLAN-HANDOFF.md#publication-receipt', text)
+                self.assertNotIn('Failed persistence is **UNSAVED**', text)
+                self.assertNotIn('Identify any failed handoff as UNSAVED', text)
+        receipt = section('skills/shared/PLAN-HANDOFF.md', 'Progress and final receipt')
+        for rule in ('actual partial result per issue', 'last_verified',
+                     '**UNKNOWN**', 'creation never attempted', 'not retry authorization'):
+            self.assertIn(rule, receipt)
 
     def test_paired_recovery_specimens_cover_inputs_and_document_expected_outcomes(self):
         fixture_dir = ROOT / 'tests/fixtures/planning'

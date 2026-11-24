@@ -128,7 +128,7 @@
       "path": "docs/project.md#accepted-requirements"
     },
     "test-plan": {
-      "reason": "Reviewed maintained offline inventory, CI shards and changed source/test contracts. Focused checks and installed smoke do not imply every offline suite or live delivery gate ran.",
+      "reason": "Reviewed maintained offline inventory, CI workflow and changed source/test contracts. Focused checks and installed smoke do not imply every offline suite or live delivery gate ran.",
       "status": "maintained",
       "path": "docs/testing.md",
       "covers": [

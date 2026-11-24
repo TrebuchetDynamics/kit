@@ -58,8 +58,10 @@ hide them with reset/clean or overwrite unrelated work.
 For every writable planning route, complete
 [GitHub publication](PLAN-HANDOFF.md#publication-and-dependencies) before claiming
 persistence. No local-main commit or `tasks/` validation is required. If GitHub is
-unavailable, continue permitted research and show complete proposals as **UNSAVED**
-with the exact missing input and retry command; never create a second local queue.
+unavailable, follow the [persistence rules](PLAN-HANDOFF.md#persistence-not-local-main-admission).
+For failed publication, use the [per-issue partial receipt](PLAN-HANDOFF.md#publication-receipt)
+to distinguish verified saved work, **UNSAVED** proposals and unknown writes; never
+create a second local queue.
 
 ## Shared planning interface
 
@@ -168,7 +170,8 @@ See [the issue contract](PLAN-HANDOFF.md#one-planning-pass-one-handoff).
    or handoff.json as a substitute for the repository plan and work queue.
 5. Read back affected documents and task records and run applicable consistency
    checks and GitHub readback. Report actual saved paths/issue URLs, checks and next action. If persistence
-   fails, report what remains unsaved; a chat answer is not a saved plan. Unchanged
+   fails, use the [per-issue partial receipt](PLAN-HANDOFF.md#publication-receipt);
+   a chat answer is not a saved plan. Unchanged
    conclusions may reuse existing durable evidence, citing its location. New
    material reasoning must be saved even if implementation scope stays unchanged.
 6. Finish according to the artifact/authority contract above. Return an
