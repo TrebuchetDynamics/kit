@@ -5481,6 +5481,89 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertIn('fecim-lattice-tools', reference)
         self.assertIn('openai-codex/gpt-6.2-sol', reference)
 
+    def test_common_path_has_four_ordered_steps_and_conditional_help(self):
+        skill = (ROOT / 'skills/orbi/SKILL.md').read_text()
+        common = skill.split('## Common path', 1)[1].split('\n## ', 1)[0]
+        self.assertEqual(re.findall(r'^\d+\. \*\*([^*]+)\*\*', common, re.M),
+                         ['Resolve intent.', 'Authorize.', 'Invoke once.', 'Relay receipt.'])
+        text = ' '.join(common.split())
+        self.assertIn('**Help first.** For help requests, run only help. '
+                      'For lifecycle commands, go directly to the requested action.', text)
+        for rule in ('No routine pre-status', 'Build argv', 'literal `--dry-run`',
+                     'No separate model', 'No blind retry'):
+            self.assertIn(rule, common)
+        # The helper owns action semantics; the public mapping above is still inline.
+        self.assertNotIn('| Action | Single-call result and guard |', common)
+
+    def test_status_detail_is_disclosed_without_losing_answer_distinctions(self):
+        skill = (ROOT / 'skills/orbi/SKILL.md').read_text()
+        reference = (ROOT / 'skills/orbi/references/lifecycle.md').read_text()
+        text = ' '.join(skill.split())
+        for rule in ('configured slots', 'enabled/active timers', 'running services',
+                     'active/issue unknown', 'unavailable counts', 'observed lower bounds',
+                     'Ready order', 'never prove pickup or liveness',
+                     'Unavailable counts are unknown, not zero', 'Ready issues are not claimed'):
+            self.assertIn(rule, text)
+        status = reference.split('## Stop, status and drain', 1)[1].split(
+            '### Pending issues and read coverage', 1)[0]
+        for evidence in ('InvocationID/MainPID', 'journal `run_start`',
+                         'retained or conflicting attempts', 'On macOS',
+                         'retained logs cannot bind a current run'):
+            self.assertIn(evidence, status)
+            self.assertNotIn(evidence, skill)
+        queue = reference.split('### Pending issues and read coverage', 1)[1].split(
+            '### Interpreting Linux scheduler inventory', 1)[0]
+        for rule in ('three cursor pages', 'observed lower bounds',
+                     'Comment/PR detail is limited to blocked/owned issues'):
+            self.assertIn(rule, queue)
+        for trigger, anchor in (
+                ('For slot attribution', 'stop-status-and-drain'),
+                ('For incomplete queue coverage', 'pending-issues-and-read-coverage'),
+                ('For Linux inventory interpretation', 'interpreting-linux-scheduler-inventory')):
+            self.assertIn(trigger, skill)
+            self.assertIn(f'references/lifecycle.md#{anchor}', skill)
+        # Bare status/version need neither setup nor recovery internals.
+        self.assertIn('Do not preload it for routine commands', text)
+
+    def test_instruction_links_and_completion_targets_resolve(self):
+        spec = importlib.util.spec_from_file_location(
+            'orbi_docs_check', ROOT / 'skills/docs-sync/scripts/docs.py')
+        docs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(docs)
+        repo = docs.Repo(ROOT)
+        for name in ('skills/orbi/SKILL.md', 'skills/orbi/references/lifecycle.md',
+                     'adapters/skills/orbi/SKILL.md'):
+            with self.subTest(path=name):
+                self.assertEqual(docs.check_document(repo, 'orbi', Path(name)), [])
+
+    def test_receipt_guidance_keeps_partial_mutation_and_exact_recovery(self):
+        skill = (ROOT / 'skills/orbi/SKILL.md').read_text()
+        receipt = ' '.join(skill.split('4. **Relay receipt.**', 1)[1].split('\n## ', 1)[0].split())
+        for rule in ('Lead with target and outcome', 'next action only when needed',
+                     'exact `resume_command`', 'never guess selectors',
+                     'exit 0', 'engine_update: deferred', 'engine was not updated',
+                     'one worker is still running', 'partial, uncertain and failed',
+                     '`error.fix`', '`error.mutated`', 'completed/failed `steps`',
+                     '`preparation`', '`activation`', '`first_tick_evidence`',
+                     'scheduler uncertainty', 'No blind retry'):
+            self.assertIn(rule, receipt)
+        self.assertIn('references/lifecycle.md#partial-failure-and-recovery', receipt)
+
+    def test_portable_adapter_owns_host_mechanics_not_runtime_semantics(self):
+        adapter = (ROOT / 'adapters/skills/orbi/SKILL.md').read_text()
+        text = ' '.join(adapter.split())
+        for rule in ('disable-model-invocation: true', 'Explicit invocation only',
+                     '../../../skills/shared/PONYTAIL.md',
+                     '../../../skills/shared/COMMUNICATION.md', '../COMMON.md',
+                     '../../../skills/orbi/SKILL.md', 'Pi supplies both',
+                     'use that supplied text without reloading it',
+                     "canonical workflow's directory", 'not this adapter'):
+            self.assertIn(rule, text)
+        for duplicate in ('Forward `version', '`update --stop`', 'unit refresh',
+                          'resume command'):
+            self.assertNotIn(duplicate, adapter)
+        self.assertEqual(adapter.count('**Done when:**'), 1)
+
     def test_first_start_guidance_keeps_fast_path_and_conditional_recovery(self):
         skill = (ROOT / 'skills/orbi/SKILL.md').read_text()
         self.assertLess(skill.index('## Intent and state: fast path'),
