@@ -69,7 +69,7 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|version|setup|start|up
   require `--config PATH` and complete matching provider inputs. It never changes
   a saved selection, pin or present provider file. See bounded resume below.
 - `update` accepts `--repo-dir`, `--config`, `--dry-run`, `--json` and update-only
-  `--stop`. The last flag explicitly authorizes pausing owned timers without
+  `--stop`. Both spellings authorize pausing owned timers by default without
   another prompt, never service interruption or restart.
   Provider, resume and harness selectors are refused: an update preserves the
   saved selection.
@@ -109,11 +109,12 @@ unavailable.
 ## Release update
 
 ```text
-/orbi update --stop --dry-run
-/orbi update --stop
+/orbi update --dry-run
+/orbi update
 ```
 
-`update --stop` pauses the selected deployment and updates only once idle. It
+`update` pauses the selected deployment by default and updates only once idle.
+`update --stop` is a compatible spelling with exactly the same behavior. It
 validates ownership, source cleanliness, saved harness/provider and prerequisites
 before touching timers, then revalidates under the existing deployment lock.
 It disables only owned timers (including inactive-but-enabled and active instances)
@@ -125,7 +126,8 @@ slots and the normal status scan; surplus workers and queued starts are not igno
 If workers are active/draining or jobs remain, the receipt has `status: draining`,
 `engine_update: deferred`, `scheduler_confirmation: timers_disabled`,
 confirmed disabled timers, `pending_services` and the
-exact `resume_command` to deliberately retry after they finish. Engine source and
+exact plain `resume_command` (`/orbi update --repo-dir … --config …`) retaining the
+selected repository and config paths to deliberately retry after they finish. Engine source and
 pin are untouched. There is no polling, background continuation, service stop/kill,
 worker cancellation or automatic restart. Retrying does not carry saved restart
 intent: scheduling stays stopped.
@@ -139,20 +141,15 @@ which already installs units. It reports engine `updated`/`up_to_date`, unit ref
 scheduler readback proves disabled/inactive timers and no pending work. On failure,
 completed disables, the failed stage, actual scheduler evidence (or `unavailable`)
 and `resume_command` remain visible; no timer re-enable rollback is attempted.
-`--stop --dry-run` previews pause/drain and conditional update without writes,
-locks, fetch or unit actions. Selectors and other start gates are unchanged.
+`update --dry-run` and `update --stop --dry-run` preview the same pause/drain and
+conditional update without writes, locks, fetch or unit actions. Selectors and
+other start gates are unchanged. Tracked checkout changes refuse as `source_dirty`
+before pausing; update never discards or force-checks-out work.
 
-### Plain update compatibility
+### Release synchronization
 
-`update` advances one prepared deployment to the newest official release and
-repairs its owned units. It needs the same evidence as setup plus a stopped and
-drained deployment: readable scheduler evidence, no active or activating service
-and no enabled timer. A live worker or enabled timer refuses as `update_busy`
-before any write. Tracked changes in the deployment checkout refuse as
-`source_dirty`; update never discards or force-checks-out work.
-
-Under the deployment lock it rechecks ownership, source, checkout cleanliness and
-inactivity, then:
+Under the deployment lock, after rechecking ownership, source, checkout cleanliness
+and confirmed idle/no-pending-start evidence, update:
 
 1. writes the upstream `release` channel into `engine_source_track`;
 2. runs upstream `sync-engine-source`, which fetches the official tags, resolves
@@ -162,13 +159,10 @@ unchanged;
 3. reads the resulting HEAD and locks it as `sha:<commit>`, so later ticks verify
 one exact commit instead of tracking a moving tag;
 4. validates with non-activating `orbi check`;
-5. refreshes this deployment's owned units with upstream `orbi install-units`
-when they are installed, which re-renders the deployment templates and enables
-configured timers; a deployment with no installed unit reports
-`refresh_units: deferred` and leaves first installation to `start`;
-6. disables every owned timer that install enabled, restoring the verified
-inactive state, and reports the names in `disabled_timers`;
-7. observes the scheduler again and reports `pending_services`.
+5. defers owned unit refresh to the next authorized `start`, avoiding even transient
+timer activation;
+6. observes the scheduler again and reports `pending_services` and confirmed stopped
+scheduling, or a failure with partial evidence if work appeared or readback failed.
 
 The config must declare exactly one `engine_source_track` line; update rewrites
 that literal and preserves every other byte. An engine that predates the upstream
@@ -177,7 +171,7 @@ release channel fails the sync closed and is reported as
 a second retry.
 
 It reports `updated`, or `up_to_date` when the release commit did not move; both
-still refresh units and validate. `previous.track`/`previous.head` name the
+validate non-activating and defer unit refresh. `previous.track`/`previous.head` name the
 observed starting point, and `deployment.deployed_commit` the locked release.
 Origin, slots, provider metadata, harness selection, `.orbi/env` and unrelated
 config bytes are preserved. Update never enables scheduling as an outcome: run
@@ -884,14 +878,15 @@ retry an unchanged timeout. Typical repairs:
   Offer authorized stop/drain only when deliberately re-preparing or pausing.
   Verify inactivity before setup; do not kill workers or stop scheduling just
   to make a preview pass. An existing valid start skips setup.
-- `update_busy`: plain update requires stop/drain first, or use explicit
-  `update --stop` to authorize the pause while preserving workers. Verify no service is
-  active and no owned timer is enabled, then rerun `update`; never kill workers
-  or disable an unrelated deployment to pass the check.
+- `update_busy`: work appeared during the update after initial idle confirmation.
+  Inspect pending work, partial steps and source state before a deliberate retry;
+  never kill workers or disable an unrelated deployment. Workers/pending starts
+  observed before synchronization normally return `draining` with the exact plain
+  resume command, not `update_busy`.
 - `source_dirty`: preserve the tracked checkout changes in a separate operation
   and decide deliberately; update never discards them or rewrites origin.
 - `sync_engine_source_failed` or `command_timeout` during `update`: the pin or
-  checkout may already have moved and units may already be refreshed. Read
+  checkout may already have moved and owned timers may already be disabled. Read
   `previous`, `steps`, `disabled_timers`, `error.mutated` and the read-only
   scheduler snapshot before deliberate recovery; inspect the fetch/channel
   privately and do not retry an unchanged timeout.
@@ -975,13 +970,12 @@ these tests do not prove that a real model asks the right clarification.
 The public CLI receipt fixture in `tests/test_orbi_control.py` uses disposable
 homes, a prepared target, an unrelated deployment and fake external tools. The
 same CLI requests against the base and current helper each use **one helper
-invocation**. External tool subprocess counts before → after are: bare/status
-32 → 32 each; help 0 → 0; setup/start previews 33 → 33 each; stop preview 32 → 32;
-update preview 36 → 36; failed busy update 35 → 35. These are helper-internal
-checks, not model calls or host tool invocations. No checks were removed. Routine
-previews return `planned`; busy update exits nonzero with `update_busy`,
-`mutated: false` and the repair action to request a separately authorized
-stop/drain and verify inactivity. No implicit mutation or retry follows.
+invocation**. These fixtures establish helper receipts, not model calls or host
+round trips. Routine previews return `planned`. Plain update and explicit `--stop`
+pause owned timers and return `draining` when workers remain, with the exact plain
+resume command; a later deliberate invocation after drain updates and leaves stopped.
+Dirty-source refusal returns `source_dirty`, `mutated: false` and a preservation
+repair action before any pause. No implicit retry follows.
 
 The workflow removes routine duplicate host discovery/status probes, help
 lookups, separate setup before absent start, preview-then-apply sequences,

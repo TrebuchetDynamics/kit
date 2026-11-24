@@ -30,7 +30,7 @@ necessarily redundant test identities. Planning launches nothing.
 ## Companion frontends and platform scope
 
 1. Establish the product boundary before discussing implementation: distinguish an existing website, a native companion app, an embedded website and an additional browser build of the companion. A second frontend for the same backend is not automatically a WebView or a second web application.
-2. Use concrete product names when asking about platforms. If a reply mentions keeping the existing website and adding the companion, clarify whether a separate Flutter browser build is also required; do not treat the word "web" as proof of that requirement or silently discard an earlier explicit platform choice.
+2. Use concrete product names and framework-neutral platform questions until source or user intent confirms Flutter. If a separate browser build remains consequential and unresolved, ask whether the companion also needs one. For a confirmed Flutter target, that can be a Flutter browser build question. An existing website and native companion without Flutter evidence need no Flutter build question. Do not treat "web" as proof of a companion browser build or silently discard an earlier explicit platform choice.
 3. Inspect existing page loaders, public APIs, role gates and shared UI patterns before proposing parity. A generic list endpoint may omit the page's filters, summaries, history, position provenance or privacy projection. Prefer shared server read models over duplicating queries or scraping framework-internal page data.
 4. Settle frontend/platform scope before asking about hosting or designing cross-origin authentication. First-party cookie reuse, native session handling and cross-site browser access have different constraints; an unresolved deployment choice does not authorize a new token protocol, relaxed cookies or broad CORS access.
 5. Once native versus embedded and feature depth are settled, save those answers in the existing planning owner before another consequential round when continuity would otherwise be lost. Mark only unresolved choices Open; do not restart discovery or make understood product scope look undecided. Keep cloud session/state independent of local-device connection state when the requested module must work without that connection.
@@ -99,12 +99,27 @@ the already requested documentation work. Actual user scope takes precedence.
 "Audit X", "is X ready?" or "what is left?" asks what to do next, not only for a
 report. Inspect read-only, then answer in this order:
 
-1. The verdict in one line (ready, or not ready and why in a few words).
+1. The verdict in one line, based on required checks:
+   - **not ready** for an observed failed required check, even when other checks
+     are unverified. Name the failure; keep missing evidence separate.
+   - **unverified** when required evidence is missing and no required check has an
+     observed failure. Lead with that state and name the missing receipt and
+     qualification action, not an assumed repair.
+   - **ready** only when all required checks have verified passing evidence for
+     the assessed source and target.
 2. The gaps that stand between now and ready, saved as complete GitHub Issues
    through [Plan Handoff](../../shared/PLAN-HANDOFF.md), or linked to existing issues.
    Preserve unresolved intent with `ai-planning`; publish complete work with
    `ai-ready` last and order it through native dependencies.
 3. What was not checked, in one line.
+
+Examples (verdicts, not observed results):
+- Required Android receipt absent, no observed failure: "Unverified: Android device
+  receipt missing"; obtain the required device qualification receipt, not a repair.
+- Observed Android failure plus missing desktop evidence: "Not ready: Android check
+  failed; desktop receipt unverified"; plan the evidenced repair and remaining check.
+- All required evidence passes: "Ready: all required desktop and Android checks
+  verified passing". An offline pass alone cannot supply a required device receipt.
 
 A list of findings or a "smallest path" without task IDs is not a finished answer.
 When the request is explicitly read-only, propose the same tasks with their full

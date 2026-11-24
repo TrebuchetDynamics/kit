@@ -86,7 +86,7 @@ tick, activates/repairs anything or updates a stale installed helper.
 | `/orbi setup` | Starts by default. Use `/orbi setup --prepare-only` for non-activating preparation. The direct Python helper’s `setup` action is prepare-only; native `orbi setup` is different. |
 | `start` | Prepares if genuinely absent, then activates the owned timers and requests a first tick if idle. Requires separate scheduling authority. |
 | `stop` | Disables owned timers; active services drain rather than being killed. It does not cancel an issue. |
-| `update` | Plain `update` requires a stopped, drained deployment. Refreshing installed units can briefly activate timers before Kit restores inactivity. `update --stop` pauses owned timers, defers while workers finish, and skips the activating unit refresh. |
+| `update` | `update` pauses owned timers by default, defers with an exact plain resume command while workers/pending starts remain, then syncs/pins the release and leaves scheduling stopped. `update --stop` is compatible. Both skip activating unit refresh until the next authorized start; neither interrupts workers or enables timers, even briefly. |
 
 Kit mutations are Linux-only; `--dry-run` previews them. On an error inspect the JSON `error.code`, `error.fix` and `error.mutated`: nonzero exit does not mean nothing changed. Use the helper for lifecycle changes, not hand-written unit commands.
 
