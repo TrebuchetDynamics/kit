@@ -55,7 +55,7 @@ to expose alternatives; its decision tree challenges important assumptions, fail
 cases and costly choices. This is a mode of Plan With Me, not a second planning
 workflow. Ask only frontier decisions whose prerequisites are settled, in rounds.
 This interview's round size, scope and stop rules override grill's exhaustive
-questioning and generic final implementation-approval prompt. Do not ask every
+questioning. Use its planning synthesis when choices are settled. Do not ask every
 possible question or repeat approval of settled answers.
 
 ## Learn enough to ask a useful question

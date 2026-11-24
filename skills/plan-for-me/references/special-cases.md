@@ -13,9 +13,15 @@ positioning and turn the aspiration into observable quality gates. Mark the rubr
 thresholds and lab conditions as planner calls; distinguish measured baselines from
 proposed targets and lab results from field performance or conversion evidence.
 Do not award a perfect score from green tests or an empty design-detector result.
-Inspect the current desktop and narrow localized render before proposing another
-rebuild; improve specific hierarchy, product-proof and layout defects while retaining
-verified imagery, brand commitments and already-qualified interactions.
+Derive checks from the surface and technology supported by source or user intent.
+For a relevant visual surface, inspect the current desktop and narrow localized
+render before proposing another rebuild; improve specific hierarchy, product-proof
+and layout defects while retaining verified imagery, brand commitments and
+already-qualified interactions. Require screenshots only for a relevant visual
+surface and Flutter build questions only for a confirmed Flutter target. A premium
+CLI without Flutter evidence needs neither screenshots nor a Flutter build question;
+use gates for command output, errors and task completion instead. These conditional
+examples are not proof of current readiness.
 
 ## Superseded limitations
 

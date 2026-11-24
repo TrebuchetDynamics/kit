@@ -71,7 +71,7 @@ class PlanningDecisionClosureTests(unittest.TestCase):
         self.assertNotIn('RESEARCH-PLAN.md#interactive-planning-plan-with-me', owner)
         for rule in ('bare “yes” or LGTM', 'round-scoped acceptance',
                      'including confirmation questions', 'exhaustive questioning',
-                     'implementation-approval prompt', 'Do not invoke Plan For Me',
+                     'planning synthesis', 'Do not invoke Plan For Me',
                      'Already-loaded sources need no reread'):
             self.assertIn(rule, owner)
 
@@ -363,6 +363,71 @@ class PlanningDecisionClosureTests(unittest.TestCase):
                      'Later explicit instruction to implement the accepted plan',
                      'Do not ask an already-authorized coordinator to approve again'):
             self.assertIn(rule, authority)
+
+    def test_readiness_verdict_distinguishes_failed_and_missing_required_evidence(self):
+        audit = section('skills/plan-with-me/references/special-cases.md',
+                        'Audits and readiness questions')
+        for rule in ('not ready', 'observed failed required check',
+                     'even when other checks are unverified',
+                     'unverified', 'no required check has an observed failure',
+                     'name the missing receipt and qualification action',
+                     'not an assumed repair', 'ready',
+                     'all required checks have verified passing evidence'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, audit)
+        for example in ('Unverified: Android device receipt missing',
+                        'Not ready: Android check failed; desktop receipt unverified',
+                        'Ready: all required desktop and Android checks verified passing'):
+            self.assertIn(example, audit)
+        self.assertNotIn('ready, or not ready and why', audit)
+
+    def test_challenge_synthesis_hands_off_without_reopening_settled_answers(self):
+        synthesis = section('skills/grill-me/SKILL.md', 'Synthesis (when the frontier is empty)')
+        for rule in ('answer sources', 'genuinely unresolved or skipped questions',
+                     'settled answers stay settled', 'Plan With Me challenge mode',
+                     '../shared/PLAN-HANDOFF.md', 'no implementation invitation',
+                     'no repeated approval', 'Outside planning', 'confirmation gate'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, synthesis)
+        self.assertNotIn('Should I start implementing', synthesis)
+        skill = ' '.join((ROOT / 'skills/grill-me/SKILL.md').read_text().split())
+        self.assertIn('planning handoff is complete', skill.split('**Done when:**', 1)[1])
+        self.assertIn('Outside planning, confirm user alignment', skill)
+        challenge = section('skills/plan-with-me/SKILL.md', 'Challenge mode')
+        self.assertIn('planning synthesis', challenge)
+
+    def test_special_cases_condition_visual_and_flutter_advice_on_evidence(self):
+        companion = section('skills/plan-with-me/references/special-cases.md',
+                            'Companion frontends and platform scope')
+        for rule in ('separate browser build', 'source or user intent confirms Flutter',
+                     'without Flutter evidence', 'framework-neutral',
+                     'existing website and native companion'):
+            self.assertIn(rule, companion)
+        self.assertNotIn('clarify whether a separate Flutter browser build is also required', companion)
+        quality = section('skills/plan-for-me/references/special-cases.md',
+                          'Aspirational quality goals')
+        for rule in ('source or user intent', 'relevant visual surface',
+                     'desktop and narrow localized render', 'premium CLI',
+                     'neither screenshots nor a Flutter build question',
+                     'command output, errors and task completion',
+                     'not proof of current readiness'):
+            self.assertIn(rule, quality)
+
+    def test_special_cases_are_reachable_through_loaded_planning_routes(self):
+        # Resolve the real reference chain; these source checks do not call a model.
+        for mode in ('plan-with-me', 'plan-for-me'):
+            adapter = ROOT / f'adapters/skills/{mode}/SKILL.md'
+            owner_link = f'../../../skills/{mode}/SKILL.md'
+            self.assertIn(owner_link, adapter.read_text())
+            owner = (adapter.parent / owner_link).resolve()
+            reference = (owner.parent / 'references/special-cases.md').resolve()
+            self.assertIn('references/special-cases.md', owner.read_text())
+            self.assertTrue(reference.is_file())
+        owner = ROOT / 'skills/plan-with-me/SKILL.md'
+        self.assertIn('../grill-me/SKILL.md', section(str(owner.relative_to(ROOT)), 'Challenge mode'))
+        grill = (owner.parent / '../grill-me/SKILL.md').resolve()
+        self.assertIn('../shared/PLAN-HANDOFF.md', grill.read_text())
+        self.assertTrue((grill.parent / '../shared/PLAN-HANDOFF.md').resolve().is_file())
 
     def test_closure_does_not_widen_planning_writes_or_execution_authority(self):
         contract = section('skills/shared/RESEARCH-PLAN.md', 'Planning artifact and authority contract')
