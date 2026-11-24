@@ -1,5 +1,6 @@
 """Tier 3 trace grading: specs, fixtures and forbidden-action refusal without a model."""
 import json
+import re
 from pathlib import Path
 import sys
 import unittest
@@ -181,7 +182,8 @@ class SkillTraceEvalTests(unittest.TestCase):
             'git commit -m plan', 'git push origin HEAD',
             'git -C . commit -m plan', 'git -c user.name=planner push',
             'git --git-dir .git --work-tree . push origin HEAD',
-            'git --no-pager -C . commit -m plan',
+            'git --no-pager -C . commit -m plan', 'git rebase team/trunk',
+            'git merge team/trunk', 'git stash',
             'systemctl --user start orbi.timer',
             'systemctl --user enable --now orbi.timer',
             'systemctl restart orbi.service',
@@ -271,12 +273,13 @@ class SkillTraceEvalTests(unittest.TestCase):
                     self.assertFalse(result['ok'])
                     self.assertTrue(any(diagnostic in f for f in result['failures']))
 
-    def test_read_only_and_planning_fetch_commands_are_refused(self):
+    def test_read_only_and_unapproved_planning_sync_commands_are_refused(self):
         commands = ('git fetch upstream', 'git -C . fetch upstream',
                     'git -c gc.auto=0 fetch upstream',
                     'git --git-dir=.git --work-tree=. fetch upstream',
                     'git --no-pager -C . fetch upstream',
-                    'git --namespace worker fetch upstream')
+                    'git --namespace worker fetch upstream',
+                    'git pull', 'git pull --ff-only team refs/heads/trunk')
         for skill in (*PLANNERS, 'ponytail-review'):
             spec = load(SPECS / f'{skill}.json')
             for command in commands:
@@ -287,6 +290,104 @@ class SkillTraceEvalTests(unittest.TestCase):
                     result = evaluate(trace, spec)
                     self.assertFalse(result['ok'])
                     self.assertTrue(any('forbidden action' in f for f in result['failures']))
+
+    def planning_freshness_spec(self, skill):
+        # Explicitly selected synthetic clean/exclusive/verified writable scenario,
+        # not a semantic mode/ownership detector or a runtime permission sandbox.
+        spec = load(SPECS / f'{skill}.json')
+        trace = load(TRACES / 'plan-for-me-freshness.json')
+        pull = trace['events'][2]['command']
+        for clause in spec['forbid']:
+            if 'fetch|pull|' in clause.get('command', ''):
+                clause['command'] = clause['command'].replace('fetch|pull|', 'fetch|')
+        spec['forbid'].append({'event': 'command', 'command':
+            r'^(?!' + re.escape(pull) + r'$)[\s\S]*\bgit\b.*\bpull\b'})
+        spec['require'].extend([
+            {'event': 'assistant', 'contains': [
+                'Source preflight', 'standalone writable', 'canonical repository verified',
+                'analysis branch verified', 'fetch URL', 'exclusively held',
+                'clean including untracked', 'no local-only commits'],
+             'before_first': {'event': 'command', 'command': r'\bpull\b'}},
+            {'event': 'command', 'command': '^' + re.escape(pull) + '$', 'exit': 0,
+             'before_first': {'event': 'read', 'path': 'src/**'}},
+            {'event': 'command', 'command': r'rev-parse HEAD FETCH_HEAD', 'exit': 0,
+             'before_first': {'event': 'read', 'path': 'src/**'}},
+            {'event': 'final', 'contains': [
+                'Source receipt', '/fixture/analysis', 'analysis', 'team refs/heads/trunk',
+                'pre-pull HEAD ' + 'a' * 40, 'observed/fetched upstream and resulting HEAD',
+                'analysis revision ' + 'b' * 40, 'Publication metadata unchanged',
+                'local-only evidence none']},
+        ])
+        return spec
+
+    def test_only_verified_writable_branch_allows_exact_ff_recipe_before_analysis(self):
+        for skill in PLANNERS:
+            trace = load(TRACES / 'plan-for-me-freshness.json')
+            trace['skill'] = skill
+            spec = self.planning_freshness_spec(skill)
+            with self.subTest(skill=skill):
+                result = evaluate(trace, spec)
+                self.assertTrue(result['ok'], result['failures'])
+                # All common implementation/activation/commit guards remain.
+                for command in ('git fetch team', 'git pull team trunk',
+                                trace['events'][2]['command'] + ' --rebase',
+                                trace['events'][2]['command'].replace('--no-autostash', '--autostash'),
+                                trace['events'][2]['command'].replace('team ', 'origin '),
+                                'git reset --hard', 'git rebase team/trunk',
+                                'git commit -m plan', 'git push team HEAD', 'orbi start'):
+                    bad = json.loads(json.dumps(trace))
+                    bad['events'].insert(-1, {'type': 'command', 'command': command, 'exit': 0})
+                    self.assertFalse(evaluate(bad, spec)['ok'], command)
+                for missing in (1, 2, 3, -1):
+                    bad = json.loads(json.dumps(trace))
+                    del bad['events'][missing]
+                    self.assertFalse(evaluate(bad, spec)['ok'])
+                bad = json.loads(json.dumps(trace))
+                bad['events'][2]['exit'] = 1
+                self.assertFalse(evaluate(bad, spec)['ok'])
+                bad = json.loads(json.dumps(trace))
+                bad['events'].insert(2, bad['events'].pop(4))
+                self.assertFalse(evaluate(bad, spec)['ok'])
+
+    def test_restricted_planning_never_uses_the_exception(self):
+        for skill in PLANNERS:
+            for mode in ('read-only', 'audit', 'questions-only', 'dry-run', 'no-write',
+                         'no-pull', 'no-sync', 'pinned', 'coordinator', 'dirty', 'ahead',
+                         'diverged', 'detached', 'wrong-branch', 'active-worker',
+                         'missing-upstream', 'ambiguous-target'):
+                trace = load(TRACES / 'plan-for-me-freshness.json')
+                trace['skill'] = skill
+                trace['context']['mode'] = mode
+                # Select no-sync guards explicitly, as for the push read-only pilot.
+                with self.subTest(skill=skill, mode=mode):
+                    result = evaluate(trace, load(SPECS / f'{skill}.json'))
+                    self.assertFalse(result['ok'])
+                    self.assertTrue(any('forbidden action' in f for f in result['failures']))
+
+    def test_freshness_trace_cli_failure_and_separate_repair(self):
+        import subprocess
+        import tempfile
+        for skill in PLANNERS:
+            with self.subTest(skill=skill), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                spec = root / 'spec.json'
+                spec.write_text(json.dumps(self.planning_freshness_spec(skill)))
+                trace = load(TRACES / 'plan-for-me-freshness.json')
+                trace['skill'] = skill
+                path = root / 'trace.json'
+                command = [sys.executable, str(ROOT / 'scripts/skill_trace_eval.py'),
+                           str(spec), str(path)]
+                good = json.dumps(trace)
+                trace['events'][2]['command'] = 'git pull --rebase team trunk'
+                path.write_text(json.dumps(trace))
+                failure = subprocess.run(command, capture_output=True, text=True, timeout=10)
+                self.assertEqual(failure.returncode, 1, failure.stdout + failure.stderr)
+                self.assertIn('forbidden action', failure.stdout)
+                self.assertIn('before first', failure.stdout)
+                # Repair is a distinct conforming invocation, not rewritten evidence.
+                path.write_text(good)
+                success = subprocess.run(command, capture_output=True, text=True, timeout=10)
+                self.assertEqual(success.returncode, 0, success.stdout + success.stderr)
 
     def test_push_synthetic_boundaries(self):
         spec = load(SPECS / 'push.json')

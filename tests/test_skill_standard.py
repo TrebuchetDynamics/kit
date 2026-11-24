@@ -64,6 +64,33 @@ class SkillStandardTests(unittest.TestCase):
                      'Delivery/sync', 'Non-repository'):
             self.assertIn(mode, text)
 
+    def test_planning_fast_forward_exception_is_narrow_and_source_bound(self):
+        text = ' '.join((ROOT / 'skills/shared/COMMON-CONTRACT.md').read_text().split())
+        section = text.split('### Standalone planner freshness', 1)[1].split(
+            '**Verify identity, not names.**', 1)[0]
+        for rule in ('Plan With Me and Plan For Me only', 'before scoped code analysis',
+                     'canonical repository', 'intended analysis branch', 'fetch URL',
+                     'branch.<branch>.remote', 'branch.<branch>.merge',
+                     'exclusively held', 'untracked', 'local-only commits',
+                     'detached', 'wrong-branch', 'active/foreign-worker',
+                     'missing or ambiguous', 'read-only source at a verified remote SHA',
+                     'local-only changes', 'historical/pinned', 'Orbi-owned',
+                     'before publication', 'material drift', 'not on every interview turn',
+                     'HEAD', 'FETCH_HEAD', 'freshness-dependent decisions',
+                     'no commit, push, rebase, merge commit, stash, reset',
+                     'no-pull/no-sync', 'no-write'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, section)
+        for flag in ('--ff-only', '--no-rebase', '--no-autostash',
+                     '--no-recurse-submodules'):
+            self.assertIn(flag, section)
+        for path in ('docs/project.md', 'docs/github-native.md', 'docs/cross-host.md',
+                     'docs/workflows.md', 'skills/shared/WORKTREE-ISOLATION.md'):
+            with self.subTest(path=path):
+                self.assertNotRegex((ROOT / path).read_text(),
+                    r'planning (?:modes )?do not (?:fetch|create worktrees or fetch)|'
+                    r'writable planning do not fetch|does not sync or commit')
+
     def test_delivery_references_do_not_call_fetch_read_only(self):
         for name in ('skills/git-commit-push/SKILL.md',
                      'skills/git-commit-push/references/pull-merge.md'):
