@@ -4,9 +4,68 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 CRAFT = ' '.join((ROOT / 'skills/shared/PLANNING-CRAFT.md').read_text().split())
+DISCOVERY = (ROOT / 'skills/plan-for-me/references/discovery.md').read_text()
 
 
 class PlanningDecompositionContractTests(unittest.TestCase):
+    def test_discovery_stops_only_after_selection_uncertainties_are_resolved(self):
+        # Keep the decision next to investigation, not hidden in publication rules.
+        investigation = ' '.join(DISCOVERY.split('## Investigate progressively', 1)[1]
+                                 .split('## Build the project model', 1)[0].split())
+        for rule in ('### Stop or widen',
+                     'source evidence, observable acceptance',
+                     'existing-issue and active-ownership check',
+                     'remaining uncertainties',
+                     'change selection, priority, prerequisites, scope or safety',
+                     'inspect the relevant area before selecting affected work',
+                     'unresolved material risk',
+                     'Stop widening when the frontier is supported',
+                     'no identified open choice could change it',
+                     'not a file or time quota'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, investigation)
+
+    def test_discovery_tracing_and_report_preserve_the_uninspected_boundary(self):
+        text = ' '.join(DISCOVERY.split())
+        for rule in ('Within the inspected boundary, trace each important requirement',
+                     'supports the frontier or could change its selection',
+                     '**Inspection boundary**',
+                     'uninspected, not free of gaps',
+                     'not repository-wide certification'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, text)
+        self.assertNotIn('Trace each important requirement:', DISCOVERY)
+
+    def test_discovery_reuses_coverage_without_truncating_explicit_batches(self):
+        text = ' '.join(DISCOVERY.split())
+        for rule in ('Reuse covering issues rather than manufacture new findings',
+                     'at most eight new tasks',
+                     'not the full explicitly requested batch',
+                     '../../shared/RESEARCH-PLAN.md#full-requested-batch'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, text)
+        full_batch = (ROOT / 'skills/shared/RESEARCH-PLAN.md').read_text().split(
+            '## Full requested batch', 1)[1].split('## Research and persistence method', 1)[0]
+        self.assertIn('every requested outcome', full_batch)
+        self.assertIn('Do not stop when the', full_batch)
+        # Matched model cases remain specifications, not fabricated model receipts.
+        scenarios = (ROOT / 'tests/fixtures/planning/README.md').read_text().split(
+            '## Discovery stop/widen scenarios', 1)[1].split('## Paired recovery', 1)[0]
+        self.assertIn('**NOT_RUN**', scenarios)
+        for case, expectations in (
+                ('Stable frontier', ('Stop widening', 'API/storage inspected boundary',
+                                     'gallery uninspected')),
+                ('Material prerequisite', ('UNKNOWN', 'duplicate a committed write',
+                                          'before selecting', 'retry work pending')),
+                ('Existing coverage', ('Reuse #800', 'preserve its owner/PR', 'zero new tasks')),
+                ('Explicit batch', ('all nine outcomes', 'reusing FMT-01',
+                                    'eight-new-task discovery ceiling'))):
+            with self.subTest(case=case):
+                row = next(line for line in scenarios.splitlines()
+                           if line.startswith(f'| **{case}**'))
+                for expectation in expectations:
+                    self.assertIn(expectation, row)
+
     def test_bounded_large_file_fix_needs_no_extraction_task(self):
         for rule in ('Re-cut ownership for cohesion',
                      'observed conflict cost and testability',
