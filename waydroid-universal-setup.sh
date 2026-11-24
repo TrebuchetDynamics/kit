@@ -50,7 +50,11 @@ WAIT=$((10#$WAIT))
 
 # Waydroid status reports DHCP leases; UNKNOWN is transient, not a serial.
 device_ip() {
-    local status ip
+    local session status ip
+    # Do not let status auto-activate an absent manager (--status is read-only
+    # apart from the documented unprivileged ADB connection).
+    session=$(manager_session) || return 1
+    [[ -n $session ]] || return 1
     status=$(timeout 10 waydroid status) || return 1
     ip=$(awk -F': *|:\t' '/^IP address:/ {gsub(/[[:space:]]/, "", $2); print $2}' <<< "$status")
     python3 - "$ip" <<'PY'
@@ -79,6 +83,9 @@ verify_device() {
                         abi=$(timeout 10 adb -s "$serial" shell getprop ro.product.cpu.abi | tr -d '\r') ||
                             fail 'Android properties unavailable; check adb devices and adb shell getprop, then retry --status.'
                         [[ -n $version && -n $abi ]] || fail 'Android properties empty; inspect adb shell getprop and retry --status.'
+                        # ADB can take minutes; do not publish readiness for a
+                        # different owner/session that appeared during that wait.
+                        if [[ $ACTION == setup ]]; then confirm_managed; fi
                         printf 'ADB serial: %s\nAndroid: %s\nABI: %s\n' "$serial" "$version" "$abi"
                         return
                     fi ;;

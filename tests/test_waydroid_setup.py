@@ -123,6 +123,7 @@ elif name == 'adb':
     elif 'getprop' in args:
         key = args[-1]
         if mode.endswith('properties-failed') and key != 'sys.boot_completed': sys.exit(1)
+        if mode == 'gui-adb-owner-race' and key == 'ro.product.cpu.abi': session_file.write_text('foreign')
         print({'sys.boot_completed': '0' if mode.endswith('boot-timeout') else '1', 'ro.build.version.release': '13', 'ro.product.cpu.abi': 'x86_64'}[key])
 elif name == 'weston':
     if '--help' in args:
@@ -324,7 +325,7 @@ class WaydroidSetupTests(unittest.TestCase):
     def test_after_stop_startup_failures_have_recovery_without_false_ready(self):
         before = self.complete_device()
         for mode in ['gui-start-race', 'gui-start-fail', 'gui-start-unconfirmed', 'gui-start-foreign',
-                     'gui-unauthorized', 'gui-properties-failed', 'gui-boot-timeout']:
+                     'gui-unauthorized', 'gui-properties-failed', 'gui-adb-owner-race', 'gui-boot-timeout']:
             with self.subTest(mode=mode):
                 (self.base / 'session').unlink(missing_ok=True)
                 (self.base / 'calls').write_text('')
@@ -454,13 +455,23 @@ class WaydroidSetupTests(unittest.TestCase):
         self.assertNotIn('sudo ', self.calls())
 
     def test_property_query_failure_names_repair_without_ready_report(self):
+        (self.base / 'session').write_text('managed')
         result = self.invoke('--status', mode='properties-failed')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Android properties unavailable', result.stderr)
         self.assertIn('--status', result.stderr)
         self.assertNotIn('ADB serial:', result.stdout)
 
+    def test_status_never_activates_an_absent_manager(self):
+        result = self.invoke('--status', '--wait', '1', mode='manager-absent')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('waydroid status', self.calls())
+        self.assertNotIn('sudo ', self.calls())
+        self.assertNotIn('enable --now', self.calls())
+        self.assertNotIn('ADB serial:', result.stdout)
+
     def test_status_distinguishes_failure_states_and_delayed_dhcp(self):
+        (self.base / 'session').write_text('managed')
         for mode, expected in [('no-ip', 'No container IP'), ('unauthorized', 'authorization pending'), ('boot-timeout', 'Android boot timeout')]:
             with self.subTest(mode=mode):
                 result = self.invoke('--status', '--wait', '1', mode=mode)

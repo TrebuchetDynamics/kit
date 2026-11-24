@@ -80,8 +80,8 @@ upstream can hide D-Bus errors in both commands. Loss of the manager fails close
 without starting a competing session. Ownership is checked again before activation.
 Startup uses the existing user-systemd/Weston `--session` path, not an extra unmanaged
 session. The active owned unit and expected UID/display are confirmed before ADB
-boot, release and ABI verification. No global service restart or speculative GUI
-rollback is performed.
+boot, release and ABI verification, and checked again before printing readiness.
+No global service restart or speculative GUI rollback is performed.
 
 The setup uses explicit official channels on initialization:
 `https://ota.waydro.id/system` and `https://ota.waydro.id/vendor` (VANILLA upstream
