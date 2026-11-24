@@ -193,12 +193,15 @@ Do not serve one repository from multiple deployments or machines.
 
 ### Kit lifecycle skill
 
-Use [`/orbi [status|setup|start|update|stop|help]`](../skills/orbi/SKILL.md) for one
+Use [`/orbi [status|version|setup|start|update|stop|help]`](../skills/orbi/SKILL.md) for one
 repository's deployment. `/orbi status all [--json]` instead inventories observable
 local host services from any directory, without repo/config selectors, GitHub auth
 or network fan-out. Preserve literal `all` in one helper call and never inject
 `--repo-dir`; partial/denied manager coverage is not an empty host. See
 [host inventory](../skills/orbi/references/lifecycle.md#host-inventory).
+`/orbi version [--json]` identifies the selected deployment engine release/revision
+and verification evidence without full status, bootstrap or network probes. Missing
+deployment is unconfigured; unverifiable metadata is unknown, never the global CLI.
 Bare invocation reads status; `--repo-dir` selects the
 canonical repository and `--config` selects its existing native configuration.
 Public `setup` starts by default, mapping to helper `start`; explicit invocation
@@ -212,7 +215,7 @@ validates non-activating, then rebinds/revalidates under the activation lock. Ex
 valid/active targets skip preparation and reject bootstrap/harness selectors; partial,
 foreign or missing explicit configs require deliberate recovery, never silent resume. Stop disables only
 owned timers and reports draining until active workers finish; missing evidence
-is unavailable, not stopped. Linux supports lifecycle changes; macOS is status-only. `help` prints the action reference read-only and needs no repository.
+is unavailable, not stopped. Linux supports lifecycle changes; macOS supports read-only status/version. `help` prints the action reference read-only and needs no repository.
 
 On Linux, status names the state it observed: `absent` when no deployment owns
 the repository, and `unavailable` when scheduler evidence cannot be verified. With

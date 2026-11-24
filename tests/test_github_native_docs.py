@@ -135,7 +135,7 @@ class GithubNativeDocsTests(unittest.TestCase):
     def test_lifecycle_skill_names_observed_states_and_platform_limits(self):
         lifecycle = compact(section(TEXT, "Kit lifecycle skill", level=3))
         for phrase in (
-                "`/orbi [status|setup|start|update|stop|help]`",
+                "`/orbi [status|version|setup|start|update|stop|help]`",
                 "Bare invocation reads status",
                 "`setup --prepare-only` prepares without activating scheduling",
                 "On Linux, status names the state it observed",
@@ -147,7 +147,7 @@ class GithubNativeDocsTests(unittest.TestCase):
                 "`stop` can report `draining` while a subsequent status still reports `running`",
                 "`unavailable`",
                 "Linux supports lifecycle changes",
-                "macOS is status-only",
+                "macOS supports read-only status/version",
                 "macOS status reports local deployment metadata but leaves active scheduler state `unavailable`",
                 "shared bootstrap"):
             self.assertIn(phrase, lifecycle)

@@ -17,6 +17,10 @@ Resolve the helper and references from the canonical workflow's directory, not
 this adapter. Keep any host-required tool-result continuation to the workflow's
 receipt relay; it is not another routing or planning pass.
 
+Forward `version [--repo-dir PATH] [--config PATH] [--json]` unchanged to the
+canonical helper in one read-only invocation on Linux/macOS, without pre-status
+or bootstrap probes. It identifies the selected deployment, not the global CLI.
+
 ## Boundaries
 
 Explicit invocation only. This adapter grants no deployment authority and does not
