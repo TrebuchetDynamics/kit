@@ -1,5 +1,11 @@
 """Isolated provisioning entrypoint tests; no real sudo, services or devices."""
 import os
+import pty
+import select
+import signal
+import termios
+import time
+import fcntl
 from pathlib import Path
 import shutil
 import subprocess
@@ -23,7 +29,7 @@ session = session_file.read_text() if session_file.exists() else ('gui' if mode.
 if name == 'timeout':
     if mode == 'gui-stop-hang' and args[1:] == ['waydroid', 'session', 'stop']:
         sys.exit(124)  # deterministic timeout contract, no sleeping/hung test
-    if os.environ.get('DNF_FAILURE') == 'timeout' and args[1:4] == ['sudo', '--', 'dnf']:
+    if os.environ.get('DNF_FAILURE') == 'timeout' and args[3:7] == ['sudo', '-n', '--', 'dnf']:
         sys.exit(124)  # bounded package transaction timeout, no real wait
     # Preserve the installed name: multicall coreutils reject renamed links.
     os.execv(os.environ['REAL_TIMEOUT'], ['timeout', *args])
@@ -54,13 +60,55 @@ elif name == 'uname':
     print(('Darwin' if mode == 'not-linux' else 'Linux') if '-s' in args else ('riscv64' if mode == 'no-arch' else 'x86_64'))
 elif name == 'modinfo':
     sys.exit(1 if mode == 'no-binder' else 0)
+elif name == 'sleep':
+    with (root / 'helper-pids').open('a') as f:
+        f.write(str(os.getpid()) + '\n' + str(os.getppid()) + '\n')
+    os.execv(os.environ['REAL_SLEEP'], ['sleep', *args])
 elif name == 'sudo':
+    auth = os.environ.get('AUTH_MODE', '')
+    with (root / 'helper-pids').open('a') as f:
+        f.write(str(os.getpid()) + '\n' + str(os.getppid()) + '\n')
+    if args == ['-n', '-v']:
+        if mode == 'gui-sudo-fail' or (auth and not (root / 'sudo-admitted').exists()): sys.exit(1)
+        (root / 'sudo-admitted').touch()
+        if mode == 'gui-sudo-race': session_file.write_text('foreign')
+        sys.exit(0)
+    if args == ['-v'] and auth:
+        import signal, termios
+        def interrupted(sig, frame): raise SystemExit(128 + sig)
+        signal.signal(signal.SIGINT, interrupted)
+        signal.signal(signal.SIGTERM, interrupted)
+        with open('/dev/tty', 'r+b', buffering=0) as tty:
+            assert os.tcgetpgrp(tty.fileno()) == os.getpgrp(), 'sudo is not foreground'
+            old = termios.tcgetattr(tty)
+            new = termios.tcgetattr(tty)
+            new[3] &= ~termios.ECHO
+            try:
+                termios.tcsetattr(tty, termios.TCSANOW, new)
+                tty.write(b'fixture sudo foreground input: '); tty.flush()
+                tty.readline()  # Discard dummy input; never log or compare credentials.
+            finally:
+                termios.tcsetattr(tty, termios.TCSANOW, old)
+        if auth == 'deny': sys.exit(1)
+        (root / 'sudo-admitted').touch()
+        sys.exit(0)
+    if auth == 'late-interrupt' and args[:2] == ['-n', '--']:
+        import signal
+        signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(130))
+        signal.signal(signal.SIGTERM, lambda sig, frame: sys.exit(143))
+        print('fixture provisioning: ', flush=True)
+        signal.pause()
+    if auth == 'expire' and args[:2] == ['-n', '--']:
+
+        print('sudo: authorization no longer valid (fixture)', file=sys.stderr)
+        sys.exit(1)
     if args == ['-v']:
         (root / 'sudo-admitted').touch()
         if mode == 'gui-sudo-fail': sys.exit(1)
         if mode == 'gui-sudo-race': session_file.write_text('foreign')
         sys.exit(0)
     if args == ['-n', '-v']: sys.exit(0)
+    if args[0] == '-n': args = args[1:]
     if args[0] == '--': args = args[1:]
     os.execvp(args[0], args)
 elif name == 'flock' and mode == 'gui-lock-manager-loss':
@@ -244,6 +292,177 @@ class WaydroidSetupTests(unittest.TestCase):
         key.with_suffix('.pub').write_text('public fixture key')
         return {p: p.read_bytes() for base in [self.state, key.parent]
                 for p in base.rglob('*') if p.is_file()}
+
+    def prepare_auth_fixture(self, auth):
+        self.env['AUTH_MODE'] = auth
+        self.env['REAL_SLEEP'] = shutil.which('sleep')
+        for name in ['timeout', 'flock']:
+            (self.bin / name).unlink()
+            (self.bin / name).symlink_to(shutil.which(name))
+        (self.bin / 'sleep').unlink()
+        (self.bin / 'sleep').write_text(FAKE)
+        (self.bin / 'sleep').chmod(0o755)
+        # Shorten only the private copy's admission deadline; real timeout runs.
+        self.script.write_text(self.script.read_text().replace('300 sudo -v', '1 sudo -v'))
+
+    def assert_auth_cleanup(self):
+        pids = self.base / 'helper-pids'
+        if pids.exists():
+            for pid in set(pids.read_text().splitlines()):
+                with self.assertRaises(ProcessLookupError, msg=f'owned helper {pid} remains'):
+                    os.kill(int(pid), 0)
+        lock = self.home / '.local/share/kit-waydroid/setup.lock'
+        if lock.exists():
+            result = subprocess.run([shutil.which('flock'), '-n', str(lock), 'true'],
+                                    capture_output=True, timeout=2)
+            self.assertEqual(result.returncode, 0, 'setup lock is still held')
+
+    def assert_no_provisioning(self):
+        for command in ['waydroid init', 'session stop', 'enable --now', 'enable-linger',
+                        'daemon-reload', 'install -', 'apt-get install', 'dnf --refresh']:
+            self.assertNotIn(command, self.calls())
+        self.assertFalse(self.state.exists())
+        self.assertFalse((self.home / '.config').exists())
+
+    def pty_setup(self, action):
+        master, slave = pty.openpty()
+        self.addCleanup(os.close, master)
+        self.addCleanup(os.close, slave)
+        # A tiny terminal owner stands in for the operator shell. Give setup its
+        # own foreground job, then reclaim input and verify the terminal is usable.
+        driver = r"""
+import os, signal, subprocess, sys, termios
+signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+p = subprocess.Popen([sys.argv[1]], process_group=0)
+os.tcsetpgrp(0, p.pid)
+rc = p.wait(timeout=12)
+os.tcsetpgrp(0, os.getpgrp())
+print('\nfixture-exit=' + str(rc), flush=True)
+print('fixture-echo=' + str(bool(termios.tcgetattr(0)[3] & termios.ECHO)), flush=True)
+input()
+print('fixture-shell-usable', flush=True)
+"""
+        def terminal_session():
+            os.setsid()
+            fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+        proc = subprocess.Popen([shutil.which('python3'), '-c', driver, str(self.script)],
+                                stdin=slave, stdout=slave, stderr=slave,
+                                env=self.env, preexec_fn=terminal_session)
+        output = bytearray()
+        def until(marker, seconds=8):
+            end = time.monotonic() + seconds
+            while marker not in output:
+                if marker == b'fixture sudo foreground input: ' and b'fixture-exit=' in output:
+                    self.fail('sudo did not reach foreground input: ' + output.decode(errors='replace'))
+                remaining = end - time.monotonic()
+                if remaining <= 0:
+                    self.fail('PTY deadline waiting for ' + repr(marker) + ': ' + output.decode(errors='replace'))
+                if select.select([master], [], [], remaining)[0]:
+                    output.extend(os.read(master, 65536))
+        try:
+            until(b'fixture sudo foreground input: ')
+            dummy = bytes([120, 121, 122]) * 4  # Non-secret input; not a password fixture.
+            if action == 'interrupt': os.write(master, b'\x03')
+            elif action != 'timeout': os.write(master, dummy + b'\n')
+            if action == 'late-interrupt':
+                until(b'fixture provisioning: ')
+                os.write(master, b'\x03')
+            until(b'fixture-echo=True')
+            os.write(master, b'\n')
+            until(b'fixture-shell-usable')
+            proc.wait(timeout=2)
+            self.assertEqual(proc.returncode, 0)
+            self.assertNotIn(dummy, output, 'terminal echoed dummy input')
+            return output.decode(errors='replace')
+        finally:
+            if proc.poll() is None:
+                # Only the fixture's owned helpers/session/job, never signal by name.
+                pids = self.base / 'helper-pids'
+                if pids.exists():
+                    for pid in set(pids.read_text().splitlines()):
+                        try: os.kill(int(pid), signal.SIGTERM)
+                        except ProcessLookupError: pass
+                try: os.killpg(os.tcgetpgrp(master), signal.SIGKILL)
+                except (ProcessLookupError, OSError): pass
+                proc.kill()
+                proc.wait(timeout=2)
+
+    def test_sudo_pty_foreground_success(self):
+        self.prepare_auth_fixture('prompt')
+        output = self.pty_setup('respond')
+        self.assertIn('fixture-exit=0', output)
+        self.assertIn('ADB serial:', output)
+        self.assertEqual(output.count('Prerequisite inspection'), 1)
+        self.assertEqual(self.calls().splitlines().count('uname -s'), 2)
+        self.assertEqual(self.calls().splitlines().count('sudo -v'), 1)
+        self.assertEqual(self.calls().splitlines().count('waydroid init -c https://ota.waydro.id/system -v https://ota.waydro.id/vendor'), 1)
+        self.assert_auth_cleanup()
+
+    def test_sudo_pty_interrupt_releases_lock_and_allows_retry(self):
+        self.prepare_auth_fixture('prompt')
+        output = self.pty_setup('interrupt')
+        self.assertIn('fixture-exit=130', output)
+        self.assertIn('Sudo authorization interrupted', output)
+        self.assertNotIn('ADB serial:', output)
+        self.assert_no_provisioning()
+        self.assert_auth_cleanup()
+        self.env.pop('AUTH_MODE')
+        self.assert_ok(self.invoke())
+        self.assert_auth_cleanup()
+
+    def test_sudo_pty_denial_and_timeout_are_distinct(self):
+        for auth, action, rc, diagnostic in [('deny', 'respond', 1, 'Sudo authorization rejected'),
+                                              ('prompt', 'timeout', 124, 'Sudo authorization timed out')]:
+            with self.subTest(auth=auth):
+                # Each case needs a fresh fake authorization state.
+                (self.base / 'sudo-admitted').unlink(missing_ok=True)
+                self.env['AUTH_MODE'] = auth
+                if not (self.bin / 'timeout').is_symlink(): self.prepare_auth_fixture(auth)
+                output = self.pty_setup(action)
+                self.assertIn('fixture-exit=' + str(rc), output)
+                self.assertIn(diagnostic, output)
+                self.assertNotIn('ADB serial:', output)
+                self.assert_no_provisioning()
+                self.assert_auth_cleanup()
+
+    def test_sudo_without_terminal_cached_or_refused(self):
+        self.prepare_auth_fixture('prompt')
+        result = subprocess.run([str(self.script)], env=self.env, start_new_session=True,
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=8)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('controlling terminal', result.stderr)
+        self.assertIn('same terminal', result.stderr)
+        self.assertNotIn('sudo -v', self.calls())
+        self.assert_no_provisioning()
+        self.assert_auth_cleanup()
+        self.env.pop('AUTH_MODE')
+        result = subprocess.run([str(self.script)], env=self.env, start_new_session=True,
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=12)
+        self.assert_ok(result)
+        self.assertNotIn('sudo -v', self.calls())
+        self.assert_auth_cleanup()
+
+    def test_sudo_pty_provisioning_interrupt_reports_partial_state(self):
+        self.prepare_auth_fixture('late-interrupt')
+        output = self.pty_setup('late-interrupt')
+        self.assertIn('fixture-exit=130', output)
+        self.assertIn('Setup interrupted during initialization', output)
+        self.assertIn('host provisioning may be partial', output)
+        self.assertNotIn('no host provisioning performed', output)
+        self.assertNotIn('ADB serial:', output)
+        self.assert_auth_cleanup()
+
+    def test_later_sudo_expiry_never_prompts_or_claims_ready(self):
+        self.prepare_auth_fixture('expire')
+        (self.base / 'sudo-admitted').touch()  # Initially valid noninteractive auth.
+        result = self.invoke()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('initialization', result.stderr)
+        self.assertIn('partial', result.stderr)
+        self.assertNotIn('no host setup performed', result.stderr)
+        self.assertNotIn('ADB serial:', result.stdout)
+        self.assertNotIn('sudo -v', self.calls())
+        self.assert_auth_cleanup()
 
     def test_timeout_fixture_preserves_native_executable_name(self):
         native = self.base / 'native/timeout'
@@ -614,9 +833,9 @@ class WaydroidSetupTests(unittest.TestCase):
         self.assertIn('ADB serial: 192.0.2.8:5555\nAndroid: 13\nABI: x86_64', result.stdout)
         calls = self.calls().splitlines()
         install = calls.index('dnf --refresh install -y weston')
-        self.assertLess(calls.index('flock -n 9'), calls.index('sudo -v'))
-        self.assertLess(calls.index('sudo -v'), install)
-        self.assertIn('timeout 1800 sudo -- dnf --refresh install -y weston', calls)
+        self.assertLess(calls.index('flock -n 9'), calls.index('sudo -n -v'))
+        self.assertLess(calls.index('sudo -n -v'), install)
+        self.assertIn('timeout --foreground --kill-after=5 1800 sudo -n -- dnf --refresh install -y weston', calls)
         self.assertEqual([c for c in calls if c.startswith('dnf ')], ['dnf --refresh install -y weston'])
         self.assertLess(install, calls.index('weston --help'))
         self.assertLess(install, calls.index('waydroid session stop'))
@@ -647,7 +866,7 @@ class WaydroidSetupTests(unittest.TestCase):
                 self.assertNotIn('Missing cached DNF package', result.stderr)
                 self.assertNotIn('ADB serial:', result.stdout)
                 calls = self.calls()
-                self.assertIn('timeout 1800 sudo -- dnf --refresh install -y weston', calls)
+                self.assertIn('timeout --foreground --kill-after=5 1800 sudo -n -- dnf --refresh install -y weston', calls)
                 for forbidden in ['--cacheonly', 'weston --help', 'session stop', 'enable --now',
                                   'daemon-reload', 'enable-linger', 'waydroid init']:
                     self.assertNotIn(forbidden, calls)
