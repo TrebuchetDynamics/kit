@@ -87,8 +87,8 @@ concrete unmet need, not a fixed sequence of model turns.
    repository access. Do not require PR-only mode, special opt-in, a protection change,
    paid GitHub plan, engine release/proof or second approval on that basis.
    Authentication, repository access, ownership and all other applicable gates still apply.
-   Plain `update` requires an already stopped/drained deployment. `update --stop`
-   explicitly authorizes pausing owned timers without another confirmation; workers
+   `update` (also spelled `update --stop`) authorizes pausing owned timers
+   without another confirmation; workers
    finish naturally and scheduling stays stopped. It never authorizes a start.
    Stop disables only owned timers; `draining` is not `stopped`. Never kill/restart workers.
    Other mutations likewise require accepted scope. Installation and offline checks grant none.
@@ -205,7 +205,7 @@ For host/fixture measurement limits, use the reference's
 | --- | --- |
 | "One more model should route or rephrase this." | Interpret once; the helper owns checks, and its safe receipt is the answer. Host-mandated continuations only relay it. |
 | "I remember help, so I can compose the table." | Run the helper's `help`; report observed output. |
-| "Start needs setup first; update needs an automatic stop." | Absent start composes preparation internally. Plain update holds on busy state; only explicit update --stop authorizes the pause, never service interruption or restart. |
+| "Start needs setup first; update needs a separate stop command." | Absent start composes preparation internally. Update pauses owned timers by default and defers until drained; it never authorizes service interruption or restart. |
 | "Passing checks releases the pause." | Owner scheduling authority and live gates remain separate. |
 | "The command failed, so nothing changed and retry is safe." | Preserve mutation/activation evidence and repair deliberately; failure can be partially applied. |
 | "The queue is empty because the status read failed." | Failed reads are unavailable; partial reads disclose gaps. Zero verified ready is not zero pending. |
@@ -215,8 +215,8 @@ For host/fixture measurement limits, use the reference's
 
 - Extra routing/validation/paraphrase models, routine polling or duplicate host probes.
 - A guessed alias, shell interpolation, changed literal selectors or removed dry-run.
-- Prepare-only/dry-run enables timers, status writes, or stop/update --stop kills/restarts a service.
-- Update --stop invokes activating install-units, syncs before fresh idle/no-pending-start
+- Prepare-only/dry-run enables timers, status writes, or stop/update kills/restarts a service.
+- Update invokes activating install-units, syncs before fresh idle/no-pending-start
   evidence, re-enables timers or reports stopped from missing scheduler evidence.
 - Missing ownership/authorization, silently changed pin/provider/harness/origin,
   or an automatic install/login/repair/retry after a refusal.

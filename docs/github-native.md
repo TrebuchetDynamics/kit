@@ -248,15 +248,17 @@ for serialization, legacy/unknown reporting and repair boundaries. Native Pi-Bol
 extensions, streaming/recovery and installed worker/reviewer compatibility remain
 live-unverified; static routing does not qualify delivery or release pauses.
 
-`update` is the deliberate release channel: for one stopped and drained
-deployment it writes upstream's `release` track, lets `sync-engine-source`
-resolve and check out the newest official semver release, then locks that commit
-as `sha:<commit>`, validates non-activating, refreshes the deployment's owned
-units and disables the timers that install enabled. A live worker or enabled
-timer refuses as `update_busy`; tracked checkout changes refuse as
-`source_dirty`. Update preserves origin, provider, harness and slots, and never
-enables scheduling as an outcome; rollback is a deliberate owner edit of
-`engine_source_track`. It never refreshes Kit itself: that stays `/update-kit`.
+`update` is the deliberate release channel: it pauses owned timers under lock by
+default, defers while workers or pending starts remain with an exact plain resume
+command, then writes upstream's `release` track, lets `sync-engine-source` resolve
+the newest official semver release and locks it as `sha:<commit>`. Explicit
+`update --stop` is compatible. Both validate non-activating and defer unit refresh
+to the next authorized start, never enabling timers or interrupting services.
+Tracked checkout changes refuse as `source_dirty` before pausing. Uncertain
+ownership/scheduler evidence holds; partial failures retain confirmed disables and
+failed steps without claiming stopped. Update preserves origin, provider, harness
+and slots; rollback is a deliberate owner edit of `engine_source_track`.
+It never refreshes Kit itself: that stays `/update-kit`.
 
 For a first authorized deployment, preview with `/orbi setup --dry-run
 --pi-providers /path/to/models.json --pi-provider PUBLISHED_PROVIDER_ID
