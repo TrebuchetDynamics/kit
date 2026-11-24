@@ -38,3 +38,17 @@ jobs:
       - *prepare-tests
       - name: Offline suite, shard ${{ matrix.shard }} of 3
         run: python scripts/check.py --shard ${{ matrix.shard }}/3
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - *setup-python
+      - *prepare-tests
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Plugin syntax
+        run: python -m py_compile __init__.py
+      - name: Pi command adapter offline tests
+        run: node --test tests/portable_pi.test.mjs
+      - name: Full offline Python suite
+        run: python scripts/check.py
