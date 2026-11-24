@@ -25,6 +25,7 @@ Usage: waydroid-universal-setup.sh [--check | --status | --stop] [--wait SECONDS
   (no action)  Check prerequisites, ask for sudo, transfer same-user GUI to managed
                headless (interrupts open GUI apps), provision and verify Android.
   --check      Read-only checks and planned same-user transfer; no sudo or writes.
+               Missing DNF dependencies return nonzero; cache evidence only.
   --status     Connect/query ADB as this user; wait for authorized Android boot.
   --stop       Disable this user's headless service; preserve Android data/keys.
   --wait       Per-stage session/device wait (default 180 seconds, max 3600).
@@ -349,11 +350,22 @@ PY
             done
         elif command -v dnf >/dev/null; then
             MANAGER=dnf
+            local candidate evidence rc
             for tool in "${missing[@]}"; do
-                [[ $tool != adb ]] || tool=android-tools
-                PACKAGES+=("$tool")
-                # cache-only: admission must not refresh/download repository metadata.
-                timeout 30 dnf --cacheonly list --available "$tool" >/dev/null 2>&1 || fail "Missing cached DNF package $tool. Configure official distro repositories and refresh metadata, then retry."
+                candidate=$tool
+                [[ $tool != adb ]] || candidate=android-tools
+                PACKAGES+=("$candidate")
+                # Mapping is not proof of availability. Normal setup resolves once,
+                # after sudo under setup.lock, without relying on the user's cache.
+                if [[ $ACTION == check ]]; then
+                    if evidence=$(timeout 30 dnf --cacheonly list --available "$candidate" 2>&1); then
+                        printf 'Missing binary: %s; DNF candidate: %s; available in cached metadata only (fresh availability unverified).\n' "$tool" "$candidate"
+                    else
+                        rc=$?
+                        printf 'Missing binary: %s; DNF candidate: %s; availability unknown without refreshing metadata (cache-only inspection exit %s).\n%s\n' "$tool" "$candidate" "$rc" "$evidence" >&2
+                        [[ $rc != 124 ]] || printf 'Cache-only DNF inspection timed out after 30 seconds.\n' >&2
+                    fi
+                fi
             done
         else
             fail "Missing dependencies: ${missing[*]}. Install native Waydroid, Weston and ADB using your distribution's packages, then retry (automatic install supports APT/DNF)."
@@ -364,7 +376,7 @@ PY
         help=$(timeout 10 weston --help)
         [[ $help == *headless* && $help == *--use-pixman* ]] || fail 'Weston lacks headless/pixman backend options. Install a Weston build with headless support.'
     fi
-    printf 'Prerequisites available (%s); initialization: %s; missing packages: %s\n' "$arch" "$INIT_STATE" "${PACKAGES[*]:-none}"
+    printf 'Prerequisite inspection (%s); initialization: %s; missing packages: %s\n' "$arch" "$INIT_STATE" "${PACKAGES[*]:-none}"
 }
 
 root() { timeout 1800 sudo -- "$@"; }
@@ -390,7 +402,21 @@ setup() {
     trap 'exit 143' TERM
     stage=$(mktemp -d)
     if ((${#PACKAGES[@]})); then
-        root "$MANAGER" install -y "${PACKAGES[@]}"
+        if [[ $MANAGER == dnf ]]; then
+            # One fresh resolution/install transaction; keep DNF's diagnostics
+            # (no match, repo/network/access errors) rather than guessing absence.
+            local rc reason
+            if root dnf --refresh install -y "${PACKAGES[@]}"; then
+                :
+            else
+                rc=$?
+                reason="failed (exit $rc)"
+                [[ $rc != 124 ]] || reason='timed out after 1800 seconds'
+                fail "DNF resolution/install $reason for: ${PACKAGES[*]}. Inspect DNF diagnostics above; repair the reported package/repository/network/access cause, then retry setup. No GUI stop or device service activation performed." "$rc"
+            fi
+        else
+            root "$MANAGER" install -y "${PACKAGES[@]}"
+        fi
     fi
     local tool
     for tool in waydroid weston adb; do
@@ -494,6 +520,9 @@ case "$ACTION" in
         preflight
         if [[ $SESSION_KIND == graphical ]]; then
             printf 'Planned same-user graphical transfer: open GUI apps will be interrupted; stop, confirm release, start managed headless, verify Android.\n'
+        fi
+        if [[ $MANAGER == dnf ]] && ((${#PACKAGES[@]})); then
+            fail "Missing DNF dependencies: ${PACKAGES[*]}; --check cannot verify fresh availability without modifying the cache. After inspecting diagnostics, run ordinary setup for authorized fresh resolution/install."
         fi ;;
 
     status) verify_device ;;
