@@ -1,7 +1,7 @@
 {
   "skill": "plan-with-me",
   "tier": 3,
-  "description": "Writable fresh helper-publication pilot: investigate, visibly preview before the first apply attempt, successfully apply a GitHub issue batch, report; no implementation or activation. Not all valid planning outcomes.",
+  "description": "No-sync helper-publication pilot: investigate, visibly preview, apply a GitHub issue batch, report; no implementation or activation. Standalone verified-writable freshness uses the explicitly selected branch in test_skill_trace_evals.py; this is not a blanket planning-sync prohibition.",
   "require": [
     {
       "event": "read",
@@ -227,7 +227,7 @@
     },
     {
       "event": "command",
-      "command": "\\bgit\\b(?:\\s+(?:-[Cc]|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+--?[^\\s]+)*\\s+(?:commit|push|fetch|pull|clone|checkout|switch|merge|reset|stash|clean|update-ref|worktree\\s+(?:add|move|remove|prune))(?=\\s|$)"
+      "command": "\\bgit\\b(?:\\s+(?:-[Cc]|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+--?[^\\s]+)*\\s+(?:commit|push|fetch|pull|rebase|clone|checkout|switch|merge|reset|stash|clean|update-ref|worktree\\s+(?:add|move|remove|prune))(?=\\s|$)"
     },
     {
       "event": "command",

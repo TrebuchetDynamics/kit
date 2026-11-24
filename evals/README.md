@@ -76,7 +76,7 @@ options such as `git -C . commit`, not only `git commit`; see
 
 ## Planning pilot: writable fresh helper publication
 
-`plan-for-me.json` and `plan-with-me.json` select one **writable-fresh-publication
+`plan-for-me.json` and `plan-with-me.json` select one **no-sync helper-publication
 pilot**: investigate, show the user a plan preview **before the first publication
 attempt**, successfully invoke `scripts/github_issues.py` with an actual `--apply`
 argument, then give a final receipt. The synthetic `*-pass.json` fixtures record a
@@ -116,6 +116,23 @@ do not satisfy this selected pilot. Select matching evidence rather than applyin
 these two specs as universal planning gates. The
 [retained recovery specimens](../tests/fixtures/planning/README.md) from #33 are
 inert inputs and expected outcomes, not traces evaluated by this pilot.
+
+### Standalone writable source freshness
+
+The [planner source contract](../skills/shared/COMMON-CONTRACT.md#standalone-planner-freshness)
+adds a narrow pre-analysis pull exception. The focused trace tests explicitly select
+that verified clean/exclusive standalone branch from the common planning guards,
+allow only the exact fixture fast-forward command, and require preflight, pull and
+HEAD/FETCH_HEAD verification before code reads, plus a source receipt. They reuse
+[`plan-for-me-freshness.json`](tier3/traces/plan-for-me-freshness.json) for both planners.
+Restricted, pinned, coordinator, unsafe and ambiguous scenarios retain the no-sync
+guards. The base publication specs are not universal freshness gates.
+
+`tests/test_planning_cli_contract.py` separately executes the documented Git recipe
+against isolated local/bare repositories, including no-op, upstream drift, rejected
+pull and transport failure. Held-path probes compare HEAD, refs, index and local
+files. These fixtures do not call a model, prove ownership detection or enforce the
+instruction's branch selection at runtime.
 
 ### Known pilot artifact layout
 
@@ -232,8 +249,9 @@ wall-clock or end-to-end speedup.
 
 The focused tests use existing `require`/`forbid` clauses for scenario receipts and
 the fixture's held PR head. They apply the read-only review clauses to the push
-audit; delivery's general spec cannot condition on a mode. Planning/review clauses
-also reject fetch, including Git global-option forms. These are bounded lexical
+audit; delivery's general spec cannot condition on a mode. No-sync planning/review
+clauses reject fetch, including Git global-option forms. Only the explicitly selected
+standalone writable planning fixture permits its verified pull recipe. These are bounded lexical
 checks, not semantic candidate selection, ancestry validation, a shell sandbox,
 state ordering or model adherence. Neither a receipt's words nor exit 0 establishes
 live delivery. Source-backed inventory and independent PR review remain necessary.

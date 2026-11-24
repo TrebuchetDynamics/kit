@@ -52,8 +52,12 @@ class AffectedTestsTests(unittest.TestCase):
     def test_a_document_selects_only_the_tests_that_read_it(self):
         tests, reasons, full = affected_tests.select(['docs/project.md'])
         self.assertFalse(full)
-        self.assertEqual([t for t in tests if t != SELF], ['tests/test_project_status.py'])
-        self.assertEqual(reasons['tests/test_project_status.py'], 'tests/test_project_status.py <- docs/project.md')
+        # The planner freshness contract also checks project guidance for stale
+        # no-sync wording, so both direct readers must be selected (and no others).
+        readers = ['tests/test_project_status.py', 'tests/test_skill_standard.py']
+        self.assertEqual([t for t in tests if t != SELF], readers)
+        for reader in readers:
+            self.assertEqual(reasons[reader], f'{reader} <- docs/project.md')
 
     def test_code_selects_its_importers_and_the_tests_that_run_it(self):
         """Today's real breakages: each change's selection holds the tests that failed."""

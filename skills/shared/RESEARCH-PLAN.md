@@ -46,7 +46,9 @@ Classify each proposed write by **artifact role**, not filename or extension:
 | Temporary research notes/results | Only bounded, allowed scratch; never implementation disguised as a spike. No scratch in no-write mode. |
 | Production code, tests, fixtures, executable instructions (including Markdown `SKILL.md`), CI, manifests and lockfiles | Implementation: describe future changes in tasks; do not write them during planning. |
 
-Investigate with reads and safe checks. Inspect commands for generated files,
+Apply [standalone planner freshness](COMMON-CONTRACT.md#standalone-planner-freshness)
+only for the two eligible standalone planners. All other investigation uses reads
+and safe checks. Inspect commands for generated files,
 cache writes and live effects before running them; a command called “dry-run” may
 mutate. Do not repair implementation, generate tests, install dependencies, alter
 services, commit or push to make a planning check pass. Name future tests/checks as
@@ -73,7 +75,11 @@ who answers consequential intent. It does not change the sequence.
    existing backlog and the evidenced gaps before adding anything. A clear one-line
    task still gets a complete saved record; “no interview” means no unnecessary
    questions, not “implement now”.
-2. **Investigate and decide.** Read the actual source, tests, docs and current task
+2. **Source.** Apply [planner freshness](COMMON-CONTRACT.md#standalone-planner-freshness)
+   before scoped analysis. Coordinate existing reads with the check; use source/tests
+   at the chosen revision and retain its source receipt. Other planning routes and
+   restricted/coordinator invocations keep their no-sync contract.
+3. **Investigate and decide.** Read the actual source, tests, docs and current task
    state. For every focused or discovery request, complete
    [open-issue reconciliation](PLAN-HANDOFF.md#open-issue-reconciliation) before
    proposing new work; reuse it through questions and refresh before writes.
@@ -82,7 +88,7 @@ who answers consequential intent. It does not change the sequence.
    method gap, select one technique through [engineering](../engineering/REFERENCE.md);
    routine planning needs no experiment loop. Apply
    [decision closure](PLANNING-CRAFT.md#decision-closure) before calling a task ready.
-3. **Preview and save.** Show the [issue preview](PLAN-HANDOFF.md#progress-and-final-receipt)
+4. **Preview and save.** Show the [issue preview](PLAN-HANDOFF.md#progress-and-final-receipt)
    in chat before publication. Write accepted decisions in their existing owners
    and complete GitHub Issues with outcome, scope/exclusions, acceptance, exact
    verification and sources. For a user-visible change, name the capability and
@@ -94,7 +100,7 @@ who answers consequential intent. It does not change the sequence.
    CLI, parallel task list or separate model pass is required.
    Use native `blockedBy` dependencies and `ai-epic` coordination for larger plans.
    Follow the [single-pass handoff](PLAN-HANDOFF.md#one-planning-pass-one-handoff).
-4. **Validate and report.** Read back the whole batch and dependencies, then publish
+5. **Validate and report.** Read back the whole batch and dependencies, then publish
    `ai-ready` last. Report issue URLs, ready/waiting/proposed state and actual checks.
    Publication is not execution evidence.
 
@@ -138,7 +144,8 @@ See [the issue contract](PLAN-HANDOFF.md#one-planning-pass-one-handoff).
 
 ## Research and persistence method
 
-1. Resume the requested goal, relevant repository source/tests and existing plans.
+1. Resume the requested goal and existing plans. Select source through the shared
+   interface above before reading relevant repository source/tests.
    If no goal was supplied, use the current authorized task or repository-development
    objective when unambiguous. A standalone Plan For Me request without a concrete
    objective in the request or relevant conversation runs the
