@@ -20,6 +20,10 @@ class CheckWorkflowTests(unittest.TestCase):
     def test_required_contexts_run_retained_tests_without_executor_dependencies(self):
         import yaml
         workflow = yaml.safe_load((ROOT / '.github/workflows/test.yml').read_text())
+        self.assertEqual(workflow['on'], {
+            'pull_request': None,
+            'push': {'branches': ['main'], 'tags': ['**']},
+        })
         jobs = workflow['jobs']
         self.assertEqual(set(jobs), {'fast', 'runner'})
         self.assertEqual(jobs['runner']['strategy']['matrix']['shard'], [1, 2, 3])
