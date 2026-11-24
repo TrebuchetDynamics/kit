@@ -46,8 +46,8 @@ the numbered round with one recommendation per question, the fact-versus-decisio
 rule, and the empty-frontier done condition. Do not restate or reshape that mechanic
 here.
 
-This skill adds the plan-specific branches below to that tree, and the synthesis and
-confirmation gate that end the interview.
+This skill adds the plan-specific branches below to that tree and the synthesis
+that ends the interview within the invoking workflow's scope.
 
 ## Question Coverage (work these branches into the tree)
 
@@ -70,11 +70,17 @@ confirmation gate that end the interview.
 
 ## Synthesis (when the frontier is empty)
 
-1. Summarize ALL decisions in bullet points
-2. List anything left open, and what is explicitly OUT of scope
-3. Ask: "Aligned? Should I start implementing, or adjust anything?"
+1. Summarize all decisions and their answer sources in bullet points; settled
+   answers stay settled.
+2. List genuinely unresolved or skipped questions with their affected scope, and
+   what is explicitly out of scope. Do not turn skipped questions into acceptance.
+3. In Plan With Me challenge mode, follow [Plan Handoff](../shared/PLAN-HANDOFF.md)
+   to save and hand off the settled plan, or return it inline in no-write mode.
+   End within planning, with no implementation invitation and no repeated approval
+   of settled choices. This overrides Grilling's generic confirmation gate.
 
-Do not act on the plan until the user confirms shared understanding.
+Outside planning, retain the confirmation gate before acting on the plan. Alignment
+alone does not authorize implementation or delivery.
 
 ## Pitfalls
 
@@ -99,11 +105,13 @@ Do not act on the plan until the user confirms shared understanding.
 - [ ] Explored the codebase for facts instead of asking the user
 - [ ] Frontier empty (no branch silently assumed) before synthesizing
 - [ ] Produced a clear summary of all decisions and open items
-- [ ] Confirmed user alignment before stopping
+- [ ] In challenge planning, completed Plan Handoff without repeated approval;
+      Outside planning, confirm user alignment before acting
 ## Boundaries
 
 - Not a general interview of an idea; use `/grilling`.
 - Not the documentation side; use `/grill-with-docs`.
 - Not implementation; publish accepted work through the planners for Orbi.
 
-**Done when:** the frontier is empty, decisions and open items are summarized, and the owner confirms alignment.
+**Done when:** the frontier is empty and decisions and open items are summarized;
+in challenge mode the planning handoff is complete, otherwise the owner confirms alignment.
