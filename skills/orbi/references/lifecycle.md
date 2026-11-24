@@ -605,17 +605,16 @@ Config references can use `ORBI_CONFIG`, direct Orbi `--config` arguments or a
 local `orbi.toml` in the job's working directory. Relative references require an
 absolute observed working directory; conflicts remain unattributed.
 A failed job read is not evidence of unloading unless a successful domain listing
-also omits that job. Running jobs remain issue unknown; retained logs cannot bind
-a current invocation. Next-fire time is unknown on launchd.
+also omits that job. Next-fire time is unknown on launchd.
 
 The host receipt has `scope: host`, `rows`, `totals` and `coverage`. Rows include
 manager/unit/timer, kind, loaded/installed evidence, scheduler and worker state,
 config binding, repository, deployment-bound engine metadata, current issue when
 locally verified and next trigger when available. No provider/env/session contents,
 raw commands, queue scan, doctor or network fan-out. Engine metadata is reused once
-per resolved config; bootstrap CLI checks are omitted. Linux issue binding uses
-the same bounded current InvocationID/MainPID journal evidence as repo status,
-in the observed manager. Missing identity is active/issue unknown, not idle.
+per resolved config; bootstrap CLI checks are omitted. For worker attribution in
+the observed manager, use the same [current-invocation binding](#stop-status-and-drain)
+as repository status.
 
 Totals count **observed loaded worker services**, not timers, templates or an
 absolute host population. Coverage is scoped to observed local managers: other
@@ -649,6 +648,14 @@ local reads. Missing evidence is `unavailable`, never an empty queue. Status
 and dry-run create no config, lock, receipt or scratch file and suppress child
 Python bytecode writes.
 
+For slot attribution on Linux, require an owned service's current InvocationID/MainPID,
+deployment working directory and that invocation's journal `run_start`. A bounded
+read and binding recheck reject retained or conflicting attempts. Missing bindings
+mean **active/issue unknown**, never idle or the newest retained issue. On macOS,
+owned launchd job state is observed, but retained logs cannot bind a current run:
+an active job remains issue unknown. Titles come from the existing bounded queue
+read only after identity is verified; a missing title stays unknown.
+
 ### Pending issues and read coverage
 
 `queue.state` and `queue.ready` remain the ready-queue interface: ready is a list
@@ -667,11 +674,12 @@ from one blocked issue.
 GitHub reads are bounded: at most three cursor pages of 100 issues (creation
 order), with up to 100 labels, 10 assignees and 20 native prerequisites per issue.
 Non-Issue and closed records are excluded defensively. Native dependency evidence
-is batched with the list, not fetched separately per issue. Only blockers and
-owned/active issues request comment detail, prioritizing blockers. A shared budget
-of ten additional reads covers comments (100 per page, up to three pages per
-issue) and deduplicated same-repository PR links found in those comments. No LLM
-call per issue is required. Unlinked PRs and remote worker ownership remain unknown.
+is batched with the list, not fetched separately per issue.
+Comment/PR detail is limited to blocked/owned issues within the shared budget,
+prioritizing blockers; no per-issue LLM calls. A shared budget of ten additional reads
+covers comments (100 per page, up to three pages per issue) and deduplicated
+same-repository PR links found in those comments. Unlinked PRs and remote worker
+ownership remain unknown.
 PR rows report observed state and head; `OPEN` is not successful delivery, and
 `MERGED` alone does not prove issue acceptance or live qualification.
 
