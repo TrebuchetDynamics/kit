@@ -71,6 +71,17 @@ Skill tool"; our hosts have commands, so the adapter states the composition dire
 Every skill separates what it read, what it changed and what it ran. Offline checks
 never qualify a live run, a rendered artifact or model behavior.
 
+For authorized GUI actions or visual claims, load the
+[shared GUI decision](../skills/shared/COMMON-CONTRACT.md#gui-actions-and-visual-evidence)
+from the common entry routes, independent of optional Ponytail coaching. Keep the
+conditional decision in that owner; add short workflow pointers only where needed,
+including explicit edit verification as well as findings. Use current semantic
+targets when available, rendered evidence for appearance, and report missing host
+modalities rather than claiming parity. Complete source/CLI evidence needs no browser.
+All-entrypoint and portable archive checks must test the actual conditional
+instruction and GUI anchor, not fragment-stripped reachability. Discovery proves
+that instructions are available, not that a model read or followed them.
+
 ## 9. Adapters stay thin
 
 `adapters/skills/<name>/SKILL.md` names the host contract, links the host-neutral

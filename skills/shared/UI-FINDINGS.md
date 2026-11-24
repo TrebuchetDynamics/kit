@@ -20,7 +20,10 @@ changing its behavior.
    ownership in every mode.
 2. **Ground the finding.** Read the project's design decisions and the screen's
    user task. Record route, state, viewport and source for each finding; distinguish
-   observed renders/interactions from behavior inferred from code. Reuse available
+   observed renders/interactions from behavior inferred from code. Apply the
+   [shared GUI decision](COMMON-CONTRACT.md#gui-actions-and-visual-evidence)
+   when inspecting controls or making visual findings: a tree label alone cannot
+   establish that it fits at 375px. Reuse available
    sanitized capture evidence after checking its freshness against current source,
    fixture, viewport and state. A capture proves a render, not correctness. Missing
    evidence stays unknown: hold that finding with the missing input and resume

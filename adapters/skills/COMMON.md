@@ -3,6 +3,10 @@
 Use the [ASD-STE100 and project language rules](../../skills/shared/COMMUNICATION.md)
 for user-facing text. Read the target project's glossary map and glossary when available.
 
+For an authorized GUI action or a visual claim, read the
+[shared GUI decision](../../skills/shared/COMMON-CONTRACT.md#gui-actions-and-visual-evidence).
+This safety/evidence rule applies even when optional Ponytail coaching is off.
+
 These adapters run repository workflows in the current Claude Code, Codex or Pi session.
 Use this host's actual file, terminal, search, question and delegation tools.
 Read repository instructions and user scope first; preserve unrelated work.

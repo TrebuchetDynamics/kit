@@ -92,7 +92,9 @@ Adapter-local references linked below resolve relative to this SKILL.md.
   minimum width with its containing panel, including map/sidebar modes. Choose
   the table/card transition from that fit rather than a generic viewport breakpoint;
   otherwise a laptop or sidebar can inherit a clipped desktop table.
-- **Verify what you ship.** Render the result with whatever browser or renderer is
+- **Verify what you ship.** Apply the
+  [shared GUI decision](../shared/COMMON-CONTRACT.md#gui-actions-and-visual-evidence)
+  for authorized interactions and visual claims, including explicit edits. Render the result with whatever browser or renderer is
   available at representative desktop and mobile sizes. When nothing can render it,
   say the checks were code-only rather than claiming a visual pass.
   For phone forms, include keyboard and system-navigation insets. Check the scroll

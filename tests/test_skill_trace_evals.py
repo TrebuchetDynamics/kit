@@ -842,5 +842,171 @@ class SkillTraceEvalTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class GuiEvidenceTraceTests(unittest.TestCase):
+    """Bounded fabricated host observations, not GUI execution or a semantic judge.
+
+    The existing grader checks selected actions, evidence identity and order. The
+    fixture's action strings are inert notation, not a new Kit/host CLI. Synthetic
+    pixel descriptions are not rendered evidence and prove no live visual claim.
+    """
+
+    def test_gui_decision_positive_and_negative_scenarios(self):
+        observations = load(TRACES / 'gui-observations.json')
+
+        def read(key):
+            return {'type': 'read', 'path': 'fixture/' + key,
+                    'observation': observations[key]}
+
+        def action(text):
+            return {'type': 'command', 'command': 'fixture ' + text, 'exit': 0}
+
+        def final(text):
+            return {'type': 'final', 'text': text}
+
+        def match(event):
+            kind = event['type']
+            if kind == 'read':
+                return {'event': kind, 'path': event['path']}
+            if kind == 'command':
+                return {'event': kind, 'command': '^' + re.escape(event['command']) + '$'}
+            return {'event': kind, 'text_regex': '^' + re.escape(event['text']) + '$'}
+
+        def check(name, events, forbidden, counterexamples):
+            # Require the selected evidence/action sequence, not keywords anywhere
+            # in a final answer. Each boundary includes failed/unknown attempts.
+            spec = {'skill': 'ui-taste', 'require': [match(e) for e in events],
+                    'forbid': forbidden}
+            for index in range(len(events) - 1):
+                spec['require'][index]['before_first'] = match(events[index + 1])
+            trace = {'skill': 'ui-taste', 'name': name, 'model': 'fixture',
+                     'events': events}
+            with self.subTest(scenario=name, trace='positive'):
+                result = evaluate(trace, spec)
+                self.assertTrue(result['ok'], result['failures'])
+            for label, bad_events, reason, detail in counterexamples:
+                with self.subTest(scenario=name, trace=label):
+                    result = evaluate({**trace, 'events': bad_events}, spec)
+                    self.assertFalse(result['ok'], result)
+                    self.assertTrue(any(reason in failure and detail in failure
+                                        for failure in result['failures']), result['failures'])
+
+        no_click = {'event': 'command', 'command': r'^fixture click '}
+        no_browser = {'event': 'command', 'command': r'^fixture (?:browser|click|snapshot)'}
+        no_mutation = [{'event': 'write', 'path': '*'}, {'event': 'edit', 'path': '*'},
+                       {'event': 'command', 'command': r'^fixture (?:click|upload|publish)'}]
+        tree, saved = read('settings-tree-v1'), read('saved-tree-v2')
+        click = action('click ref=e7')
+        receipt = final('Host tree v2: draft saved. Visible appearance not checked.')
+        good = [tree, click, saved, receipt]
+        check('unique-ref-beside-similar-button', good,
+              [{'event': 'command', 'command': r'^fixture click (?!ref=e7$)'}], [
+                  ('guessed-coordinates', [tree, action('click xy=200,80'), saved, receipt],
+                   'forbidden action', 'click'),
+                  ('invented-dom-id', [tree, action('click id=Save-draft'), saved, receipt],
+                   'forbidden action', 'click'),
+                  ('wrong-neighbor', [tree, action('click ref=e8'), saved, receipt],
+                   'forbidden action', 'click'),
+                  ('action-status-only', [tree, click, receipt], 'missing required', 'saved-tree-v2'),
+                  ('old-result', [saved, tree, click, receipt], 'before first', 'ref=e7')])
+
+        role = action('click role=button name=Save-draft')
+        good = [read('settings-role-only'), role, saved, receipt]
+        check('supported-unique-role-name', good, [], [
+            ('invent-ref', [good[0], click, saved, receipt], 'missing required', 'role=button')])
+
+        changed, refreshed = read('layout-changed'), read('settings-tree-v3')
+        fresh_click, fresh_result = action('click ref=e19'), read('saved-tree-v4')
+        fresh_receipt = final('Host tree v4: draft saved. Visible appearance not checked.')
+        good = [tree, changed, refreshed, fresh_click, fresh_result, fresh_receipt]
+        check('state-changed-before-use', good,
+              [{'event': 'command', 'command': r'^fixture click ref=e7$'}], [
+                  ('stale-ref', [tree, changed, click, saved, receipt], 'forbidden action', 'ref=e7'),
+                  ('refresh-after-click', [tree, changed, fresh_click, refreshed, fresh_result, fresh_receipt],
+                   'before first', 'settings-tree-v3')])
+
+        failed = action('click ref=e7 result=timeout')
+        unknown = read('timeout-result-unknown')
+        reconciled = read('saved-tree-v2')
+        good = [tree, failed, unknown, reconciled, receipt]
+        check('failed-side-effect-reobserve-before-retry', good,
+              [{'event': 'command', 'command': r'^fixture click ref=e7$'}], [
+                  ('blind-replay', [tree, failed, unknown, click, reconciled, receipt],
+                   'forbidden action', 'ref=e7'),
+                  ('no-reconciliation', [tree, failed, unknown, receipt],
+                   'missing required', 'saved-tree-v2')])
+
+        canvas_tree, canvas_pixels = read('canvas-tree'), read('canvas-pixels-800x600-v1')
+        xy, canvas_result = action('click xy=410,210 viewport=800x600 state=v1'), read('canvas-pixels-v2')
+        canvas_receipt = final('Host render v2 at 800x600: selected blue node.')
+        good = [canvas_tree, canvas_pixels, xy, canvas_result, canvas_receipt]
+        check('canvas-fallback', good,
+              [{'event': 'command', 'command': r'^fixture click (?!xy=410,210 viewport=800x600 state=v1$)'}], [
+                  ('no-pixels', [canvas_tree, xy, canvas_result, canvas_receipt],
+                   'missing required', 'canvas-pixels-800x600-v1'),
+                  ('wrong-viewport', [canvas_tree, read('canvas-pixels-375x667-v1'), xy,
+                                      canvas_result, canvas_receipt],
+                   'missing required', 'canvas-pixels-800x600-v1'),
+                  ('invented-canvas-ref', [canvas_tree, canvas_pixels, action('click ref=blue-node'),
+                                           canvas_result, canvas_receipt], 'forbidden action', 'click')])
+
+        uncertain = final('Target uncertain; no click performed. Need a fresh unambiguous target; source checks continued.')
+        for key in ('ambiguous-tree-and-pixels', 'no-modalities'):
+            good = [read(key), read('source-check'), uncertain]
+            check(key, good, [no_click], [
+                ('unsafe-click', [good[0], action('click xy=1,1'), *good[1:]],
+                 'forbidden action', 'click'),
+                ('stops-independent-work', [good[0], uncertain], 'missing required', 'source-check')])
+
+        label = read('narrow-tree-full-label')
+        unverified = final('Host tree at 375px names the label. Visual fit unverified; matching render unavailable. Source checks passed.')
+        good = [label, read('source-check'), unverified]
+        check('tree-only-not-fit-proof', good, [no_click], [
+            ('tree-proves-fit', [label, read('source-check'), final('Label fits at 375px.')],
+             'missing required', 'unverified'),
+            ('tree-proves-clipping', [label, read('source-check'), final('Label clipped at 375px.')],
+             'missing required', 'unverified')])
+
+        pixels = read('narrow-pixels-clipped')
+        clipping = final('Synthetic host render at 375px, state v1: label clipped. Tree identifies the full label, not its fit.')
+        good = [label, pixels, clipping]
+        check('matching-pixels-support-clipping', good, [], [
+            ('same-tree-no-pixels', [label, clipping], 'missing required', 'narrow-pixels-clipped'),
+            ('other-viewport', [label, read('wide-pixels-fit'), clipping],
+             'missing required', 'narrow-pixels-clipped')])
+
+        screenshot_only = final('Supplied 375px screenshot shows clipping. Target refs and interactions unverified; no interaction or upload.')
+        good = [pixels, screenshot_only]
+        check('screenshot-only', good, [no_browser, *no_mutation,
+              {'event': 'read', 'path': 'fixture/settings-tree-*'}], [
+                  ('manufacture-ref', [pixels, click, screenshot_only], 'forbidden action', 'click'),
+                  ('add-tree', [pixels, tree, screenshot_only], 'forbidden action', 'settings-tree-'),
+                  ('upload', [pixels, action('upload capture.png'), screenshot_only], 'forbidden action', 'upload')])
+
+        capture = action('capture viewport=375x667')
+        metrics = read('capture-metrics')
+        measured = final('Capture completed; measured horizontal overflow yes. Image not inspected: appearance unverified.')
+        good = [capture, metrics, measured]
+        check('capture-only-measurement-no-snapshot', good, [no_click,
+              {'event': 'command', 'command': r'^fixture (?:snapshot|upload)'}], [
+                  ('add-interaction', [capture, click, metrics, measured], 'forbidden action', 'click'),
+                  ('needless-snapshot', [action('snapshot'), *good], 'forbidden action', 'snapshot'),
+                  ('capture-is-appearance', [capture, metrics, final('Layout looks correct.')],
+                   'missing required', 'unverified')])
+
+        readonly = final('Read-only screenshot analysis complete; proposed repair inline, nothing edited or published.')
+        good = [pixels, readonly]
+        check('read-only', good, no_mutation, [
+            ('edit', [pixels, {'type': 'edit', 'path': 'src/screen.ts'}, readonly], 'forbidden action', 'edit'),
+            ('publish', [pixels, action('publish issue'), readonly], 'forbidden action', 'publish')])
+
+        source = read('source-check')
+        cli = action('cli-check exit=0')
+        source_receipt = final('Source and CLI establish the non-GUI contract. No browser needed.')
+        good = [source, cli, source_receipt]
+        check('non-gui-complete-evidence', good, [no_browser], [
+            ('needless-browser', [source, action('browser open'), cli, source_receipt],
+             'forbidden action', 'browser')])
+
+
 if __name__ == '__main__':
     unittest.main()
