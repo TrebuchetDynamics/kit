@@ -25,7 +25,11 @@ class CheckWorkflowTests(unittest.TestCase):
             'push': {'branches': ['main'], 'tags': ['**']},
         })
         jobs = workflow['jobs']
-        self.assertEqual(set(jobs), {'fast', 'runner'})
+        self.assertEqual(set(jobs), {'fast', 'runner', 'test'})
+        combined = [step.get('run', '') for step in jobs['test']['steps']]
+        for command in ('python -m py_compile __init__.py', 'node --test tests/portable_pi.test.mjs',
+                        'python scripts/check.py'):
+            self.assertIn(command, combined)
         self.assertEqual(jobs['runner']['strategy']['matrix']['shard'], [1, 2, 3])
         fast = [step.get('run', '') for step in jobs['fast']['steps']]
         shards = [step.get('run', '') for step in jobs['runner']['steps']]
