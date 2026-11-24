@@ -51,6 +51,31 @@ ask only consequential unresolved questions, do not manufacture product directio
 or approval, do not duplicate existing work, and distinguish planning publication
 from implementation and live acceptance.
 
+## Paired export decision authority
+
+`plan-with-me-export-authority` and `plan-for-me-export-authority` are read-only
+inputs with identical files. They vary only the canonical planner and explicit
+format delegation. One record export is accepted; CSV and JSONL are feasible.
+The importer provides compatibility evidence for CSV, not a mandatory format or
+an owner preference. Scheduled email remains an unaccepted idea.
+
+Plan With Me should recommend with reasons, ask the owner about the consequential
+format preference and leave it open. Plan For Me should use the evidence to choose
+CSV and record its own delegated call, not pretend the owner chose it. Neither
+adds email to accepted scope or writes anything. The
+[paired Tier 3 rubric and commands](../../../evals/README.md#paired-read-only-export-authority)
+score decision, reason, attribution and scope using bounded text matchers. Tests
+include paraphrases, swapped answers with unchanged skill identity, false owner
+attribution and scope expansion. The separate writable publication pilots remain
+unchanged.
+
+The pass traces are **synthetic offline evidence**, not captured model responses.
+Actual model runs for this pair are **NOT_RUN**. For optional model evaluation,
+start fresh matched contexts, supply these files and requests without adding a
+format preference, retain all tool activity and apply the rubric to the full
+answer. Read-only prohibits local/scratch/Git/GitHub writes; do not use a live
+publication run to test this authority distinction.
+
 ## Paired decision-branch scenarios
 
 These are specified model cases, **NOT_RUN**, not transcripts or model-compliance

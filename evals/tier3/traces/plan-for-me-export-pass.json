@@ -1,0 +1,32 @@
+{
+  "name": "plan-for-me-export-pass",
+  "skill": "plan-for-me",
+  "model": "fixture",
+  "note": "Synthetic fixture; not a model run. Same export evidence in both modes.",
+  "events": [
+    {
+      "type": "read",
+      "path": "AGENTS.md"
+    },
+    {
+      "type": "read",
+      "path": "README.md"
+    },
+    {
+      "type": "read",
+      "path": "docs/plan.md"
+    },
+    {
+      "type": "read",
+      "path": "docs/compatibility.md"
+    },
+    {
+      "type": "read",
+      "path": "src/importer.py"
+    },
+    {
+      "type": "final",
+      "text": "Accepted scope: export records only. The existing importer reads CSV without conversion; JSONL needs an adapter. Planner's call: use CSV for export. This is not an owner preference. Scheduled email remains a proposal, not accepted. Proposed checks: round-trip quotes, embedded newlines and Unicode with the existing importer. Read-only: nothing saved or published."
+    }
+  ]
+}

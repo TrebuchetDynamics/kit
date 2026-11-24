@@ -80,7 +80,7 @@ def _clause_text(clause):
 def _check_clause(clause, *, allow_before_first=False):
     if not isinstance(clause, dict):
         raise TraceError('every clause must be an object')
-    allowed = {'event', 'path', 'command', 'exit', 'contains'}
+    allowed = {'event', 'path', 'command', 'exit', 'contains', 'text_regex'}
     if allow_before_first:
         allowed.add('before_first')
     unknown = set(clause) - allowed
@@ -95,6 +95,15 @@ def _check_clause(clause, *, allow_before_first=False):
         raise TraceError('command and exit are only valid for command')
     if 'contains' in clause and kind not in ('assistant', 'final'):
         raise TraceError('contains is only valid for assistant or final')
+    if 'text_regex' in clause:
+        if kind not in ('assistant', 'final'):
+            raise TraceError('text_regex is only valid for assistant or final')
+        if not isinstance(clause['text_regex'], str):
+            raise TraceError('text_regex must be a regular expression string')
+        try:
+            re.compile(clause['text_regex'])
+        except re.error as exc:
+            raise TraceError(f'invalid text_regex: {exc}') from exc
     if 'before_first' in clause:
         _check_clause(clause['before_first'])
 
@@ -112,6 +121,10 @@ def _matches(event, clause):
         if not isinstance(command, str) or not re.search(clause['command'], command):
             return False
         if 'exit' in clause and _exit(event) != clause['exit']:
+            return False
+    if 'text_regex' in clause:
+        text = event.get('text')
+        if not isinstance(text, str) or not re.search(clause['text_regex'], text):
             return False
     if kind in ('assistant', 'final') and 'contains' in clause:
         text = event.get('text')

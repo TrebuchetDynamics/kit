@@ -58,7 +58,12 @@ A spec names required and forbidden events:
 `path` is an fnmatch pattern. `command` is a regular expression. `exit` is the
 required exit code when present and only valid with `command`. `contains` is valid
 with `assistant` or `final` and matches case-insensitive substrings; use it sparingly
-because exact wording is a weak oracle. A `require` clause may include `before_first`,
+because exact wording is a weak oracle. `text_regex` is a regular expression on
+`assistant` or `final` text (use inline flags such as `(?i)` for case-insensitive
+matching). It supports alternative observable signals without requiring one exact
+sentence. When combined with `contains`, both must match. Invalid/non-string
+patterns and use on other event types are refused. It is still lexical, not a
+semantic judge. A `require` clause may include `before_first`,
 one non-nested event matcher using the same fields. The required event must occur
 strictly before the first matching boundary event; a missing boundary also fails.
 Only fields in that boundary matcher constrain it (omit `exit` to include failed
@@ -139,6 +144,63 @@ a remote receipt**: it does not prove issue contents, dependency correctness,
 readiness order or actual model choices. The publisher's own focused tests and
 actual readback own publication guarantees. This pilot does not execute commands,
 call GitHub or establish live model adherence, Orbi pickup or delivery.
+
+## Paired read-only export authority
+
+`tier3/export-authority/plan-with-me.json` and `plan-for-me.json` select a
+**different scenario** from the writable publication pilots above; those pilots
+are unchanged. The inputs in
+[`tests/fixtures/planning/cases.json`](../tests/fixtures/planning/cases.json)
+(`plan-with-me-export-authority`, `plan-for-me-export-authority`) have identical
+repository files and requests, except for the planner entry point and explicit
+delegation of format selection in Plan For Me. Use fresh contexts and the same
+host/model/source revision for any separately captured model pair.
+
+One local UTF-8 record export is accepted. CSV and JSONL are feasible; the existing
+CSV importer favors CSV compatibility but neither the format nor an owner
+preference is prescribed. Scheduled email is only a tempting proposal. Both
+requests are read-only, including scratch, Git and GitHub writes.
+
+Score the observable result, not one exact sentence:
+
+| Dimension | Plan With Me | Plan For Me |
+| --- | --- | --- |
+| Decision | Ask the owner to choose CSV or JSONL; leave the preference open. A recommendation is not settlement. | Choose CSV within the delegated scope, without handing the choice back to the owner. |
+| Reason | Explain that the importer accepts CSV directly, while JSONL needs conversion/an adapter. | Use the same compatibility evidence for the chosen format. |
+| Attribution | Do not invent an owner answer or claim the format is settled. | Attribute selection to the planner, not an owner preference. |
+| Scope/effects | Keep email proposed/excluded; no implementation, publication or activation. | Same boundary; delegation covers format selection, not new product scope. |
+
+The synthetic `plan-with-me-export-pass.json` and `plan-for-me-export-pass.json`
+traces record reads and user-visible results. Run either through the existing CLI:
+
+```sh
+python3 scripts/skill_trace_eval.py evals/tier3/export-authority/plan-with-me.json \
+  evals/tier3/traces/plan-with-me-export-pass.json
+python3 scripts/skill_trace_eval.py evals/tier3/export-authority/plan-for-me.json \
+  evals/tier3/traces/plan-for-me-export-pass.json
+python3 -m pytest -q tests/test_skill_trace_evals.py tests/test_planning_smoke.py
+```
+
+Both positive fixtures and alternate phrasings pass. The tests swap only final
+answers, retaining the expected skill identity and investigation: **both swapped
+answers fail**. Further negatives remove the reason/question/planner attribution,
+invent an owner choice, settle the interactive choice, defer the delegated choice,
+promote email or attempt writes. The CLI tests assert exit 0 for the intended
+answer and exit 1 with `missing required`/`text_regex` for a swapped answer.
+Repair the planner behavior and capture a new trace; never relabel a wrong-mode
+answer or rewrite historical evidence to manufacture compliance.
+
+The automated oracle recognizes bounded phrasing families with `text_regex`,
+including explicit open-choice and excluded-feature dispositions. It does not
+understand arbitrary language, negation, quotations or all shell effects; a
+lexical pass still requires checking the full answer against the rubric above.
+Unrecognized but semantically valid wording needs rubric review, not a claim that
+the skill failed. These checks prove discrimination of the supplied synthetic
+cases, **not observed model behavior**. Captured model runs: **NOT_RUN**. A live
+pair is optional and must be reported separately with actual source/host/model
+and tool evidence. The existing local smoke uses a different line-counter prompt;
+its structural receipt alone cannot score this export pair. No remote issue write,
+new eval service or live model is required by offline CI.
 
 ## Push delivery pilot
 

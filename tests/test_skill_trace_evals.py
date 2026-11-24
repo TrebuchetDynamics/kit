@@ -456,6 +456,145 @@ class SkillTraceEvalTests(unittest.TestCase):
             bad['events'].insert(-1, {'type': 'command', 'command': command, 'exit': 0})
             self.assertFalse(evaluate(bad, spec)['ok'])
 
+    def test_export_pair_uses_identical_evidence_and_only_varies_authority(self):
+        cases = load(ROOT / 'tests/fixtures/planning/cases.json')['cases']
+        interactive = cases['plan-with-me-export-authority']
+        delegated = cases['plan-for-me-export-authority']
+        self.assertEqual(interactive[2], delegated[2])
+        for skill, case in zip(('plan-with-me', 'plan-for-me'), (interactive, delegated)):
+            self.assertEqual(case[0], f'skills/{skill}/SKILL.md')
+            self.assertTrue(case[1].startswith('read-only:'))
+            self.assertIn('no local, scratch, Git or GitHub writes', case[1])
+        self.assertEqual(interactive[1], delegated[1].split(' You decide')[0])
+        self.assertIn('You decide the export format', delegated[1])
+        plan = interactive[2]['docs/plan.md']
+        for fact in ('Status: Accepted', 'CSV and JSONL', 'No format is mandatory',
+                     'no stated owner preference', 'Scheduled email', 'Status: Proposed'):
+            self.assertIn(fact, plan)
+        self.assertIn('CSV', interactive[2]['docs/compatibility.md'])
+        self.assertIn('JSONL', interactive[2]['docs/compatibility.md'])
+
+    def test_export_authority_positive_paraphrases_and_swapped_answers(self):
+        for skill in PLANNERS:
+            spec = load(SPECS / 'export-authority' / f'{skill}.json')
+            trace = load(TRACES / f'{skill}-export-pass.json')
+            other = next(p for p in PLANNERS if p != skill)
+            with self.subTest(skill=skill):
+                self.assertTrue(evaluate(trace, spec)['ok'])
+                # Keep skill identity and reads: the wrong behavior itself must fail.
+                trace['events'][-1]['text'] = load(
+                    TRACES / f'{other}-export-pass.json')['events'][-1]['text']
+                result = evaluate(trace, spec)
+                self.assertFalse(result['ok'], result)
+                self.assertFalse(any('skill mismatch' in f for f in result['failures']))
+            paraphrases = (
+                ('CSV works with the existing importer; JSONL needs conversion. '
+                 'My recommendation is CSV, but the format remains undecided. '
+                 'Would you prefer CSV or JSONL? Scheduled email is outside scope.'),
+                ('The importer already handles CSV, whereas JSONL requires an adapter. '
+                 'The choice is still open: should we use CSV or JSONL? '
+                 'Email delivery remains only a proposal.')
+            ) if skill == 'plan-with-me' else (
+                ('I choose CSV for export because the existing importer accepts it; '
+                 'JSONL would need conversion. This is my decision, not an owner selection. '
+                 'Scheduled email is outside scope.'),
+                ('Planner decision: use CSV. The importer reads CSV without conversion; '
+                 'JSONL requires an adapter. Email delivery remains only a proposal.')
+            )
+            for text in paraphrases:
+                trace['events'][-1]['text'] = text
+                with self.subTest(skill=skill, text=text):
+                    result = evaluate(trace, spec)
+                    self.assertTrue(result['ok'], result['failures'])
+            trace['events'][-1]['text'] += ' Do not add scheduled email.'
+            self.assertTrue(evaluate(trace, spec)['ok'])
+
+    def test_export_authority_rejects_missing_reason_attribution_and_scope_expansion(self):
+        for skill in PLANNERS:
+            spec = load(SPECS / 'export-authority' / f'{skill}.json')
+            base = load(TRACES / f'{skill}-export-pass.json')
+            final = base['events'][-1]['text']
+            mutations = {
+                'no-reason': final.replace('The existing importer reads CSV without conversion; '
+                                           'JSONL needs an adapter. ', ''),
+                'no-tradeoff': final.replace('JSONL needs an adapter. ', ''),
+                'wrong-reason': final.replace('The existing importer reads CSV without conversion; '
+                                              'JSONL needs an adapter. ',
+                                              'CSV is trendy; JSONL is boring. '),
+                'scope-expansion': final + ' Add scheduled email as an accepted task.',
+                'accepted-email': final + ' Accepted scope: record export and scheduled email.',
+                'false-owner-choice': final + ' The owner selected CSV.',
+                'false-owner-alternative': final + ' The owner selected JSONL.',
+            }
+            if skill == 'plan-with-me':
+                mutations['silent-settlement'] = final + ' The format is settled: CSV.'
+                mutations['settled-alternative'] = final + ' We choose JSONL.'
+                mutations['no-question'] = final.replace('Do you want CSV or JSONL?', '')
+            else:
+                mutations['no-planner-attribution'] = final.replace(
+                    "Planner's call: use CSV for export. ", '')
+                mutations['deferred'] = final + ' Which format do you want, CSV or JSONL?'
+            for name, text in mutations.items():
+                trace = json.loads(json.dumps(base))
+                trace['events'][-1]['text'] = text
+                with self.subTest(skill=skill, name=name):
+                    self.assertFalse(evaluate(trace, spec)['ok'])
+            for event in ({'type': 'write', 'path': '/tmp/batch.json'},
+                          {'type': 'tool', 'tool': 'edit', 'args': {'path': 'docs/plan.md'}},
+                          {'type': 'command', 'command': 'python3 scripts/github_issues.py --apply'},
+                          {'type': 'command', 'command': 'gh issue create --title export'}):
+                trace = json.loads(json.dumps(base))
+                trace['events'].insert(-1, event)
+                with self.subTest(skill=skill, event=event):
+                    self.assertFalse(evaluate(trace, spec)['ok'])
+
+    def test_text_regex_matches_visible_text_not_tool_output_and_validates_patterns(self):
+        spec = {'skill': 'plan-with-me', 'require': [
+            {'event': 'final', 'text_regex': r'(?i)\b(?:choose|select) CSV\b'}]}
+        trace = {'skill': 'plan-with-me', 'events': [
+            {'type': 'final', 'text': 'I select CSV for compatibility.'}]}
+        self.assertTrue(evaluate(trace, spec)['ok'])
+        for kind in ('thinking', 'command', 'assistant'):
+            trace['events'][0]['type'] = kind
+            self.assertFalse(evaluate(trace, spec)['ok'])
+        spec['require'][0]['event'] = 'assistant'
+        trace['events'][0]['type'] = 'assistant'
+        self.assertTrue(evaluate(trace, spec)['ok'])
+        spec['require'][0]['contains'] = 'compatibility'
+        self.assertTrue(evaluate(trace, spec)['ok'])
+        spec['require'][0]['contains'] = 'owner selected'
+        self.assertFalse(evaluate(trace, spec)['ok'])
+        del trace['events'][0]['text']
+        self.assertFalse(evaluate(trace, spec)['ok'])
+        for clause in ({'event': 'read', 'text_regex': 'CSV'},
+                       {'event': 'final', 'text_regex': '['},
+                       {'event': 'final', 'text_regex': 42}):
+            with self.subTest(clause=clause), self.assertRaises(TraceError):
+                evaluate(trace, {'skill': 'plan-with-me', 'require': [clause]})
+
+    def test_export_authority_cli_success_failure_and_repair(self):
+        import subprocess
+        import tempfile
+        for skill in PLANNERS:
+            command = [sys.executable, str(ROOT / 'scripts/skill_trace_eval.py'),
+                       str(SPECS / 'export-authority' / f'{skill}.json')]
+            good_path = TRACES / f'{skill}-export-pass.json'
+            success = subprocess.run(command + [str(good_path)], capture_output=True,
+                                     text=True, timeout=30)
+            self.assertEqual(success.returncode, 0, success.stdout + success.stderr)
+            with tempfile.TemporaryDirectory() as directory:
+                bad = load(good_path)
+                other = next(p for p in PLANNERS if p != skill)
+                bad['events'][-1] = load(TRACES / f'{other}-export-pass.json')['events'][-1]
+                path = Path(directory) / 'swapped.json'
+                path.write_text(json.dumps(bad))
+                failure = subprocess.run(command + [str(path)], capture_output=True,
+                                         text=True, timeout=30)
+                self.assertEqual(failure.returncode, 1, failure.stdout + failure.stderr)
+                self.assertIn('missing required', failure.stdout)
+                self.assertIn('text_regex', failure.stdout)
+                self.assertTrue(json.loads(success.stdout)['ok'])  # Separate conforming run.
+
     def test_every_spec_has_a_passing_fixture(self):
         specs = sorted(SPECS.glob('*.json'))
         self.assertTrue(specs)
