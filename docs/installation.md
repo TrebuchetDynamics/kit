@@ -653,7 +653,15 @@ the receipt to `requested`; if another restart loaded the update first it record
 next step and restarts nothing. Cron schedules persist (a job mid-run during a
 restart is marked `unknown` and not retried; its next tick runs normally).
 Otherwise it reports `not_running`, or `not_needed` for a no-op or incomplete
-activation. A later update can join an outstanding requested restart. It can join
+activation. If the updater stops after applying code or skill changes, or if
+activation is incomplete, resolve any reported errors and rerun
+`hermes kit update`. The updater keeps the restart and host refresh obligation
+in `maintenance/toolset-update/owed.json` (or its staged `owed.tmp` if interrupted
+before publication). The rerun treats that obligation as a change. Once
+activation succeeds, it runs the best-effort host refresh and clears the record
+after requesting, joining or deferring the restart, or reporting `not_running`.
+
+A later update can join an outstanding requested restart. It can join
 an outstanding deferred restart only if its waiter watches the same running
 gateway. If the deferred waiter watches a different gateway or has no recorded
 gateway PID, the update makes its own restart decision. An update that joins
@@ -925,7 +933,11 @@ the original plugin is moved back if the slot is still empty; partial native out
 An interruption can leave plugin and skill publication at different phases.
 Rerun the same command to resume the original source, selection, staging and
 backup. A different revision/selection, including the same profiles in a different order,
-is refused while that run is incomplete.
+is refused while that run is incomplete. If an incomplete scoped run has a recorded
+phase for any selected profile, `hermes kit update` and `hermes kit update --check`
+return `incomplete` before fetching or changing the checkout or skill files. Follow
+the reported action to resume the original scoped command before retrying the
+all-profile update.
 
 If the original source is gone and **publication never began**, inspect the receipt
 and its backup manifest, then cancel only that exact attempt:
