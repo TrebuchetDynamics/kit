@@ -4029,10 +4029,10 @@ def fleet_service(ctx, manager, name, values, fragments):
                 and Path(argv[1]) == cwd / '3rd/monitoring/prometheus/orbi-exporter.py')
     if not (exporter or command['orbi'] or any(item['orbi'] or item['referenced'] for _, item in fragments)):
         return None  # A similar basename without Orbi evidence is not ownership.
-    if (not (command['orbi'] or exporter) or any(
+    if (not (command['runner'] or exporter) or any(
             re.search(r'^\s*ExecStart\s*=\s*[-:@]*[+!]', bounded_text(path), re.M)
             for path, _ in fragments)):
-        fleet_refuse(f'{label}: effective Orbi service command is unverified')
+        fleet_refuse(f'{label}: effective worker/exporter command is unverified; refusing Orbi subcommands')
     if exporter and not refs:
         refs.add(str(cwd / 'orbi.toml'))
     if (len(refs) != 1 or any(item['referenced'] and not item['configs'] for _, item in fragments)
@@ -4221,11 +4221,27 @@ def fleet_latest_release(ctx):
     return tag, latest.get((tag, True)) or latest[tag, False]
 
 
+def fleet_checkout_root(ctx, target):
+    # `git -C` by itself can discover the parent repository or operate on a
+    # different worktree via ambient or deployment-persisted Git overrides.
+    local_keys = set(ctx.run(['git', 'rev-parse', '--local-env-vars']).stdout.splitlines())
+    if not {'GIT_DIR', 'GIT_WORK_TREE'} <= local_keys:
+        fleet_refuse('cannot verify Git checkout-local environment keys')
+    if local_keys & (ctx.env.keys() | persisted_env(target).keys()):
+        fleet_refuse(f'{target.config_path}: Git environment redirects checkout state')
+    root = ctx.run(['git', '-C', target.deploy_home, 'rev-parse', '--show-toplevel']).stdout.strip()
+    if root != str(target.deploy_home):
+        fleet_refuse(f'{target.deploy_home}: engine directory is not its own Git checkout root')
+
+
 def fleet_preflight_target(ctx, target):
     validate_deployment_paths(target)
     identities = setup_file_identities(target)
     if len(target.source_repos) != 1 or not target.deploy_home.is_dir():
         fleet_refuse(f'{target.config_path}: deployment identity is unverified')
+    fleet_checkout_root(ctx, target)
+    if target.repo_dir == target.deploy_home:
+        fleet_refuse(f'{target.deploy_home}: engine checkout must be separate from the source repository')
     if target.repo_dir is not None:
         repo = repo_identity(ctx, target.repo_dir)
         validate_target(target, repo)
@@ -4280,9 +4296,12 @@ def installer_fleet(ctx):
             coverage = {'state': 'ok', 'managers': {}, 'problems': []}
             if ctx.platform != 'darwin':
                 fleet_refuse(f'{ctx.platform}: no supported Orbi deployment manager')
-            units, _ = host_darwin(ctx, coverage)
-            if units or coverage['problems']:
-                fleet_refuse('macOS: deployment coverage or launchd mutation unsupported; no deployment upgraded')
+            units, configs = host_darwin(ctx, coverage)
+            if units or configs or coverage['problems']:
+                subject = (str(min(configs)) if configs else units[0]['unit'] if units
+                           else coverage['problems'][0]['reason'])
+                fleet_refuse(f'macOS: deployment coverage or launchd mutation unsupported ({subject}); '
+                             'no deployment upgraded')
             return receipt
         managers = fleet_managers(ctx)
         units, targets, jobs = fleet_inventory(ctx, managers)
@@ -4330,6 +4349,7 @@ def installer_fleet(ctx):
                 if (setup_file_identities(target) != before[config][0]
                         or checkout_head(ctx, target) != before[config][1]):
                     fleet_refuse(f'{config}: deployment files changed after preflight')
+                fleet_checkout_root(ctx, target)
                 require_clean_checkout(ctx, target)
             receipt['status'] = 'incomplete'
 
@@ -4402,6 +4422,7 @@ def installer_fleet(ctx):
                 if (setup_file_identities(target) != before[config][0]
                         or checkout_head(ctx, target) != before[config][1]):
                     fleet_refuse(f'{config}: deployment changed while stopping')
+                fleet_checkout_root(ctx, target)
                 require_clean_checkout(ctx, target)
                 progress = {}
                 try:

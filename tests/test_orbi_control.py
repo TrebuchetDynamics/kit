@@ -3500,10 +3500,14 @@ class InstallerFleetTests(unittest.TestCase):
 
     def test_macos_deployment_is_held_without_mutation(self):
         ctx = helper.Context(env=self.h.env, platform='darwin')
-        with mock.patch.object(helper, 'host_darwin', return_value=([{'unit': 'dev.orbi.worker'}], set())):
-            receipt = helper.installer_fleet(ctx)
-        self.assertEqual(receipt['status'], 'held')
-        self.assertIn('no deployment upgraded', receipt['error']['message'])
+        config = self.h.root / 'orbi.toml'
+        for inventory, subject in (([{'unit': 'dev.orbi.worker'}], 'dev.orbi.worker'), ([], str(config))):
+            with self.subTest(subject=subject), mock.patch.object(
+                    helper, 'host_darwin', return_value=(inventory, set() if inventory else {config})):
+                receipt = helper.installer_fleet(ctx)
+                self.assertEqual(receipt['status'], 'held')
+                self.assertIn(subject, receipt['error']['message'])
+                self.assertIn('no deployment upgraded', receipt['error']['message'])
         self.assertEqual(self.h.calls(), [])
 
 

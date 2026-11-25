@@ -1490,9 +1490,18 @@ if [[ $1 == ls-remote ]]; then
     printf '{old}\\trefs/tags/v1.2.2\\n{old}\\trefs/tags/v1.2.3\\n{head}\\trefs/tags/v1.2.3^{{}}\\n{old}\\trefs/tags/v9.0.0-rc.1\\n'
     exit 0
 fi
+if [[ $1 == rev-parse && $2 == --local-env-vars ]]; then
+    printf 'GIT_DIR\\nGIT_WORK_TREE\\nGIT_INDEX_FILE\\n'
+    exit 0
+fi
 [[ $1 == -C ]] || exit 98
 case $3 in
-    rev-parse) cat "$2/head" ;;
+    rev-parse)
+        if [[ $4 == --show-toplevel ]]; then
+            if [[ $2 == "$FAKE_PARENT_REPO" ]]; then dirname "$2"; else echo "$2"; fi
+        else
+            cat "$2/head"
+        fi ;;
     status) ;;
     remote) echo https://github.com/orbi-build/orbi ;;
     *) exit 97 ;;
@@ -1595,6 +1604,30 @@ else:
         self.assertEqual(state.read_bytes(), original)
         self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
                              for verb in ('stop', 'disable', 'cancel', 'start', 'enable')))
+
+    def test_orbi_holds_before_downtime_for_a_parent_git_checkout(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi', env={'FAKE_PARENT_REPO': str(self.home / 'paused')})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('engine directory is not its own Git checkout root', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_holds_before_downtime_for_nonworker_orbi_commands(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        states = json.loads(state.read_text())
+        service = states['--system']['working-extra.service']
+        service['ExecStart'] = service['ExecStart'].replace(' --config ', ' setup --config ')
+        fragment = Path(service['FragmentPath'])
+        fragment.write_text(fragment.read_text().replace(' --config ', ' setup --config '))
+        state.write_text(json.dumps(states))
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('working-extra.service: effective worker/exporter command is unverified', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
 
     def test_orbi_partial_failures_keep_bound_receipts(self):
         for phase, failed_step in (('stop', 'stop_service'), ('sync', 'sync_engine_source'),
