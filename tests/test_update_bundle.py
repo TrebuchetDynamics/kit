@@ -588,6 +588,47 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(receipts[1]['hosts'], hosts_result)
         self.assertNotIn('hosts', receipts[2])
 
+    def test_rerun_recovers_obligation_if_interrupted_between_apply_and_marker_replace(self):
+        self.advance()
+        prepare, replace = self.mod.prepare, Path.replace
+        state = self.home / 'maintenance/toolset-update'
+
+        def interrupt_before_owed_replace(path, target):
+            if target == state / 'owed.json':
+                raise KeyboardInterrupt
+            return replace(path, target)
+
+        def finalize(source, root, profiles, **_):
+            return [{'profile': name, 'status': 'ready'} for name, _ in profiles]
+
+        args = ['--hermes-home', str(self.home)]
+        hosts_result = [{'item': 'claude', 'status': 'installed', 'exit': 0}]
+        with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                          'live_profiles', self.setup_stub.live_profiles), \
+             patch.object(self.mod, 'finalize_profiles', side_effect=finalize) as activate, \
+             patch.object(self.mod, 'gateway_running', return_value=True), \
+             patch.object(self.mod, 'chat_turns', return_value=0), \
+             patch.object(self.mod, 'refresh_hosts', return_value=hosts_result) as hosts, \
+             patch.object(self.mod, 'request_gateway_restart', return_value=4242) as restart, \
+             contextlib.redirect_stdout(io.StringIO()):
+            with patch.object(Path, 'replace', interrupt_before_owed_replace), self.assertRaises(KeyboardInterrupt):
+                self.mod.main(args)
+            activate.assert_not_called()
+            hosts.assert_not_called()
+            restart.assert_not_called()
+            self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), self.git(self.remote, 'rev-parse', 'HEAD'))
+            self.assertEqual(self.mod.main(args), 0)
+            receipt = json.loads((state / 'latest.json').read_text())
+            self.assertEqual(receipt['skill_files'], 0)
+            self.assertEqual(receipt['gateway_restart'], 'requested')
+            self.assertEqual(receipt['hosts'], hosts_result)
+            self.assertEqual(self.mod.main(args), 0)
+            receipt = json.loads((state / 'latest.json').read_text())
+            self.assertEqual((receipt['status'], receipt['gateway_restart']), ('up_to_date', 'not_needed'))
+            hosts.assert_called_once_with(self.repo)
+            restart.assert_called_once()
+
     def test_symlinked_owed_temp_is_refused_before_apply(self):
         self.advance()
         before = self.git(self.repo, 'rev-parse', 'HEAD')
