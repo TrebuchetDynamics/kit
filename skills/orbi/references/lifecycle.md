@@ -104,8 +104,8 @@ unavailable.
   and attempts are preserved. A reused deployment keeps its pin; a changed pin is a deliberate owner
   operation, never a setup side effect.
 - The initial supported source is the verified retention-capable pin
-  `sha:ce97e015ca433a9312e5bdf69353be58ab394fd9`. Setup never upgrades it; only
-  the deliberate `update` below advances a deployment past that pin.
+  `sha:ce97e015ca433a9312e5bdf69353be58ab394fd9`. Prepare-only setup never upgrades it;
+  use `start` on an existing target or the deliberate `update` below to advance it.
 
 ## Suite installer refresh
 
@@ -411,17 +411,14 @@ transport or an owner-required repair.
 
 Explicit `/orbi start`, plain `/orbi update`, and `install.sh` with Orbi selected
 authorize activation. Require verified unit and file ownership, a validated release
-pin and a passing `orbi check`. The helper runs the check during absent-target
-preparation and release update; the Orbi installer runs it during fleet refresh.
-Existing-target `start` skips preparation and does not run `orbi check` itself.
-Reuse a passing result only for the same unchanged config, release pin and
-runtime environment. Otherwise, before invoking the activating helper, run the
-non-activating `orbi check --config PATH` using the bound deployment's bootstrap
-and scoped environment, not an unrelated global CLI or the ambient shell alone.
-If you cannot bind that scope or the check fails, name the exact missing evidence
-or error and the next safe read-only check or repair; do not start. This is not
-part of dry-run. No cutover or human-approval record is required. Report live
-delivery only from live evidence.
+pin and a passing `orbi check`. The helper runs the non-activating `orbi check --config PATH`
+with the bound deployment's bootstrap and scoped environment during absent-target
+preparation or the locked release transaction, before activation. The Orbi installer
+runs it during fleet refresh. A current, already-scheduled target does not activate
+or need a new check. Do not run a separate pre-start check or validate during
+dry-run. If validation fails or is unknown, report the blocker and exact repair;
+do not start. No cutover or human-approval record is required. Report live delivery
+only from live evidence.
 
 Branch protection is not a Kit setup/start prerequisite. If GitHub reports
 **unprotected main**, report that observed branch state; it is not an access error.
@@ -466,8 +463,8 @@ Use disposable fake hosts only; do not contact the named repositories' real host
 - **SalmaListApi:** given a setup preview returning `setup_busy`, one active/owned timer
   and zero observed running services: report “scheduling is active, but no worker was
   observed within the scan.” Use `status`, not setup, to inspect; this is not stopped or
-  a request to install extra instances. A valid existing start skips setup and retains
-  saved selection after technical checks. Offer stop only if
+  a request to install extra instances. An existing-target start skips initial
+  preparation and preserves the saved selection. Offer stop only if
   deliberately re-preparing or pausing and worker interruption is intended. Verify
   inactivity before setup. Missing reads or out-of-scan activity remain unknown, not zero.
 
@@ -508,20 +505,24 @@ canonical repository, ownership, source, provider, harness and prerequisites aga
 under the activation lock. The setup lock is released before this lock is acquired.
 Changed ownership/config/selection holds without activation or automatic repair.
 
-An existing valid or active target skips preparation entirely, avoiding `setup_busy`
-and preserving its provider/harness/pin. Omit all `--pi-*` and `--harness` selectors
-on subsequent starts; even matching bootstrap selectors are refused. A missing
+An existing valid target skips initial preparation and preserves its provider and
+harness. Omit all `--pi-*` and `--harness` selectors on subsequent starts; even
+matching bootstrap selectors are refused. A missing
 explicit config is an error, not permission to create a target. Malformed, ambiguous,
 foreign or partial existing targets require deliberate recovery; start never performs
 `--resume-setup` (setup-only). Config-absent interrupted preparation can reuse only
 verified staged source and byte-equivalent intended files under normal setup rules.
 
-Start re-reads unit ownership, the pinned source, provider metadata, Node/Pi
-compatibility, GitHub and Pi authentication and the shared bootstrap. It runs upstream `setup` and
-`install-units` with the scoped environment, enables only instances
-`1..max_concurrency` of this deployment's timer, and starts the first service
-instance only when no instance is active or activating. A repeated start never
-restarts or duplicates a live worker.
+Start checks ownership, source, provider, Node/Pi compatibility, authentication and
+bootstrap. If the exact pin matches the newest official release and all configured
+timers are enabled and active, it reports `already-running` without mutation,
+even between worker ticks. Otherwise, start reuses the [locked release transaction](#release-update).
+It disables owned timers, cancels queued starts and stops running workers as needed,
+then syncs, pins and checks the release. A failed sync or check starts nothing and
+returns a bound recovery command. Only after validation does the shared activation
+path run scoped upstream `setup` and `install-units`, enable configured timers
+(`1..max_concurrency`) as needed, and request a first tick if no worker is active.
+For an existing target, success confirms the configured timers are enabled and active.
 
 A definite nonzero exit from a configured timer's `systemctl --user enable --now`
 can still allow one normal `systemctl --user start` of the exact owned slot-1
@@ -544,10 +545,10 @@ validation and activation preflight explicitly deferred/unrun. It does not run
 fail honestly. It creates no deployment directory, lock, launcher, config, source
 fetch, bootstrap or timer writes.
 
-For an existing target, start dry-run plans the same configured `1..max_concurrency` timer range, skipping
-already-active timers. Its separate `scheduler` snapshot retains the broader
-observed inventory, including out-of-config units; those observations are not
-planned activations. Preview performs no mutation.
+For an existing target, start dry-run previews conditional release maintenance and
+activation. It lists currently inactive configured timers in `1..max_concurrency`
+and reports a separate `scheduler` snapshot of the broader observed inventory.
+Release resolution and validation are deferred; preview performs no mutation.
 
 Start activates only the bound deployment. It never issues issue
 pauses or blocked work and never touches another deployment. Enforced
@@ -873,7 +874,7 @@ retry an unchanged timeout. Typical repairs:
 - `setup_busy`: cite observed timer/worker state and inspect with `status`.
   Offer authorized stop only when deliberately re-preparing or pausing.
   Verify inactivity before setup; do not kill workers or stop scheduling just
-  to make a preview pass. An existing valid start skips setup.
+  to make a preview pass. An existing valid start skips initial preparation.
 - `update_busy`: work appeared during the update after initial idle confirmation.
   Inspect pending work, partial steps and source state before a deliberate retry;
   never kill workers or disable an unrelated deployment.
@@ -882,11 +883,11 @@ retry an unchanged timeout. Typical repairs:
   repair the user service manager or ownership evidence before deliberately retrying.
 - `source_dirty`: preserve the tracked checkout changes in a separate operation
   and decide deliberately; update never discards them or rewrites origin.
-- `sync_engine_source_failed` or `command_timeout` during `update`: the pin or
-  checkout may already have moved and owned timers may already be disabled. Read
-  `previous`, `steps`, `disabled_timers`, `error.mutated` and the read-only
-  scheduler snapshot before deliberate recovery; inspect the fetch/channel
-  privately and do not retry an unchanged timeout.
+- `sync_engine_source_failed`, `validation_failed` or a timeout during release maintenance:
+  the pin or checkout may already have moved and owned timers may already be disabled.
+  Read `previous`, `steps`, `disabled_timers`, `error.mutated` and the read-only
+  scheduler snapshot. Repair the fetch or validation failure before running the
+  bound `repair_command`; do not retry an unchanged timeout.
 - `bootstrap_incompatible` or `bootstrap_conflict`: repair or replace the
   user-local Orbi bootstrap deliberately; never force-reinstall a shared tool
   as part of another deployment's start.
