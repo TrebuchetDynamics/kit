@@ -145,6 +145,23 @@ class WorktreeSweepTests(unittest.TestCase):
         self.assertEqual((dirty / 'app.txt').read_text(), 'edited but uncommitted\n')
         self.assertTrue(ahead.is_dir(), 'a merged worktree stays until it is closed out')
 
+    def test_apply_refuses_a_linked_worktree_before_merging(self):
+        linked = self.worktree('linked')
+        candidate = self.worktree('candidate')
+        (linked / 'app.txt').write_text('linked side\n')
+        git(linked, 'commit', '-qam', 'linked side')
+        (candidate / 'app.txt').write_text('candidate side\n')
+        git(candidate, 'commit', '-qam', 'candidate side')
+        before = git(linked, 'rev-parse', 'HEAD')
+
+        done = run(sys.executable, str(SCRIPT), str(linked), '--apply',
+                   '--idle-minutes', '0', check=False)
+
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertEqual(git(linked, 'rev-parse', 'HEAD'), before)
+        self.assertEqual(git(linked, 'ls-files', '--unmerged'), '', done.stdout)
+        self.assertIn(f'canonical checkout: {self.repo.resolve()}', done.stderr)
+
     def test_a_conflict_aborts_that_merge_and_keeps_the_other_worktrees(self):
         self.worktree('clash', commit='change app')
         (self.repo / '.worktrees/clash/app.txt').write_text('branch side\n')
@@ -154,10 +171,25 @@ class WorktreeSweepTests(unittest.TestCase):
         git(self.repo, 'commit', '-qam', 'main side')
         done = self.sweep('--apply', check=False)
         self.assertEqual(done.returncode, 1, done.stdout)
-        self.assertIn('conflict', done.stdout)
+        self.assertIn('-> conflict', done.stdout)
         self.assertEqual((self.repo / 'clean.txt').read_text(), 'clean\n')
-        self.assertFalse((self.repo / '.git' / 'MERGE_HEAD').exists())
+        self.assertFalse((self.repo / git(self.repo, 'rev-parse', '--git-path', 'MERGE_HEAD')).exists())
         self.assertTrue(clean.is_dir())
+
+    def test_it_refuses_when_a_merge_is_already_in_progress(self):
+        candidate = self.worktree('candidate')
+        git(candidate, 'commit', '-qm', 'empty change', '--allow-empty')
+        git(self.repo, 'merge', '--no-ff', '--no-commit', 'delivery/candidate')
+        # Nothing is staged, so only the merge-state check can catch this merge.
+        self.assertEqual(git(self.repo, 'status', '--porcelain', '--untracked-files=no'), '')
+        merge_head = git(self.repo, 'rev-parse', 'MERGE_HEAD')
+
+        done = self.sweep('--apply', check=False)
+
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn('a merge is already in progress in the canonical checkout', done.stderr)
+        self.assertEqual(git(self.repo, 'rev-parse', 'MERGE_HEAD'), merge_head)
+        self.assertEqual(git(self.repo, 'rev-parse', 'HEAD'), self.base)
 
     def test_it_refuses_to_merge_over_a_dirty_canonical_checkout(self):
         self.worktree('ahead', commit='pending work')
