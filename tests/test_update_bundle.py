@@ -4,6 +4,7 @@ import contextlib
 import io
 import fcntl
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -2173,6 +2174,66 @@ class PinProfileTests(unittest.TestCase):
         self.assertTrue((Path(result['clone_kept_at'])/'.git').is_dir())
         with self.assertRaisesRegex(ValueError, 'No saved link'):
             self.unpin()
+
+    def pin_work_eu(self):
+        checkout = self.root/'checkout-eu'
+        self.git(self.root, 'clone', str(self.remote), str(checkout))
+        self.profiles.append(('work-eu', self.home/'profiles/work-eu'))
+        plugin = self.plugin('work-eu')
+        plugin.parent.mkdir(parents=True)
+        plugin.symlink_to(checkout)
+        return Path(self.pin('work-eu')['backup']), checkout
+
+    def test_unpin_restores_only_the_exact_profiles_saved_link(self):
+        work_backup = Path(self.pin()['backup'])
+        eu_backup, eu_checkout = self.pin_work_eu()
+
+        result = self.unpin()
+
+        self.assertEqual(self.plugin().readlink(), self.repo)
+        self.assertEqual(Path(result['clone_kept_at']).parent, work_backup)
+        self.assertEqual((eu_backup/'link').readlink(), eu_checkout)
+        self.assertFalse(self.plugin('work-eu').is_symlink())
+        self.unpin('work-eu')
+        self.assertEqual(self.plugin('work-eu').readlink(), eu_checkout)
+
+    def test_unpin_refuses_plain_clone_when_only_prefixed_profile_is_pinned(self):
+        plugin = self.plugin()
+        plugin.unlink()
+        self.git(self.root, 'clone', str(self.remote), str(plugin))
+        eu_backup, eu_checkout = self.pin_work_eu()
+        before = sorted(self.home.rglob('*'))
+
+        with self.assertRaisesRegex(ValueError, 'No saved link for work; nothing to restore'):
+            self.unpin()
+
+        self.assertEqual(sorted(self.home.rglob('*')), before)
+        self.assertTrue((plugin/'.git').is_dir())
+        self.assertEqual((eu_backup/'link').readlink(), eu_checkout)
+
+    def test_unpin_ignores_invalid_pin_records(self):
+        backup = Path(self.pin()['backup'])
+        record = backup/'record.json'
+        for kind, contents in (
+            ('syntax', b'{'), ('encoding', b'\xff'), ('array', b'[]'), ('no profile', b'{}'),
+            ('integer limit', b'{"revision":' + b'1' * 5000 + b'}'),
+            ('nesting limit', b'[' * 10_000 + b'0' + b']' * 10_000),
+        ):
+            with self.subTest(kind=kind):
+                record.write_bytes(contents)
+                with self.assertRaisesRegex(ValueError, 'No saved link for work'):
+                    self.unpin(dry_run=True)
+        record.unlink()
+        os.mkfifo(record)  # Unlike a regular record, opening this could block.
+        (self.home/'profiles/work/config.yaml').write_text('{}\n')
+        result = subprocess.run([sys.executable, str(ROOT/'scripts/update_bundle.py'),
+                                 '--hermes-home', str(self.home), '--unpin-profile', 'work'],
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {'profile': 'work', 'status': 'refused',
+                                                    'error': 'No saved link for work; nothing to restore'})
+        self.assertTrue((self.plugin()/'.git').is_dir())
+        self.assertEqual((backup/'link').readlink(), self.repo)
 
     def test_unlinked_profile_and_cli_refusal(self):
         self.pin()
