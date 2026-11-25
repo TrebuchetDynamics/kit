@@ -123,6 +123,53 @@ class PublicationTests(unittest.TestCase):
         self.assertTrue(result['partial'])
         return {row['key']: row for row in result['issues']}
 
+    def test_cli_interrupted_create_reports_in_memory_receipt(self):
+        api = FakeGitHub()
+        api.label_names.update(publisher.LABELS)
+        original = api.api
+
+        def interrupt(path, method='GET', data=None, **kwargs):
+            result = original(path, method, data, **kwargs)
+            if (method, path) == ('POST', 'issues') and result['number'] == 2:
+                raise KeyboardInterrupt
+            return result
+
+        api.api = interrupt
+        status, stdout, stderr = self.apply_cli(api, {'issues': [task('a'), task('b')]})
+        self.assertEqual((status, stdout), (130, ''))
+        self.assertEqual(len(stderr.splitlines()), 2)
+        self.assertEqual(stderr.splitlines()[0], 'Publication incomplete: interrupted')
+        rows = self.partial_receipt(stderr)
+        self.assertEqual(rows['a']['creation'], 'saved')
+        self.assertEqual(rows['a']['url'], api.issues[1]['html_url'])
+        self.assertEqual(rows['b']['creation'], 'unknown')
+        self.assertTrue(rows['b']['unverified_write'])
+        self.assertEqual(rows['b']['attempted_phase'], 'create')
+        self.assertIsNone(rows['b']['number'])
+        self.assertEqual([event[:2] for event in api.events], [('POST', 'issues')] * 2)
+
+    def test_cli_malformed_create_payload_reports_in_memory_receipt(self):
+        api = FakeGitHub()
+        api.label_names.update(publisher.LABELS)
+        original = api.api
+
+        def malformed(path, method='GET', data=None, **kwargs):
+            result = original(path, method, data, **kwargs)
+            if (method, path) == ('POST', 'issues') and result['number'] == 2:
+                return dict(result, labels=None)  # observe raises TypeError
+            return result
+
+        api.api = malformed
+        status, stdout, stderr = self.apply_cli(api, {'issues': [task('a'), task('b')]})
+        self.assertEqual((status, stdout), (1, ''))
+        self.assertEqual(len(stderr.splitlines()), 2)
+        self.assertIn('NoneType', stderr.splitlines()[0])
+        rows = self.partial_receipt(stderr)
+        self.assertEqual(rows['a']['creation'], 'saved')
+        self.assertEqual(rows['b']['creation'], 'unknown')
+        self.assertTrue(rows['b']['unverified_write'])
+        self.assertEqual([event[:2] for event in api.events], [('POST', 'issues')] * 2)
+
     def test_cli_ready_timeout_preserves_verified_saved_and_unknown_results(self):
         for accepted in (False, True):
             for readback_fails in (False, True):

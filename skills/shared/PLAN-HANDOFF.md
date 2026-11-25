@@ -325,7 +325,7 @@ recovery acceptance from application/device qualification using
 
 #### Incomplete `--apply` receipt
 
-The helper exits 1 with empty stdout on failure. After the existing
+The helper exits nonzero with empty stdout on failure. After the existing
 `Publication incomplete: ...` diagnostic, failures with issue publication progress
 append one JSON object on its own stderr line:
 
@@ -355,12 +355,15 @@ Every input key appears, including later saved issues and never-attempted create
   An issue GET can resolve issue/label state, not an interrupted native graph write.
   `reconciliation_error`, when present, explains why recovery observation failed.
 
-After failure, the helper only reads the interrupted issue: one issue GET when its
-number is known, otherwise an all-state stable-marker scan for an ambiguous create
-(capped at ten 100-issue pages; each API call has a 60-second timeout). No unique
-match, a scan cap, or a failed read leaves creation unknown, not absent. Recovery
-reads do not validate/repair foreign changes, dispatch the next issue, or repeat a
-mutation. Success JSON/exit 0 and the local preview format are unchanged.
+For expected publication errors, the helper only reads the interrupted issue: one
+issue GET when its number is known, otherwise an all-state stable-marker scan for
+an ambiguous create (capped at ten 100-issue pages; each API call has a 60-second
+timeout). No unique match, a scan cap, or a failed read leaves creation unknown,
+not absent. Recovery reads do not validate/repair foreign changes, dispatch the
+next issue, or repeat a mutation. On Ctrl-C (exit 130) or an unexpected error,
+the helper prints the in-memory receipt without a recovery read, so an in-flight
+create remains `unknown` and `unverified_write` is `true`. Success JSON/exit 0
+and the local preview format are unchanged.
 
 For safe recovery, preserve the diagnostic/receipt and transient input. Read back
 unknown writes by issue number or the same stable marker (open **and closed**
