@@ -219,8 +219,21 @@ elif name in ['apt-get', 'dnf', 'pacman']:
         p = root / 'bin' / ('adb' if package == 'android-tools' else package)
         p.write_text(Path(sys.argv[0]).read_text())
         p.chmod(0o755)
+elif name == 'install':
+    os.execv(os.environ['REAL_INSTALL'], ['install', *args])
 elif name == 'systemctl':
     if 'show' in args and 'LoadState' in ' '.join(args): print('loaded')
+    if args in (['is-enabled', 'waydroid-container.service'],
+                ['--user', 'is-enabled', 'kit-waydroid.service']):
+        marker = 'user-enabled' if '--user' in args else 'container-enabled'
+        enabled = (root / marker).exists()
+        print('enabled' if enabled else 'disabled')
+        sys.exit(0 if enabled else 1)
+    if args == ['is-active', '--quiet', 'waydroid-container.service']:
+        sys.exit(0 if (root / 'container-active').exists() else 3)
+    if args == ['enable', '--now', 'waydroid-container.service']:
+        (root / 'container-enabled').touch()
+        (root / 'container-active').touch()
     if 'FragmentPath' in ' '.join(args):
         unit = root / 'home/.config/systemd/user/kit-waydroid.service'
         print('/foreign/kit-waydroid.service' if mode == 'gui-foreign-unit' else (str(unit) if unit.exists() else ''))
@@ -228,12 +241,18 @@ elif name == 'systemctl':
         print('activating' if mode == 'gui-unit-activating' else ('active' if session == 'managed' else 'inactive'))
     if args == ['--user', 'enable', '--now', 'kit-waydroid.service']:
         if mode == 'gui-start-fail': sys.exit(1)
+        (root / 'user-enabled').touch()
         if mode != 'gui-start-unconfirmed':
             session_file.write_text('foreign' if mode == 'gui-start-foreign' else 'managed')
     if mode == 'gui-start-race' and args == ['--user', 'daemon-reload']:
         session_file.write_text('foreign')
 elif name == 'loginctl':
-    pass
+    if args == ['show-user', 'tester', '--property=Linger', '--value']:
+        print('yes' if (root / 'linger').exists() else 'no')
+    elif args == ['enable-linger', 'tester']:
+        (root / 'linger').touch()
+    else:
+        raise AssertionError(args)
 '''
 
 
@@ -244,7 +263,7 @@ class WaydroidSetupTests(unittest.TestCase):
         self.base = Path(self.tmp.name)
         self.bin = self.base / 'bin'
         self.bin.mkdir()
-        for name in ['bash', 'cat', 'python3', 'timeout', 'readlink', 'awk', 'tr', 'sed', 'grep', 'mkdir', 'flock', 'sleep', 'mktemp', 'rm', 'install']:
+        for name in ['bash', 'cat', 'chmod', 'cmp', 'python3', 'timeout', 'readlink', 'awk', 'tr', 'sed', 'grep', 'mkdir', 'flock', 'sleep', 'mktemp', 'rm']:
             (self.bin / name).symlink_to(shutil.which(name))
         for name in ['timeout', 'flock']:
             (self.bin / name).unlink()
@@ -262,13 +281,17 @@ class WaydroidSetupTests(unittest.TestCase):
         self.script = self.base / 'setup.sh'
         self.script.write_text(text)
         self.script.chmod(0o755)
-        for name in ['busctl', 'id', 'uname', 'sudo', 'systemctl', 'loginctl', 'waydroid', 'weston', 'adb', 'modinfo', 'apt-cache', 'apt-get']:
+        self.dropin = self.base / 'etc/systemd/system/waydroid-container.service.d/kit-headless.conf'
+        self.unit = self.home / '.config/systemd/user/kit-waydroid.service'
+        self.payload = self.home / '.local/share/kit-waydroid/waydroid-universal-setup.sh'
+        for name in ['busctl', 'id', 'uname', 'sudo', 'systemctl', 'loginctl', 'waydroid', 'weston', 'adb', 'modinfo', 'apt-cache', 'apt-get', 'install']:
             p = self.bin / name
             p.write_text(FAKE)
             p.chmod(0o755)
         self.env = dict(os.environ, HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / '.config'),
                         XDG_DATA_HOME=str(self.home / '.local/share'), XDG_RUNTIME_DIR=str(self.run),
-                        PATH=str(self.bin), FIXTURE=str(self.base), REAL_TIMEOUT=shutil.which('timeout'))
+                        PATH=str(self.bin), FIXTURE=str(self.base), REAL_TIMEOUT=shutil.which('timeout'),
+                        REAL_INSTALL=shutil.which('install'))
         # A PAM/user-systemd runtime is required, not a graphical login.
         self.env.pop('DISPLAY', None)
         self.env.pop('WAYLAND_DISPLAY', None)
@@ -545,6 +568,11 @@ print('fixture-shell-usable', flush=True)
             with self.subTest(mode=mode):
                 for name in ['session', 'sudo-admitted', 'manager-lost']:
                     (self.base / name).unlink(missing_ok=True)
+                if mode in ['gui-sudo-fail', 'gui-sudo-race']:
+                    # Exercise admission failures only when privileged repair is needed.
+                    (self.base / 'container-enabled').unlink(missing_ok=True)
+                else:
+                    (self.base / 'container-enabled').touch()
                 (self.base / 'calls').write_text('')
                 result = self.invoke(mode=mode)
                 self.assertNotEqual(result.returncode, 0, result.stdout)
@@ -580,6 +608,9 @@ print('fixture-shell-usable', flush=True)
                      'gui-unauthorized', 'gui-properties-failed', 'gui-adb-owner-race', 'gui-boot-timeout']:
             with self.subTest(mode=mode):
                 (self.base / 'session').unlink(missing_ok=True)
+                if mode == 'gui-start-race':
+                    # A changed unit triggers the reload where the competing owner appears.
+                    self.unit.write_text(self.unit.read_text() + '# stale unit\n')
                 (self.base / 'calls').write_text('')
                 result = self.invoke('--wait', '1', mode=mode)
                 self.assertNotEqual(result.returncode, 0)
@@ -663,6 +694,104 @@ print('fixture-shell-usable', flush=True)
             self.assertIn('Android: 13', result.stdout)
             self.assertIn('ABI: x86_64', result.stdout)
             self.assertNotIn('sudo ', self.calls())
+
+    def test_ready_setup_repeats_without_sudo_or_service_changes(self):
+        self.assert_ok(self.invoke())
+        artifacts = [self.dropin, self.unit, self.payload, self.payload.with_name('setup.lock')]
+        before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in artifacts}
+        (self.base / 'calls').write_text('')
+        result = self.invoke()
+        self.assert_ok(result)
+        for command in ['sudo ', 'daemon-reload', ' enable ', 'install ', 'restart', 'session stop']:
+            self.assertNotIn(command, self.calls())
+        self.assertEqual(before, {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in artifacts})
+        self.assertIn('ADB serial: 192.0.2.8:5555\nAndroid: 13\nABI: x86_64', result.stdout)
+
+    def test_ready_setup_repairs_only_changed_dropin(self):
+        self.assert_ok(self.invoke())
+        expected = self.dropin.read_bytes()
+        self.dropin.write_bytes(expected.replace(b'RestartSec=5', b'RestartSec=9'))
+        (self.base / 'calls').write_text('')
+        self.assert_ok(self.invoke())
+        calls = self.calls().splitlines()
+        install = [call for call in calls if call.startswith('install ')]
+        self.assertEqual(len(install), 1)
+        self.assertTrue(install[0].startswith('install -m 644 '), install)
+        self.assertTrue(install[0].endswith(' ' + str(self.dropin)), install)
+        self.assertEqual([call for call in calls if call.startswith('sudo ')],
+                         ['sudo -n -v', 'sudo -n -- ' + install[0],
+                          'sudo -n -- systemctl daemon-reload'])
+        self.assertNotIn('systemctl --user daemon-reload', calls)
+        self.assertNotIn(' enable ', self.calls())
+        self.assertEqual(self.dropin.read_bytes(), expected)
+
+    def test_ready_setup_repairs_only_linger(self):
+        self.assert_ok(self.invoke())
+        (self.base / 'linger').unlink()
+        (self.base / 'calls').write_text('')
+        self.assert_ok(self.invoke())
+        self.assertEqual([call for call in self.calls().splitlines() if call.startswith('sudo ')],
+                         ['sudo -n -v', 'sudo -n -- loginctl enable-linger tester'])
+        for command in ['install ', 'daemon-reload', ' enable ']:
+            self.assertNotIn(command, self.calls())
+        self.assertTrue((self.base / 'linger').exists())
+
+    def test_ready_setup_loads_changed_user_unit_without_restarting(self):
+        self.assert_ok(self.invoke())
+        expected = self.unit.read_bytes()
+        self.unit.write_bytes(expected + b'# stale unit\n')
+        (self.base / 'calls').write_text('')
+        self.assert_ok(self.invoke())
+        calls = self.calls().splitlines()
+        self.assertEqual(self.unit.read_bytes(), expected)
+        self.assertEqual([call for call in calls if 'daemon-reload' in call and call.startswith('systemctl ')],
+                         ['systemctl --user daemon-reload'])
+        for command in ['sudo ', ' enable ', 'restart', 'session stop']:
+            self.assertNotIn(command, self.calls())
+
+    def test_ready_setup_updates_payload_for_next_service_restart(self):
+        self.assert_ok(self.invoke())
+        self.script.write_text(self.script.read_text() + '# new payload\n')
+        (self.base / 'calls').write_text('')
+        result = self.invoke()
+        self.assert_ok(result)
+        self.assertEqual(self.payload.read_bytes(), self.script.read_bytes())
+        self.assertIn('systemctl --user restart kit-waydroid.service', result.stdout)
+        for command in ['sudo ', 'daemon-reload', ' enable ', 'restart', 'session stop']:
+            self.assertNotIn(command, self.calls())
+
+    def test_setup_replaces_fifo_payload_without_waiting_for_writer(self):
+        self.assert_ok(self.invoke())
+        self.payload.unlink()
+        os.mkfifo(self.payload)
+        result = subprocess.run([shutil.which('timeout'), '10', str(self.script)],
+                                env=self.env, cwd=self.base, text=True, capture_output=True, timeout=12)
+        self.assert_ok(result)
+        self.assertTrue(self.payload.is_file())
+        self.assertEqual(self.payload.read_bytes(), self.script.read_bytes())
+
+    def test_setup_replaces_link_to_identical_payload_without_touching_its_target(self):
+        self.assert_ok(self.invoke())
+        target = self.home / 'old-payload'
+        self.payload.rename(target)
+        target.chmod(0o644)
+        self.payload.symlink_to(target)
+        self.assert_ok(self.invoke())
+        self.assertFalse(self.payload.is_symlink())
+        self.assertEqual(self.payload.read_bytes(), self.script.read_bytes())
+        self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+
+    def test_setup_restores_execute_bit_without_recopying_payload(self):
+        self.assert_ok(self.invoke())
+        self.payload.chmod(0o644)
+        mtime = self.payload.stat().st_mtime_ns
+        (self.base / 'calls').write_text('')
+        result = self.invoke()
+        self.assert_ok(result)
+        self.assertTrue(os.access(self.payload, os.X_OK))
+        self.assertEqual(self.payload.stat().st_mtime_ns, mtime)
+        self.assertNotIn('install ', self.calls())
+        self.assertNotIn('restart', result.stdout)
 
     def test_interrupted_init_preserves_valid_image_and_checks_false_success(self):
         self.state.mkdir(parents=True)
@@ -837,6 +966,7 @@ print('fixture-shell-usable', flush=True)
 
     def test_dnf_cold_user_cache_installs_before_headless_checks_and_transfer(self):
         before = self.complete_device()
+        (self.base / 'container-enabled').unlink()
         self.use_dnf('weston')
         result = self.invoke(mode='gui')
         self.assert_ok(result)
@@ -932,6 +1062,7 @@ print('fixture-shell-usable', flush=True)
 
     def test_pacman_installs_missing_packages_before_gui_transfer(self):
         self.complete_device()
+        (self.base / 'container-active').unlink()
         self.use_pacman('waydroid', 'adb')
         result = self.invoke(mode='gui')
         self.assert_ok(result)

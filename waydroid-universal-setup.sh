@@ -22,8 +22,8 @@ fail() {
 usage() {
     cat <<'EOF'
 Usage: waydroid-universal-setup.sh [--check | --status | --stop] [--wait SECONDS]
-  (no action)  Check prerequisites, ask for sudo, transfer same-user GUI to managed
-               headless (interrupts open GUI apps), provision and verify Android.
+  (no action)  Check prerequisites, ask for sudo if needed, transfer same-user GUI
+               to managed headless (interrupts open GUI apps), and verify Android.
   --check      Read-only checks and planned same-user transfer; no sudo or writes.
                Missing DNF/pacman dependencies return nonzero; cached metadata only.
   --status     Connect/query ADB as this user; wait for authorized Android boot.
@@ -455,36 +455,69 @@ setup_failure() {
     fi
     fail "$reason during $setup_stage (exit $rc); host provisioning may be partial. No rollback attempted. Inspect package/device state and service journals; preserve data and keys, repair the cause, then retry setup (or --status if headless is running)." "$rc"
 }
+same_artifact() {
+    # Don't open a FIFO or device just to compare bytes. Bound regular-file
+    # comparisons too, in case a path changes or its filesystem stops responding.
+    [[ -f $2 ]] || return 1
+    local rc
+    if timeout --kill-after=2 10 cmp -s -- "$1" "$2"; then return 0; else rc=$?; fi
+    [[ $rc == 1 ]] || fail "Cannot compare $2 (exit $rc); check permissions and filesystem access, then retry setup." "$rc"
+    return 1
+}
+container_ready() {
+    [[ $(timeout 10 systemctl is-enabled waydroid-container.service 2>/dev/null) == enabled ]] &&
+        timeout 10 systemctl is-active --quiet waydroid-container.service
+}
 setup() {
     keepalive='' stage='' setup_stage=admission
     trap setup_cleanup EXIT
     trap 'sudo_failure 130' INT
     trap 'sudo_failure 143' TERM
     trap 'setup_failure $? "Setup failed"' ERR
+    command -v cmp >/dev/null || fail 'Missing prerequisite: cmp (diffutils). Install it before setup.'
     preflight quiet
     local expected_kind=$SESSION_KIND expected_id=$SESSION_ID
     # All read-only admission checks precede files, package installs and sudo.
     mkdir -p "$HOME/.local/share/kit-waydroid"
-    exec 9>"$HOME/.local/share/kit-waydroid/setup.lock"
+    exec 9>>"$HOME/.local/share/kit-waydroid/setup.lock"
     flock -n 9 || fail 'Another setup is running for this user; wait for it to finish.'
     # Admission is only a snapshot. A peer may finish between it and this lock;
     # never force that newly initialized device through init using stale state.
     preflight
-    sudo_admission
+    local -A artifact_changes=([dropin]=unchanged [user_unit]=unchanged [payload]=unchanged)
+    local container_needs_enable=0 needs_sudo=0 linger user
+    stage=$(mktemp -d)
+    cat > "$stage/container.conf" <<EOF
+# kit-waydroid user=$(id -u)
+[Service]
+Restart=on-failure
+RestartSec=5
+EOF
+    same_artifact "$stage/container.conf" "$DROPIN" || artifact_changes[dropin]=changed
+    container_ready || container_needs_enable=1
+    user=$(id -un)
+    linger=$(timeout 10 loginctl show-user "$user" --property=Linger --value) &&
+        [[ $linger == yes || $linger == no ]] || fail 'Cannot inspect user linger; repair systemd-logind and retry setup.'
+    if ((${#PACKAGES[@]} || container_needs_enable)) ||
+        [[ $INIT_STATE != complete || ${artifact_changes[dropin]} == changed || $linger == no ]]; then
+        needs_sudo=1
+        sudo_admission
+    fi
     setup_stage=packages
     trap 'setup_failure 130 "Setup interrupted"' INT
     trap 'setup_failure 143 "Setup terminated"' TERM
-    # Reap only this refresher and its current child. Background wait lets TERM
-    # interrupt either sleep or validation; timeout bounds sudo's termination.
-    (child=''
-     trap 'trap - TERM; kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; exit' TERM
-     while :; do
-         sleep 60 & child=$!; wait "$child" || exit
-         timeout --kill-after=5 10 sudo -n -v & child=$!; wait "$child" || exit
-     done
-    ) </dev/null >/dev/null 2>&1 9>&- &
-    keepalive=$!
-    stage=$(mktemp -d)
+    if ((needs_sudo)); then
+        # Reap only this refresher and its current child. Background wait lets TERM
+        # interrupt either sleep or validation; timeout bounds sudo's termination.
+        (child=''
+         trap 'trap - TERM; kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; exit' TERM
+         while :; do
+             sleep 60 & child=$!; wait "$child" || exit
+             timeout --kill-after=5 10 sudo -n -v & child=$!; wait "$child" || exit
+         done
+        ) </dev/null >/dev/null 2>&1 9>&- &
+        keepalive=$!
+    fi
     if ((${#PACKAGES[@]})); then
         if [[ $MANAGER == dnf ]]; then
             # One fresh resolution/install transaction; keep DNF's diagnostics
@@ -550,20 +583,31 @@ PY
         [[ $(image_state) == complete ]] || fail 'Waydroid initialization incomplete despite init returning. Inspect waydroid log and retry setup; keep downloaded images/data.'
     fi
     setup_stage=container-service
-    cat > "$stage/container.conf" <<EOF
-# kit-waydroid user=$(id -u)
-[Service]
-Restart=on-failure
-RestartSec=5
-EOF
-    root install -d -m 755 "${DROPIN%/*}"
-    root install -m 644 "$stage/container.conf" "$DROPIN"
-    root systemctl daemon-reload
-    root systemctl enable --now waydroid-container.service
-    root loginctl enable-linger "$(id -un)"
+    if [[ ${artifact_changes[dropin]} == changed ]]; then
+        [[ -d ${DROPIN%/*} ]] || root install -d -m 755 "${DROPIN%/*}"
+        root install -m 644 "$stage/container.conf" "$DROPIN"
+        root systemctl daemon-reload
+    fi
+    # Package installation or initialization may have enabled/started it already.
+    if ((container_needs_enable || ${#PACKAGES[@]})) || [[ $INIT_STATE != complete ]]; then
+        container_ready || root systemctl enable --now waydroid-container.service
+    fi
+    [[ $linger == yes ]] || root loginctl enable-linger "$user"
     setup_stage=user-service
-    mkdir -p "$USER_UNITS"
-    [[ $SELF == "$PAYLOAD" ]] || install -m 755 "$SELF" "$PAYLOAD"
+    if [[ $SELF != "$PAYLOAD" ]]; then
+        # Keep an independent copy. Some install implementations refuse a FIFO
+        # destination, and chmod must not follow a link to another executable.
+        if [[ -L $PAYLOAD || ( -e $PAYLOAD && ! -f $PAYLOAD ) ]]; then
+            timeout --kill-after=2 10 rm -f -- "$PAYLOAD"
+        fi
+        if ! same_artifact "$SELF" "$PAYLOAD"; then
+            timeout --kill-after=2 10 install -T -m 755 -- "$SELF" "$PAYLOAD"
+            artifact_changes[payload]=changed
+        elif [[ ! -x $PAYLOAD ]]; then
+            # An identical copy restored without its mode still has to start.
+            chmod 755 "$PAYLOAD"
+        fi
+    fi
     cat > "$stage/user.service" <<'EOF'
 # Managed by waydroid-universal-setup.sh
 [Unit]
@@ -586,8 +630,12 @@ v = sys.argv[2].replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%').rep
 s = p.read_text().replace('[Service]\n', '[Service]\nEnvironment="XDG_DATA_HOME=' + v + '"\n')
 p.write_text(s)
 PY
-    install -m 644 "$stage/user.service" "$USER_UNITS/$UNIT"
-    timeout 15 systemctl --user daemon-reload
+    if ! same_artifact "$stage/user.service" "$USER_UNITS/$UNIT"; then
+        mkdir -p "$USER_UNITS"
+        install -m 644 "$stage/user.service" "$USER_UNITS/$UNIT"
+        timeout 15 systemctl --user daemon-reload
+        artifact_changes[user_unit]=changed
+    fi
     # Last competing-owner/socket check before activating the managed service.
     [[ -z $TRANSFER_STAGE ]] || TRANSFER_STAGE=start
     classify_session
@@ -595,11 +643,16 @@ PY
     observed=$(manager_session) || fail 'Cannot verify manager before managed startup; inspect container journal and retry setup.'
     if [[ $SESSION_KIND == managed ]]; then
         [[ $observed == "$SESSION_ID" ]] || fail 'Managed session identity changed before start; inspect ownership and retry setup.'
+        if [[ ${artifact_changes[payload]} == changed ]]; then
+            printf 'The new payload takes effect at the next service restart. To apply it now: systemctl --user restart %s\n' "$UNIT"
+        fi
     else
         [[ -z $observed && $SESSION_KIND == stopped ]] || fail 'Competing session appeared before managed start; inspect ownership and retry setup.'
     fi
-    [[ -z $TRANSFER_STAGE ]] || TRANSFER_STATE='GUI stopped; managed headless startup requested'
-    timeout 30 systemctl --user enable --now "$UNIT" || fail 'Managed headless service activation failed; inspect user service journal and retry setup.'
+    if [[ $SESSION_KIND != managed || $(timeout 10 systemctl --user is-enabled "$UNIT") != enabled ]]; then
+        [[ -z $TRANSFER_STAGE ]] || TRANSFER_STATE='GUI stopped; managed headless startup requested'
+        timeout 30 systemctl --user enable --now "$UNIT" || fail 'Managed headless service activation failed; inspect user service journal and retry setup.'
+    fi
     setup_stage=verification
     confirm_managed
     [[ -z $TRANSFER_STAGE ]] || { TRANSFER_STAGE=adb; TRANSFER_STATE='GUI stopped; managed headless session confirmed'; }
