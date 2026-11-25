@@ -134,8 +134,9 @@ A different or missing session UID, ambiguous display, foreign loaded user unit,
 or colliding `wayland-kit` socket/lock refuses takeover. A running session is
 recognized as managed only with the current UID, `wayland-kit` display and an
 active owned `kit-waydroid.service`. Setup only writes the container drop-in,
-user unit and service executable when they are missing or their bytes differ. If
-the installed executable is identical but has lost its execute permission, setup
+user unit and service executable when they are missing or their bytes differ.
+The service executable is kept as an independent file, not a symlink to the
+checkout. If it is identical but has lost its execute permission, setup
 restores that permission without recopying it. Setup runs `daemon-reload` for
 the corresponding manager only after changing a unit file or drop-in, and runs
 `enable --now` only for a unit that is not enabled or not active. A working

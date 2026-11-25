@@ -770,6 +770,17 @@ print('fixture-shell-usable', flush=True)
         self.assertTrue(self.payload.is_file())
         self.assertEqual(self.payload.read_bytes(), self.script.read_bytes())
 
+    def test_setup_replaces_link_to_identical_payload_without_touching_its_target(self):
+        self.assert_ok(self.invoke())
+        target = self.home / 'old-payload'
+        self.payload.rename(target)
+        target.chmod(0o644)
+        self.payload.symlink_to(target)
+        self.assert_ok(self.invoke())
+        self.assertFalse(self.payload.is_symlink())
+        self.assertEqual(self.payload.read_bytes(), self.script.read_bytes())
+        self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+
     def test_setup_restores_execute_bit_without_recopying_payload(self):
         self.assert_ok(self.invoke())
         self.payload.chmod(0o644)
@@ -1051,6 +1062,7 @@ print('fixture-shell-usable', flush=True)
 
     def test_pacman_installs_missing_packages_before_gui_transfer(self):
         self.complete_device()
+        (self.base / 'container-active').unlink()
         self.use_pacman('waydroid', 'adb')
         result = self.invoke(mode='gui')
         self.assert_ok(result)

@@ -595,8 +595,13 @@ PY
     [[ $linger == yes ]] || root loginctl enable-linger "$user"
     setup_stage=user-service
     if [[ $SELF != "$PAYLOAD" ]]; then
+        # Keep an independent copy. Some install implementations refuse a FIFO
+        # destination, and chmod must not follow a link to another executable.
+        if [[ -L $PAYLOAD || ( -e $PAYLOAD && ! -f $PAYLOAD ) ]]; then
+            timeout --kill-after=2 10 rm -f -- "$PAYLOAD"
+        fi
         if ! same_artifact "$SELF" "$PAYLOAD"; then
-            install -m 755 "$SELF" "$PAYLOAD"
+            timeout --kill-after=2 10 install -T -m 755 -- "$SELF" "$PAYLOAD"
             artifact_changes[payload]=changed
         elif [[ ! -x $PAYLOAD ]]; then
             # An identical copy restored without its mode still has to start.
