@@ -647,11 +647,12 @@ live qualification.
 
 ## Stop, status and drain
 
-`stop` enumerates this deployment's owned timer instances, including observed
-out-of-config instances within the five-instance observation bound, and runs only
-`systemctl --user disable --now <timer>`. It never runs `stop`, `kill` or
-`restart` on a service. A pre-existing invocation may finish; later issue
-phases may wait for a start. Re-read the service states and report `draining`
+`stop` enumerates this deployment's owned timer instances across slots
+1 through `max(5, max_concurrency)`, including observed out-of-config instances
+within that bound, and runs only `systemctl --user disable --now <timer>`.
+It never runs `stop`, `kill` or `restart` on a service. A pre-existing invocation
+may finish; later issue phases may wait for a start. Re-read the service states within
+the same bound and report `draining`
 while any is active or activating, `stopped` only when all service states were
 observed as inactive or failed. Failed, empty or unknown state reads leave drain
 unverified: report `scheduler_unavailable`, preserving any disabled-timer evidence.
@@ -743,8 +744,9 @@ from template availability. Absent timer fragments retain the existing omission
 from `timers`; service records cover every scanned index.
 
 `scheduler.inventory` exposes `scope: local-target-prefix`, `scan_first: 1`,
-`scan_last: 5` (the current `MAX_INSTANCES`) and `outside_scan: unobserved`.
-`configured_slots_covered` is false when configured capacity exceeds this scan;
+`scan_last: 5` (the default `MAX_INSTANCES`) and `outside_scan: unobserved`.
+The setup idle check and stop failure observation use `scan_last: max(5, max_concurrency)`.
+`configured_slots_covered` is false when configured capacity exceeds the scan bound;
 positive concurrency above five remains valid. Counts describe only owned
 observed units within that bound, including out-of-config ones, not exhaustive
 whole-deployment or remote activity:
