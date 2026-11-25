@@ -262,8 +262,34 @@ real upstream installation, package refresh, model run or live skill discovery.
 
 Default/full/menu and `update` include `pi-bolt`. Use `./install.sh --only pi-bolt`
 to install it alone or `--skip pi-bolt` to leave it untouched. Every install and
-`update` runs the upstream installer again: a present `pi-bolt` is refreshed rather
-than kept, so a stale native build never survives an install.
+`update` checks freshness before downloading the bootstrap script for an existing
+installation. Kit uses HTTPS GitHub release metadata: stable `releases/latest`,
+`releases/tags/<PIBOLT_VERSION>` for an explicit tag, or the highest numeric
+`bolt-vX.Y.Z` tag among the first 30 releases for upstream's beta selection.
+The lookup has a 10-second connection timeout, a 30-second transfer limit, and
+at most five HTTPS-only redirects. A transfer rate cap also bounds downloads
+when older curl versions do not know the response size upfront. Kit rejects
+responses larger than 1 MiB for a single release or 8 MiB for the beta list,
+which includes assets for each release.
+Preview performs no live lookup.
+
+A current result requires the **Pi-Bolt version inside the banner**, not the
+leading Pi version, plus a healthy build manifest/assets, the requested
+platform/variant and install root, effective channel, and the selected Kit BIN
+symlink to the expected upstream command. A proven match leaves the payload and
+links untouched and runs no bootstrap, archive download or installer shell.
+`PIBOLT_VERSION`, `PIBOLT_CHANNEL`, `PIBOLT_VARIANT` and `PIBOLT_INSTALL` retain
+upstream meanings; default x86-64 selection follows upstream's AVX2/libc rules.
+With no channel override, upstream selects the latest stable release for this
+install but preserves any stored beta channel for future `pi-bolt update` calls;
+an explicit channel override must match the stored channel to skip installation.
+Special modes (including Termux, mirrors, `PIBOLT_NO_PATH=1` and explicit Paseo
+registration) use the official installer directly. Missing, stale, broken, locally
+compiled or otherwise unproven builds use the official install/repair path. A failed or malformed
+release lookup for an existing installation reports `Pi-Bolt release check failed`,
+preserves it without reinstalling, and asks to retry `./install.sh --only pi-bolt`.
+This is a failed check, not an unchanged success. Pi package freshness/skill repairs
+and other suite components' native checks still run independently.
 
 Kit downloads the [official installer](https://pi-bolt.opensec.in/install.sh) into a
 private temporary file with HTTPS-only redirects, five redirects at most, a 15-second
@@ -271,7 +297,7 @@ connection timeout, a 300-second transfer limit and a 1 MiB size limit, then run
 the published file unmodified with `sh`. The run cannot prompt and installs no
 optional extensions (`PIBOLT_YES=1`, `PIBOLT_EXTENSIONS=no`). `PIBOLT_BIN_DIR` is
 the Kit binary directory (`~/.local/bin`, or `KIT_BIN_DIR`); the payload keeps
-upstream's `~/.pi-bolt` default. Kit verifies the linked `pi-bolt --version` and
+upstream's `~/.pi-bolt` default (or `PIBOLT_INSTALL` override). Kit verifies the linked `pi-bolt --version` and
 never writes through a broken link. Upstream owns release selection, channel,
 signature and checksum verification, and `pi-bolt update`; Kit pins no version and
 edits no shell profile. An upstream failure can leave a partial installation: no
