@@ -653,14 +653,16 @@ the receipt to `requested`; if another restart loaded the update first it record
 next step and restarts nothing. Cron schedules persist (a job mid-run during a
 restart is marked `unknown` and not retried; its next tick runs normally).
 Otherwise it reports `not_running`, or `not_needed` for a no-op or incomplete
-activation. While a deferred or requested restart is outstanding, a later update
-reports `pending` and joins it instead of starting another one, so a burst of
-updates restarts the gateway once; that restart loads the newest release, and its
-outcome reaches the latest receipt with `gateway_restart_covers`, the number of
-updates it covers. The waiter never restarts while an update is still applying
-files: it shares the update lock and waits for the next check. The waiter records
-its outcome in the durable receipt; a subsequent update also records a completed
-requested restart. `completed` includes `gateway_restart_result` (new gateway PID,
+activation. A later update can join an outstanding requested restart. It can join
+an outstanding deferred restart only if its waiter watches the same running
+gateway. If the deferred waiter watches a different gateway or has no recorded
+gateway PID, the update makes its own restart decision. An update that joins
+reports `pending`, so a burst of updates restarts the gateway once; that restart
+loads the newest release, and its outcome reaches the latest receipt with
+`gateway_restart_covers`, the number of updates it covers. The waiter never
+restarts while an update is still applying files: it shares the update lock and
+waits for the next check. The waiter records its outcome in the durable receipt;
+a subsequent update also records a completed requested restart. `completed` includes `gateway_restart_result` (new gateway PID,
 start time, observed menu resends and interruptions); `restart_failed` means the
 old gateway still runs. `restart.json` retains the outcome. These receipt fields
 are evidence, not a promise of the former chat summary. To restart immediately
