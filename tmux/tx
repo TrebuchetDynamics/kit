@@ -814,8 +814,7 @@ session_list_has() {
 }
 session_kill() { "$TMUX_BIN" kill-session -t "=$1"; }
 session_new() { "$TMUX_BIN" new-session -d -s "$1" -c "$2" "$3"; }
-session_pane_path() { "$TMUX_BIN" display-message -p -t "=$1" '#{pane_current_path}' 2>/dev/null || true; }
-session_pane_command() { "$TMUX_BIN" display-message -p -t "=$1" '#{pane_current_command}' 2>/dev/null || true; }
+session_pane_path() { "$TMUX_BIN" display-message -p -t "=$1:" '#{pane_current_path}' 2>/dev/null || true; }
 session_switch() { "$TMUX_BIN" switch-client -t "=$1"; }
 session_attach() { "$TMUX_BIN" attach-session -t "=$1"; }
 
@@ -1015,14 +1014,10 @@ attach_session() {
   if ! session_exists "$alias"; then
     session_new "$alias" "$target" "$startup"
   else
-    # Existing session (e.g. restored by tmux-continuum/resurrect) may be in
-    # the wrong cwd. If the active pane is an idle shell in the wrong dir,
-    # self-heal by sending `cd <target>` before attaching.
-    local cur_path="" cur_cmd=""
+    local cur_path
     cur_path=$(session_pane_path "$alias")
-    cur_cmd=$(session_pane_command "$alias")
-    if [[ "$cur_path" != "$target" ]] && [[ "$cur_cmd" =~ ^(bash|zsh|sh|fish|dash)$ ]]; then
-      "$TMUX_BIN" send-keys -t "=$alias" "cd -- $(printf '%q' "$target")" C-m
+    if [[ -n "$cur_path" && ! "$cur_path" -ef "$target" ]]; then
+      printf 'tx: active pane is not in the expected directory for %s: %s\n' "$alias" "$target" >&2
     fi
   fi
 
