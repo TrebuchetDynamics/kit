@@ -21,9 +21,10 @@ Worktrees are merged oldest commit first, so work that others build on lands ear
 worktree whose Git metadata changed within `--idle-minutes` (default 5) is treated as
 live and skipped, because another session may still be writing there.
 
-`--remove` requires an explicit existing `--closeout` safety helper. There is no
-bundled executor helper or unsafe Git-removal fallback. The supplied helper must
-independently verify ownership, clean integration and retained recovery evidence.
+`--remove` passes only merged, clean, idle worktrees to an explicit existing
+`--closeout` safety helper. There is no bundled executor helper or unsafe Git-removal
+fallback. The supplied helper must independently verify ownership, clean integration
+and retained recovery evidence.
 
 Exit status is 0 when the sweep completed, 1 when it refused to start or a merge
 failed, and 2 for a usage error.
@@ -140,11 +141,24 @@ def merge(repo, entry, base):
     return False
 
 
-def closeouts(repo, entries, closer):
+def is_active(entry, idle_minutes):
+    return (idle_minutes != 0 and entry['idle_minutes'] is not None
+            and entry['idle_minutes'] < idle_minutes)
+
+
+def closeouts(repo, entries, closer, idle_minutes):
     if closer is None:
         return
     for entry in entries:
         if entry.get('result') != 'merged' and entry['state'] != 'merged':
+            continue
+        if entry['modified'] or entry['untracked']:
+            entry['closed'] = 'kept'
+            entry['note'] = 'kept: worktree is dirty; resolve uncommitted changes before closeout'
+            continue
+        if is_active(entry, idle_minutes):
+            entry['closed'] = 'kept'
+            entry['note'] = f'kept: active within {idle_minutes} min; retry closeout when idle'
             continue
         done = subprocess.run([sys.executable, str(closer), str(repo),
                                '--worktree', entry['path'], '--apply'],
@@ -176,7 +190,7 @@ def main():
     parser.add_argument('--base', default='', help='base branch (default: the checked-out branch)')
     parser.add_argument('--apply', action='store_true', help='merge unmerged-clean worktrees')
     parser.add_argument('--remove', action='store_true',
-                        help='remove worktrees that are merged and clean, through worktree_closeout.py')
+                        help='remove merged, clean, idle worktrees through the closeout helper')
     parser.add_argument('--closeout', type=Path, default=None,
                         help='explicit ownership-aware closeout helper (required with --remove)')
     parser.add_argument('--json', action='store_true', help='print the inventory as JSON')
@@ -203,15 +217,14 @@ def main():
         candidates = [entry for entry in entries if entry['state'] == 'unmerged-clean']
         candidates.sort(key=lambda entry: git(repo, 'log', '-1', '--format=%ct', entry['head']))
         for entry in candidates:
-            if (args.idle_minutes and entry['idle_minutes'] is not None
-                    and entry['idle_minutes'] < args.idle_minutes):
+            if is_active(entry, args.idle_minutes):
                 entry['result'] = 'skipped'
                 entry['note'] = f'active within {args.idle_minutes} min; merge it when it is idle'
                 continue
             if not merge(repo, entry, base):
                 failed += 1
     if closer:
-        closeouts(repo, entries, closer)
+        closeouts(repo, entries, closer, args.idle_minutes)
 
     report(entries, args.json)
     counts = {}
