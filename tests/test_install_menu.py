@@ -1529,6 +1529,9 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         (build / 'pi-bolt.txt').write_text(f'Pi-Bolt {version} (Pi 0.67.1), {system}-{variant}, JIT {"on" if variant.endswith("-jit") else "off"}, built 2026-11-24\n')
         (build / 'package.json').write_text('{"version": "0.67.1"}')
         for name in ('README.md', 'photon_rs_bg.wasm', 'export-html/template.html',
+                     'export-html/template.css', 'export-html/template.js',
+                     'export-html/vendor/highlight.min.js', 'export-html/vendor/marked.min.js',
+                     'export-html/vendor/marked-cjk-friendly.min.js',
                      'theme/dark.json', 'assets/logo.txt', 'docs/PLUGINS.md',
                      'examples/example.ts', f'native/{system}/prebuilds/{native_platform}/{helper}'):
             file = build / name
@@ -1575,7 +1578,7 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         # Upstream defaults: AVX2, baseline on missing CPU flags, musl, ARM64 and Apple silicon.
         for system, machine, variant, libc, cpu_flags in (
                 ('Linux', 'x86_64', 'x64', 'glibc', 'avx2'),
-                ('Linux', 'x86_64', 'x64-baseline', 'glibc', None),
+                ('Linux', 'x86_64', 'x64-baseline', None, None),
                 ('Linux', 'x86_64', 'x64-musl', 'musl', 'avx2'),
                 ('Linux', 'aarch64', 'arm64', 'glibc', None),
                 ('Darwin', 'arm64', 'arm64', '', None)):
@@ -1584,6 +1587,8 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
                 real_run = subprocess.run
                 def run(argv, **kwargs):
                     if argv == ['ldd', '--version']:
+                        if libc is None:
+                            raise FileNotFoundError('ldd')
                         return SimpleNamespace(stdout=libc, stderr='', returncode=0)
                     return real_run(argv, **kwargs)
                 with patch.dict(os.environ, {'PIBOLT_INSTALL': str(build.parent)}), \
@@ -1607,8 +1612,8 @@ cp -R "$FAKE_HOME/release-build" "$root/pi-bolt-linux-x64"
 rm -f "$PIBOLT_BIN_DIR/pi-bolt" "$root/channel"
 ln -s "$root/pi-bolt-linux-x64/pi" "$PIBOLT_BIN_DIR/pi-bolt"'''))
         for state in ('absent', 'stale', 'broken-link', 'wrong-link', 'wrong-platform',
-                      'wrong-variant', 'wrong-root', 'aliased-build', 'missing-assets', 'wrong-native',
-                      'empty-native', 'bad-manifest', 'compiled', 'channel', 'invalid-channel-file'):
+                      'wrong-variant', 'wrong-root', 'aliased-build', 'missing-assets', 'missing-export-js',
+                      'wrong-native', 'empty-native', 'bad-manifest', 'compiled', 'channel', 'invalid-channel-file'):
             with self.subTest(state=state):
                 build = self.native_bolt()
                 release_build = self.home / 'release-build'
@@ -1633,6 +1638,9 @@ ln -s "$root/pi-bolt-linux-x64/pi" "$PIBOLT_BIN_DIR/pi-bolt"'''))
                     build.symlink_to(release_build, target_is_directory=True)
                 elif state == 'missing-assets':
                     (build / 'export-html/template.html').unlink()
+                elif state == 'missing-export-js':
+                    # --version still works; Pi-Bolt's HTML export cannot read its template script.
+                    (build / 'export-html/template.js').unlink()
                 elif state == 'wrong-native':
                     native = build / 'native/linux/prebuilds/linux-x64'
                     native.rename(native.with_name('linux-arm64'))
@@ -1725,9 +1733,10 @@ ln -s "$root/pi-bolt-linux-x64/pi" "$PIBOLT_BIN_DIR/pi-bolt"'''))
                 self.assertIn('current (release checked', result.stdout)
                 self.assertEqual(len(self.calls('curl')), 1)
                 self.assertTrue(self.calls('curl')[0].endswith(suffix))
-                max_bytes = 8388608 if overrides.get('PIBOLT_CHANNEL') == 'beta' else 1048576
+                max_bytes, rate = ((8388608, '512K') if overrides.get('PIBOLT_CHANNEL') == 'beta'
+                                   else (1048576, '64K'))
                 for flag in ('--proto =https', '--proto-redir =https', '--connect-timeout 10',
-                             '--max-time 30', f'--max-filesize {max_bytes}'):
+                             '--max-time 30', f'--max-filesize {max_bytes}', f'--limit-rate {rate}'):
                     self.assertIn(flag, self.calls('curl')[0])
                 self.assertEqual(self.calls('pi-bolt-installer'), [])
         self.log.write_text('')

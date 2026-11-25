@@ -267,8 +267,10 @@ installation. Kit uses HTTPS GitHub release metadata: stable `releases/latest`,
 `releases/tags/<PIBOLT_VERSION>` for an explicit tag, or the highest numeric
 `bolt-vX.Y.Z` tag among the first 30 releases for upstream's beta selection.
 The lookup has a 10-second connection timeout, a 30-second transfer limit, and
-at most five HTTPS-only redirects. It rejects responses larger than 1 MiB for a
-single release or 8 MiB for the beta list, which includes assets for each release.
+at most five HTTPS-only redirects. A transfer rate cap also bounds downloads
+when older curl versions do not know the response size upfront. Kit rejects
+responses larger than 1 MiB for a single release or 8 MiB for the beta list,
+which includes assets for each release.
 Preview performs no live lookup.
 
 A current result requires the **Pi-Bolt version inside the banner**, not the

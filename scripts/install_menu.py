@@ -1170,14 +1170,17 @@ def pi_bolt_release(output):
         url = f'{PI_BOLT_RELEASES}/latest'
     # GitHub includes asset metadata for every row; the 30-release listing can exceed 1 MiB.
     max_bytes = (8 if beta_list else 1) * 1024 * 1024
+    # Curl before 8.4 cannot enforce --max-filesize during an unknown-length transfer.
+    # Rate and time bound that transfer too; the size check rejects any oversized result.
+    rate = '512K' if beta_list else '64K'
     try:
         with tempfile.TemporaryDirectory(prefix='kit-pi-bolt-check-') as directory:
             metadata = Path(directory) / 'release.json'
             metadata.touch(mode=0o600)
             argv = ['curl', '--disable', '--proto', '=https', '--proto-redir', '=https',
                     '--tlsv1.2', '--location', '--max-redirs', '5', '--connect-timeout', '10',
-                    '--max-time', '30', '--max-filesize', str(max_bytes), '--fail', '--silent',
-                    '--show-error', '--header', 'Accept: application/vnd.github+json',
+                    '--max-time', '30', '--max-filesize', str(max_bytes), '--limit-rate', rate,
+                    '--fail', '--silent', '--show-error', '--header', 'Accept: application/vnd.github+json',
                     '--output', str(metadata), url]
             if output.verbosity > 1:
                 output.line('  $ ' + shlex.join(argv), 'command')
@@ -1224,10 +1227,14 @@ def pi_bolt_current(destination, release):
         if system not in ('linux', 'darwin') or (system == 'darwin' and not arm):
             return None
         musl = ''
-        if system == 'linux':
-            libc = subprocess.run(['ldd', '--version'], capture_output=True, text=True,
-                                  errors='replace', timeout=5)
-            musl = '-musl' if 'musl' in libc.stdout + libc.stderr else ''
+        if system == 'linux' and not arm:
+            try:
+                libc = subprocess.run(['ldd', '--version'], capture_output=True, text=True,
+                                      errors='replace', timeout=5)
+            except FileNotFoundError:
+                pass  # upstream's is_musl finds no musl marker when ldd is absent
+            else:
+                musl = '-musl' if 'musl' in libc.stdout + libc.stderr else ''
         variant = os.environ.get('PIBOLT_VARIANT') or ''
         if variant == 'jit':
             variant = 'arm64-jit' if arm else f'x64{musl}-jit'
@@ -1284,8 +1291,11 @@ def pi_bolt_current(destination, release):
         binary = destination / 'pi-bolt'
         if not binary.is_symlink() or binary.resolve(strict=True) != target.resolve(strict=True):
             return None
-        required = ['pi', 'pi-bolt.txt', 'package.json', 'README.md',
-                    'photon_rs_bg.wasm', 'export-html/template.html']
+        # --version bypasses the normal CLI, including export's mandatory sibling assets.
+        required = ['pi', 'pi-bolt.txt', 'package.json', 'README.md', 'photon_rs_bg.wasm',
+                    'export-html/template.html', 'export-html/template.css', 'export-html/template.js',
+                    'export-html/vendor/highlight.min.js', 'export-html/vendor/marked.min.js',
+                    'export-html/vendor/marked-cjk-friendly.min.js']
         native_platform = f'{system}-{"arm64" if arm else "x64"}'
         helper = 'darwin-platform.node' if system == 'darwin' else 'linux-platform-x11.node'
         required += [f'native/{system}/prebuilds/{native_platform}/{helper}']
