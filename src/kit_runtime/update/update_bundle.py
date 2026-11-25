@@ -729,8 +729,9 @@ def restart_when_quiet(root, homes, folder, *, update_id, gateway, window=QUIET_
 
     Every step runs under the update lock: the waiter never restarts while an update
     is applying files, and updates that join this restart (``covers``) do so atomically.
-    Returns 'requested', 'reloaded' (another restart already loaded the updates) or
-    'deferred_expired' (still busy when the window ended; nothing was restarted).
+    Returns 'requested', 'reloaded' (another restart already loaded the updates),
+    'deferred_expired' (still busy when the window ended), or 'superseded' (a newer
+    update started its own restart).
     """
     started = clock()
     deferred_ns = time.time_ns()
@@ -739,6 +740,9 @@ def restart_when_quiet(root, homes, folder, *, update_id, gateway, window=QUIET_
         if lock is not None:
             with lock:
                 covers = _read_marker(folder).get('covers') or [update_id]
+                if update_id not in covers:
+                    # The marker now belongs to a newer restart. Leave its receipt alone.
+                    return 'superseded'
                 current = gateway_pid(root)
                 if current is not None and current != gateway:
                     _record_restart_outcome(folder, covers, 'reloaded')
@@ -753,7 +757,7 @@ def restart_when_quiet(root, homes, folder, *, update_id, gateway, window=QUIET_
                     return 'requested'
                 _write_marker(folder, {'mode': 'deferred', 'waiter_pid': os.getpid(), 'deferred_ns': deferred_ns,
                                        'window_s': window, 'chat_turns': turns, 'checked_ns': time.time_ns(),
-                                       'covers': covers})
+                                       'gateway_pid': gateway, 'covers': covers})
                 if clock() - started >= window:
                     hours = round(window / 3600, 1)
                     _record_restart_outcome(
@@ -926,7 +930,7 @@ def start_quiet_restart(root, folder, update_id, gateway):
                                    stdout=stream, stderr=stream, start_new_session=True)
     _write_marker(folder, {'mode': 'deferred', 'waiter_pid': process.pid, 'deferred_ns': time.time_ns(),
                            'window_s': QUIET_WINDOW_S, 'chat_turns': None, 'checked_ns': None,
-                           'covers': [update_id]})
+                           'gateway_pid': gateway, 'covers': [update_id]})
     return process.pid
 
 
@@ -2255,9 +2259,12 @@ def main(argv=None):
                 # A plugin reload rewires handlers, but Telegram menus refresh only on reconnect.
                 if not ready or not (changed or missing or healed):
                     result['gateway_restart'] = 'not_needed'
-                elif (pending := pending_restart(state_dir)) is not None:
-                    # An outstanding restart (draining, or deferred to a quiet moment) loads this
-                    # update too; join it so its outcome reaches this receipt. We hold the update lock.
+                elif ((pending := pending_restart(state_dir)) is not None
+                      and (pending.get('mode') != 'deferred'
+                           or ((watched_pid := pending.get('gateway_pid')) is not None
+                               and gateway_pid(root) == watched_pid))):
+                    # A deferred waiter can only cover this update if it still watches
+                    # the running gateway. We hold the update lock while joining.
                     pending['covers'] = (pending.get('covers') or []) + [result['started_ns']]
                     _write_marker(state_dir, pending)
                     result['gateway_restart'] = 'pending'

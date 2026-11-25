@@ -627,9 +627,11 @@ the receipt to `requested`; if another restart loaded the update first it record
 next step and restarts nothing. Cron schedules persist (a job mid-run during a
 restart is marked `unknown` and not retried; its next tick runs normally).
 Otherwise it reports `not_running`, or `not_needed` for a no-op or incomplete
-activation. While a deferred or requested restart is outstanding, a later update
-reports `pending` and joins it instead of starting another one, so a burst of
-updates restarts the gateway once; that restart loads the newest release, and its
+activation. A later update can join an outstanding requested restart, or a deferred
+restart if its waiter watches the same running gateway. If the gateway already
+changed or the waiter has no recorded gateway PID, the update makes its own
+restart decision. An update that joins reports `pending`, so a burst of updates
+restarts the gateway once; that restart loads the newest release, and its
 outcome reaches the latest receipt with `gateway_restart_covers`, the number of
 updates it covers. The waiter never restarts while an update is still applying
 files: it shares the update lock and waits for the next check. The waiter records
