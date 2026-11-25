@@ -83,7 +83,7 @@ tmux source-file ~/.tmux.conf
 
 - `install.sh` copies the shared assets into user locations: `tmux.conf`, helper scripts, optional local style, and the `tx` launcher.
 - `tmux.conf` shows a navy/teal status bar with the session, short current path, git branch/status, window tabs, zoom state, and host. Periodic refresh remains disabled.
-- `tx` reads session aliases from its config file, starts or switches to the matching tmux session, and uses the alias as the tmux session name.
+- `tx <alias>` starts the matching tmux session or attaches to it (switches from inside tmux), using the alias as the session name. It never types into an existing pane. If the active pane is in a different directory, `tx` prints the expected directory before attaching or switching.
 - `style.tmux` stores per-machine colors and is sourced by `tmux.conf` from `~/.tmux/style.tmux`.
 
 ## Helper-script contract
