@@ -35,6 +35,7 @@ Standard library only.
 """
 import argparse
 import codecs
+from contextlib import contextmanager, nullcontext
 import fcntl
 import hashlib
 import json
@@ -60,6 +61,7 @@ ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
                '1a8b2f9603f6258cb105293f238a8d3f775f3393')
 HOME = Path(os.environ.get('HOME', str(Path.home())))
 BIN = Path(os.environ.get('KIT_BIN_DIR') or HOME / '.local' / 'bin')
+ITEM_KEYS = ('pi-bolt', 'pi', 'tx', 'hermes', 'claude', 'codex', 'orbi')
 
 def manifest_name(relative, key='name'):
     """A plugin or marketplace name declared by a manifest in this checkout."""
@@ -1566,14 +1568,23 @@ def restart_services(output, observations=None):
     return '; '.join(reasons) or 'no active supported consumers; no service restart requests'
 
 
-def install(all_items, chosen, dry_run=False, output=None, mode='install', baseline=None):
+def install(all_items, chosen, dry_run=False, output=None, mode='install', baseline=None, lock=None):
     output = output or Output()
     if dry_run or (not chosen and not os.environ.get('KIT_INSTALL_REPORT')):
         return _install(all_items, chosen, dry_run=dry_run, output=output, mode=mode)
+    with (installer_lock(output) if lock is None else nullcontext(lock)) as held:
+        if held is None:
+            return 1
+        return _install(all_items, chosen, output=output, mode=mode, lock_fd=held.fileno(), baseline=baseline)
+
+
+@contextmanager
+def installer_lock(output):
     # Resolve aliases so checkouts targeting the same binary directory share one
     # persistent inode. Never unlink it: that would allow two independent locks.
     binary_dir = BIN.resolve()
     lock_path = binary_dir.with_name(binary_dir.name + '.kit-install.lock')
+    lock = None
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         inherited = os.environ.get('KIT_INSTALL_LOCK_FD')
@@ -1581,11 +1592,13 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install', basel
                 else lock_path.open('a+', encoding='utf-8'))
         actual, expected = os.fstat(lock.fileno()), lock_path.stat()
         if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
-            lock.close()
             raise OSError('inherited installer lock does not match the binary directory')
     except (OSError, ValueError) as exc:
+        if lock is not None:
+            lock.close()
         output.line(f'  FAILED: cannot open installer lock {lock_path}: {exc}', 'failed')
-        return 1
+        yield None
+        return
     with lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1594,16 +1607,18 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install', basel
             holder = lock.read(128).strip() or 'unknown (holder metadata unavailable)'
             output.line(f'  FAILED: installer lock {lock_path} held by PID {holder}; '
                         'let the holder finish, then retry; do not remove the lock file.', 'failed')
-            return 1
+            yield None
+            return
         except OSError as exc:
             output.line(f'  FAILED: cannot acquire installer lock {lock_path}: {exc}', 'failed')
-            return 1
+            yield None
+            return
         if not inherited:
             lock.seek(0)
             lock.truncate()
             lock.write(f'{os.getpid()}\n')
             lock.flush()
-        return _install(all_items, chosen, output=output, mode=mode, lock_fd=lock.fileno(), baseline=baseline)
+        yield lock
 
 
 def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock_fd=None, baseline=None):
@@ -1904,7 +1919,7 @@ def main(argv=None):
                'Dry-run performs no registry probes or mutations. See docs/cross-host.md.')
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--all', '--full', action='store_true', help='install the full suite for every available host (default)')
-    selection.add_argument('--only', help='comma-separated items to install (pi-bolt,pi,tx,hermes,claude,codex,orbi)')
+    selection.add_argument('--only', help=f'comma-separated items to install ({",".join(ITEM_KEYS)})')
     parser.add_argument('--skip', help='comma-separated items to leave out')
     parser.add_argument('--list', action='store_true', help='show the items and whether each is available')
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')
@@ -1922,7 +1937,22 @@ def main(argv=None):
     parser.add_argument('command', nargs='?', choices=('install', 'update'), default='install',
                         help='install (default) or update the installed suite in place; both run the same items')
     args = parser.parse_args(argv)
+    for given in (args.only, args.skip):
+        unknown = [k for k in (given or '').split(',') if k and k not in ITEM_KEYS]
+        if unknown:
+            parser.error(f'unknown item(s): {", ".join(unknown)}; choose from {", ".join(ITEM_KEYS)}')
+
     output = Output(args.color, 0 if args.quiet else 2)
+    if (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
+            or os.environ.get('KIT_INSTALL_NO_PULL')):
+        return run_suite(args, parser, output)
+    with installer_lock(output) as lock:
+        if lock is None:
+            return 1
+        return run_suite(args, parser, output, lock=lock, argv=argv)
+
+
+def run_suite(args, parser, output, lock=None, argv=None):
     baseline = {}
     inherited = os.environ.pop('KIT_INSTALL_BASELINE_FD', None)
     if inherited:
@@ -1932,12 +1962,10 @@ def main(argv=None):
         except (OSError, ValueError) as exc:
             output.line(f'FAILED: installed baseline unavailable: {exc}; rerun ./install.sh with the same options', 'failed')
             return 1
-    if not (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
-            or os.environ.get('KIT_INSTALL_NO_PULL')):
+    if lock is not None:  # checkout preparation is enabled and already owns the lock
         try:
             def snapshot():
-                keys = set((args.only if args.only and not args.menu else
-                            'pi-bolt,pi,tx,hermes,claude,codex,orbi').split(','))
+                keys = set(args.only.split(',') if args.only and not args.menu else ITEM_KEYS)
                 if not args.menu:  # menu selection may include initially skipped candidates
                     keys -= set((args.skip or '').split(','))
                 baseline.update(installed_baseline(keys, output))
@@ -1949,24 +1977,21 @@ def main(argv=None):
             return 1
         if changed:
             # Pull or stash may have replaced the running installer: run disk code once.
-            # An anonymous descriptor survives exec, but is consumed before any
-            # child/native refresh, so nested installers take their own baseline.
+            # Preserve the flock across exec and carry the baseline separately, so
+            # nested installers share the lock but capture their own baseline.
             with tempfile.TemporaryFile(mode='w+', encoding='utf-8') as stream:
                 json.dump(baseline, stream)
                 stream.seek(0)
                 os.set_inheritable(stream.fileno(), True)
+                os.set_inheritable(lock.fileno(), True)
                 os.execvpe('bash', ['bash', str(ROOT / 'install.sh'), *(sys.argv[1:] if argv is None else argv)],
-                           dict(os.environ, KIT_INSTALL_PULLED='1', KIT_INSTALL_BASELINE_FD=str(stream.fileno())))
+                           dict(os.environ, KIT_INSTALL_PULLED='1', KIT_INSTALL_BASELINE_FD=str(stream.fileno()),
+                                KIT_INSTALL_LOCK_FD=str(lock.fileno())))
     hermes = [f for f, on in (('--bundle-only', args.bundle_only), ('--no-reload', args.no_reload),
                               ('--yes-deps', args.yes_deps), ('--dry-run', args.dry_run)) if on]
     if args.hermes_home:
         hermes += ['--hermes-home', args.hermes_home]
     all_items = items(hermes, output, mode=args.command)
-    keys = [i.key for i in all_items]
-    for given in (args.only, args.skip):
-        unknown = [k for k in (given or '').split(',') if k and k not in keys]
-        if unknown:
-            parser.error(f'unknown item(s): {", ".join(unknown)}; choose from {", ".join(keys)}')
     if args.list:
         for item in all_items:
             output.line(f"  {item.key:<9} {'available' if item.available else 'unavailable':<12} {item.label}"
@@ -1990,7 +2015,8 @@ def main(argv=None):
         if not go:
             print('Nothing installed.')
             return 0
-    return install(all_items, chosen, dry_run=args.dry_run, output=output, mode=args.command, baseline=baseline)
+    return install(all_items, chosen, dry_run=args.dry_run, output=output, mode=args.command,
+                   baseline=baseline, lock=lock)
 
 
 if __name__ == '__main__':

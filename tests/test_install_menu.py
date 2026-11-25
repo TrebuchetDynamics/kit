@@ -2805,6 +2805,7 @@ class PullCheckoutTests(unittest.TestCase):
                 env = {k: v for k, v in os.environ.items()
                        if k not in ('KIT_INSTALL_NO_PULL', 'KIT_INSTALL_PULLED')}
                 with patch.dict(os.environ, env, clear=True), patch.object(install_menu, 'ROOT', repo), \
+                        patch.object(install_menu, 'BIN', Path(tmp) / 'bin'), \
                         patch.object(install_menu, 'pull_checkout',
                                      side_effect=lambda *a, **kw: original_pull_checkout(*a, run=run, **kw)), \
                         patch.object(install_menu, 'items') as components, \
@@ -2851,9 +2852,21 @@ def fixture_trace(event):
         stream.write(json.dumps([event, FIXTURE_VERSION, sys.argv[1:],
                                  os.environ.get('KIT_INSTALL_PULLED', '')]) + '\n')
 fixture_trace('load')
+if os.environ.get('KIT_INSTALL_PULLED'):
+    # Probe before main can reacquire a lock on the new revision.
+    lock_path = BIN.with_name(BIN.name + '.kit-install.lock')
+    with lock_path.open() as probe:
+        try:
+            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            raise AssertionError('installer lock was not held across re-exec')
 def fixture_component():
     fixture_trace('component')
     return 'fixture installed'
+def installed_baseline(*args, **kwargs):
+    return {}  # never query real host CLIs from this fixture
 def items(*args, **kwargs):
     return [Item('tx', 'fixture', steps=[Step('fixture component', run=fixture_component)])]
 def restart_services(output, observations=None):
@@ -2883,6 +2896,49 @@ def restart_services(output, observations=None):
 
     def events(self):
         return [json.loads(line) for line in self.trace.read_text().splitlines()]
+
+    def test_held_installer_lock_refuses_before_stashing_or_pulling(self):
+        self.installer_fixture()
+        self.dirty()
+        (self.other / 'f').write_text('upstream advanced')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'advance')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
+        lock_path = Path(self.entry_env['KIT_BIN_DIR']).with_name('bin.kit-install.lock')
+        with lock_path.open('a+') as lock:
+            inode = lock_path.stat().st_ino
+            lock.write(f'{os.getpid()}\n')
+            lock.flush()
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            result = self.entry()
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f'installer lock {lock_path} held by PID {os.getpid()}', result.stdout)
+            self.assertEqual((self.head(self.clone), self.stashes(), self.git('status', '--porcelain')),
+                             before, result.stdout)
+            self.assertIn('let the holder finish, then retry; do not remove the lock file', result.stdout)
+            self.assertEqual([event[0] for event in self.events()], ['load'])
+        self.trace.write_text('')
+        result = self.entry()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.head(self.clone), self.head(self.other))
+        self.assertEqual(len(self.stashes()), 1)
+        self.assertEqual(lock_path.stat().st_ino, inode)
+        self.assertEqual([event[0] for event in self.events()], ['load', 'load', 'component', 'restart'])
+
+    def test_unknown_item_refuses_before_stashing_or_pulling(self):
+        self.installer_fixture()
+        self.dirty()
+        (self.other / 'f').write_text('upstream advanced')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'advance')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
+        for flag in ('--only', '--skip'):
+            with self.subTest(flag=flag):
+                result = self.entry(flag, 'nope')
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn('unknown item(s): nope', result.stderr)
+                self.assertEqual((self.head(self.clone), self.stashes(), self.git('status', '--porcelain')),
+                                 before, result.stdout)
 
     def test_entrypoint_runs_clean_disk_code_once_after_stashing(self):
         self.installer_fixture()

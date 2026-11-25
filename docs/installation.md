@@ -137,19 +137,21 @@ These rules do not change the separate [tmux installer](../tmux/README.md#instal
 `tmux/install.sh` and `tx install` still use their existing timestamp backups,
 including backups beside the command in the bin directory.
 
-Non-preview suite runs take a nonblocking advisory lock before writing the private
-installer receipt or running any component, and hold it through service restarts
-and the summary. The lock is beside the resolved binary directory:
-`~/.local/bin.kit-install.lock` by default, or `<KIT_BIN_DIR>.kit-install.lock`.
+The installer rejects unknown `--only` and `--skip` names before changing the
+checkout. Non-preview suite runs take a nonblocking advisory lock before any
+automatic stash or pull, and hold it across re-execution through component
+installs, service restarts and the summary. The lock is beside the resolved binary
+directory: `~/.local/bin.kit-install.lock` by default, or `<KIT_BIN_DIR>.kit-install.lock`.
 Overlapping runs targeting that directory fail immediately with the lock path and
-holder PID, without touching the receipt or installing anything. Let the holder
-finish, then retry the same command. Do not delete or replace the lock file to
+holder PID, without stashing, pulling, touching the receipt or installing anything.
+Let the holder finish, then retry the same command. Do not delete or replace the lock file to
 bypass a refusal: doing so permits separate writers. The kernel releases the lock
 when the installer exits, including after a crash; the persistent file and its old
 PID alone are not a live lock. Retry normally after confirming the old installer
 and any child host commands have ended; only a successful lock acquisition replaces
-old PID metadata. Dry-run, list and menu preview/cancellation take no lock and
-create no receipt or lock file. This serializes suite installers for the same
+old PID metadata. Dry-run and list take no lock and write no receipt. With automatic
+checkout preparation disabled, menu cancellation also takes no lock and writes no
+receipt. This serializes suite installers for the same
 binary directory, not unrelated manual host commands or native updater ownership.
 
 Output streams during each install step, including native prompts. Verbose output
