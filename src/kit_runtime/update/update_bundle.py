@@ -2039,6 +2039,37 @@ def automatic_recovery(root, profiles, *, plan=None, prior=None, check=False):
                              _recovery=managed, _locked=True)
 
 
+def scoped_resume_action(root, receipt):
+    """Inspect scoped publication evidence while the updater lock is held."""
+    error = f'Invalid scoped deployment receipt {receipt}; preserve it and reconcile it with the backup manifest'
+    safe_path(receipt)
+    if not receipt.exists():
+        return None
+    try:
+        scoped = json.loads(receipt.read_text())
+    except ValueError as cause:
+        raise ValueError(error) from cause
+    if not isinstance(scoped, dict) or not isinstance(scoped.get('status'), str):
+        raise ValueError(error)
+    if scoped['status'] != 'incomplete':
+        return None
+    selected, rows = scoped.get('selected'), scoped.get('profiles')
+    if (not isinstance(selected, list) or not selected or not isinstance(rows, dict)
+            or any(not isinstance(name, str) or not isinstance(rows.get(name), dict) for name in selected)
+            or not all(isinstance(scoped.get(key), str) for key in ('source', 'revision'))):
+        raise ValueError(error)
+    if not any(rows[name].get('phase') is not None for name in selected):
+        return None
+    command = ['python3', 'scripts/update_bundle.py', '--hermes-home', str(root)]
+    for name in selected:
+        command.extend(['--profile', name])
+    command.extend(['--source', scoped['source'], '--revision', scoped['revision'],
+                    '--native-python', '/path/to/original/hermes-python'])
+    return ('Resume the original scoped deployment first. In the checkout where you ran it, replace '
+            '/path/to/original/hermes-python with the original interpreter path and run:\n'
+            f'{shlex.join(command)}\nThen retry hermes kit update.')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--hermes-home', required=True, type=Path)
@@ -2147,20 +2178,10 @@ def main(argv=None):
         except (ValueError, OSError) as error:
             profile_error = error
         try:
-            safe_path(scoped_receipt)
-            if scoped_receipt.exists():
-                scoped = json.loads(scoped_receipt.read_text())
-                if scoped.get('status') == 'incomplete' and any(
-                        scoped['profiles'].get(name, {}).get('phase') is not None for name in scoped['selected']):
-                    command = ['python3', 'scripts/update_bundle.py', '--hermes-home', str(root)]
-                    for name in scoped['selected']:
-                        command.extend(['--profile', name])
-                    command.extend(['--source', scoped['source'], '--revision', scoped['revision']])
-                    print(json.dumps({'status': 'incomplete',
-                                      'action': f'Resume the original scoped deployment first: {shlex.join(command)} '
-                                                '--native-python <original Hermes Python path>. '
-                                                'Then retry hermes kit update.'}, indent=2))
-                    return 1
+            action = scoped_resume_action(root, scoped_receipt)
+            if action:
+                print(json.dumps({'status': 'incomplete', 'action': action}, indent=2))
+                return 1
             # Re-read after lock contention before deciding whether the journal may
             # account for an incomplete native publication's dangling shared links.
             safe_path(recovery_receipt)

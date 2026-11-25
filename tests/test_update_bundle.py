@@ -5,6 +5,7 @@ import io
 import fcntl
 import json
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -1141,11 +1142,11 @@ class ScopedUpdateTests(unittest.TestCase):
                 with self.subTest(extra=extra):
                     code, blocked = run([*fleet_args, *extra])
                     self.assertEqual((code, blocked['status']), (1, 'incomplete'), blocked)
-                    self.assertIn('Resume', blocked['action'])
-                    self.assertIn('python3 scripts/update_bundle.py', blocked['action'])
-                    self.assertIn('--profile default', blocked['action'])
-                    self.assertIn(str(reviewed), blocked['action'])
-                    self.assertIn(self.revision, blocked['action'])
+                    instructions, command, next_step = blocked['action'].splitlines()
+                    self.assertIn('checkout where you ran it', instructions)
+                    self.assertEqual(shlex.split(command), ['python3', 'scripts/update_bundle.py',
+                                                           *scoped_args[:-1], '/path/to/original/hermes-python'])
+                    self.assertIn('retry hermes kit update', next_step)
                     self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), head)
                     self.assertEqual([path.read_bytes() for path in paths], before)
                     self.assertEqual(receipt.read_bytes(), saved)
@@ -1161,6 +1162,20 @@ class ScopedUpdateTests(unittest.TestCase):
             self.assertEqual((code, updated['status']), (0, 'updated'), updated)
             self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), latest)
             self.assertEqual([path.read_bytes() for path in paths], [b'latest\n'] * len(paths))
+
+    def test_fleet_update_refuses_unreadable_scoped_evidence(self):
+        receipt = self.scan_blocked_receipt()
+        for data in (b'{', b'null', b'{"status":"incomplete"}'):
+            with self.subTest(data=data):
+                receipt.write_bytes(data)
+                with patch.object(self.mod, 'prepare') as prepare, contextlib.redirect_stdout(io.StringIO()) as output:
+                    code = self.mod.main(['--hermes-home', str(self.home), '--check'])
+                result = json.loads(output.getvalue())
+                self.assertEqual((code, result['status']), (1, 'incomplete'))
+                self.assertIn(str(receipt), result['error'])
+                self.assertIn('preserve', result['error'])
+                self.assertEqual(receipt.read_bytes(), data)
+                prepare.assert_not_called()
 
     def test_source_race_during_scan_prevents_publication(self):
         def race(action, *args):
