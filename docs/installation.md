@@ -186,9 +186,11 @@ unit references are held with the named input/service and an inspection/retry ac
 Hosts without Linux user systemd report restarts unavailable. Restart failures make installation fail.
 The installer saves observed changes beside its lock before moving on to the next component. If it is
 interrupted or a restart fails, fix the reported problem and rerun with the same selection. The installer
-rechecks the affected consumers even if the refreshed payload is now unchanged. Once the restart work
-is complete, an unchanged repeat requests no restart. A failed payload holds its consumer while independent
-successful changes remain eligible.
+rechecks the affected consumers even if the refreshed payload is now unchanged. Unverified unit
+references leave restart work pending. After a service pass, the installer records which units
+restarted successfully so retries can skip them for the same payload. Once the restart work is
+complete, an unchanged repeat requests no restart. A failed payload holds its consumer while
+independent successful changes remain eligible.
 
 Hermes owns gateway disposition on both setup and installed-update paths. Its native
 `gateway_restart` fields (including `deferred`, `pending` and `not_needed`) reach the outer receipt;

@@ -1017,6 +1017,37 @@ esac
         self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
         self.assertEqual(self.calls('systemctl --user try-restart'), [restart, restart])
 
+    def test_retry_keeps_owed_restart_when_unit_references_are_temporarily_unavailable(self):
+        self.fake('systemctl', LOGGING + r'''
+case "$*" in
+  *list-units*) printf '%s\n' 'kit-bolt.service loaded active running Bolt' 'kit-other.service loaded active running Other' ;;
+  *show*)
+    if [[ "$*" == *kit-other.service* && -n "$FAIL_SHOW" ]]; then exit 1; fi
+    printf 'ExecStart={ path=%s ; }\n' "$FAKE_HOME/.local/bin/pi-bolt" ;;
+  *try-restart*kit-other.service) if [[ -n "$FAIL_RESTART" ]]; then exit 17; fi ;;
+esac
+''')
+        self.bolt.write_text(PI + '# previous release\n')
+        args = ('--only', 'pi-bolt')
+        failed = self.install(*args, env={'FAIL_RESTART': '1'})
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertIn('service restart failed: kit-other.service', failed.stdout)
+        bolt = 'systemctl --user try-restart kit-bolt.service'
+        other = 'systemctl --user try-restart kit-other.service'
+        self.assertEqual(self.calls('systemctl --user try-restart'), [bolt, other])
+
+        held = self.install(*args, env={'FAIL_SHOW': '1'})
+        self.assertEqual(held.returncode, 0, held.stdout + held.stderr)
+        self.assertIn('kit-other.service: held (unverified executable/config references', held.stdout)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [bolt, other])
+
+        recovered = self.install(*args)
+        self.assertEqual(recovered.returncode, 0, recovered.stdout + recovered.stderr)
+        self.assertIn('kit-other.service: restarted', recovered.stdout)
+        unchanged = self.install(*args)
+        self.assertEqual(unchanged.returncode, 0, unchanged.stdout + unchanged.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [bolt, other, other])
+
     def test_restart_timeout_does_not_drop_independent_changed_consumer(self):
         path = str(self.bolt)
         observation = {'pi-bolt': {'status': 'installed', 'change': 'changed',

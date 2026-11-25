@@ -1467,7 +1467,7 @@ def read_pending_restarts(path):
                 not isinstance(row, dict) or any(
                     not isinstance(row.get(field), list) or
                     any(not isinstance(value, str) for value in row[field])
-                    for field in ('changed_inputs', 'directories'))
+                    for field in ('changed_inputs', 'directories', 'restarted_units'))
                 for row in pending.values()):
             raise ValueError('invalid pending restart record')
         return pending
@@ -1494,7 +1494,11 @@ def write_pending_restarts(path, pending):
 
 
 def restart_services(output, observations=None, settled=None):
-    """Restart proven consumers and mark changed items whose service decisions completed."""
+    """Restart proven consumers, updating any supplied restart progress sets.
+
+    An item's restarted_units tracks its successful units; settled tracks items
+    that no longer need a service decision.
+    """
     observations = observations or {}
     candidates = {key: row for key, row in observations.items()
                   if row['change'] in ('changed', 'unverified')}
@@ -1532,6 +1536,8 @@ def restart_services(output, observations=None, settled=None):
                                     '--property=EnvironmentFiles', '--property=Environment'],
                                    capture_output=True, text=True, timeout=30)
         except (OSError, subprocess.SubprocessError) as exc:
+            # An unverified unit could still consume any of these changed inputs.
+            unsettled.update(candidates)
             reasons.append(f'{unit}: held (cannot verify executable/config references: {exc}); '
                            f'inspect systemctl --user show {unit} and restart manually if affected')
             continue
@@ -1540,6 +1546,7 @@ def restart_services(output, observations=None, settled=None):
                              if line.startswith(('ExecStart=', 'EnvironmentFiles=')))
         references = {Path(value) for value in re.findall(r'(?<![\w./-])(/[^\s;"{}]+)', consumed)}
         if shown.returncode or not references:
+            unsettled.update(candidates)
             reasons.append(f'{unit}: held (unverified executable/config references for '
                            f'{", ".join(candidates)}); inspect systemctl --user show {unit} and restart manually if affected')
             continue
@@ -1575,12 +1582,13 @@ def restart_services(output, observations=None, settled=None):
             if row['status'] == 'failed' or row['change'] == 'unverified':
                 blocked.add(key)
             elif row['change'] == 'changed':
-                affected.add(key)
+                matched.add(key)
+                if unit not in row.get('restarted_units', ()):
+                    affected.add(key)
         if blocked:
             unsettled.update(affected | blocked)
             reasons.append(f'{unit}: held (incomplete/unverified {", ".join(sorted(blocked))}); repair those inputs before manual restart')
         elif affected:
-            matched.update(affected)
             argv = [ctl, '--user', 'try-restart', unit]
             output.line('  $ ' + shlex.join(argv), 'command')
             try:
@@ -1595,18 +1603,23 @@ def restart_services(output, observations=None, settled=None):
                     unsettled.update(affected)
                     reasons.append(f'{unit}: restart failed (exit {code})')
                 else:
+                    for key in affected:
+                        completed = observations[key].get('restarted_units')
+                        if completed is not None:
+                            completed.add(unit)
                     reasons.append(f'{unit}: restarted ({", ".join(sorted(affected))} changed)')
         else:
-            reasons.append(f'{unit}: skipped (no proven changed consumer input)')
+            reasons.append(f'{unit}: skipped (no outstanding proven changed consumer input)')
     for key, row in candidates.items():
-        if key not in matched and row['status'] != 'failed' and row['change'] == 'changed':
+        if key not in matched | unsettled and row['status'] != 'failed' and row['change'] == 'changed':
             reasons.append(f'{key}: no proven active consumer for {", ".join(row["changed_inputs"])}; '
                            'no restart requested; inspect unit executable/config references if a service uses these inputs')
     if settled is not None:
         settled.update(key for key, row in candidates.items()
                        if key not in unsettled and row['change'] == 'changed' and row['status'] != 'failed')
     if failed:
-        raise RuntimeError('service restart failed: ' + ', '.join(failed) + '; ' + '; '.join(reasons))
+        raise RuntimeError('service restart failed: ' + ', '.join(failed) + '; ' + '; '.join(reasons)
+                           + '; resolve the named service errors and rerun ./install.sh with the same options')
     return '; '.join(reasons) or 'no active supported consumers; no service restart requests'
 
 
@@ -1694,7 +1707,8 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
             changed_inputs = set(paths) | set(owed.get('changed_inputs', []))
             directories = set(before.get('directories', [])) | set(after.get('directories', []))
             directories = (directories & set(paths)) | set(owed.get('directories', []))
-            row = dict(changed_inputs=sorted(changed_inputs), directories=sorted(directories))
+            # New changes invalidate restart successes for the previous payload.
+            row = dict(changed_inputs=sorted(changed_inputs), directories=sorted(directories), restarted_units=[])
             if row != owed:
                 pending[key] = row
                 write_pending_restarts(state_path, pending)
@@ -1869,7 +1883,8 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                     directories = set(row['before'].get('directories', [])) | set(owed['directories'])
                     service_observations[key] = dict(
                         row, change=change, before=dict(row['before'], directories=sorted(directories)),
-                        changed_inputs=sorted(set(row['changed_inputs']) | set(owed['changed_inputs'])))
+                        changed_inputs=sorted(set(row['changed_inputs']) | set(owed['changed_inputs'])),
+                        restarted_units=set(owed['restarted_units']))
             settled = set()
             try:
                 detail = restart_services(output, service_observations, settled)
@@ -1877,9 +1892,17 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                 record('services', 'installed', detail, 0, decision=detail)
             except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
                 record('services', 'failed', str(exc), 1, reason=str(exc))
-            settled_keys = {pending_key(key) for key in settled}
-            if pending.keys() & settled_keys:
-                write_pending_restarts(state_path, {k: row for k, row in pending.items() if k not in settled_keys})
+            remaining = dict(pending)
+            for key, row in service_observations.items():
+                if 'restarted_units' not in row:
+                    continue
+                state_key = pending_key(key)
+                if key in settled:
+                    del remaining[state_key]
+                else:
+                    remaining[state_key] = dict(pending[state_key], restarted_units=sorted(row['restarted_units']))
+            if remaining != pending:
+                write_pending_restarts(state_path, remaining)
     output.line('\nSummary:', 'heading')
     for key, outcome, detail in results:
         output.line(f'  {key:<9} {outcome:<9} {detail}', outcome)
