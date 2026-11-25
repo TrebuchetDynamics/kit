@@ -1579,24 +1579,37 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install', basel
 
 
 @contextmanager
-def installer_lock(output):
+def installer_lock(output, before_pull=False):
     # Resolve aliases so checkouts targeting the same binary directory share one
     # persistent inode. Never unlink it: that would allow two independent locks.
     binary_dir = BIN.resolve()
     lock_path = binary_dir.with_name(binary_dir.name + '.kit-install.lock')
     lock = None
+    placement_error = None
     try:
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        # Git must not stash or replace the directory entry that names our lock.
+        if before_pull and ((ROOT / '.git').exists() or (ROOT / '.git').is_symlink()):
+            if lock_path.is_relative_to(ROOT) or lock_path.resolve().is_relative_to(ROOT):
+                placement_error = (f'installer lock {lock_path} is inside the Git checkout; '
+                                   'set KIT_BIN_DIR outside it or retry with --no-pull.')
         inherited = os.environ.get('KIT_INSTALL_LOCK_FD')
-        lock = (os.fdopen(os.dup(int(inherited)), 'a+', encoding='utf-8') if inherited
-                else lock_path.open('a+', encoding='utf-8'))
+        if not placement_error:
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+        if inherited:
+            lock = os.fdopen(os.dup(int(inherited)), 'a+', encoding='utf-8')
+        else:
+            # If a lock already exists, preserve the usual contention diagnostic.
+            lock = lock_path.open('r+' if placement_error else 'a+', encoding='utf-8')
         actual, expected = os.fstat(lock.fileno()), lock_path.stat()
         if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
             raise OSError('inherited installer lock does not match the binary directory')
-    except (OSError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         if lock is not None:
             lock.close()
-        output.line(f'  FAILED: cannot open installer lock {lock_path}: {exc}', 'failed')
+        detail = f'cannot open installer lock {lock_path}: {exc}'
+        if placement_error and isinstance(exc, FileNotFoundError):
+            detail = placement_error
+        output.line(f'  FAILED: {detail}', 'failed')
         yield None
         return
     with lock:
@@ -1611,6 +1624,10 @@ def installer_lock(output):
             return
         except OSError as exc:
             output.line(f'  FAILED: cannot acquire installer lock {lock_path}: {exc}', 'failed')
+            yield None
+            return
+        if placement_error:
+            output.line(f'  FAILED: {placement_error}', 'failed')
             yield None
             return
         if not inherited:
@@ -1946,7 +1963,7 @@ def main(argv=None):
     if (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
             or os.environ.get('KIT_INSTALL_NO_PULL')):
         return run_suite(args, parser, output)
-    with installer_lock(output) as lock:
+    with installer_lock(output, before_pull=True) as lock:
         if lock is None:
             return 1
         return run_suite(args, parser, output, lock=lock, argv=argv)

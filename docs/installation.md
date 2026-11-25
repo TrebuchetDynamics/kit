@@ -144,15 +144,16 @@ installs, service restarts and the summary. The lock is beside the resolved bina
 directory: `~/.local/bin.kit-install.lock` by default, or `<KIT_BIN_DIR>.kit-install.lock`.
 Overlapping runs targeting that directory fail immediately with the lock path and
 holder PID, without stashing, pulling, touching the receipt or installing anything.
-Let the holder finish, then retry the same command. Do not delete or replace the lock file to
-bypass a refusal: doing so permits separate writers. The kernel releases the lock
-when the installer exits, including after a crash; the persistent file and its old
-PID alone are not a live lock. Retry normally after confirming the old installer
-and any child host commands have ended; only a successful lock acquisition replaces
-old PID metadata. Dry-run and list take no lock and write no receipt. With automatic
-checkout preparation disabled, menu cancellation also takes no lock and writes no
-receipt. This serializes suite installers for the same
-binary directory, not unrelated manual host commands or native updater ownership.
+Let the holder finish, then retry the same command. Do not delete or replace the
+lock file: doing so permits separate writers. If the lock path is inside the Git
+checkout, use a `KIT_BIN_DIR` outside the checkout or run with `--no-pull` so Git
+cannot stash or replace the lock. The kernel releases the lock when the installer
+exits, including after a crash; the persistent file and its old PID alone are not
+a live lock. Retry normally after confirming the old installer and any child host
+commands have ended. Dry-run and list take no lock and write no receipt. With
+automatic checkout preparation disabled, menu cancellation also takes no lock and
+writes no receipt. This serializes suite installers for the same binary directory,
+not unrelated manual host commands or native updater ownership.
 
 Output streams during each install step, including native prompts. Verbose output
 is on by default (`--verbose`) and shows shell-quoted commands; `--quiet` shows summaries and failure diagnostics,

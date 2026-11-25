@@ -2904,7 +2904,7 @@ def restart_services(output, observations=None):
         self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'advance')
         self.run_git('git', '-C', str(self.other), 'push', '-q')
         before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
-        lock_path = Path(self.entry_env['KIT_BIN_DIR']).with_name('bin.kit-install.lock')
+        lock_path = Path(self.entry_env['KIT_BIN_DIR']).with_name('bin.kit-install.lock').resolve()
         with lock_path.open('a+') as lock:
             inode = lock_path.stat().st_ino
             lock.write(f'{os.getpid()}\n')
@@ -2924,6 +2924,38 @@ def restart_services(output, observations=None):
         self.assertEqual(len(self.stashes()), 1)
         self.assertEqual(lock_path.stat().st_ino, inode)
         self.assertEqual([event[0] for event in self.events()], ['load', 'load', 'component', 'restart'])
+
+    def test_checkout_preparation_does_not_stash_its_own_lock(self):
+        self.installer_fixture()
+        self.dirty()
+        env = {'KIT_BIN_DIR': str(self.clone / 'bin')}
+        lock_path = self.clone.resolve() / 'bin.kit-install.lock'
+        before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
+
+        result = self.entry(env=env)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'installer lock {lock_path} is inside the Git checkout', result.stdout)
+        self.assertIn('--no-pull', result.stdout)
+        self.assertFalse(lock_path.exists())
+        self.assertEqual((self.head(self.clone), self.stashes(), self.git('status', '--porcelain')), before)
+
+        result = self.entry('--no-pull', env=env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.head(self.clone), self.stashes()), before[:2])
+        with lock_path.open('r+') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            inode, metadata = lock_path.stat().st_ino, f'{os.getpid()}\n'
+            lock.write(metadata)
+            lock.truncate()
+            lock.flush()
+            result = self.entry(env=env)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f'installer lock {lock_path} held by PID {os.getpid()}', result.stdout)
+        result = self.entry(env=env)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('--no-pull', result.stdout)
+        self.assertEqual((lock_path.stat().st_ino, lock_path.read_text()), (inode, metadata))
+        self.assertEqual((self.head(self.clone), self.stashes()), before[:2])
 
     def test_unknown_item_refuses_before_stashing_or_pulling(self):
         self.installer_fixture()
