@@ -61,7 +61,7 @@ another repository audit.
 ## Boundaries
 
 - Not a default repair campaign; use `/bug-harvest` only for explicitly authorized
-  local fixes. Publication does not start Orbi or release its pause.
+  local fixes. Publication does not activate Orbi.
 - Not a requirement decision; use `/plan-with-me` for an unresolved product rule.
 - Not a framework migration or proof that all possible executions are safe.
   Use `/improve-codebase-architecture` for a broader structural review.

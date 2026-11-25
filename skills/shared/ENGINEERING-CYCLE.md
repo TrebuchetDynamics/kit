@@ -2,8 +2,8 @@
 
 Optional routing reference: consult when a method is needed and its selection is
 unclear. GitHub Issues own executable work; retained fix/apply modes implement only
-their explicitly accepted scope under ownership, PR and review gates. Orbi remains
-paused and live-unqualified. Engineering protocols add techniques, never authority.
+their explicitly accepted scope under ownership, PR and review gates.
+Engineering protocols add techniques, never authority.
 
 Caller scope and saved stop/batch limits control continuation. Default interactive
 execution completes one slice including authorized recovery and closeout; an

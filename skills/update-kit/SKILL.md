@@ -86,13 +86,13 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this scope and 
 - Choosing another checkout/cache, repairing dirt with force, or deleting failed staging.
 - Running source/network/host probes in preview or scheduling background updates.
 - Hiding secondary source changes, partial failures or native ownership uncertainty.
-- Starting Orbi or treating installation as live qualification.
+- Running extra Orbi lifecycle actions outside the installer or treating installation as live qualification.
 
 ## Boundaries
 
 - Not a project updater, native-host logic fork or background scheduler.
 - For choosing a skill, use `/ask-kit`; for repository plans, use `/plan-with-me`.
-- For Orbi lifecycle operations, use `/orbi` with its own authority and paused gates.
+- For a single deployment’s lifecycle operations, use `/orbi`. Suite Orbi refresh follows [installer selection](../../docs/installation.md#orbi-cli).
 
 **Done when:** the invocation has a source/installer/reload receipt or a precise
 preserving refusal with a repair action; unrun live facts remain `NOT_CHECKED`.

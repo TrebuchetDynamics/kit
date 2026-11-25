@@ -1,8 +1,8 @@
 # Product scope and architecture
 
 Kit supplies coding-agent skills and optional native Hermes integration.
-GitHub Issues own executable work; Orbi is the delivery successor, still paused
-and live-unqualified.
+GitHub Issues own executable work; Orbi is the delivery successor. Explicit
+lifecycle commands authorize activation; live delivery requires separate evidence.
 This document specifies current product contracts and accepted planned directions,
 not a delivery ledger. Operator procedures belong in [installation](installation.md),
 [cross-host setup](cross-host.md) and [removal/recovery](uninstall.md); current work
@@ -56,7 +56,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Current components
 
@@ -138,7 +138,7 @@ offline helper tests prove none of those live outcomes by themselves.
 Measured native qualification remains pending. Model-driven recovery, original-environment delivery
 and externally enforced spending/descendant limits still require their own evidence
 and authority. Offline checks do not establish actual model startup or universal
-latency. Removal does not satisfy these obligations or enable paused Orbi.
+latency. Removal does not satisfy these obligations or activate Orbi.
 
 ## Faster ready-task startup
 
@@ -154,7 +154,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Autonomous execution authority
 
@@ -205,7 +205,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## TODO-first execution without Kanban
 
@@ -221,7 +221,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## TODO-owned task priority
 
@@ -234,7 +234,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Checkable core-document completeness
 
@@ -506,7 +506,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Backlog replan (2026-10-15)
 
@@ -563,7 +563,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Compact task ledger
 
@@ -572,7 +572,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Managed Hermes checkout recovery
 
@@ -631,7 +631,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Interactive checkout writer (2026-10-20)
 
@@ -648,7 +648,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Fleet TUI action surface
 
@@ -657,7 +657,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Fleet blockers report
 
@@ -666,7 +666,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Runner observation resilience
 
@@ -680,7 +680,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Planning authority and shared protocol (2026-11-01)
 
@@ -689,7 +689,7 @@ The [original requirements and remaining qualification](https://github.com/Trebu
 are immutable migration evidence, not current runner instructions. Any still-required
 product outcome must be reconciled into GitHub Issues with its original scope,
 proof and human/live gates; removal is not acceptance or completion.
-See [paused GitHub/Orbi cutover](github-native.md).
+See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Skill adherence and Definition of Done (2026-11-01)
 

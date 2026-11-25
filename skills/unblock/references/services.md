@@ -1,7 +1,7 @@
 # Service boundaries
 
-Orbi remains paused and live-unqualified. An Unblock invocation does not enable
-a deployment, release deliberate-stop state or authorize interruption.
+An Unblock invocation does not enable a deployment, release deliberate-stop state
+or authorize interruption.
 
 For separately authorized operations on a supported deployment:
 

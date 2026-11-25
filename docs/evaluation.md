@@ -5,8 +5,8 @@ worktrees and recovery evidence; documentation cleanup does not satisfy unresolv
 
 ## Current qualification
 
-Orbi remains paused and live-unqualified. Complete the single-repository
-[cutover pilot](github-native.md#cutover) before any fleet expansion. Establish
+Activation does not qualify live delivery. Use the single-repository
+[cutover pilot](github-native.md#cutover) to establish
 actual issue pickup, implementation, PR creation, independent review, required CI,
 merge and failed-run recovery without duplicate work or lost candidates.
 Preserve explicit pauses, sensitive-change controls and human-only acceptance.

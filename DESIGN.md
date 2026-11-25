@@ -3,11 +3,11 @@
 ## Current scope
 
 Kit supplies planning and repository-workflow skills. GitHub Issues own executable
-work and Orbi owns delivery. Orbi remains paused and live-unqualified.
+work and Orbi owns delivery. Activation requires an explicit lifecycle command; live delivery needs separate evidence.
 
 Current product contracts live in [the product specification](docs/project.md).
 Use [GitHub-native delivery](docs/github-native.md) for the support boundary,
-publication, ownership and qualification gates. Paseo remains an agent host, not
+publication, ownership and live qualification. Paseo remains an agent host, not
 a Kit executor dashboard.
 
 ## Presentation principles

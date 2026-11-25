@@ -158,8 +158,7 @@ and PR/review gates; see [workflows](workflows.md#commands).
 The executor and task CLI are removed. Reload the current Kit skills and use
 [GitHub-native handoff](github-native.md). Preserve existing local tasks, attempts,
 worktrees and recovery evidence; do not reinstall the old executor or create a new
-store. Orbi remains paused and live-unqualified; this error is not permission to
-start it.
+store. This error does not authorize activation.
 
 ### `docs.py check` reports findings
 

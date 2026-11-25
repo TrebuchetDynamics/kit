@@ -179,7 +179,7 @@ part of this skill.
   changes, pulls verified `main` and delivers to `main` without inspecting other worktrees.
 - Preserve files, worktrees, refs, scheduler state and task status. No cleanup,
   forced ignored-file staging, stash, reset, rebase, force-push, protection change,
-  deployment or release is authorized. Observation does not activate paused Orbi.
+  deployment or release is authorized. Observation does not activate Orbi.
 - Stop for missing credentials, an unresolved conflict, a failed required gate,
   unsafe landing route or unresolved product decision; report the exact blocker
   and the next action.

@@ -49,8 +49,8 @@ do not force a takeover or use the retired command.
 Use terminal `hermes kit doctor --json` for registration and plugin diagnostics.
 Use `hermes kit update` or `hermes kit update --check` for synchronous
 maintenance and its printed receipt. These are not chat-output equivalents.
-GitHub issue/PR evidence and read-only Orbi diagnostics own delivery status; Orbi
-remains paused and live-unqualified.
+GitHub issue/PR evidence and read-only Orbi diagnostics own delivery status;
+these reads do not activate Orbi or qualify live delivery.
 
 ## Source-checkout scripts
 

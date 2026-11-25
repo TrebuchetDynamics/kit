@@ -21,9 +21,9 @@ Issues → Orbi/Pi implementation and tests → PR, independent review and merge
 [Using Orbi](#using-orbi) · [Development flow](#github-native-development-flow) ·
 [Skills](#the-skills) · [Safety](#safety-before-installing) · [Docs](#documentation)
 
-**Orbi remains paused and live-unqualified** pending the
-[pilot and cutover gates](docs/github-native.md#cutover). Installing Kit or publishing
-an issue does not authorize activation. Preserve existing work and recovery evidence.
+[Explicit Orbi lifecycle commands](#using-orbi) authorize activation after technical
+checks. Publishing an issue does not authorize activation, and activation does not
+qualify live delivery. Preserve existing work and recovery evidence.
 
 ## Install
 
@@ -171,9 +171,8 @@ execute; explicit pauses and incomplete planning stay undispatched. An existing
 Orbi deployment may pick up newly ready issues immediately, but a label is not
 pickup, passing tests, independent review or protected merge.
 
-**Activation is a separate gate.** Orbi stays paused and live-unqualified until the
-[pilot and cutover checks](docs/github-native.md#cutover) pass. Keep scoped
-credentials, existing branch protection and strict required CI, independent review,
+**Activation does not replace delivery gates.** Keep scoped credentials, existing
+branch protection and strict required CI, independent review,
 sensitive-change controls and human-only acceptance. Dispatch does not replace them.
 Branch protection is not a Kit setup/start prerequisite.
 See [publication, migration and deployment](docs/github-native.md).
@@ -185,14 +184,15 @@ and protection-only HTTP 403 are informational, not scheduling blockers; a 403
 leaves protection details unknown, not absent. Authorized setup/start uses the normal
 activation path without PR-only mode, special opt-in, protection repair, paid GitHub
 plan, engine upgrade/proof or second approval on that basis. Authentication,
-repository access, ownership, explicit pauses and other gates still apply.
+repository access, ownership and other technical checks still apply.
 Existing protections, CI, review and merge requirements remain unchanged. Startup
 is not successful merge or live qualification; prepare-only and dry-run never activate.
 See [protection diagnostics](docs/github-native.md#read-protection-diagnostics-safely).
 
-One Orbi deployment owns one repository. The suite installer refreshes verified
-local Linux deployments when Orbi is selected. Use `--skip orbi` to keep them
-untouched, including when they are paused.
+One Orbi deployment owns one repository. `install.sh` with Orbi selected authorizes
+refresh and activation of verified local Linux deployments. Use `--skip orbi` to
+leave them untouched, including when paused. Activation requires verified unit and
+file ownership, a validated release pin and a passing `orbi check`.
 
 Use `/orbi [status|version|setup|start|update|stop|help]` in Pi or Hermes, `/kit:orbi` in Claude
 Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
@@ -202,10 +202,10 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | Bare skill invocation or `status` | Read-only status for the repository; missing evidence is unavailable, not an empty queue. |
 | `version` | Read-only selected deployment engine release/revision and verification evidence, without full status or global CLI probes. |
 | `help` | Read-only action reference, without a repository or deployment. |
-| `setup` | Start by default: map to `start`, preparing/validating if absent, then activate only with resolved gates. Explicit invocation expresses scheduling intent. |
+| `setup` | Start by default: map to `start`, preparing and validating if absent. |
 | `setup --prepare-only` | Prepare source/configuration without scheduling or timer activation (direct helper `setup`). |
-| `start` | Prepare if absent, then activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
-| `update` | Pause owned timers, defer while workers finish, then validate the newest official release and start scheduling, even after an earlier `stop`. Use `update --stop` to update and leave scheduling stopped. It is not `/update-kit`. |
+| `start` | The command authorizes scheduling after technical checks. Prepare first if absent. |
+| `update` | The command authorizes maintenance and activation, even after an earlier `stop`. Pause owned timers, defer while workers finish, then pin and validate the newest official release before starting scheduling. `update --stop` leaves scheduling stopped. Not `/update-kit`. |
 | `stop` | Disable owned timers without killing active workers; report draining while they finish. |
 
 Linux supports lifecycle changes. macOS supports status, version and help only.
@@ -232,9 +232,9 @@ orbi doctor --config /path/to/orbi.toml   # read-only diagnostics
 ```
 
 Upstream `orbi setup` and `orbi install-units` can activate timers. Prefer the
-Kit lifecycle skill with `setup --prepare-only` for non-activating preparation; deployment changes require a separate
-checkout and their own authorization. Installing or updating files is not runtime
-activation, and installing the CLI does not start workers or qualify delivery.
+Kit lifecycle skill with `setup --prepare-only` for non-activating preparation.
+Deployments use a separate checkout. Installing the CLI alone does not start
+workers or qualify delivery.
 
 Read [GitHub-native deployment](docs/github-native.md#one-repository-per-deployment)
 and the [current lifecycle reference](skills/orbi/references/lifecycle.md) for
@@ -281,7 +281,7 @@ without `--prepare-only`, public resume is rejected before mutation with the cor
 command. Other incomplete states need deliberate repair.
 `setup --prepare-only` does not activate scheduling or qualify live recovery, isolation or
 delivery. Direct Python helper `setup` remains non-activating; `--prepare-only` is a
-public skill flag only. Missing/failed activation gates name the blocker and next safe
+public skill flag only. Failed or unknown activation checks name the blocker and next safe
 action, never a silent preparation-only success. Keep credentials out of Git and preserve workers and recovery state.
 
 <details>
