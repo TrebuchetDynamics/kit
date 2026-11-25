@@ -2219,7 +2219,11 @@ def main(argv=None):
             result['sources'] = {str(p): {k: s[k] for k in ('before', 'after')} for p, s in plan['sources'].items()}
             result['skill_files'] = len(plan['writes'])
             result['linked_profiles'] = [{k: r[k] for k in ('profile', 'target')} for r in linked_profiles(profiles)]
-            changed = bool(plan['writes']) or any(s['before'] != s['after'] for s in plan['sources'].values())
+            # An applied update whose activation ended incomplete still owes one restart and host refresh.
+            owed = state_dir / 'owed.json'
+            safe_path(owed)
+            changed = (bool(plan['writes']) or any(s['before'] != s['after'] for s in plan['sources'].values())
+                       or owed.exists())
             missing = any(not plugin_dir(h).exists() for _, h in profiles)
             result['drift'] = plan['drift']
             # Profile edits reset to the release or removed (bytes in the backup); port any
@@ -2235,6 +2239,11 @@ def main(argv=None):
                 if plan['writes']:
                     result['backup'] = str(state_dir / stamp)
                 apply(plan, state_dir / stamp)
+                if changed:
+                    owed_tmp = state_dir / 'owed.tmp'
+                    safe_path(owed_tmp)
+                    owed_tmp.write_text(json.dumps({'started_ns': result['started_ns']}) + '\n')
+                    owed_tmp.replace(owed)
                 before = config_snapshot(profiles)
                 # Refresh even on equal revisions: a prior setup/reload may have failed.
                 # Plugin activation also re-applies each profile's command menu and settings.
@@ -2277,6 +2286,8 @@ def main(argv=None):
                         start_quiet_restart(root, state_dir, result['started_ns'], gateway_pid(root))
                 else:
                     result['gateway_restart'] = 'not_running'
+                if result['status'] == 'updated' and result['gateway_restart'] != 'not_needed':
+                    owed.unlink(missing_ok=True)
             result['note'] = ('Existing chats may retain loaded instructions. The gateway restarts only when no chat '
                               'turn is in flight; while one is, the restart is deferred and retried for up to 6 h, '
                               'never forced. It then refreshes commands and Telegram menus; the durable restart receipt '

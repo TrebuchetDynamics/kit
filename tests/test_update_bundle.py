@@ -558,6 +558,34 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual([r['gateway_restart'] for r in receipts], ['requested', 'not_needed'])
         self.assertEqual(restart.call_count, 1)
 
+    def test_rerun_after_incomplete_changed_update_still_restarts_and_refreshes_hosts(self):
+        self.advance()
+        prepare = self.mod.prepare
+        statuses = iter(['incomplete', 'ready', 'ready'])
+        receipts = []
+        def finalize(source, root, profiles, **_):
+            status = next(statuses)
+            return [{'profile': n, 'status': status} for n, _ in profiles]
+        with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                          'live_profiles', self.setup_stub.live_profiles), \
+             patch.object(self.mod, 'finalize_profiles', side_effect=finalize), \
+             patch.object(self.mod, 'gateway_running', return_value=True), \
+             patch.object(self.mod, 'chat_turns', return_value=0), \
+             patch.object(self.mod, 'refresh_hosts', return_value=[{'item': 'claude', 'status': 'ok', 'exit': 0}]) as hosts, \
+             patch.object(self.mod, 'request_gateway_restart', return_value=4242) as restart, \
+             contextlib.redirect_stdout(io.StringIO()):
+            for code in (1, 0, 0):
+                self.assertEqual(self.mod.main(['--hermes-home', str(self.home)]), code)
+                receipts.append(json.loads((self.home / 'maintenance/toolset-update/latest.json').read_text()))
+        self.assertEqual([r['status'] for r in receipts], ['incomplete', 'updated', 'up_to_date'])
+        self.assertEqual([r['gateway_restart'] for r in receipts], ['not_needed', 'requested', 'not_needed'])
+        self.assertEqual(restart.call_count, 1)
+        self.assertEqual(hosts.call_count, 1)
+        self.assertNotIn('hosts', receipts[0])
+        self.assertEqual(receipts[1]['hosts'], [{'item': 'claude', 'status': 'ok', 'exit': 0}])
+        self.assertNotIn('hosts', receipts[2])
+
     def test_symlinked_restart_marker_is_refused(self):
         target = self.root / 'important-data'
         target.write_bytes(b'IMPORTANT USER DATA')
