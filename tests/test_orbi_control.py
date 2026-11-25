@@ -5686,6 +5686,60 @@ class SchedulingUpdateTests(unittest.TestCase):
         self.assertFalse([c for c in self.h.calls() if c['tool'] == 'orbi'
                           and c['argv'][:1] == ['sync-engine-source']])
 
+    def test_start_updates_a_literal_string_pin(self):
+        config = self.h.deploy / 'orbi.toml'
+        before = config.read_text().replace(f'"sha:{PIN}"', f"'sha:{PIN}'  # retain comment")
+        config.write_text(before)
+        self.active_rules(initially_active=False, extra=[self.latest_release])
+
+        code, doc, err = self.h.run('start')
+
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(doc['status'], 'started')
+        self.assertEqual(config.read_text(), before.replace(f'sha:{PIN}', f'sha:{NEW_PIN}'))
+        self.assert_start_order()
+
+    def test_start_refuses_unwritable_track_before_stopping_workers(self):
+        config = self.h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace(f'engine_source_track = "sha:{PIN}"\n', ''))
+        self.active_rules(services={1: 'active'}, extra=[self.latest_release])
+        before = snapshot(self.h.home)
+
+        code, doc, err = self.h.run('start')
+
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'config_invalid')
+        self.assertEqual(doc['activation'], 'none')
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertFalse([c for c in self.h.calls() if c['tool'] == 'systemctl'
+                          and c['argv'][1] in {'disable', 'stop', 'cancel'}])
+        self.assert_safe_trace()
+
+    def test_start_refuses_to_validate_a_different_config_than_the_units_will_run(self):
+        for override in ('alternate-config', 'environment-file'):
+            with self.subTest(override=override):
+                self.h = self.fresh(override)
+                config = self.h.deploy / 'orbi.toml'
+                alternate = self.h.deploy / 'other.toml'
+                if override == 'alternate-config':
+                    config = config.rename(alternate)
+                    self.pause_rules(installed=False, extra=[self.latest_release])
+                else:
+                    env_file = self.h.deploy / '.orbi/env'
+                    with env_file.open('a') as stream:
+                        stream.write(f'\nORBI_CONFIG={alternate}\n')
+                    self.active_rules(initially_active=False, extra=[self.latest_release])
+                before = snapshot(self.h.home)
+                code, doc, err = self.h.run('start', config=config)
+                self.assertNotEqual(code, 0, (doc, err))
+                self.assertEqual(doc['error']['code'], 'config_mismatch')
+                self.assertEqual(doc['activation'], 'none')
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+                self.assertFalse([c for c in self.h.calls() if c['tool'] == 'orbi'
+                                  and c['argv'][:1] != ['--version']])
+                self.assert_safe_trace()
+
     def test_start_failed_release_transaction_does_not_activate_and_names_bound_repair(self):
         for command, error in (('sync-engine-source', 'sync_engine_source_failed'),
                                ('check', 'validation_failed'),

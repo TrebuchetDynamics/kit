@@ -508,8 +508,10 @@ Changed ownership/config/selection holds without activation or automatic repair.
 An existing valid target skips initial preparation and preserves its provider and
 harness. Omit all `--pi-*` and `--harness` selectors on subsequent starts; even
 matching bootstrap selectors are refused. A missing
-explicit config is an error, not permission to create a target. Malformed, ambiguous,
-foreign or partial existing targets require deliberate recovery; start never performs
+explicit config is an error, not permission to create a target. An existing start
+requires the config the installed units will use (`deploy_home/orbi.toml`, with no
+conflicting `ORBI_CONFIG` in `.orbi/env`). Malformed, ambiguous, foreign or partial
+existing targets require deliberate recovery; start never performs
 `--resume-setup` (setup-only). Config-absent interrupted preparation can reuse only
 verified staged source and byte-equivalent intended files under normal setup rules.
 

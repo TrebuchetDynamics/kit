@@ -2592,6 +2592,17 @@ def activate_existing_locked(ctx, args, repo, target, identities, steps, current
     return snapshot, state, first_tick
 
 
+def require_start_config_binding(target):
+    # Upstream setup/install-units render deploy_home/orbi.toml into the service.
+    # Its EnvironmentFile can override that value for the tick and its source sync.
+    unit_config = target.deploy_home / 'orbi.toml'
+    if (target.config_path != unit_config
+            or persisted_env(target).get('ORBI_CONFIG', str(unit_config)) != str(unit_config)):
+        raise ControlError('config_mismatch', 'the installed units would not run the selected config',
+                           fix=f'verify that {unit_config} owns this deployment and remove any conflicting '
+                               f'ORBI_CONFIG in {target.env_path} before starting', exit_code=2)
+
+
 def command_start(ctx, args):
     target = None
     try:
@@ -2603,6 +2614,8 @@ def command_start(ctx, args):
             raise ControlError('bootstrap_override_refused', 'start selectors are only for absent preparation',
                                fix='omit --pi-* and --harness to reuse the saved selection; '
                                    'use deliberate setup/repair for partial deployments', exit_code=2)
+        if target is not None:
+            require_start_config_binding(target)
     except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
         exc = lifecycle_failure(ctx, target, error, target_path=args.config, steps=[],
                                 current={'step': 'preflight', 'mutation': 'none'}, mutated=False,
@@ -2841,13 +2854,15 @@ def require_clean_checkout(ctx, deployment):
 def engine_track_replacement(path, track):
     """Render only the engine_source_track literal; preserve every other byte."""
     text = path.read_bytes().decode('utf-8')
-    pattern = re.compile(r'^([ \t]*engine_source_track[ \t]*=[ \t]*)"[^"\n]*"', re.MULTILINE)
+    pattern = re.compile(r'''^([ \t]*engine_source_track[ \t]*=[ \t]*)(["'])[^"'\r\n]*\2(?=[ \t]*(?:#|\r?$))''',
+                         re.MULTILINE)
     if len(pattern.findall(text)) != 1:
         raise ControlError(
             'config_invalid',
             f'{path} must declare exactly one engine_source_track line',
             fix='repair the native config deliberately; preserve recovery inputs', exit_code=2)
-    return text, pattern.sub(lambda match: match.group(1) + json.dumps(track), text, count=1)
+    return text, pattern.sub(lambda match: match[1] + (
+        json.dumps(track) if match[2] == '"' else "'" + track + "'"), text, count=1)
 
 
 def rewrite_engine_track(deployment, track):
@@ -3208,6 +3223,16 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
             # The release channel also considers local tags. Sync the exact
             # official tag we resolved, then verify its peeled commit.
             source_track = 'tag:' + tag
+            current = {'step': 'preflight_release_track', 'mutation': 'none'}
+            _, rendered = engine_track_replacement(target.config_path, source_track)
+            try:
+                applied_track = tomllib.loads(rendered).get('engine_source_track')
+            except tomllib.TOMLDecodeError:
+                applied_track = None
+            if applied_track != source_track:
+                raise ControlError('config_invalid', 'engine_source_track is not writable at the top level',
+                                   fix='declare a top-level engine_source_track; preserve recovery inputs',
+                                   exit_code=2)
 
             def verify_head(head):
                 if head != expected:
@@ -3230,6 +3255,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
             validate_target(target, repo)
             require_unit_ownership(ctx, target, symlink_error=symlink_error)
             if start:
+                require_start_config_binding(target)
                 require_engine_checkout(ctx, target, source_repo=repo.path)
             require_source(ctx, target)
             require_clean_checkout(ctx, target)
