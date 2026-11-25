@@ -845,7 +845,12 @@ can be restored from its original checkout; partial native output and newer fore
 edits are never deleted or overwritten to roll back. Read-back checks the exact
 published HEAD, tracked bytes, profile output, permissions and source binding before
 success. An unchanged retry validates the completed recovery without reinstalling,
-rescanning, resetting preserved customizations or creating a new backup.
+rescanning, resetting preserved customizations or creating a new backup. If a
+recovered skill is edited later, the next update uses ordinary release
+synchronization: it resets the copy to the release, reports the edit under
+`local_edits`, and saves the edited bytes in the update backup. The recovery
+journal stays complete, so later releases can still be applied. Ordinary updates
+to other profiles also leave the completed recovery journal untouched.
 
 `python3 scripts/update_bundle.py --hermes-home /path/to/home --dry-run` only previews;
 it performs no fetch, staging or state/profile writes. `--check` retains its

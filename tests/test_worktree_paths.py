@@ -95,6 +95,55 @@ class PlacementTests(unittest.TestCase):
         self.assertNotEqual(self.hook('WorktreeRemove', worktree_path=str(path)).returncode, 0)
         self.assertTrue(path.exists())
 
+    def test_claude_reuses_a_removed_worktrees_merged_branch(self):
+        path = self.repo / '.worktrees' / 'claude-fix'
+        result = self.hook('WorktreeCreate', name='fix')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.git('-c', 'user.name=Fixture', '-c', 'user.email=f@example.invalid',
+                 'commit', '--allow-empty', '-qm', 'fix', cwd=path)
+        tip = self.git('rev-parse', 'refs/heads/claude/fix')
+        self.git('merge', '--ff-only', 'claude/fix')
+        self.git('-c', 'user.name=Fixture', '-c', 'user.email=f@example.invalid',
+                 'commit', '--allow-empty', '-qm', 'advance baseline')
+        removed = self.hook('WorktreeRemove', worktree_path=str(path))
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertFalse(path.exists())
+
+        result = self.hook('WorktreeCreate', name='fix')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), str(path))
+        self.assertEqual(self.git('symbolic-ref', '--short', 'HEAD', cwd=path), 'claude/fix')
+        self.assertEqual(self.git('rev-parse', 'HEAD', cwd=path), tip)
+
+    def test_claude_reuse_refuses_a_kept_unmerged_branch(self):
+        path = self.repo / '.worktrees' / 'claude-fix'
+        result = self.hook('WorktreeCreate', name='fix')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.git('-c', 'user.name=Fixture', '-c', 'user.email=f@example.invalid',
+                 'commit', '--allow-empty', '-qm', 'unmerged fix', cwd=path)
+        tip = self.git('rev-parse', 'refs/heads/claude/fix')
+        # The removal hook would refuse; ordinary Git can remove this clean fixture checkout.
+        self.git('worktree', 'remove', str(path))
+
+        result = self.hook('WorktreeCreate', name='fix')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('Branch claude/fix has commits not in the baseline', result.stderr)
+        self.assertEqual(result.stdout, '')
+        self.assertFalse(path.exists())
+        self.assertEqual(self.git('rev-parse', 'refs/heads/claude/fix'), tip)
+
+    def test_claude_reuse_refuses_a_branch_checked_out_elsewhere(self):
+        other = self.repo / '.worktrees' / 'other'
+        self.git('worktree', 'add', '-b', 'claude/fix', str(other))
+
+        result = self.hook('WorktreeCreate', name='fix')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('claude/fix', result.stderr)
+        self.assertIn(str(other), result.stderr)
+        self.assertEqual(result.stdout, '')
+        self.assertFalse((self.repo / '.worktrees' / 'claude-fix').exists())
+        self.assertEqual(self.git('symbolic-ref', '--short', 'HEAD', cwd=other), 'claude/fix')
+
     def test_claude_rejects_escaping_names_and_symlinked_root(self):
         for name in ('../escape', '.', '', '/tmp/escape'):
             self.assertNotEqual(self.hook('WorktreeCreate', name=name).returncode, 0)
