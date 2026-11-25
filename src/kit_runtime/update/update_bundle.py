@@ -2222,8 +2222,9 @@ def main(argv=None):
             # An applied update whose activation ended incomplete still owes one restart and host refresh.
             owed = state_dir / 'owed.json'
             safe_path(owed)
+            restart_owed = owed.exists()
             changed = (bool(plan['writes']) or any(s['before'] != s['after'] for s in plan['sources'].values())
-                       or owed.exists())
+                       or restart_owed)
             missing = any(not plugin_dir(h).exists() for _, h in profiles)
             result['drift'] = plan['drift']
             # Profile edits reset to the release or removed (bytes in the backup); port any
@@ -2238,13 +2239,16 @@ def main(argv=None):
                 stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
                 if plan['writes']:
                     result['backup'] = str(state_dir / stamp)
+                record_owed = changed and not restart_owed
                 owed_tmp = owed.with_suffix('.tmp')
-                if changed:
-                    # Refuse an unsafe marker path before applying changes we could not track.
+                if record_owed:
+                    # Stage the write before applying changes; publish only once apply succeeds.
                     safe_path(owed_tmp)
+                    owed_tmp.unlink(missing_ok=True)
+                    with owed_tmp.open('x') as stream:
+                        stream.write(json.dumps({'started_ns': result['started_ns']}) + '\n')
                 apply(plan, state_dir / stamp)
-                if changed:
-                    owed_tmp.write_text(json.dumps({'started_ns': result['started_ns']}) + '\n')
+                if record_owed:
                     owed_tmp.replace(owed)
                 before = config_snapshot(profiles)
                 # Refresh even on equal revisions: a prior setup/reload may have failed.
