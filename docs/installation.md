@@ -284,9 +284,41 @@ configuration and Pi packages as Pi, so the installed Kit package serves both.
 
 ### Orbi CLI
 
-Default/full/menu and `update` include `orbi`. Use `./install.sh --only orbi`
-to install it alone or `--skip orbi` to leave it untouched. A missing CLI uses the
-[XelHaku/orbi fork](https://github.com/XelHaku/orbi) at commit
+Plain `./install.sh`, full, menu selection, `--only orbi`, and `update` all use
+the same Orbi behavior when selected. A delegated installer (for example, the
+Hermes suite refresh) inherits it. Use `--skip orbi` to leave Orbi untouched,
+including in delegated refreshes. When both the top-level installer and a
+delegate would select Orbi, the top-level installer runs the refresh once.
+`--list` and `--dry-run` do not change units or engines.
+
+On Linux, selecting Orbi authorizes stopping, updating and restarting all
+verified deployments on the local systemd host, **including deliberately
+paused deployments**, even if the engine is already current. No approval record
+or prompt is required. The installer inventories installed and loaded units and
+queued jobs in the system and user managers, including other local accounts with
+unit evidence. Remote machines, containers and separate namespaces are outside
+that inventory. Inaccessible managers, ambiguous unit/config/owner bindings or
+missing noninteractive write access hold the entire Orbi fleet before any stop.
+The deployment file and engine execution owner must match the installing account;
+Kit does not switch users, invoke sudo or make access changes.
+
+It disables/stops verified triggers and cancels owned queued starts before stopping
+owned services through systemd, without a natural-drain wait. After proving fleet
+quiescence, it syncs each deployment once, locks the newest official stable release
+as an exact commit, and runs `orbi check` before activation. It reads back enabled,
+active scheduling separately from requested service starts. No new deployment,
+unit topology, credential setup or bare Orbi tick is part of the refresh.
+
+On a partial failure, the installer exits nonzero but continues independent
+components. Inspect the named config and manager-qualified units in the Orbi
+receipt, repair the failed step and deliberately re-evaluate the fleet with
+`./install.sh --only orbi`. A failed refresh may leave deployments stopped or
+partly updated. It is not a rollback. On macOS, the installer never mutates launchd
+or claims a deployment update; existing deployments or unverifiable coverage are
+reported as held. Offline verification does not qualify this behavior on a live host.
+
+On a verified host with no installed deployment, the component is CLI-only.
+A missing CLI uses the [XelHaku/orbi fork](https://github.com/XelHaku/orbi) at commit
 `1a8b2f9603f6258cb105293f238a8d3f775f3393`, which adds the host-only
 `pi_executable` setting for Pi-compatible CLIs such as Pi-Bolt:
 
@@ -307,16 +339,10 @@ The installer verifies `orbi --version`, including a user-local CLI not yet on P
 List/preview do not execute uv or Orbi. A broken existing launcher is reported,
 not overwritten; repair it using its deployment's supported procedure.
 
-A working existing CLI is kept, including on `install.sh update`, so an editable
-bootstrap or pinned live deployment is not silently replaced with the fork.
-Update deployments separately through Orbi's supported source-sync procedure.
-The CLI source selection does not repin deployment homes or `engine_source_track`,
-set `pi_executable`, copy provider files or credentials, or change the lifecycle
-skill's separately supported source pin. Those remain explicit deployment work.
-This component installs **only the CLI**, not an execution-ready deployment: no
-`orbi setup`, `install-units`, bare tick, authentication or config changes, and no
-Orbi service start/restart/stop. Other selected hosts use the suite's change-based service decisions. Repository deployment and activation remain separate, explicitly authorized
-steps; see [GitHub-native setup](github-native.md#one-repository-per-deployment).
+A working existing global CLI is kept, including on `install.sh update`.
+The CLI pin is separate from deployment release pins; CLI bootstrap does not
+call `orbi setup`, `install-units`, a bare tick or a scheduler mutation.
+See [GitHub-native setup](github-native.md#one-repository-per-deployment).
 
 ### Removed runner installation
 

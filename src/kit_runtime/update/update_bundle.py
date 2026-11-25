@@ -36,7 +36,8 @@ def refresh_hosts(source):
         with tempfile.TemporaryDirectory(prefix='kit-host-update-') as directory:
             report = Path(directory) / 'items.jsonl'
             env = dict(os.environ, KIT_INSTALL_REPORT=str(report), NO_COLOR='1')
-            with subprocess.Popen(['bash', str(source / 'install.sh'), '--full', '--skip', 'hermes,pi', '-q'],
+            skipped = 'hermes,pi,orbi' if env.get('KIT_INSTALL_SKIP_ORBI') == '1' else 'hermes,pi'
+            with subprocess.Popen(['bash', str(source / 'install.sh'), '--full', '--skip', skipped, '-q'],
                                   cwd=source, stdin=subprocess.DEVNULL, env=env,
                                   start_new_session=True,
                                   pass_fds=((int(env['KIT_INSTALL_LOCK_FD']),)
@@ -58,7 +59,7 @@ def refresh_hosts(source):
                             and row.get('status') in ('installed', 'failed', 'skipped')
                             and (row.get('exit') is None or type(row['exit']) is int)):
                         rows[row['item']] = {k: row[k] for k in ('item', 'status', 'exit', 'change',
-                            'changed_inputs', 'evidence', 'decision', 'reason') if k in row}
+                            'changed_inputs', 'evidence', 'decision', 'reason', 'orbi_fleet') if k in row}
     except (OSError, subprocess.SubprocessError):
         status, code = 'unavailable', None
     return ([rows.get(item, {'item': item, 'status': status, 'exit': code}) for item in HOST_ITEMS]

@@ -3446,6 +3446,67 @@ class LifecycleSequenceTests(unittest.TestCase):
         self.assertNotIn('ready', doc['queue'])
 
 
+class InstallerFleetTests(unittest.TestCase):
+    def setUp(self):
+        root = self.enterContext(tempfile.TemporaryDirectory())
+        self.h = Harness(Path(root))
+
+    def test_inventory_loads_configured_disabled_orbi_template_instances(self):
+        ctx = helper.Context(env=self.h.env, platform='linux')
+        manager = helper.FleetManager('user', ('--user',), os.getuid(), self.h.home)
+        target = self.h.root / 'checkout'
+        target.mkdir()
+        config = target / 'orbi.toml'
+        config.write_text('source_repos = ["example/repo"]\nmax_concurrency = 2\n')
+        bootstrap = self.h.home / '.local/bin/orbi'
+        service = self.h.unit_dir / 'project-delivery@.service'
+        timer = self.h.unit_dir / 'project-delivery@.timer'
+        service.write_text(f'[Service]\nWorkingDirectory={target}\nExecStart={bootstrap} --config {config}\n')
+        timer.write_text('[Timer]\nUnit=project-delivery@%i.service\n[Install]\nWantedBy=timers.target\n')
+        for path in (service, timer):
+            path.chmod(0o644)
+        properties = dict(LoadState='loaded', ActiveState='inactive', NeedDaemonReload='no',
+                          CanStart='yes', CanStop='yes', KillMode='control-group', SendSIGKILL='yes',
+                          DynamicUser='no', WorkingDirectory=target)
+
+        def rule(name, **extra):
+            values = {'Id': name, **properties, **extra}
+            return {'tool': 'systemctl', 'argv_contains': ['--user', 'show', name],
+                    'stdout': '\n'.join(f'{k}={v}' for k, v in values.items())}
+
+        rules = [
+            {'tool': 'systemctl', 'argv_contains': ['--user', 'list-units'], 'stdout': '[]'},
+            {'tool': 'systemctl', 'argv_contains': ['--user', 'list-unit-files'],
+             'stdout': json.dumps([{'unit_file': path.name} for path in (service, timer)])},
+            {'tool': 'systemctl', 'argv_contains': ['--user', 'show', 'UnitPath'], 'stdout': str(self.h.unit_dir)},
+        ]
+        for index in (1, 2):
+            name = f'project-delivery@{index}.service'
+            rules.extend([rule(name, FragmentPath=service, Type='oneshot', UnitFileState='static',
+                               ExecStart=f'{{ path={bootstrap} ; argv[]={bootstrap} --config {config} ; }}'),
+                          rule(f'project-delivery@{index}.timer', FragmentPath=timer,
+                               Unit=name, Triggers=name, UnitFileState='disabled')])
+        self.h.rules(*rules)
+        units, targets, jobs = helper.fleet_inventory(ctx, [manager])
+        self.assertEqual(list(targets), [config])
+        self.assertEqual(jobs, {manager: {}})
+        self.assertEqual({unit.name: unit.triggers for unit in units}, {
+            'project-delivery@1.service': '', 'project-delivery@2.service': '',
+            'project-delivery@1.timer': 'project-delivery@1.service',
+            'project-delivery@2.timer': 'project-delivery@2.service',
+        })
+        self.assertTrue(all(call['argv'][2] in {'list-unit-files', 'list-units', 'list-jobs', 'show'}
+                            for call in self.h.calls()))
+
+    def test_macos_deployment_is_held_without_mutation(self):
+        ctx = helper.Context(env=self.h.env, platform='darwin')
+        with mock.patch.object(helper, 'host_darwin', return_value=([{'unit': 'dev.orbi.worker'}], set())):
+            receipt = helper.installer_fleet(ctx)
+        self.assertEqual(receipt['status'], 'held')
+        self.assertIn('no deployment upgraded', receipt['error']['message'])
+        self.assertEqual(self.h.calls(), [])
+
+
 class HostStatusTests(unittest.TestCase):
     """The public CLI is local/read-only, including outside a Git checkout."""
 

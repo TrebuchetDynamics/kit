@@ -190,8 +190,9 @@ Existing protections, CI, review and merge requirements remain unchanged. Startu
 is not successful merge or live qualification; prepare-only and dry-run never activate.
 See [protection diagnostics](docs/github-native.md#read-protection-diagnostics-safely).
 
-One Orbi deployment owns one repository. The suite installer adds only the CLI
-(`./install.sh --only orbi`, needs `uv`); a working Orbi installation is kept.
+One Orbi deployment owns one repository. The suite installer refreshes verified
+local Linux deployments when Orbi is selected. Use `--skip orbi` to keep them
+untouched, including when they are paused.
 
 Use `/orbi [status|version|setup|start|update|stop|help]` in Pi or Hermes, `/kit:orbi` in Claude
 Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
@@ -328,12 +329,16 @@ Hermes still runs its complete fleet setup and its own dependency and
 security prompts; use `--yes-deps` only when you intend to consent to them.
 
 Orbi is included by default; use `./install.sh --only orbi` or `--skip orbi`.
-A missing CLI is installed user-locally from the pinned
+When no deployment is installed, a missing CLI is bootstrapped from the pinned
 [XelHaku/orbi fork](https://github.com/XelHaku/orbi/tree/1a8b2f9603f6258cb105293f238a8d3f775f3393)
 with `uv` and Python 3.14 (`uv` and Git must be installed first).
-Existing Orbi installations and source pins are kept,
-even during `update`. This installs the CLI only: no repository setup, credentials,
-scheduler activation or worker starts. See [Orbi CLI installation](docs/installation.md#orbi-cli).
+With existing deployments on Linux, selecting Orbi stops verified local systemd
+work without waiting for a natural drain, pins and checks the newest stable
+release, and restores scheduling, even for paused or already-current deployments.
+The install command authorizes that restart. Incomplete coverage or ownership
+holds the Orbi component before downtime; macOS does not refresh deployments.
+With no deployment, Kit keeps a working CLI or bootstraps it without setup.
+See [Orbi installation and deployment refresh](docs/installation.md#orbi-cli).
 
 Pi-Bolt is included by default; use `./install.sh --only pi-bolt` or `--skip pi-bolt`.
 It installs the upstream native Pi build through the
