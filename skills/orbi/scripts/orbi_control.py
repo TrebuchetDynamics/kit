@@ -3175,6 +3175,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
         if start:
             current = {'step': 'resolve_release', 'mutation': 'none'}
             tag, expected = official_latest_release(ctx)
+            current = {'step': 'observe_scheduler', 'mutation': 'none'}
         snapshot = update_observation(ctx, target)
         if args.dry_run:
             return {'action': 'update', 'platform': ctx.platform, 'status': 'planned',
@@ -3183,7 +3184,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
                     'scheduler': snapshot, 'steps': update_plan_steps(stop=args.stop),
                     'activation': 'none' if args.stop else 'conditional',
                     'activated': False, 'warnings': []}
-        verify_head = None
+        source_track = verify_head = None
         if start:
             if (target.pin == 'sha:' + expected and previous['head'] == expected
                     and configured_timers_active(target, snapshot)):
@@ -3201,6 +3202,12 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
                         'deployment': {**report, 'deployed_commit': expected}, 'steps': steps,
                         'activated': False, 'scheduler': snapshot, 'engine_update': 'up_to_date',
                         'first_tick': 'already-active' if live else 'not-requested', **start_fields}
+
+            current = {'step': 'verify_engine_checkout', 'mutation': 'none'}
+            require_engine_checkout(ctx, target, source_repo=repo.path)
+            # The release channel also considers local tags. Sync the exact
+            # official tag we resolved, then verify its peeled commit.
+            source_track = 'tag:' + tag
 
             def verify_head(head):
                 if head != expected:
@@ -3222,6 +3229,8 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
                                        'preserve all recovery inputs', exit_code=2)
             validate_target(target, repo)
             require_unit_ownership(ctx, target, symlink_error=symlink_error)
+            if start:
+                require_engine_checkout(ctx, target, source_repo=repo.path)
             require_source(ctx, target)
             require_clean_checkout(ctx, target)
             require_setup_transport(repo, target)
@@ -3257,7 +3266,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
             try:
                 target, head, validated_identities = apply_release_locked(
                     ctx, target, read_target, steps, current, progress, repo=repo,
-                    verify_head=verify_head)
+                    source_track=source_track, verify_head=verify_head)
             finally:
                 target = progress.get('target', target)
                 engine_result = progress['engine_update']
@@ -3278,7 +3287,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
                                    fix='verify the systemd user session, then rerun')
             if not args.stop:
                 activation = 'possible'
-                _, state, first_tick = activate_existing_locked(
+                _, _, first_tick = activate_existing_locked(
                     ctx, args, repo, target, validated_identities, steps, current, activated,
                     first_tick_request=start)
                 current = {'step': 'verify_activation', 'mutation': 'none'}
@@ -3293,7 +3302,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
         report['source'] = source_evidence(ctx, target)['state']
         report['deployed_commit'] = head
         if start:
-            return {'action': action, 'platform': ctx.platform, 'status': state,
+            return {'action': action, 'platform': ctx.platform, 'status': 'started',
                     'dry_run': False, 'repo': repo.full, 'deployment': report,
                     'steps': steps, 'activated': True, 'activation': activation,
                     'first_tick': first_tick, 'scheduler': after, 'engine_update': engine_result,
@@ -4423,22 +4432,29 @@ def official_latest_release(ctx):
     return tag, latest.get((tag, True)) or latest[tag, False]
 
 
-def fleet_checkout_root(ctx, target):
+def require_engine_checkout(ctx, target, *, source_repo):
+    def refuse(message):
+        raise ControlError('source_unavailable', message,
+                           fix='verify deploy_home names the separate deployment checkout and '
+                               'remove Git checkout redirects before retrying', exit_code=2)
+
     # `git -C` by itself can discover the parent repository or operate on a
     # different worktree via ambient or deployment-persisted Git overrides.
     local_keys = set(ctx.run(['git', 'rev-parse', '--local-env-vars']).stdout.splitlines())
     if not {'GIT_DIR', 'GIT_WORK_TREE'} <= local_keys:
-        fleet_refuse('cannot verify Git checkout-local environment keys')
+        refuse('cannot verify Git checkout-local environment keys')
     if local_keys & (ctx.env.keys() | persisted_env(target).keys()):
-        fleet_refuse(f'{target.config_path}: Git environment redirects checkout state')
+        refuse(f'{target.config_path}: Git environment redirects checkout state')
     root = ctx.run(['git', '-C', target.deploy_home, 'rev-parse', '--show-toplevel']).stdout.strip()
     if root != str(target.deploy_home):
-        fleet_refuse(f'{target.deploy_home}: engine directory is not its own Git checkout root')
+        refuse(f'{target.deploy_home}: engine directory is not its own Git checkout root')
+    if target.deploy_home == source_repo:
+        refuse(f'{target.deploy_home}: engine checkout must be separate from the source repository')
     git_dir = Path(ctx.run(['git', '-C', target.deploy_home, 'rev-parse',
                             '--path-format=absolute', '--git-common-dir']).stdout.strip())
     if (not git_dir.is_absolute() or not checked_path(git_dir, 'engine Git directory').resolve().is_relative_to(target.deploy_home)
             or not git_dir.is_dir()):
-        fleet_refuse(f'{target.deploy_home}: Git state is not contained in the engine checkout')
+        refuse(f'{target.deploy_home}: Git state is not contained in the engine checkout')
     file_identity(git_dir)
 
 
@@ -4447,9 +4463,7 @@ def fleet_preflight_target(ctx, target):
     identities = setup_file_identities(target)
     if len(target.source_repos) != 1 or not target.deploy_home.is_dir():
         fleet_refuse(f'{target.config_path}: deployment identity is unverified')
-    fleet_checkout_root(ctx, target)
-    if target.repo_dir == target.deploy_home:
-        fleet_refuse(f'{target.deploy_home}: engine checkout must be separate from the source repository')
+    require_engine_checkout(ctx, target, source_repo=target.repo_dir)
     if target.repo_dir is not None:
         repo = repo_identity(ctx, target.repo_dir)
         validate_target(target, repo)
@@ -4592,7 +4606,7 @@ def installer_fleet(ctx, *, report_progress=None):
                         or checkout_head(ctx, target) != before[config][1]
                         or fleet_bootstrap_identity(ctx) != before[config][2]):
                     fleet_refuse(f'{config}: deployment files changed after preflight')
-                fleet_checkout_root(ctx, target)
+                require_engine_checkout(ctx, target, source_repo=target.repo_dir)
                 require_clean_checkout(ctx, target)
             receipt['status'] = 'incomplete'
 
@@ -4671,7 +4685,7 @@ def installer_fleet(ctx, *, report_progress=None):
                         or checkout_head(ctx, target) != before[config][1]
                         or fleet_bootstrap_identity(ctx) != before[config][2]):
                     fleet_refuse(f'{config}: deployment changed while stopping')
-                fleet_checkout_root(ctx, target)
+                require_engine_checkout(ctx, target, source_repo=target.repo_dir)
                 require_clean_checkout(ctx, target)
                 progress = {}
                 current['step'] = 'apply_release'

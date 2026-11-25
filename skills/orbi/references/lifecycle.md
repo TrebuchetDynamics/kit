@@ -517,8 +517,10 @@ Start checks ownership, source, provider, Node/Pi compatibility, authentication 
 bootstrap. If the exact pin matches the newest official release and all configured
 timers are enabled and active, it reports `already-running` without mutation,
 even between worker ticks. Otherwise, start reuses the [locked release transaction](#release-update).
-It disables owned timers, cancels queued starts and stops running workers as needed,
-then syncs, pins and checks the release. A failed sync or check starts nothing and
+Before quiescing, start verifies the engine is in its own Git checkout, separate
+from the delivery repository. It disables owned timers, cancels queued starts and
+stops running workers as needed, then syncs the resolved official tag, verifies its
+commit, pins it and checks the release. A failed sync or check starts nothing and
 returns a bound recovery command. Only after validation does the shared activation
 path run scoped upstream `setup` and `install-units`, enable configured timers
 (`1..max_concurrency`) as needed, and request a first tick if no worker is active.

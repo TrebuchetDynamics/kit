@@ -176,11 +176,17 @@ class Harness:
         return [
             {'tool': 'git', 'argv_contains': ['ls-remote', '--tags', OFFICIAL, 'refs/tags/v*'],
              'stdout': f'{self.deploy_head}\trefs/tags/v0.7.41\n'},
+            {'tool': 'git', 'argv_contains': ['rev-parse', '--local-env-vars'],
+             'stdout': 'GIT_DIR\nGIT_WORK_TREE\n'},
+            {'tool': 'git', 'argv_contains': [deploy, 'rev-parse', '--show-toplevel'],
+             'stdout': deploy + '\n'},
+            {'tool': 'git', 'argv_contains': [deploy, 'rev-parse', '--git-common-dir'],
+             'stdout': deploy + '/.git\n'},
             {'tool': 'git', 'argv_contains': [deploy, 'config', 'remote.origin.url'],
              'stdout': OFFICIAL + '.git\n'},
             {'tool': 'git', 'argv_contains': [deploy, 'rev-parse', 'HEAD'],
              'stdout': self.deploy_head + '\n'},
-            {'tool': 'git', 'argv_contains': ['clone'], 'mkdir': [deploy]},
+            {'tool': 'git', 'argv_contains': ['clone'], 'mkdir': [deploy + '/.git']},
             {'tool': 'git', 'argv_contains': ['worktree', 'list'],
              'stdout': f'worktree {repo}\nHEAD {self.deploy_head}\nbranch refs/heads/main\n'},
             {'tool': 'git', 'argv_contains': ['config', 'remote.origin.url'],
@@ -5588,7 +5594,9 @@ class SchedulingUpdateTests(unittest.TestCase):
                                      enabled={1: True} if initially_active else None, extra=extra, **kwargs)
 
     latest_release = {'tool': 'git', 'argv_contains': ['ls-remote', '--tags', OFFICIAL, 'refs/tags/v*'],
-                      'stdout': f'{PIN}\trefs/tags/v0.7.41\n{NEW_PIN}\trefs/tags/v0.7.42\n'}
+                      'stdout': (f'{PIN}\trefs/tags/v0.7.41\n'
+                                 f'{OLD_PIN}\trefs/tags/v0.7.42\n'
+                                 f'{NEW_PIN}\trefs/tags/v0.7.42^{{}}\n')}
 
     def test_cli_start_updates_stopped_deployment_before_activation(self):
         self.active_rules(initially_active=False, extra=[self.latest_release])
@@ -5599,6 +5607,8 @@ class SchedulingUpdateTests(unittest.TestCase):
         doc = json.loads(result.stdout)
         self.assertEqual(doc['action'], 'start')
         self.assertEqual(doc['status'], 'started')
+        selected = next(s for s in doc['steps'] if s['step'] == 'set_release_track')
+        self.assertEqual(selected['track'], 'tag:v0.7.42')
         self.assertEqual(self.h.config()['engine_source_track'], 'sha:' + NEW_PIN)
         timer = doc['scheduler']['timers'][f'{self.prefix}@1.timer']
         self.assertTrue(timer['enabled'])
@@ -5643,6 +5653,38 @@ class SchedulingUpdateTests(unittest.TestCase):
         self.assertEqual(doc['activation'], 'started')
         self.assert_start_order(running=True)
         self.assert_a_unchanged()
+
+    def test_start_reports_started_when_refreshed_timer_ticks_before_readback(self):
+        installed = str(self.h.root / 'installed')
+        service = f'{self.prefix}@1.service'
+        self.active_rules(initially_active=False, extra=[self.latest_release,
+            {'tool': 'orbi', 'argv_contains': ['install-units'], 'write': {installed: '1'}},
+            {'tool': 'systemctl', 'argv_contains': ['show', 'ActiveState', service],
+             'if_exists': installed, 'stdout': 'active\n'},
+        ])
+        code, doc, err = self.h.run('start')
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(doc['status'], 'started')
+        self.assertTrue(doc['activated'])
+        self.assertEqual(doc['first_tick'], 'already-active')
+        self.assertFalse([c for c in self.h.calls() if c['tool'] == 'systemctl'
+                          and c['argv'] == ['--user', 'start', service]])
+
+    def test_start_refuses_sync_from_a_parent_checkout_before_stopping_work(self):
+        self.active_rules(services={1: 'active'}, extra=[self.latest_release,
+            {'tool': 'git', 'argv_contains': [str(self.h.deploy), 'rev-parse', '--show-toplevel'],
+             'stdout': str(self.h.deploy.parent) + '\n'},
+        ])
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('start')
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'source_unavailable')
+        self.assertIn('not its own Git checkout root', doc['error']['message'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assert_safe_trace()
+        self.assertFalse(doc['disabled_timers'])
+        self.assertFalse([c for c in self.h.calls() if c['tool'] == 'orbi'
+                          and c['argv'][:1] == ['sync-engine-source']])
 
     def test_start_failed_release_transaction_does_not_activate_and_names_bound_repair(self):
         for command, error in (('sync-engine-source', 'sync_engine_source_failed'),
