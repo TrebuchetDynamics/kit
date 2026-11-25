@@ -8,6 +8,7 @@ import json
 import os
 import re
 from pathlib import Path
+import shlex
 import shutil
 import signal
 import subprocess
@@ -1005,7 +1006,6 @@ def native_call(action, home, stage, revision, python):
     if python is None:
         # Full-suite installation may run under system Python rather than Hermes' venv.
         launcher = Path(shutil.which('hermes')).resolve()
-        import shlex
         text = launcher.read_text()
         words = shlex.split(text.split('\n', 1)[1], comments=True) if text.startswith(('#!/bin/sh', '#!/usr/bin/env sh')) else []
         if (len(words) > 2 and words[0] == 'exec' and '-c' in words
@@ -2081,6 +2081,37 @@ def automatic_recovery(root, profiles, *, plan=None, prior=None, check=False):
                              _recovery=managed, _locked=True)
 
 
+def scoped_resume_action(root, receipt):
+    """Inspect scoped publication evidence while the updater lock is held."""
+    error = f'Invalid scoped deployment receipt {receipt}; preserve it and reconcile it with the backup manifest'
+    safe_path(receipt)
+    if not receipt.exists():
+        return None
+    try:
+        scoped = json.loads(receipt.read_text())
+    except ValueError as cause:
+        raise ValueError(error) from cause
+    if not isinstance(scoped, dict) or not isinstance(scoped.get('status'), str):
+        raise ValueError(error)
+    if scoped['status'] != 'incomplete':
+        return None
+    selected, rows = scoped.get('selected'), scoped.get('profiles')
+    if (not isinstance(selected, list) or not selected or not isinstance(rows, dict)
+            or any(not isinstance(name, str) or not isinstance(rows.get(name), dict) for name in selected)
+            or not all(isinstance(scoped.get(key), str) for key in ('source', 'revision'))):
+        raise ValueError(error)
+    if not any(rows[name].get('phase') is not None for name in selected):
+        return None
+    command = ['python3', 'scripts/update_bundle.py', '--hermes-home', str(root)]
+    for name in selected:
+        command.extend(['--profile', name])
+    command.extend(['--source', scoped['source'], '--revision', scoped['revision'],
+                    '--native-python', '/path/to/original/hermes-python'])
+    return ('Resume the original scoped deployment first. In the checkout where you ran it, replace '
+            '/path/to/original/hermes-python with the original interpreter path and run:\n'
+            f'{shlex.join(command)}\nThen retry hermes kit update.')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--hermes-home', required=True, type=Path)
@@ -2132,13 +2163,15 @@ def main(argv=None):
     live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
     root = root_home(args.hermes_home)
     state_dir = root / 'maintenance/toolset-update'
+    scoped_receipt = state_dir / 'scoped.json'
     try:
         recovery_receipt = state_dir / 'recovery.json'
         safe_path(recovery_receipt)
         prior = json.loads(recovery_receipt.read_text()) if recovery_receipt.exists() else None
-        # Incomplete native publication is resolved under the transaction lock;
-        # its journal records interrupted publication phases.
-        if not prior or prior.get('status') != 'incomplete':
+        # A scoped publication may leave an invalid plugin slot. Give its
+        # locked journal check precedence over early profile admission.
+        inspect_scoped = not args.dry_run and (scoped_receipt.exists() or scoped_receipt.is_symlink())
+        if not inspect_scoped and (not prior or prior.get('status') != 'incomplete'):
             try:
                 profiles = live_profiles(root)
             except (ValueError, OSError):
@@ -2187,6 +2220,10 @@ def main(argv=None):
         except (ValueError, OSError) as error:
             profile_error = error
         try:
+            action = scoped_resume_action(root, scoped_receipt)
+            if action:
+                print(json.dumps({'status': 'incomplete', 'action': action}, indent=2))
+                return 1
             # Re-read after lock contention before deciding whether the journal may
             # account for an incomplete native publication's dangling shared links.
             safe_path(recovery_receipt)
@@ -2261,7 +2298,15 @@ def main(argv=None):
             result['sources'] = {str(p): {k: s[k] for k in ('before', 'after')} for p, s in plan['sources'].items()}
             result['skill_files'] = len(plan['writes'])
             result['linked_profiles'] = [{k: r[k] for k in ('profile', 'target')} for r in linked_profiles(profiles)]
-            changed = bool(plan['writes']) or any(s['before'] != s['after'] for s in plan['sources'].values())
+            owed = state_dir / 'owed.json'
+            owed_tmp = owed.with_suffix('.tmp')
+            safe_path(owed)
+            safe_path(owed_tmp)
+            restart_owed = owed.exists()
+            # A staged record also counts: apply may have finished before the updater could publish it.
+            staged_owed = owed_tmp.exists()
+            changed = (bool(plan['writes']) or any(s['before'] != s['after'] for s in plan['sources'].values())
+                       or restart_owed or staged_owed)
             missing = any(not plugin_dir(h).exists() for _, h in profiles)
             result['drift'] = plan['drift']
             # Profile edits reset to the release or removed (bytes in the backup); port any
@@ -2276,7 +2321,13 @@ def main(argv=None):
                 stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
                 if plan['writes']:
                     result['backup'] = str(state_dir / stamp)
+                if changed and not (restart_owed or staged_owed):
+                    # Stage the write before applying changes; publish only once apply succeeds.
+                    with owed_tmp.open('x') as stream:
+                        stream.write(json.dumps({'started_ns': result['started_ns']}) + '\n')
                 apply(plan, state_dir / stamp)
+                if changed and not restart_owed:
+                    owed_tmp.replace(owed)
                 before = config_snapshot(profiles)
                 # Refresh even on equal revisions: a prior setup/reload may have failed.
                 # Plugin activation also re-applies each profile's command menu and settings.
@@ -2324,6 +2375,8 @@ def main(argv=None):
                         start_quiet_restart(root, state_dir, result['started_ns'], gateway_pid(root))
                 else:
                     result['gateway_restart'] = 'not_running'
+                if changed and ready:
+                    owed.unlink(missing_ok=True)
             result['note'] = ('Existing chats may retain loaded instructions. The gateway restarts only when no chat '
                               'turn is in flight; while one is, the restart is deferred and retried for up to 6 h, '
                               'never forced. It then refreshes commands and Telegram menus; the durable restart receipt '

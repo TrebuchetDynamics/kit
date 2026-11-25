@@ -6,6 +6,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -559,6 +560,130 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual([r['gateway_restart'] for r in receipts], ['requested', 'not_needed'])
         self.assertEqual(restart.call_count, 1)
 
+    def test_rerun_after_incomplete_changed_update_still_restarts_and_refreshes_hosts(self):
+        self.advance()
+        prepare = self.mod.prepare
+        statuses = iter(['incomplete', 'ready', 'ready'])
+        hosts_result = [{'item': 'claude', 'status': 'installed', 'exit': 0}]
+        receipts = []
+        def finalize(source, root, profiles, **_):
+            status = next(statuses)
+            return [{'profile': n, 'status': status} for n, _ in profiles]
+        with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                          'live_profiles', self.setup_stub.live_profiles), \
+             patch.object(self.mod, 'finalize_profiles', side_effect=finalize), \
+             patch.object(self.mod, 'gateway_running', return_value=True), \
+             patch.object(self.mod, 'chat_turns', return_value=0), \
+             patch.object(self.mod, 'refresh_hosts', return_value=hosts_result) as hosts, \
+             patch.object(self.mod, 'request_gateway_restart', return_value=4242) as restart, \
+             contextlib.redirect_stdout(io.StringIO()):
+            for code, calls in ((1, 0), (0, 1), (0, 1)):
+                self.assertEqual(self.mod.main(['--hermes-home', str(self.home)]), code)
+                receipts.append(json.loads((self.home / 'maintenance/toolset-update/latest.json').read_text()))
+                self.assertEqual(restart.call_count, calls)
+                self.assertEqual(hosts.call_count, calls)
+        self.assertEqual([r['status'] for r in receipts], ['incomplete', 'updated', 'up_to_date'])
+        self.assertEqual([r['gateway_restart'] for r in receipts], ['not_needed', 'requested', 'not_needed'])
+        hosts.assert_called_once_with(self.repo)
+        self.assertNotIn('hosts', receipts[0])
+        self.assertEqual(receipts[1]['hosts'], hosts_result)
+        self.assertNotIn('hosts', receipts[2])
+
+    def test_rerun_recovers_obligation_if_interrupted_between_apply_and_marker_replace(self):
+        self.advance()
+        prepare, replace = self.mod.prepare, Path.replace
+        state = self.home / 'maintenance/toolset-update'
+
+        def interrupt_before_owed_replace(path, target):
+            if target == state / 'owed.json':
+                raise KeyboardInterrupt
+            return replace(path, target)
+
+        def finalize(source, root, profiles, **_):
+            return [{'profile': name, 'status': 'ready'} for name, _ in profiles]
+
+        args = ['--hermes-home', str(self.home)]
+        hosts_result = [{'item': 'claude', 'status': 'installed', 'exit': 0}]
+        with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                          'live_profiles', self.setup_stub.live_profiles), \
+             patch.object(self.mod, 'finalize_profiles', side_effect=finalize) as activate, \
+             patch.object(self.mod, 'gateway_running', return_value=True), \
+             patch.object(self.mod, 'chat_turns', return_value=0), \
+             patch.object(self.mod, 'refresh_hosts', return_value=hosts_result) as hosts, \
+             patch.object(self.mod, 'request_gateway_restart', return_value=4242) as restart, \
+             contextlib.redirect_stdout(io.StringIO()):
+            with patch.object(Path, 'replace', interrupt_before_owed_replace), self.assertRaises(KeyboardInterrupt):
+                self.mod.main(args)
+            activate.assert_not_called()
+            hosts.assert_not_called()
+            restart.assert_not_called()
+            self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), self.git(self.remote, 'rev-parse', 'HEAD'))
+            self.assertEqual(self.mod.main(args), 0)
+            receipt = json.loads((state / 'latest.json').read_text())
+            self.assertEqual(receipt['skill_files'], 0)
+            self.assertEqual(receipt['gateway_restart'], 'requested')
+            self.assertEqual(receipt['hosts'], hosts_result)
+            self.assertEqual(self.mod.main(args), 0)
+            receipt = json.loads((state / 'latest.json').read_text())
+            self.assertEqual((receipt['status'], receipt['gateway_restart']), ('up_to_date', 'not_needed'))
+            hosts.assert_called_once_with(self.repo)
+            restart.assert_called_once()
+
+    def test_symlinked_owed_temp_is_refused_before_apply(self):
+        self.advance()
+        before = self.git(self.repo, 'rev-parse', 'HEAD')
+        state = self.home / 'maintenance/toolset-update'
+        state.mkdir(parents=True)
+        target = self.root / 'important-data'
+        target.write_text('keep me\n')
+        temporary = state / 'owed.tmp'
+        temporary.symlink_to(target)
+        prepare = self.mod.prepare
+        output = io.StringIO()
+        with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                          'live_profiles', self.setup_stub.live_profiles), \
+             patch.object(self.mod, 'finalize_profiles') as finalize, \
+             contextlib.redirect_stdout(output):
+            self.assertEqual(self.mod.main(['--hermes-home', str(self.home)]), 1)
+        receipt = json.loads(output.getvalue())
+        self.assertEqual(receipt['status'], 'incomplete')
+        self.assertIn('Refusing symlink', receipt['error'])
+        self.assertIn(str(temporary), receipt['error'])
+        self.assertIn('rerun hermes kit update', receipt['action'])
+        self.assertEqual(target.read_text(), 'keep me\n')
+        self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), before)
+        self.assertEqual((self.home / 'skills/demo/SKILL.md').read_text(), 'old\n')
+        finalize.assert_not_called()
+
+    def test_owed_marker_write_failure_leaves_release_unapplied(self):
+        self.advance()
+        before = self.git(self.repo, 'rev-parse', 'HEAD')
+        temporary = self.home / 'maintenance/toolset-update/owed.tmp'
+        prepare, open_path = self.mod.prepare, Path.open
+        def open_without_space(path, *args, **kwargs):
+            if path == temporary:
+                raise OSError(f'No space left for {path}')
+            return open_path(path, *args, **kwargs)
+        output = io.StringIO()
+        with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                          'live_profiles', self.setup_stub.live_profiles), \
+             patch.object(self.mod, 'finalize_profiles') as finalize, \
+             patch.object(Path, 'open', open_without_space), \
+             contextlib.redirect_stdout(output):
+            self.assertEqual(self.mod.main(['--hermes-home', str(self.home)]), 1)
+        receipt = json.loads(output.getvalue())
+        self.assertEqual(receipt['status'], 'incomplete')
+        self.assertIn(str(temporary), receipt['error'])
+        self.assertIn('rerun hermes kit update', receipt['action'])
+        self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), before)
+        self.assertEqual((self.home / 'skills/demo/SKILL.md').read_text(), 'old\n')
+        self.assertFalse(temporary.with_suffix('.json').exists())
+        finalize.assert_not_called()
+
     def test_symlinked_restart_marker_is_refused(self):
         target = self.root / 'important-data'
         target.write_bytes(b'IMPORTANT USER DATA')
@@ -1100,6 +1225,82 @@ class ScopedUpdateTests(unittest.TestCase):
         self.assertEqual(second['status'], 'updated')
         self.assertEqual(first['backup'], second['backup'])
         self.assertNotIn('install', [a for a, _ in self.calls])
+
+    def test_fleet_update_waits_for_scoped_publication(self):
+        reviewed = self.root / 'reviewed checkout'
+        self.git(self.root, 'clone', str(self.remote), str(reviewed))
+        (self.profiles[1][1] / 'config.yaml').write_text('{}\n')
+        fleet_args = ['--hermes-home', str(self.home)]
+        scoped_args = [*fleet_args, '--profile', 'default', '--source', str(reviewed),
+                       '--revision', self.revision, '--native-python', sys.executable]
+
+        def run(args):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                code = self.mod.main(args)
+            return code, json.loads(output.getvalue())
+
+        def fail_install(action, *args):
+            if action == 'install':
+                raise OSError('interrupted native install')
+            return self.fake_native(action, *args)
+
+        with patch.object(self.mod, 'native_call', fail_install):
+            code, failed = run(scoped_args)
+        self.assertEqual((code, failed['status']), (1, 'incomplete'))
+        self.assertEqual(failed['profiles']['default']['phase'], 'backed_up')
+        receipt = self.home / 'maintenance/toolset-update/scoped.json'
+        saved = receipt.read_bytes()
+        head = self.git(self.repo, 'rev-parse', 'HEAD')
+        paths = [self.repo / 'skills/demo/SKILL.md',
+                 *(home / 'skills/demo/SKILL.md' for _, home in self.profiles)]
+        before = [path.read_bytes() for path in paths]
+        (self.remote / 'skills/demo/SKILL.md').write_text('latest\n')
+        self.git(self.remote, 'commit', '-am', 'new upstream release')
+        latest = self.git(self.remote, 'rev-parse', 'HEAD')
+
+        prepare = self.mod.prepare
+        with patch.object(self.mod, 'prepare',
+                          side_effect=lambda source, profiles: prepare(source, profiles, upstream=str(self.remote))) as prep, \
+             patch.object(self.mod, 'finalize_profiles', return_value=[{'status': 'ready'}]), \
+             patch.object(self.mod, 'gateway_running', return_value=False):
+            for extra in ([], ['--check']):
+                with self.subTest(extra=extra):
+                    code, blocked = run([*fleet_args, *extra])
+                    self.assertEqual((code, blocked['status']), (1, 'incomplete'), blocked)
+                    instructions, command, next_step = blocked['action'].splitlines()
+                    self.assertIn('checkout where you ran it', instructions)
+                    self.assertEqual(shlex.split(command), ['python3', 'scripts/update_bundle.py',
+                                                           *scoped_args[:-1], '/path/to/original/hermes-python'])
+                    self.assertIn('retry hermes kit update', next_step)
+                    self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), head)
+                    self.assertEqual([path.read_bytes() for path in paths], before)
+                    self.assertEqual(receipt.read_bytes(), saved)
+            prep.assert_not_called()
+
+            code, resumed = run(scoped_args)
+            self.assertEqual((code, resumed['status']), (0, 'updated'), resumed)
+            self.assertEqual(resumed['profiles']['default']['status'], 'ready')
+            self.assertEqual(resumed['backup'], failed['backup'])
+            self.assertEqual(paths[1].read_bytes(), b'new\n')
+
+            code, updated = run(fleet_args)
+            self.assertEqual((code, updated['status']), (0, 'updated'), updated)
+            self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), latest)
+            self.assertEqual([path.read_bytes() for path in paths], [b'latest\n'] * len(paths))
+
+    def test_fleet_update_refuses_unreadable_scoped_evidence(self):
+        receipt = self.scan_blocked_receipt()
+        for data in (b'{', b'null', b'{"status":"incomplete"}'):
+            with self.subTest(data=data):
+                receipt.write_bytes(data)
+                with patch.object(self.mod, 'prepare') as prepare, contextlib.redirect_stdout(io.StringIO()) as output:
+                    code = self.mod.main(['--hermes-home', str(self.home), '--check'])
+                result = json.loads(output.getvalue())
+                self.assertEqual((code, result['status']), (1, 'incomplete'))
+                self.assertIn(str(receipt), result['error'])
+                self.assertIn('preserve', result['error'])
+                self.assertEqual(receipt.read_bytes(), data)
+                prepare.assert_not_called()
 
     def test_source_race_during_scan_prevents_publication(self):
         def race(action, *args):
